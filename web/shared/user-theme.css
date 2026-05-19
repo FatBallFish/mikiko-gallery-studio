@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Manrope:wght@300;400;500;600&display=swap');
+@import './tokens.css';
+
+:root {
+  --bg-deep: #05070d;
+  --bg-surface: rgba(255, 255, 255, 0.03);
+  --bg-glass: rgba(10, 12, 20, 0.6);
+  
+  --text-main: #f6efe4;
+  --text-dim: rgba(246, 239, 228, 0.5);
+  
+  --border-thin: rgba(255, 255, 255, 0.08);
+  --border-bright: rgba(255, 255, 255, 0.15);
+}
+
+body {
+  background-color: var(--bg-deep);
+  background-image: 
+    radial-gradient(circle at 50% -20%, rgba(212, 157, 94, 0.08), transparent 50%),
+    radial-gradient(circle at 0% 100%, rgba(131, 118, 255, 0.05), transparent 40%);
+  color: var(--text-main);
+  min-height: 100vh;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-thin);
+  border-radius: var(--pg-radius-md);
+}
