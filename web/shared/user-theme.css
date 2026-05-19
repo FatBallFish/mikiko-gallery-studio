@@ -2,31 +2,36 @@
 @import './tokens.css';
 
 :root {
-  --bg-deep: #05070d;
-  --bg-surface: rgba(255, 255, 255, 0.03);
-  --bg-glass: rgba(10, 12, 20, 0.6);
+  --pg-user-bg-deep: #05070d;
+  --pg-user-bg-surface: rgba(255, 255, 255, 0.03);
+  --pg-user-bg-glass: rgba(10, 12, 20, 0.6);
   
-  --text-main: #f6efe4;
-  --text-dim: rgba(246, 239, 228, 0.5);
+  --pg-user-text-main: #f6efe4;
+  --pg-user-text-dim: rgba(246, 239, 228, 0.5);
   
-  --border-thin: rgba(255, 255, 255, 0.08);
-  --border-bright: rgba(255, 255, 255, 0.15);
+  --pg-user-border-thin: rgba(255, 255, 255, 0.08);
+  --pg-user-border-bright: rgba(255, 255, 255, 0.15);
 }
 
 body {
-  background-color: var(--bg-deep);
+  background-color: var(--pg-user-bg-deep);
   background-image: 
     radial-gradient(circle at 50% -20%, rgba(212, 157, 94, 0.08), transparent 50%),
     radial-gradient(circle at 0% 100%, rgba(131, 118, 255, 0.05), transparent 40%);
-  color: var(--text-main);
+  color: var(--pg-user-text-main);
   min-height: 100vh;
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  font-family: 'Manrope', sans-serif;
 }
 
-.glass-panel {
-  background: var(--bg-glass);
+h1, strong, button {
+  font-family: 'Cormorant Garamond', serif;
+}
+
+.pg-glass-panel {
+  background: var(--pg-user-bg-glass);
   backdrop-filter: blur(20px);
-  border: 1px solid var(--border-thin);
+  border: 1px solid var(--pg-user-border-thin);
   border-radius: var(--pg-radius-md);
 }
