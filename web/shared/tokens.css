@@ -10,16 +10,16 @@
   --pg-space-12: 48px;
 
   /* Radius */
-  --pg-radius-sm: 8px;
-  --pg-radius-md: 12px;
-  --pg-radius-lg: 20px;
+  --pg-radius-sm: 12px;
+  --pg-radius-md: 18px;
+  --pg-radius-lg: 24px;
   --pg-radius-full: 9999px;
 
   /* Dimensions */
   --pg-pill-height: 42px;
-  --pg-topbar-height: 72px;
-  --pg-sidebar-user-width: 100px;
-  --pg-sidebar-admin-width: 240px;
+  --pg-topbar-height: 76px;
+  --pg-sidebar-user-width: 108px;
+  --pg-sidebar-admin-width: 216px;
 
   /* Shadows - Minimal for Admin, Glows for User */
   --pg-shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
