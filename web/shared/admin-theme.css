@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500&family=Manrope:wght@400;500;600&display=swap');
+@import './tokens.css';
+
+:root {
+  /* High-density Clinical Palette */
+  --pg-admin-bg-app: #eef2f4;
+  --pg-admin-bg-card: #ffffff;
+  --pg-admin-bg-subtle: #f8fafb;
+  
+  --pg-admin-text-main: #1a2532;
+  --pg-admin-text-dim: #68788b;
+  
+  --pg-admin-border-base: rgba(26, 37, 50, 0.08);
+  --pg-admin-border-focus: rgba(87, 117, 185, 0.3);
+  
+  --pg-admin-color-primary: #5775b9;
+
+  /* Accent colors */
+  --pg-admin-color-success: #5a9572;
+  --pg-admin-color-warning: #b88740;
+}
+
+body {
+  background-color: var(--pg-admin-bg-app);
+  color: var(--pg-admin-text-main);
+  margin: 0;
+  font-size: 14px; /* Clinical density */
+  font-family: 'Manrope', sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, 
+strong, 
+button {
+  font-family: 'Fraunces', serif;
+}
+
+/* Base Utility for Grid Layouts */
+.pg-admin-card {
+  background: var(--pg-admin-bg-card);
+  border: 1px solid var(--pg-admin-border-base);
+  border-radius: var(--pg-radius-sm);
+  box-shadow: var(--pg-shadow-sm);
+}
