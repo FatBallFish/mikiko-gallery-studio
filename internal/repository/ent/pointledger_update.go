@@ -56,6 +56,33 @@ func (_u *PointLedgerUpdate) AddUserID(v int64) *PointLedgerUpdate {
 	return _u
 }
 
+// SetAPIKeyID sets the "api_key_id" field.
+func (_u *PointLedgerUpdate) SetAPIKeyID(v int64) *PointLedgerUpdate {
+	_u.mutation.ResetAPIKeyID()
+	_u.mutation.SetAPIKeyID(v)
+	return _u
+}
+
+// SetNillableAPIKeyID sets the "api_key_id" field if the given value is not nil.
+func (_u *PointLedgerUpdate) SetNillableAPIKeyID(v *int64) *PointLedgerUpdate {
+	if v != nil {
+		_u.SetAPIKeyID(*v)
+	}
+	return _u
+}
+
+// AddAPIKeyID adds value to the "api_key_id" field.
+func (_u *PointLedgerUpdate) AddAPIKeyID(v int64) *PointLedgerUpdate {
+	_u.mutation.AddAPIKeyID(v)
+	return _u
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (_u *PointLedgerUpdate) ClearAPIKeyID() *PointLedgerUpdate {
+	_u.mutation.ClearAPIKeyID()
+	return _u
+}
+
 // SetTaskID sets the "task_id" field.
 func (_u *PointLedgerUpdate) SetTaskID(v uuid.UUID) *PointLedgerUpdate {
 	_u.mutation.SetTaskID(v)
@@ -329,6 +356,15 @@ func (_u *PointLedgerUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(pointledger.FieldUserID, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.APIKeyID(); ok {
+		_spec.SetField(pointledger.FieldAPIKeyID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAPIKeyID(); ok {
+		_spec.AddField(pointledger.FieldAPIKeyID, field.TypeInt64, value)
+	}
+	if _u.mutation.APIKeyIDCleared() {
+		_spec.ClearField(pointledger.FieldAPIKeyID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.TaskID(); ok {
 		_spec.SetField(pointledger.FieldTaskID, field.TypeUUID, value)
 	}
@@ -427,6 +463,33 @@ func (_u *PointLedgerUpdateOne) SetNillableUserID(v *int64) *PointLedgerUpdateOn
 // AddUserID adds value to the "user_id" field.
 func (_u *PointLedgerUpdateOne) AddUserID(v int64) *PointLedgerUpdateOne {
 	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (_u *PointLedgerUpdateOne) SetAPIKeyID(v int64) *PointLedgerUpdateOne {
+	_u.mutation.ResetAPIKeyID()
+	_u.mutation.SetAPIKeyID(v)
+	return _u
+}
+
+// SetNillableAPIKeyID sets the "api_key_id" field if the given value is not nil.
+func (_u *PointLedgerUpdateOne) SetNillableAPIKeyID(v *int64) *PointLedgerUpdateOne {
+	if v != nil {
+		_u.SetAPIKeyID(*v)
+	}
+	return _u
+}
+
+// AddAPIKeyID adds value to the "api_key_id" field.
+func (_u *PointLedgerUpdateOne) AddAPIKeyID(v int64) *PointLedgerUpdateOne {
+	_u.mutation.AddAPIKeyID(v)
+	return _u
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (_u *PointLedgerUpdateOne) ClearAPIKeyID() *PointLedgerUpdateOne {
+	_u.mutation.ClearAPIKeyID()
 	return _u
 }
 
@@ -732,6 +795,15 @@ func (_u *PointLedgerUpdateOne) sqlSave(ctx context.Context) (_node *PointLedger
 	}
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(pointledger.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.APIKeyID(); ok {
+		_spec.SetField(pointledger.FieldAPIKeyID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAPIKeyID(); ok {
+		_spec.AddField(pointledger.FieldAPIKeyID, field.TypeInt64, value)
+	}
+	if _u.mutation.APIKeyIDCleared() {
+		_spec.ClearField(pointledger.FieldAPIKeyID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.TaskID(); ok {
 		_spec.SetField(pointledger.FieldTaskID, field.TypeUUID, value)

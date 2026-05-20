@@ -4,8 +4,17 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"math/big"
+	"net"
+	"net/http"
+	"net/mail"
+	"net/smtp"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,9 +29,12 @@ import (
 )
 
 type emailCode struct {
-	Code      string
-	Scene     string
-	ExpiresAt time.Time
+	Code           string
+	Scene          string
+	ExpiresAt      time.Time
+	LastSentAt     time.Time
+	FailedAttempts int
+	LockedUntil    time.Time
 }
 
 type refreshSession struct {
@@ -40,6 +52,7 @@ type Claims struct {
 	Email        string `json:"email"`
 	TokenVersion int    `json:"token_version"`
 	GroupCode    string `json:"group_code"`
+	SessionID    string `json:"session_id"`
 	jwt.RegisteredClaims
 }
 
@@ -47,6 +60,7 @@ type Service struct {
 	mu              sync.Mutex
 	cfg             config.AuthConfig
 	store           Store
+	emailSender     EmailSender
 	userMultipliers map[string]string
 	nextUserID      int64
 	usersByEmail    map[string]*domainauth.User
@@ -56,14 +70,84 @@ type Service struct {
 	familySessions  map[string][]*refreshSession
 }
 
+type EmailSender interface {
+	SendVerificationCode(email, scene, code string) error
+}
+
+type SMTPEmailSender struct {
+	cfg config.SMTPConfig
+}
+
+func NewSMTPEmailSender(cfg config.SMTPConfig) *SMTPEmailSender {
+	return &SMTPEmailSender{cfg: cfg}
+}
+
+func (s *SMTPEmailSender) SendVerificationCode(email, scene, code string) error {
+	if !smtpConfigured(s.cfg) {
+		return emailDeliveryConfigError()
+	}
+	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("connect smtp server: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, s.cfg.Host)
+	if err != nil {
+		return fmt.Errorf("create smtp client: %w", err)
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return fmt.Errorf("smtp hello: %w", err)
+	}
+	if s.cfg.StartTLS {
+		tlsCfg := &tls.Config{ServerName: s.cfg.Host, InsecureSkipVerify: s.cfg.InsecureSkipVerify}
+		if err := client.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("smtp starttls: %w", err)
+		}
+	}
+	if strings.TrimSpace(s.cfg.Username) != "" {
+		auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+	if err := client.Mail(envelopeAddress(s.cfg.From)); err != nil {
+		return fmt.Errorf("smtp mail from: %w", err)
+	}
+	if err := client.Rcpt(email); err != nil {
+		return fmt.Errorf("smtp rcpt to: %w", err)
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data: %w", err)
+	}
+	message := verificationEmailMessage(s.cfg.From, email, scene, code)
+	if _, err := writer.Write([]byte(message)); err != nil {
+		_ = writer.Close()
+		return fmt.Errorf("write smtp data: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close smtp data: %w", err)
+	}
+	return client.Quit()
+}
+
 func NewService(cfg config.AuthConfig, userMultipliers map[string]string) *Service {
 	return NewServiceWithStore(cfg, userMultipliers, nil)
 }
 
 func NewServiceWithStore(cfg config.AuthConfig, userMultipliers map[string]string, store Store) *Service {
+	var sender EmailSender
+	if smtpConfigured(cfg.SMTP) {
+		sender = NewSMTPEmailSender(cfg.SMTP)
+	}
 	return &Service{
 		cfg:             cfg,
 		store:           store,
+		emailSender:     sender,
 		userMultipliers: userMultipliers,
 		nextUserID:      1,
 		usersByEmail:    map[string]*domainauth.User{},
@@ -74,21 +158,147 @@ func NewServiceWithStore(cfg config.AuthConfig, userMultipliers map[string]strin
 	}
 }
 
+func NewServiceWithEmailSender(cfg config.AuthConfig, userMultipliers map[string]string, sender EmailSender) *Service {
+	svc := NewServiceWithStore(cfg, userMultipliers, nil)
+	svc.emailSender = sender
+	return svc
+}
+
+func ValidateProductionEmailCodeConfig(env string, cfg config.AuthConfig) error {
+	if !isProductionEnv(env) {
+		return nil
+	}
+	if strings.TrimSpace(os.Getenv("PIC_GALLERY_AUTH_FIXED_CODE")) != "" {
+		return fmt.Errorf("PIC_GALLERY_AUTH_FIXED_CODE is not allowed in %s env", env)
+	}
+	if enabled, err := strconv.ParseBool(os.Getenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES")); err == nil && enabled {
+		return fmt.Errorf("PIC_GALLERY_AUTH_DEV_EMAIL_CODES is not allowed in %s env", env)
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Issuer), "test") {
+		return fmt.Errorf("auth.issuer=test is not allowed in %s env because it enables fixed email codes", env)
+	}
+	return nil
+}
+
 func (s *Service) SendEmailCode(email, scene string) error {
-	if email == "" || scene == "" {
+	email = strings.TrimSpace(strings.ToLower(email))
+	scene = strings.TrimSpace(scene)
+	if email == "" || scene == "" || !strings.Contains(email, "@") {
 		return errs.BadRequest("email and scene are required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.codesByEmail[email] = emailCode{Code: "123456", Scene: scene, ExpiresAt: time.Now().Add(10 * time.Minute)}
+	existing := s.codesByEmail[email]
+	now := time.Now()
+	if !existing.LastSentAt.IsZero() && now.Sub(existing.LastSentAt) < time.Minute {
+		return errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "verification code was sent recently")
+	}
+	code := fixedEmailCode(s.cfg)
+	if code == "" {
+		generated, err := randomEmailCode()
+		if err != nil {
+			return errs.Internal("failed to generate verification code")
+		}
+		code = generated
+		if s.emailSender == nil {
+			return emailDeliveryConfigError()
+		}
+		if err := s.emailSender.SendVerificationCode(email, scene, code); err != nil {
+			if appErr, ok := err.(*errs.Error); ok {
+				return appErr
+			}
+			return errs.Internal("failed to send email verification code")
+		}
+	}
+	s.codesByEmail[email] = emailCode{Code: code, Scene: scene, ExpiresAt: now.Add(10 * time.Minute), LastSentAt: now}
 	return nil
 }
 
+func fixedEmailCode(cfg config.AuthConfig) string {
+	if code := strings.TrimSpace(os.Getenv("PIC_GALLERY_AUTH_FIXED_CODE")); code != "" {
+		return code
+	}
+	if enabled, err := strconv.ParseBool(os.Getenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES")); err == nil && enabled {
+		return "123456"
+	}
+	if cfg.Issuer == "test" {
+		return "123456"
+	}
+	return ""
+}
+
+func isProductionEnv(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "prod", "production":
+		return true
+	default:
+		return false
+	}
+}
+
+func randomEmailCode() (string, error) {
+	value, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", value.Int64()), nil
+}
+
+func smtpConfigured(cfg config.SMTPConfig) bool {
+	return strings.TrimSpace(cfg.Host) != "" && cfg.Port > 0 && strings.TrimSpace(cfg.From) != ""
+}
+
+func emailDeliveryConfigError() *errs.Error {
+	return errs.Internal("email verification SMTP delivery is not configured: set auth.smtp.host, auth.smtp.port, and auth.smtp.from")
+}
+
+func verificationEmailMessage(from, to, scene, code string) string {
+	subject := "Pic Gallery verification code"
+	body := fmt.Sprintf("Your Pic Gallery verification code is %s. It expires in 10 minutes.", code)
+	if scene != "" {
+		body = fmt.Sprintf("Your Pic Gallery verification code for %s is %s. It expires in 10 minutes.", scene, code)
+	}
+	headers := []string{
+		"From: " + sanitizeHeader(from),
+		"To: " + sanitizeHeader(to),
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+	}
+	return strings.Join(headers, "\r\n") + "\r\n\r\n" + body + "\r\n"
+}
+
+func sanitizeHeader(value string) string {
+	value = strings.ReplaceAll(value, "\r", "")
+	value = strings.ReplaceAll(value, "\n", "")
+	return value
+}
+
+func envelopeAddress(value string) string {
+	parsed, err := mail.ParseAddress(strings.TrimSpace(value))
+	if err != nil {
+		return strings.TrimSpace(value)
+	}
+	return parsed.Address
+}
+
 func (s *Service) LoginWithEmailCode(email, code string) (domainauth.User, domainauth.Session, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record, ok := s.codesByEmail[email]
-	if !ok || record.Code != code || time.Now().After(record.ExpiresAt) {
+	now := time.Now()
+	if ok && !record.LockedUntil.IsZero() && now.Before(record.LockedUntil) {
+		return domainauth.User{}, domainauth.Session{}, errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "too many invalid verification attempts")
+	}
+	if !ok || record.Code != strings.TrimSpace(code) || now.After(record.ExpiresAt) {
+		if ok {
+			record.FailedAttempts++
+			if record.FailedAttempts >= 5 {
+				record.LockedUntil = now.Add(15 * time.Minute)
+			}
+			s.codesByEmail[email] = record
+		}
 		return domainauth.User{}, domainauth.Session{}, errs.Unauthorized("invalid or expired verification code")
 	}
 	delete(s.codesByEmail, email)
@@ -154,6 +364,9 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 	if !ok {
 		return domainauth.User{}, domainauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "refresh token expired")
 	}
+	if user.Status == "disabled" {
+		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
+	}
 	current.Status = "rotated"
 	newSession := s.issueSessionWithFamilyLocked(&user, current.FamilyID)
 	current.ReplacedBySessionID = newSession.SessionID
@@ -163,6 +376,23 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 		}
 	}
 	return user, newSession, nil
+}
+
+func (s *Service) Logout(sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	if s.store != nil {
+		return s.store.MarkRefreshSessionRevoked(context.Background(), sessionID)
+	}
+	for _, session := range s.sessionsByHash {
+		if session.ID == sessionID && session.Status == "active" {
+			session.Status = "revoked"
+		}
+	}
+	return nil
 }
 
 func (s *Service) ParseAccessToken(accessToken string) (*Claims, error) {
@@ -179,10 +409,90 @@ func (s *Service) ParseAccessToken(accessToken string) (*Claims, error) {
 	return claims, nil
 }
 
+func (s *Service) ValidateAccessToken(accessToken string) (domainauth.User, *Claims, error) {
+	claims, err := s.ParseAccessToken(accessToken)
+	if err != nil {
+		return domainauth.User{}, nil, err
+	}
+	user, ok := s.GetUserByID(claims.UserID)
+	if !ok {
+		return domainauth.User{}, nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "user not found")
+	}
+	if user.Status == "disabled" {
+		return domainauth.User{}, nil, errs.New(http.StatusForbidden, errs.CodeUserDisabled, "user has been disabled")
+	}
+	if user.TokenVersion != claims.TokenVersion {
+		return domainauth.User{}, nil, errs.New(http.StatusUnauthorized, errs.CodeAuthAccessExpired, "access token revoked")
+	}
+	return user, claims, nil
+}
+
 func (s *Service) GetUserByID(id int64) (domainauth.User, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.getUserByIDLocked(id)
+}
+
+func (s *Service) UpdateProfile(userID int64, nickname, bio, theme, locale, avatarObjectKey *string) (domainauth.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.getUserByIDLocked(userID)
+	if !ok {
+		return domainauth.User{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "user not found")
+	}
+	if nickname != nil {
+		value := strings.TrimSpace(*nickname)
+		if len([]rune(value)) < 2 || len([]rune(value)) > 30 {
+			return domainauth.User{}, errs.BadRequest("nickname must be 2-30 characters")
+		}
+		user.Nickname = value
+	}
+	if bio != nil {
+		value := strings.TrimSpace(*bio)
+		if len([]rune(value)) > 120 {
+			return domainauth.User{}, errs.BadRequest("bio must be up to 120 characters")
+		}
+		user.Bio = value
+	}
+	if theme != nil {
+		value := strings.TrimSpace(*theme)
+		if value != "light" && value != "dark" && value != "system" {
+			return domainauth.User{}, errs.BadRequest("invalid theme")
+		}
+		user.Theme = value
+	}
+	if locale != nil {
+		user.DefaultLocale = defaultString(strings.TrimSpace(*locale), "zh-CN")
+	}
+	if avatarObjectKey != nil {
+		user.AvatarObjectKey = strings.TrimSpace(*avatarObjectKey)
+	}
+	return s.saveUserLocked(user)
+}
+
+func (s *Service) ChangePassword(userID int64, _ string, newPassword string) error {
+	if strings.TrimSpace(newPassword) == "" {
+		return errs.BadRequest("new password is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.getUserByIDLocked(userID)
+	if !ok {
+		return errs.New(http.StatusNotFound, errs.CodeNotFound, "user not found")
+	}
+	user.TokenVersion++
+	if _, err := s.saveUserLocked(user); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) ResetPassword(email, code, newPassword string) error {
+	user, _, err := s.LoginWithEmailCode(email, code)
+	if err != nil {
+		return err
+	}
+	return s.ChangePassword(user.ID, "", newPassword)
 }
 
 func (s *Service) userMultiplierFor(groupCode string) string {
@@ -203,7 +513,7 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 	accessExp := time.Now().Add(s.cfg.AccessTokenTTL)
 	refreshExp := time.Now().Add(s.cfg.RefreshTokenTTL)
 	claims := Claims{
-		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode,
+		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode, SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", user.ID), ExpiresAt: jwt.NewNumericDate(accessExp), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: s.cfg.Issuer},
 	}
 	accessToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.AccessTokenSecret))
@@ -257,6 +567,8 @@ func (s *Service) createUserLocked(email string) (domainauth.User, error) {
 		Status:          "active",
 		GroupCode:       "basic",
 		GroupMultiplier: s.userMultiplierFor("basic"),
+		DefaultLocale:   "zh-CN",
+		Theme:           "system",
 		CreatedAt:       time.Now(),
 	}
 	if s.store != nil {
@@ -266,6 +578,16 @@ func (s *Service) createUserLocked(email string) (domainauth.User, error) {
 	s.usersByEmail[email] = &user
 	s.usersByID[user.ID] = &user
 	return user, nil
+}
+
+func (s *Service) saveUserLocked(user domainauth.User) (domainauth.User, error) {
+	if s.store != nil {
+		return s.store.UpdateUser(context.Background(), user)
+	}
+	existing := user
+	s.usersByID[user.ID] = &existing
+	s.usersByEmail[user.Email] = &existing
+	return existing, nil
 }
 
 func (s *Service) getUserByIDLocked(id int64) (domainauth.User, bool) {
@@ -294,4 +616,26 @@ func randomToken() string {
 		panic(err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buffer)
+}
+
+func randomInt(max int) int {
+	if max <= 0 {
+		return 0
+	}
+	buffer := make([]byte, 4)
+	if _, err := rand.Read(buffer); err != nil {
+		panic(err)
+	}
+	value := int(buffer[0])<<24 | int(buffer[1])<<16 | int(buffer[2])<<8 | int(buffer[3])
+	if value < 0 {
+		value = -value
+	}
+	return value % max
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }

@@ -29,6 +29,8 @@ type APIKey struct {
 	AccessKey string `json:"access_key,omitempty"`
 	// SecretHash holds the value of the "secret_hash" field.
 	SecretHash string `json:"secret_hash,omitempty"`
+	// SigningSecret holds the value of the "signing_secret" field.
+	SigningSecret *string `json:"signing_secret,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Status holds the value of the "status" field.
@@ -55,7 +57,7 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case apikey.FieldID, apikey.FieldUserID, apikey.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case apikey.FieldAccessKey, apikey.FieldSecretHash, apikey.FieldName, apikey.FieldStatus, apikey.FieldGroupCode, apikey.FieldTotalQuotaPoints, apikey.FieldDailyQuotaPoints:
+		case apikey.FieldAccessKey, apikey.FieldSecretHash, apikey.FieldSigningSecret, apikey.FieldName, apikey.FieldStatus, apikey.FieldGroupCode, apikey.FieldTotalQuotaPoints, apikey.FieldDailyQuotaPoints:
 			values[i] = new(sql.NullString)
 		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldExpiresAt, apikey.FieldLastUsedAt:
 			values[i] = new(sql.NullTime)
@@ -116,6 +118,13 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field secret_hash", values[i])
 			} else if value.Valid {
 				_m.SecretHash = value.String
+			}
+		case apikey.FieldSigningSecret:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field signing_secret", values[i])
+			} else if value.Valid {
+				_m.SigningSecret = new(string)
+				*_m.SigningSecret = value.String
 			}
 		case apikey.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -225,6 +234,11 @@ func (_m *APIKey) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("secret_hash=")
 	builder.WriteString(_m.SecretHash)
+	builder.WriteString(", ")
+	if v := _m.SigningSecret; v != nil {
+		builder.WriteString("signing_secret=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)

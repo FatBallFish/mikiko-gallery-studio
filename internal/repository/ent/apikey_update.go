@@ -103,6 +103,26 @@ func (_u *APIKeyUpdate) SetNillableSecretHash(v *string) *APIKeyUpdate {
 	return _u
 }
 
+// SetSigningSecret sets the "signing_secret" field.
+func (_u *APIKeyUpdate) SetSigningSecret(v string) *APIKeyUpdate {
+	_u.mutation.SetSigningSecret(v)
+	return _u
+}
+
+// SetNillableSigningSecret sets the "signing_secret" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableSigningSecret(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetSigningSecret(*v)
+	}
+	return _u
+}
+
+// ClearSigningSecret clears the value of the "signing_secret" field.
+func (_u *APIKeyUpdate) ClearSigningSecret() *APIKeyUpdate {
+	_u.mutation.ClearSigningSecret()
+	return _u
+}
+
 // SetName sets the "name" field.
 func (_u *APIKeyUpdate) SetName(v string) *APIKeyUpdate {
 	_u.mutation.SetName(v)
@@ -305,6 +325,11 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "secret_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_hash": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SigningSecret(); ok {
+		if err := apikey.SigningSecretValidator(v); err != nil {
+			return &ValidationError{Name: "signing_secret", err: fmt.Errorf(`ent: validator failed for field "APIKey.signing_secret": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
@@ -355,6 +380,12 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.SecretHash(); ok {
 		_spec.SetField(apikey.FieldSecretHash, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SigningSecret(); ok {
+		_spec.SetField(apikey.FieldSigningSecret, field.TypeString, value)
+	}
+	if _u.mutation.SigningSecretCleared() {
+		_spec.ClearField(apikey.FieldSigningSecret, field.TypeString)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
@@ -490,6 +521,26 @@ func (_u *APIKeyUpdateOne) SetNillableSecretHash(v *string) *APIKeyUpdateOne {
 	if v != nil {
 		_u.SetSecretHash(*v)
 	}
+	return _u
+}
+
+// SetSigningSecret sets the "signing_secret" field.
+func (_u *APIKeyUpdateOne) SetSigningSecret(v string) *APIKeyUpdateOne {
+	_u.mutation.SetSigningSecret(v)
+	return _u
+}
+
+// SetNillableSigningSecret sets the "signing_secret" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableSigningSecret(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetSigningSecret(*v)
+	}
+	return _u
+}
+
+// ClearSigningSecret clears the value of the "signing_secret" field.
+func (_u *APIKeyUpdateOne) ClearSigningSecret() *APIKeyUpdateOne {
+	_u.mutation.ClearSigningSecret()
 	return _u
 }
 
@@ -708,6 +759,11 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "secret_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_hash": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SigningSecret(); ok {
+		if err := apikey.SigningSecretValidator(v); err != nil {
+			return &ValidationError{Name: "signing_secret", err: fmt.Errorf(`ent: validator failed for field "APIKey.signing_secret": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
@@ -775,6 +831,12 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.SecretHash(); ok {
 		_spec.SetField(apikey.FieldSecretHash, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SigningSecret(); ok {
+		_spec.SetField(apikey.FieldSigningSecret, field.TypeString, value)
+	}
+	if _u.mutation.SigningSecretCleared() {
+		_spec.ClearField(apikey.FieldSigningSecret, field.TypeString)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)

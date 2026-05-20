@@ -9,9 +9,13 @@ import (
 
 type Store interface {
 	Create(ctx context.Context, key domainapikey.APIKey) (domainapikey.APIKey, error)
+	ListByUser(ctx context.Context, userID int64) ([]domainapikey.APIKey, error)
+	GetByID(ctx context.Context, userID int64, id int64) (domainapikey.APIKey, error)
 	GetByAccessKey(ctx context.Context, accessKey string) (domainapikey.APIKey, error)
 	GetBySecretHash(ctx context.Context, secretHash string) (domainapikey.APIKey, error)
 	UpdateLastUsedAt(ctx context.Context, id int64, at time.Time) error
 	UpdateStatus(ctx context.Context, id int64, status string) error
 	UpdateExpiresAt(ctx context.Context, id int64, expiresAt *time.Time) error
+	Update(ctx context.Context, key domainapikey.APIKey) (domainapikey.APIKey, error)
+	SoftDelete(ctx context.Context, userID int64, id int64, at time.Time) error
 }

@@ -424,6 +424,7 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetAspectRatio(defaultString(task.AspectRatio, "1:1")).
 		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
 		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
@@ -441,6 +442,15 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetProviderTrace(trace)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
+	}
+	if strings.TrimSpace(task.NegativePrompt) != "" {
+		builder.SetNegativePrompt(task.NegativePrompt)
+	}
+	if task.ReferenceStrength > 0 {
+		builder.SetReferenceStrength(task.ReferenceStrength)
+	}
+	if task.Seed != nil {
+		builder.SetSeed(*task.Seed)
 	}
 
 	now := time.Now().UTC()
@@ -479,6 +489,7 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
 		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
 		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
@@ -496,6 +507,21 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
 		builder.ClearAPIKeyID()
+	}
+	if strings.TrimSpace(task.NegativePrompt) != "" {
+		builder.SetNegativePrompt(task.NegativePrompt)
+	} else {
+		builder.ClearNegativePrompt()
+	}
+	if task.ReferenceStrength > 0 {
+		builder.SetReferenceStrength(task.ReferenceStrength)
+	} else {
+		builder.ClearReferenceStrength()
+	}
+	if task.Seed != nil {
+		builder.SetSeed(*task.Seed)
+	} else {
+		builder.ClearSeed()
 	}
 
 	if task.LeaseOwner != "" {
@@ -555,6 +581,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
 		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
 		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
@@ -572,6 +599,21 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
 		builder.ClearAPIKeyID()
+	}
+	if strings.TrimSpace(task.NegativePrompt) != "" {
+		builder.SetNegativePrompt(task.NegativePrompt)
+	} else {
+		builder.ClearNegativePrompt()
+	}
+	if task.ReferenceStrength > 0 {
+		builder.SetReferenceStrength(task.ReferenceStrength)
+	} else {
+		builder.ClearReferenceStrength()
+	}
+	if task.Seed != nil {
+		builder.SetSeed(*task.Seed)
+	} else {
+		builder.ClearSeed()
 	}
 
 	// Running-state progress updates must not rewrite lease columns because
@@ -631,6 +673,7 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
 		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
 		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
@@ -648,6 +691,21 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
 		builder.ClearAPIKeyID()
+	}
+	if strings.TrimSpace(task.NegativePrompt) != "" {
+		builder.SetNegativePrompt(task.NegativePrompt)
+	} else {
+		builder.ClearNegativePrompt()
+	}
+	if task.ReferenceStrength > 0 {
+		builder.SetReferenceStrength(task.ReferenceStrength)
+	} else {
+		builder.ClearReferenceStrength()
+	}
+	if task.Seed != nil {
+		builder.SetSeed(*task.Seed)
+	} else {
+		builder.ClearSeed()
 	}
 
 	if task.Status != domainimagetask.StatusRunning {
@@ -719,6 +777,8 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		AbstractModel:         entity.AbstractModel,
 		TaskType:              entity.TaskType,
 		Prompt:                entity.Prompt,
+		NegativePrompt:        nullableString(entity.NegativePrompt),
+		AspectRatio:           entity.AspectRatio,
 		RequestedSize:         nullableString(entity.RequestedSize),
 		RequestedQuality:      entity.RequestedQuality,
 		ResolvedQualityBucket: entity.ResolvedQualityBucket,
@@ -727,6 +787,8 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		OutputImageCount:      entity.RequestedOutputImageCount,
 		ReferenceImageCount:   entity.ReferenceImageCount,
 		ReferenceAssetIDs:     decodeReferenceAssetIDs(entity.RoutingSnapshot),
+		ReferenceStrength:     nullableInt(entity.ReferenceStrength),
+		Seed:                  entity.Seed,
 		EstimatedPoints:       entity.EstimatedPoints,
 		ActualPoints:          entity.ActualPoints,
 		LeaseOwner:            nullableString(entity.LeaseOwner),
@@ -943,6 +1005,13 @@ func isTerminalStatus(status string) bool {
 func nullableString(value *string) string {
 	if value == nil {
 		return ""
+	}
+	return *value
+}
+
+func nullableInt(value *int) int {
+	if value == nil {
+		return 0
 	}
 	return *value
 }

@@ -55,6 +55,20 @@ func (_c *PointLedgerCreate) SetUserID(v int64) *PointLedgerCreate {
 	return _c
 }
 
+// SetAPIKeyID sets the "api_key_id" field.
+func (_c *PointLedgerCreate) SetAPIKeyID(v int64) *PointLedgerCreate {
+	_c.mutation.SetAPIKeyID(v)
+	return _c
+}
+
+// SetNillableAPIKeyID sets the "api_key_id" field if the given value is not nil.
+func (_c *PointLedgerCreate) SetNillableAPIKeyID(v *int64) *PointLedgerCreate {
+	if v != nil {
+		_c.SetAPIKeyID(*v)
+	}
+	return _c
+}
+
 // SetTaskID sets the "task_id" field.
 func (_c *PointLedgerCreate) SetTaskID(v uuid.UUID) *PointLedgerCreate {
 	_c.mutation.SetTaskID(v)
@@ -326,6 +340,10 @@ func (_c *PointLedgerCreate) createSpec() (*PointLedger, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.UserID(); ok {
 		_spec.SetField(pointledger.FieldUserID, field.TypeInt64, value)
 		_node.UserID = value
+	}
+	if value, ok := _c.mutation.APIKeyID(); ok {
+		_spec.SetField(pointledger.FieldAPIKeyID, field.TypeInt64, value)
+		_node.APIKeyID = &value
 	}
 	if value, ok := _c.mutation.TaskID(); ok {
 		_spec.SetField(pointledger.FieldTaskID, field.TypeUUID, value)

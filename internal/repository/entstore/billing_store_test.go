@@ -3,14 +3,18 @@ package entstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
+	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/lib/pq"
+	"github.com/mattn/go-sqlite3"
 
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -336,9 +340,107 @@ func TestBillingStoreConcurrentReserveAndFinalizeRemainIdempotent(t *testing.T) 
 	}
 }
 
+func TestBillingStoreAPIKeyQuotaConcurrentReserveIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-apikey-quota-concurrent?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	if _, err := store.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: 68, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("Adjust: %v", err)
+	}
+
+	totalQuota := "16.00000"
+	dailyQuota := "16.00000"
+	dayStart := time.Now()
+	const workers = 8
+	start := make(chan struct{})
+	errCh := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := store.ReserveTask(ctx, billingservice.ReserveStoreRequest{
+				UserID:          68,
+				APIKeyID:        9001,
+				TaskID:          uuid.NewString(),
+				EstimatedPoints: "8.00000",
+				Reason:          "reserve with api key quota",
+				APIKeyQuota: domainbilling.APIKeyQuota{
+					APIKeyTotalQuotaPoints: &totalQuota,
+					APIKeyDailyQuotaPoints: &dailyQuota,
+					APIKeyQuotaDayStart:    &dayStart,
+				},
+			})
+			errCh <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	successes := 0
+	rateLimited := 0
+	for err := range errCh {
+		switch {
+		case err == nil:
+			successes++
+		default:
+			appErr, ok := err.(*errs.Error)
+			if !ok || appErr.StatusCode != 429 || appErr.Code != errs.CodeRateLimited {
+				t.Fatalf("expected only quota 429 errors, got %T %v", err, err)
+			}
+			rateLimited++
+		}
+	}
+	if successes != 2 || rateLimited != workers-2 {
+		t.Fatalf("expected exactly 2 successes and %d quota failures, got successes=%d failures=%d", workers-2, successes, rateLimited)
+	}
+	balance, err := store.GetBalance(ctx, 68)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balance.AvailablePoints != "84.00000" || balance.FrozenPoints != "16.00000" {
+		t.Fatalf("expected only quota-covered reserves to affect balance, got %#v", balance)
+	}
+	totalUsed, err := store.APIKeyUsage(ctx, 9001, nil)
+	if err != nil {
+		t.Fatalf("APIKeyUsage total: %v", err)
+	}
+	dailyUsed, err := store.APIKeyUsage(ctx, 9001, &dayStart)
+	if err != nil {
+		t.Fatalf("APIKeyUsage daily: %v", err)
+	}
+	if totalUsed != "16.00000" || dailyUsed != "16.00000" {
+		t.Fatalf("expected usage to stop at quota, total=%s daily=%s", totalUsed, dailyUsed)
+	}
+}
+
 func TestIsRetryableTxErrRecognizesSQLiteTableLock(t *testing.T) {
 	if !isRetryableTxErr(errors.New("database table is locked: point_ledgers")) {
 		t.Fatal("expected sqlite table lock error to be retryable")
+	}
+
+	sqliteLock := sqlite3.Error{Code: sqlite3.ErrLocked, ExtendedCode: sqlite3.ErrLockedSharedCache}
+	if !isRetryableTxErr(fmt.Errorf("ent insert point_ledgers: %w", sqliteLock)) {
+		t.Fatal("expected wrapped sqlite locked error to be retryable")
+	}
+}
+
+func TestIsRetryableTxErrRecognizesPostgresSerializationCodes(t *testing.T) {
+	if !isRetryableTxErr(fmt.Errorf("commit billing tx: %w", &pq.Error{Code: "40001"})) {
+		t.Fatal("expected wrapped postgres serialization failure to be retryable")
+	}
+	if !isRetryableTxErr(fmt.Errorf("commit billing tx: %w", &pq.Error{Code: "40P01"})) {
+		t.Fatal("expected wrapped postgres deadlock to be retryable")
 	}
 }
 

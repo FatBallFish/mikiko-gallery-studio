@@ -3,10 +3,12 @@ package errs
 import "net/http"
 
 type Error struct {
-	Code       string         `json:"code"`
-	Message    string         `json:"message"`
-	StatusCode int            `json:"-"`
-	Details    map[string]any `json:"details,omitempty"`
+	Code           string         `json:"code"`
+	Message        string         `json:"message"`
+	Chargeable     bool           `json:"chargeable"`
+	NextSuggestion string         `json:"next_suggestion,omitempty"`
+	StatusCode     int            `json:"-"`
+	Details        map[string]any `json:"details,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -14,7 +16,7 @@ func (e *Error) Error() string {
 }
 
 func New(statusCode int, code, message string) *Error {
-	return &Error{Code: code, Message: message, StatusCode: statusCode}
+	return &Error{Code: code, Message: message, Chargeable: false, NextSuggestion: defaultSuggestion(code), StatusCode: statusCode}
 }
 
 func BadRequest(message string) *Error {
@@ -35,4 +37,19 @@ func Internal(message string) *Error {
 func WithDetails(err *Error, details map[string]any) *Error {
 	err.Details = details
 	return err
+}
+
+func defaultSuggestion(code string) string {
+	switch code {
+	case CodeRateLimited:
+		return "retry after the cooldown window"
+	case CodeInsufficientPoints:
+		return "redeem or add points before creating a task"
+	case CodeUnauthorized, CodeAuthAccessExpired, CodeAuthRefreshExpired:
+		return "sign in again and retry"
+	case CodeImageReferenceRequired, CodeImageReferenceExceeded, CodeValidationFailed, CodeBadRequest:
+		return "adjust request parameters and retry"
+	default:
+		return "retry later or contact support if the problem persists"
+	}
 }

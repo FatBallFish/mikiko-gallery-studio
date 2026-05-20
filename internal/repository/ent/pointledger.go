@@ -24,6 +24,8 @@ type PointLedger struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// APIKeyID holds the value of the "api_key_id" field.
+	APIKeyID *int64 `json:"api_key_id,omitempty"`
 	// TaskID holds the value of the "task_id" field.
 	TaskID *uuid.UUID `json:"task_id,omitempty"`
 	// OrderID holds the value of the "order_id" field.
@@ -54,7 +56,7 @@ func (*PointLedger) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case pointledger.FieldTaskID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case pointledger.FieldID, pointledger.FieldUserID, pointledger.FieldOrderID, pointledger.FieldRedeemCodeID, pointledger.FieldOperatorAdminID:
+		case pointledger.FieldID, pointledger.FieldUserID, pointledger.FieldAPIKeyID, pointledger.FieldOrderID, pointledger.FieldRedeemCodeID, pointledger.FieldOperatorAdminID:
 			values[i] = new(sql.NullInt64)
 		case pointledger.FieldLedgerType, pointledger.FieldChangePoints, pointledger.FieldBalanceAfter, pointledger.FieldFrozenAfter, pointledger.FieldReason, pointledger.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
@@ -98,6 +100,13 @@ func (_m *PointLedger) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case pointledger.FieldAPIKeyID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field api_key_id", values[i])
+			} else if value.Valid {
+				_m.APIKeyID = new(int64)
+				*_m.APIKeyID = value.Int64
 			}
 		case pointledger.FieldTaskID:
 			if value, ok := values[i].(*sql.NullScanner); !ok {
@@ -208,6 +217,11 @@ func (_m *PointLedger) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	builder.WriteString(", ")
+	if v := _m.APIKeyID; v != nil {
+		builder.WriteString("api_key_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.TaskID; v != nil {
 		builder.WriteString("task_id=")

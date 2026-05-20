@@ -58,6 +58,7 @@ create table if not exists api_keys (
   user_id bigint not null,
   access_key varchar(64) not null unique,
   secret_hash varchar(128) not null,
+  signing_secret varchar(512),
   name varchar(64) not null,
   status varchar(32) not null default 'active',
   group_code varchar(32) not null default 'default',
@@ -90,6 +91,7 @@ create table if not exists redeem_codes (
 create table if not exists point_ledgers (
   id bigserial primary key,
   user_id bigint not null,
+  api_key_id bigint,
   task_id uuid,
   order_id bigint,
   redeem_code_id bigint,

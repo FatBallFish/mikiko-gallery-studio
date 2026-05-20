@@ -8,6 +8,7 @@ type Config struct {
 	Redis            RedisConfig            `yaml:"redis"`
 	Storage          StorageConfig          `yaml:"storage"`
 	Auth             AuthConfig             `yaml:"auth"`
+	APIKey           APIKeyConfig           `yaml:"api_key"`
 	Billing          BillingConfig          `yaml:"billing"`
 	GenerationLimits GenerationLimitsConfig `yaml:"generation_limits"`
 	Providers        ProvidersConfig        `yaml:"providers"`
@@ -45,6 +46,21 @@ type AuthConfig struct {
 	Issuer            string        `yaml:"issuer"`
 	AccessTokenSecret string        `yaml:"access_token_secret"`
 	RefreshCookieName string        `yaml:"refresh_cookie_name"`
+	SMTP              SMTPConfig    `yaml:"smtp"`
+}
+
+type SMTPConfig struct {
+	Host               string `yaml:"host"`
+	Port               int    `yaml:"port"`
+	Username           string `yaml:"username"`
+	Password           string `yaml:"password"`
+	From               string `yaml:"from"`
+	StartTLS           bool   `yaml:"starttls"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+}
+
+type APIKeyConfig struct {
+	SigningSecretEncryptionKey string `yaml:"signing_secret_encryption_key"`
 }
 
 type BillingConfig struct {
