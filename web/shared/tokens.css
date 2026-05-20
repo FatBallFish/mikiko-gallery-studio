@@ -1,0 +1,28 @@
+:root {
+  /* Spacing - 8px base grid */
+  --pg-space-1: 4px;
+  --pg-space-2: 8px;
+  --pg-space-3: 12px;
+  --pg-space-4: 16px;
+  --pg-space-5: 20px;
+  --pg-space-6: 24px;
+  --pg-space-8: 32px;
+  --pg-space-12: 48px;
+
+  /* Radius */
+  --pg-radius-sm: 12px;
+  --pg-radius-md: 18px;
+  --pg-radius-lg: 24px;
+  --pg-radius-full: 9999px;
+
+  /* Dimensions */
+  --pg-pill-height: 42px;
+  --pg-topbar-height: 76px;
+  --pg-sidebar-user-width: 108px;
+  --pg-sidebar-admin-width: 216px;
+
+  /* Shadows - Minimal for Admin, Glows for User */
+  --pg-shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --pg-shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+  --pg-glow-gold: 0 0 20px rgba(212, 157, 94, 0.2);
+}

@@ -1,0 +1,233 @@
+components:
+  schemas:
+    SendEmailCodeRequest:
+      type: object
+      required: [email, scene]
+      properties:
+        email:
+          type: string
+          format: email
+        scene:
+          type: string
+          enum: [login, register, forgot_password]
+    EmailCodeLoginRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+        redirect_to:
+          type: string
+    SessionResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            access_token:
+              type: string
+            expires_in_seconds:
+              type: integer
+            user_id:
+              type: integer
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        nickname:
+          type: string
+        bio:
+          type: string
+        user_group_code:
+          type: string
+        theme:
+          type: string
+        default_locale:
+          type: string
+    UserProfileResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/UserProfile'
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+        bio:
+          type: string
+        avatar_object_key:
+          type: string
+        theme:
+          type: string
+    BalanceSummary:
+      type: object
+      properties:
+        available_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        frozen_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        user_group_multiplier:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        cny_per_point:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+    BalanceResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/BalanceSummary'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    PointLedgerEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: string
+        ledger_type:
+          type: string
+        change_points:
+          type: string
+          pattern: '^-?\d+\.\d{5}$'
+        balance_after:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        frozen_after:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PointLedgerPageResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PointLedgerEntry'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    EstimateResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            resolved_quality_bucket:
+              type: string
+            estimated_points:
+              type: string
+            user_group_multiplier:
+              type: string
+            requested_output_image_count:
+              type: integer
+            reference_image_count:
+              type: integer
+    CapabilityItem:
+      type: object
+      properties:
+        abstract_model:
+          type: string
+        task_types:
+          type: array
+          items:
+            type: string
+        qualities:
+          type: array
+          items:
+            type: string
+        max_output_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
+    CapabilitiesResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CapabilityItem'
+    ReferenceAssetUploadRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+    ReferenceAssetResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./common.yaml#/components/schemas/ReferenceAsset
+    CreateImageTaskRequest:
+      type: object
+      required: [task_type, prompt, abstract_model, requested_quality, requested_output_image_count]
+      properties:
+        task_type:
+          type: string
+          enum: [text_to_image, image_edit, reference_generate]
+        prompt:
+          type: string
+        negative_prompt:
+          type: string
+        abstract_model:
+          type: string
+          enum: [basic, plus, pro]
+        requested_quality:
+          type: string
+          enum: [auto, 1k, 2k, 4k]
+        requested_size:
+          type: string
+        aspect_ratio:
+          type: string
+        requested_output_image_count:
+          type: integer
+          minimum: 1
+          maximum: 5
+        reference_image_count:
+          type: integer
+          minimum: 0
+          maximum: 4
+        reference_asset_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        mask_asset_id:
+          type: string
+          format: uuid
+        response_mode:
+          type: string
+          enum: [sync, async]
+    ImageTaskResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./common.yaml#/components/schemas/ImageTask
