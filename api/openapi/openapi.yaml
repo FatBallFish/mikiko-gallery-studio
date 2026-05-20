@@ -1,0 +1,564 @@
+openapi: 3.1.0
+info:
+  title: Pic Gallery API
+  version: 0.2.0
+  description: >-
+    P0 baseline contract for Pic Gallery, including Agent API, Open API,
+    OpenAI-compatible image APIs, and admin configuration endpoints.
+servers:
+  - url: http://localhost:8080
+    description: Local API server
+tags:
+  - name: Health
+  - name: Agent Auth
+  - name: Agent User
+  - name: Agent Billing
+  - name: Agent Image
+  - name: Open Image API
+  - name: Admin Config
+  - name: OpenAI Compat
+paths:
+  /:
+    get:
+      tags: [Health]
+      summary: Service bootstrap status
+      operationId: getRoot
+      responses:
+        '200':
+          description: Service is running
+          headers:
+            X-Request-Id:
+              $ref: ./components/parameters/common.yaml#/components/headers/XRequestId
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check
+      operationId: getHealthz
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      operationId: getReadyz
+      responses:
+        '200':
+          description: API is ready
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /metrics:
+    get:
+      tags: [Health]
+      summary: Prometheus metrics endpoint
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Metrics in Prometheus text format
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/agent/auth/v1/email/send-code:
+    post:
+      tags: [Agent Auth]
+      summary: Send email verification code
+      operationId: postAgentAuthSendCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/SendEmailCodeRequest
+      responses:
+        '202':
+          description: Verification code accepted for delivery
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/auth/v1/login/email-code:
+    post:
+      tags: [Agent Auth]
+      summary: Login or register with email code
+      operationId: postAgentAuthEmailLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/EmailCodeLoginRequest
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/SessionResponse
+  /api/agent/auth/v1/session/refresh:
+    post:
+      tags: [Agent Auth]
+      summary: Refresh user session
+      operationId: postAgentAuthRefresh
+      responses:
+        '200':
+          description: Session refreshed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/SessionResponse
+  /api/agent/user/v1/profile:
+    get:
+      tags: [Agent User]
+      summary: Get current user profile
+      operationId: getAgentUserProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/UserProfileResponse
+    put:
+      tags: [Agent User]
+      summary: Update current user profile
+      operationId: putAgentUserProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/UpdateUserProfileRequest
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/UserProfileResponse
+  /api/agent/billing/v1/balance:
+    get:
+      tags: [Agent Billing]
+      summary: Get points balance summary
+      operationId: getAgentBalance
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Balance summary
+          headers:
+            X-Request-Id:
+              $ref: ./components/parameters/common.yaml#/components/headers/XRequestId
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/BalanceResponse
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '405':
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/billing/v1/ledger:
+    get:
+      tags: [Agent Billing]
+      summary: Get points ledger entries
+      operationId: getAgentLedger
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 20
+      responses:
+        '200':
+          description: Ledger page
+          headers:
+            X-Request-Id:
+              $ref: ./components/parameters/common.yaml#/components/headers/XRequestId
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/PointLedgerPageResponse
+        '400':
+          description: Invalid pagination parameters
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '405':
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/billing/v1/estimate:
+    get:
+      tags: [Agent Billing]
+      summary: Estimate generation points cost
+      operationId: getAgentEstimate
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedQuality
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputImageCount
+        - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceImageCount
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskType
+      responses:
+        '200':
+          description: Cost estimate
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
+  /api/agent/image/v1/capabilities:
+    get:
+      tags: [Agent Image]
+      summary: Get visible image generation capabilities
+      operationId: getAgentImageCapabilities
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Capability matrix
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CapabilitiesResponse
+  /api/agent/image/v1/reference-assets:
+    post:
+      tags: [Agent Image]
+      summary: Upload a reference asset through Agent API
+      operationId: postAgentReferenceAsset
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetUploadRequest
+      responses:
+        '201':
+          description: Reference asset created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
+  /api/agent/image/v1/tasks:
+    get:
+      tags: [Agent Image]
+      summary: List image tasks for current user
+      operationId: listAgentImageTasks
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: ./components/schemas/common.yaml#/components/schemas/ImageTask
+    post:
+      tags: [Agent Image]
+      summary: Create an image generation task
+      operationId: postAgentImageTask
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/CreateImageTaskRequest
+      responses:
+        '202':
+          description: Task accepted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+  /api/agent/image/v1/tasks/{task_id}:
+    get:
+      tags: [Agent Image]
+      summary: Get image task detail
+      operationId: getAgentImageTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskId
+      responses:
+        '200':
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+  /api/agent/image/v1/history/tasks:
+    get:
+      tags: [Agent Image]
+      summary: List history tasks for current user
+      operationId: listAgentHistoryTasks
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: History task list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: ./components/schemas/common.yaml#/components/schemas/ImageTask
+  /api/agent/image/v1/history/tasks/{task_id}:
+    get:
+      tags: [Agent Image]
+      summary: Get history task detail
+      operationId: getAgentHistoryTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskId
+      responses:
+        '200':
+          description: History task detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+    delete:
+      tags: [Agent Image]
+      summary: Hide a history task from the current user
+      operationId: deleteAgentHistoryTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskId
+      responses:
+        '204':
+          description: History task hidden
+  /api/open/image/v1/reference-assets/uploads:
+    post:
+      tags: [Open Image API]
+      summary: Create an upload session for reference assets
+      operationId: postOpenReferenceAssetUploadSession
+      security:
+        - accessKeyAuth: []
+          accessSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/openapi.yaml#/components/schemas/UploadSessionRequest
+      responses:
+        '201':
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openapi.yaml#/components/schemas/UploadSessionResponse
+  /api/open/image/v1/tasks:
+    post:
+      tags: [Open Image API]
+      summary: Create an image task through Open API
+      operationId: postOpenImageTask
+      security:
+        - accessKeyAuth: []
+          accessSignature: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/CreateImageTaskRequest
+      responses:
+        '202':
+          description: Task accepted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+  /api/open/image/v1/estimate:
+    get:
+      tags: [Open Image API]
+      summary: Estimate task points through Open API
+      operationId: getOpenEstimate
+      security:
+        - accessKeyAuth: []
+          accessSignature: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedQuality
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputImageCount
+        - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceImageCount
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskType
+      responses:
+        '200':
+          description: Cost estimate
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
+  /api/ops/admin/v1/config-tabs:
+    get:
+      tags: [Admin Config]
+      summary: List admin configuration tabs
+      operationId: getAdminConfigTabs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Config tabs page data
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/ConfigTabListResponse
+  /api/ops/admin/v1/config-tabs/{tab_key}:
+    put:
+      tags: [Admin Config]
+      summary: Update a configuration tab
+      operationId: putAdminConfigTab
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TabKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/UpdateConfigTabRequest
+      responses:
+        '200':
+          description: Updated config tab
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/ConfigTabResponse
+  /v1/images/generations:
+    post:
+      tags: [OpenAI Compat]
+      summary: OpenAI-compatible image generation endpoint
+      operationId: postOpenAIImageGeneration
+      security:
+        - compatBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageGenerationRequest
+      responses:
+        '200':
+          description: OpenAI-compatible image generation response
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageResponse
+  /v1/images/edits:
+    post:
+      tags: [OpenAI Compat]
+      summary: OpenAI-compatible image edit endpoint
+      operationId: postOpenAIImageEdit
+      security:
+        - compatBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageEditRequest
+      responses:
+        '200':
+          description: OpenAI-compatible image edit response
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageResponse
+  /v1/models:
+    get:
+      tags: [OpenAI Compat]
+      summary: OpenAI-compatible model list
+      operationId: getOpenAIModels
+      security:
+        - compatBearerAuth: []
+      responses:
+        '200':
+          description: OpenAI-compatible models
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIModelListResponse
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    compatBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: sk-*
+    accessKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Access-Key
+    accessSignature:
+      type: apiKey
+      in: header
+      name: X-Signature

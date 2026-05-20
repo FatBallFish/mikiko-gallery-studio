@@ -1,0 +1,28 @@
+package errs
+
+const (
+	CodeInternal                 = "INTERNAL_ERROR"
+	CodeBadRequest               = "BAD_REQUEST"
+	CodeMethodNotAllowed         = "METHOD_NOT_ALLOWED"
+	CodeUnauthorized             = "UNAUTHORIZED"
+	CodeForbidden                = "FORBIDDEN"
+	CodeNotFound                 = "NOT_FOUND"
+	CodeConflict                 = "CONFLICT"
+	CodeRateLimited              = "RATE_LIMITED"
+	CodeValidationFailed         = "VALIDATION_FAILED"
+	CodeAuthAccessExpired        = "AUTH_ACCESS_EXPIRED"
+	CodeAuthRefreshExpired       = "AUTH_REFRESH_EXPIRED"
+	CodeAuthRefreshReplayBlocked = "AUTH_REFRESH_REPLAY_BLOCKED"
+	CodeUserDisabled             = "USER_DISABLED"
+	CodeAPIKeyDisabled           = "API_KEY_DISABLED"
+	CodeInsufficientPoints       = "BILLING_INSUFFICIENT_POINTS"
+	CodeImageCapabilityMismatch  = "IMAGE_CAPABILITY_MISMATCH"
+	CodeImageReferenceRequired   = "IMAGE_REFERENCE_REQUIRED"
+	CodeImageReferenceExceeded   = "IMAGE_REFERENCE_COUNT_EXCEEDED"
+	CodeImageAutoUnsupported     = "IMAGE_AUTO_RESOLUTION_UNSUPPORTED"
+	CodeImageTaskFailed          = "IMAGE_TASK_FAILED"
+	CodeImageStorageFailed       = "IMAGE_STORAGE_FAILED"
+	CodeUpstreamUnavailable      = "UPSTREAM_UNAVAILABLE"
+	CodeUpstreamBadRequest       = "UPSTREAM_BAD_REQUEST"
+	CodeContentBlocked           = "UPSTREAM_CONTENT_BLOCKED"
+)

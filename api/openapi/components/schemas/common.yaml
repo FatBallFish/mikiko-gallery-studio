@@ -1,0 +1,85 @@
+components:
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    ReferenceAsset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+    ImageResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        b64_json:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        visibility_status:
+          type: string
+    ImageTask:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_type:
+          type: string
+        status:
+          type: string
+        abstract_model:
+          type: string
+        requested_quality:
+          type: string
+        resolved_quality_bucket:
+          type: string
+        requested_output_image_count:
+          type: integer
+        reference_image_count:
+          type: integer
+        estimated_points:
+          type: string
+          description: Decimal string with up to 5 fraction digits.
+        actual_points:
+          type: string
+          description: Decimal string with up to 5 fraction digits.
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageResult'

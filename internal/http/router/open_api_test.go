@@ -1,0 +1,218 @@
+package router
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/fatballfish/pic-gallery/internal/config"
+	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
+	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
+	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+)
+
+func TestOpenImageEstimateTaskAndReferenceUploadUseAPIKeyAuth(t *testing.T) {
+	handler, creds, billingSvc := newOpenAPIHandler(t)
+
+	estimateReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=0", nil)
+	signNativeRequest(estimateReq, creds)
+	estimateRec := httptest.NewRecorder()
+	handler.ServeHTTP(estimateRec, estimateReq)
+	if estimateRec.Code != http.StatusOK {
+		t.Fatalf("expected estimate 200, got %d body=%s", estimateRec.Code, estimateRec.Body.String())
+	}
+	var estimateResp struct {
+		Data struct {
+			EstimatedPoints string `json:"estimated_points"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(estimateRec.Body).Decode(&estimateResp); err != nil {
+		t.Fatalf("decode estimate response: %v", err)
+	}
+	if estimateResp.Data.EstimatedPoints != "16.00000" {
+		t.Fatalf("unexpected estimate response %#v", estimateResp)
+	}
+
+	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII="
+	uploadBody := bytes.NewBufferString(`{"filename":"tiny.png","mime_type":"image/png","content_base64":"` + png + `"}`)
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/reference-assets/uploads", uploadBody)
+	uploadReq.Header.Set("Content-Type", "application/json")
+	signNativeRequest(uploadReq, creds)
+	uploadRec := httptest.NewRecorder()
+	handler.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("expected upload 201, got %d body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+	var uploadResp struct {
+		Data struct {
+			AssetID    string `json:"asset_id"`
+			Status     string `json:"status"`
+			UploadMode string `json:"upload_mode"`
+			Asset      struct {
+				ID string `json:"id"`
+			} `json:"asset"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(uploadRec.Body).Decode(&uploadResp); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+	if uploadResp.Data.AssetID == "" || uploadResp.Data.Asset.ID != uploadResp.Data.AssetID || uploadResp.Data.UploadMode != "inline_base64" {
+		t.Fatalf("unexpected upload response %#v", uploadResp)
+	}
+
+	taskBody := `{"task_type":"reference_generate","prompt":"use reference","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_asset_ids":["` + uploadResp.Data.AssetID + `"],"response_mode":"async"}`
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstReq.Header.Set("Idempotency-Key", "open-idem")
+	signNativeRequest(firstReq, creds)
+	firstRec := httptest.NewRecorder()
+	handler.ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusAccepted {
+		t.Fatalf("expected task create 202, got %d body=%s", firstRec.Code, firstRec.Body.String())
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondReq.Header.Set("Idempotency-Key", "open-idem")
+	signNativeRequest(secondReq, creds)
+	secondRec := httptest.NewRecorder()
+	handler.ServeHTTP(secondRec, secondReq)
+	if secondRec.Code != http.StatusAccepted {
+		t.Fatalf("expected idempotent task retry 202, got %d body=%s", secondRec.Code, secondRec.Body.String())
+	}
+	var firstResp, secondResp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(firstRec.Body).Decode(&firstResp); err != nil {
+		t.Fatalf("decode first task response: %v", err)
+	}
+	if err := json.NewDecoder(secondRec.Body).Decode(&secondResp); err != nil {
+		t.Fatalf("decode second task response: %v", err)
+	}
+	if firstResp.Data.ID == "" || firstResp.Data.ID != secondResp.Data.ID {
+		t.Fatalf("expected same task id on idempotent retry, got first=%#v second=%#v", firstResp, secondResp)
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), creds.UserID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "90.80000" || summary.FrozenPoints != "9.20000" {
+		t.Fatalf("expected single reference_generate reserve, got %#v", summary)
+	}
+}
+
+func TestOpenImageAPIRejectsMissingAccessKeyInvalidSignatureAndInvalidParams(t *testing.T) {
+	handler, creds, _ := newOpenAPIHandler(t)
+
+	missingReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
+	missingRec := httptest.NewRecorder()
+	handler.ServeHTTP(missingRec, missingReq)
+	if missingRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing key 401, got %d body=%s", missingRec.Code, missingRec.Body.String())
+	}
+
+	badSigReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
+	badSigReq.Header.Set("X-Access-Key", creds.AccessKey)
+	badSigReq.Header.Set("X-Signature", "wrong")
+	badSigRec := httptest.NewRecorder()
+	handler.ServeHTTP(badSigRec, badSigReq)
+	if badSigRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected bad signature 401, got %d body=%s", badSigRec.Code, badSigRec.Body.String())
+	}
+
+	invalidReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=oops", nil)
+	signNativeRequest(invalidReq, creds)
+	invalidRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidRec, invalidReq)
+	if invalidRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid params 400, got %d body=%s", invalidRec.Code, invalidRec.Body.String())
+	}
+}
+
+type openAPICredentials struct {
+	UserID    int64
+	AccessKey string
+	Secret    string
+}
+
+func newOpenAPIHandler(t *testing.T) (http.Handler, openAPICredentials, *billingservice.Service) {
+	t.Helper()
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	cfg.Storage.LocalRoot = t.TempDir()
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000", "plus": "1.00000"})
+	if err := authSvc.SendEmailCode("openapi@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, _, err := authSvc.LoginWithEmailCode("openapi@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: user.ID, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	keySvc := apikeyservice.NewService(nil)
+	created, err := keySvc.CreateKey(context.Background(), apikeyservice.CreateRequest{
+		UserID:    user.ID,
+		Name:      "openapi",
+		GroupCode: "plus",
+		Secret:    "sk-openapi-secret",
+	})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	assetSvc := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), assetSvc, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, billingSvc, keySvc)
+	return NewWithAPI(api), openAPICredentials{UserID: user.ID, AccessKey: created.Key.AccessKey, Secret: created.Secret}, billingSvc
+}
+
+func signNativeRequest(req *http.Request, creds openAPICredentials) {
+	req.Header.Set("X-Access-Key", creds.AccessKey)
+	req.Header.Set("X-Signature", creds.Secret)
+}
+
+func TestOpenReferenceUploadRejectsInvalidBase64(t *testing.T) {
+	handler, creds, _ := newOpenAPIHandler(t)
+	body := bytes.NewBufferString(`{"filename":"tiny.png","mime_type":"image/png","content_base64":"not-base64"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/reference-assets/uploads", body)
+	req.Header.Set("Content-Type", "application/json")
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid upload 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOpenReferenceUploadAcceptsRawStdBase64(t *testing.T) {
+	handler, creds, _ := newOpenAPIHandler(t)
+	raw, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")
+	uploadBody := bytes.NewBufferString(`{"filename":"tiny.png","mime_type":"image/png","content_base64":"` + base64.StdEncoding.EncodeToString(raw) + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/reference-assets/uploads", uploadBody)
+	req.Header.Set("Content-Type", "application/json")
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected upload 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

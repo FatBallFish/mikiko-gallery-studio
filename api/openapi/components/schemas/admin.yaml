@@ -1,0 +1,52 @@
+components:
+  schemas:
+    ConfigItem:
+      type: object
+      properties:
+        config_category:
+          type: string
+        config_key:
+          type: string
+        config_value:
+          type: object
+          additionalProperties: true
+        scope:
+          type: string
+        version:
+          type: integer
+    ConfigTab:
+      type: object
+      properties:
+        tab_key:
+          type: string
+        tab_name:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigItem'
+    ConfigTabListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ConfigTab'
+    UpdateConfigTabRequest:
+      type: object
+      required: [version, items]
+      properties:
+        version:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigItem'
+    ConfigTabResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/ConfigTab'

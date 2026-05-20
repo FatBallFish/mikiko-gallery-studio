@@ -1,0 +1,948 @@
+package entstore
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/provider"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+)
+
+type ImageTaskStore struct {
+	client *repoent.Client
+}
+
+func NewImageTaskStore(client *repoent.Client) *ImageTaskStore {
+	return &ImageTaskStore{client: client}
+}
+
+func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) error {
+	taskUUID, err := uuid.Parse(task.ID)
+	if err != nil {
+		return err
+	}
+
+	trace, err := buildProviderTrace(task)
+	if err != nil {
+		return err
+	}
+	routingSnapshot, err := buildRoutingSnapshot(task)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			if err := createImageTask(ctx, tx, taskUUID, task, trace, routingSnapshot); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	} else {
+		if err := updateImageTask(ctx, tx, entity, task, trace, routingSnapshot); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ImageResult.Delete().Where(imageresult.TaskIDEQ(taskUUID)).Exec(ctx); err != nil {
+		return err
+	}
+	for idx, result := range task.Results {
+		if err := createImageResult(ctx, tx, taskUUID, task.UserID, idx, result); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *ImageTaskStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	taskUUID, err := uuid.Parse(task.ID)
+	if err != nil {
+		return err
+	}
+
+	trace, err := buildProviderTrace(task)
+	if err != nil {
+		return err
+	}
+	routingSnapshot, err := buildRoutingSnapshot(task)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), imagetask.DeletedAtIsNil()).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return repoerr.ErrNotFound
+		}
+		return err
+	}
+	if entity.Status != domainimagetask.StatusRunning || entity.LeaseOwner == nil || *entity.LeaseOwner != owner {
+		return repoerr.ErrConflict
+	}
+	if entity.LeaseExpiresAt != nil && entity.LeaseExpiresAt.Before(now) {
+		return repoerr.ErrConflict
+	}
+
+	affected, err := updateLeaseOwnedImageTask(ctx, tx, entity, task, owner, now, trace, routingSnapshot)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return repoerr.ErrConflict
+	}
+
+	if _, err := tx.ImageResult.Delete().Where(imageresult.TaskIDEQ(taskUUID)).Exec(ctx); err != nil {
+		return err
+	}
+	for idx, result := range task.Results {
+		if err := createImageResult(ctx, tx, taskUUID, task.UserID, idx, result); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	taskUUID, err := uuid.Parse(task.ID)
+	if err != nil {
+		return err
+	}
+
+	trace, err := buildProviderTrace(task)
+	if err != nil {
+		return err
+	}
+	routingSnapshot, err := buildRoutingSnapshot(task)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), imagetask.DeletedAtIsNil()).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return repoerr.ErrNotFound
+		}
+		return err
+	}
+	if entity.Status != domainimagetask.StatusRunning {
+		return repoerr.ErrConflict
+	}
+
+	affected, err := updateRecoverableImageTask(ctx, tx, entity, task, owner, now, trace, routingSnapshot)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return repoerr.ErrConflict
+	}
+
+	if _, err := tx.ImageResult.Delete().Where(imageresult.TaskIDEQ(taskUUID)).Exec(ctx); err != nil {
+		return err
+	}
+	for idx, result := range task.Results {
+		if err := createImageResult(ctx, tx, taskUUID, task.UserID, idx, result); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
+	taskUUID, err := uuid.Parse(taskID)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+
+	entity, err := s.client.ImageTask.Query().
+		Where(imagetask.IDEQ(taskUUID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.Task{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.Task{}, err
+	}
+	results, err := s.client.ImageResult.Query().
+		Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		Order(repoent.Asc(imageresult.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	return mapImageTaskEntity(entity, results)
+}
+
+func (s *ImageTaskStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
+	entities, err := s.client.ImageTask.Query().
+		Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		Order(repoent.Desc(imagetask.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(entities) == 0 {
+		return []domainimagetask.Task{}, nil
+	}
+
+	taskIDs := make([]uuid.UUID, 0, len(entities))
+	for _, entity := range entities {
+		taskIDs = append(taskIDs, entity.ID)
+	}
+	resultEntities, err := s.client.ImageResult.Query().
+		Where(imageresult.UserIDEQ(userID), imageresult.TaskIDIn(taskIDs...), imageresult.DeletedAtIsNil()).
+		Order(repoent.Asc(imageresult.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resultsByTask := map[uuid.UUID][]*repoent.ImageResult{}
+	for _, entity := range resultEntities {
+		resultsByTask[entity.TaskID] = append(resultsByTask[entity.TaskID], entity)
+	}
+
+	list := make([]domainimagetask.Task, 0, len(entities))
+	for _, entity := range entities {
+		task, err := mapImageTaskEntity(entity, resultsByTask[entity.ID])
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, task)
+	}
+	return list, nil
+}
+
+func (s *ImageTaskStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
+	taskUUID, err := uuid.Parse(taskID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	entity, err := tx.ImageTask.Query().
+		Where(imagetask.IDEQ(taskUUID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return repoerr.ErrNotFound
+		}
+		return err
+	}
+
+	deletedAt := time.Now().UTC()
+	if err := tx.ImageTask.UpdateOneID(entity.ID).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.ImageResult.Update().
+		Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		SetDeletedAt(deletedAt).
+		Save(ctx); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *ImageTaskStore) AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	entity, err := tx.ImageTask.Query().
+		Where(imagetask.DeletedAtIsNil(), acquireEligiblePredicate(now)).
+		Order(repoent.Asc(imagetask.FieldCreatedAt)).
+		First(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.Task{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.Task{}, err
+	}
+
+	expiresAt := now.Add(leaseTTL)
+	update := tx.ImageTask.Update().
+		Where(imagetask.IDEQ(entity.ID), imagetask.DeletedAtIsNil(), acquireEligiblePredicate(now)).
+		SetStatus(domainimagetask.StatusRunning).
+		SetLeaseOwner(owner).
+		SetLeaseExpiresAt(expiresAt)
+	if entity.StartedAt == nil {
+		update.SetStartedAt(now)
+	}
+	affected, err := update.Save(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	if affected == 0 {
+		return domainimagetask.Task{}, repoerr.ErrNotFound
+	}
+
+	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(entity.ID)).Only(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	results, err := tx.ImageResult.Query().
+		Where(imageresult.TaskIDEQ(entity.ID), imageresult.UserIDEQ(updated.UserID), imageresult.DeletedAtIsNil()).
+		Order(repoent.Asc(imageresult.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domainimagetask.Task{}, err
+	}
+	return mapImageTaskEntity(updated, results)
+}
+
+func (s *ImageTaskStore) RenewTaskLease(ctx context.Context, taskID, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
+	taskUUID, err := uuid.Parse(taskID)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), imagetask.DeletedAtIsNil()).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.Task{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.Task{}, err
+	}
+	if entity.Status != domainimagetask.StatusRunning || entity.LeaseOwner == nil || *entity.LeaseOwner != owner {
+		return domainimagetask.Task{}, repoerr.ErrConflict
+	}
+	if entity.LeaseExpiresAt != nil && entity.LeaseExpiresAt.Before(now) {
+		return domainimagetask.Task{}, repoerr.ErrConflict
+	}
+
+	expiresAt := now.Add(leaseTTL)
+	affected, err := tx.ImageTask.Update().
+		Where(
+			imagetask.IDEQ(taskUUID),
+			imagetask.DeletedAtIsNil(),
+			imagetask.StatusEQ(domainimagetask.StatusRunning),
+			imagetask.LeaseOwnerEQ(owner),
+			imagetask.Or(imagetask.LeaseExpiresAtIsNil(), imagetask.LeaseExpiresAtGTE(now)),
+		).
+		SetLeaseExpiresAt(expiresAt).
+		Save(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	if affected == 0 {
+		return domainimagetask.Task{}, repoerr.ErrConflict
+	}
+
+	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).Only(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	results, err := tx.ImageResult.Query().
+		Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(updated.UserID), imageresult.DeletedAtIsNil()).
+		Order(repoent.Asc(imageresult.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domainimagetask.Task{}, err
+	}
+	return mapImageTaskEntity(updated, results)
+}
+
+func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, task domainimagetask.Task, trace map[string]any, routingSnapshot map[string]any) error {
+	pricingSnapshot, err := buildPricingSnapshot(task)
+	if err != nil {
+		return err
+	}
+	builder := tx.ImageTask.Create().
+		SetID(taskUUID).
+		SetUserID(task.UserID).
+		SetSourceChannel(defaultString(task.SourceChannel, "web")).
+		SetTaskType(defaultTaskType(task.TaskType)).
+		SetStatus(defaultTaskStatus(task.Status)).
+		SetPrompt(task.Prompt).
+		SetAbstractModel(task.AbstractModel).
+		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
+		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetAspectRatio("1:1").
+		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
+		SetSuccessOutputImageCount(len(task.Results)).
+		SetReferenceImageCount(task.ReferenceImageCount).
+		SetMaskPresent(false).
+		SetResponseMode(defaultString(task.ResponseMode, "async")).
+		SetSavePolicy(defaultString(task.SavePolicy, "private")).
+		SetEstimatedPoints(defaultString(task.EstimatedPoints, "0.00000")).
+		SetActualPoints(defaultString(task.ActualPoints, "0.00000")).
+		SetPricingSnapshot(pricingSnapshot).
+		SetRoutingSnapshot(routingSnapshot).
+		SetProviderTrace(trace)
+	if task.APIKeyID > 0 {
+		builder.SetAPIKeyID(task.APIKeyID)
+	}
+
+	now := time.Now().UTC()
+	if task.LeaseOwner != "" {
+		builder.SetLeaseOwner(task.LeaseOwner)
+	}
+	if task.LeaseExpiresAt != nil {
+		builder.SetLeaseExpiresAt(*task.LeaseExpiresAt)
+	}
+	if task.Status == domainimagetask.StatusRunning {
+		builder.SetStartedAt(now)
+	}
+	if isTerminalStatus(task.Status) {
+		builder.SetStartedAt(now)
+		builder.SetFinishedAt(now)
+	}
+	if strings.TrimSpace(task.ErrorCode) != "" {
+		builder.SetErrorCode(task.ErrorCode)
+	}
+	if strings.TrimSpace(task.ErrorMessage) != "" {
+		builder.SetErrorMessage(task.ErrorMessage)
+	}
+	_, err = builder.Save(ctx)
+	return err
+}
+
+func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, trace map[string]any, routingSnapshot map[string]any) error {
+	pricingSnapshot, err := buildPricingSnapshot(task)
+	if err != nil {
+		return err
+	}
+	builder := tx.ImageTask.UpdateOneID(entity.ID).
+		SetUserID(task.UserID).
+		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
+		SetTaskType(defaultTaskType(task.TaskType)).
+		SetStatus(defaultTaskStatus(task.Status)).
+		SetPrompt(task.Prompt).
+		SetAbstractModel(task.AbstractModel).
+		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
+		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
+		SetSuccessOutputImageCount(len(task.Results)).
+		SetReferenceImageCount(task.ReferenceImageCount).
+		SetResponseMode(defaultString(task.ResponseMode, entity.ResponseMode)).
+		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
+		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
+		SetActualPoints(defaultString(task.ActualPoints, entity.ActualPoints)).
+		SetPricingSnapshot(pricingSnapshot).
+		SetRoutingSnapshot(routingSnapshot).
+		SetProviderTrace(trace)
+	if task.APIKeyID > 0 {
+		builder.SetAPIKeyID(task.APIKeyID)
+	} else {
+		builder.ClearAPIKeyID()
+	}
+
+	if task.LeaseOwner != "" {
+		builder.SetLeaseOwner(task.LeaseOwner)
+	} else {
+		builder.ClearLeaseOwner()
+	}
+	if task.LeaseExpiresAt != nil {
+		builder.SetLeaseExpiresAt(*task.LeaseExpiresAt)
+	} else {
+		builder.ClearLeaseExpiresAt()
+	}
+	if strings.TrimSpace(task.ErrorCode) != "" {
+		builder.SetErrorCode(task.ErrorCode)
+	} else {
+		builder.ClearErrorCode()
+	}
+	if strings.TrimSpace(task.ErrorMessage) != "" {
+		builder.SetErrorMessage(task.ErrorMessage)
+	} else {
+		builder.ClearErrorMessage()
+	}
+
+	startedAt := entity.StartedAt
+	if task.Status == domainimagetask.StatusRunning && startedAt == nil {
+		now := time.Now().UTC()
+		startedAt = &now
+	}
+	if startedAt != nil {
+		builder.SetStartedAt(*startedAt)
+	}
+	if isTerminalStatus(task.Status) {
+		builder.SetFinishedAt(time.Now().UTC())
+	} else {
+		builder.ClearFinishedAt()
+	}
+
+	return builder.Exec(ctx)
+}
+
+func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, owner string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {
+	pricingSnapshot, err := buildPricingSnapshot(task)
+	if err != nil {
+		return 0, err
+	}
+	builder := tx.ImageTask.Update().
+		Where(
+			imagetask.IDEQ(entity.ID),
+			imagetask.DeletedAtIsNil(),
+			imagetask.StatusEQ(domainimagetask.StatusRunning),
+			imagetask.LeaseOwnerEQ(owner),
+			imagetask.Or(imagetask.LeaseExpiresAtIsNil(), imagetask.LeaseExpiresAtGTE(now)),
+		).
+		SetUserID(task.UserID).
+		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
+		SetTaskType(defaultTaskType(task.TaskType)).
+		SetStatus(defaultTaskStatus(task.Status)).
+		SetPrompt(task.Prompt).
+		SetAbstractModel(task.AbstractModel).
+		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
+		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
+		SetSuccessOutputImageCount(len(task.Results)).
+		SetReferenceImageCount(task.ReferenceImageCount).
+		SetResponseMode(defaultString(task.ResponseMode, entity.ResponseMode)).
+		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
+		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
+		SetActualPoints(defaultString(task.ActualPoints, entity.ActualPoints)).
+		SetPricingSnapshot(pricingSnapshot).
+		SetRoutingSnapshot(routingSnapshot).
+		SetProviderTrace(trace)
+	if task.APIKeyID > 0 {
+		builder.SetAPIKeyID(task.APIKeyID)
+	} else {
+		builder.ClearAPIKeyID()
+	}
+
+	// Running-state progress updates must not rewrite lease columns because
+	// heartbeat renewals happen concurrently in a separate transaction.
+	if task.Status != domainimagetask.StatusRunning {
+		if task.LeaseOwner != "" {
+			builder.SetLeaseOwner(task.LeaseOwner)
+		} else {
+			builder.ClearLeaseOwner()
+		}
+		if task.LeaseExpiresAt != nil {
+			builder.SetLeaseExpiresAt(*task.LeaseExpiresAt)
+		} else {
+			builder.ClearLeaseExpiresAt()
+		}
+	}
+	if strings.TrimSpace(task.ErrorCode) != "" {
+		builder.SetErrorCode(task.ErrorCode)
+	} else {
+		builder.ClearErrorCode()
+	}
+	if strings.TrimSpace(task.ErrorMessage) != "" {
+		builder.SetErrorMessage(task.ErrorMessage)
+	} else {
+		builder.ClearErrorMessage()
+	}
+
+	startedAt := entity.StartedAt
+	if task.Status == domainimagetask.StatusRunning && startedAt == nil {
+		startedAt = &now
+	}
+	if startedAt != nil {
+		builder.SetStartedAt(*startedAt)
+	}
+	if isTerminalStatus(task.Status) {
+		builder.SetFinishedAt(now)
+	} else {
+		builder.ClearFinishedAt()
+	}
+	return builder.Save(ctx)
+}
+
+func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, _ string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {
+	pricingSnapshot, err := buildPricingSnapshot(task)
+	if err != nil {
+		return 0, err
+	}
+	builder := tx.ImageTask.Update().
+		Where(
+			imagetask.IDEQ(entity.ID),
+			imagetask.DeletedAtIsNil(),
+			imagetask.StatusEQ(domainimagetask.StatusRunning),
+		).
+		SetUserID(task.UserID).
+		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
+		SetTaskType(defaultTaskType(task.TaskType)).
+		SetStatus(defaultTaskStatus(task.Status)).
+		SetPrompt(task.Prompt).
+		SetAbstractModel(task.AbstractModel).
+		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
+		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
+		SetSuccessOutputImageCount(len(task.Results)).
+		SetReferenceImageCount(task.ReferenceImageCount).
+		SetResponseMode(defaultString(task.ResponseMode, entity.ResponseMode)).
+		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
+		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
+		SetActualPoints(defaultString(task.ActualPoints, entity.ActualPoints)).
+		SetPricingSnapshot(pricingSnapshot).
+		SetRoutingSnapshot(routingSnapshot).
+		SetProviderTrace(trace)
+	if task.APIKeyID > 0 {
+		builder.SetAPIKeyID(task.APIKeyID)
+	} else {
+		builder.ClearAPIKeyID()
+	}
+
+	if task.Status != domainimagetask.StatusRunning {
+		if task.LeaseOwner != "" {
+			builder.SetLeaseOwner(task.LeaseOwner)
+		} else {
+			builder.ClearLeaseOwner()
+		}
+		if task.LeaseExpiresAt != nil {
+			builder.SetLeaseExpiresAt(*task.LeaseExpiresAt)
+		} else {
+			builder.ClearLeaseExpiresAt()
+		}
+	}
+	if strings.TrimSpace(task.ErrorCode) != "" {
+		builder.SetErrorCode(task.ErrorCode)
+	} else {
+		builder.ClearErrorCode()
+	}
+	if strings.TrimSpace(task.ErrorMessage) != "" {
+		builder.SetErrorMessage(task.ErrorMessage)
+	} else {
+		builder.ClearErrorMessage()
+	}
+
+	startedAt := entity.StartedAt
+	if task.Status == domainimagetask.StatusRunning && startedAt == nil {
+		startedAt = &now
+	}
+	if startedAt != nil {
+		builder.SetStartedAt(*startedAt)
+	}
+	if isTerminalStatus(task.Status) {
+		builder.SetFinishedAt(now)
+	} else {
+		builder.ClearFinishedAt()
+	}
+	return builder.Save(ctx)
+}
+
+func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, userID int64, index int, result provider.ImageResult) error {
+	objectKey := fmt.Sprintf("task:%s:%d", taskUUID.String(), index)
+	storageDriver := "inline"
+	if strings.TrimSpace(result.URL) != "" {
+		storageDriver = "remote"
+	}
+	sha := sha256.Sum256([]byte(result.URL + "|" + result.B64JSON + "|" + fmt.Sprintf("%d", index)))
+	return tx.ImageResult.Create().
+		SetTaskID(taskUUID).
+		SetUserID(userID).
+		SetImageRole("output").
+		SetStorageDriver(storageDriver).
+		SetObjectKey(objectKey).
+		SetMimeType(defaultString(result.Format, "application/octet-stream")).
+		SetFileSizeBytes(0).
+		SetWidth(0).
+		SetHeight(0).
+		SetSha256(hex.EncodeToString(sha[:])).
+		SetVisibilityStatus("private").
+		Exec(ctx)
+}
+
+func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.ImageResult) (domainimagetask.Task, error) {
+	task := domainimagetask.Task{
+		UserID:                entity.UserID,
+		SourceChannel:         entity.SourceChannel,
+		ID:                    entity.ID.String(),
+		Status:                entity.Status,
+		AbstractModel:         entity.AbstractModel,
+		TaskType:              entity.TaskType,
+		Prompt:                entity.Prompt,
+		RequestedSize:         nullableString(entity.RequestedSize),
+		RequestedQuality:      entity.RequestedQuality,
+		ResolvedQualityBucket: entity.ResolvedQualityBucket,
+		ResponseMode:          entity.ResponseMode,
+		SavePolicy:            entity.SavePolicy,
+		OutputImageCount:      entity.RequestedOutputImageCount,
+		ReferenceImageCount:   entity.ReferenceImageCount,
+		ReferenceAssetIDs:     decodeReferenceAssetIDs(entity.RoutingSnapshot),
+		EstimatedPoints:       entity.EstimatedPoints,
+		ActualPoints:          entity.ActualPoints,
+		LeaseOwner:            nullableString(entity.LeaseOwner),
+		LeaseExpiresAt:        entity.LeaseExpiresAt,
+		ErrorCode:             nullableString(entity.ErrorCode),
+		ErrorMessage:          nullableString(entity.ErrorMessage),
+	}
+	if entity.APIKeyID != nil {
+		task.APIKeyID = *entity.APIKeyID
+	}
+	if entity.PricingSnapshot != nil {
+		if snapshot, err := decodePricingSnapshot(entity.PricingSnapshot); err == nil {
+			task.PricingSnapshot = snapshot
+		} else {
+			return domainimagetask.Task{}, err
+		}
+	}
+
+	if entity.ProviderTrace != nil {
+		trace := entity.ProviderTrace
+		if providerName, ok := trace["provider"].(string); ok {
+			task.Provider = providerName
+		}
+		if attempts, err := decodeAttempts(trace["attempts"]); err == nil {
+			task.Attempts = attempts
+		}
+		if results, err := decodeResults(trace["results"]); err == nil && len(results) > 0 {
+			task.Results = results
+		}
+	}
+	if len(task.Results) == 0 {
+		task.Results = mapFallbackResults(resultEntities)
+	}
+	return task, nil
+}
+
+func buildProviderTrace(task domainimagetask.Task) (map[string]any, error) {
+	trace := map[string]any{
+		"provider": task.Provider,
+	}
+
+	attempts, err := jsonRoundTrip(task.Attempts)
+	if err != nil {
+		return nil, err
+	}
+	results, err := jsonRoundTrip(task.Results)
+	if err != nil {
+		return nil, err
+	}
+	trace["attempts"] = attempts
+	trace["results"] = results
+	return trace, nil
+}
+
+func buildRoutingSnapshot(task domainimagetask.Task) (map[string]any, error) {
+	snapshot := map[string]any{
+		"reference_asset_ids": task.ReferenceAssetIDs,
+	}
+	return snapshot, nil
+}
+
+func buildPricingSnapshot(task domainimagetask.Task) (map[string]any, error) {
+	if task.PricingSnapshot == (domainbilling.PricingSnapshot{}) {
+		return map[string]any{}, nil
+	}
+	value, err := jsonRoundTrip(task.PricingSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	decoded, _ := value.(map[string]any)
+	return decoded, nil
+}
+
+func decodePricingSnapshot(value map[string]any) (domainbilling.PricingSnapshot, error) {
+	var snapshot domainbilling.PricingSnapshot
+	if len(value) == 0 {
+		return snapshot, nil
+	}
+	if err := decodeJSONValue(value, &snapshot); err != nil {
+		return domainbilling.PricingSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func decodeAttempts(value any) ([]domainimagetask.Attempt, error) {
+	var attempts []domainimagetask.Attempt
+	if value == nil {
+		return attempts, nil
+	}
+	if err := decodeJSONValue(value, &attempts); err != nil {
+		return nil, err
+	}
+	return attempts, nil
+}
+
+func decodeResults(value any) ([]provider.ImageResult, error) {
+	var results []provider.ImageResult
+	if value == nil {
+		return results, nil
+	}
+	if err := decodeJSONValue(value, &results); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func decodeJSONValue(value any, target any) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(payload, target)
+}
+
+func jsonRoundTrip(value any) (any, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var decoded any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
+}
+
+func mapFallbackResults(resultEntities []*repoent.ImageResult) []provider.ImageResult {
+	if len(resultEntities) == 0 {
+		return nil
+	}
+	sorted := append([]*repoent.ImageResult(nil), resultEntities...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].CreatedAt.Before(sorted[j].CreatedAt)
+	})
+
+	results := make([]provider.ImageResult, 0, len(sorted))
+	for _, entity := range sorted {
+		item := provider.ImageResult{}
+		if entity.StorageDriver == "remote" {
+			item.URL = entity.ObjectKey
+		}
+		results = append(results, item)
+	}
+	return results
+}
+
+func decodeReferenceAssetIDs(value any) []string {
+	if value == nil {
+		return nil
+	}
+	data, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	raw, ok := data["reference_asset_ids"]
+	if !ok || raw == nil {
+		return nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if value, ok := item.(string); ok && strings.TrimSpace(value) != "" {
+			ids = append(ids, value)
+		}
+	}
+	return ids
+}
+
+func acquireEligiblePredicate(now time.Time) predicate.ImageTask {
+	return imagetask.Or(
+		imagetask.StatusEQ(domainimagetask.StatusQueued),
+		imagetask.And(
+			imagetask.StatusEQ(domainimagetask.StatusRunning),
+			imagetask.Or(imagetask.LeaseExpiresAtIsNil(), imagetask.LeaseExpiresAtLT(now)),
+		),
+	)
+}
+
+func defaultTaskType(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return string(provider.TaskTypeTextToImage)
+	}
+	return value
+}
+
+func defaultTaskStatus(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return domainimagetask.StatusQueued
+	}
+	return value
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func defaultPositive(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func isTerminalStatus(status string) bool {
+	return status == domainimagetask.StatusSucceeded || status == domainimagetask.StatusFailed
+}
+
+func nullableString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}

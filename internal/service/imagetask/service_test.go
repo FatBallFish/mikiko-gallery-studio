@@ -1,0 +1,1330 @@
+package imagetask_test
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/fatballfish/pic-gallery/internal/config"
+	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/provider"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	"github.com/fatballfish/pic-gallery/internal/service/imagetask"
+)
+
+type fakeAssetLoader struct {
+	inputs map[string]provider.ImageInput
+	calls  []string
+}
+
+func (f *fakeAssetLoader) LoadInput(userID int64, assetID string) (provider.ImageInput, error) {
+	f.calls = append(f.calls, assetID)
+	input, ok := f.inputs[assetID]
+	if !ok {
+		return provider.ImageInput{}, errors.New("asset not found")
+	}
+	return input, nil
+}
+
+type fakeProvider struct {
+	generateFunc func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error)
+	editFunc     func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error)
+}
+
+func (f fakeProvider) Generate(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+	if f.generateFunc == nil {
+		return provider.ImageResponse{}, errors.New("generate not implemented")
+	}
+	return f.generateFunc(ctx, req)
+}
+
+func (f fakeProvider) Edit(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+	if f.editFunc == nil {
+		return provider.ImageResponse{}, errors.New("edit not implemented")
+	}
+	return f.editFunc(ctx, req)
+}
+
+func TestExecuteGenerateProducesSucceededTask(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			if req.Model != "openrouter/vision" {
+				t.Fatalf("unexpected provider model %q", req.Model)
+			}
+			return provider.ImageResponse{Created: 1770000000, Data: []provider.ImageResult{{URL: "https://cdn.example.com/result.png"}}}, nil
+		}},
+	}
+
+	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             7,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate a poster",
+		RequestedSize:      "1536x1024",
+		RequestedQuality:   "auto",
+		OutputImageCount:   2,
+		ResponseFormat:     string(provider.ResponseFormatURL),
+		PreferredProviders: []string{"openrouter"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected succeeded, got %s", result.Task.Status)
+	}
+	if result.Task.Provider != "openrouter" {
+		t.Fatalf("expected openrouter provider, got %s", result.Task.Provider)
+	}
+	if len(result.Response.Data) != 1 || result.Response.Data[0].URL == "" {
+		t.Fatalf("unexpected response %#v", result.Response)
+	}
+
+	loaded, err := svc.GetByID(context.Background(), 7, result.Task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if loaded.ID != result.Task.ID || loaded.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("unexpected loaded task %#v", loaded)
+	}
+	if len(loaded.Results) != 1 || loaded.Results[0].URL == "" {
+		t.Fatalf("expected persisted results, got %#v", loaded.Results)
+	}
+
+	list, err := svc.ListByUser(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != result.Task.ID {
+		t.Fatalf("unexpected task list %#v", list)
+	}
+}
+
+func TestExecuteFallsBackOnRetryableProviderError(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{}, &provider.UpstreamError{
+				Provider:   provider.ProviderTypeOpenRouter,
+				HTTPStatus: 429,
+				Code:       "rate_limit_error",
+				Message:    "slow down",
+				Action:     provider.UpstreamErrorActionRetry,
+				Family:     provider.UpstreamErrorFamilyRateLimited,
+			}
+		}},
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			if req.Model != "gpt-image-1" {
+				t.Fatalf("unexpected provider model %q", req.Model)
+			}
+			return provider.ImageResponse{Created: 1770000001, Data: []provider.ImageResult{{B64JSON: "ZmFrZQ=="}}}, nil
+		}},
+	}
+
+	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             9,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate a poster",
+		RequestedSize:      "auto",
+		RequestedQuality:   "4k",
+		OutputImageCount:   1,
+		ResponseFormat:     string(provider.ResponseFormatB64JSON),
+		PreferredProviders: []string{"openrouter", "openai"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected succeeded, got %s", result.Task.Status)
+	}
+	if result.Task.Provider != "openai" {
+		t.Fatalf("expected fallback provider openai, got %s", result.Task.Provider)
+	}
+	if len(result.Task.Attempts) != 2 {
+		t.Fatalf("expected 2 attempts, got %d", len(result.Task.Attempts))
+	}
+	if result.Task.Attempts[0].Provider != "openrouter" || result.Task.Attempts[1].Provider != "openai" {
+		t.Fatalf("unexpected attempts %#v", result.Task.Attempts)
+	}
+}
+
+func taskTestConfig() config.Config {
+	cfg := config.Config{}
+	cfg.Billing.CNYPerPoint = "0.31250"
+	cfg.Billing.PointsScale = 5
+	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"plus": "2k"}
+	cfg.Billing.QualityPointsByModel = map[string]map[string]string{
+		"plus": {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
+	}
+	cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000", "plus": "1.00000"}
+	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000", "reference_generate": "1.15000"}
+	cfg.Billing.ReferenceImageExtra = config.ReferenceExtra{First: "0.10000", Additional: "0.05000"}
+	cfg.GenerationLimits.MaxImageCount = 5
+	cfg.GenerationLimits.ReferenceImageMaxCount = 4
+	cfg.Providers.OpenRouter.Enabled = true
+	cfg.Providers.OpenAI.Enabled = true
+	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
+		"openrouter": {
+			SupportedModels:        []string{"plus"},
+			SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedQualities:     []string{"1k", "2k", "4k"},
+			SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
+			MaxImageCount:          5,
+			MaxReferenceImageCount: 4,
+			SupportsImageInput:     true,
+			SupportsMask:           false,
+			Priority:               1,
+		},
+		"openai": {
+			SupportedModels:        []string{"plus"},
+			SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedQualities:     []string{"1k", "2k", "4k"},
+			SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
+			MaxImageCount:          5,
+			MaxReferenceImageCount: 4,
+			SupportsImageInput:     true,
+			SupportsMask:           true,
+			Priority:               2,
+		},
+	}
+	cfg.Routing.ProviderModelMap = map[string]map[string]string{
+		"plus": {"openrouter": "openrouter/vision", "openai": "gpt-image-1"},
+	}
+	return cfg
+}
+
+type failingSaveStore struct {
+	base                 *imagetask.MemoryStore
+	failSave             bool
+	failSaveIfOwned      bool
+	failSaveIfOwnedError error
+}
+
+func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) error {
+	if s.failSave {
+		s.failSave = false
+		return errors.New("save failed")
+	}
+	return s.base.Save(ctx, task)
+}
+
+func (s *failingSaveStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	if s.failSaveIfOwned {
+		s.failSaveIfOwned = false
+		if s.failSaveIfOwnedError != nil {
+			return s.failSaveIfOwnedError
+		}
+		return repoerr.ErrConflict
+	}
+	return s.base.SaveIfOwned(ctx, task, owner, now)
+}
+
+func (s *failingSaveStore) SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	return s.base.SaveTerminalState(ctx, task, owner, now)
+}
+
+func (s *failingSaveStore) GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
+	return s.base.GetByID(ctx, userID, taskID)
+}
+
+func (s *failingSaveStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
+	return s.base.ListByUser(ctx, userID)
+}
+
+func (s *failingSaveStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
+	return s.base.DeleteByID(ctx, userID, taskID)
+}
+
+func (s *failingSaveStore) AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
+	return s.base.AcquireNextQueuedTask(ctx, owner, now, leaseTTL)
+}
+
+func (s *failingSaveStore) RenewTaskLease(ctx context.Context, taskID, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
+	return s.base.RenewTaskLease(ctx, taskID, owner, now, leaseTTL)
+}
+
+type raceyTerminalStore struct {
+	base                    *imagetask.MemoryStore
+	failSaveIfOwned         bool
+	failSaveIfOwnedError    error
+	blockFirstTerminalSave  bool
+	terminalSaveEntered     chan struct{}
+	releaseTerminalSave     chan struct{}
+	terminalSaveBlockerOnce sync.Once
+}
+
+func (s *raceyTerminalStore) Save(ctx context.Context, task domainimagetask.Task) error {
+	return s.base.Save(ctx, task)
+}
+
+func (s *raceyTerminalStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	if s.failSaveIfOwned {
+		s.failSaveIfOwned = false
+		if s.failSaveIfOwnedError != nil {
+			return s.failSaveIfOwnedError
+		}
+		return repoerr.ErrConflict
+	}
+	return s.base.SaveIfOwned(ctx, task, owner, now)
+}
+
+func (s *raceyTerminalStore) SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	if s.blockFirstTerminalSave {
+		s.terminalSaveBlockerOnce.Do(func() {
+			close(s.terminalSaveEntered)
+			<-s.releaseTerminalSave
+		})
+	}
+	return s.base.SaveTerminalState(ctx, task, owner, now)
+}
+
+func (s *raceyTerminalStore) GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
+	return s.base.GetByID(ctx, userID, taskID)
+}
+
+func (s *raceyTerminalStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
+	return s.base.ListByUser(ctx, userID)
+}
+
+func (s *raceyTerminalStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
+	return s.base.DeleteByID(ctx, userID, taskID)
+}
+
+func (s *raceyTerminalStore) AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
+	return s.base.AcquireNextQueuedTask(ctx, owner, now, leaseTTL)
+}
+
+func (s *raceyTerminalStore) RenewTaskLease(ctx context.Context, taskID, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
+	return s.base.RenewTaskLease(ctx, taskID, owner, now, leaseTTL)
+}
+
+func seedBalance(t *testing.T, svc *billingservice.Service, userID int64, points string) {
+	t.Helper()
+	if _, err := svc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{
+		UserID:       userID,
+		ChangePoints: points,
+		Reason:       "seed balance",
+	}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+}
+
+func TestExecuteWithStorePersistsThroughStoreBackend(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000002, Data: []provider.ImageResult{{URL: "https://cdn.example.com/persisted.png"}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             21,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate persisted task",
+		RequestedSize:      "auto",
+		RequestedQuality:   "auto",
+		OutputImageCount:   1,
+		ResponseFormat:     string(provider.ResponseFormatURL),
+		PreferredProviders: []string{"openrouter"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	loaded, err := svc.GetByID(context.Background(), 21, result.Task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if loaded.ID != result.Task.ID || len(loaded.Results) != 1 {
+		t.Fatalf("unexpected persisted task %#v", loaded)
+	}
+}
+
+func TestCreateTaskQueuesResolvedTask(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+
+	task, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           33,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Queue me",
+		RequestedSize:    "auto",
+		RequestedQuality: "auto",
+		OutputImageCount: 2,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if task.Status != domainimagetask.StatusQueued {
+		t.Fatalf("expected queued task, got %s", task.Status)
+	}
+	if task.ResolvedQualityBucket != "2k" {
+		t.Fatalf("expected resolved quality 2k, got %s", task.ResolvedQualityBucket)
+	}
+	if task.OutputImageCount != 2 {
+		t.Fatalf("expected output count 2, got %d", task.OutputImageCount)
+	}
+	if task.LeaseOwner != "" || task.LeaseExpiresAt != nil {
+		t.Fatalf("expected no active lease, got owner=%q lease=%v", task.LeaseOwner, task.LeaseExpiresAt)
+	}
+
+	loaded, err := svc.GetByID(context.Background(), 33, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if loaded.Status != domainimagetask.StatusQueued {
+		t.Fatalf("expected persisted queued task, got %s", loaded.Status)
+	}
+}
+
+func TestCreateTaskReservesPointsAndRollsBackIfTaskSaveFails(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 77, "20.00000")
+
+	store := &failingSaveStore{base: imagetask.NewMemoryStore(), failSave: true}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc)
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              77,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Queue me",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTask to fail when store save fails")
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 77, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "20.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("expected reserve rollback after save failure, got %#v", summary)
+	}
+}
+
+func TestCreateTaskRetryAfterSaveFailureStillReservesPoints(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 78, "20.00000")
+
+	store := &failingSaveStore{base: imagetask.NewMemoryStore(), failSave: true}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc)
+	createReq := domainimagetask.CreateRequest{
+		TaskID:              "77777777-7777-7777-7777-777777777777",
+		UserID:              78,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Retry me",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	}
+
+	if _, err := svc.CreateTask(context.Background(), createReq); err == nil {
+		t.Fatal("expected first CreateTask to fail when store save fails")
+	}
+	created, err := svc.CreateTask(context.Background(), createReq)
+	if err != nil {
+		t.Fatalf("second CreateTask: %v", err)
+	}
+	if created.ID != createReq.TaskID {
+		t.Fatalf("expected retry to reuse task id %s, got %#v", createReq.TaskID, created)
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 78, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "12.00000" || summary.FrozenPoints != "8.00000" {
+		t.Fatalf("expected retry to reserve points once, got %#v", summary)
+	}
+}
+
+func TestExecuteLeasedTaskSettlesPartialSuccessAgainstReservedEstimate(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 81, "100.00000")
+
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000010, Data: []provider.ImageResult{{URL: "https://cdn.example.com/partial.png"}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              81,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Need two images",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    2,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if created.EstimatedPoints != "16.00000" {
+		t.Fatalf("expected estimate 16.00000, got %#v", created)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	result, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected succeeded task, got %s", result.Task.Status)
+	}
+	if result.Task.ActualPoints != "8.00000" {
+		t.Fatalf("expected actual points 8.00000, got %#v", result.Task)
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 81, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "92.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("unexpected settled balance %#v", summary)
+	}
+}
+
+func TestExecuteLeasedTaskRefundsReservedPointsOnFailure(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 82, "100.00000")
+
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{}, errors.New("provider failed")
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              82,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Will fail",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	if _, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"}); err == nil {
+		t.Fatal("expected ExecuteLeasedTask failure")
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 82, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "100.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("expected full refund on failure, got %#v", summary)
+	}
+}
+
+func TestExecuteLeasedTaskSettlesBillingWhenFirstOwnedSaveConflictsOnSuccess(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 83, "20.00000")
+
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000011, Data: []provider.ImageResult{{URL: "https://cdn.example.com/conflict-success.png"}}}, nil
+		}},
+	}
+	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              83,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Will hit save conflict",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	store.failSaveIfOwned = true
+	store.failSaveIfOwnedError = repoerr.ErrConflict
+	result, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected recovered succeeded result, got %#v", result.Task)
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 83, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "12.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("expected billing settlement despite save conflict, got %#v", summary)
+	}
+}
+
+func TestExecuteLeasedTaskSettlesBillingWhenFirstOwnedSaveConflictsOnFailure(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 84, "20.00000")
+
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{}, errors.New("provider failed")
+		}},
+	}
+	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              84,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Will fail with save conflict",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	store.failSaveIfOwned = true
+	store.failSaveIfOwnedError = repoerr.ErrConflict
+	if _, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"}); err == nil {
+		t.Fatal("expected ExecuteLeasedTask to surface lease conflict")
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 84, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "20.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("expected refund settlement despite save conflict, got %#v", summary)
+	}
+}
+
+func TestExecuteLeasedTaskDurablyPersistsSuccessAfterFirstOwnedSaveConflict(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 185, "20.00000")
+
+	generateCalls := 0
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			generateCalls++
+			return provider.ImageResponse{Created: 1770000123, Data: []provider.ImageResult{{URL: "https://cdn.example.com/conflict-success.png"}}}, nil
+		}},
+	}
+	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              185,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Persist successful terminal snapshot",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	store.failSaveIfOwned = true
+	store.failSaveIfOwnedError = repoerr.ErrConflict
+	result, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected recovered succeeded result, got %#v", result.Task)
+	}
+
+	persisted, err := svc.GetByID(context.Background(), 185, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if persisted.Status != domainimagetask.StatusSucceeded && len(persisted.Results) == 0 {
+		t.Fatalf("expected persisted success marker after conflict, got %#v", persisted)
+	}
+
+	if persisted.Status == domainimagetask.StatusRunning {
+		reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-b", 30*time.Second)
+		if err != nil {
+			t.Fatalf("AcquireNextTask reclaim: %v", err)
+		}
+		if !ok {
+			t.Fatal("expected persisted running task to be reclaimable for terminalization")
+		}
+		if _, err := svc.ExecuteLeasedTask(context.Background(), reclaimed, "worker-b", []string{"openrouter"}); err != nil {
+			t.Fatalf("ExecuteLeasedTask reclaim: %v", err)
+		}
+	}
+
+	if generateCalls != 1 {
+		t.Fatalf("expected provider generate to run once, got %d", generateCalls)
+	}
+
+	finalTask, err := svc.GetByID(context.Background(), 185, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID final: %v", err)
+	}
+	if finalTask.Status != domainimagetask.StatusSucceeded || len(finalTask.Results) != 1 {
+		t.Fatalf("expected succeeded task after recovery, got %#v", finalTask)
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 185, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "12.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("expected settled balance after recovery, got %#v", summary)
+	}
+}
+
+func TestExecuteLeasedTaskDurablyPersistsFailureAfterFirstOwnedSaveConflict(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 186, "20.00000")
+
+	generateCalls := 0
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			generateCalls++
+			return provider.ImageResponse{}, errors.New("provider failed permanently")
+		}},
+	}
+	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              186,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Persist failed terminal snapshot",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	store.failSaveIfOwned = true
+	store.failSaveIfOwnedError = repoerr.ErrConflict
+	if _, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"}); err == nil {
+		t.Fatal("expected ExecuteLeasedTask to surface lease conflict")
+	}
+
+	persisted, err := svc.GetByID(context.Background(), 186, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if persisted.Status != domainimagetask.StatusFailed && persisted.ErrorCode == "" && persisted.ErrorMessage == "" {
+		t.Fatalf("expected persisted failure marker after conflict, got %#v", persisted)
+	}
+
+	if persisted.Status == domainimagetask.StatusRunning {
+		reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-b", 30*time.Second)
+		if err != nil {
+			t.Fatalf("AcquireNextTask reclaim: %v", err)
+		}
+		if !ok {
+			t.Fatal("expected persisted running task to be reclaimable for terminalization")
+		}
+		if _, err := svc.ExecuteLeasedTask(context.Background(), reclaimed, "worker-b", []string{"openrouter"}); err == nil {
+			t.Fatal("expected reclaimed terminal failure to return an error")
+		}
+	}
+
+	if generateCalls != 1 {
+		t.Fatalf("expected provider generate to run once, got %d", generateCalls)
+	}
+
+	finalTask, err := svc.GetByID(context.Background(), 186, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID final: %v", err)
+	}
+	if finalTask.Status != domainimagetask.StatusFailed || finalTask.ErrorMessage == "" {
+		t.Fatalf("expected failed task after recovery, got %#v", finalTask)
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), 186, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "20.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("expected refunded balance after recovery, got %#v", summary)
+	}
+}
+
+func TestExecuteLeasedTaskReloadsPersistedTerminalSnapshotAfterReclaimRace(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 187, "20.00000")
+
+	generateCalls := 0
+	providerGate := make(chan struct{})
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			generateCalls++
+			select {
+			case <-ctx.Done():
+				return provider.ImageResponse{}, ctx.Err()
+			case <-providerGate:
+			}
+			return provider.ImageResponse{Created: 1770000456, Data: []provider.ImageResult{{URL: "https://cdn.example.com/race-recovered.png"}}}, nil
+		}},
+	}
+	store := &raceyTerminalStore{
+		base:                   imagetask.NewMemoryStore(),
+		blockFirstTerminalSave: true,
+		terminalSaveEntered:    make(chan struct{}),
+		releaseTerminalSave:    make(chan struct{}),
+	}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              187,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Recover reclaim race without duplicate provider call",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 20*time.Millisecond)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	firstDone := make(chan struct {
+		result domainimagetask.ExecuteResult
+		err    error
+	}, 1)
+	go func() {
+		result, execErr := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"})
+		firstDone <- struct {
+			result domainimagetask.ExecuteResult
+			err    error
+		}{result: result, err: execErr}
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+	close(providerGate)
+
+	select {
+	case <-store.terminalSaveEntered:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected first worker to block before persisting terminal snapshot")
+	}
+
+	reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-b", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask reclaim: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected second worker to reclaim expired task")
+	}
+
+	close(store.releaseTerminalSave)
+
+	firstOutcome := <-firstDone
+	if firstOutcome.err != nil {
+		t.Fatalf("first ExecuteLeasedTask: %v", firstOutcome.err)
+	}
+	if firstOutcome.result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected first worker to recover terminal state, got %#v", firstOutcome.result.Task)
+	}
+
+	secondResult, err := svc.ExecuteLeasedTask(context.Background(), reclaimed, "worker-b", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("second ExecuteLeasedTask: %v", err)
+	}
+	if secondResult.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected reclaimed worker to observe stored terminal state, got %#v", secondResult.Task)
+	}
+	if generateCalls != 1 {
+		t.Fatalf("expected provider generate to run once across reclaim race, got %d", generateCalls)
+	}
+
+	finalTask, err := svc.GetByID(context.Background(), 187, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID final: %v", err)
+	}
+	if finalTask.Status != domainimagetask.StatusSucceeded || len(finalTask.Results) != 1 {
+		t.Fatalf("expected succeeded task after reclaim race recovery, got %#v", finalTask)
+	}
+}
+
+func TestExecuteLeasedTaskRejectsStaleWorkerAfterReclaim(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 188, "20.00000")
+
+	generateCalls := 0
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			generateCalls++
+			return provider.ImageResponse{Created: 1770000789, Data: []provider.ImageResult{{URL: "https://cdn.example.com/reclaim-owner.png"}}}, nil
+		}},
+	}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, imagetask.NewMemoryStore(), nil, billingSvc)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              188,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Only the reclaimed worker may call provider",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimedA, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", time.Nanosecond)
+	if err != nil {
+		t.Fatalf("AcquireNextTask worker-a: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected worker-a to claim the task")
+	}
+	time.Sleep(time.Millisecond)
+
+	claimedB, ok, err := svc.AcquireNextTask(context.Background(), "worker-b", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask worker-b: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected worker-b to reclaim the expired task")
+	}
+
+	if _, err := svc.ExecuteLeasedTask(context.Background(), claimedA, "worker-a", []string{"openrouter"}); err == nil {
+		t.Fatal("expected stale worker execution to fail with lease conflict")
+	}
+	if generateCalls != 0 {
+		t.Fatalf("expected stale worker to avoid provider call, got %d calls", generateCalls)
+	}
+
+	result, err := svc.ExecuteLeasedTask(context.Background(), claimedB, "worker-b", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask worker-b: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected reclaimed worker to succeed, got %#v", result.Task)
+	}
+	if generateCalls != 1 {
+		t.Fatalf("expected exactly one provider call from reclaimed worker, got %d", generateCalls)
+	}
+
+	finalTask, err := svc.GetByID(context.Background(), 188, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID final: %v", err)
+	}
+	if finalTask.Status != domainimagetask.StatusSucceeded || len(finalTask.Results) != 1 {
+		t.Fatalf("expected succeeded task after reclaim, got %#v", finalTask)
+	}
+}
+
+func TestAcquireNextTaskClaimsAndReclaimsExpiredLease(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           41,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Lease me",
+		RequestedSize:    "auto",
+		RequestedQuality: "auto",
+		OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask first claim: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected first claim to succeed")
+	}
+	if claimed.ID != created.ID {
+		t.Fatalf("expected claimed task %s, got %s", created.ID, claimed.ID)
+	}
+	if claimed.Status != domainimagetask.StatusRunning {
+		t.Fatalf("expected running status after claim, got %s", claimed.Status)
+	}
+	if claimed.LeaseOwner != "worker-a" || claimed.LeaseExpiresAt == nil {
+		t.Fatalf("expected active lease for worker-a, got owner=%q lease=%v", claimed.LeaseOwner, claimed.LeaseExpiresAt)
+	}
+
+	_, ok, err = svc.AcquireNextTask(context.Background(), "worker-b", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask second claim: %v", err)
+	}
+	if ok {
+		t.Fatal("expected second claim to fail while lease is active")
+	}
+
+	expiredAt := time.Now().Add(-time.Minute)
+	claimed.LeaseExpiresAt = &expiredAt
+	if err := store.Save(context.Background(), claimed); err != nil {
+		t.Fatalf("Save expired lease: %v", err)
+	}
+
+	reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-b", 45*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask reclaim: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected reclaimed task after lease expiry")
+	}
+	if reclaimed.ID != created.ID {
+		t.Fatalf("expected reclaimed task %s, got %s", created.ID, reclaimed.ID)
+	}
+	if reclaimed.LeaseOwner != "worker-b" || reclaimed.LeaseExpiresAt == nil {
+		t.Fatalf("expected worker-b to own reclaimed lease, got owner=%q lease=%v", reclaimed.LeaseOwner, reclaimed.LeaseExpiresAt)
+	}
+}
+
+func TestHeartbeatTaskExtendsLeaseForOwner(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           51,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Keep alive",
+		RequestedSize:    "auto",
+		RequestedQuality: "auto",
+		OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 20*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok || claimed.LeaseExpiresAt == nil {
+		t.Fatalf("expected claimed task with lease, got ok=%v task=%#v", ok, claimed)
+	}
+	firstExpiry := *claimed.LeaseExpiresAt
+
+	renewed, err := svc.HeartbeatTask(context.Background(), claimed.ID, "worker-a", 60*time.Second)
+	if err != nil {
+		t.Fatalf("HeartbeatTask: %v", err)
+	}
+	if renewed.LeaseExpiresAt == nil || !renewed.LeaseExpiresAt.After(firstExpiry) {
+		t.Fatalf("expected renewed lease expiry after %v, got %v", firstExpiry, renewed.LeaseExpiresAt)
+	}
+
+	if _, err := svc.HeartbeatTask(context.Background(), claimed.ID, "worker-b", 60*time.Second); err == nil {
+		t.Fatal("expected non-owner heartbeat to fail")
+	}
+}
+
+func TestMemoryStoreSaveIfOwnedRejectsStaleWorkerWriteAfterReclaim(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	now := time.Now().UTC()
+	task := domainimagetask.Task{
+		UserID:                61,
+		ID:                    "stale-worker-task",
+		Status:                domainimagetask.StatusQueued,
+		AbstractModel:         "plus",
+		TaskType:              string(provider.TaskTypeTextToImage),
+		Prompt:                "stale write",
+		RequestedQuality:      "auto",
+		ResolvedQualityBucket: "2k",
+		RequestedSize:         "auto",
+		OutputImageCount:      1,
+	}
+	if err := store.Save(context.Background(), task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	claimedByA, err := store.AcquireNextQueuedTask(context.Background(), "worker-a", now, 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextQueuedTask worker-a: %v", err)
+	}
+	staleSnapshot := claimedByA
+
+	expiredAt := now.Add(-time.Minute)
+	claimedByA.LeaseExpiresAt = &expiredAt
+	if err := store.Save(context.Background(), claimedByA); err != nil {
+		t.Fatalf("Save expired lease: %v", err)
+	}
+	if _, err := store.AcquireNextQueuedTask(context.Background(), "worker-b", now.Add(2*time.Second), 30*time.Second); err != nil {
+		t.Fatalf("AcquireNextQueuedTask worker-b: %v", err)
+	}
+
+	staleSnapshot.Status = domainimagetask.StatusSucceeded
+	staleSnapshot.LeaseOwner = ""
+	staleSnapshot.LeaseExpiresAt = nil
+	staleSnapshot.Results = []provider.ImageResult{{URL: "https://cdn.example.com/stale.png"}}
+	if err := store.SaveIfOwned(context.Background(), staleSnapshot, "worker-a", now.Add(3*time.Second)); err == nil {
+		t.Fatal("expected stale worker write to be rejected")
+	}
+}
+
+func TestMemoryStoreSaveIfOwnedPreservesRenewedLeaseForRunningTask(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	now := time.Now().UTC()
+	task := domainimagetask.Task{
+		UserID:                62,
+		ID:                    "renewed-lease-task",
+		Status:                domainimagetask.StatusQueued,
+		AbstractModel:         "plus",
+		TaskType:              string(provider.TaskTypeTextToImage),
+		Prompt:                "keep latest lease",
+		RequestedQuality:      "auto",
+		ResolvedQualityBucket: "2k",
+		RequestedSize:         "auto",
+		OutputImageCount:      1,
+	}
+	if err := store.Save(context.Background(), task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	claimed, err := store.AcquireNextQueuedTask(context.Background(), "worker-a", now, 20*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextQueuedTask: %v", err)
+	}
+	renewed, err := store.RenewTaskLease(context.Background(), claimed.ID, "worker-a", now.Add(5*time.Second), 45*time.Second)
+	if err != nil {
+		t.Fatalf("RenewTaskLease: %v", err)
+	}
+
+	staleRunningSnapshot := claimed
+	staleRunningSnapshot.Attempts = []domainimagetask.Attempt{{Provider: "openrouter", Status: domainimagetask.StatusFailed, Error: "retry me"}}
+	if err := store.SaveIfOwned(context.Background(), staleRunningSnapshot, "worker-a", now.Add(6*time.Second)); err != nil {
+		t.Fatalf("SaveIfOwned: %v", err)
+	}
+
+	loaded, err := store.GetByID(context.Background(), 62, claimed.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if loaded.LeaseExpiresAt == nil || renewed.LeaseExpiresAt == nil {
+		t.Fatalf("expected persisted lease expiry, got task=%#v renewed=%#v", loaded, renewed)
+	}
+	if !loaded.LeaseExpiresAt.Equal(*renewed.LeaseExpiresAt) {
+		t.Fatalf("expected latest renewed lease %v, got %v", renewed.LeaseExpiresAt, loaded.LeaseExpiresAt)
+	}
+}
+
+func TestExecuteLeasedTaskProcessesClaimedTaskWithoutCreatingNewID(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000003, Data: []provider.ImageResult{{URL: "https://cdn.example.com/leased.png"}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           71,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Process leased task",
+		RequestedSize:    "auto",
+		RequestedQuality: "auto",
+		OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	result, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.ID != created.ID {
+		t.Fatalf("expected leased execution to keep task ID %s, got %s", created.ID, result.Task.ID)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected succeeded task, got %s", result.Task.Status)
+	}
+	if len(result.Task.Results) != 1 || result.Task.Results[0].URL == "" {
+		t.Fatalf("expected persisted results, got %#v", result.Task.Results)
+	}
+}
+
+func TestExecuteLeasedTaskLoadsReferenceAssetsForEdit(t *testing.T) {
+	cfg := taskTestConfig()
+	loader := &fakeAssetLoader{
+		inputs: map[string]provider.ImageInput{
+			"asset-a": {Filename: "asset-a.png", MIMEType: "image/png", Data: []byte("asset-a")},
+			"asset-b": {Filename: "asset-b.png", MIMEType: "image/png", Data: []byte("asset-b")},
+		},
+	}
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{editFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			if len(req.ReferenceImages) != 2 {
+				t.Fatalf("expected 2 reference images, got %d", len(req.ReferenceImages))
+			}
+			if req.ReferenceImages[0].Filename != "asset-a.png" || string(req.ReferenceImages[0].Data) != "asset-a" {
+				t.Fatalf("unexpected first reference image %#v", req.ReferenceImages[0])
+			}
+			if req.ReferenceImages[1].Filename != "asset-b.png" || string(req.ReferenceImages[1].Data) != "asset-b" {
+				t.Fatalf("unexpected second reference image %#v", req.ReferenceImages[1])
+			}
+			return provider.ImageResponse{Created: 1770000007, Data: []provider.ImageResult{{URL: "https://cdn.example.com/edit.png"}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersStoreAndAssets(cfg, providers, store, loader)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:              72,
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeImageEdit),
+		Prompt:              "Edit with references",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+		ReferenceImageCount: 2,
+		ReferenceAssetIDs:   []string{"asset-a", "asset-b"},
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextTask: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected task claim to succeed")
+	}
+
+	result, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-a", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.ID != created.ID {
+		t.Fatalf("expected leased execution to keep task ID %s, got %s", created.ID, result.Task.ID)
+	}
+	if len(loader.calls) != 2 || loader.calls[0] != "asset-a" || loader.calls[1] != "asset-b" {
+		t.Fatalf("expected loader to read both assets in order, got %#v", loader.calls)
+	}
+}

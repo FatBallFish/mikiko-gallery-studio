@@ -1,0 +1,116 @@
+app:
+  name: pic-gallery
+  env: local
+  addr: :8080
+
+database:
+  url: postgres://postgres@localhost:5432/pic_gallery?sslmode=disable
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime: 30m
+
+redis:
+  url: redis://localhost:6379/0
+
+storage:
+  driver: local
+  local_root: ./tmp/storage
+  public_base_url: http://localhost:8080/files
+
+auth:
+  access_token_ttl: 10m
+  refresh_token_ttl: 2h
+  issuer: pic-gallery
+  access_token_secret: change-me-in-prod
+  refresh_cookie_name: pg_refresh_token
+
+billing:
+  cny_per_point: "0.31250"
+  points_scale: 5
+  auto_quality_default_by_group:
+    basic: 1k
+    plus: 2k
+    pro: 4k
+  quality_points_by_model:
+    basic:
+      1k: "2.00000"
+      2k: "4.00000"
+      4k: "8.00000"
+    plus:
+      1k: "5.00000"
+      2k: "8.00000"
+      4k: "16.00000"
+    pro:
+      1k: "8.00000"
+      2k: "12.00000"
+      4k: "20.00000"
+  user_group_multipliers:
+    basic: "1.00000"
+    plus: "1.00000"
+    pro: "1.00000"
+  task_multipliers:
+    text_to_image: "1.00000"
+    image_edit: "1.25000"
+    reference_generate: "1.15000"
+  reference_image_extra:
+    first: "0.10000"
+    additional: "0.05000"
+
+generation_limits:
+  max_image_count: 5
+  reference_image_max_mb: 10
+  reference_image_max_count: 4
+  prompt_max_chars: 4000
+  negative_prompt_max_chars: 1000
+
+providers:
+  openai:
+    enabled: true
+    base_url: https://api.openai.com/v1
+    api_key: ""
+  openrouter:
+    enabled: true
+    base_url: https://openrouter.ai/api/v1
+    api_key: ""
+
+routing:
+  default_provider: openai
+  fallback_providers:
+    - openrouter
+  openai_compat_model_map:
+    gpt-image-2: plus
+  provider_model_map:
+    basic:
+      openai: gpt-image-1
+      openrouter: openai/gpt-image-1
+    plus:
+      openai: gpt-image-1
+      openrouter: openai/gpt-image-1
+    pro:
+      openai: gpt-image-1
+      openrouter: openai/gpt-image-1
+  provider_capabilities:
+    openai:
+      supported_models: [basic, plus, pro]
+      supported_task_types: [text_to_image, image_edit, reference_generate]
+      supported_qualities: [1k, 2k, 4k]
+      supported_aspect_ratios: ["1:1", "4:3", "16:9"]
+      max_image_count: 5
+      max_reference_image_count: 4
+      supports_image_input: true
+      supports_mask: true
+      priority: 1
+    openrouter:
+      supported_models: [basic, plus, pro]
+      supported_task_types: [text_to_image, image_edit, reference_generate]
+      supported_qualities: [1k, 2k, 4k]
+      supported_aspect_ratios: ["1:1", "4:3", "16:9"]
+      max_image_count: 5
+      max_reference_image_count: 4
+      supports_image_input: true
+      supports_mask: false
+      priority: 2
+
+docs:
+  title: Pic Gallery API Docs
+  base_path: /developers/docs
