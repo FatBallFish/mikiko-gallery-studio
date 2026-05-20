@@ -23,6 +23,18 @@ auth:
   issuer: pic-gallery
   access_token_secret: change-me-in-prod
   refresh_cookie_name: pg_refresh_token
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+    from: ""
+    starttls: true
+    insecure_skip_verify: false
+
+api_key:
+  # Set API_KEY_SIGNING_SECRET_ENCRYPTION_KEY in production; used to encrypt stored API key HMAC signing secrets.
+  signing_secret_encryption_key: ""
 
 billing:
   cny_per_point: "0.31250"

@@ -80,6 +80,20 @@ func (_c *APIKeyCreate) SetSecretHash(v string) *APIKeyCreate {
 	return _c
 }
 
+// SetSigningSecret sets the "signing_secret" field.
+func (_c *APIKeyCreate) SetSigningSecret(v string) *APIKeyCreate {
+	_c.mutation.SetSigningSecret(v)
+	return _c
+}
+
+// SetNillableSigningSecret sets the "signing_secret" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableSigningSecret(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetSigningSecret(*v)
+	}
+	return _c
+}
+
 // SetName sets the "name" field.
 func (_c *APIKeyCreate) SetName(v string) *APIKeyCreate {
 	_c.mutation.SetName(v)
@@ -264,6 +278,11 @@ func (_c *APIKeyCreate) check() error {
 			return &ValidationError{Name: "secret_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_hash": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.SigningSecret(); ok {
+		if err := apikey.SigningSecretValidator(v); err != nil {
+			return &ValidationError{Name: "signing_secret", err: fmt.Errorf(`ent: validator failed for field "APIKey.signing_secret": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "APIKey.name"`)}
 	}
@@ -337,6 +356,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.SecretHash(); ok {
 		_spec.SetField(apikey.FieldSecretHash, field.TypeString, value)
 		_node.SecretHash = value
+	}
+	if value, ok := _c.mutation.SigningSecret(); ok {
+		_spec.SetField(apikey.FieldSigningSecret, field.TypeString, value)
+		_node.SigningSecret = &value
 	}
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)

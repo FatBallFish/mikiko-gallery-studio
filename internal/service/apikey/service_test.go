@@ -2,11 +2,19 @@ package apikey
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 )
 
-func TestCreateKeyStoresOnlySecretHashAndAuthenticates(t *testing.T) {
+func TestAPIKeySecretStoresOnlyHashAndEncryptedSigningSecretAndAuthenticates(t *testing.T) {
 	svc := NewService(nil)
 
 	created, err := svc.CreateKey(context.Background(), CreateRequest{
@@ -24,6 +32,15 @@ func TestCreateKeyStoresOnlySecretHashAndAuthenticates(t *testing.T) {
 	if created.Key.SecretHash == "" || created.Key.SecretHash == "sk-task4-secret" {
 		t.Fatalf("expected stored key to contain only a hash, got %#v", created.Key)
 	}
+	if created.Key.SigningSecret == "" || strings.Contains(created.Key.SigningSecret, "sk-task4-secret") {
+		t.Fatalf("expected encrypted signing secret, got %q", created.Key.SigningSecret)
+	}
+	if decoded, ok := domainapikey.DecodeSigningSecret(created.Key.SigningSecret); ok || decoded == "sk-task4-secret" {
+		t.Fatalf("expected signing secret not to use legacy reversible format, decoded=%q ok=%v", decoded, ok)
+	}
+	if raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(created.Key.SigningSecret, "enc:v1:")); err == nil && string(raw) == "sk-task4-secret" {
+		t.Fatalf("expected signing secret not to be simple base64 of the raw secret")
+	}
 
 	identity, err := svc.AuthenticateNative(context.Background(), created.Key.AccessKey, "sk-task4-secret")
 	if err != nil {
@@ -39,6 +56,34 @@ func TestCreateKeyStoresOnlySecretHashAndAuthenticates(t *testing.T) {
 	}
 	if bearer.APIKeyID != identity.APIKeyID {
 		t.Fatalf("expected bearer identity to match native identity, got %#v want %#v", bearer, identity)
+	}
+}
+
+func TestAPIKeyHMACUsesEncryptedSigningSecret(t *testing.T) {
+	svc := NewServiceWithSigningSecretKey(nil, "test-api-key-signing-encryption-key")
+	created, err := svc.CreateKey(context.Background(), CreateRequest{
+		UserID:    42,
+		Name:      "canonical",
+		GroupCode: "plus",
+		Secret:    "sk-canonical-secret",
+	})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	emptyBodySum := sha256.Sum256(nil)
+	bodySHA := hex.EncodeToString(emptyBodySum[:])
+	canonical := "POST" + "/api/open/image/v1/tasks" + timestamp + bodySHA
+	mac := hmac.New(sha256.New, []byte("sk-canonical-secret"))
+	_, _ = mac.Write([]byte(canonical))
+
+	identity, err := svc.AuthenticateCanonical(context.Background(), "POST", "/api/open/image/v1/tasks", timestamp, bodySHA, created.Key.AccessKey, hex.EncodeToString(mac.Sum(nil)), time.Minute)
+	if err != nil {
+		t.Fatalf("AuthenticateCanonical: %v", err)
+	}
+	if identity.UserID != 42 || identity.GroupCode != "plus" {
+		t.Fatalf("unexpected identity %#v", identity)
 	}
 }
 

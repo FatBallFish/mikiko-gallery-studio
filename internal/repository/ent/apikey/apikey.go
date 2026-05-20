@@ -25,6 +25,8 @@ const (
 	FieldAccessKey = "access_key"
 	// FieldSecretHash holds the string denoting the secret_hash field in the database.
 	FieldSecretHash = "secret_hash"
+	// FieldSigningSecret holds the string denoting the signing_secret field in the database.
+	FieldSigningSecret = "signing_secret"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -54,6 +56,7 @@ var Columns = []string{
 	FieldUserID,
 	FieldAccessKey,
 	FieldSecretHash,
+	FieldSigningSecret,
 	FieldName,
 	FieldStatus,
 	FieldGroupCode,
@@ -85,6 +88,8 @@ var (
 	AccessKeyValidator func(string) error
 	// SecretHashValidator is a validator for the "secret_hash" field. It is called by the builders before save.
 	SecretHashValidator func(string) error
+	// SigningSecretValidator is a validator for the "signing_secret" field. It is called by the builders before save.
+	SigningSecretValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -133,6 +138,11 @@ func ByAccessKey(opts ...sql.OrderTermOption) OrderOption {
 // BySecretHash orders the results by the secret_hash field.
 func BySecretHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSecretHash, opts...).ToFunc()
+}
+
+// BySigningSecret orders the results by the signing_secret field.
+func BySigningSecret(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSigningSecret, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.

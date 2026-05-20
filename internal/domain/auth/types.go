@@ -6,10 +6,14 @@ type User struct {
 	ID              int64
 	Email           string
 	Nickname        string
+	Bio             string
+	AvatarObjectKey string
 	Status          string
 	GroupCode       string
 	GroupMultiplier string
 	TokenVersion    int
+	DefaultLocale   string
+	Theme           string
 	CreatedAt       time.Time
 }
 

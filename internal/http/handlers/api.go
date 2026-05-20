@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -65,7 +68,7 @@ func NewAPIWithRuntimeServices(cfg config.Config, authSvc *authservice.Service, 
 		apiKeySvc = apiKeySvcs[0]
 	}
 	if apiKeySvc == nil {
-		apiKeySvc = apikeyservice.NewService(nil)
+		apiKeySvc = apikeyservice.NewServiceWithSigningSecretKey(nil, cfg.APIKey.SigningSecretEncryptionKey)
 	}
 	if billingSvc == nil && taskSvc != nil {
 		if sharedBilling, ok := taskSvc.BillingManager().(*billingservice.Service); ok {
@@ -75,12 +78,14 @@ func NewAPIWithRuntimeServices(cfg config.Config, authSvc *authservice.Service, 
 	if billingSvc == nil {
 		billingSvc = billingservice.NewService(cfg.Billing)
 	}
+	apiKeySvc.SetUsageStore(billingSvc)
 	if assetSvc == nil {
 		assetSvc = assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
 	}
 	if taskSvc == nil {
 		taskSvc = imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, nil, nil, billingSvc)
 	}
+	taskSvc.SetAPIKeyUsageManager(apiKeySvc)
 	if adminSvc == nil {
 		adminSvc = adminconfigservice.NewService(cfg)
 	}
@@ -164,13 +169,48 @@ func (a *API) HandleProfile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	if r.Method == http.MethodPut {
+		var req struct {
+			Nickname      *string `json:"nickname"`
+			Bio           *string `json:"bio"`
+			Signature     *string `json:"signature"`
+			Theme         *string `json:"theme"`
+			DefaultLocale *string `json:"default_locale"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		bio := req.Bio
+		if bio == nil {
+			bio = req.Signature
+		}
+		updated, err := a.auth.UpdateProfile(user.ID, req.Nickname, bio, req.Theme, req.DefaultLocale, nil)
+		if err != nil {
+			httpx.WriteError(w, r, err.(*errs.Error))
+			return
+		}
+		writeProfile(w, r, updated)
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	writeProfile(w, r, *user)
+}
+
+func writeProfile(w http.ResponseWriter, r *http.Request, user domainauth.User) {
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
-		"id":              user.ID,
-		"email":           user.Email,
-		"nickname":        user.Nickname,
-		"user_group_code": user.GroupCode,
-		"theme":           "system",
-		"default_locale":  "zh-CN",
+		"id":                user.ID,
+		"email":             user.Email,
+		"nickname":          user.Nickname,
+		"bio":               user.Bio,
+		"signature":         user.Bio,
+		"avatar_object_key": user.AvatarObjectKey,
+		"user_group_code":   user.GroupCode,
+		"theme":             defaultString(user.Theme, "system"),
+		"default_locale":    defaultString(user.DefaultLocale, "zh-CN"),
 	})
 }
 
@@ -339,6 +379,11 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	assetID := strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/reference-assets/")
+	if r.Method == http.MethodDelete {
+		_ = assetID
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	asset, err := a.assets.Get(user.ID, assetID)
 	if err != nil {
 		httpx.WriteError(w, r, err.(*errs.Error))
@@ -399,13 +444,13 @@ func (a *API) HandleAgentTasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		a.handleAgentTaskList(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
 }
 
 func (a *API) HandleAgentTaskDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
 	user, appErr := a.requireUser(r)
@@ -427,7 +472,7 @@ func (a *API) HandleAgentHistoryTasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		a.handleAgentTaskList(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
 }
 
@@ -453,17 +498,16 @@ func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Reques
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
 }
 
 func (a *API) HandleAdminConfigTabs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	if _, appErr := a.requireUser(r); appErr != nil {
-		httpx.WriteError(w, r, appErr)
+	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
 	tabs, err := a.admin.ListTabs(r.Context())
@@ -475,9 +519,8 @@ func (a *API) HandleAdminConfigTabs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request) {
-	user, appErr := a.requireUser(r)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
+	adminID, ok := a.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	tabKey := strings.TrimPrefix(r.URL.Path, "/api/ops/admin/v1/config-tabs/")
@@ -509,7 +552,7 @@ func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request)
 			TabKey:    tabKey,
 			Version:   req.Version,
 			Items:     items,
-			UpdatedBy: user.ID,
+			UpdatedBy: adminID,
 		})
 		if err != nil {
 			httpx.WriteError(w, r, err.(*errs.Error))
@@ -517,7 +560,7 @@ func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request)
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, tab)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
 }
 
@@ -641,12 +684,18 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
+		NegativePrompt            string   `json:"negative_prompt"`
 		AbstractModel             string   `json:"abstract_model"`
 		RequestedQuality          string   `json:"requested_quality"`
+		Quality                   string   `json:"quality"`
 		RequestedSize             string   `json:"requested_size"`
+		AspectRatio               string   `json:"aspect_ratio"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
+		ReferenceStrength         int      `json:"reference_strength"`
+		Seed                      *int64   `json:"seed"`
 		ResponseMode              string   `json:"response_mode"`
+		SavePolicy                string   `json:"save_policy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -659,15 +708,19 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		AbstractModel:       req.AbstractModel,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
+		NegativePrompt:      req.NegativePrompt,
 		RequestedSize:       req.RequestedSize,
-		RequestedQuality:    req.RequestedQuality,
+		RequestedQuality:    defaultString(req.RequestedQuality, req.Quality),
+		AspectRatio:         req.AspectRatio,
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
 		UserGroupCode:       user.GroupCode,
 		UserGroupMultiplier: user.GroupMultiplier,
+		ReferenceStrength:   req.ReferenceStrength,
+		Seed:                req.Seed,
 		ResponseMode:        req.ResponseMode,
-		SavePolicy:          "private",
+		SavePolicy:          defaultString(req.SavePolicy, "private"),
 	})
 	if err != nil {
 		httpx.WriteError(w, r, compatservice.MapError(err))
@@ -686,12 +739,18 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
+		NegativePrompt            string   `json:"negative_prompt"`
 		AbstractModel             string   `json:"abstract_model"`
 		RequestedQuality          string   `json:"requested_quality"`
+		Quality                   string   `json:"quality"`
 		RequestedSize             string   `json:"requested_size"`
+		AspectRatio               string   `json:"aspect_ratio"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
+		ReferenceStrength         int      `json:"reference_strength"`
+		Seed                      *int64   `json:"seed"`
 		ResponseMode              string   `json:"response_mode"`
+		SavePolicy                string   `json:"save_policy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -706,15 +765,19 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		AbstractModel:       req.AbstractModel,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
+		NegativePrompt:      req.NegativePrompt,
 		RequestedSize:       req.RequestedSize,
-		RequestedQuality:    req.RequestedQuality,
+		RequestedQuality:    defaultString(req.RequestedQuality, req.Quality),
+		AspectRatio:         req.AspectRatio,
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
 		UserGroupCode:       identity.GroupCode,
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
+		ReferenceStrength:   req.ReferenceStrength,
+		Seed:                req.Seed,
 		ResponseMode:        req.ResponseMode,
-		SavePolicy:          "private",
+		SavePolicy:          defaultString(req.SavePolicy, "private"),
 	})
 	if err != nil {
 		httpx.WriteError(w, r, compatservice.MapError(err))
@@ -742,19 +805,25 @@ func (a *API) requireUser(r *http.Request) (*domainauth.User, *errs.Error) {
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		return nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing bearer token")
 	}
-	claims, err := a.auth.ParseAccessToken(strings.TrimPrefix(authHeader, "Bearer "))
+	user, _, err := a.auth.ValidateAccessToken(strings.TrimPrefix(authHeader, "Bearer "))
 	if err != nil {
 		return nil, err.(*errs.Error)
-	}
-	user, ok := a.auth.GetUserByID(claims.UserID)
-	if !ok {
-		return nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "user not found")
 	}
 	return &user, nil
 }
 
 func (a *API) requireOpenAPIKey(r *http.Request) (domainapikey.Identity, *errs.Error) {
-	identity, err := a.apiKeys.AuthenticateNative(r.Context(), r.Header.Get("X-Access-Key"), r.Header.Get("X-Signature"))
+	timestamp := strings.TrimSpace(r.Header.Get("X-Timestamp"))
+	if timestamp == "" {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key timestamp")
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return domainapikey.Identity{}, errs.BadRequest("failed to read request body")
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	sum := sha256.Sum256(body)
+	identity, err := a.apiKeys.AuthenticateCanonical(r.Context(), r.Method, r.URL.Path, timestamp, hex.EncodeToString(sum[:]), r.Header.Get("X-Access-Key"), r.Header.Get("X-Signature"), 5*time.Minute)
 	if err != nil {
 		return domainapikey.Identity{}, normalizeAppError(err)
 	}

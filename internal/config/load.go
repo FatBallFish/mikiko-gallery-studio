@@ -13,7 +13,7 @@ const defaultConfigPath = "configs/config.dev.yaml"
 
 func Load(path string) (Config, error) {
 	if path == "" {
-		path = envOrDefault("APP_CONFIG_PATH", defaultConfigPath)
+		path = configPathFromEnv()
 	}
 
 	content, err := os.ReadFile(path)
@@ -29,6 +29,16 @@ func Load(path string) (Config, error) {
 	applyEnvOverrides(&cfg)
 	applyDefaults(&cfg)
 	return cfg, nil
+}
+
+func configPathFromEnv() string {
+	if value := os.Getenv("APP_CONFIG_PATH"); value != "" {
+		return value
+	}
+	if value := os.Getenv("PIC_GALLERY_CONFIG"); value != "" {
+		return value
+	}
+	return defaultConfigPath
 }
 
 func applyEnvOverrides(cfg *Config) {
@@ -67,6 +77,39 @@ func applyEnvOverrides(cfg *Config) {
 	if value := os.Getenv("AUTH_ACCESS_TOKEN_SECRET"); value != "" {
 		cfg.Auth.AccessTokenSecret = value
 	}
+	if value := os.Getenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY"); value != "" {
+		cfg.APIKey.SigningSecretEncryptionKey = value
+	}
+	if value := os.Getenv("PIC_GALLERY_API_KEY_SIGNING_SECRET_ENCRYPTION_KEY"); value != "" {
+		cfg.APIKey.SigningSecretEncryptionKey = value
+	}
+	if value := os.Getenv("SMTP_HOST"); value != "" {
+		cfg.Auth.SMTP.Host = value
+	}
+	if value := os.Getenv("SMTP_PORT"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			cfg.Auth.SMTP.Port = parsed
+		}
+	}
+	if value := os.Getenv("SMTP_USERNAME"); value != "" {
+		cfg.Auth.SMTP.Username = value
+	}
+	if value := os.Getenv("SMTP_PASSWORD"); value != "" {
+		cfg.Auth.SMTP.Password = value
+	}
+	if value := os.Getenv("SMTP_FROM"); value != "" {
+		cfg.Auth.SMTP.From = value
+	}
+	if value := os.Getenv("SMTP_STARTTLS"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.SMTP.StartTLS = parsed
+		}
+	}
+	if value := os.Getenv("SMTP_INSECURE_SKIP_VERIFY"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Auth.SMTP.InsecureSkipVerify = parsed
+		}
+	}
 }
 
 func applyDefaults(cfg *Config) {
@@ -87,6 +130,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Auth.RefreshCookieName == "" {
 		cfg.Auth.RefreshCookieName = "pg_refresh_token"
+	}
+	if cfg.APIKey.SigningSecretEncryptionKey == "" {
+		cfg.APIKey.SigningSecretEncryptionKey = "local-dev-api-key-signing-secret-encryption-key"
 	}
 	cfg.Billing.PointsScale = 5
 	if len(cfg.Billing.AutoQualityDefaultByGroup) == 0 {

@@ -15,6 +15,7 @@ func (APIKey) Fields() []ent.Field {
 		field.Int64("user_id"),
 		field.String("access_key").MaxLen(64).NotEmpty(),
 		field.String("secret_hash").MaxLen(128).NotEmpty(),
+		field.String("signing_secret").MaxLen(512).Optional().Nillable(),
 		field.String("name").MaxLen(64).NotEmpty(),
 		field.String("status").MaxLen(32).Default("active"),
 		field.String("group_code").MaxLen(32).Default("default"),

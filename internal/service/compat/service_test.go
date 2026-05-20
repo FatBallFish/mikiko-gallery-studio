@@ -225,6 +225,50 @@ func TestOpenAICompatGenerateMapsUpstreamFailure(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatGenerateEnforcesAPIKeyQuotaBeforeUpstream(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	cfg := compatTestConfig()
+	cfg.Providers.OpenRouter.BaseURL = upstream.URL
+	cfg.Providers.OpenAI.Enabled = false
+	cfg.Routing.DefaultProvider = "openrouter"
+	cfg.Routing.OpenAICompatModelMap = map[string]string{"gpt-image-2": "plus"}
+	cfg.Routing.ProviderModelMap = map[string]map[string]string{"plus": {"openrouter": "openrouter/vision"}}
+	totalQuota := "7.00000"
+	handler, apiSecret, billingSvc, userID := newCompatHandlerWithKey(t, cfg, "compat-quota@example.com", "100.00000", apikeyservice.CreateRequest{
+		Name:             "compat-quota",
+		GroupCode:        "plus",
+		Secret:           "sk-compat-quota-secret",
+		TotalQuotaPoints: &totalQuota,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(`{"model":"gpt-image-2","prompt":"quota please","n":1,"quality":"medium"}`))
+	req.Header.Set("Authorization", "Bearer "+apiSecret)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected quota failure 429, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("expected quota failure before upstream call, got %d calls", upstreamCalls)
+	}
+	summary, err := billingSvc.GetBalance(context.Background(), userID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "100.00000" || summary.FrozenPoints != "0.00000" {
+		t.Fatalf("expected no reserve on quota failure, got %#v", summary)
+	}
+}
+
 func compatTestConfig() config.Config {
 	cfg := config.Config{}
 	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
@@ -269,7 +313,16 @@ func compatTestConfig() config.Config {
 
 func newCompatHandler(t *testing.T, cfg config.Config, email, balance string) (http.Handler, string) {
 	t.Helper()
+	handler, secret, _, _ := newCompatHandlerWithKey(t, cfg, email, balance, apikeyservice.CreateRequest{
+		Name:      "compat",
+		GroupCode: "plus",
+		Secret:    "sk-compat-secret-" + email,
+	})
+	return handler, secret
+}
 
+func newCompatHandlerWithKey(t *testing.T, cfg config.Config, email, balance string, keyReq apikeyservice.CreateRequest) (http.Handler, string, *billingservice.Service, int64) {
+	t.Helper()
 	authSvc := authservice.NewService(config.AuthConfig{
 		AccessTokenTTL:    10 * time.Minute,
 		RefreshTokenTTL:   2 * time.Hour,
@@ -295,19 +348,15 @@ func newCompatHandler(t *testing.T, cfg config.Config, email, balance string) (h
 	}
 
 	keySvc := apikeyservice.NewService(nil)
-	created, err := keySvc.CreateKey(context.Background(), apikeyservice.CreateRequest{
-		UserID:    user.ID,
-		Name:      "compat",
-		GroupCode: "plus",
-		Secret:    "sk-compat-secret-" + email,
-	})
+	keyReq.UserID = user.ID
+	created, err := keySvc.CreateKey(context.Background(), keyReq)
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
 
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc)
-	return apphttp.NewWithAPI(api), created.Secret
+	return apphttp.NewWithAPI(api), created.Secret, billingSvc, user.ID
 }
 
 func TestOpenAICompatRejectsMissingAndInvalidBearerKey(t *testing.T) {

@@ -8,10 +8,13 @@ import (
 )
 
 const (
-	StatusQueued    = "queued"
-	StatusRunning   = "running"
-	StatusSucceeded = "succeeded"
-	StatusFailed    = "failed"
+	StatusQueued        = "queued"
+	StatusRunning       = "running"
+	StatusSucceeded     = "succeeded"
+	StatusPartialFailed = "partial_failed"
+	StatusFailed        = "failed"
+	StatusRejected      = "rejected"
+	StatusDeleted       = "deleted"
 )
 
 type ExecuteRequest struct {
@@ -41,11 +44,15 @@ type CreateRequest struct {
 	AbstractModel       string
 	TaskType            string
 	Prompt              string
+	NegativePrompt      string
 	RequestedSize       string
 	RequestedQuality    string
+	AspectRatio         string
 	OutputImageCount    int
 	ReferenceImageCount int
 	ReferenceAssetIDs   []string
+	ReferenceStrength   int
+	Seed                *int64
 	UserGroupCode       string
 	UserGroupMultiplier string
 	MaskPresent         bool
@@ -69,6 +76,8 @@ type Task struct {
 	AbstractModel         string                        `json:"abstract_model"`
 	TaskType              string                        `json:"task_type"`
 	Prompt                string                        `json:"prompt,omitempty"`
+	NegativePrompt        string                        `json:"negative_prompt,omitempty"`
+	AspectRatio           string                        `json:"aspect_ratio,omitempty"`
 	RequestedSize         string                        `json:"requested_size,omitempty"`
 	RequestedQuality      string                        `json:"requested_quality"`
 	ResolvedQualityBucket string                        `json:"resolved_quality_bucket"`
@@ -77,6 +86,8 @@ type Task struct {
 	OutputImageCount      int                           `json:"requested_output_image_count"`
 	ReferenceImageCount   int                           `json:"reference_image_count"`
 	ReferenceAssetIDs     []string                      `json:"reference_asset_ids,omitempty"`
+	ReferenceStrength     int                           `json:"reference_strength,omitempty"`
+	Seed                  *int64                        `json:"seed,omitempty"`
 	EstimatedPoints       string                        `json:"estimated_points,omitempty"`
 	ActualPoints          string                        `json:"actual_points,omitempty"`
 	LeaseOwner            string                        `json:"lease_owner,omitempty"`

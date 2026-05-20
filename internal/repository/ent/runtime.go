@@ -79,8 +79,12 @@ func init() {
 			return nil
 		}
 	}()
+	// apikeyDescSigningSecret is the schema descriptor for signing_secret field.
+	apikeyDescSigningSecret := apikeyFields[3].Descriptor()
+	// apikey.SigningSecretValidator is a validator for the "signing_secret" field. It is called by the builders before save.
+	apikey.SigningSecretValidator = apikeyDescSigningSecret.Validators[0].(func(string) error)
 	// apikeyDescName is the schema descriptor for name field.
-	apikeyDescName := apikeyFields[3].Descriptor()
+	apikeyDescName := apikeyFields[4].Descriptor()
 	// apikey.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	apikey.NameValidator = func() func(string) error {
 		validators := apikeyDescName.Validators
@@ -98,13 +102,13 @@ func init() {
 		}
 	}()
 	// apikeyDescStatus is the schema descriptor for status field.
-	apikeyDescStatus := apikeyFields[4].Descriptor()
+	apikeyDescStatus := apikeyFields[5].Descriptor()
 	// apikey.DefaultStatus holds the default value on creation for the status field.
 	apikey.DefaultStatus = apikeyDescStatus.Default.(string)
 	// apikey.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	apikey.StatusValidator = apikeyDescStatus.Validators[0].(func(string) error)
 	// apikeyDescGroupCode is the schema descriptor for group_code field.
-	apikeyDescGroupCode := apikeyFields[5].Descriptor()
+	apikeyDescGroupCode := apikeyFields[6].Descriptor()
 	// apikey.DefaultGroupCode holds the default value on creation for the group_code field.
 	apikey.DefaultGroupCode = apikeyDescGroupCode.Default.(string)
 	// apikey.GroupCodeValidator is a validator for the "group_code" field. It is called by the builders before save.
@@ -739,7 +743,7 @@ func init() {
 	// pointledger.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	pointledger.UpdateDefaultUpdatedAt = pointledgerDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// pointledgerDescLedgerType is the schema descriptor for ledger_type field.
-	pointledgerDescLedgerType := pointledgerFields[4].Descriptor()
+	pointledgerDescLedgerType := pointledgerFields[5].Descriptor()
 	// pointledger.LedgerTypeValidator is a validator for the "ledger_type" field. It is called by the builders before save.
 	pointledger.LedgerTypeValidator = func() func(string) error {
 		validators := pointledgerDescLedgerType.Validators
@@ -757,25 +761,25 @@ func init() {
 		}
 	}()
 	// pointledgerDescChangePoints is the schema descriptor for change_points field.
-	pointledgerDescChangePoints := pointledgerFields[5].Descriptor()
+	pointledgerDescChangePoints := pointledgerFields[6].Descriptor()
 	// pointledger.DefaultChangePoints holds the default value on creation for the change_points field.
 	pointledger.DefaultChangePoints = pointledgerDescChangePoints.Default.(string)
 	// pointledgerDescBalanceAfter is the schema descriptor for balance_after field.
-	pointledgerDescBalanceAfter := pointledgerFields[6].Descriptor()
+	pointledgerDescBalanceAfter := pointledgerFields[7].Descriptor()
 	// pointledger.DefaultBalanceAfter holds the default value on creation for the balance_after field.
 	pointledger.DefaultBalanceAfter = pointledgerDescBalanceAfter.Default.(string)
 	// pointledgerDescFrozenAfter is the schema descriptor for frozen_after field.
-	pointledgerDescFrozenAfter := pointledgerFields[7].Descriptor()
+	pointledgerDescFrozenAfter := pointledgerFields[8].Descriptor()
 	// pointledger.DefaultFrozenAfter holds the default value on creation for the frozen_after field.
 	pointledger.DefaultFrozenAfter = pointledgerDescFrozenAfter.Default.(string)
 	// pointledgerDescReason is the schema descriptor for reason field.
-	pointledgerDescReason := pointledgerFields[8].Descriptor()
+	pointledgerDescReason := pointledgerFields[9].Descriptor()
 	// pointledger.DefaultReason holds the default value on creation for the reason field.
 	pointledger.DefaultReason = pointledgerDescReason.Default.(string)
 	// pointledger.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	pointledger.ReasonValidator = pointledgerDescReason.Validators[0].(func(string) error)
 	// pointledgerDescIdempotencyKey is the schema descriptor for idempotency_key field.
-	pointledgerDescIdempotencyKey := pointledgerFields[10].Descriptor()
+	pointledgerDescIdempotencyKey := pointledgerFields[11].Descriptor()
 	// pointledger.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
 	pointledger.IdempotencyKeyValidator = pointledgerDescIdempotencyKey.Validators[0].(func(string) error)
 	providererrorpolicyMixin := schema.ProviderErrorPolicy{}.Mixin()

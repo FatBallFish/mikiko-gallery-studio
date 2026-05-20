@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - .env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+  redis:
+    image: redis:7-alpine
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    env_file:
+      - .env
+    volumes:
+      - minio_data:/data
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    depends_on: [postgres, redis, minio]
+    env_file:
+      - .env
+    environment:
+      APP_CONFIG_PATH: /app/configs/config.example.yaml
+      APP_ENV: prod
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_LOCAL_ROOT: /app/storage
+      STORAGE_SHARED_VOLUME: "true"
+    volumes:
+      - app_storage:/app/storage
+    ports:
+      - "8080:8080"
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.worker
+    depends_on: [postgres, redis, minio]
+    env_file:
+      - .env
+    environment:
+      APP_CONFIG_PATH: /app/configs/config.example.yaml
+      APP_ENV: prod
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_LOCAL_ROOT: /app/storage
+      STORAGE_SHARED_VOLUME: "true"
+    volumes:
+      - app_storage:/app/storage
+volumes:
+  pg_data:
+  minio_data:
+  app_storage:
