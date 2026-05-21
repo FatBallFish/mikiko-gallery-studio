@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+./scripts/workflow/verify.sh
+./scripts/workflow/check-review-gate.sh
+
+changed="$(git diff --name-only @{u}..HEAD 2>/dev/null || git diff --name-only HEAD~1..HEAD 2>/dev/null || true)"
+if printf '%s\n' "$changed" | grep -E '^(cmd/|internal/|pkg/|api/|configs/|deployments/|Dockerfile|Dockerfile\.)' >/dev/null 2>&1; then
+  ./scripts/workflow/api-smoke.sh
+fi
+
+exit 0
+
