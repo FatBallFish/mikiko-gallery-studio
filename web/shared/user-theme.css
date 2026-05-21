@@ -3,14 +3,25 @@
 
 :root {
   --pg-user-bg-deep: #05070d;
+  --pg-user-bg-panel: #090c14;
   --pg-user-bg-surface: rgba(255, 255, 255, 0.03);
   --pg-user-bg-glass: rgba(10, 12, 20, 0.6);
   
   --pg-user-text-main: #f6efe4;
   --pg-user-text-dim: rgba(246, 239, 228, 0.5);
+  --pg-user-text-soft: rgba(246, 239, 228, 0.68);
   
   --pg-user-border-thin: rgba(255, 255, 255, 0.08);
   --pg-user-border-bright: rgba(255, 255, 255, 0.15);
+  --pg-user-gold: #d49d5e;
+  --pg-user-coral: #cb7c4d;
+  --pg-user-violet: #8376ff;
+  --pg-user-emerald: #41b995;
+  --pg-user-blue: #89b8ff;
+  --pg-line: rgba(255, 255, 255, 0.08);
+  --pg-line-strong: rgba(255, 255, 255, 0.15);
+  --pg-text-soft: rgba(246, 239, 228, 0.68);
+  --pg-focus-ring: var(--pg-user-gold);
 }
 
 body {

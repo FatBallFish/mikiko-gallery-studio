@@ -25,369 +25,312 @@
 
 | 标识 | 含义 |
 |---|---|
-| ✅ 已准出完成 | 已有 runtime 路由、服务、持久化和测试；关键异常路径覆盖；当前范围可交付。 |
-| 🟡 部分完成 | 主链路或 service 已有，但仍缺完整产品视图、后台 CRUD、动态配置、E2E 或生产增强。 |
-| 🟠 架子完成 | 主要是 schema、配置、默认定义或 stub 存在，业务闭环还没形成。 |
+| ✅ 已准出完成 | 已有 runtime 路由、服务、持久化和测试；关键异常路径覆盖；与 OpenAPI 契约一致。 |
+| 🟡 部分完成 | 主链路或 service 已有，但缺 endpoint、权限、动态配置、完整边界或产品级闭环。 |
+| 🟠 架子完成 | 主要是 schema、配置、默认定义或少量 primitive 存在，业务闭环还没形成。 |
 | ⚪ 未开始 | 没有可用 service/handler，或仅存在 PRD/技术方案描述。 |
 
 ## 3. 一句话结论
 
-本轮已经把原进度文档中 P0 后端主缺口大幅补齐：生产级认证保护、用户资料与偏好、API Key 生命周期、Canonical HMAC、Key quota/RPM、兑换码核销、Open API 查询能力、结果图片基础落库、Admin 独立 Token、审计 service、部署资产和安全启动校验都已进入可准出状态。
+当前后端已经完成“图片生成平台最难的内核部分”：任务编排、Worker 抢占、计费结算、Provider 适配、OpenAPI / OpenAI Compat 最小闭环。
 
-仍未完成的主要集中在：真实支付/订阅、完整后台运营 CRUD、Provider Model/Route/Error Policy 的 DB 驱动动态生效、公开广场/审核完整链路、OpenAPI 文档全量对齐、E2E/联调报告，以及更强的生产运维能力。
+但完整 PRD 产品化能力还差“账号生产化、API Key 管理、历史图库图片落库、后台管理、审计、兑换/支付、部署交付”等外围闭环。前端准备推倒重做后，后端下一步最值得优先补的是：API Key 管理、Open API 查询能力、生成结果图库落库。
 
-## 4. 本轮已补齐并可准出的后端能力
+## 4. 已准出完成的后端能力
 
-### 4.1 生产级认证、会话与用户资料
+### 4.1 任务状态机、Worker lease 与抢占闭环
 
-状态：✅ 已准出完成（当前后端范围）
+状态：✅ 已准出完成（核心后端内核）
 
-已完成：
-
-- 邮箱验证码改为随机 6 位码；生产禁用固定码/开发码/`issuer=test`。
-- 增加邮件发送配置与 SMTP/dev-log 支持。
-- Access token 校验用户存在、禁用状态与 `token_version`。
-- 增加 logout、修改密码、重置密码。
-- 增加 profile、preferences、avatar 更新接口。
-- 用户禁用后阻断登录、refresh、JWT 访问、API Key 鉴权和任务创建。
-
-主要代码：
-
-- `internal/service/auth/service.go`
-- `internal/repository/entstore/auth_store.go`
-- `internal/http/handlers/api.go`
-- `internal/http/handlers/api_extra.go`
-- `internal/app/run.go`
-
-### 4.2 API Key 生命周期、Canonical HMAC、quota/RPM
-
-状态：✅ 已准出完成（当前后端范围）
-
-已完成：
-
-- 用户侧 API Key 列表、创建、更新、重置 secret、软删除。
-- Secret 只在创建/重置返回；数据库保存 hash 与加密 signing material。
-- 原生 Open API 强制 `X-Timestamp` + canonical HMAC：`HMAC-SHA256(secret, method + path + timestamp + body_sha256)`。
-- OpenAI Compat 保留 Bearer `sk-*` 鉴权。
-- API Key total quota、daily quota 在 billing reserve 同一事务中原子校验。
-- API Key RPM 增加限流预检。
-- 普通用户不能通过 `group_code` 越权改变计费/权限分组。
-- 生产环境拒绝弱 API Key signing encryption key。
-
-主要代码：
-
-- `internal/domain/apikey/types.go`
-- `internal/service/apikey/service.go`
-- `internal/repository/entstore/apikey_store.go`
-- `internal/repository/entstore/billing_store.go`
-- `internal/http/router/api_keys_test.go`
-
-### 4.3 计费、预扣、结算与兑换码
-
-状态：✅ 已准出完成（不含支付/订阅）
-
-已完成：
-
-- 预估、预扣、结算、失败退款、部分成功按成功图数扣费。
-- 账务 5 位小数。
-- reserve/finalize/refund 幂等。
-- wrong-user protection。
-- API Key quota 使用已消费 + 活跃预扣视图，避免 finalize 双计。
-- 兑换码核销：不存在、未生效、过期、禁用、次数超限、幂等重放校验。
-- 兑换成功写入 `point_ledgers(redeem)`，关联 `redeem_code_id`。
-
-主要代码：
-
-- `internal/domain/billing/calculator.go`
-- `internal/service/billing/service.go`
-- `internal/service/billing/store.go`
-- `internal/repository/entstore/billing_store.go`
-- `internal/repository/entstore/redeem_store_test.go`
-
-### 4.4 图片任务、Worker 与结果图库基础
-
-状态：✅ 核心完成；🟡 图片级产品视图仍需增强
-
-已完成：
-
-- 任务创建、排队、Worker 抢占、lease、heartbeat、过期回收。
-- Provider 成功/失败后落终态。
-- 任务创建接入 `negative_prompt`、比例、seed、reference_strength、save policy 等字段。
-- sync 模式基础执行/等待策略。
-- Provider URL/b64 结果转存后端 storage。
-- `task_images` 保存 storage/object/mime/size/width/height/sha256 等真实图库字段。
-- 任务详情返回结果图对象。
-- 图片下载接口具备路由与归属校验基础。
-
-主要代码：
+代码位置：
 
 - `internal/service/imagetask/service.go`
 - `internal/repository/entstore/imagetask_store.go`
 - `internal/worker/runner.go`
 - `internal/domain/imagetask/types.go`
 
-仍需增强：
+已完成能力：
 
-- 下载接口的真实流式返回/签名 URL 需要按 storage driver 完整落地。
-- 图片筛选、分页、公开状态、审核状态仍不是完整产品视图。
-- `partial_failed` 已有状态建模，但业务展示与 OpenAPI 示例仍需继续完善。
+- 创建任务并进入排队态。
+- Worker 从 DB 抢占任务。
+- 支持 `lease_owner`、`lease_expires_at`。
+- 支持 heartbeat 续租。
+- 支持过期 lease reclaim。
+- stale worker 写入会被拒绝。
+- provider 成功/失败后落终态。
+- lease conflict / reclaim race 下避免重复结算和重复 provider 调用窗口。
 
-### 4.5 Open API / OpenAI Compat
+测试覆盖：
 
-状态：✅ 当前 P0 后端闭环完成；🟡 契约文档仍需补全
+- `internal/service/imagetask/service_test.go`
+- `internal/repository/entstore/imagetask_store_test.go`
+- `internal/worker/runner_test.go`
 
-已完成路由：
+对照 PRD / 技术方案：
+
+- 覆盖 PRD 5.2 图片任务状态机的核心后端执行模型。
+- 覆盖技术方案 T13 “任务编排、状态机与 Worker 集群”的核心内容。
+- 当前实际状态主要是 `queued/running/succeeded/failed/deleted`，PRD 中的 `pending_validation/rejected/partial_failed` 尚未完整显式落地。
+
+### 4.2 计费核心：预估、预扣、结算、失败退款、5 位小数
+
+状态：✅ 已准出完成（生成计费主链路）
+
+代码位置：
+
+- `internal/domain/billing/calculator.go`
+- `internal/service/billing/service.go`
+- `internal/repository/entstore/billing_store.go`
+- `internal/domain/billing/types.go`
+
+已完成能力：
+
+- 按抽象模型、质量档位、任务类型、输出数量、参考图数量、用户分组倍率计算预估积分。
+- 支持 `auto` 质量档位解析。
+- 支持 reserve / finalize / refund。
+- 失败不扣费。
+- 部分成功可按成功图片数计算实际点数。
+- 积分字段统一 5 位小数。
+- wrong-user protection。
+- finalize 幂等和并发场景测试。
+
+测试覆盖：
+
+- `internal/domain/billing/calculator_test.go`
+- `internal/service/billing/service_test.go`
+- `internal/repository/entstore/billing_store_test.go`
+
+对照 PRD / 技术方案：
+
+- 覆盖 PRD A8、A21、A22 的核心后端计算逻辑。
+- 覆盖技术方案 2.5.2 计费结算伪代码的核心路径。
+- 不包含充值、兑换码、套餐、积分过期、支付订单相关流水。
+
+### 4.3 Agent 侧余额与流水查询
+
+状态：✅ 已准出完成（当前账本查询范围）
+
+路由：
+
+- `GET /api/agent/billing/v1/balance`
+- `GET /api/agent/billing/v1/ledger`
+
+代码位置：
+
+- `internal/http/handlers/api.go`
+- `internal/http/router/tasks_api_test.go`
+
+已完成能力：
+
+- 用户 JWT 鉴权。
+- 查询可用积分、冻结积分、用户倍率、折算金额。
+- 查询积分流水分页。
+- 与 task service 共享同一个 billing backend，避免账本分裂。
+
+对照 PRD / 技术方案：
+
+- 覆盖 PRD A4 中余额与流水的基础后端能力。
+- 不包含套餐、即将过期积分、充值余额来源拆分、筛选条件等完整产品视图。
+
+### 4.4 Open Image API 三个 Task 4 P0 接口
+
+状态：✅ 已准出完成（Task 4 最小闭环）
+
+路由：
 
 - `POST /api/open/image/v1/reference-assets/uploads`
-- `POST /api/open/image/v1/reference-assets`
-- `GET /api/open/image/v1/reference-assets/{asset_id}`
 - `POST /api/open/image/v1/tasks`
-- `GET /api/open/image/v1/tasks/{task_id}`
-- `GET /api/open/image/v1/balance`
-- `GET /api/open/image/v1/capabilities`
 - `GET /api/open/image/v1/estimate`
+
+代码位置：
+
+- `internal/http/handlers/api.go`
+- `internal/http/router/router.go`
+- `internal/http/router/open_api_test.go`
+- `api/openapi/openapi.yaml`
+- `api/openapi/openapi_test.go`
+
+已完成能力：
+
+- AK/SK 最小鉴权。
+- OpenAPI 原生估价复用 billing。
+- OpenAPI 创建任务复用 task / billing 主链路。
+- OpenAPI 参考图上传采用 inline base64 local storage 模式。
+- 任务落 `api_key_id` / `source_channel=openapi`。
+- 参考图落 `api_key_id` / `upload_source=openapi`。
+- `Idempotency-Key` 创建任务重试可复用相同任务 ID。
+
+对照 PRD / 技术方案：
+
+- 技术方案中当前 P0 runtime 缺口已闭环。
+- 完整 Open API 中的任务查询、余额、capabilities、multipart 上传、资产查询、支付 webhook 仍未完成。
+
+### 4.5 OpenAI 兼容接口最小闭环
+
+状态：✅ 已准出完成（兼容接口最小可用）
+
+路由：
+
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 - `GET /v1/models`
 
+代码位置：
+
+- `internal/service/compat/service.go`
+- `internal/service/compat/service_test.go`
+- `internal/http/handlers/api.go`
+
 已完成能力：
 
-- 原生 Open API 与 OpenAI Compat 均进入统一 task/billing/provider 链路。
-- OpenAI Compat edit 的 multipart 图片进入参考资产/任务链路。
-- API Key quota/RPM 对 Open API 与 Compat 生效。
-- Canonical HMAC body/timestamp mismatch 测试覆盖。
+- `Authorization: Bearer sk-*` API Key 鉴权。
+- 兼容 generate / edit / models。
+- 支持 OpenAI / OpenRouter provider 路由。
+- OpenAI / OpenRouter 上游错误归一化。
+- OpenAI compat 请求进入现有 task / billing / provider 主链路。
 
-仍需增强：
+对照 PRD / 技术方案：
 
-- OpenAPI YAML 尚未完整覆盖本轮新增所有 Agent/Ops/Docs 路由和 schema 示例。
-- HMAC canonical 当前未包含 query string；若后续 query 参与敏感语义，建议纳入签名。
+- 覆盖 PRD A23、A24 的最小后端能力。
+- 还缺 `Idempotency-Key`、限流、Key 额度、完整 OpenAI SDK 兼容细节、edit 图片转存 reference_assets 等增强项。
 
-### 4.6 Admin auth、配置中心、审计与调用记录基础
+### 4.6 Provider 抽象层：OpenAI + OpenRouter
+
+状态：✅ 已准出完成（当前两个 provider）
+
+代码位置：
+
+- `internal/provider/contracts.go`
+- `internal/provider/openai/client.go`
+- `internal/provider/openrouter/client.go`
+- `internal/provider/errors.go`
+
+已完成能力：
+
+- OpenAI Images API generate / edit。
+- OpenRouter chat completions 多模态图片生成适配。
+- data URL / url 响应归一。
+- 上游错误分类。
+
+对照 PRD / 技术方案：
+
+- 覆盖技术方案 2.4.4 和 2.5.3 的核心 provider 转换策略。
+- provider 健康检查、成本字段、DB 驱动模型能力尚未完成。
+
+### 4.7 OpenAPI 契约基线与当前已接路由一致性
+
+状态：✅ 当前范围完成
+
+代码位置：
+
+- `api/openapi/openapi.yaml`
+- `api/openapi/openapi_test.go`
+
+已完成能力：
+
+- P0 Open Image 三路由已在 spec 和 runtime 对齐。
+- OpenAI compat security 已改为 `compatBearerAuth`。
+- native Open API security 使用 `X-Access-Key` + `X-Signature` 同时要求。
+- inline upload schema 已补齐。
+
+对照 PRD / 技术方案：
+
+- 开放接口契约基础完成。
+- 不是完整开发文档页面。
+
+## 5. 部分完成的后端能力
+
+### 5.1 用户认证与会话
 
 状态：🟡 部分完成
 
-已完成：
+代码位置：
 
-- 新增独立 admin login/logout。
-- Ops config API 切换到 admin token。
-- Admin JWT 生产环境要求显式强 secret，拒绝弱值和回退普通用户 token secret。
-- `requireAdmin` 校验 issuer、subject、role、email、可选 admin id/email。
-- 配置更新写审计基础。
-- 新增 audit service/store skeleton。
-- 新增 audit/call-records 查询 stub，确保路由与鉴权基础存在。
-
-主要代码：
-
-- `internal/http/handlers/api_extra.go`
-- `internal/service/audit/service.go`
-- `internal/repository/entstore/audit_store.go`
-- `internal/service/adminconfig/service.go`
-
-仍需增强：
-
-- Admin users 表驱动登录、session/refresh、密码 hash 与后台账号管理尚未完整产品化。
-- 用户管理、模型供应商、Provider Model、路由、错误策略、运营大盘等后台 CRUD 尚未补齐。
-- audit/call-records 当前是基础/stub 查询，还不是完整运营检索。
-
-### 4.7 部署资产与生产启动保护
-
-状态：✅ P0 部署骨架完成；🟡 集群运维仍需增强
+- `internal/service/auth/service.go`
+- `internal/repository/entstore/auth_store.go`
+- `internal/http/handlers/api.go`
 
 已完成：
 
-- `Dockerfile.api`
-- `Dockerfile.worker`
-- `.dockerignore`
-- `deployments/docker-compose/docker-compose.prod.yml`
-- `deployments/docker-compose/.env.example`
-- `deployments/nginx/pic-gallery.conf`
-- `docs/deploy/backend-runbook.md`
-- `CGO_ENABLED=0` API/Worker 构建通过。
-- Docker API/Worker 镜像构建通过。
-- 生产启动路径拒绝弱 API Key signing encryption key、弱 admin token secret、固定验证码/开发验证码。
+- 邮箱验证码登录/注册主流程。
+- 登录后签发 Access Token + Refresh Token。
+- Refresh Token hash 持久化。
+- refresh rotation。
+- refresh replay 检测并阻断 session family。
+- `users` / `refresh_sessions` 持久化。
 
-仍需增强：
+缺口：
 
-- Compose 冒烟、MinIO/S3 生产配置、Nginx TLS、监控告警和值班说明还需补齐。
-- local SQLite 在 CGO disabled 下显式不可用，生产应使用 Postgres。
+- 验证码目前固定为 `123456`，没有真实邮件发送。
+- 没有 60 秒重发冷却。
+- 没有连续错误 5 次冷却 15 分钟。
+- 没有 logout。
+- 没有修改密码、忘记密码。
+- `token_version` 没有形成完整吊销校验闭环。
+- 用户禁用后现有 token / API Key 的联动阻断不完整。
 
-## 5. PRD A1-A26 当前后端状态
+对照 PRD：
 
-| PRD 验收项 | 后端状态 | 当前说明 |
-|---|---:|---|
-| A1 邮箱注册/登录 | ✅ | 随机验证码、邮件发送接口、生产固定码熔断、登录注册主链路完成；Redis 分布式验证码/冷却仍可增强。 |
-| A2 双 Token 会话 | ✅ | Access/Refresh、刷新轮换、logout、token_version、禁用阻断已完成。 |
-| A3 用户资料 | ✅ | Profile、Preferences、Avatar 后端接口已完成。 |
-| A4 额度展示 | 🟡 | balance/ledger 可用；套餐、过期积分、充值来源拆分未做。 |
-| A5 兑换码 | 🟡 | 用户核销与账务关联完成；后台批量生成/导出/失效未做。 |
-| A6 API Key | ✅ | 生命周期、secret 一次展示、HMAC、quota、daily quota、RPM、禁用/删除完成；后台 Key 管理仍未做。 |
-| A7 图片生成成功 | ✅ | 文生图/图生图/参考图任务主链路、结果落 storage/task_images 完成。 |
-| A8 计费准确 | ✅ | 预估、预扣、结算、失败退款、5 位小数、并发幂等已覆盖。 |
-| A9 参数边界 | 🟡 | 余额、模型、数量、参考图、Key quota/RPM、禁用用户等核心边界完成；平台级/用户级 Redis 限流仍需增强。 |
-| A10 数量上限 | 🟡 | config resolver 校验已有；后台调低后 runtime 动态生效仍需完整化。 |
-| A11 同步/异步 | 🟡 | 异步 Worker 完成，sync 模式基础完成；HTTP 长轮询与超时体验仍需打磨。 |
-| A12 历史图库 | 🟡 | task list/detail/delete 与 task_images 基础完成；图片级下载、筛选分页、公开状态仍需增强。 |
-| A13 后台模型配置 | 🟠 | config-driven routing 有；Provider Model/Route/Error Policy CRUD 与 DB 动态生效未完成。 |
-| A14 后台积分策略 | 🟡 | 计费配置和 config tab 有；完整后台策略管理、审计查询和动态快照仍需增强。 |
-| A15 系统配置中心 | 🟡 | config-tabs GET/PUT + admin auth + 审计基础完成；运行时快照/回滚/发布仍需增强。 |
-| A16 用户管理 | ⚪ | 无完整 admin 用户管理 API。 |
-| A17 调用记录 | 🟠 | call-records stub 有；筛选、成本、耗时、大盘未完成。 |
-| A18 审计 | 🟡 | audit service/store 与部分写入基础完成；全量动作覆盖和查询筛选未完成。 |
-| A19 权限隔离 | ✅ | 用户资源隔离、admin token 隔离、API Key group_code 越权修复完成。 |
-| A20 容器化 | ✅ | API/Worker Dockerfile、prod compose、nginx 示例、runbook 完成。 |
-| A21 auto 分辨率解析 | ✅ | `auto` 和 size 到 1k/2k/4k 的后端解析已做。 |
-| A22 输出/参考图片数量识别 | ✅ | 计费和任务字段已区分输出图数与参考图数。 |
-| A23 OpenAI 兼容接口 | ✅ | generate/edit/models、Bearer sk、统一任务链路、Key quota/RPM 完成。 |
-| A24 多平台路由 | 🟡 | OpenAI/OpenRouter provider 支持已做；后台动态路由/健康检查/成本字段未完成。 |
-| A25 开发文档页面 | 🟡 | `/docs/openapi.*`、examples/errors 基础路由完成；正式文档门户和完整示例未完成。 |
-| A26 错误归一化 | 🟡 | `errs/httpx`、provider mapping 有；i18n、扣费建议、error policy 动态生效未完整。 |
+- A1 / A2 后端主干有了，但不能算完整准出。
 
-## 6. 技术方案 T01-T26 当前后端状态（忽略前端 UI）
+### 5.2 用户资料与偏好
 
-| 任务 | 后端状态 | 当前说明 |
-|---|---:|---|
-| T01 仓库骨架与工程约定 | ✅ | Go module、cmd、internal/pkg 结构已成型。 |
-| T02 本地开发依赖与容器编排 | ✅ | dev compose 与 prod compose 均已有基础。 |
-| T03 配置体系与环境变量模型 | ✅ | YAML + env override + 测试；生产关键 secret fail-closed。 |
-| T04 通用协议、错误码与响应封装 | 🟡 | `errs/httpx` 有；少量静态文件/legacy 路径仍可继续统一。 |
-| T05 OpenAPI 契约基线 | 🟡 | runtime 路由丰富，但 YAML 未完整覆盖本轮全部新增路由。 |
-| T06 可观测性底座 | 🟡 | metrics/health/logger/recovery 有；业务指标/大盘无。 |
-| T07 数据模型与 Ent Schema | 🟡 | 核心 schema 多数有；provider_models、orders、subscriptions 等缺。 |
-| T08 认证与会话域 | ✅ | 当前 P0 后端准出完成。 |
-| T09 计费、余额与用户分组倍率域 | ✅ | 不含支付/订阅/过期积分。 |
-| T10 参考图资产与对象存储域 | 🟡 | local upload/get/dedupe 有；S3/presigned/delete/expiry 仍需增强。 |
-| T11 模型能力矩阵、路由与配置域 | 🟡 | config resolver 有；DB/后台/AB/健康检查缺。 |
-| T12 Provider 抽象层 | ✅ | OpenAI + OpenRouter client 和错误映射有。 |
-| T13 任务编排、状态机与 Worker 集群 | ✅ | lease/heartbeat/reclaim/settlement 已覆盖。 |
-| T14 Open API 与 OpenAI Compat 接入层 | ✅ | P0 后端 runtime 完成；OpenAPI YAML 仍需补齐。 |
-| T15 管理后台后端能力 | 🟡 | admin auth/config/audit/call-record stub 有；用户/模型/运营 CRUD 缺。 |
-| T23 集群部署与发布资产 | ✅ | API/Worker Docker、prod compose、nginx、runbook 已补。 |
-| T24 测试资产与 Provider Mock | 🟡 | 单测和 mock provider 丰富；E2E/mock server 未系统化。 |
-| T25 联调与验收回归 | 🟠 | 自动化测试可用；无完整联调记录和验收报告。 |
-| T26 上线准备与交付文档 | 🟡 | backend runbook 有；容量评估、告警值班、回滚演练仍需补。 |
+状态：🟠 架子完成
 
-## 7. 目前仍未完成 / 后续待办清单
+已完成：
 
-### P0 后端准出后的必要收尾
+- `GET /api/agent/user/v1/profile` 可返回用户基础资料。
 
-1. **OpenAPI YAML 全量对齐**
-   - 补齐本轮新增 Agent/Open/Ops/Docs 路由、schema、security、错误码和示例。
-   - 增加更严格的 spec paths 与 runtime router 对齐测试。
+缺口：
 
-2. **图片下载与图库产品视图增强**
-   - 下载接口按 local/S3 storage driver 做真实流式返回或签名 URL。
-   - task/image 列表增加状态、任务类型、模型、时间范围筛选和分页。
-   - 历史删除、图片可见性、公开状态与审计联动继续补齐。
+- `PUT /api/agent/user/v1/profile` OpenAPI 声明了，但 handler 实际没有更新逻辑。
+- 没有头像上传。
+- 没有 bio / signature 更新。
+- 没有 theme / default_locale / preferences 更新和持久化 API。
 
-3. **配置运行时快照与动态生效**
-   - 建立 `runtimeconfig` snapshot/cache。
-   - Billing calculator、capabilities、model resolver、provider registry 从 runtime snapshot 读取。
-   - 配置保存后 1 分钟内影响新任务，历史任务快照不回算。
+对照 PRD：
 
-4. **审计覆盖率补齐**
-   - 登录、刷新、登出、改密、API Key、任务、计费、兑换码、后台配置、模型、用户管理写操作全覆盖。
-   - 审计查询支持 actor/action/target/result/time 分页筛选。
+- A3 基本未完成，只能算资料读取架子。
 
-### 后台能力待补
+### 5.3 API Key 鉴权服务
 
-5. **管理员账号体系产品化**
-   - 从环境变量 bootstrap 迁移到 `admin_users` 表驱动账号。
-   - 增加 admin password hash、session/refresh、禁用、last_login、token_version。
-   - 后台登录限流与审计。
+状态：🟡 部分完成
 
-6. **用户管理 API**
-   - 用户列表筛选。
-   - 禁用/启用、重置密码、设置用户组、RPM、并发。
-   - 管理员手动调账 endpoint 与原因必填。
+代码位置：
 
-7. **模型供应商 / Provider Model / Route / Error Policy CRUD**
-   - Provider 密钥加密/脱敏、健康检查、禁用跳过。
-   - Provider Model 维护任务类型、质量、比例、数量、参考图、mask、成本字段。
-   - Route 权重、AB、fallback order 校验。
-   - Error Policy 控制 retry/wrap/block/sanitize。
+- `internal/domain/apikey/types.go`
+- `internal/service/apikey/service.go`
+- `internal/repository/entstore/apikey_store.go`
 
-8. **调用记录与运营大盘**
-   - 基于 `image_tasks + task_images + point_ledgers` 聚合调用记录。
-   - 支持用户、模型、状态、时间、API Key 筛选。
-   - 成功率、失败率、耗时、成本/毛利大盘。
+已完成：
 
-### 商业化 / P1 能力待补
+- 创建 key 的 service primitive。
+- secret 只存 hash。
+- native `X-Access-Key` + `X-Signature` 校验。
+- compat Bearer sk 校验。
+- disabled / expired key 拒绝。
+- `last_used_at` 更新。
 
-9. **支付、订单、订阅套餐**
-   - 订单与支付 schema。
-   - 支付 webhook。
-   - 套餐权益、月额度、过期积分。
-   - 当前仍以兑换码和管理员调账作为 MVP 资金/额度闭环。
+缺口：
 
-10. **公开广场与审核完整链路**
-    - 用户公开申请。
-    - 管理员审核、下架。
-    - 公开图片列表/瀑布流 API。
-    - 内容安全与审核审计。
+- 没有用户侧 API Key 创建 / 列表 / 重置 / 删除 / 启停接口。
+- 没有管理员侧 Key 管理。
+- 没有 total quota / daily quota 实际扣减限制。
+- 没有 RPM 限速。
+- 没有完整 HMAC canonical signing。
+- 没有 `X-Timestamp` 漂移校验。
+- 没有 API Key 操作审计。
 
-11. **开发者文档门户**
-    - 正式 API 文档页面。
-    - curl / Python / TypeScript 可执行示例。
-    - 错误码、签名说明、SDK 兼容说明。
+对照 PRD：
 
-### 测试与交付待补
+- A6 的“可调用鉴权”部分完成；“密钥管理产品能力”还没完成。
 
-12. **E2E / 联调回归**
-    - Mock provider 冒烟：登录、兑换、创建任务、worker 产图、查询、下载。
-    - OpenAI SDK 兼容脚本。
-    - 后台配置保存后动态生效测试。
+### 5.4 Agent 图片任务 API
 
-13. **生产运维补强**
-    - `AUTH_ACCESS_TOKEN_SECRET` 启动期弱值熔断。
-    - Postgres/Redis/对象存储高可用说明。
-    - 告警阈值、值班手册、容量评估、回滚演练。
+状态：🟡 部分完成
 
-## 8. 当前可真实使用的后端接口清单
+路由：
 
-### 基础接口
-
-- `GET /`
-- `GET /healthz`
-- `GET /readyz`
-- `GET /metrics`
-
-### Agent/Auth
-
-- `POST /api/agent/auth/v1/email/send-code`
-- `POST /api/agent/auth/v1/login/email-code`
-- `POST /api/agent/auth/v1/session/refresh`
-- `POST /api/agent/auth/v1/logout`
-- `POST /api/agent/auth/v1/password/change`
-- `POST /api/agent/auth/v1/password/reset`
-
-### Agent/User
-
-- `GET /api/agent/user/v1/profile`
-- `PUT /api/agent/user/v1/profile`
-- `PUT /api/agent/user/v1/preferences`
-- `POST /api/agent/user/v1/avatar`
-
-### Agent/Billing
-
-- `GET /api/agent/billing/v1/balance`
-- `GET /api/agent/billing/v1/ledger`
-- `GET /api/agent/billing/v1/estimate`
-- `POST /api/agent/billing/v1/redeem-codes/redeem`
-
-### Agent/Developer
-
-- `GET /api/agent/developer/v1/api-keys`
-- `POST /api/agent/developer/v1/api-keys`
-- `PATCH /api/agent/developer/v1/api-keys/{key_id}`
-- `POST /api/agent/developer/v1/api-keys/{key_id}/reset-secret`
-- `DELETE /api/agent/developer/v1/api-keys/{key_id}`
-
-### Agent/Image
-
-- `GET /api/agent/image/v1/capabilities`
-- `POST /api/agent/image/v1/reference-assets`
-- `GET /api/agent/image/v1/reference-assets/{asset_id}`
-- `GET /api/agent/image/v1/images/{image_id}/download`
 - `POST /api/agent/image/v1/tasks`
 - `GET /api/agent/image/v1/tasks`
 - `GET /api/agent/image/v1/tasks/{task_id}`
@@ -395,45 +338,628 @@
 - `GET /api/agent/image/v1/history/tasks/{task_id}`
 - `DELETE /api/agent/image/v1/history/tasks/{task_id}`
 
-### Open Image API
+已完成：
+
+- 用户创建任务。
+- 幂等任务 ID。
+- 查询自己的任务。
+- 列表自己的任务。
+- 删除历史任务视角。
+- 任务创建会进行估价和 reserve。
+
+缺口：
+
+- `response_mode=sync` 目前没有 HTTP 同步等待结果闭环，创建任务返回 queued。
+- 任务详情没有完整结果图片对象、下载地址、预览 URL。
+- 缺少筛选、分页、时间范围。
+- `negative_prompt`、`aspect_ratio`、`reference_strength`、`seed`、`save_policy` 没有完整接入 handler。
+- `partial_failed` 状态未完整体现。
+
+对照 PRD：
+
+- A7 / A11 / A12 的主干有，但产品验收还不完整。
+
+### 5.5 参考图资产
+
+状态：🟡 部分完成
+
+代码位置：
+
+- `internal/service/assets/service.go`
+- `internal/repository/entstore/assets_store.go`
+- `internal/domain/assets/types.go`
+
+已完成：
+
+- Agent multipart 上传。
+- OpenAPI inline base64 上传。
+- 图片 decode 校验。
+- 大小限制。
+- 按 hash 去重。
+- local storage 保存。
+- Ent 持久化。
+- 用户资源隔离查询。
+
+缺口：
+
+- 没有删除接口。
+- 没有预签名 URL / S3 模式。
+- 没有上传 session complete。
+- 没有 preview / download。
+- 没有过期清理。
+- OpenAI compat edit 目前直接读 multipart 图片传 provider，没有按技术方案转存到 reference_assets。
+
+对照 PRD：
+
+- “图生图/参考图输入资产”后端基础完成；完整图床/资产生命周期未完成。
+
+### 5.6 模型能力矩阵与路由
+
+状态：🟡 部分完成
+
+代码位置：
+
+- `internal/domain/modelhub/resolver.go`
+- `internal/service/capabilities/service.go`
+- `internal/config/config.go`
+
+已完成：
+
+- 从 YAML config 读取 provider capabilities。
+- 按 abstract model、task type、quality、输出数量、参考图数量、mask 能力筛 provider。
+- 按 priority 排序。
+- capabilities endpoint 返回模型能力。
+
+缺口：
+
+- 没有 DB 驱动的 `provider_models` 表；技术方案里有 `provider_models`，当前 Ent 里没有对应 schema。
+- 没有后台供应商 CRUD。
+- 没有 AB weight 真实分流。
+- 没有 provider 健康状态动态跳过。
+- 没有成本字段和毛利核算。
+- 没有 model route 动态发布生效机制。
+
+对照 PRD：
+
+- A13 / A24 的运行时路由基础有了；后台模型配置不是完整闭环。
+
+### 5.7 系统配置中心
+
+状态：🟡 部分完成
+
+路由：
+
+- `GET /api/ops/admin/v1/config-tabs`
+- `PUT /api/ops/admin/v1/config-tabs/{tab_key}`
+
+代码位置：
+
+- `internal/service/adminconfig/service.go`
+- `internal/repository/entstore/config_store.go`
+- `internal/domain/adminconfig/types.go`
+
+已完成：
+
+- 默认配置 Tab 定义。
+- Ent 持久化 override。
+- version 乐观锁。
+- 配置项更新测试。
+
+缺口：
+
+- 当前 Ops API 使用普通用户 JWT，不是独立 admin auth。
+- 配置更新后没有完整“1 分钟内影响新任务”的 runtime reload / 缓存失效机制。
+- 没有配置变更审计。
+- 只覆盖配置 Tab，不覆盖用户管理、模型管理、运营管理。
+
+对照 PRD：
+
+- A15 有架子和部分可用逻辑，不能算完整准出。
+
+### 5.8 错误归一化
+
+状态：🟡 部分完成
+
+已完成：
+
+- 平台错误类型 `pkg/errs`。
+- provider upstream error classification。
+- compat error shape。
+- 部分 HTTP handler 标准响应。
+
+缺口：
+
+- 技术方案里的 `provider_error_policies` 只是 schema，没有 service / 后台配置生效。
+- 部分 handler 仍直接 `http.Error`，没有完全统一 error envelope。
+- 用户可见“是否扣费 / 下一步建议”还没有系统化文案。
+
+对照 PRD：
+
+- A26 部分完成。
+
+### 5.9 本地开发与部署
+
+状态：🟡 部分完成
+
+已完成：
+
+- `cmd/api`。
+- `cmd/worker`。
+- config loader。
+- local docker-compose 依赖：Postgres / Redis / MinIO / Mailpit。
+- metrics / health / ready。
+- storage topology validation。
+
+缺口：
+
+- 没有后端 Dockerfile。
+- 没有 worker Dockerfile。
+- 没有完整 nginx 配置。
+- 没有完整集群部署资产。
+
+对照 PRD：
+
+- A20 只完成本地开发依赖层，不是完整交付。
+
+## 6. 只有架子的后端能力
+
+### 6.1 审计日志
+
+状态：🟠 架子完成
+
+已有：
+
+- Ent schema：`audit_logs`
+- 代码位置：`internal/repository/ent/schema/auditlog.go`
+
+缺口：
+
+- 没有 audit service。
+- 没有登录、续期、API Key、任务、计费、后台配置写审计。
+- 没有审计查询。
+
+对照 PRD：
+
+- A18 未形成可用能力。
+
+### 6.2 管理员账号体系
+
+状态：🟠 架子完成
+
+已有：
+
+- Ent schema：`admin_users`
+- 代码位置：`internal/repository/ent/schema/adminuser.go`
+
+缺口：
+
+- 没有 admin login。
+- 没有 admin token / session。
+- Ops API 没有 admin role 权限。
+- 管理员与 C 端用户体系未隔离。
+
+对照 PRD：
+
+- A16 / A19 未完成。
+
+### 6.3 兑换码
+
+状态：🟠 架子完成
+
+已有：
+
+- Ent schema：`redeem_codes`
+- 代码位置：`internal/repository/ent/schema/redeemcode.go`
+
+缺口：
+
+- 没有 redeem service。
+- 没有核销 API。
+- 没有并发幂等核销。
+- 没有后台批量生成 / 导出 / 失效。
+
+对照 PRD：
+
+- A5 未完成。
+
+### 6.4 图片结果与图库公开状态
+
+状态：🟠 架子完成
+
+已有：
+
+- Ent schema：`image_results`
+- 字段包含 `visibility_status`、`review_reason`、`published_at`
+- 代码位置：`internal/repository/ent/schema/imageresult.go`
+
+缺口：
+
+- provider 返回结果没有落 `image_results` 形成图床记录。
+- 没有图片下载接口。
+- 没有公开申请 / 审核 service。
+- 没有公开图片列表。
+
+对照 PRD：
+
+- A12 的“任务历史”部分有，图片级图库没完成。
+- P1 图片广场 / 审核未开始。
+
+### 6.5 模型供应商和路由后台
+
+状态：🟠 架子完成
+
+已有：
+
+- Ent schema：`model_providers`、`model_routes`、`provider_error_policies`
+- config-driven resolver。
+
+缺口：
+
+- 没有 provider CRUD。
+- 没有 route CRUD。
+- 没有 error policy CRUD。
+- 没有 DB 配置驱动 provider client 初始化。
+- 没有 health check 和禁用生效。
+
+对照 PRD：
+
+- A13 / A17 只完成运行时 config 路由的一小部分。
+
+## 7. 基本未开始的后端能力
+
+### 7.1 支付 / 订单 / 订阅套餐
+
+状态：⚪ 未开始
+
+PRD 范围：
+
+- 充值。
+- 订阅套餐。
+- 支付订单状态闭环。
+
+当前情况：
+
+- 没有 order / payment / subscription schema。
+- 没有支付 webhook。
+- 没有订单状态机。
+- 没有套餐权益。
+
+对照 PRD：
+
+- 8.3 支付订单、订阅套餐未开始。
+
+### 7.2 用户管理后台
+
+状态：⚪ 未开始
+
+PRD 范围：
+
+- 禁用用户。
+- 重置密码。
+- 调整积分。
+- 设置并发 / RPM。
+- 配置用户分组倍率。
+
+当前情况：
+
+- 只有 `users`、`user_groups` schema 和 auth store 创建默认 basic 用户。
+- 没有管理 API。
+- `billing.AdminAdjust` service 有 primitive，但没有 admin endpoint 和审计。
+
+对照 PRD：
+
+- A16 未开始。
+
+### 7.3 API Key 管理页面对应后端 API
+
+状态：⚪ 未开始（鉴权 service 已有，管理 API 未开始）
+
+PRD 范围：
+
+- 创建、删除、重置、启用 / 禁用、额度上限、分组、过期时间、RPM。
+
+当前情况：
+
+- 鉴权 service / store 完成。
+- 没有用户侧 `/api/agent/.../api-keys` 管理接口。
+- 没有 reset / delete / quota / rpm 限制。
+
+对照 PRD：
+
+- A6 的管理能力未开始。
+
+### 7.4 限流与额度配额
+
+状态：⚪ 未开始
+
+PRD / 技术方案范围：
+
+- 用户、API Key、套餐、平台多层限流。
+- Redis `rate:user:{id}` / `rate:api_key:{id}`。
+
+当前情况：
+
+- Config / schema 中有 `rpm_limit` 字段。
+- 没有 Redis rate limiter。
+- 没有 quota enforcement。
+
+对照 PRD：
+
+- A9 中“限速”未完成。
+
+### 7.5 完整开发文档页面
+
+状态：⚪ 未开始
+
+当前情况：
+
+- OpenAPI spec 有。
+- 没有后端 docs 页面服务或静态文档页面。
+- 没有示例代码页面。
+
+对照 PRD：
+
+- A25 未完成；只有契约文件基础。
+
+### 7.6 Inner / Debug API
+
+状态：⚪ 未开始
+
+技术方案范围：
+
+- upload complete。
+- provider callback。
+- cluster heartbeat。
+- debug retry。
+- mock result。
+
+当前情况：
+
+- 无对应路由。
+- Worker heartbeat 是内部 Go service 调用，不是 Inner API。
+
+对照技术方案：
+
+- 2.4.6 未开始。
+
+### 7.7 后台调用记录、监控大盘、运营大盘
+
+状态：⚪ 未开始
+
+当前情况：
+
+- metrics endpoint 有。
+- `image_tasks` schema 可以作为调用记录来源。
+- 没有 Ops 查询 API。
+- 没有成功率、失败率、耗时、成本、毛利大盘。
+
+对照 PRD：
+
+- A17 未完成。
+
+### 7.8 多语言后端资源结构
+
+状态：⚪ 未开始
+
+当前情况：
+
+- 用户和错误文案多为硬编码英文或配置内文本。
+- 没有 i18n message catalog。
+
+对照 PRD：
+
+- Q7 后端支撑未开始。
+
+## 8. 当前后端可真实使用的接口清单
+
+### 8.1 基础接口
+
+- `GET /`
+- `GET /healthz`
+- `GET /readyz`
+- `GET /metrics`
+
+### 8.2 Agent/Auth
+
+- `POST /api/agent/auth/v1/email/send-code`
+- `POST /api/agent/auth/v1/login/email-code`
+- `POST /api/agent/auth/v1/session/refresh`
+
+注意：验证码固定为 `123456`，适合开发和测试，不是生产闭环。
+
+### 8.3 Agent/User
+
+- `GET /api/agent/user/v1/profile`
+
+注意：`PUT /api/agent/user/v1/profile` 在 OpenAPI 中有声明，但 runtime 尚未实现真实更新。
+
+### 8.4 Agent/Billing
+
+- `GET /api/agent/billing/v1/balance`
+- `GET /api/agent/billing/v1/ledger`
+- `GET /api/agent/billing/v1/estimate`
+
+### 8.5 Agent/Image
+
+- `GET /api/agent/image/v1/capabilities`
+- `POST /api/agent/image/v1/reference-assets`
+- `GET /api/agent/image/v1/reference-assets/{asset_id}`
+- `POST /api/agent/image/v1/tasks`
+- `GET /api/agent/image/v1/tasks`
+- `GET /api/agent/image/v1/tasks/{task_id}`
+- `GET /api/agent/image/v1/history/tasks`
+- `GET /api/agent/image/v1/history/tasks/{task_id}`
+- `DELETE /api/agent/image/v1/history/tasks/{task_id}`
+
+### 8.6 Open Image API
 
 - `POST /api/open/image/v1/reference-assets/uploads`
-- `POST /api/open/image/v1/reference-assets`
-- `GET /api/open/image/v1/reference-assets/{asset_id}`
 - `POST /api/open/image/v1/tasks`
-- `GET /api/open/image/v1/tasks/{task_id}`
-- `GET /api/open/image/v1/balance`
-- `GET /api/open/image/v1/capabilities`
 - `GET /api/open/image/v1/estimate`
 
-### OpenAI Compat
+### 8.7 OpenAI Compat
 
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 - `GET /v1/models`
 
-### Ops/Admin
+### 8.8 Ops/Admin
 
-- `POST /api/ops/admin/v1/auth/login`
-- `POST /api/ops/admin/v1/auth/logout`
 - `GET /api/ops/admin/v1/config-tabs`
 - `PUT /api/ops/admin/v1/config-tabs/{tab_key}`
-- `GET /api/ops/admin/v1/audit-logs`
-- `GET /api/ops/admin/v1/call-records`
 
-### Docs
+注意：当前不是独立 admin auth，而是复用普通用户 JWT。
 
-- `GET /docs/openapi.yaml`
-- `GET /docs/openapi.json`
-- `GET /docs/examples`
-- `GET /docs/errors`
+## 9. PRD 必须验收项 A1-A26 对照
 
-## 9. 结论
+| PRD 验收项 | 后端状态 | 说明 |
+|---|---:|---|
+| A1 邮箱注册/登录 | 🟡 部分完成 | 注册/登录主链路可用；验证码固定、无真实邮件、无冷却/错误次数限制。 |
+| A2 双 Token 会话 | 🟡 部分完成 | Access/Refresh、刷新轮换、重放阻断已做；logout、token_version 吊销、前端回跳不在后端闭环。 |
+| A3 用户资料 | 🟠 架子 | profile GET 有；编辑昵称/签名/头像/偏好未做。 |
+| A4 额度展示 | 🟡 部分完成 | balance/ledger 后端可用；套餐、过期积分、充值来源拆分未做。 |
+| A5 兑换码 | ⚪ 未开始 | 只有 schema，无核销 service/API。 |
+| A6 API Key | 🟡 部分完成 | 鉴权和 secret hash 完成；管理 CRUD、重置、删除、额度、RPM 未做。 |
+| A7 图片生成成功 | 🟡 部分完成 | 文生图/图生图/参考图任务主链路可跑；结果图床/历史图库展示/download 不完整。 |
+| A8 计费准确 | ✅ 核心完成 | 预估、预扣、结算、失败退款、5 位小数、并发幂等已覆盖；充值/兑换流水除外。 |
+| A9 参数边界 | 🟡 部分完成 | prompt、模型、数量、参考图、余额等部分有；限速、禁用用户、完整参数边界不足。 |
+| A10 数量上限 | 🟡 部分完成 | config 中 max count 会被 resolver 校验；后台调低后 runtime 生效闭环不足。 |
+| A11 同步/异步 | 🟡 部分完成 | 异步队列/查询有；Web 同步等待未做；Open API 任务查询未做。 |
+| A12 历史图库 | 🟡 部分完成 | task list/detail/delete 有；图片级记录、下载、筛选分页不完整。 |
+| A13 后台模型配置 | 🟠 架子 | config-driven routing 有；后台供应商/模型/AB/降级 CRUD 未做。 |
+| A14 后台积分策略 | 🟡 部分完成 | 计费配置和 config tab 有；动态生效、审计、完整后台管理不足。 |
+| A15 系统配置中心 | 🟡 部分完成 | config-tabs GET/PUT + version 有；admin auth、审计、动态应用不完整。 |
+| A16 用户管理 | ⚪ 未开始 | 无 admin 用户管理 API。 |
+| A17 调用记录 | ⚪ 未开始 | task 数据可作为基础；无后台筛选查询/成本/大盘。 |
+| A18 审计 | 🟠 架子 | audit_logs schema 有；无写入逻辑。 |
+| A19 权限隔离 | 🟡 部分完成 | 用户资源查询有 userID 隔离；admin/C 端账号体系未隔离。 |
+| A20 容器化 | 🟡 部分完成 | 本地依赖 compose 有；应用 Docker/集群/nginx 不完整。 |
+| A21 auto 分辨率解析 | ✅ 核心完成 | `auto` 和 size 到 1k/2k/4k 的后端解析已做。 |
+| A22 输出/参考图片数量识别 | ✅ 核心完成 | 计费和任务字段已区分输出图数与参考图数。 |
+| A23 OpenAI 兼容接口 | ✅ 最小完成 | generate/edit/models 可用，Bearer sk 鉴权。 |
+| A24 多平台路由 | ✅ 最小完成 | OpenAI/OpenRouter provider 支持已做；后台动态配置不足。 |
+| A25 开发文档页面 | 🟠 架子 | OpenAPI spec 有；页面和示例代码未做。 |
+| A26 错误归一化 | 🟡 部分完成 | platform error/provider mapping 有；错误文案/策略配置/全 handler 统一还不完整。 |
 
-截至 2026-05-21，本分支后端已达到“P0 后端准出”的主要目标：生成、计费、鉴权、Key 管理、Open API、Compat API、基础后台、部署骨架与安全启动保护均已形成可验证闭环。
+## 10. 技术方案任务 T01-T26 对照（忽略前端 UI）
 
-后续不应再把主要精力放在后端主链路补洞，而应转向三类收尾：
+| 任务 | 后端状态 | 说明 |
+|---|---:|---|
+| T01 仓库骨架与工程约定 | ✅ 完成 | Go module、cmd、internal/pkg 结构已成型。 |
+| T02 本地开发依赖与容器编排 | 🟡 部分 | 依赖 compose 有；应用容器和完整部署未做。 |
+| T03 配置体系与环境变量模型 | ✅ 基础完成 | YAML + env override + tests；动态 reload 未做。 |
+| T04 通用协议、错误码与响应封装 | 🟡 部分 | `errs/httpx` 有；部分 handler 仍未完全统一。 |
+| T05 OpenAPI 契约基线 | ✅ 当前范围完成 | 当前 runtime 接口有 spec 测试；完整 PRD API 未全覆盖。 |
+| T06 可观测性底座 | 🟡 部分 | metrics/health/logger/recovery 有；业务指标/大盘无。 |
+| T07 数据模型与 Ent Schema | 🟡 部分 | 核心 schema 多数有；provider_models、orders、subscriptions 等缺。 |
+| T08 认证与会话域 | 🟡 部分 | 主链路有，生产级验证码/冷却/password/logout 缺。 |
+| T09 计费、余额与用户分组倍率域 | ✅ 核心完成 | 不含充值/兑换/套餐/过期积分。 |
+| T10 参考图资产与对象存储域 | 🟡 部分 | local upload/get/dedupe 有；S3/presigned/delete/expiry 缺。 |
+| T11 模型能力矩阵、路由与配置域 | 🟡 部分 | config resolver 有；DB/后台/AB/健康检查缺。 |
+| T12 Provider 抽象层 | ✅ 当前完成 | OpenAI + OpenRouter client 和错误映射有。 |
+| T13 任务编排、状态机与 Worker 集群 | ✅ 核心完成 | lease/heartbeat/reclaim/settlement 已重点覆盖。 |
+| T14 Open API 与 OpenAI Compat 接入层 | ✅ 最小完成 | Task 4 P0 + compat 完成；完整 Open API 仍缺。 |
+| T15 管理后台后端能力 | 🟠 架子 | 只有 config-tabs；admin auth/users/model/tasks/dashboards 缺。 |
+| T23 集群部署与发布资产 | 🟠 架子 | 本地依赖有；发布资产不足。 |
+| T24 测试资产与 Provider Mock | 🟡 部分 | 单测/mock provider 丰富；E2E/mock server 未系统化。 |
+| T25 联调与验收回归 | 🟠 架子 | `go test ./...` 可用；无真实联调/E2E 验收。 |
+| T26 上线准备与交付文档 | ⚪ 未开始 | 无上线 runbook/交付文档/运维手册。 |
 
-1. OpenAPI/文档/E2E 交付资产对齐。
-2. 后台运营能力和动态配置产品化。
-3. 支付订阅、公开广场等商业化/P1 能力。
+## 11. 推荐下一阶段后端优先级
+
+### P0-1：API Key 管理闭环
+
+目标：让 Open API 从“测试用 service primitive”变成真实用户可管理能力。
+
+建议补齐：
+
+- 用户侧创建 / 列表 / 重置 / 禁用 / 删除 API Key。
+- Secret 只展示一次。
+- quota / daily quota / RPM 字段真正生效。
+- API Key 操作审计。
+
+### P0-2：完整 Open API 查询能力
+
+目标：让开发者链路从“能提交任务”变成“能查询完整结果”。
+
+建议补齐：
+
+- `GET /api/open/image/v1/tasks/{task_id}`
+- `GET /api/open/image/v1/balance`
+- `GET /api/open/image/v1/capabilities`
+- `GET /api/open/image/v1/reference-assets/{asset_id}`
+
+### P0-3：生成结果落库与历史图库后端
+
+目标：让生成结果真正成为图库资产，而不是只停留在 provider response / task results。
+
+建议补齐：
+
+- provider 结果写入 `image_results`。
+- 生成图片本地 / S3 存储。
+- 下载接口。
+- task detail 返回图片结果。
+- 删除只影响图库展示，不影响流水。
+
+### P0-4：生产级认证补齐
+
+建议补齐：
+
+- 真实邮件验证码发送。
+- 发送冷却。
+- 错误次数冷却。
+- logout。
+- token_version 吊销校验。
+- 用户 disabled 状态联动 JWT 和 API Key。
+
+### P0-5：管理员账号体系
+
+建议补齐：
+
+- admin login。
+- admin token。
+- Ops API 切换到 admin auth。
+- C 端用户和管理员彻底隔离。
+
+### P0-6：配置中心真实生效
+
+建议补齐：
+
+- 配置更新后影响新任务。
+- billing / routing / generation limits 从配置 store 或缓存读取。
+- 变更审计。
+- 配置回滚 / 版本冲突完善。
+
+### P0-7：兑换码与管理员调积分
+
+建议补齐：
+
+- redeem service + endpoint。
+- 并发核销幂等。
+- admin points adjustment endpoint。
+- 审计日志。
+
+### P0-8：模型接入后台
+
+建议补齐：
+
+- provider CRUD。
+- route CRUD。
+- AB weight。
+- fallback chain。
+- provider error policy 生效。
+- provider health check。
+
+### P0-9：部署交付
+
+建议补齐：
+
+- backend API Dockerfile。
+- worker Dockerfile。
+- nginx 配置。
+- 单机部署文档。
+- 集群部署约束文档。
+
+### P1：支付 / 订阅 / 公开广场
+
+支付和公开广场都不是当前后端主链路的阻塞项，可在生成、账户、Key、后台稳定后再做。

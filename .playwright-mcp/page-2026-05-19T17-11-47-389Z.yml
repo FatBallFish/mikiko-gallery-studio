@@ -1,0 +1,158 @@
+- main [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e7]:
+      - paragraph [ref=e8]: Pic Gallery
+      - strong [ref=e9]: Atelier
+    - navigation "用户端导航" [ref=e10]:
+      - link "REC 推荐" [ref=e11] [cursor=pointer]:
+        - /url: "#recommend"
+        - generic [ref=e12]: REC
+        - emphasis [ref=e13]: 推荐
+      - link "REF 参考生图" [ref=e14] [cursor=pointer]:
+        - /url: "#reference"
+        - generic [ref=e15]: REF
+        - emphasis [ref=e16]: 参考生图
+      - link "TXT 文生图" [ref=e17] [cursor=pointer]:
+        - /url: "#text"
+        - generic [ref=e18]: TXT
+        - emphasis [ref=e19]: 文生图
+      - link "HIS 历史" [ref=e20] [cursor=pointer]:
+        - /url: "#history"
+        - generic [ref=e21]: HIS
+        - emphasis [ref=e22]: 历史
+      - link "API 接入" [ref=e23] [cursor=pointer]:
+        - /url: "#access"
+        - generic [ref=e24]: API
+        - emphasis [ref=e25]: 接入
+    - generic [ref=e26]:
+      - link "文档" [ref=e27] [cursor=pointer]:
+        - /url: "#access"
+      - link "广场" [ref=e28] [cursor=pointer]:
+        - /url: "#history"
+      - link "支持" [ref=e29] [cursor=pointer]:
+        - /url: "#recommend"
+  - generic [ref=e30]:
+    - generic [ref=e31]:
+      - generic "活动快速入口" [ref=e32]:
+        - link "限时活动" [ref=e33] [cursor=pointer]:
+          - /url: "#recommend"
+          - emphasis [ref=e35]: 限时活动
+        - link "灵感模板" [ref=e36] [cursor=pointer]:
+          - /url: "#recommend"
+          - emphasis [ref=e38]: 灵感模板
+        - link "创作挑战" [ref=e39] [cursor=pointer]:
+          - /url: "#recommend"
+          - emphasis [ref=e41]: 创作挑战
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - generic [ref=e44]: 积分余额
+          - strong [ref=e45]: "182.50000"
+        - button "消息 3" [ref=e46] [cursor=pointer]:
+          - emphasis [ref=e48]: 消息
+          - strong [ref=e49]: "3"
+        - button "活动 2" [ref=e50] [cursor=pointer]:
+          - emphasis [ref=e52]: 活动
+          - strong [ref=e53]: "2"
+        - generic [ref=e54]:
+          - generic [ref=e55]: YH
+          - generic [ref=e56]:
+            - strong [ref=e57]: Yvonne
+            - generic [ref=e58]: 高级会员
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - generic [ref=e62]:
+            - generic [ref=e63]: 创作流程
+            - generic [ref=e64]:
+              - generic [ref=e65]:
+                - generic [ref=e66]: "01"
+                - strong [ref=e67]: 上传参考图
+              - generic [ref=e68]:
+                - generic [ref=e69]: "02"
+                - strong [ref=e70]: 补全描述
+              - generic [ref=e71]:
+                - generic [ref=e72]: "03"
+                - strong [ref=e73]: 确认参数
+              - generic [ref=e74]:
+                - generic [ref=e75]: "04"
+                - strong [ref=e76]: 同步看结果
+          - generic [ref=e77]:
+            - generic [ref=e79]:
+              - generic [ref=e80]: 参考素材
+              - strong [ref=e81]: 角色、场景、风格素材在这里合流，不再拆成多个分散小卡块。
+              - paragraph [ref=e82]: 优先处理素材上传、素材状态与继续添加动作，让用户在一个连续区域内完成图生图前置准备。
+              - generic [ref=e83]:
+                - button "上传图片" [ref=e84] [cursor=pointer]
+                - button "添加主体图" [ref=e85] [cursor=pointer]
+            - generic [ref=e86]:
+              - generic [ref=e87]: 角色图已锁定
+              - generic [ref=e88]: 风格图已锁定
+              - generic [ref=e89]: 支持继续添加参考图
+          - generic [ref=e90]:
+            - generic [ref=e91]:
+              - generic [ref=e92]: 正向描述
+              - generic [ref=e93]: 限制词
+            - textbox [ref=e94]: 设计一个带金属编织感的未来艺廊大厅，主色为深蓝、琥珀与孔雀绿，空间中悬浮半透明雕塑与镜面反射，保留参考图中的主体姿态与材质层次，整体氛围偏高级时尚展陈。
+          - generic [ref=e95]:
+            - generic [ref=e96]: 生成参数
+            - generic [ref=e97]:
+              - generic [ref=e98]:
+                - generic [ref=e99]: 模型分组
+                - strong [ref=e100]: Plus Image
+              - generic [ref=e101]:
+                - generic [ref=e102]: 分辨率
+                - strong [ref=e103]: auto 解析为 2K
+              - generic [ref=e104]:
+                - generic [ref=e105]: 宽高比
+                - strong [ref=e106]: 16:9 影院屏
+              - generic [ref=e107]:
+                - generic [ref=e108]: 图片数量
+                - strong [ref=e109]: 2 张
+          - generic [ref=e110]:
+            - generic [ref=e111]:
+              - text: 费用预估
+              - strong [ref=e112]: 12.50000 积分
+            - paragraph [ref=e113]: Plus × auto > 2K × 图生图 × 2 张 × 用户倍率 1.00
+        - generic [ref=e114]:
+          - generic [ref=e115]:
+            - generic [ref=e116]:
+              - generic [ref=e117]: Live Preview
+              - strong [ref=e118]: 结果画布、任务状态与操作入口收在一个主视区。
+            - generic [ref=e119]:
+              - generic [ref=e120]: OpenAI 主路由
+              - generic [ref=e121]: 同步回显
+              - generic [ref=e122]: 队列 02
+          - generic [ref=e125]:
+            - generic [ref=e126]: 结果预览区
+            - strong [ref=e127]: 大画布仍然是主角，局部状态只做贴边反馈，不拆独立公告块。
+            - paragraph [ref=e128]: 生成前显示构图占位与安全边界；生成中展示阶段进度；完成后支持放大、下载、公开申请与再次编辑。
+            - generic [ref=e129]:
+              - button "开始生成" [ref=e130] [cursor=pointer]
+              - button "再次编辑" [ref=e131] [cursor=pointer]
+          - generic [ref=e132]:
+            - generic [ref=e133]:
+              - text: 参考图状态
+              - strong [ref=e134]: 角色图 1 / 风格图 1
+              - generic [ref=e135]: 素材校验完成，可继续补图。
+            - generic [ref=e136]:
+              - text: 积分变动
+              - strong [ref=e137]: 预扣 12.50000
+              - generic [ref=e138]: 任务失败自动返还，部分成功按成功张数结算。
+            - generic [ref=e139]:
+              - text: 任务回显
+              - strong [ref=e140]: 排队中 > 处理中 > 成功
+              - generic [ref=e141]: 失败时会显示重试原因与 provider 路由信息。
+      - generic [ref=e142]:
+        - generic [ref=e143]:
+          - generic [ref=e144]: 最近结果
+          - strong [ref=e145]: 历史结果仅作为延续创作的素材条，不抢当前工作台焦点。
+        - generic [ref=e146]:
+          - article [ref=e147]:
+            - strong [ref=e148]: 镀铬花园
+            - generic [ref=e149]: 参考图生成 / Plus / 2K
+          - article [ref=e150]:
+            - strong [ref=e151]: 静电肖像
+            - generic [ref=e152]: 局部编辑 / 蒙版 / 1 张
+          - article [ref=e153]:
+            - strong [ref=e154]: 矿石剧院
+            - generic [ref=e155]: 风格迁移 / 4K / 已公开

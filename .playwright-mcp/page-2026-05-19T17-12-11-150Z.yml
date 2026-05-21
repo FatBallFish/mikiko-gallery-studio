@@ -1,0 +1,145 @@
+- main [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - paragraph [ref=e6]: Pic Gallery Ops
+      - strong [ref=e7]: Console
+    - navigation "后台导航" [ref=e8]:
+      - link "总览" [ref=e9] [cursor=pointer]:
+        - /url: "#overview"
+      - link "配置中心" [ref=e10] [cursor=pointer]:
+        - /url: "#config"
+      - link "模型路由" [ref=e11] [cursor=pointer]:
+        - /url: "#routing"
+      - link "价格策略" [ref=e12] [cursor=pointer]:
+        - /url: "#pricing"
+      - link "审核队列" [ref=e13] [cursor=pointer]:
+        - /url: "#review"
+      - link "审计日志" [ref=e14] [cursor=pointer]:
+        - /url: "#audit"
+    - generic [ref=e15]:
+      - generic [ref=e16]: 变更即时可回滚
+      - generic [ref=e17]: 反馈优先展示
+      - generic [ref=e18]: 集群模式已纳入设计
+  - generic [ref=e19]:
+    - generic [ref=e20]:
+      - generic "告警通知总览" [ref=e21]:
+        - button "高优告警 2" [ref=e22] [cursor=pointer]:
+          - emphasis [ref=e24]: 高优告警
+          - strong [ref=e25]: "2"
+        - button "待审核 12" [ref=e26] [cursor=pointer]:
+          - emphasis [ref=e28]: 待审核
+          - strong [ref=e29]: "12"
+        - button "策略待确认 4" [ref=e30] [cursor=pointer]:
+          - emphasis [ref=e32]: 策略待确认
+          - strong [ref=e33]: "4"
+      - generic [ref=e34]:
+        - emphasis [ref=e37]: OpenAI 主 / OpenRouter 备
+        - generic [ref=e38]:
+          - generic [ref=e39]: AL
+          - generic [ref=e40]:
+            - strong [ref=e41]: Admin Liu
+            - generic [ref=e42]: 超级管理员
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - text: 环境
+        - strong [ref=e45]: Production
+      - generic [ref=e46]:
+        - text: 主 Provider
+        - strong [ref=e47]: OpenAI
+      - generic [ref=e48]:
+        - text: 兜底 Provider
+        - strong [ref=e49]: OpenRouter
+      - generic [ref=e50]:
+        - text: API 集群
+        - strong [ref=e51]: 3 节点健康
+      - generic [ref=e52]:
+        - text: 公开图待审
+        - strong [ref=e53]: "12"
+    - generic [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - generic [ref=e59]: 生成限制
+            - generic [ref=e60]: 价格策略
+            - generic [ref=e61]: 模型路由
+            - generic [ref=e62]: 认证安全
+            - generic [ref=e63]: 开发文档
+          - generic [ref=e64]:
+            - generic [ref=e65]: 草稿 2
+            - generic [ref=e66]: 可回滚
+            - generic [ref=e67]: 预发布中
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - text: 配置主表
+            - strong [ref=e70]: 把高频配置收进同一张连续主表，让操作、校对和发布反馈都沿同一条阅读路径发生。
+          - paragraph [ref=e71]: 主表负责承载配置本身；发布、冲突、回滚和变更摘要统一压到右侧窄反馈区，避免出现多块并列大卡片抢视线。
+        - generic [ref=e72]:
+          - generic [ref=e73]: 分类
+          - generic [ref=e74]: 配置项
+          - generic [ref=e75]: 当前值
+          - generic [ref=e76]: 状态
+        - generic [ref=e77]:
+          - strong [ref=e78]: 生成限制
+          - code [ref=e79]: generation_limits.max_image_count
+          - generic [ref=e80]: "5"
+          - emphasis [ref=e81]: 已生效
+        - generic [ref=e82]:
+          - strong [ref=e83]: 积分价格
+          - code [ref=e84]: billing_pricing.cny_per_point
+          - generic [ref=e85]: "0.31250"
+          - emphasis [ref=e86]: 已生效
+        - generic [ref=e87]:
+          - strong [ref=e88]: 模型价格
+          - code [ref=e89]: billing_pricing.plus.2k
+          - generic [ref=e90]: "8.00000"
+          - emphasis [ref=e91]: 待发布
+        - generic [ref=e92]:
+          - strong [ref=e93]: 用户分组
+          - code [ref=e94]: user_groups.default_multiplier
+          - generic [ref=e95]: "1.00000"
+          - emphasis [ref=e96]: 已生效
+        - generic [ref=e97]:
+          - strong [ref=e98]: 认证安全
+          - code [ref=e99]: auth_security.access_token_ttl_sec
+          - generic [ref=e100]: "600"
+          - emphasis [ref=e101]: 已生效
+        - generic [ref=e102]:
+          - strong [ref=e103]: 开发文档
+          - code [ref=e104]: docs.portal_enabled
+          - generic [ref=e105]: "true"
+          - emphasis [ref=e106]: 已生效
+        - generic [ref=e107]:
+          - generic [ref=e108]:
+            - text: 变更摘要
+            - strong [ref=e109]: 当前提交涉及 2 个价格项、1 个限额项
+          - generic [ref=e110]:
+            - text: 影响范围
+            - strong [ref=e111]: 用户端生图计费、后台审核上限与开发文档展示
+          - generic [ref=e112]:
+            - text: 发布策略
+            - strong [ref=e113]: 先预发布，再人工确认后全量生效
+      - complementary [ref=e114]:
+        - generic [ref=e115]:
+          - text: 发布反馈
+          - generic [ref=e116]:
+            - generic [ref=e117]:
+              - strong [ref=e118]: 保存中
+              - text: 2 项配置已进入预发布态
+            - generic [ref=e119]:
+              - strong [ref=e120]: 可回滚
+              - text: 最近一次发布版本 v2026.05.19.3
+            - generic [ref=e121]:
+              - strong [ref=e122]: 冲突提醒
+              - text: 1 项路由配置与价格策略修改同窗发生
+        - generic [ref=e123]:
+          - text: 最近变更
+          - generic [ref=e124]:
+            - generic [ref=e125]:
+              - strong [ref=e126]: 10:24
+              - generic [ref=e127]: 更新 max_image_count：3 > 5
+            - generic [ref=e128]:
+              - strong [ref=e129]: 10:11
+              - text: 确认积分精度支持到小数点后五位
+            - generic [ref=e130]:
+              - strong [ref=e131]: 09:52
+              - text: 发布 OpenAI Compat generate/edit 路由表

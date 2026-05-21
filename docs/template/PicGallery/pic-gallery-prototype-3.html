@@ -1,0 +1,132 @@
+
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pic Gallery Prototype Launcher</title>
+  <style>
+    :root {
+      --bg: oklch(12% 0.015 260);
+      --surface: oklch(16% 0.02 260);
+      --fg: oklch(95% 0.01 80);
+      --muted: oklch(90% 0.01 80 / 0.6);
+      --border: oklch(100% 0 0 / 0.1);
+      --accent: oklch(70% 0.12 75);
+      --font-display: 'Cormorant Garamond', serif;
+      --font-body: 'Manrope', sans-serif;
+    }
+    body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); padding: 80px 40px; }
+    .container { max-width: 1200px; margin-inline: auto; }
+    header { margin-bottom: 80px; text-align: center; }
+    h1 { font-family: var(--font-display); font-size: 64px; margin: 0 0 16px; }
+    p { color: var(--muted); font-size: 18px; max-width: 60ch; margin-inline: auto; }
+    
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 32px; }
+    .screen-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; text-decoration: none; color: inherit; transition: all 0.3s; display: flex; flex-direction: column; }
+    .screen-card:hover { transform: translateY(-8px); border-color: var(--accent); box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+    .screen-preview { aspect-ratio: 16/10; background: oklch(10% 0 0); display: grid; place-items: center; border-bottom: 1px solid var(--border); overflow: hidden; }
+    .screen-preview img { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
+    .screen-info { padding: 24px; flex: 1; }
+    .screen-tag { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .screen-name { font-family: var(--font-display); font-size: 28px; margin-bottom: 8px; }
+    .screen-desc { font-size: 14px; color: var(--muted); line-height: 1.5; }
+    
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; background: var(--accent); color: var(--bg); font-weight: 700; font-size: 12px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Pic Gallery</h1>
+      <p>AI 图片生成平台完整原型 · 响应式 Web 高保真设计 (修复版)</p>
+    </header>
+
+    <div class="grid">
+      <a href="home.html" class="screen-card">
+        <div class="screen-preview">
+          <img src="mpdhezm8-image.png" alt="Workflow Home">
+        </div>
+        <div class="screen-info">
+          <div class="screen-tag">Portal</div>
+          <div class="screen-name">工作流首页 (Home)</div>
+          <div class="screen-desc">轮播图与灵感瀑布流推荐，品牌核心入口。</div>
+          <div class="badge">Luminous Vault</div>
+        </div>
+      </a>
+
+      <a href="login.html" class="screen-card">
+        <div class="screen-preview">
+          <div style="color: var(--muted); font-size: 14px;">Login Form Preview</div>
+        </div>
+        <div class="screen-info">
+          <div class="screen-tag">Auth</div>
+          <div class="screen-name">登录页面 (Login)</div>
+          <div class="screen-desc">账号密码、验证码、快捷登录。</div>
+          <div class="badge">Luminous Vault</div>
+        </div>
+      </a>
+
+      <a href="app.html" class="screen-card">
+        <div class="screen-preview">
+          <img src="mpdhfj5l-image.png" alt="Workspace">
+        </div>
+        <div class="screen-info">
+          <div class="screen-tag">Core App</div>
+          <div class="screen-name">生成工作台 (Workspace)</div>
+          <div class="screen-desc">沉浸式创作，参数调优，实时预览。</div>
+          <div class="badge">Luminous Vault</div>
+        </div>
+      </a>
+
+      <a href="gallery.html" class="screen-card">
+        <div class="screen-preview">
+          <img src="mpdhezm8-image.png" alt="Gallery">
+        </div>
+        <div class="screen-info">
+          <div class="screen-tag">Assets</div>
+          <div class="screen-name">历史资产 (Gallery)</div>
+          <div class="screen-desc">个人资产流式展示。</div>
+          <div class="badge">Luminous Vault</div>
+        </div>
+      </a>
+
+      <a href="api-keys.html" class="screen-card">
+        <div class="screen-preview">
+          <div style="color: var(--muted); font-size: 14px; font-family: monospace;">$ curl api.picgallery.ai...</div>
+        </div>
+        <div class="screen-info">
+          <div class="screen-tag">Developer</div>
+          <div class="screen-name">API 密钥管理 (Claw)</div>
+          <div class="screen-desc">开发者凭证与 RPM 限速。</div>
+          <div class="badge">Luminous Vault</div>
+        </div>
+      </a>
+
+      <a href="profile.html" class="screen-card">
+        <div class="screen-preview">
+          <div style="font-family: var(--font-display); font-size: 48px; color: var(--accent);">◈ 25.00</div>
+        </div>
+        <div class="screen-info">
+          <div class="screen-tag">Account</div>
+          <div class="screen-name">个人中心 (Profile)</div>
+          <div class="screen-desc">余额、套餐与流水记录。</div>
+          <div class="badge">Luminous Vault</div>
+        </div>
+      </a>
+
+      <a href="admin.html" class="screen-card">
+        <div class="screen-preview" style="background: oklch(96% 0.005 230);">
+          <div style="color: oklch(55% 0.02 240); font-size: 14px;">Admin Dashboard Preview</div>
+        </div>
+        <div class="screen-info">
+          <div class="screen-tag">Admin</div>
+          <div class="screen-name">管理后台 (Admin)</div>
+          <div class="screen-desc">运营管理、用户审计。</div>
+          <div class="badge" style="background: oklch(55% 0.12 250); color: oklch(100% 0 0);">Soft Grid Ops</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</body>
+</html>
