@@ -124,6 +124,10 @@ func firstAPIKeyService(values []*apikeyservice.Service) *apikeyservice.Service 
 }
 
 func (a *API) HandleSendEmailCode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
 	var req struct {
 		Email string `json:"email"`
 		Scene string `json:"scene"`
@@ -144,6 +148,10 @@ func (a *API) HandleSendEmailCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleEmailCodeLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
 	var req struct {
 		Email string `json:"email"`
 		Code  string `json:"code"`
@@ -166,6 +174,10 @@ func (a *API) HandleEmailCodeLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
 	cookie, err := r.Cookie(a.cfg.Auth.RefreshCookieName)
 	if err != nil {
 		httpx.WriteError(w, r, errs.New(http.StatusUnauthorized, errs.CodeAuthRefreshExpired, "refresh token expired"))
@@ -395,6 +407,10 @@ func (a *API) HandleLedger(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
 	user, appErr := a.requireUser(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
@@ -465,6 +481,10 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
 	if _, appErr := a.requireUser(r); appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
@@ -770,6 +790,10 @@ func (a *API) HandleRedeemCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
 	user, appErr := a.requireUser(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
@@ -797,13 +821,17 @@ func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
-	user, appErr := a.requireUser(r)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
 	assetID := strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/reference-assets/")
 	if strings.HasSuffix(assetID, "/download") {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w, r)
+			return
+		}
+		user, appErr := a.requireUser(r)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
 		assetID = strings.TrimSuffix(assetID, "/download")
 		asset, content, err := a.assets.Download(user.ID, assetID)
 		if err != nil {
@@ -818,6 +846,11 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		user, appErr := a.requireUser(r)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
 		asset, err := a.assets.Get(user.ID, assetID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
@@ -825,6 +858,11 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, asset)
 	case http.MethodDelete:
+		user, appErr := a.requireUser(r)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
 		if err := a.assets.Delete(user.ID, assetID); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
@@ -951,13 +989,13 @@ func (a *API) HandleAgentTasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		a.handleAgentTaskList(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, r)
 	}
 }
 
 func (a *API) HandleAgentTaskDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, r)
 		return
 	}
 	user, appErr := a.requireUser(r)
@@ -979,11 +1017,17 @@ func (a *API) HandleAgentHistoryTasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		a.handleAgentTaskList(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, r)
 	}
 }
 
 func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodDelete:
+	default:
+		writeMethodNotAllowed(w, r)
+		return
+	}
 	user, appErr := a.requireUser(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
@@ -1005,7 +1049,7 @@ func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Reques
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, r)
 	}
 }
 
@@ -1207,6 +1251,10 @@ func (a *API) HandleDocsErrors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.writeCompatError(w, methodNotAllowedError())
+		return
+	}
 	identity, appErr := a.requireCompatAPIKey(r)
 	if appErr != nil {
 		a.writeCompatError(w, appErr)
@@ -1272,6 +1320,10 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 }
 
 func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.writeCompatError(w, methodNotAllowedError())
+		return
+	}
 	identity, appErr := a.requireCompatAPIKey(r)
 	if appErr != nil {
 		a.writeCompatError(w, appErr)
@@ -1358,6 +1410,10 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleOpenAIModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		a.writeCompatError(w, methodNotAllowedError())
+		return
+	}
 	if _, appErr := a.requireCompatAPIKey(r); appErr != nil {
 		a.writeCompatError(w, appErr)
 		return
@@ -1757,6 +1813,14 @@ func normalizeAppError(err error) *errs.Error {
 		return appErr
 	}
 	return errs.Internal("internal server error")
+}
+
+func methodNotAllowedError() *errs.Error {
+	return errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed")
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteError(w, r, methodNotAllowedError())
 }
 
 func (a *API) setRefreshCookie(w http.ResponseWriter, session domainauth.Session) {
