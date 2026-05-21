@@ -8,3 +8,6 @@ coverage
 tmp
 .vite
 *.log
+.coding-context.json
+.workflow/
+.review/

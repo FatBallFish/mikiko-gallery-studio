@@ -1,0 +1,43 @@
+{
+  "_comment": "Codex hooks. Project must be trusted in Codex before this file is loaded.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; exec \"$ROOT/.hook-scripts/session-fix-hooks-path.sh\"'",
+            "statusMessage": "checking git hooks path"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; exec \"$ROOT/.hook-scripts/danger-bash-block.sh\"'",
+            "statusMessage": "checking dangerous shell and workflow gates",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; exec \"$ROOT/.hook-scripts/auto-format.sh\"'",
+            "statusMessage": "auto-format changed source files",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
+
