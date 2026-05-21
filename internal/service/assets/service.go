@@ -77,7 +77,10 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 		}
 	}
 	if assetID, ok := s.assetsByHash[key]; ok {
-		return s.assetsByID[assetID].Asset, nil
+		if stored, exists := s.assetsByID[assetID]; exists && stored.Asset.Status != "deleted" {
+			return stored.Asset, nil
+		}
+		delete(s.assetsByHash, key)
 	}
 
 	config, _, err := image.DecodeConfig(bytes.NewReader(content))
@@ -127,13 +130,60 @@ func (s *Service) Get(userID int64, assetID string) (domainassets.ReferenceAsset
 			}
 			return domainassets.ReferenceAsset{}, err
 		}
+		if asset.Status == "deleted" {
+			return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "reference asset not found")
+		}
 		return asset, nil
 	}
 	stored, ok := s.assetsByID[assetID]
-	if !ok || stored.UserID != userID {
+	if !ok || stored.UserID != userID || stored.Asset.Status == "deleted" {
 		return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "reference asset not found")
 	}
 	return stored.Asset, nil
+}
+
+func (s *Service) Delete(userID int64, assetID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store != nil {
+		asset, err := s.store.GetByUserAndID(context.Background(), userID, assetID)
+		if err != nil {
+			if err == repoerr.ErrNotFound {
+				return errs.New(404, errs.CodeNotFound, "reference asset not found")
+			}
+			return err
+		}
+		if err := s.store.DeleteByUserAndID(context.Background(), userID, assetID); err != nil {
+			if err == repoerr.ErrNotFound {
+				return errs.New(404, errs.CodeNotFound, "reference asset not found")
+			}
+			return err
+		}
+		delete(s.assetsByID, assetID)
+		delete(s.assetsByHash, fmt.Sprintf("%d:%s", userID, asset.SHA256))
+		return nil
+	}
+	stored, ok := s.assetsByID[assetID]
+	if !ok || stored.UserID != userID {
+		return errs.New(404, errs.CodeNotFound, "reference asset not found")
+	}
+	stored.Asset.Status = "deleted"
+	s.assetsByID[assetID] = stored
+	delete(s.assetsByHash, fmt.Sprintf("%d:%s", userID, stored.Asset.SHA256))
+	return nil
+}
+
+func (s *Service) Download(userID int64, assetID string) (domainassets.ReferenceAsset, []byte, error) {
+	asset, err := s.Get(userID, assetID)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, nil, err
+	}
+	fullPath := filepath.Join(s.storageRoot, filepath.Base(asset.ObjectKey))
+	content, readErr := os.ReadFile(fullPath)
+	if readErr != nil {
+		return domainassets.ReferenceAsset{}, nil, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
+	}
+	return asset, content, nil
 }
 
 func (s *Service) LoadInput(userID int64, assetID string) (provider.ImageInput, error) {

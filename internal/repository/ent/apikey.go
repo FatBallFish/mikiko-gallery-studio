@@ -29,8 +29,8 @@ type APIKey struct {
 	AccessKey string `json:"access_key,omitempty"`
 	// SecretHash holds the value of the "secret_hash" field.
 	SecretHash string `json:"secret_hash,omitempty"`
-	// SigningSecret holds the value of the "signing_secret" field.
-	SigningSecret *string `json:"signing_secret,omitempty"`
+	// SecretCiphertext holds the value of the "secret_ciphertext" field.
+	SecretCiphertext *string `json:"secret_ciphertext,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Status holds the value of the "status" field.
@@ -41,8 +41,18 @@ type APIKey struct {
 	TotalQuotaPoints *string `json:"total_quota_points,omitempty"`
 	// DailyQuotaPoints holds the value of the "daily_quota_points" field.
 	DailyQuotaPoints *string `json:"daily_quota_points,omitempty"`
+	// TotalQuotaUsedPoints holds the value of the "total_quota_used_points" field.
+	TotalQuotaUsedPoints string `json:"total_quota_used_points,omitempty"`
+	// DailyQuotaUsedPoints holds the value of the "daily_quota_used_points" field.
+	DailyQuotaUsedPoints string `json:"daily_quota_used_points,omitempty"`
+	// QuotaUsageDay holds the value of the "quota_usage_day" field.
+	QuotaUsageDay *string `json:"quota_usage_day,omitempty"`
 	// RpmLimit holds the value of the "rpm_limit" field.
 	RpmLimit *int `json:"rpm_limit,omitempty"`
+	// RpmWindowStartedAt holds the value of the "rpm_window_started_at" field.
+	RpmWindowStartedAt *time.Time `json:"rpm_window_started_at,omitempty"`
+	// RpmWindowCount holds the value of the "rpm_window_count" field.
+	RpmWindowCount int `json:"rpm_window_count,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// LastUsedAt holds the value of the "last_used_at" field.
@@ -55,11 +65,11 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case apikey.FieldID, apikey.FieldUserID, apikey.FieldRpmLimit:
+		case apikey.FieldID, apikey.FieldUserID, apikey.FieldRpmLimit, apikey.FieldRpmWindowCount:
 			values[i] = new(sql.NullInt64)
-		case apikey.FieldAccessKey, apikey.FieldSecretHash, apikey.FieldSigningSecret, apikey.FieldName, apikey.FieldStatus, apikey.FieldGroupCode, apikey.FieldTotalQuotaPoints, apikey.FieldDailyQuotaPoints:
+		case apikey.FieldAccessKey, apikey.FieldSecretHash, apikey.FieldSecretCiphertext, apikey.FieldName, apikey.FieldStatus, apikey.FieldGroupCode, apikey.FieldTotalQuotaPoints, apikey.FieldDailyQuotaPoints, apikey.FieldTotalQuotaUsedPoints, apikey.FieldDailyQuotaUsedPoints, apikey.FieldQuotaUsageDay:
 			values[i] = new(sql.NullString)
-		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldExpiresAt, apikey.FieldLastUsedAt:
+		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldRpmWindowStartedAt, apikey.FieldExpiresAt, apikey.FieldLastUsedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -119,12 +129,12 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SecretHash = value.String
 			}
-		case apikey.FieldSigningSecret:
+		case apikey.FieldSecretCiphertext:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field signing_secret", values[i])
+				return fmt.Errorf("unexpected type %T for field secret_ciphertext", values[i])
 			} else if value.Valid {
-				_m.SigningSecret = new(string)
-				*_m.SigningSecret = value.String
+				_m.SecretCiphertext = new(string)
+				*_m.SecretCiphertext = value.String
 			}
 		case apikey.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -158,12 +168,44 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 				_m.DailyQuotaPoints = new(string)
 				*_m.DailyQuotaPoints = value.String
 			}
+		case apikey.FieldTotalQuotaUsedPoints:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field total_quota_used_points", values[i])
+			} else if value.Valid {
+				_m.TotalQuotaUsedPoints = value.String
+			}
+		case apikey.FieldDailyQuotaUsedPoints:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field daily_quota_used_points", values[i])
+			} else if value.Valid {
+				_m.DailyQuotaUsedPoints = value.String
+			}
+		case apikey.FieldQuotaUsageDay:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field quota_usage_day", values[i])
+			} else if value.Valid {
+				_m.QuotaUsageDay = new(string)
+				*_m.QuotaUsageDay = value.String
+			}
 		case apikey.FieldRpmLimit:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field rpm_limit", values[i])
 			} else if value.Valid {
 				_m.RpmLimit = new(int)
 				*_m.RpmLimit = int(value.Int64)
+			}
+		case apikey.FieldRpmWindowStartedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field rpm_window_started_at", values[i])
+			} else if value.Valid {
+				_m.RpmWindowStartedAt = new(time.Time)
+				*_m.RpmWindowStartedAt = value.Time
+			}
+		case apikey.FieldRpmWindowCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field rpm_window_count", values[i])
+			} else if value.Valid {
+				_m.RpmWindowCount = int(value.Int64)
 			}
 		case apikey.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -235,8 +277,8 @@ func (_m *APIKey) String() string {
 	builder.WriteString("secret_hash=")
 	builder.WriteString(_m.SecretHash)
 	builder.WriteString(", ")
-	if v := _m.SigningSecret; v != nil {
-		builder.WriteString("signing_secret=")
+	if v := _m.SecretCiphertext; v != nil {
+		builder.WriteString("secret_ciphertext=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
@@ -259,10 +301,29 @@ func (_m *APIKey) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
+	builder.WriteString("total_quota_used_points=")
+	builder.WriteString(_m.TotalQuotaUsedPoints)
+	builder.WriteString(", ")
+	builder.WriteString("daily_quota_used_points=")
+	builder.WriteString(_m.DailyQuotaUsedPoints)
+	builder.WriteString(", ")
+	if v := _m.QuotaUsageDay; v != nil {
+		builder.WriteString("quota_usage_day=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
 	if v := _m.RpmLimit; v != nil {
 		builder.WriteString("rpm_limit=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	if v := _m.RpmWindowStartedAt; v != nil {
+		builder.WriteString("rpm_window_started_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("rpm_window_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RpmWindowCount))
 	builder.WriteString(", ")
 	if v := _m.ExpiresAt; v != nil {
 		builder.WriteString("expires_at=")

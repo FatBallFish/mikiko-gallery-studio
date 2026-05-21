@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
@@ -39,50 +40,57 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAPIKey              = "APIKey"
-	TypeAdminUser           = "AdminUser"
-	TypeAuditLog            = "AuditLog"
-	TypeConfigItem          = "ConfigItem"
-	TypeImageResult         = "ImageResult"
-	TypeImageTask           = "ImageTask"
-	TypeModelProvider       = "ModelProvider"
-	TypeModelRoute          = "ModelRoute"
-	TypePointLedger         = "PointLedger"
-	TypeProviderErrorPolicy = "ProviderErrorPolicy"
-	TypeRedeemCode          = "RedeemCode"
-	TypeReferenceAsset      = "ReferenceAsset"
-	TypeRefreshSession      = "RefreshSession"
-	TypeUser                = "User"
-	TypeUserGroup           = "UserGroup"
+	TypeAPIKey                 = "APIKey"
+	TypeAPIKeyQuotaReservation = "APIKeyQuotaReservation"
+	TypeAdminUser              = "AdminUser"
+	TypeAuditLog               = "AuditLog"
+	TypeConfigItem             = "ConfigItem"
+	TypeImageResult            = "ImageResult"
+	TypeImageTask              = "ImageTask"
+	TypeModelProvider          = "ModelProvider"
+	TypeModelRoute             = "ModelRoute"
+	TypePointLedger            = "PointLedger"
+	TypeProviderErrorPolicy    = "ProviderErrorPolicy"
+	TypeRedeemCode             = "RedeemCode"
+	TypeReferenceAsset         = "ReferenceAsset"
+	TypeRefreshSession         = "RefreshSession"
+	TypeUser                   = "User"
+	TypeUserGroup              = "UserGroup"
 )
 
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
 type APIKeyMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *int
-	created_at         *time.Time
-	updated_at         *time.Time
-	deleted_at         *time.Time
-	user_id            *int64
-	adduser_id         *int64
-	access_key         *string
-	secret_hash        *string
-	signing_secret     *string
-	name               *string
-	status             *string
-	group_code         *string
-	total_quota_points *string
-	daily_quota_points *string
-	rpm_limit          *int
-	addrpm_limit       *int
-	expires_at         *time.Time
-	last_used_at       *time.Time
-	clearedFields      map[string]struct{}
-	done               bool
-	oldValue           func(context.Context) (*APIKey, error)
-	predicates         []predicate.APIKey
+	op                      Op
+	typ                     string
+	id                      *int
+	created_at              *time.Time
+	updated_at              *time.Time
+	deleted_at              *time.Time
+	user_id                 *int64
+	adduser_id              *int64
+	access_key              *string
+	secret_hash             *string
+	secret_ciphertext       *string
+	name                    *string
+	status                  *string
+	group_code              *string
+	total_quota_points      *string
+	daily_quota_points      *string
+	total_quota_used_points *string
+	daily_quota_used_points *string
+	quota_usage_day         *string
+	rpm_limit               *int
+	addrpm_limit            *int
+	rpm_window_started_at   *time.Time
+	rpm_window_count        *int
+	addrpm_window_count     *int
+	expires_at              *time.Time
+	last_used_at            *time.Time
+	clearedFields           map[string]struct{}
+	done                    bool
+	oldValue                func(context.Context) (*APIKey, error)
+	predicates              []predicate.APIKey
 }
 
 var _ ent.Mutation = (*APIKeyMutation)(nil)
@@ -432,53 +440,53 @@ func (m *APIKeyMutation) ResetSecretHash() {
 	m.secret_hash = nil
 }
 
-// SetSigningSecret sets the "signing_secret" field.
-func (m *APIKeyMutation) SetSigningSecret(s string) {
-	m.signing_secret = &s
+// SetSecretCiphertext sets the "secret_ciphertext" field.
+func (m *APIKeyMutation) SetSecretCiphertext(s string) {
+	m.secret_ciphertext = &s
 }
 
-// SigningSecret returns the value of the "signing_secret" field in the mutation.
-func (m *APIKeyMutation) SigningSecret() (r string, exists bool) {
-	v := m.signing_secret
+// SecretCiphertext returns the value of the "secret_ciphertext" field in the mutation.
+func (m *APIKeyMutation) SecretCiphertext() (r string, exists bool) {
+	v := m.secret_ciphertext
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldSigningSecret returns the old "signing_secret" field's value of the APIKey entity.
+// OldSecretCiphertext returns the old "secret_ciphertext" field's value of the APIKey entity.
 // If the APIKey object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *APIKeyMutation) OldSigningSecret(ctx context.Context) (v *string, err error) {
+func (m *APIKeyMutation) OldSecretCiphertext(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSigningSecret is only allowed on UpdateOne operations")
+		return v, errors.New("OldSecretCiphertext is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSigningSecret requires an ID field in the mutation")
+		return v, errors.New("OldSecretCiphertext requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSigningSecret: %w", err)
+		return v, fmt.Errorf("querying old value for OldSecretCiphertext: %w", err)
 	}
-	return oldValue.SigningSecret, nil
+	return oldValue.SecretCiphertext, nil
 }
 
-// ClearSigningSecret clears the value of the "signing_secret" field.
-func (m *APIKeyMutation) ClearSigningSecret() {
-	m.signing_secret = nil
-	m.clearedFields[apikey.FieldSigningSecret] = struct{}{}
+// ClearSecretCiphertext clears the value of the "secret_ciphertext" field.
+func (m *APIKeyMutation) ClearSecretCiphertext() {
+	m.secret_ciphertext = nil
+	m.clearedFields[apikey.FieldSecretCiphertext] = struct{}{}
 }
 
-// SigningSecretCleared returns if the "signing_secret" field was cleared in this mutation.
-func (m *APIKeyMutation) SigningSecretCleared() bool {
-	_, ok := m.clearedFields[apikey.FieldSigningSecret]
+// SecretCiphertextCleared returns if the "secret_ciphertext" field was cleared in this mutation.
+func (m *APIKeyMutation) SecretCiphertextCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldSecretCiphertext]
 	return ok
 }
 
-// ResetSigningSecret resets all changes to the "signing_secret" field.
-func (m *APIKeyMutation) ResetSigningSecret() {
-	m.signing_secret = nil
-	delete(m.clearedFields, apikey.FieldSigningSecret)
+// ResetSecretCiphertext resets all changes to the "secret_ciphertext" field.
+func (m *APIKeyMutation) ResetSecretCiphertext() {
+	m.secret_ciphertext = nil
+	delete(m.clearedFields, apikey.FieldSecretCiphertext)
 }
 
 // SetName sets the "name" field.
@@ -687,6 +695,127 @@ func (m *APIKeyMutation) ResetDailyQuotaPoints() {
 	delete(m.clearedFields, apikey.FieldDailyQuotaPoints)
 }
 
+// SetTotalQuotaUsedPoints sets the "total_quota_used_points" field.
+func (m *APIKeyMutation) SetTotalQuotaUsedPoints(s string) {
+	m.total_quota_used_points = &s
+}
+
+// TotalQuotaUsedPoints returns the value of the "total_quota_used_points" field in the mutation.
+func (m *APIKeyMutation) TotalQuotaUsedPoints() (r string, exists bool) {
+	v := m.total_quota_used_points
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalQuotaUsedPoints returns the old "total_quota_used_points" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldTotalQuotaUsedPoints(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalQuotaUsedPoints is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalQuotaUsedPoints requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalQuotaUsedPoints: %w", err)
+	}
+	return oldValue.TotalQuotaUsedPoints, nil
+}
+
+// ResetTotalQuotaUsedPoints resets all changes to the "total_quota_used_points" field.
+func (m *APIKeyMutation) ResetTotalQuotaUsedPoints() {
+	m.total_quota_used_points = nil
+}
+
+// SetDailyQuotaUsedPoints sets the "daily_quota_used_points" field.
+func (m *APIKeyMutation) SetDailyQuotaUsedPoints(s string) {
+	m.daily_quota_used_points = &s
+}
+
+// DailyQuotaUsedPoints returns the value of the "daily_quota_used_points" field in the mutation.
+func (m *APIKeyMutation) DailyQuotaUsedPoints() (r string, exists bool) {
+	v := m.daily_quota_used_points
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDailyQuotaUsedPoints returns the old "daily_quota_used_points" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldDailyQuotaUsedPoints(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDailyQuotaUsedPoints is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDailyQuotaUsedPoints requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDailyQuotaUsedPoints: %w", err)
+	}
+	return oldValue.DailyQuotaUsedPoints, nil
+}
+
+// ResetDailyQuotaUsedPoints resets all changes to the "daily_quota_used_points" field.
+func (m *APIKeyMutation) ResetDailyQuotaUsedPoints() {
+	m.daily_quota_used_points = nil
+}
+
+// SetQuotaUsageDay sets the "quota_usage_day" field.
+func (m *APIKeyMutation) SetQuotaUsageDay(s string) {
+	m.quota_usage_day = &s
+}
+
+// QuotaUsageDay returns the value of the "quota_usage_day" field in the mutation.
+func (m *APIKeyMutation) QuotaUsageDay() (r string, exists bool) {
+	v := m.quota_usage_day
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaUsageDay returns the old "quota_usage_day" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldQuotaUsageDay(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaUsageDay is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaUsageDay requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaUsageDay: %w", err)
+	}
+	return oldValue.QuotaUsageDay, nil
+}
+
+// ClearQuotaUsageDay clears the value of the "quota_usage_day" field.
+func (m *APIKeyMutation) ClearQuotaUsageDay() {
+	m.quota_usage_day = nil
+	m.clearedFields[apikey.FieldQuotaUsageDay] = struct{}{}
+}
+
+// QuotaUsageDayCleared returns if the "quota_usage_day" field was cleared in this mutation.
+func (m *APIKeyMutation) QuotaUsageDayCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldQuotaUsageDay]
+	return ok
+}
+
+// ResetQuotaUsageDay resets all changes to the "quota_usage_day" field.
+func (m *APIKeyMutation) ResetQuotaUsageDay() {
+	m.quota_usage_day = nil
+	delete(m.clearedFields, apikey.FieldQuotaUsageDay)
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (m *APIKeyMutation) SetRpmLimit(i int) {
 	m.rpm_limit = &i
@@ -755,6 +884,111 @@ func (m *APIKeyMutation) ResetRpmLimit() {
 	m.rpm_limit = nil
 	m.addrpm_limit = nil
 	delete(m.clearedFields, apikey.FieldRpmLimit)
+}
+
+// SetRpmWindowStartedAt sets the "rpm_window_started_at" field.
+func (m *APIKeyMutation) SetRpmWindowStartedAt(t time.Time) {
+	m.rpm_window_started_at = &t
+}
+
+// RpmWindowStartedAt returns the value of the "rpm_window_started_at" field in the mutation.
+func (m *APIKeyMutation) RpmWindowStartedAt() (r time.Time, exists bool) {
+	v := m.rpm_window_started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRpmWindowStartedAt returns the old "rpm_window_started_at" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldRpmWindowStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRpmWindowStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRpmWindowStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRpmWindowStartedAt: %w", err)
+	}
+	return oldValue.RpmWindowStartedAt, nil
+}
+
+// ClearRpmWindowStartedAt clears the value of the "rpm_window_started_at" field.
+func (m *APIKeyMutation) ClearRpmWindowStartedAt() {
+	m.rpm_window_started_at = nil
+	m.clearedFields[apikey.FieldRpmWindowStartedAt] = struct{}{}
+}
+
+// RpmWindowStartedAtCleared returns if the "rpm_window_started_at" field was cleared in this mutation.
+func (m *APIKeyMutation) RpmWindowStartedAtCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldRpmWindowStartedAt]
+	return ok
+}
+
+// ResetRpmWindowStartedAt resets all changes to the "rpm_window_started_at" field.
+func (m *APIKeyMutation) ResetRpmWindowStartedAt() {
+	m.rpm_window_started_at = nil
+	delete(m.clearedFields, apikey.FieldRpmWindowStartedAt)
+}
+
+// SetRpmWindowCount sets the "rpm_window_count" field.
+func (m *APIKeyMutation) SetRpmWindowCount(i int) {
+	m.rpm_window_count = &i
+	m.addrpm_window_count = nil
+}
+
+// RpmWindowCount returns the value of the "rpm_window_count" field in the mutation.
+func (m *APIKeyMutation) RpmWindowCount() (r int, exists bool) {
+	v := m.rpm_window_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRpmWindowCount returns the old "rpm_window_count" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldRpmWindowCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRpmWindowCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRpmWindowCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRpmWindowCount: %w", err)
+	}
+	return oldValue.RpmWindowCount, nil
+}
+
+// AddRpmWindowCount adds i to the "rpm_window_count" field.
+func (m *APIKeyMutation) AddRpmWindowCount(i int) {
+	if m.addrpm_window_count != nil {
+		*m.addrpm_window_count += i
+	} else {
+		m.addrpm_window_count = &i
+	}
+}
+
+// AddedRpmWindowCount returns the value that was added to the "rpm_window_count" field in this mutation.
+func (m *APIKeyMutation) AddedRpmWindowCount() (r int, exists bool) {
+	v := m.addrpm_window_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRpmWindowCount resets all changes to the "rpm_window_count" field.
+func (m *APIKeyMutation) ResetRpmWindowCount() {
+	m.rpm_window_count = nil
+	m.addrpm_window_count = nil
 }
 
 // SetExpiresAt sets the "expires_at" field.
@@ -889,7 +1123,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 20)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -908,8 +1142,8 @@ func (m *APIKeyMutation) Fields() []string {
 	if m.secret_hash != nil {
 		fields = append(fields, apikey.FieldSecretHash)
 	}
-	if m.signing_secret != nil {
-		fields = append(fields, apikey.FieldSigningSecret)
+	if m.secret_ciphertext != nil {
+		fields = append(fields, apikey.FieldSecretCiphertext)
 	}
 	if m.name != nil {
 		fields = append(fields, apikey.FieldName)
@@ -926,8 +1160,23 @@ func (m *APIKeyMutation) Fields() []string {
 	if m.daily_quota_points != nil {
 		fields = append(fields, apikey.FieldDailyQuotaPoints)
 	}
+	if m.total_quota_used_points != nil {
+		fields = append(fields, apikey.FieldTotalQuotaUsedPoints)
+	}
+	if m.daily_quota_used_points != nil {
+		fields = append(fields, apikey.FieldDailyQuotaUsedPoints)
+	}
+	if m.quota_usage_day != nil {
+		fields = append(fields, apikey.FieldQuotaUsageDay)
+	}
 	if m.rpm_limit != nil {
 		fields = append(fields, apikey.FieldRpmLimit)
+	}
+	if m.rpm_window_started_at != nil {
+		fields = append(fields, apikey.FieldRpmWindowStartedAt)
+	}
+	if m.rpm_window_count != nil {
+		fields = append(fields, apikey.FieldRpmWindowCount)
 	}
 	if m.expires_at != nil {
 		fields = append(fields, apikey.FieldExpiresAt)
@@ -955,8 +1204,8 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.AccessKey()
 	case apikey.FieldSecretHash:
 		return m.SecretHash()
-	case apikey.FieldSigningSecret:
-		return m.SigningSecret()
+	case apikey.FieldSecretCiphertext:
+		return m.SecretCiphertext()
 	case apikey.FieldName:
 		return m.Name()
 	case apikey.FieldStatus:
@@ -967,8 +1216,18 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.TotalQuotaPoints()
 	case apikey.FieldDailyQuotaPoints:
 		return m.DailyQuotaPoints()
+	case apikey.FieldTotalQuotaUsedPoints:
+		return m.TotalQuotaUsedPoints()
+	case apikey.FieldDailyQuotaUsedPoints:
+		return m.DailyQuotaUsedPoints()
+	case apikey.FieldQuotaUsageDay:
+		return m.QuotaUsageDay()
 	case apikey.FieldRpmLimit:
 		return m.RpmLimit()
+	case apikey.FieldRpmWindowStartedAt:
+		return m.RpmWindowStartedAt()
+	case apikey.FieldRpmWindowCount:
+		return m.RpmWindowCount()
 	case apikey.FieldExpiresAt:
 		return m.ExpiresAt()
 	case apikey.FieldLastUsedAt:
@@ -994,8 +1253,8 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldAccessKey(ctx)
 	case apikey.FieldSecretHash:
 		return m.OldSecretHash(ctx)
-	case apikey.FieldSigningSecret:
-		return m.OldSigningSecret(ctx)
+	case apikey.FieldSecretCiphertext:
+		return m.OldSecretCiphertext(ctx)
 	case apikey.FieldName:
 		return m.OldName(ctx)
 	case apikey.FieldStatus:
@@ -1006,8 +1265,18 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldTotalQuotaPoints(ctx)
 	case apikey.FieldDailyQuotaPoints:
 		return m.OldDailyQuotaPoints(ctx)
+	case apikey.FieldTotalQuotaUsedPoints:
+		return m.OldTotalQuotaUsedPoints(ctx)
+	case apikey.FieldDailyQuotaUsedPoints:
+		return m.OldDailyQuotaUsedPoints(ctx)
+	case apikey.FieldQuotaUsageDay:
+		return m.OldQuotaUsageDay(ctx)
 	case apikey.FieldRpmLimit:
 		return m.OldRpmLimit(ctx)
+	case apikey.FieldRpmWindowStartedAt:
+		return m.OldRpmWindowStartedAt(ctx)
+	case apikey.FieldRpmWindowCount:
+		return m.OldRpmWindowCount(ctx)
 	case apikey.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
 	case apikey.FieldLastUsedAt:
@@ -1063,12 +1332,12 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSecretHash(v)
 		return nil
-	case apikey.FieldSigningSecret:
+	case apikey.FieldSecretCiphertext:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetSigningSecret(v)
+		m.SetSecretCiphertext(v)
 		return nil
 	case apikey.FieldName:
 		v, ok := value.(string)
@@ -1105,12 +1374,47 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDailyQuotaPoints(v)
 		return nil
+	case apikey.FieldTotalQuotaUsedPoints:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalQuotaUsedPoints(v)
+		return nil
+	case apikey.FieldDailyQuotaUsedPoints:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDailyQuotaUsedPoints(v)
+		return nil
+	case apikey.FieldQuotaUsageDay:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaUsageDay(v)
+		return nil
 	case apikey.FieldRpmLimit:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRpmLimit(v)
+		return nil
+	case apikey.FieldRpmWindowStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRpmWindowStartedAt(v)
+		return nil
+	case apikey.FieldRpmWindowCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRpmWindowCount(v)
 		return nil
 	case apikey.FieldExpiresAt:
 		v, ok := value.(time.Time)
@@ -1140,6 +1444,9 @@ func (m *APIKeyMutation) AddedFields() []string {
 	if m.addrpm_limit != nil {
 		fields = append(fields, apikey.FieldRpmLimit)
 	}
+	if m.addrpm_window_count != nil {
+		fields = append(fields, apikey.FieldRpmWindowCount)
+	}
 	return fields
 }
 
@@ -1152,6 +1459,8 @@ func (m *APIKeyMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedUserID()
 	case apikey.FieldRpmLimit:
 		return m.AddedRpmLimit()
+	case apikey.FieldRpmWindowCount:
+		return m.AddedRpmWindowCount()
 	}
 	return nil, false
 }
@@ -1175,6 +1484,13 @@ func (m *APIKeyMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddRpmLimit(v)
 		return nil
+	case apikey.FieldRpmWindowCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRpmWindowCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown APIKey numeric field %s", name)
 }
@@ -1186,8 +1502,8 @@ func (m *APIKeyMutation) ClearedFields() []string {
 	if m.FieldCleared(apikey.FieldDeletedAt) {
 		fields = append(fields, apikey.FieldDeletedAt)
 	}
-	if m.FieldCleared(apikey.FieldSigningSecret) {
-		fields = append(fields, apikey.FieldSigningSecret)
+	if m.FieldCleared(apikey.FieldSecretCiphertext) {
+		fields = append(fields, apikey.FieldSecretCiphertext)
 	}
 	if m.FieldCleared(apikey.FieldTotalQuotaPoints) {
 		fields = append(fields, apikey.FieldTotalQuotaPoints)
@@ -1195,8 +1511,14 @@ func (m *APIKeyMutation) ClearedFields() []string {
 	if m.FieldCleared(apikey.FieldDailyQuotaPoints) {
 		fields = append(fields, apikey.FieldDailyQuotaPoints)
 	}
+	if m.FieldCleared(apikey.FieldQuotaUsageDay) {
+		fields = append(fields, apikey.FieldQuotaUsageDay)
+	}
 	if m.FieldCleared(apikey.FieldRpmLimit) {
 		fields = append(fields, apikey.FieldRpmLimit)
+	}
+	if m.FieldCleared(apikey.FieldRpmWindowStartedAt) {
+		fields = append(fields, apikey.FieldRpmWindowStartedAt)
 	}
 	if m.FieldCleared(apikey.FieldExpiresAt) {
 		fields = append(fields, apikey.FieldExpiresAt)
@@ -1221,8 +1543,8 @@ func (m *APIKeyMutation) ClearField(name string) error {
 	case apikey.FieldDeletedAt:
 		m.ClearDeletedAt()
 		return nil
-	case apikey.FieldSigningSecret:
-		m.ClearSigningSecret()
+	case apikey.FieldSecretCiphertext:
+		m.ClearSecretCiphertext()
 		return nil
 	case apikey.FieldTotalQuotaPoints:
 		m.ClearTotalQuotaPoints()
@@ -1230,8 +1552,14 @@ func (m *APIKeyMutation) ClearField(name string) error {
 	case apikey.FieldDailyQuotaPoints:
 		m.ClearDailyQuotaPoints()
 		return nil
+	case apikey.FieldQuotaUsageDay:
+		m.ClearQuotaUsageDay()
+		return nil
 	case apikey.FieldRpmLimit:
 		m.ClearRpmLimit()
+		return nil
+	case apikey.FieldRpmWindowStartedAt:
+		m.ClearRpmWindowStartedAt()
 		return nil
 	case apikey.FieldExpiresAt:
 		m.ClearExpiresAt()
@@ -1265,8 +1593,8 @@ func (m *APIKeyMutation) ResetField(name string) error {
 	case apikey.FieldSecretHash:
 		m.ResetSecretHash()
 		return nil
-	case apikey.FieldSigningSecret:
-		m.ResetSigningSecret()
+	case apikey.FieldSecretCiphertext:
+		m.ResetSecretCiphertext()
 		return nil
 	case apikey.FieldName:
 		m.ResetName()
@@ -1283,8 +1611,23 @@ func (m *APIKeyMutation) ResetField(name string) error {
 	case apikey.FieldDailyQuotaPoints:
 		m.ResetDailyQuotaPoints()
 		return nil
+	case apikey.FieldTotalQuotaUsedPoints:
+		m.ResetTotalQuotaUsedPoints()
+		return nil
+	case apikey.FieldDailyQuotaUsedPoints:
+		m.ResetDailyQuotaUsedPoints()
+		return nil
+	case apikey.FieldQuotaUsageDay:
+		m.ResetQuotaUsageDay()
+		return nil
 	case apikey.FieldRpmLimit:
 		m.ResetRpmLimit()
+		return nil
+	case apikey.FieldRpmWindowStartedAt:
+		m.ResetRpmWindowStartedAt()
+		return nil
+	case apikey.FieldRpmWindowCount:
+		m.ResetRpmWindowCount()
 		return nil
 	case apikey.FieldExpiresAt:
 		m.ResetExpiresAt()
@@ -1342,6 +1685,692 @@ func (m *APIKeyMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *APIKeyMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown APIKey edge %s", name)
+}
+
+// APIKeyQuotaReservationMutation represents an operation that mutates the APIKeyQuotaReservation nodes in the graph.
+type APIKeyQuotaReservationMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int
+	created_at     *time.Time
+	updated_at     *time.Time
+	api_key_id     *int64
+	addapi_key_id  *int64
+	reservation_id *string
+	points         *string
+	usage_day      *string
+	status         *string
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*APIKeyQuotaReservation, error)
+	predicates     []predicate.APIKeyQuotaReservation
+}
+
+var _ ent.Mutation = (*APIKeyQuotaReservationMutation)(nil)
+
+// apikeyquotareservationOption allows management of the mutation configuration using functional options.
+type apikeyquotareservationOption func(*APIKeyQuotaReservationMutation)
+
+// newAPIKeyQuotaReservationMutation creates new mutation for the APIKeyQuotaReservation entity.
+func newAPIKeyQuotaReservationMutation(c config, op Op, opts ...apikeyquotareservationOption) *APIKeyQuotaReservationMutation {
+	m := &APIKeyQuotaReservationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAPIKeyQuotaReservation,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAPIKeyQuotaReservationID sets the ID field of the mutation.
+func withAPIKeyQuotaReservationID(id int) apikeyquotareservationOption {
+	return func(m *APIKeyQuotaReservationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *APIKeyQuotaReservation
+		)
+		m.oldValue = func(ctx context.Context) (*APIKeyQuotaReservation, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().APIKeyQuotaReservation.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAPIKeyQuotaReservation sets the old APIKeyQuotaReservation of the mutation.
+func withAPIKeyQuotaReservation(node *APIKeyQuotaReservation) apikeyquotareservationOption {
+	return func(m *APIKeyQuotaReservationMutation) {
+		m.oldValue = func(context.Context) (*APIKeyQuotaReservation, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m APIKeyQuotaReservationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m APIKeyQuotaReservationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *APIKeyQuotaReservationMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *APIKeyQuotaReservationMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().APIKeyQuotaReservation.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *APIKeyQuotaReservationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *APIKeyQuotaReservationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the APIKeyQuotaReservation entity.
+// If the APIKeyQuotaReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyQuotaReservationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *APIKeyQuotaReservationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *APIKeyQuotaReservationMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *APIKeyQuotaReservationMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the APIKeyQuotaReservation entity.
+// If the APIKeyQuotaReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyQuotaReservationMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *APIKeyQuotaReservationMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *APIKeyQuotaReservationMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *APIKeyQuotaReservationMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the APIKeyQuotaReservation entity.
+// If the APIKeyQuotaReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyQuotaReservationMutation) OldAPIKeyID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *APIKeyQuotaReservationMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *APIKeyQuotaReservationMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *APIKeyQuotaReservationMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+}
+
+// SetReservationID sets the "reservation_id" field.
+func (m *APIKeyQuotaReservationMutation) SetReservationID(s string) {
+	m.reservation_id = &s
+}
+
+// ReservationID returns the value of the "reservation_id" field in the mutation.
+func (m *APIKeyQuotaReservationMutation) ReservationID() (r string, exists bool) {
+	v := m.reservation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReservationID returns the old "reservation_id" field's value of the APIKeyQuotaReservation entity.
+// If the APIKeyQuotaReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyQuotaReservationMutation) OldReservationID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReservationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReservationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReservationID: %w", err)
+	}
+	return oldValue.ReservationID, nil
+}
+
+// ResetReservationID resets all changes to the "reservation_id" field.
+func (m *APIKeyQuotaReservationMutation) ResetReservationID() {
+	m.reservation_id = nil
+}
+
+// SetPoints sets the "points" field.
+func (m *APIKeyQuotaReservationMutation) SetPoints(s string) {
+	m.points = &s
+}
+
+// Points returns the value of the "points" field in the mutation.
+func (m *APIKeyQuotaReservationMutation) Points() (r string, exists bool) {
+	v := m.points
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPoints returns the old "points" field's value of the APIKeyQuotaReservation entity.
+// If the APIKeyQuotaReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyQuotaReservationMutation) OldPoints(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPoints is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPoints requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPoints: %w", err)
+	}
+	return oldValue.Points, nil
+}
+
+// ResetPoints resets all changes to the "points" field.
+func (m *APIKeyQuotaReservationMutation) ResetPoints() {
+	m.points = nil
+}
+
+// SetUsageDay sets the "usage_day" field.
+func (m *APIKeyQuotaReservationMutation) SetUsageDay(s string) {
+	m.usage_day = &s
+}
+
+// UsageDay returns the value of the "usage_day" field in the mutation.
+func (m *APIKeyQuotaReservationMutation) UsageDay() (r string, exists bool) {
+	v := m.usage_day
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageDay returns the old "usage_day" field's value of the APIKeyQuotaReservation entity.
+// If the APIKeyQuotaReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyQuotaReservationMutation) OldUsageDay(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageDay is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageDay requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageDay: %w", err)
+	}
+	return oldValue.UsageDay, nil
+}
+
+// ResetUsageDay resets all changes to the "usage_day" field.
+func (m *APIKeyQuotaReservationMutation) ResetUsageDay() {
+	m.usage_day = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *APIKeyQuotaReservationMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *APIKeyQuotaReservationMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the APIKeyQuotaReservation entity.
+// If the APIKeyQuotaReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyQuotaReservationMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *APIKeyQuotaReservationMutation) ResetStatus() {
+	m.status = nil
+}
+
+// Where appends a list predicates to the APIKeyQuotaReservationMutation builder.
+func (m *APIKeyQuotaReservationMutation) Where(ps ...predicate.APIKeyQuotaReservation) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the APIKeyQuotaReservationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *APIKeyQuotaReservationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.APIKeyQuotaReservation, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *APIKeyQuotaReservationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *APIKeyQuotaReservationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (APIKeyQuotaReservation).
+func (m *APIKeyQuotaReservationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *APIKeyQuotaReservationMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.created_at != nil {
+		fields = append(fields, apikeyquotareservation.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, apikeyquotareservation.FieldUpdatedAt)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, apikeyquotareservation.FieldAPIKeyID)
+	}
+	if m.reservation_id != nil {
+		fields = append(fields, apikeyquotareservation.FieldReservationID)
+	}
+	if m.points != nil {
+		fields = append(fields, apikeyquotareservation.FieldPoints)
+	}
+	if m.usage_day != nil {
+		fields = append(fields, apikeyquotareservation.FieldUsageDay)
+	}
+	if m.status != nil {
+		fields = append(fields, apikeyquotareservation.FieldStatus)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *APIKeyQuotaReservationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case apikeyquotareservation.FieldCreatedAt:
+		return m.CreatedAt()
+	case apikeyquotareservation.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case apikeyquotareservation.FieldAPIKeyID:
+		return m.APIKeyID()
+	case apikeyquotareservation.FieldReservationID:
+		return m.ReservationID()
+	case apikeyquotareservation.FieldPoints:
+		return m.Points()
+	case apikeyquotareservation.FieldUsageDay:
+		return m.UsageDay()
+	case apikeyquotareservation.FieldStatus:
+		return m.Status()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *APIKeyQuotaReservationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case apikeyquotareservation.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case apikeyquotareservation.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case apikeyquotareservation.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case apikeyquotareservation.FieldReservationID:
+		return m.OldReservationID(ctx)
+	case apikeyquotareservation.FieldPoints:
+		return m.OldPoints(ctx)
+	case apikeyquotareservation.FieldUsageDay:
+		return m.OldUsageDay(ctx)
+	case apikeyquotareservation.FieldStatus:
+		return m.OldStatus(ctx)
+	}
+	return nil, fmt.Errorf("unknown APIKeyQuotaReservation field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *APIKeyQuotaReservationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case apikeyquotareservation.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case apikeyquotareservation.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case apikeyquotareservation.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case apikeyquotareservation.FieldReservationID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReservationID(v)
+		return nil
+	case apikeyquotareservation.FieldPoints:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPoints(v)
+		return nil
+	case apikeyquotareservation.FieldUsageDay:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageDay(v)
+		return nil
+	case apikeyquotareservation.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	}
+	return fmt.Errorf("unknown APIKeyQuotaReservation field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *APIKeyQuotaReservationMutation) AddedFields() []string {
+	var fields []string
+	if m.addapi_key_id != nil {
+		fields = append(fields, apikeyquotareservation.FieldAPIKeyID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *APIKeyQuotaReservationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case apikeyquotareservation.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *APIKeyQuotaReservationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case apikeyquotareservation.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown APIKeyQuotaReservation numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *APIKeyQuotaReservationMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *APIKeyQuotaReservationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *APIKeyQuotaReservationMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown APIKeyQuotaReservation nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *APIKeyQuotaReservationMutation) ResetField(name string) error {
+	switch name {
+	case apikeyquotareservation.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case apikeyquotareservation.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case apikeyquotareservation.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case apikeyquotareservation.FieldReservationID:
+		m.ResetReservationID()
+		return nil
+	case apikeyquotareservation.FieldPoints:
+		m.ResetPoints()
+		return nil
+	case apikeyquotareservation.FieldUsageDay:
+		m.ResetUsageDay()
+		return nil
+	case apikeyquotareservation.FieldStatus:
+		m.ResetStatus()
+		return nil
+	}
+	return fmt.Errorf("unknown APIKeyQuotaReservation field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *APIKeyQuotaReservationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *APIKeyQuotaReservationMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *APIKeyQuotaReservationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *APIKeyQuotaReservationMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *APIKeyQuotaReservationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *APIKeyQuotaReservationMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *APIKeyQuotaReservationMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown APIKeyQuotaReservation unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *APIKeyQuotaReservationMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown APIKeyQuotaReservation edge %s", name)
 }
 
 // AdminUserMutation represents an operation that mutates the AdminUser nodes in the graph.

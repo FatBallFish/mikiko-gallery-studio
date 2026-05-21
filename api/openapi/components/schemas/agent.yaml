@@ -44,6 +44,8 @@ components:
           type: string
         bio:
           type: string
+        avatar_object_key:
+          type: string
         user_group_code:
           type: string
         theme:
@@ -63,6 +65,8 @@ components:
         bio:
           type: string
         avatar_object_key:
+          type: string
+        default_locale:
           type: string
         theme:
           type: string

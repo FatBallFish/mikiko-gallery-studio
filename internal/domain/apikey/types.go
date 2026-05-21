@@ -15,25 +15,32 @@ import (
 const (
 	StatusActive   = "active"
 	StatusDisabled = "disabled"
-	StatusDeleted  = "deleted"
+	StatusRevoked  = "revoked"
 )
 
 type APIKey struct {
-	ID               int64      `json:"id"`
-	UserID           int64      `json:"-"`
-	AccessKey        string     `json:"access_key"`
-	SecretHash       string     `json:"-"`
-	SigningSecret    string     `json:"-"`
-	Name             string     `json:"name"`
-	Status           string     `json:"status"`
-	GroupCode        string     `json:"group_code"`
-	TotalQuotaPoints *string    `json:"total_quota_points,omitempty"`
-	DailyQuotaPoints *string    `json:"daily_quota_points,omitempty"`
-	RPMLimit         *int       `json:"rpm_limit,omitempty"`
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                   int64      `json:"id"`
+	UserID               int64      `json:"-"`
+	AccessKey            string     `json:"access_key"`
+	SecretHash           string     `json:"-"`
+	SecretCiphertext     string     `json:"-"`
+	SigningSecret        string     `json:"-"`
+	Name                 string     `json:"name"`
+	Status               string     `json:"status"`
+	GroupCode            string     `json:"group_code"`
+	TotalQuotaPoints     *string    `json:"total_quota_points,omitempty"`
+	DailyQuotaPoints     *string    `json:"daily_quota_points,omitempty"`
+	TotalQuotaUsedPoints string     `json:"total_quota_used_points"`
+	DailyQuotaUsedPoints string     `json:"daily_quota_used_points"`
+	QuotaUsageDay        *string    `json:"quota_usage_day,omitempty"`
+	RPMLimit             *int       `json:"rpm_limit,omitempty"`
+	RPMWindowStartedAt   *time.Time `json:"rpm_window_started_at,omitempty"`
+	RPMWindowCount       int        `json:"rpm_window_count"`
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt           *time.Time `json:"last_used_at,omitempty"`
+	DeletedAt            *time.Time `json:"-"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type Identity struct {
@@ -48,25 +55,6 @@ func HashSecret(secret string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-func EncodeSigningSecret(secret string) string {
-	if strings.TrimSpace(secret) == "" {
-		return ""
-	}
-	return "plain:v1:" + base64.RawURLEncoding.EncodeToString([]byte(secret))
-}
-
-func DecodeSigningSecret(material string) (string, bool) {
-	const prefix = "plain:v1:"
-	if !strings.HasPrefix(material, prefix) {
-		return "", false
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(material, prefix))
-	if err != nil || len(decoded) == 0 {
-		return "", false
-	}
-	return string(decoded), true
-}
-
 func EncryptSigningSecret(secret, keyMaterial string) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", nil
@@ -79,32 +67,26 @@ func EncryptSigningSecret(secret, keyMaterial string) (string, error) {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", fmt.Errorf("generate signing secret nonce: %w", err)
 	}
-	ciphertext := aead.Seal(nil, nonce, []byte(secret), nil)
-	return "enc:v1:" + base64.RawURLEncoding.EncodeToString(nonce) + ":" + base64.RawURLEncoding.EncodeToString(ciphertext), nil
+	ciphertext := aead.Seal(nonce, nonce, []byte(secret), nil)
+	return "v1:" + base64.RawURLEncoding.EncodeToString(ciphertext), nil
 }
 
 func DecryptSigningSecret(material, keyMaterial string) (string, bool) {
-	const prefix = "enc:v1:"
-	if !strings.HasPrefix(material, prefix) {
+	encoded := strings.TrimSpace(material)
+	if !strings.HasPrefix(encoded, "v1:") {
 		return "", false
 	}
-	parts := strings.Split(strings.TrimPrefix(material, prefix), ":")
-	if len(parts) != 2 {
-		return "", false
-	}
-	nonce, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return "", false
-	}
-	ciphertext, err := base64.RawURLEncoding.DecodeString(parts[1])
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encoded, "v1:"))
 	if err != nil {
 		return "", false
 	}
 	aead, err := signingSecretAEAD(keyMaterial)
-	if err != nil || len(nonce) != aead.NonceSize() {
+	if err != nil || len(payload) < aead.NonceSize() {
 		return "", false
 	}
-	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	nonce := payload[:aead.NonceSize()]
+	sealed := payload[aead.NonceSize():]
+	plaintext, err := aead.Open(nil, nonce, sealed, nil)
 	if err != nil || len(plaintext) == 0 {
 		return "", false
 	}

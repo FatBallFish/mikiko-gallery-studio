@@ -395,6 +395,8 @@ paths:
       operationId: postOpenReferenceAssetUploadSession
       security:
         - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
           accessSignature: []
       requestBody:
         required: true
@@ -416,6 +418,8 @@ paths:
       operationId: postOpenImageTask
       security:
         - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
           accessSignature: []
       parameters:
         - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
@@ -439,6 +443,8 @@ paths:
       operationId: getOpenEstimate
       security:
         - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
           accessSignature: []
       parameters:
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
@@ -544,6 +550,341 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIModelListResponse
+  /api/agent/auth/v1/logout:
+    post:
+      tags: [Agent Auth]
+      summary: Logout current user session
+      operationId: postAgentAuthLogout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session logged out
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/agent/image/v1/reference-assets/{asset_id}:
+    get:
+      tags: [Agent Image]
+      summary: Get reference asset metadata
+      operationId: getAgentReferenceAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Reference asset metadata
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
+    delete:
+      tags: [Agent Image]
+      summary: Delete reference asset
+      operationId: deleteAgentReferenceAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Reference asset deleted
+  /api/agent/image/v1/reference-assets/{asset_id}/download:
+    get:
+      tags: [Agent Image]
+      summary: Download reference asset bytes
+      operationId: downloadAgentReferenceAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Reference asset bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /api/open/image/v1/reference-assets:
+    post:
+      tags: [Open Image API]
+      summary: Upload a reference asset using multipart form data
+      operationId: postOpenReferenceAssetMultipart
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Reference asset created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
+  /api/open/image/v1/reference-assets/{asset_id}:
+    get:
+      tags: [Open Image API]
+      summary: Get Open API reference asset metadata
+      operationId: getOpenReferenceAsset
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Reference asset metadata
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
+  /api/open/image/v1/tasks/{task_id}:
+    get:
+      tags: [Open Image API]
+      summary: Get Open API image task status and results
+      operationId: getOpenTask
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Image task
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+  /api/open/image/v1/balance:
+    get:
+      tags: [Open Image API]
+      summary: Get Open API key user balance
+      operationId: getOpenBalance
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      responses:
+        '200':
+          description: Balance summary
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/BalanceResponse
+  /api/open/image/v1/capabilities:
+    get:
+      tags: [Open Image API]
+      summary: Get Open API image generation capabilities
+      operationId: getOpenCapabilities
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      responses:
+        '200':
+          description: Capability list
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CapabilitiesResponse
+  /api/agent/account/v1/api-keys:
+    get:
+      tags: [Agent User]
+      summary: List current user's API keys
+      operationId: getAgentAPIKeys
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: API key list without secrets
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+    post:
+      tags: [Agent User]
+      summary: Create an API key
+      operationId: postAgentAPIKey
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                total_quota_points: { type: string, pattern: '^\d+(\.\d{1,5})?$' }
+                daily_quota_points: { type: string, pattern: '^\d+(\.\d{1,5})?$' }
+                rpm_limit: { type: integer, minimum: 1 }
+                expires_at: { type: string, format: date-time }
+      responses:
+        '201':
+          description: API key created; secret is shown once
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/agent/account/v1/api-keys/{key_id}:
+    get:
+      tags: [Agent User]
+      summary: Get current user's API key metadata
+      operationId: getAgentAPIKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: API key metadata
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+    put:
+      tags: [Agent User]
+      summary: Update current user's API key metadata or status
+      operationId: putAgentAPIKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                status: { type: string, enum: [active, disabled, revoked] }
+                total_quota_points: { type: string, pattern: '^\d+(\.\d{1,5})?$' }
+                daily_quota_points: { type: string, pattern: '^\d+(\.\d{1,5})?$' }
+                rpm_limit: { type: integer, minimum: 1 }
+                expires_at: { type: string, format: date-time }
+      responses:
+        '200':
+          description: API key updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+        '400':
+          description: Invalid update payload
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        '401':
+          description: Missing or invalid user token
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        '404':
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+    delete:
+      tags: [Agent User]
+      summary: Revoke and delete current user's API key
+      operationId: deleteAgentAPIKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: API key revoked
+  /api/agent/account/v1/api-keys/{key_id}/reset-secret:
+    post:
+      tags: [Agent User]
+      summary: Reset an API key secret; new secret is shown once
+      operationId: postAgentAPIKeyResetSecret
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: API key secret reset
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/ops/admin/v1/auth/login:
+    post:
+      tags: [Admin Config]
+      summary: Login to the independent admin account system
+      operationId: postOpsAdminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Admin session
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
 components:
   securitySchemes:
     bearerAuth:
@@ -558,7 +899,18 @@ components:
       type: apiKey
       in: header
       name: X-Access-Key
+    accessTimestamp:
+      type: apiKey
+      in: header
+      name: X-Timestamp
+      description: RFC3339 timestamp; requests outside the configured drift window are rejected.
+    accessBodySHA256:
+      type: apiKey
+      in: header
+      name: X-Body-SHA256
+      description: Base64url-encoded SHA-256 of the exact request body bytes; use the empty body hash for GET.
     accessSignature:
       type: apiKey
       in: header
       name: X-Signature
+      description: HMAC-SHA256 over method, request URI, timestamp, and X-Body-SHA256 using the API key secret.

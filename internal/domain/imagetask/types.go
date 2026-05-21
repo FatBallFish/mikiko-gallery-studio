@@ -18,6 +18,7 @@ const (
 )
 
 type ExecuteRequest struct {
+	TaskID              string
 	UserID              int64
 	APIKeyID            int64
 	SourceChannel       string

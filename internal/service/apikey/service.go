@@ -7,19 +7,22 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
+	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
+	"os"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/shopspring/decimal"
-
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
-	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
+	"github.com/shopspring/decimal"
+)
+
+const (
+	defaultHMACMaxDrift = 5 * time.Minute
+	zeroPoints          = "0.00000"
 )
 
 type CreateRequest struct {
@@ -38,61 +41,93 @@ type CreateResult struct {
 	Secret string
 }
 
-type Service struct {
-	store                *MemoryStore
-	usage                UsageStore
-	signingEncryptionKey string
-	rpmMu                sync.Mutex
-	rpmWindows           map[int64][]time.Time
+type ResetSecretResult struct {
+	Key    domainapikey.APIKey
+	Secret string
 }
 
-type UsageStore interface {
-	APIKeyUsage(ctx context.Context, apiKeyID int64, since *time.Time) (string, error)
+type UpdateRequest struct {
+	Name             *string
+	GroupCode        *string
+	TotalQuotaPoints *string
+	DailyQuotaPoints *string
+	RPMLimit         *int
+	ExpiresAt        *time.Time
+}
+
+type HMACRequest struct {
+	AccessKey  string
+	Method     string
+	Path       string
+	Timestamp  time.Time
+	Body       []byte
+	BodySHA256 string
+	Signature  string
+	MaxDrift   time.Duration
+	Now        time.Time
+}
+
+type Service struct {
+	store                      *MemoryStore
+	signingSecretEncryptionKey string
+}
+
+type quotaReservation struct {
+	KeyID  int64
+	Day    string
+	Points decimal.Decimal
+	Status string
 }
 
 func NewService(store Store) *Service {
-	return NewServiceWithSigningSecretKey(store, "")
+	return NewServiceWithSigningSecretKey(store, defaultSigningSecretEncryptionKey())
 }
 
-func NewServiceWithSigningSecretKey(store Store, signingEncryptionKey string) *Service {
+func NewServiceWithSigningSecretKey(store Store, signingSecretEncryptionKey string) *Service {
 	if store == nil {
 		store = NewMemoryStore()
 	}
-	signingEncryptionKey = defaultSigningEncryptionKey(signingEncryptionKey)
 	memory, ok := store.(*MemoryStore)
 	if ok {
-		return &Service{store: memory, signingEncryptionKey: signingEncryptionKey, rpmWindows: map[int64][]time.Time{}}
+		return newServiceWithMemoryStore(memory, signingSecretEncryptionKey)
 	}
-	return &Service{store: &MemoryStore{delegate: store}, signingEncryptionKey: signingEncryptionKey, rpmWindows: map[int64][]time.Time{}}
+	return newServiceWithMemoryStore(&MemoryStore{delegate: store}, signingSecretEncryptionKey)
 }
 
-func (s *Service) SetUsageStore(usage UsageStore) {
-	s.usage = usage
+func newServiceWithMemoryStore(store *MemoryStore, signingSecretEncryptionKey string) *Service {
+	if strings.TrimSpace(signingSecretEncryptionKey) == "" {
+		signingSecretEncryptionKey = defaultSigningSecretEncryptionKey()
+	}
+	return &Service{store: store, signingSecretEncryptionKey: signingSecretEncryptionKey}
 }
 
 func (s *Service) CreateKey(ctx context.Context, req CreateRequest) (CreateResult, error) {
 	if req.UserID <= 0 {
 		return CreateResult{}, errs.BadRequest("user_id is required")
 	}
+	if req.RPMLimit != nil && *req.RPMLimit <= 0 {
+		return CreateResult{}, errs.BadRequest("rpm_limit must be greater than 0")
+	}
 	secret := strings.TrimSpace(req.Secret)
 	if secret == "" {
 		secret = "sk-" + randomToken()
 	}
-	signingSecret, err := domainapikey.EncryptSigningSecret(secret, s.signingEncryptionKey)
+	secretCiphertext, err := s.encryptSecret(secret)
 	if err != nil {
-		return CreateResult{}, errs.Internal("failed to protect api key signing secret")
+		return CreateResult{}, errs.Internal("failed to protect api key secret")
 	}
 	key := domainapikey.APIKey{
 		UserID:           req.UserID,
 		AccessKey:        "ak-" + randomToken(),
 		SecretHash:       domainapikey.HashSecret(secret),
-		SigningSecret:    signingSecret,
+		SecretCiphertext: secretCiphertext,
+		SigningSecret:    secretCiphertext,
 		Name:             defaultString(req.Name, "api-key"),
 		Status:           domainapikey.StatusActive,
 		GroupCode:        defaultString(req.GroupCode, "basic"),
-		TotalQuotaPoints: req.TotalQuotaPoints,
-		DailyQuotaPoints: req.DailyQuotaPoints,
-		RPMLimit:         req.RPMLimit,
+		TotalQuotaPoints: cloneStringPtr(req.TotalQuotaPoints),
+		DailyQuotaPoints: cloneStringPtr(req.DailyQuotaPoints),
+		RPMLimit:         cloneIntPtr(req.RPMLimit),
 		ExpiresAt:        req.ExpiresAt,
 	}
 	created, err := s.store.Create(ctx, key)
@@ -102,86 +137,103 @@ func (s *Service) CreateKey(ctx context.Context, req CreateRequest) (CreateResul
 	return CreateResult{Key: created, Secret: secret}, nil
 }
 
-func (s *Service) ListKeys(ctx context.Context, userID int64) ([]domainapikey.APIKey, error) {
+func (s *Service) ListByUser(ctx context.Context, userID int64) ([]domainapikey.APIKey, error) {
 	if userID <= 0 {
 		return nil, errs.BadRequest("user_id is required")
 	}
-	return s.store.ListByUser(ctx, userID)
-}
-
-type UpdateRequest struct {
-	UserID           int64
-	ID               int64
-	Name             *string
-	Status           *string
-	GroupCode        *string
-	TotalQuotaPoints *string
-	DailyQuotaPoints *string
-	RPMLimit         *int
-	ExpiresAt        **time.Time
-	AllowGroupUpdate bool
-}
-
-func (s *Service) UpdateKey(ctx context.Context, req UpdateRequest) (domainapikey.APIKey, error) {
-	key, err := s.store.GetByID(ctx, req.UserID, req.ID)
+	list, err := s.store.ListByUser(ctx, userID)
 	if err != nil {
-		return domainapikey.APIKey{}, mapOwnerLookupError(err)
+		return nil, errs.Internal("failed to list api keys")
 	}
-	if req.Name != nil {
-		key.Name = defaultString(*req.Name, key.Name)
-	}
-	if req.Status != nil {
-		status := strings.TrimSpace(*req.Status)
-		if status != domainapikey.StatusActive && status != domainapikey.StatusDisabled {
-			return domainapikey.APIKey{}, errs.BadRequest("invalid api key status")
-		}
-		key.Status = status
-	}
-	if req.GroupCode != nil {
-		if !req.AllowGroupUpdate {
-			return domainapikey.APIKey{}, errs.BadRequest("group_code cannot be changed")
-		}
-		key.GroupCode = defaultString(*req.GroupCode, key.GroupCode)
-	}
-	if req.TotalQuotaPoints != nil {
-		key.TotalQuotaPoints = req.TotalQuotaPoints
-	}
-	if req.DailyQuotaPoints != nil {
-		key.DailyQuotaPoints = req.DailyQuotaPoints
-	}
-	if req.RPMLimit != nil {
-		key.RPMLimit = req.RPMLimit
-	}
-	if req.ExpiresAt != nil {
-		key.ExpiresAt = *req.ExpiresAt
-	}
-	return s.store.Update(ctx, key)
+	return list, nil
 }
 
-func (s *Service) ResetSecret(ctx context.Context, userID int64, id int64) (CreateResult, error) {
+func (s *Service) GetByID(ctx context.Context, userID, id int64) (domainapikey.APIKey, error) {
+	if userID <= 0 || id <= 0 {
+		return domainapikey.APIKey{}, errs.BadRequest("user_id and id are required")
+	}
 	key, err := s.store.GetByID(ctx, userID, id)
 	if err != nil {
-		return CreateResult{}, mapOwnerLookupError(err)
+		return domainapikey.APIKey{}, mapLifecycleError(err, "api key not found", "failed to load api key")
 	}
-	secret := "sk-" + randomToken()
-	signingSecret, encErr := domainapikey.EncryptSigningSecret(secret, s.signingEncryptionKey)
-	if encErr != nil {
-		return CreateResult{}, errs.Internal("failed to protect api key signing secret")
-	}
-	key.SecretHash = domainapikey.HashSecret(secret)
-	key.SigningSecret = signingSecret
-	updated, err := s.store.Update(ctx, key)
-	if err != nil {
-		return CreateResult{}, err
-	}
-	return CreateResult{Key: updated, Secret: secret}, nil
+	return key, nil
 }
 
-func (s *Service) DeleteKey(ctx context.Context, userID int64, id int64) error {
-	if err := s.store.SoftDelete(ctx, userID, id, time.Now().UTC()); err != nil {
-		return mapOwnerLookupError(err)
+func (s *Service) Update(ctx context.Context, userID, id int64, req UpdateRequest) (domainapikey.APIKey, error) {
+	if userID <= 0 || id <= 0 {
+		return domainapikey.APIKey{}, errs.BadRequest("user_id and id are required")
+	}
+	if req.RPMLimit != nil && *req.RPMLimit <= 0 {
+		return domainapikey.APIKey{}, errs.BadRequest("rpm_limit must be greater than 0")
+	}
+	key, err := s.store.GetByID(ctx, userID, id)
+	if err != nil {
+		return domainapikey.APIKey{}, mapLifecycleError(err, "api key not found", "failed to load api key")
+	}
+	if req.Name != nil {
+		key.Name = defaultString(*req.Name, "api-key")
+	}
+	if req.GroupCode != nil {
+		key.GroupCode = defaultString(*req.GroupCode, "basic")
+	}
+	if req.TotalQuotaPoints != nil {
+		key.TotalQuotaPoints = cloneStringPtr(req.TotalQuotaPoints)
+	}
+	if req.DailyQuotaPoints != nil {
+		key.DailyQuotaPoints = cloneStringPtr(req.DailyQuotaPoints)
+	}
+	if req.RPMLimit != nil {
+		key.RPMLimit = cloneIntPtr(req.RPMLimit)
+	}
+	if req.ExpiresAt != nil {
+		key.ExpiresAt = req.ExpiresAt
+	}
+	updated, err := s.store.UpdateForUser(ctx, userID, key)
+	if err != nil {
+		return domainapikey.APIKey{}, mapLifecycleError(err, "api key not found", "failed to update api key")
+	}
+	return updated, nil
+}
+
+func (s *Service) UpdateStatus(ctx context.Context, userID, id int64, status string) error {
+	status = strings.TrimSpace(status)
+	if userID <= 0 || id <= 0 || status == "" {
+		return errs.BadRequest("user_id, id and status are required")
+	}
+	if !validStatus(status) {
+		return errs.BadRequest("invalid api key status")
+	}
+	_, err := s.store.UpdateStatusForUser(ctx, userID, id, status)
+	if err != nil {
+		return mapLifecycleError(err, "api key not found", "failed to update api key status")
 	}
 	return nil
+}
+
+func (s *Service) Delete(ctx context.Context, userID, id int64) error {
+	if userID <= 0 || id <= 0 {
+		return errs.BadRequest("user_id and id are required")
+	}
+	if err := s.store.DeleteForUser(ctx, userID, id, time.Now().UTC()); err != nil {
+		return mapLifecycleError(err, "api key not found", "failed to delete api key")
+	}
+	return nil
+}
+
+func (s *Service) ResetSecret(ctx context.Context, userID, id int64) (ResetSecretResult, error) {
+	if userID <= 0 || id <= 0 {
+		return ResetSecretResult{}, errs.BadRequest("user_id and id are required")
+	}
+	secret := "sk-" + randomToken()
+	secretCiphertext, err := s.encryptSecret(secret)
+	if err != nil {
+		return ResetSecretResult{}, errs.Internal("failed to protect api key secret")
+	}
+	key, err := s.store.UpdateSecretForUser(ctx, userID, id, domainapikey.HashSecret(secret), secretCiphertext)
+	if err != nil {
+		return ResetSecretResult{}, mapLifecycleError(err, "api key not found", "failed to reset api key secret")
+	}
+	return ResetSecretResult{Key: key, Secret: secret}, nil
 }
 
 func (s *Service) AuthenticateNative(ctx context.Context, accessKey, signature string) (domainapikey.Identity, error) {
@@ -200,101 +252,6 @@ func (s *Service) AuthenticateNative(ctx context.Context, accessKey, signature s
 	return s.acceptKey(ctx, key)
 }
 
-func (s *Service) AuthenticateCanonical(ctx context.Context, method, path, timestamp, bodySHA256, accessKey, signature string, maxSkew time.Duration) (domainapikey.Identity, error) {
-	accessKey = strings.TrimSpace(accessKey)
-	signature = strings.TrimSpace(signature)
-	if accessKey == "" || signature == "" || strings.TrimSpace(timestamp) == "" {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key credentials")
-	}
-	unixSeconds, err := strconv.ParseInt(timestamp, 10, 64)
-	if err != nil {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key timestamp")
-	}
-	if maxSkew <= 0 {
-		maxSkew = 5 * time.Minute
-	}
-	if delta := time.Since(time.Unix(unixSeconds, 0)); delta > maxSkew || delta < -maxSkew {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "api key timestamp expired")
-	}
-	key, err := s.store.GetByAccessKey(ctx, accessKey)
-	if err != nil {
-		return domainapikey.Identity{}, mapLookupError(err)
-	}
-	secret, ok := domainapikey.DecryptSigningSecret(key.SigningSecret, s.signingEncryptionKey)
-	if !ok {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key credentials")
-	}
-	canonical := strings.ToUpper(method) + path + timestamp + strings.ToLower(bodySHA256)
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(canonical))
-	expected := hex.EncodeToString(mac.Sum(nil))
-	if subtle.ConstantTimeCompare([]byte(expected), []byte(strings.ToLower(signature))) != 1 {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key credentials")
-	}
-	return s.acceptKey(ctx, key)
-}
-
-func (s *Service) CheckTaskAllowed(ctx context.Context, apiKeyID, userID int64, estimatedPoints string, now time.Time) (domainbilling.APIKeyQuota, error) {
-	if apiKeyID <= 0 {
-		return domainbilling.APIKeyQuota{}, nil
-	}
-	key, err := s.store.GetByID(ctx, userID, apiKeyID)
-	if err != nil {
-		return domainbilling.APIKeyQuota{}, mapOwnerLookupError(err)
-	}
-	estimated, err := decimal.NewFromString(strings.TrimSpace(estimatedPoints))
-	if err != nil || estimated.IsNegative() {
-		return domainbilling.APIKeyQuota{}, errs.BadRequest("estimated points must be non-negative")
-	}
-	if err := s.checkRPM(key, now); err != nil {
-		return domainbilling.APIKeyQuota{}, err
-	}
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	return domainbilling.APIKeyQuota{
-		APIKeyTotalQuotaPoints: key.TotalQuotaPoints,
-		APIKeyDailyQuotaPoints: key.DailyQuotaPoints,
-		APIKeyQuotaDayStart:    &startOfDay,
-	}, nil
-}
-
-func (s *Service) apiKeyUsage(ctx context.Context, apiKeyID int64, since *time.Time) (decimal.Decimal, error) {
-	value, err := s.usage.APIKeyUsage(ctx, apiKeyID, since)
-	if err != nil {
-		return decimal.Zero, errs.Internal("failed to load api key usage")
-	}
-	used, err := decimal.NewFromString(strings.TrimSpace(value))
-	if err != nil {
-		return decimal.Zero, errs.Internal("invalid api key usage")
-	}
-	if used.IsNegative() {
-		return decimal.Zero, nil
-	}
-	return used, nil
-}
-
-func (s *Service) checkRPM(key domainapikey.APIKey, now time.Time) error {
-	if key.RPMLimit == nil || *key.RPMLimit <= 0 {
-		return nil
-	}
-	windowStart := now.Add(-time.Minute)
-	s.rpmMu.Lock()
-	defer s.rpmMu.Unlock()
-	hits := s.rpmWindows[key.ID]
-	kept := hits[:0]
-	for _, hit := range hits {
-		if hit.After(windowStart) {
-			kept = append(kept, hit)
-		}
-	}
-	if len(kept) >= *key.RPMLimit {
-		s.rpmWindows[key.ID] = kept
-		return errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "api key rpm limit exceeded")
-	}
-	kept = append(kept, now)
-	s.rpmWindows[key.ID] = kept
-	return nil
-}
-
 func (s *Service) AuthenticateBearer(ctx context.Context, bearerSecret string) (domainapikey.Identity, error) {
 	bearerSecret = strings.TrimSpace(bearerSecret)
 	if bearerSecret == "" {
@@ -305,6 +262,73 @@ func (s *Service) AuthenticateBearer(ctx context.Context, bearerSecret string) (
 		return domainapikey.Identity{}, mapLookupError(err)
 	}
 	return s.acceptKey(ctx, key)
+}
+
+func (s *Service) VerifyCanonicalHMAC(ctx context.Context, req HMACRequest) (domainapikey.Identity, error) {
+	accessKey := strings.TrimSpace(req.AccessKey)
+	signature := strings.TrimSpace(req.Signature)
+	bodyHash := strings.TrimSpace(req.BodySHA256)
+	if accessKey == "" || signature == "" || bodyHash == "" || req.Timestamp.IsZero() {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key credentials")
+	}
+	if subtle.ConstantTimeCompare([]byte(bodyHash), []byte(BodySHA256(req.Body))) != 1 {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key body hash")
+	}
+	now := req.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	drift := req.MaxDrift
+	if drift <= 0 {
+		drift = defaultHMACMaxDrift
+	}
+	if absDuration(now.Sub(req.Timestamp)) > drift {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "api key timestamp expired")
+	}
+	key, err := s.store.GetByAccessKey(ctx, accessKey)
+	if err != nil {
+		return domainapikey.Identity{}, mapLookupError(err)
+	}
+	signingSecret, err := s.decryptSecret(key.SecretCiphertext)
+	if err != nil {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "api key signing secret is unavailable")
+	}
+	expected := signCanonicalHMACWithKey(signingSecret, req.Method, req.Path, req.Timestamp, bodyHash)
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) != 1 {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key credentials")
+	}
+	return s.acceptKey(ctx, key)
+}
+
+func (s *Service) ReserveQuota(ctx context.Context, identity domainapikey.Identity, reservationID, points string) error {
+	if identity.APIKeyID <= 0 {
+		return nil
+	}
+	reservationID = strings.TrimSpace(reservationID)
+	if reservationID == "" {
+		return errs.BadRequest("quota reservation id is required")
+	}
+	parsedPoints, err := decimal.NewFromString(strings.TrimSpace(points))
+	if err != nil {
+		return errs.BadRequest("invalid quota points")
+	}
+	if parsedPoints.IsNegative() {
+		return errs.BadRequest("quota points must be non-negative")
+	}
+	if parsedPoints.IsZero() {
+		return nil
+	}
+	if err := s.store.ReserveQuota(ctx, identity.UserID, identity.APIKeyID, reservationID, normalizePoints(parsedPoints), time.Now().UTC()); err != nil {
+		return mapQuotaError(err)
+	}
+	return nil
+}
+
+func (s *Service) ReleaseQuota(ctx context.Context, identity domainapikey.Identity, reservationID string) error {
+	if identity.APIKeyID <= 0 || strings.TrimSpace(reservationID) == "" {
+		return nil
+	}
+	return s.store.ReleaseQuota(ctx, identity.APIKeyID, reservationID)
 }
 
 func (s *Service) SetStatusForTest(ctx context.Context, id int64, status string) error {
@@ -322,6 +346,11 @@ func (s *Service) acceptKey(ctx context.Context, key domainapikey.APIKey) (domai
 	if key.ExpiresAt != nil && time.Now().After(*key.ExpiresAt) {
 		return domainapikey.Identity{}, errs.New(http.StatusForbidden, errs.CodeAPIKeyDisabled, "api key is expired")
 	}
+	if key.RPMLimit != nil {
+		if err := s.store.RecordRequest(ctx, key.ID, *key.RPMLimit, time.Now().UTC()); err != nil {
+			return domainapikey.Identity{}, mapQuotaError(err)
+		}
+	}
 	_ = s.store.UpdateLastUsedAt(ctx, key.ID, time.Now().UTC())
 	return domainapikey.Identity{
 		APIKeyID:  key.ID,
@@ -331,18 +360,81 @@ func (s *Service) acceptKey(ctx context.Context, key domainapikey.APIKey) (domai
 	}, nil
 }
 
-func mapOwnerLookupError(err error) error {
-	if err == repoerr.ErrNotFound {
-		return errs.New(http.StatusNotFound, errs.CodeNotFound, "api key not found")
+func BodySHA256(body []byte) string {
+	sum := sha256.Sum256(body)
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func SignCanonicalHMAC(secret, method, path string, timestamp time.Time, bodySHA256 string) string {
+	return signCanonicalHMACWithKey(secret, method, path, timestamp, bodySHA256)
+}
+
+func signCanonicalHMACWithKey(secretKey, method, path string, timestamp time.Time, bodySHA256 string) string {
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write([]byte(canonicalHMACPayload(method, path, timestamp, bodySHA256)))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func canonicalHMACPayload(method, path string, timestamp time.Time, bodySHA256 string) string {
+	return strings.ToUpper(strings.TrimSpace(method)) + "\n" + strings.TrimSpace(path) + "\n" + timestamp.UTC().Format(time.RFC3339) + "\n" + strings.TrimSpace(bodySHA256)
+}
+
+func (s *Service) encryptSecret(secret string) (string, error) {
+	return domainapikey.EncryptSigningSecret(secret, s.signingSecretEncryptionKey)
+}
+
+func (s *Service) decryptSecret(ciphertext string) (string, error) {
+	if secret, ok := domainapikey.DecryptSigningSecret(ciphertext, s.signingSecretEncryptionKey); ok {
+		return secret, nil
 	}
-	return err
+	return "", errors.New("unsupported secret ciphertext")
+}
+
+func defaultSigningSecretEncryptionKey() string {
+	material := strings.TrimSpace(os.Getenv("PIC_GALLERY_API_KEY_ENCRYPTION_KEY"))
+	if material == "" {
+		material = strings.TrimSpace(os.Getenv("AUTH_ACCESS_TOKEN_SECRET"))
+	}
+	if material == "" {
+		material = "pic-gallery-local-api-key-secret-encryption"
+	}
+	return material
 }
 
 func mapLookupError(err error) error {
-	if err == repoerr.ErrNotFound {
+	if errors.Is(err, repoerr.ErrNotFound) {
 		return errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key credentials")
 	}
 	return errs.Internal("failed to authenticate api key")
+}
+
+func mapLifecycleError(err error, notFoundMessage, internalMessage string) error {
+	if errors.Is(err, repoerr.ErrNotFound) {
+		return errs.New(http.StatusNotFound, errs.CodeNotFound, notFoundMessage)
+	}
+	return errs.Internal(internalMessage)
+}
+
+func mapQuotaError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if appErr, ok := err.(*errs.Error); ok {
+		return appErr
+	}
+	if errors.Is(err, repoerr.ErrNotFound) {
+		return errs.New(http.StatusNotFound, errs.CodeNotFound, "api key not found")
+	}
+	return errs.Internal("failed to update api key usage")
+}
+
+func validStatus(status string) bool {
+	switch status {
+	case domainapikey.StatusActive, domainapikey.StatusDisabled, domainapikey.StatusRevoked:
+		return true
+	default:
+		return false
+	}
 }
 
 func randomToken() string {
@@ -360,9 +452,33 @@ func defaultString(value, fallback string) string {
 	return value
 }
 
-func defaultSigningEncryptionKey(value string) string {
-	if strings.TrimSpace(value) != "" {
-		return value
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
 	}
-	return "local-dev-api-key-signing-secret-encryption-key"
+	cloned := *value
+	return &cloned
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func absDuration(value time.Duration) time.Duration {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func quotaReservationKey(keyID int64, reservationID string) string {
+	return fmt.Sprintf("%d:%s", keyID, strings.TrimSpace(reservationID))
+}
+
+func normalizePoints(value decimal.Decimal) string {
+	return value.Round(5).StringFixed(5)
 }

@@ -58,19 +58,41 @@ create table if not exists api_keys (
   user_id bigint not null,
   access_key varchar(64) not null unique,
   secret_hash varchar(128) not null,
-  signing_secret varchar(512),
+  secret_ciphertext varchar(512),
   name varchar(64) not null,
   status varchar(32) not null default 'active',
   group_code varchar(32) not null default 'default',
   total_quota_points numeric(20,5),
   daily_quota_points numeric(20,5),
+  total_quota_used_points numeric(20,5) not null default 0.00000,
+  daily_quota_used_points numeric(20,5) not null default 0.00000,
+  quota_usage_day varchar(10),
   rpm_limit int,
+  rpm_window_started_at timestamptz,
+  rpm_window_count int not null default 0,
   expires_at timestamptz,
   last_used_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+
+create table if not exists api_key_quota_reservations (
+  id bigserial primary key,
+  api_key_id bigint not null,
+  reservation_id varchar(128) not null,
+  points numeric(20,5) not null,
+  usage_day varchar(10) not null,
+  status varchar(16) not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (api_key_id, reservation_id)
+);
+
+create index if not exists apikey_user_id on api_keys (user_id);
+create index if not exists apikey_status on api_keys (status);
+create index if not exists apikey_group_code on api_keys (group_code);
+create index if not exists apikeyquotareservation_api_key_id_status on api_key_quota_reservations (api_key_id, status);
 
 create table if not exists redeem_codes (
   id bigserial primary key,
@@ -91,7 +113,6 @@ create table if not exists redeem_codes (
 create table if not exists point_ledgers (
   id bigserial primary key,
   user_id bigint not null,
-  api_key_id bigint,
   task_id uuid,
   order_id bigint,
   redeem_code_id bigint,

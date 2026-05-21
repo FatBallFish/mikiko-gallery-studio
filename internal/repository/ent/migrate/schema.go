@@ -18,13 +18,18 @@ var (
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "access_key", Type: field.TypeString, Size: 64},
 		{Name: "secret_hash", Type: field.TypeString, Size: 128},
-		{Name: "signing_secret", Type: field.TypeString, Nullable: true, Size: 512},
+		{Name: "secret_ciphertext", Type: field.TypeString, Nullable: true, Size: 512},
 		{Name: "name", Type: field.TypeString, Size: 64},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
 		{Name: "group_code", Type: field.TypeString, Size: 32, Default: "default"},
 		{Name: "total_quota_points", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "daily_quota_points", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "total_quota_used_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "daily_quota_used_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "quota_usage_day", Type: field.TypeString, Nullable: true, Size: 10},
 		{Name: "rpm_limit", Type: field.TypeInt, Nullable: true},
+		{Name: "rpm_window_started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "rpm_window_count", Type: field.TypeInt, Default: 0},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
 	}
@@ -53,6 +58,35 @@ var (
 				Name:    "apikey_group_code",
 				Unique:  false,
 				Columns: []*schema.Column{APIKeysColumns[10]},
+			},
+		},
+	}
+	// APIKeyQuotaReservationsColumns holds the columns for the "api_key_quota_reservations" table.
+	APIKeyQuotaReservationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "api_key_id", Type: field.TypeInt64},
+		{Name: "reservation_id", Type: field.TypeString, Size: 128},
+		{Name: "points", Type: field.TypeString, SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "usage_day", Type: field.TypeString, Size: 10},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "active"},
+	}
+	// APIKeyQuotaReservationsTable holds the schema information for the "api_key_quota_reservations" table.
+	APIKeyQuotaReservationsTable = &schema.Table{
+		Name:       "api_key_quota_reservations",
+		Columns:    APIKeyQuotaReservationsColumns,
+		PrimaryKey: []*schema.Column{APIKeyQuotaReservationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "apikeyquotareservation_api_key_id_reservation_id",
+				Unique:  true,
+				Columns: []*schema.Column{APIKeyQuotaReservationsColumns[3], APIKeyQuotaReservationsColumns[4]},
+			},
+			{
+				Name:    "apikeyquotareservation_api_key_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeyQuotaReservationsColumns[3], APIKeyQuotaReservationsColumns[7]},
 			},
 		},
 	}
@@ -686,6 +720,7 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		APIKeysTable,
+		APIKeyQuotaReservationsTable,
 		AdminUsersTable,
 		AuditLogsTable,
 		SystemConfigsTable,

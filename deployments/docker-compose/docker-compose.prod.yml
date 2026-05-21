@@ -1,52 +1,128 @@
+name: ${COMPOSE_PROJECT_NAME:-pic-gallery-prod}
+
 services:
   postgres:
     image: postgres:16-alpine
-    env_file:
-      - .env
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pic_gallery}
+      POSTGRES_USER: ${POSTGRES_USER:-pic_gallery}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pic_gallery} -d ${POSTGRES_DB:-pic_gallery}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   redis:
     image: redis:7-alpine
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address :9001
-    env_file:
-      - .env
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - minio_data:/data
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: ../..
       dockerfile: Dockerfile.api
-    depends_on: [postgres, redis, minio]
-    env_file:
-      - .env
+    image: pic-gallery-api:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      APP_CONFIG_PATH: /app/configs/config.example.yaml
+      APP_CONFIG_PATH: configs/config.example.yaml
       APP_ENV: prod
+      APP_ADDR: :8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-pic_gallery}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
       REDIS_URL: redis://redis:6379/0
-      STORAGE_LOCAL_ROOT: /app/storage
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
       STORAGE_SHARED_VOLUME: "true"
-    volumes:
-      - app_storage:/app/storage
+      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
+      PIC_GALLERY_ADMIN_EMAIL: ${PIC_GALLERY_ADMIN_EMAIL:?set PIC_GALLERY_ADMIN_EMAIL in the env file}
+      PIC_GALLERY_ADMIN_PASSWORD: ${PIC_GALLERY_ADMIN_PASSWORD:?set PIC_GALLERY_ADMIN_PASSWORD in the env file}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - shared-storage:/var/lib/pic-gallery/storage
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   worker:
     build:
       context: ../..
       dockerfile: Dockerfile.worker
-    depends_on: [postgres, redis, minio]
-    env_file:
-      - .env
+    image: pic-gallery-worker:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      APP_CONFIG_PATH: /app/configs/config.example.yaml
+      APP_CONFIG_PATH: configs/config.example.yaml
       APP_ENV: prod
+      DATABASE_URL: postgres://${POSTGRES_USER:-pic_gallery}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
       REDIS_URL: redis://redis:6379/0
-      STORAGE_LOCAL_ROOT: /app/storage
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
       STORAGE_SHARED_VOLUME: "true"
+      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
-      - app_storage:/app/storage
+      - shared-storage:/var/lib/pic-gallery/storage
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+
 volumes:
-  pg_data:
-  minio_data:
-  app_storage:
+  postgres-data:
+  redis-data:
+  shared-storage:
+  prometheus-data:

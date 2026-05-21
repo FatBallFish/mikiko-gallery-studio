@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
@@ -87,21 +88,22 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			apikey.Table:              apikey.ValidColumn,
-			adminuser.Table:           adminuser.ValidColumn,
-			auditlog.Table:            auditlog.ValidColumn,
-			configitem.Table:          configitem.ValidColumn,
-			imageresult.Table:         imageresult.ValidColumn,
-			imagetask.Table:           imagetask.ValidColumn,
-			modelprovider.Table:       modelprovider.ValidColumn,
-			modelroute.Table:          modelroute.ValidColumn,
-			pointledger.Table:         pointledger.ValidColumn,
-			providererrorpolicy.Table: providererrorpolicy.ValidColumn,
-			redeemcode.Table:          redeemcode.ValidColumn,
-			referenceasset.Table:      referenceasset.ValidColumn,
-			refreshsession.Table:      refreshsession.ValidColumn,
-			user.Table:                user.ValidColumn,
-			usergroup.Table:           usergroup.ValidColumn,
+			apikey.Table:                 apikey.ValidColumn,
+			apikeyquotareservation.Table: apikeyquotareservation.ValidColumn,
+			adminuser.Table:              adminuser.ValidColumn,
+			auditlog.Table:               auditlog.ValidColumn,
+			configitem.Table:             configitem.ValidColumn,
+			imageresult.Table:            imageresult.ValidColumn,
+			imagetask.Table:              imagetask.ValidColumn,
+			modelprovider.Table:          modelprovider.ValidColumn,
+			modelroute.Table:             modelroute.ValidColumn,
+			pointledger.Table:            pointledger.ValidColumn,
+			providererrorpolicy.Table:    providererrorpolicy.ValidColumn,
+			redeemcode.Table:             redeemcode.ValidColumn,
+			referenceasset.Table:         referenceasset.ValidColumn,
+			refreshsession.Table:         refreshsession.ValidColumn,
+			user.Table:                   user.ValidColumn,
+			usergroup.Table:              usergroup.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

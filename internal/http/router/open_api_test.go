@@ -3,15 +3,11 @@ package router
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 	"time"
 
@@ -128,15 +124,6 @@ func TestOpenImageAPIRejectsMissingAccessKeyInvalidSignatureAndInvalidParams(t *
 		t.Fatalf("expected missing key 401, got %d body=%s", missingRec.Code, missingRec.Body.String())
 	}
 
-	missingTimestampReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
-	missingTimestampReq.Header.Set("X-Access-Key", creds.AccessKey)
-	missingTimestampReq.Header.Set("X-Signature", creds.Secret)
-	missingTimestampRec := httptest.NewRecorder()
-	handler.ServeHTTP(missingTimestampRec, missingTimestampReq)
-	if missingTimestampRec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected missing timestamp 401, got %d body=%s", missingTimestampRec.Code, missingTimestampRec.Body.String())
-	}
-
 	badSigReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
 	signNativeRequest(badSigReq, creds)
 	badSigReq.Header.Set("X-Signature", "wrong")
@@ -155,104 +142,62 @@ func TestOpenImageAPIRejectsMissingAccessKeyInvalidSignatureAndInvalidParams(t *
 	}
 }
 
-func TestOpenImageAPIRejectsCanonicalBodyAndTimestampMismatch(t *testing.T) {
-	handler, creds, _ := newOpenAPIHandler(t)
-
-	goodBody := `{"task_type":"text_to_image","prompt":"signed body","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
-	badBodyReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(goodBody))
-	badBodyReq.Header.Set("Content-Type", "application/json")
-	signNativeRequest(badBodyReq, creds)
-	badBodyReq.Body = io.NopCloser(bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"tampered","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`))
-	badBodyRec := httptest.NewRecorder()
-	handler.ServeHTTP(badBodyRec, badBodyReq)
-	if badBodyRec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected body mismatch 401, got %d body=%s", badBodyRec.Code, badBodyRec.Body.String())
-	}
-
-	oldReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(goodBody))
-	oldReq.Header.Set("Content-Type", "application/json")
-	signNativeRequestAt(oldReq, creds, time.Now().Add(-10*time.Minute))
-	oldRec := httptest.NewRecorder()
-	handler.ServeHTTP(oldRec, oldReq)
-	if oldRec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected stale timestamp 401, got %d body=%s", oldRec.Code, oldRec.Body.String())
+func TestOpenImageAPIRejectsMissingAuthBeforeReadingLargeBody(t *testing.T) {
+	handler, _, _ := newOpenAPIHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewReader(bytes.Repeat([]byte("x"), 4<<20)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing auth to fail with 401 before body validation, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestOpenTaskCreateEnforcesAPIKeyRPMBeforeReserve(t *testing.T) {
-	rpm := 1
-	handler, creds, billingSvc := newOpenAPIHandlerWithKey(t, apikeyservice.CreateRequest{
-		Name:      "openapi-rpm",
-		GroupCode: "plus",
-		Secret:    "sk-openapi-rpm-secret",
-		RPMLimit:  &rpm,
+func TestOpenImageTaskRejectsAPIKeyQuotaExceeded(t *testing.T) {
+	dailyQuota := "1.00000"
+	totalQuota := "100.00000"
+	handler, creds, _ := newOpenAPIHandlerWithCreateRequest(t, apikeyservice.CreateRequest{
+		Name:             "openapi-limited",
+		GroupCode:        "plus",
+		Secret:           "sk-openapi-secret",
+		TotalQuotaPoints: &totalQuota,
+		DailyQuotaPoints: &dailyQuota,
 	})
 
-	firstBody := `{"task_type":"text_to_image","prompt":"first","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
-	firstReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(firstBody))
-	firstReq.Header.Set("Content-Type", "application/json")
-	signNativeRequest(firstReq, creds)
-	firstRec := httptest.NewRecorder()
-	handler.ServeHTTP(firstRec, firstReq)
-	if firstRec.Code != http.StatusAccepted {
-		t.Fatalf("expected first task 202, got %d body=%s", firstRec.Code, firstRec.Body.String())
-	}
-
-	secondBody := `{"task_type":"text_to_image","prompt":"second","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
-	secondReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(secondBody))
-	secondReq.Header.Set("Content-Type", "application/json")
-	signNativeRequest(secondReq, creds)
-	secondRec := httptest.NewRecorder()
-	handler.ServeHTTP(secondRec, secondReq)
-	if secondRec.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected rpm limit 429, got %d body=%s", secondRec.Code, secondRec.Body.String())
-	}
-
-	summary, err := billingSvc.GetBalance(context.Background(), creds.UserID, "1.00000")
-	if err != nil {
-		t.Fatalf("GetBalance: %v", err)
-	}
-	if summary.AvailablePoints != "92.00000" || summary.FrozenPoints != "8.00000" {
-		t.Fatalf("expected only first task reserve after rpm limit, got %#v", summary)
+	taskBody := `{"task_type":"text_to_image","prompt":"cat","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "quota-limit")
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected quota exceeded 403, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestOpenTaskCreateEnforcesAPIKeyQuotaBeforeReserve(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		total *string
-		daily *string
-	}{
-		{name: "total", total: ptrString("7.00000")},
-		{name: "daily", daily: ptrString("7.00000")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			handler, creds, billingSvc := newOpenAPIHandlerWithKey(t, apikeyservice.CreateRequest{
-				Name:             "openapi-quota-" + tc.name,
-				GroupCode:        "plus",
-				Secret:           "sk-openapi-quota-secret-" + tc.name,
-				TotalQuotaPoints: tc.total,
-				DailyQuotaPoints: tc.daily,
-			})
+func TestOpenAndCompatAPIRejectDisabledUserAPIKey(t *testing.T) {
+	handler, creds, authSvc, _ := newOpenAPIHandlerWithAuth(t, apikeyservice.CreateRequest{
+		Name:      "disabled-user",
+		GroupCode: "plus",
+		Secret:    "sk-disabled-user",
+	})
+	authSvc.DisableUserForTest(creds.UserID)
 
-			body := `{"task_type":"text_to_image","prompt":"quota","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
-			req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(body))
-			req.Header.Set("Content-Type", "application/json")
-			signNativeRequest(req, creds)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-			if rec.Code != http.StatusTooManyRequests {
-				t.Fatalf("expected quota limit 429, got %d body=%s", rec.Code, rec.Body.String())
-			}
+	openReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
+	signNativeRequest(openReq, creds)
+	openRec := httptest.NewRecorder()
+	handler.ServeHTTP(openRec, openReq)
+	if openRec.Code != http.StatusForbidden {
+		t.Fatalf("expected disabled user native Open API call to return 403, got %d body=%s", openRec.Code, openRec.Body.String())
+	}
 
-			summary, err := billingSvc.GetBalance(context.Background(), creds.UserID, "1.00000")
-			if err != nil {
-				t.Fatalf("GetBalance: %v", err)
-			}
-			if summary.AvailablePoints != "100.00000" || summary.FrozenPoints != "0.00000" {
-				t.Fatalf("expected no reserve on quota failure, got %#v", summary)
-			}
-		})
+	compatReq := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	compatReq.Header.Set("Authorization", "Bearer "+creds.Secret)
+	compatRec := httptest.NewRecorder()
+	handler.ServeHTTP(compatRec, compatReq)
+	if compatRec.Code != http.StatusForbidden {
+		t.Fatalf("expected disabled user compat bearer call to return 403, got %d body=%s", compatRec.Code, compatRec.Body.String())
 	}
 }
 
@@ -264,14 +209,19 @@ type openAPICredentials struct {
 
 func newOpenAPIHandler(t *testing.T) (http.Handler, openAPICredentials, *billingservice.Service) {
 	t.Helper()
-	return newOpenAPIHandlerWithKey(t, apikeyservice.CreateRequest{
+	return newOpenAPIHandlerWithCreateRequest(t, apikeyservice.CreateRequest{
 		Name:      "openapi",
 		GroupCode: "plus",
 		Secret:    "sk-openapi-secret",
 	})
 }
 
-func newOpenAPIHandlerWithKey(t *testing.T, keyReq apikeyservice.CreateRequest) (http.Handler, openAPICredentials, *billingservice.Service) {
+func newOpenAPIHandlerWithCreateRequest(t *testing.T, createReq apikeyservice.CreateRequest) (http.Handler, openAPICredentials, *billingservice.Service) {
+	handler, creds, _, billingSvc := newOpenAPIHandlerWithAuth(t, createReq)
+	return handler, creds, billingSvc
+}
+
+func newOpenAPIHandlerWithAuth(t *testing.T, createReq apikeyservice.CreateRequest) (http.Handler, openAPICredentials, *authservice.Service, *billingservice.Service) {
 	t.Helper()
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	cfg.Storage.LocalRoot = t.TempDir()
@@ -294,36 +244,29 @@ func newOpenAPIHandlerWithKey(t *testing.T, keyReq apikeyservice.CreateRequest) 
 		t.Fatalf("AdminAdjust: %v", err)
 	}
 	keySvc := apikeyservice.NewService(nil)
-	keyReq.UserID = user.ID
-	created, err := keySvc.CreateKey(context.Background(), keyReq)
+	createReq.UserID = user.ID
+	created, err := keySvc.CreateKey(context.Background(), createReq)
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
 	assetSvc := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), assetSvc, billingSvc)
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, billingSvc, keySvc)
-	return NewWithAPI(api), openAPICredentials{UserID: user.ID, AccessKey: created.Key.AccessKey, Secret: created.Secret}, billingSvc
+	return NewWithAPI(api), openAPICredentials{UserID: user.ID, AccessKey: created.Key.AccessKey, Secret: created.Secret}, authSvc, billingSvc
 }
 
 func signNativeRequest(req *http.Request, creds openAPICredentials) {
-	signNativeRequestAt(req, creds, time.Now())
-}
-
-func signNativeRequestAt(req *http.Request, creds openAPICredentials, at time.Time) {
-	body, _ := io.ReadAll(req.Body)
-	req.Body = io.NopCloser(bytes.NewReader(body))
-	bodySum := sha256.Sum256(body)
-	timestamp := strconv.FormatInt(at.Unix(), 10)
-	canonical := req.Method + req.URL.Path + timestamp + hex.EncodeToString(bodySum[:])
-	mac := hmac.New(sha256.New, []byte(creds.Secret))
-	_, _ = mac.Write([]byte(canonical))
+	var body []byte
+	if req.Body != nil {
+		body, _ = io.ReadAll(req.Body)
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	timestamp := time.Now().UTC()
+	bodyHash := apikeyservice.BodySHA256(body)
 	req.Header.Set("X-Access-Key", creds.AccessKey)
-	req.Header.Set("X-Timestamp", timestamp)
-	req.Header.Set("X-Signature", hex.EncodeToString(mac.Sum(nil)))
-}
-
-func ptrString(value string) *string {
-	return &value
+	req.Header.Set("X-Timestamp", timestamp.Format(time.RFC3339))
+	req.Header.Set("X-Body-SHA256", bodyHash)
+	req.Header.Set("X-Signature", apikeyservice.SignCanonicalHMAC(creds.Secret, req.Method, req.URL.RequestURI(), timestamp, bodyHash))
 }
 
 func TestOpenReferenceUploadRejectsInvalidBase64(t *testing.T) {

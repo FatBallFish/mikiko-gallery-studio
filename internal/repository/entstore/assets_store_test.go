@@ -2,12 +2,14 @@ package entstore
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"entgo.io/ent/dialect"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -57,6 +59,27 @@ func TestAssetsStorePersistsAndQueriesByHash(t *testing.T) {
 	}
 	if loadedByID.ObjectKey != asset.ObjectKey {
 		t.Fatalf("unexpected object key: %s", loadedByID.ObjectKey)
+	}
+
+	if err := store.DeleteByUserAndID(ctx, 7, asset.ID); err != nil {
+		t.Fatalf("DeleteByUserAndID: %v", err)
+	}
+	if _, err := store.GetByUserAndHash(ctx, 7, "hash-asset"); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("expected deleted asset to be excluded from hash lookup, got %v", err)
+	}
+	if err := store.DeleteByUserAndID(ctx, 7, "22222222-2222-2222-2222-222222222222"); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("expected missing asset delete to return not found, got %v", err)
+	}
+
+	otherAsset := asset
+	otherAsset.ID = "33333333-3333-3333-3333-333333333333"
+	otherAsset.SHA256 = "hash-other"
+	otherAsset.ObjectKey = "reference-assets/33333333-3333-3333-3333-333333333333.png"
+	if err := store.Save(ctx, 7, otherAsset); err != nil {
+		t.Fatalf("Save other asset: %v", err)
+	}
+	if err := store.DeleteByUserAndID(ctx, 8, otherAsset.ID); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("expected wrong-user asset delete to return not found, got %v", err)
 	}
 }
 

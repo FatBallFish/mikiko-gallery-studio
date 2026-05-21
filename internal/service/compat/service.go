@@ -13,6 +13,7 @@ import (
 )
 
 type GenerateRequest struct {
+	TaskID              string
 	UserID              int64
 	APIKeyID            int64
 	SourceChannel       string
@@ -28,6 +29,7 @@ type GenerateRequest struct {
 }
 
 type EditRequest struct {
+	TaskID              string
 	UserID              int64
 	APIKeyID            int64
 	SourceChannel       string
@@ -80,6 +82,7 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (provider.I
 		return provider.ImageResponse{}, errs.BadRequest("model and prompt are required")
 	}
 	result, err := s.taskSvc.Execute(ctx, domainimagetask.ExecuteRequest{
+		TaskID:              req.TaskID,
 		UserID:              req.UserID,
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,
@@ -109,6 +112,7 @@ func (s *Service) Edit(ctx context.Context, req EditRequest) (provider.ImageResp
 		return provider.ImageResponse{}, errs.New(400, errs.CodeImageReferenceRequired, "image is required")
 	}
 	result, err := s.taskSvc.Execute(ctx, domainimagetask.ExecuteRequest{
+		TaskID:              req.TaskID,
 		UserID:              req.UserID,
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,

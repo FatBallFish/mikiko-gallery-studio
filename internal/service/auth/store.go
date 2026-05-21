@@ -19,4 +19,6 @@ type Store interface {
 	MarkRefreshSessionExpired(ctx context.Context, sessionID string) error
 	MarkRefreshSessionRevoked(ctx context.Context, sessionID string) error
 	MarkFamilyReplayBlocked(ctx context.Context, familyID string) error
+	RevokeRefreshSessionByHash(ctx context.Context, tokenHash string) error
+	UpdateUserProfile(ctx context.Context, req domainauth.UpdateProfileRequest) (domainauth.User, error)
 }
