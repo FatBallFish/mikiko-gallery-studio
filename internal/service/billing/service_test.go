@@ -2,7 +2,9 @@ package billing
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
@@ -69,6 +71,83 @@ func TestReserveTaskRejectsInsufficientBalance(t *testing.T) {
 		Reason:          "reserve",
 	}); err == nil {
 		t.Fatal("expected insufficient balance error")
+	}
+}
+
+func TestMemoryStoreAPIKeyQuotaConcurrentReserveIsAtomic(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	if _, err := svc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{
+		UserID:       202,
+		ChangePoints: "100.00000",
+		Reason:       "seed balance",
+	}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+
+	totalQuota := "16.00000"
+	dailyQuota := "16.00000"
+	dayStart := time.Now()
+	const workers = 8
+	start := make(chan struct{})
+	errCh := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, err := svc.ReserveTask(context.Background(), domainbilling.ReserveRequest{
+				UserID:          202,
+				APIKeyID:        7001,
+				TaskID:          "memory-quota-task-" + string(rune('a'+i)),
+				EstimatedPoints: "8.00000",
+				Reason:          "reserve with api key quota",
+				APIKeyQuota: domainbilling.APIKeyQuota{
+					APIKeyTotalQuotaPoints: &totalQuota,
+					APIKeyDailyQuotaPoints: &dailyQuota,
+					APIKeyQuotaDayStart:    &dayStart,
+				},
+			})
+			errCh <- err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	successes := 0
+	rateLimited := 0
+	for err := range errCh {
+		if err == nil {
+			successes++
+			continue
+		}
+		appErr, ok := err.(*errs.Error)
+		if !ok || appErr.StatusCode != 429 || appErr.Code != errs.CodeRateLimited {
+			t.Fatalf("expected only quota 429 errors, got %T %v", err, err)
+		}
+		rateLimited++
+	}
+	if successes != 2 || rateLimited != workers-2 {
+		t.Fatalf("expected exactly 2 successes and %d quota failures, got successes=%d failures=%d", workers-2, successes, rateLimited)
+	}
+	summary, err := svc.GetBalance(context.Background(), 202, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.AvailablePoints != "84.00000" || summary.FrozenPoints != "16.00000" {
+		t.Fatalf("expected only quota-covered reserves to affect balance, got %#v", summary)
+	}
+	totalUsed, err := svc.APIKeyUsage(context.Background(), 7001, nil)
+	if err != nil {
+		t.Fatalf("APIKeyUsage total: %v", err)
+	}
+	dailyUsed, err := svc.APIKeyUsage(context.Background(), 7001, &dayStart)
+	if err != nil {
+		t.Fatalf("APIKeyUsage daily: %v", err)
+	}
+	if totalUsed != "16.00000" || dailyUsed != "16.00000" {
+		t.Fatalf("expected usage to stop at quota, total=%s daily=%s", totalUsed, dailyUsed)
 	}
 }
 

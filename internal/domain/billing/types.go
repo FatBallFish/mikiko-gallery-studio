@@ -47,6 +47,7 @@ type BalanceSummary struct {
 
 type LedgerEntry struct {
 	ID           int64     `json:"id"`
+	APIKeyID     int64     `json:"api_key_id,omitempty"`
 	TaskID       string    `json:"task_id,omitempty"`
 	LedgerType   string    `json:"ledger_type"`
 	ChangePoints string    `json:"change_points"`
@@ -63,15 +64,24 @@ type LedgerPage struct {
 	Total    int           `json:"total"`
 }
 
+type APIKeyQuota struct {
+	APIKeyTotalQuotaPoints *string
+	APIKeyDailyQuotaPoints *string
+	APIKeyQuotaDayStart    *time.Time
+}
+
 type ReserveRequest struct {
 	UserID          int64
+	APIKeyID        int64
 	TaskID          string
 	EstimatedPoints string
 	Reason          string
+	APIKeyQuota
 }
 
 type FinalizeRequest struct {
 	UserID          int64
+	APIKeyID        int64
 	TaskID          string
 	EstimatedPoints string
 	ActualPoints    string

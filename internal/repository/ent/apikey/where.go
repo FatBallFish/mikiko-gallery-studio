@@ -84,6 +84,11 @@ func SecretHash(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldSecretHash, v))
 }
 
+// SigningSecret applies equality check predicate on the "signing_secret" field. It's identical to SigningSecretEQ.
+func SigningSecret(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldSigningSecret, v))
+}
+
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
 func Name(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldName, v))
@@ -422,6 +427,81 @@ func SecretHashEqualFold(v string) predicate.APIKey {
 // SecretHashContainsFold applies the ContainsFold predicate on the "secret_hash" field.
 func SecretHashContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldSecretHash, v))
+}
+
+// SigningSecretEQ applies the EQ predicate on the "signing_secret" field.
+func SigningSecretEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldSigningSecret, v))
+}
+
+// SigningSecretNEQ applies the NEQ predicate on the "signing_secret" field.
+func SigningSecretNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldSigningSecret, v))
+}
+
+// SigningSecretIn applies the In predicate on the "signing_secret" field.
+func SigningSecretIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldSigningSecret, vs...))
+}
+
+// SigningSecretNotIn applies the NotIn predicate on the "signing_secret" field.
+func SigningSecretNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldSigningSecret, vs...))
+}
+
+// SigningSecretGT applies the GT predicate on the "signing_secret" field.
+func SigningSecretGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldSigningSecret, v))
+}
+
+// SigningSecretGTE applies the GTE predicate on the "signing_secret" field.
+func SigningSecretGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldSigningSecret, v))
+}
+
+// SigningSecretLT applies the LT predicate on the "signing_secret" field.
+func SigningSecretLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldSigningSecret, v))
+}
+
+// SigningSecretLTE applies the LTE predicate on the "signing_secret" field.
+func SigningSecretLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldSigningSecret, v))
+}
+
+// SigningSecretContains applies the Contains predicate on the "signing_secret" field.
+func SigningSecretContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldSigningSecret, v))
+}
+
+// SigningSecretHasPrefix applies the HasPrefix predicate on the "signing_secret" field.
+func SigningSecretHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldSigningSecret, v))
+}
+
+// SigningSecretHasSuffix applies the HasSuffix predicate on the "signing_secret" field.
+func SigningSecretHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldSigningSecret, v))
+}
+
+// SigningSecretIsNil applies the IsNil predicate on the "signing_secret" field.
+func SigningSecretIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldSigningSecret))
+}
+
+// SigningSecretNotNil applies the NotNil predicate on the "signing_secret" field.
+func SigningSecretNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldSigningSecret))
+}
+
+// SigningSecretEqualFold applies the EqualFold predicate on the "signing_secret" field.
+func SigningSecretEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldSigningSecret, v))
+}
+
+// SigningSecretContainsFold applies the ContainsFold predicate on the "signing_secret" field.
+func SigningSecretContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldSigningSecret, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.

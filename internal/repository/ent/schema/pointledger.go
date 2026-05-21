@@ -14,6 +14,7 @@ func (PointLedger) Mixin() []ent.Mixin { return []ent.Mixin{TimeMixin{}} }
 func (PointLedger) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("user_id"),
+		field.Int64("api_key_id").Optional().Nillable(),
 		field.UUID("task_id", uuid.UUID{}).Optional().Nillable(),
 		field.Int64("order_id").Optional().Nillable(),
 		field.Int64("redeem_code_id").Optional().Nillable(),
@@ -27,5 +28,5 @@ func (PointLedger) Fields() []ent.Field {
 	}
 }
 func (PointLedger) Indexes() []ent.Index {
-	return []ent.Index{index.Fields("user_id"), index.Fields("task_id"), index.Fields("ledger_type"), index.Fields("idempotency_key").Unique()}
+	return []ent.Index{index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("task_id"), index.Fields("ledger_type"), index.Fields("idempotency_key").Unique()}
 }

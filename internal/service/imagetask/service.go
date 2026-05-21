@@ -27,6 +27,7 @@ type Service struct {
 	store     Store
 	assets    AssetLoader
 	billing   BillingManager
+	apiKeys   APIKeyUsageManager
 }
 
 type executionOptions struct {
@@ -48,6 +49,10 @@ type BillingManager interface {
 	ActualPoints(snapshot domainbilling.PricingSnapshot, successOutputImageCount int) (string, error)
 	ReserveTask(ctx context.Context, req domainbilling.ReserveRequest) (domainbilling.BalanceSummary, error)
 	FinalizeTask(ctx context.Context, req domainbilling.FinalizeRequest) (domainbilling.BalanceSummary, error)
+}
+
+type APIKeyUsageManager interface {
+	CheckTaskAllowed(ctx context.Context, apiKeyID, userID int64, estimatedPoints string, now time.Time) (domainbilling.APIKeyQuota, error)
 }
 
 func NewService(cfg config.Config) *Service {
@@ -97,6 +102,10 @@ func (s *Service) BillingManager() BillingManager {
 		return nil
 	}
 	return s.billing
+}
+
+func (s *Service) SetAPIKeyUsageManager(apiKeys APIKeyUsageManager) {
+	s.apiKeys = apiKeys
 }
 
 func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequest) (domainimagetask.Task, error) {
@@ -633,11 +642,21 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 	task.ActualPoints = s.zeroPoints()
 	task.PricingSnapshot = estimate.PricingSnapshot
 
+	var apiKeyQuota domainbilling.APIKeyQuota
+	if s.apiKeys != nil && req.APIKeyID > 0 {
+		quota, err := s.apiKeys.CheckTaskAllowed(ctx, req.APIKeyID, req.UserID, estimate.EstimatedPoints, time.Now())
+		if err != nil {
+			return err
+		}
+		apiKeyQuota = quota
+	}
 	if _, err := s.billing.ReserveTask(ctx, domainbilling.ReserveRequest{
 		UserID:          req.UserID,
+		APIKeyID:        req.APIKeyID,
 		TaskID:          task.ID,
 		EstimatedPoints: estimate.EstimatedPoints,
 		Reason:          "reserve image task points",
+		APIKeyQuota:     apiKeyQuota,
 	}); err != nil {
 		return err
 	}
@@ -650,6 +669,7 @@ func (s *Service) rollbackTaskReserve(ctx context.Context, task domainimagetask.
 	}
 	_, err := s.billing.FinalizeTask(ctx, domainbilling.FinalizeRequest{
 		UserID:          task.UserID,
+		APIKeyID:        task.APIKeyID,
 		TaskID:          task.ID,
 		EstimatedPoints: task.EstimatedPoints,
 		ActualPoints:    s.zeroPoints(),
@@ -678,6 +698,7 @@ func (s *Service) settleTaskBilling(ctx context.Context, task domainimagetask.Ta
 	}
 	_, err := s.billing.FinalizeTask(ctx, domainbilling.FinalizeRequest{
 		UserID:          task.UserID,
+		APIKeyID:        task.APIKeyID,
 		TaskID:          task.ID,
 		EstimatedPoints: task.EstimatedPoints,
 		ActualPoints:    defaultString(task.ActualPoints, s.zeroPoints()),
@@ -704,14 +725,18 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		AbstractModel:         req.AbstractModel,
 		TaskType:              req.TaskType,
 		Prompt:                req.Prompt,
+		NegativePrompt:        req.NegativePrompt,
 		RequestedSize:         req.RequestedSize,
 		RequestedQuality:      defaultString(req.RequestedQuality, "auto"),
+		AspectRatio:           defaultString(req.AspectRatio, "1:1"),
 		ResolvedQualityBucket: resolved.ResolvedQualityBucket,
 		ResponseMode:          defaultString(req.ResponseMode, "async"),
 		SavePolicy:            defaultString(req.SavePolicy, "private"),
 		OutputImageCount:      normalizedCount(req.OutputImageCount),
 		ReferenceImageCount:   req.ReferenceImageCount,
 		ReferenceAssetIDs:     append([]string(nil), req.ReferenceAssetIDs...),
+		ReferenceStrength:     req.ReferenceStrength,
+		Seed:                  req.Seed,
 	}
 }
 
@@ -761,6 +786,10 @@ func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	task.Attempts = append([]domainimagetask.Attempt(nil), task.Attempts...)
 	task.Results = append([]provider.ImageResult(nil), task.Results...)
 	task.ReferenceAssetIDs = append([]string(nil), task.ReferenceAssetIDs...)
+	if task.Seed != nil {
+		seed := *task.Seed
+		task.Seed = &seed
+	}
 	if task.LeaseExpiresAt != nil {
 		expiresAt := *task.LeaseExpiresAt
 		task.LeaseExpiresAt = &expiresAt

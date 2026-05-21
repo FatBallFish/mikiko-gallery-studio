@@ -1,0 +1,6 @@
+.git
+.worktrees
+web/**/node_modules
+**/*.test
+.coverage
+.playwright-mcp

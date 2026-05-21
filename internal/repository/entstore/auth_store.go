@@ -72,6 +72,33 @@ func (s *AuthStore) GetUserByID(ctx context.Context, id int64) (domainauth.User,
 	return s.mapUserEntity(ctx, entity)
 }
 
+func (s *AuthStore) UpdateUser(ctx context.Context, domainUser domainauth.User) (domainauth.User, error) {
+	update := s.client.User.UpdateOneID(int(domainUser.ID)).
+		SetNickname(domainUser.Nickname).
+		SetBio(domainUser.Bio).
+		SetStatus(domainUser.Status).
+		SetTokenVersion(domainUser.TokenVersion).
+		SetDefaultLocale(defaultAuthString(domainUser.DefaultLocale, "zh-CN")).
+		SetTheme(defaultAuthString(domainUser.Theme, "system"))
+	if domainUser.AvatarObjectKey == "" {
+		update.ClearAvatarObjectKey()
+	} else {
+		update.SetAvatarObjectKey(domainUser.AvatarObjectKey)
+	}
+	if err := update.Exec(ctx); err != nil {
+		return domainauth.User{}, err
+	}
+	return s.GetUserByID(ctx, domainUser.ID)
+}
+
+func (s *AuthStore) IncrementTokenVersion(ctx context.Context, userID int64) error {
+	entity, err := s.client.User.Get(ctx, int(userID))
+	if err != nil {
+		return err
+	}
+	return s.client.User.UpdateOneID(entity.ID).SetTokenVersion(entity.TokenVersion + 1).Exec(ctx)
+}
+
 func (s *AuthStore) SaveRefreshSession(ctx context.Context, session RefreshSessionRecord) error {
 	sessionID, err := uuid.Parse(session.ID)
 	if err != nil {
@@ -133,6 +160,14 @@ func (s *AuthStore) MarkRefreshSessionExpired(ctx context.Context, sessionID str
 	return s.client.RefreshSession.UpdateOneID(id).SetStatus("expired").Exec(ctx)
 }
 
+func (s *AuthStore) MarkRefreshSessionRevoked(ctx context.Context, sessionID string) error {
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		return err
+	}
+	return s.client.RefreshSession.UpdateOneID(id).SetStatus("revoked").Exec(ctx)
+}
+
 func (s *AuthStore) MarkFamilyReplayBlocked(ctx context.Context, familyID string) error {
 	parsed, err := uuid.Parse(familyID)
 	if err != nil {
@@ -164,10 +199,13 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 		ID:              int64(entity.ID),
 		Email:           entity.Email,
 		Nickname:        entity.Nickname,
+		Bio:             entity.Bio,
 		Status:          entity.Status,
 		GroupCode:       groupCode,
 		GroupMultiplier: groupMultiplier,
 		TokenVersion:    entity.TokenVersion,
+		DefaultLocale:   entity.DefaultLocale,
+		Theme:           entity.Theme,
 		CreatedAt:       entity.CreatedAt,
 	}, nil
 }
@@ -213,4 +251,11 @@ func mapRefreshSessionEntity(entity *repoent.RefreshSession) RefreshSessionRecor
 
 func unixToTime(value int64) (t time.Time) {
 	return time.Unix(value, 0).UTC()
+}
+
+func defaultAuthString(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }

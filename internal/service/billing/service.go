@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -80,6 +81,18 @@ func (s *Service) AdminAdjust(ctx context.Context, req domainbilling.AdjustReque
 		return domainbilling.BalanceSummary{}, err
 	}
 	return s.balanceSummaryFromState(state, "")
+}
+
+func (s *Service) RedeemCode(ctx context.Context, req RedeemCodeRequest) (domainbilling.BalanceSummary, error) {
+	state, err := s.store.RedeemCode(ctx, req)
+	if err != nil {
+		return domainbilling.BalanceSummary{}, err
+	}
+	return s.balanceSummaryFromState(state, "")
+}
+
+func (s *Service) APIKeyUsage(ctx context.Context, apiKeyID int64, since *time.Time) (string, error) {
+	return s.store.APIKeyUsage(ctx, apiKeyID, since)
 }
 
 func (s *Service) balanceSummaryFromState(state BalanceState, userGroupMultiplier string) (domainbilling.BalanceSummary, error) {

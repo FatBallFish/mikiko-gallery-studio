@@ -235,6 +235,47 @@ func taskAPIConfig(openrouterBaseURL string) config.Config {
 	return cfg
 }
 
+func TestRedeemCodeRejectsUnknownCodeWithoutCreditingBalance(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	if err := authSvc.SendEmailCode("redeem@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, session, err := authSvc.LoginWithEmailCode("redeem@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+
+	billingSvc := billingservice.NewService(cfg.Billing)
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	handler := NewWithAPI(api)
+
+	redeemReq := httptest.NewRequest(http.MethodPost, "/api/agent/billing/v1/redeem-codes/redeem", bytes.NewBufferString(`{"code":"ANYTHING"}`))
+	redeemReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	redeemReq.Header.Set("Content-Type", "application/json")
+	redeemReq.Header.Set("Idempotency-Key", "redeem-unknown")
+	redeemRec := httptest.NewRecorder()
+	handler.ServeHTTP(redeemRec, redeemReq)
+	if redeemRec.Code != http.StatusNotFound {
+		t.Fatalf("expected unknown redeem code 404, got %d body=%s", redeemRec.Code, redeemRec.Body.String())
+	}
+
+	balance, err := billingSvc.GetBalance(context.Background(), user.ID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balance.AvailablePoints != "0.00000" || balance.FrozenPoints != "0.00000" {
+		t.Fatalf("expected redeem failure to leave balance unchanged, got %#v", balance)
+	}
+}
+
 func TestAgentTaskCreateQueuesTaskForWorker(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{

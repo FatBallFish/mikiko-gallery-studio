@@ -1,10 +1,8 @@
-# Pic Gallery 后端进度对照 PRD / 技术方案梳理（2026-05-20）
+# Pic Gallery 后端进度对照 PRD / 技术方案梳理（更新于 2026-05-21）
 
 ## 1. 梳理范围
 
-本文只评估后端、OpenAPI 契约、持久化、Worker、Provider、部署底座等服务端能力，不评估当前前端实现。
-
-当前前端代码将被整体放弃重做，因此本次判断中不把 `web/*` 的页面、视觉、交互和前端业务接入算入完成度。
+本文只评估后端、OpenAPI 契约、持久化、Worker、Provider、部署底座、审计/后台 API 等服务端能力，不评估当前 `web/*` 前端页面实现。
 
 参考资料：
 
@@ -12,13 +10,16 @@
 - 技术方案：`docs/tech/pic-gallery-tech-design.md`
 - OpenAPI：`api/openapi/openapi.yaml`
 - 后端入口：`cmd/api/main.go`、`cmd/worker/main.go`
-- 当前 PR：`https://github.com/FatBallFish/pic-gallery/pull/1`
+- 当前工作分支：`codex/p0-backend-ready`
 
-当前代码基准：
+当前验证基准：
 
-- 分支：`codex/t01-project-scaffold`
-- 当前 HEAD：`488a05a feat(api): 补齐图片开放接口与 API Key 鉴权闭环`
-- 最近验证：`go test ./...` 已通过
+- `CGO_ENABLED=0 go build ./cmd/api ./cmd/worker` 通过
+- `go test -count=1 ./...` 通过
+- `go test -race -count=1 ./internal/service/billing ./internal/service/apikey ./internal/worker` 通过
+- `docker build -f Dockerfile.api .` 通过
+- `docker build -f Dockerfile.worker .` 通过
+- 最终 BLOCK-only review 结论：`NO_BLOCK_FINDINGS`
 
 ## 2. 完成度定义
 

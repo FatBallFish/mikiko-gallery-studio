@@ -23,6 +23,17 @@ auth:
   issuer: pic-gallery-local
   access_token_secret: local-dev-secret
   refresh_cookie_name: pg_refresh_token
+  smtp:
+    host: ""
+    port: 0
+    username: ""
+    password: ""
+    from: ""
+    starttls: true
+    insecure_skip_verify: false
+
+api_key:
+  signing_secret_encryption_key: ""
 
 billing:
   cny_per_point: "0.31250"

@@ -18,6 +18,7 @@ var (
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "access_key", Type: field.TypeString, Size: 64},
 		{Name: "secret_hash", Type: field.TypeString, Size: 128},
+		{Name: "signing_secret", Type: field.TypeString, Nullable: true, Size: 512},
 		{Name: "name", Type: field.TypeString, Size: 64},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
 		{Name: "group_code", Type: field.TypeString, Size: 32, Default: "default"},
@@ -46,12 +47,12 @@ var (
 			{
 				Name:    "apikey_status",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[8]},
+				Columns: []*schema.Column{APIKeysColumns[9]},
 			},
 			{
 				Name:    "apikey_group_code",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[9]},
+				Columns: []*schema.Column{APIKeysColumns[10]},
 			},
 		},
 	}
@@ -403,6 +404,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "task_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "order_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "redeem_code_id", Type: field.TypeInt64, Nullable: true},
@@ -426,19 +428,24 @@ var (
 				Columns: []*schema.Column{PointLedgersColumns[3]},
 			},
 			{
-				Name:    "pointledger_task_id",
+				Name:    "pointledger_api_key_id",
 				Unique:  false,
 				Columns: []*schema.Column{PointLedgersColumns[4]},
 			},
 			{
+				Name:    "pointledger_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[5]},
+			},
+			{
 				Name:    "pointledger_ledger_type",
 				Unique:  false,
-				Columns: []*schema.Column{PointLedgersColumns[7]},
+				Columns: []*schema.Column{PointLedgersColumns[8]},
 			},
 			{
 				Name:    "pointledger_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{PointLedgersColumns[13]},
+				Columns: []*schema.Column{PointLedgersColumns[14]},
 			},
 		},
 	}

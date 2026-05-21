@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -30,6 +31,9 @@ func Run() error {
 	if err := validateStorageTopology(cfg); err != nil {
 		return err
 	}
+	if err := authservice.ValidateProductionEmailCodeConfig(cfg.App.Env, cfg.Auth); err != nil {
+		return err
+	}
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	client, err := db.Open(cfg.Database.URL)
@@ -46,7 +50,10 @@ func Run() error {
 	assetSvc := assetservice.NewServiceWithStore(cfg.Storage, cfg.GenerationLimits, entstore.NewAssetsStore(client))
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, entstore.NewImageTaskStore(client), assetSvc, billingSvc)
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
-	apiKeySvc := apikeyservice.NewService(entstore.NewAPIKeyStore(client))
+	apiKeySvc, err := newRuntimeAPIKeyService(cfg, entstore.NewAPIKeyStore(client))
+	if err != nil {
+		return err
+	}
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc)
@@ -63,4 +70,31 @@ func Run() error {
 		return nil
 	}
 	return err
+}
+
+func newRuntimeAPIKeyService(cfg config.Config, store apikeyservice.Store) (*apikeyservice.Service, error) {
+	signingSecretEncryptionKey := strings.TrimSpace(cfg.APIKey.SigningSecretEncryptionKey)
+	if isProductionEnv(cfg.App.Env) && isWeakAPIKeySigningSecretEncryptionKey(signingSecretEncryptionKey) {
+		return nil, fmt.Errorf("api key signing secret encryption key must be set to a non-development value in %s env", cfg.App.Env)
+	}
+	return apikeyservice.NewServiceWithSigningSecretKey(store, signingSecretEncryptionKey), nil
+}
+
+func isProductionEnv(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "prod", "production":
+		return true
+	default:
+		return false
+	}
+}
+
+func isWeakAPIKeySigningSecretEncryptionKey(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "", "secret", "password", "admin", "admin-token-secret", "admin-secret":
+		return true
+	default:
+		return strings.HasPrefix(value, "change-me") || strings.HasPrefix(value, "local-dev") || strings.Contains(value, "example") || strings.Contains(value, "sample") || len(value) < 32
+	}
 }

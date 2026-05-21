@@ -70,6 +70,11 @@ func UserID(v int64) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldEQ(FieldUserID, v))
 }
 
+// APIKeyID applies equality check predicate on the "api_key_id" field. It's identical to APIKeyIDEQ.
+func APIKeyID(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldAPIKeyID, v))
+}
+
 // TaskID applies equality check predicate on the "task_id" field. It's identical to TaskIDEQ.
 func TaskID(v uuid.UUID) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldEQ(FieldTaskID, v))
@@ -238,6 +243,56 @@ func UserIDLT(v int64) predicate.PointLedger {
 // UserIDLTE applies the LTE predicate on the "user_id" field.
 func UserIDLTE(v int64) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldLTE(FieldUserID, v))
+}
+
+// APIKeyIDEQ applies the EQ predicate on the "api_key_id" field.
+func APIKeyIDEQ(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldAPIKeyID, v))
+}
+
+// APIKeyIDNEQ applies the NEQ predicate on the "api_key_id" field.
+func APIKeyIDNEQ(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNEQ(FieldAPIKeyID, v))
+}
+
+// APIKeyIDIn applies the In predicate on the "api_key_id" field.
+func APIKeyIDIn(vs ...int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIn(FieldAPIKeyID, vs...))
+}
+
+// APIKeyIDNotIn applies the NotIn predicate on the "api_key_id" field.
+func APIKeyIDNotIn(vs ...int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotIn(FieldAPIKeyID, vs...))
+}
+
+// APIKeyIDGT applies the GT predicate on the "api_key_id" field.
+func APIKeyIDGT(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGT(FieldAPIKeyID, v))
+}
+
+// APIKeyIDGTE applies the GTE predicate on the "api_key_id" field.
+func APIKeyIDGTE(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGTE(FieldAPIKeyID, v))
+}
+
+// APIKeyIDLT applies the LT predicate on the "api_key_id" field.
+func APIKeyIDLT(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLT(FieldAPIKeyID, v))
+}
+
+// APIKeyIDLTE applies the LTE predicate on the "api_key_id" field.
+func APIKeyIDLTE(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLTE(FieldAPIKeyID, v))
+}
+
+// APIKeyIDIsNil applies the IsNil predicate on the "api_key_id" field.
+func APIKeyIDIsNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIsNull(FieldAPIKeyID))
+}
+
+// APIKeyIDNotNil applies the NotNil predicate on the "api_key_id" field.
+func APIKeyIDNotNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotNull(FieldAPIKeyID))
 }
 
 // TaskIDEQ applies the EQ predicate on the "task_id" field.

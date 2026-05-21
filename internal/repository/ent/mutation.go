@@ -69,6 +69,7 @@ type APIKeyMutation struct {
 	adduser_id         *int64
 	access_key         *string
 	secret_hash        *string
+	signing_secret     *string
 	name               *string
 	status             *string
 	group_code         *string
@@ -429,6 +430,55 @@ func (m *APIKeyMutation) OldSecretHash(ctx context.Context) (v string, err error
 // ResetSecretHash resets all changes to the "secret_hash" field.
 func (m *APIKeyMutation) ResetSecretHash() {
 	m.secret_hash = nil
+}
+
+// SetSigningSecret sets the "signing_secret" field.
+func (m *APIKeyMutation) SetSigningSecret(s string) {
+	m.signing_secret = &s
+}
+
+// SigningSecret returns the value of the "signing_secret" field in the mutation.
+func (m *APIKeyMutation) SigningSecret() (r string, exists bool) {
+	v := m.signing_secret
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSigningSecret returns the old "signing_secret" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldSigningSecret(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSigningSecret is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSigningSecret requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSigningSecret: %w", err)
+	}
+	return oldValue.SigningSecret, nil
+}
+
+// ClearSigningSecret clears the value of the "signing_secret" field.
+func (m *APIKeyMutation) ClearSigningSecret() {
+	m.signing_secret = nil
+	m.clearedFields[apikey.FieldSigningSecret] = struct{}{}
+}
+
+// SigningSecretCleared returns if the "signing_secret" field was cleared in this mutation.
+func (m *APIKeyMutation) SigningSecretCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldSigningSecret]
+	return ok
+}
+
+// ResetSigningSecret resets all changes to the "signing_secret" field.
+func (m *APIKeyMutation) ResetSigningSecret() {
+	m.signing_secret = nil
+	delete(m.clearedFields, apikey.FieldSigningSecret)
 }
 
 // SetName sets the "name" field.
@@ -839,7 +889,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -857,6 +907,9 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.secret_hash != nil {
 		fields = append(fields, apikey.FieldSecretHash)
+	}
+	if m.signing_secret != nil {
+		fields = append(fields, apikey.FieldSigningSecret)
 	}
 	if m.name != nil {
 		fields = append(fields, apikey.FieldName)
@@ -902,6 +955,8 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.AccessKey()
 	case apikey.FieldSecretHash:
 		return m.SecretHash()
+	case apikey.FieldSigningSecret:
+		return m.SigningSecret()
 	case apikey.FieldName:
 		return m.Name()
 	case apikey.FieldStatus:
@@ -939,6 +994,8 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldAccessKey(ctx)
 	case apikey.FieldSecretHash:
 		return m.OldSecretHash(ctx)
+	case apikey.FieldSigningSecret:
+		return m.OldSigningSecret(ctx)
 	case apikey.FieldName:
 		return m.OldName(ctx)
 	case apikey.FieldStatus:
@@ -1005,6 +1062,13 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSecretHash(v)
+		return nil
+	case apikey.FieldSigningSecret:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSigningSecret(v)
 		return nil
 	case apikey.FieldName:
 		v, ok := value.(string)
@@ -1122,6 +1186,9 @@ func (m *APIKeyMutation) ClearedFields() []string {
 	if m.FieldCleared(apikey.FieldDeletedAt) {
 		fields = append(fields, apikey.FieldDeletedAt)
 	}
+	if m.FieldCleared(apikey.FieldSigningSecret) {
+		fields = append(fields, apikey.FieldSigningSecret)
+	}
 	if m.FieldCleared(apikey.FieldTotalQuotaPoints) {
 		fields = append(fields, apikey.FieldTotalQuotaPoints)
 	}
@@ -1153,6 +1220,9 @@ func (m *APIKeyMutation) ClearField(name string) error {
 	switch name {
 	case apikey.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case apikey.FieldSigningSecret:
+		m.ClearSigningSecret()
 		return nil
 	case apikey.FieldTotalQuotaPoints:
 		m.ClearTotalQuotaPoints()
@@ -1194,6 +1264,9 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldSecretHash:
 		m.ResetSecretHash()
+		return nil
+	case apikey.FieldSigningSecret:
+		m.ResetSigningSecret()
 		return nil
 	case apikey.FieldName:
 		m.ResetName()
@@ -9290,6 +9363,8 @@ type PointLedgerMutation struct {
 	updated_at           *time.Time
 	user_id              *int64
 	adduser_id           *int64
+	api_key_id           *int64
+	addapi_key_id        *int64
 	task_id              *uuid.UUID
 	order_id             *int64
 	addorder_id          *int64
@@ -9533,6 +9608,76 @@ func (m *PointLedgerMutation) AddedUserID() (r int64, exists bool) {
 func (m *PointLedgerMutation) ResetUserID() {
 	m.user_id = nil
 	m.adduser_id = nil
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *PointLedgerMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *PointLedgerMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the PointLedger entity.
+// If the PointLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PointLedgerMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *PointLedgerMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *PointLedgerMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *PointLedgerMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[pointledger.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *PointLedgerMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[pointledger.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *PointLedgerMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, pointledger.FieldAPIKeyID)
 }
 
 // SetTaskID sets the "task_id" field.
@@ -10057,7 +10202,7 @@ func (m *PointLedgerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PointLedgerMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.created_at != nil {
 		fields = append(fields, pointledger.FieldCreatedAt)
 	}
@@ -10066,6 +10211,9 @@ func (m *PointLedgerMutation) Fields() []string {
 	}
 	if m.user_id != nil {
 		fields = append(fields, pointledger.FieldUserID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, pointledger.FieldAPIKeyID)
 	}
 	if m.task_id != nil {
 		fields = append(fields, pointledger.FieldTaskID)
@@ -10111,6 +10259,8 @@ func (m *PointLedgerMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedAt()
 	case pointledger.FieldUserID:
 		return m.UserID()
+	case pointledger.FieldAPIKeyID:
+		return m.APIKeyID()
 	case pointledger.FieldTaskID:
 		return m.TaskID()
 	case pointledger.FieldOrderID:
@@ -10146,6 +10296,8 @@ func (m *PointLedgerMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldUpdatedAt(ctx)
 	case pointledger.FieldUserID:
 		return m.OldUserID(ctx)
+	case pointledger.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
 	case pointledger.FieldTaskID:
 		return m.OldTaskID(ctx)
 	case pointledger.FieldOrderID:
@@ -10195,6 +10347,13 @@ func (m *PointLedgerMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUserID(v)
+		return nil
+	case pointledger.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
 		return nil
 	case pointledger.FieldTaskID:
 		v, ok := value.(uuid.UUID)
@@ -10277,6 +10436,9 @@ func (m *PointLedgerMutation) AddedFields() []string {
 	if m.adduser_id != nil {
 		fields = append(fields, pointledger.FieldUserID)
 	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, pointledger.FieldAPIKeyID)
+	}
 	if m.addorder_id != nil {
 		fields = append(fields, pointledger.FieldOrderID)
 	}
@@ -10296,6 +10458,8 @@ func (m *PointLedgerMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case pointledger.FieldUserID:
 		return m.AddedUserID()
+	case pointledger.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
 	case pointledger.FieldOrderID:
 		return m.AddedOrderID()
 	case pointledger.FieldRedeemCodeID:
@@ -10317,6 +10481,13 @@ func (m *PointLedgerMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddUserID(v)
+		return nil
+	case pointledger.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
 		return nil
 	case pointledger.FieldOrderID:
 		v, ok := value.(int64)
@@ -10347,6 +10518,9 @@ func (m *PointLedgerMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *PointLedgerMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(pointledger.FieldAPIKeyID) {
+		fields = append(fields, pointledger.FieldAPIKeyID)
+	}
 	if m.FieldCleared(pointledger.FieldTaskID) {
 		fields = append(fields, pointledger.FieldTaskID)
 	}
@@ -10376,6 +10550,9 @@ func (m *PointLedgerMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *PointLedgerMutation) ClearField(name string) error {
 	switch name {
+	case pointledger.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
 	case pointledger.FieldTaskID:
 		m.ClearTaskID()
 		return nil
@@ -10407,6 +10584,9 @@ func (m *PointLedgerMutation) ResetField(name string) error {
 		return nil
 	case pointledger.FieldUserID:
 		m.ResetUserID()
+		return nil
+	case pointledger.FieldAPIKeyID:
+		m.ResetAPIKeyID()
 		return nil
 	case pointledger.FieldTaskID:
 		m.ResetTaskID()
