@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录 · Pic Gallery</title>
+  <style>
+    :root {
+      --bg:      oklch(12% 0.015 260);
+      --surface: oklch(16% 0.02 260);
+      --fg:      oklch(95% 0.01 80);
+      --muted:   oklch(90% 0.01 80 / 0.68);
+      --border:  oklch(100% 0 0 / 0.1);
+      --accent:  oklch(70% 0.12 75);
+
+      --font-display: 'Cormorant Garamond', serif;
+      --font-body:    'Manrope', system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); display: flex; height: 100vh; overflow: hidden; align-items: center; justify-content: center; background-image: radial-gradient(circle at top right, color-mix(in oklch, var(--accent) 15%, transparent), transparent 40%); }
+
+    .login-container { width: 100%; max-width: 440px; padding: 48px; background: color-mix(in oklch, var(--surface) 80%, transparent); backdrop-filter: blur(20px); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 32px 64px rgba(0,0,0,0.5); }
+    
+    .logo-area { text-align: center; margin-bottom: 40px; }
+    .logo-area .logo { font-family: var(--font-display); font-size: 32px; color: var(--accent); font-weight: bold; text-decoration: none; display: inline-block; margin-bottom: 8px; }
+    .logo-area p { color: var(--muted); font-size: 14px; margin: 0; }
+
+    .tabs { display: flex; margin-bottom: 32px; border-bottom: 1px solid var(--border); }
+    .tab { flex: 1; text-align: center; padding-bottom: 12px; font-size: 14px; color: var(--muted); cursor: pointer; transition: 0.2s; position: relative; }
+    .tab.active { color: var(--fg); font-weight: bold; }
+    .tab.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--accent); }
+
+    .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    .field label { font-size: 13px; color: var(--muted); font-weight: 600; }
+    .input { background: var(--bg); border: 1px solid var(--border); padding: 14px; border-radius: 8px; color: var(--fg); font: inherit; outline: none; transition: border-color 0.2s; }
+    .input:focus { border-color: var(--accent); }
+    
+    .code-group { display: flex; gap: 12px; }
+    .btn-code { background: var(--surface); border: 1px solid var(--border); color: var(--fg); padding: 0 16px; border-radius: 8px; font-size: 13px; cursor: pointer; white-space: nowrap; transition: 0.2s; }
+    .btn-code:hover { border-color: var(--muted); }
+
+    .btn-primary { width: 100%; padding: 16px; background: var(--accent); color: var(--bg); border: none; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; transition: transform 0.2s, opacity 0.2s; margin-top: 12px; display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+
+    .divider { display: flex; align-items: center; text-align: center; margin-block: 32px; color: var(--muted); font-size: 12px; }
+    .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid var(--border); }
+    .divider::not(:empty)::before { margin-right: .5em; }
+    .divider::not(:empty)::after { margin-left: .5em; }
+
+    .social-login { display: flex; gap: 16px; }
+    .social-btn { flex: 1; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; font-size: 14px; }
+    .social-btn:hover { background: var(--surface); border-color: var(--muted); }
+
+    .footer-text { text-align: center; margin-top: 24px; font-size: 13px; color: var(--muted); }
+    .footer-text a { color: var(--accent); text-decoration: none; }
+    
+    .form-pane { display: none; }
+    .form-pane.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="logo-area">
+      <a href="landing.html" class="logo">Pic Gallery</a>
+      <p>登入您的 AI 创作空间</p>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('pwd')">账号密码登录</div>
+      <div class="tab" onclick="switchTab('code')">验证码登录</div>
+    </div>
+
+    <div id="pane-pwd" class="form-pane active">
+      <div class="field">
+        <label>邮箱/用户名</label>
+        <input type="text" class="input" placeholder="输入邮箱地址">
+      </div>
+      <div class="field">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <label>密码</label>
+          <a href="#" style="font-size: 12px; color: var(--muted); text-decoration: none;">忘记密码?</a>
+        </div>
+        <input type="password" class="input" placeholder="输入密码">
+      </div>
+      <a href="app.html" class="btn-primary">登 录</a>
+    </div>
+
+    <div id="pane-code" class="form-pane">
+      <div class="field">
+        <label>邮箱地址</label>
+        <input type="text" class="input" placeholder="输入邮箱地址">
+      </div>
+      <div class="field">
+        <label>验证码</label>
+        <div class="code-group">
+          <input type="text" class="input" placeholder="6 位验证码" style="flex: 1;">
+          <button class="btn-code">获取验证码</button>
+        </div>
+      </div>
+      <a href="app.html" class="btn-primary">登 录</a>
+    </div>
+
+    <div class="divider">其他登录方式</div>
+
+    <div class="social-login">
+      <button class="social-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12c0 1.2-4 6-9 6s-9-4.8-9-6c0-1.2 4-6 9-6s9 4.8 9 6z"/><circle cx="12" cy="12" r="3"/></svg>
+        WeChat
+      </button>
+      <button class="social-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        钉钉
+      </button>
+      <button class="social-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 12c0-.8-.1-1.6-.2-2.4H12v4.5h5.4c-.2 1.5-.9 2.7-2 3.6v3h3.2c1.9-1.7 3-4.2 3-6.7z"/><path d="M12 21.6c2.7 0 4.9-.9 6.6-2.4l-3.2-3c-.9.6-2 .9-3.4.9-2.6 0-4.8-1.7-5.6-4H3v3.1c1.7 3.4 5.3 5.4 9 5.4z"/><path d="M6.4 13.1c-.2-.6-.3-1.2-.3-1.8s.1-1.2.3-1.8V6.4H3C2.3 7.8 2 9.4 2 11c0 1.7.4 3.2 1 4.7l3.4-2.6z"/><path d="M12 6.6c1.5 0 2.8.5 3.9 1.5l2.9-2.9C17 3.5 14.7 2.4 12 2.4 8.3 2.4 4.7 4.4 3 7.8l3.4 2.6c.8-2.3 3-4 5.6-4z"/></svg>
+        Google
+      </button>
+    </div>
+
+    <div class="footer-text">
+      还没有账号？ <a href="#">立即注册</a>
+    </div>
+  </div>
+
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.form-pane').forEach(p => p.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('pane-' + tabId).classList.add('active');
+    }
+  </script>
+</body>
+</html>

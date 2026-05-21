@@ -24,5 +24,19 @@
   /* Shadows - Minimal for Admin, Glows for User */
   --pg-shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
   --pg-shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+  --pg-shadow-lg: 0 24px 80px rgba(0, 0, 0, 0.22);
   --pg-glow-gold: 0 0 20px rgba(212, 157, 94, 0.2);
+
+  /* Motion */
+  --pg-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --pg-duration-fast: 140ms;
+  --pg-duration-base: 220ms;
+  --pg-duration-slow: 480ms;
+
+  /* Layout */
+  --pg-content-max: 1480px;
+  --pg-focus-ring: #d49d5e;
+  --pg-z-nav: 20;
+  --pg-z-topbar: 30;
+  --pg-z-overlay: 80;
 }

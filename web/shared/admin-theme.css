@@ -18,6 +18,8 @@
   /* Accent colors */
   --pg-admin-color-success: #5a9572;
   --pg-admin-color-warning: #b88740;
+  --pg-admin-color-danger: #b85f54;
+  --pg-focus-ring: var(--pg-admin-color-primary);
 }
 
 body {

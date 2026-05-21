@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pic Gallery · AI 艺术生成工作台</title>
+  <style>
+    :root {
+      /* Luminous Vault Theme */
+      --bg:      oklch(12% 0.015 260);
+      --surface: oklch(16% 0.02 260);
+      --fg:      oklch(95% 0.01 80);
+      --muted:   oklch(90% 0.01 80 / 0.68);
+      --border:  oklch(100% 0 0 / 0.08);
+      --accent:  oklch(70% 0.12 75);
+
+      --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
+      --fg-soft:     color-mix(in oklch, var(--fg) 6%, transparent);
+
+      --font-display: 'Cormorant Garamond', 'Charter', Georgia, serif;
+      --font-body:    'Manrope', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+      --fs-h1: clamp(48px, 8vw, 84px);
+      --fs-h2: clamp(32px, 5vw, 56px);
+      --fs-h3: 24px;
+      --fs-lead: 20px;
+      --fs-body: 16px;
+      --fs-meta: 13px;
+
+      --gap-xs: 8px;
+      --gap-sm: 12px;
+      --gap-md: 20px;
+      --gap-lg: 32px;
+      --gap-xl: 56px;
+      --gap-2xl: 96px;
+      --container: 1120px;
+      --gutter: 32px;
+
+      --radius: 12px;
+      --radius-lg: 18px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: var(--fs-body);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    img, svg { display: block; max-width: 100%; }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; cursor: pointer; border: none; }
+
+    .container { max-width: var(--container); margin-inline: auto; padding-inline: var(--gutter); }
+    .section { padding-block: clamp(64px, 10vw, var(--gap-2xl)); }
+    .stack { display: flex; flex-direction: column; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--gap-lg); }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap-lg); }
+    @media (max-width: 920px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+    .h1 { font-family: var(--font-display); font-size: var(--fs-h1); line-height: 1.05; letter-spacing: -0.02em; margin: 0; }
+    .h2 { font-family: var(--font-display); font-size: var(--fs-h2); line-height: 1.1; letter-spacing: -0.015em; margin: 0; }
+    .h3 { font-size: var(--fs-h3); font-weight: 600; margin: 0; }
+    .lead { font-size: var(--fs-lead); color: var(--muted); max-width: 60ch; }
+    .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: var(--gap-md); }
+    .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+    .topnav { position: sticky; top: 0; z-index: 100; background: color-mix(in oklch, var(--bg) 80%, transparent); backdrop-filter: blur(16px); border-bottom: 1px solid var(--border); }
+    .topnav-inner { display: flex; align-items: center; justify-content: space-between; padding-block: 18px; }
+    .logo { font-family: var(--font-display); font-size: 24px; font-weight: 600; }
+    nav { display: flex; gap: var(--gap-xl); }
+    nav a { font-size: 14px; color: var(--muted); transition: color 0.2s; }
+    nav a:hover { color: var(--fg); }
+
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 28px; border-radius: var(--radius); font-weight: 600; transition: all 0.2s; }
+    .btn-primary { background: var(--accent); color: var(--bg); }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px color-mix(in oklch, var(--accent) 30%, transparent); }
+    .btn-secondary { background: var(--surface); color: var(--fg); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); }
+
+    .hero { text-align: center; padding-block: clamp(100px, 15vw, 200px); }
+    .hero-cta { display: flex; justify-content: center; gap: var(--gap-md); margin-top: var(--gap-xl); }
+
+    .feature-card { background: var(--surface); padding: 40px; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+    .feature-icon { width: 48px; height: 48px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); border-radius: 12px; margin-bottom: 24px; }
+    .feature-card h3 { margin-bottom: 12px; }
+    .feature-card p { color: var(--muted); margin: 0; }
+
+    .stat { text-align: center; }
+    .stat-num { font-family: var(--font-display); font-size: 80px; font-weight: 600; color: var(--accent); line-height: 1; }
+    .stat-label { margin-top: 12px; color: var(--muted); font-size: 15px; }
+
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-2xl); align-items: center; }
+    @media (max-width: 920px) { .split { grid-template-columns: 1fr; text-align: center; } }
+
+    .ph-img { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; display: grid; place-items: center; color: var(--muted); font-family: var(--font-mono); font-size: 14px; position: relative; }
+    .ph-img img { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
+
+    .cta-strip { background: linear-gradient(to bottom, var(--bg), var(--surface)); text-align: center; border-radius: 40px; padding: 80px 40px; margin-block: 80px; border: 1px solid var(--border); }
+    
+    .pagefoot { padding-block: 60px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header class="topnav" data-od-id="topnav">
+    <div class="container topnav-inner">
+      <div class="logo">Pic Gallery</div>
+      <nav>
+        <a href="#features">功能特性</a>
+        <a href="#showcase">作品展示</a>
+        <a href="#pricing">计费规则</a>
+      </nav>
+      <a href="app.html" class="btn btn-primary">进入工作台</a>
+    </div>
+  </header>
+
+  <main id="content">
+    <section class="section hero" data-od-id="hero">
+      <div class="container">
+        <p class="eyebrow">AI Powered Creativity</p>
+        <h1 class="h1">文字跃然屏上<br>灵感触手可及</h1>
+        <p class="lead" style="margin: 24px auto 0;">Pic Gallery 是为您量身定制的 AI 图片生成工作台。集成全球顶尖模型，为您提供极简、艺术、高效的创作体验。</p>
+        <div class="hero-cta">
+          <a href="app.html" class="btn btn-primary">立即免费开始</a>
+          <a href="#showcase" class="btn btn-secondary">浏览画廊</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features" data-od-id="features">
+      <div class="container">
+        <div class="grid-3">
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5"/></svg>
+            </div>
+            <h3 class="h3">多模型路由</h3>
+            <p>集成 OpenAI, OpenRouter 等底层模型。根据您的需求自动选择最佳路径，确保生成质量与效率。</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/></svg>
+            </div>
+            <h3 class="h3">统一计费体系</h3>
+            <p>无需维护多个模型账号。统一积分结算，精确到小数点后 5 位，让每一分投入都清晰可见。</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.886H20.09l-4.73 3.436 1.806 5.556-4.73-3.436-4.73 3.436 1.806-5.556-4.73-3.436h6.178L12 3z"/></svg>
+            </div>
+            <h3 class="h3">开发者友好</h3>
+            <p>提供原生 API 与 OpenAI 兼容接口。AK/SK 独立管理，轻松将 AI 生图能力集成至您的业务。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="showcase" data-od-id="showcase">
+      <div class="container split">
+        <div class="stack" style="gap: 32px;">
+          <p class="eyebrow">Visual Excellence</p>
+          <h2 class="h2">从文生图到参考生图，<br>掌控每一处细节。</h2>
+          <p class="lead">无论是电商产品图、社交媒体封面，还是极具创意的艺术作品，Pic Gallery 都能为您提供精准的参数控制与卓越的输出质量。</p>
+          <div>
+            <a href="app.html" class="btn btn-secondary">探索创作工具</a>
+          </div>
+        </div>
+        <div class="ph-img" style="aspect-ratio: 1; height: 600px;">
+          <img src="mpdhezm8-image.png" alt="Showcase Image">
+          <div style="position: absolute; bottom: 20px; left: 20px; padding: 12px 20px; background: oklch(0% 0 0 / 0.6); backdrop-filter: blur(8px); border-radius: 8px; font-size: 14px;">
+            Prompt: A high-end watch in a cinematic luxury setting...
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="pricing" data-od-id="stats">
+      <div class="container">
+        <div class="grid-3">
+          <div class="stat">
+            <div class="stat-num num">3.2</div>
+            <p class="stat-label">积分 / 元<br>透明计费，充值即得</p>
+          </div>
+          <div class="stat">
+            <div class="stat-num num">5</div>
+            <p class="stat-label">位小数精度<br>不浪费任何一分额度</p>
+          </div>
+          <div class="stat">
+            <div class="stat-num num">99.9<span style="font-size: 0.5em;">%</span></div>
+            <p class="stat-label">服务可用性<br>多模型降级策略保障</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="cta">
+      <div class="container">
+        <div class="cta-strip">
+          <h2 class="h2">准备好开启您的 AI 创作之旅了吗？</h2>
+          <p class="lead" style="margin: 24px auto 32px;">加入数千名创作者的行列，体验最纯粹的 AI 生图。无需繁琐配置，只需放飞灵感。</p>
+          <a href="app.html" class="btn btn-primary btn-lg" style="padding: 18px 48px; font-size: 18px;">立即注册，领取免费积分</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="pagefoot" data-od-id="footer">
+    <div class="container">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+        <div class="logo">Pic Gallery</div>
+        <div class="stack" style="gap: 8px;">
+          <div style="display: flex; gap: 24px;">
+            <a href="#">隐私政策</a>
+            <a href="#">服务条款</a>
+            <a href="#">联系我们</a>
+          </div>
+          <p style="margin: 0;">© 2026 Pic Gallery AI Architecture. All rights reserved.</p>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
