@@ -2,64 +2,107 @@ package audit
 
 import (
 	"context"
-	"time"
+	"strings"
+
+	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
-type Event struct {
-	ActorType  string
-	ActorID    string
-	Action     string
-	TargetType string
-	TargetID   string
-	Result     string
-	Metadata   map[string]any
-	IPAddr     string
-	UserAgent  string
-	CreatedAt  time.Time
+const RedactedValue = "[REDACTED]"
+
+type Service struct {
+	store Store
 }
 
-type Store interface {
-	Write(ctx context.Context, event Event) error
-	List(ctx context.Context, filter Filter) ([]Event, int, error)
+func NewService(store Store) *Service {
+	if store == nil {
+		store = NewMemoryStore()
+	}
+	return &Service{store: store}
 }
 
-type Filter struct {
-	ActorType  string
-	ActorID    string
-	Action     string
-	TargetType string
-	TargetID   string
-	Result     string
-	Page       int
-	PageSize   int
+func (s *Service) Record(ctx context.Context, req domainaudit.RecordRequest) (domainaudit.Log, error) {
+	if strings.TrimSpace(req.ActorType) == "" || strings.TrimSpace(req.ActorID) == "" || strings.TrimSpace(req.Action) == "" || strings.TrimSpace(req.TargetType) == "" || strings.TrimSpace(req.TargetID) == "" {
+		return domainaudit.Log{}, errs.BadRequest("actor, action, and target are required")
+	}
+	result := strings.TrimSpace(req.Result)
+	if result == "" {
+		result = "success"
+	}
+	return s.store.Create(ctx, domainaudit.Log{
+		ActorType:  strings.TrimSpace(req.ActorType),
+		ActorID:    strings.TrimSpace(req.ActorID),
+		Action:     strings.TrimSpace(req.Action),
+		TargetType: strings.TrimSpace(req.TargetType),
+		TargetID:   strings.TrimSpace(req.TargetID),
+		Result:     result,
+		Metadata:   redactMetadata(req.Metadata),
+		IPAddr:     req.IPAddr,
+		UserAgent:  req.UserAgent,
+	})
 }
 
-type Service struct{ store Store }
-
-func NewService(store Store) *Service { return &Service{store: store} }
-
-func (s *Service) Write(ctx context.Context, event Event) error {
-	if s == nil || s.store == nil {
-		return nil
-	}
-	if event.Result == "" {
-		event.Result = "success"
-	}
-	if event.CreatedAt.IsZero() {
-		event.CreatedAt = time.Now().UTC()
-	}
-	return s.store.Write(ctx, event)
+func (s *Service) List(ctx context.Context) ([]domainaudit.Log, error) {
+	return s.store.List(ctx)
 }
 
-func (s *Service) List(ctx context.Context, filter Filter) ([]Event, int, error) {
-	if s == nil || s.store == nil {
-		return []Event{}, 0, nil
+func redactMetadata(input map[string]any) map[string]any {
+	if input == nil {
+		return map[string]any{}
 	}
-	if filter.Page <= 0 {
-		filter.Page = 1
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		if isSecretKey(key) {
+			output[key] = RedactedValue
+			continue
+		}
+		output[key] = redactValue(value)
 	}
-	if filter.PageSize <= 0 {
-		filter.PageSize = 20
+	return output
+}
+
+func redactValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return redactMetadata(typed)
+	case []any:
+		redacted := make([]any, len(typed))
+		for i, item := range typed {
+			redacted[i] = redactValue(item)
+		}
+		return redacted
+	default:
+		return typed
 	}
-	return s.store.List(ctx, filter)
+}
+
+func isSecretKey(key string) bool {
+	lower := strings.ToLower(key)
+	return strings.Contains(lower, "secret") || strings.Contains(lower, "token") || strings.Contains(lower, "password")
+}
+
+func cloneMetadata(input map[string]any) map[string]any {
+	if input == nil {
+		return map[string]any{}
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = cloneValue(value)
+	}
+	return output
+}
+
+func cloneValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneMetadata(typed)
+	case []any:
+		cloned := make([]any, len(typed))
+		for i, item := range typed {
+			cloned[i] = cloneValue(item)
+		}
+		return cloned
+	default:
+		return typed
+	}
 }

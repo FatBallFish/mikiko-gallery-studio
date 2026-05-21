@@ -103,23 +103,23 @@ func (_u *APIKeyUpdate) SetNillableSecretHash(v *string) *APIKeyUpdate {
 	return _u
 }
 
-// SetSigningSecret sets the "signing_secret" field.
-func (_u *APIKeyUpdate) SetSigningSecret(v string) *APIKeyUpdate {
-	_u.mutation.SetSigningSecret(v)
+// SetSecretCiphertext sets the "secret_ciphertext" field.
+func (_u *APIKeyUpdate) SetSecretCiphertext(v string) *APIKeyUpdate {
+	_u.mutation.SetSecretCiphertext(v)
 	return _u
 }
 
-// SetNillableSigningSecret sets the "signing_secret" field if the given value is not nil.
-func (_u *APIKeyUpdate) SetNillableSigningSecret(v *string) *APIKeyUpdate {
+// SetNillableSecretCiphertext sets the "secret_ciphertext" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableSecretCiphertext(v *string) *APIKeyUpdate {
 	if v != nil {
-		_u.SetSigningSecret(*v)
+		_u.SetSecretCiphertext(*v)
 	}
 	return _u
 }
 
-// ClearSigningSecret clears the value of the "signing_secret" field.
-func (_u *APIKeyUpdate) ClearSigningSecret() *APIKeyUpdate {
-	_u.mutation.ClearSigningSecret()
+// ClearSecretCiphertext clears the value of the "secret_ciphertext" field.
+func (_u *APIKeyUpdate) ClearSecretCiphertext() *APIKeyUpdate {
+	_u.mutation.ClearSecretCiphertext()
 	return _u
 }
 
@@ -205,6 +205,54 @@ func (_u *APIKeyUpdate) ClearDailyQuotaPoints() *APIKeyUpdate {
 	return _u
 }
 
+// SetTotalQuotaUsedPoints sets the "total_quota_used_points" field.
+func (_u *APIKeyUpdate) SetTotalQuotaUsedPoints(v string) *APIKeyUpdate {
+	_u.mutation.SetTotalQuotaUsedPoints(v)
+	return _u
+}
+
+// SetNillableTotalQuotaUsedPoints sets the "total_quota_used_points" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableTotalQuotaUsedPoints(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetTotalQuotaUsedPoints(*v)
+	}
+	return _u
+}
+
+// SetDailyQuotaUsedPoints sets the "daily_quota_used_points" field.
+func (_u *APIKeyUpdate) SetDailyQuotaUsedPoints(v string) *APIKeyUpdate {
+	_u.mutation.SetDailyQuotaUsedPoints(v)
+	return _u
+}
+
+// SetNillableDailyQuotaUsedPoints sets the "daily_quota_used_points" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableDailyQuotaUsedPoints(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetDailyQuotaUsedPoints(*v)
+	}
+	return _u
+}
+
+// SetQuotaUsageDay sets the "quota_usage_day" field.
+func (_u *APIKeyUpdate) SetQuotaUsageDay(v string) *APIKeyUpdate {
+	_u.mutation.SetQuotaUsageDay(v)
+	return _u
+}
+
+// SetNillableQuotaUsageDay sets the "quota_usage_day" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableQuotaUsageDay(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetQuotaUsageDay(*v)
+	}
+	return _u
+}
+
+// ClearQuotaUsageDay clears the value of the "quota_usage_day" field.
+func (_u *APIKeyUpdate) ClearQuotaUsageDay() *APIKeyUpdate {
+	_u.mutation.ClearQuotaUsageDay()
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *APIKeyUpdate) SetRpmLimit(v int) *APIKeyUpdate {
 	_u.mutation.ResetRpmLimit()
@@ -229,6 +277,47 @@ func (_u *APIKeyUpdate) AddRpmLimit(v int) *APIKeyUpdate {
 // ClearRpmLimit clears the value of the "rpm_limit" field.
 func (_u *APIKeyUpdate) ClearRpmLimit() *APIKeyUpdate {
 	_u.mutation.ClearRpmLimit()
+	return _u
+}
+
+// SetRpmWindowStartedAt sets the "rpm_window_started_at" field.
+func (_u *APIKeyUpdate) SetRpmWindowStartedAt(v time.Time) *APIKeyUpdate {
+	_u.mutation.SetRpmWindowStartedAt(v)
+	return _u
+}
+
+// SetNillableRpmWindowStartedAt sets the "rpm_window_started_at" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableRpmWindowStartedAt(v *time.Time) *APIKeyUpdate {
+	if v != nil {
+		_u.SetRpmWindowStartedAt(*v)
+	}
+	return _u
+}
+
+// ClearRpmWindowStartedAt clears the value of the "rpm_window_started_at" field.
+func (_u *APIKeyUpdate) ClearRpmWindowStartedAt() *APIKeyUpdate {
+	_u.mutation.ClearRpmWindowStartedAt()
+	return _u
+}
+
+// SetRpmWindowCount sets the "rpm_window_count" field.
+func (_u *APIKeyUpdate) SetRpmWindowCount(v int) *APIKeyUpdate {
+	_u.mutation.ResetRpmWindowCount()
+	_u.mutation.SetRpmWindowCount(v)
+	return _u
+}
+
+// SetNillableRpmWindowCount sets the "rpm_window_count" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableRpmWindowCount(v *int) *APIKeyUpdate {
+	if v != nil {
+		_u.SetRpmWindowCount(*v)
+	}
+	return _u
+}
+
+// AddRpmWindowCount adds value to the "rpm_window_count" field.
+func (_u *APIKeyUpdate) AddRpmWindowCount(v int) *APIKeyUpdate {
+	_u.mutation.AddRpmWindowCount(v)
 	return _u
 }
 
@@ -325,9 +414,9 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "secret_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_hash": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.SigningSecret(); ok {
-		if err := apikey.SigningSecretValidator(v); err != nil {
-			return &ValidationError{Name: "signing_secret", err: fmt.Errorf(`ent: validator failed for field "APIKey.signing_secret": %w`, err)}
+	if v, ok := _u.mutation.SecretCiphertext(); ok {
+		if err := apikey.SecretCiphertextValidator(v); err != nil {
+			return &ValidationError{Name: "secret_ciphertext", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_ciphertext": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Name(); ok {
@@ -343,6 +432,11 @@ func (_u *APIKeyUpdate) check() error {
 	if v, ok := _u.mutation.GroupCode(); ok {
 		if err := apikey.GroupCodeValidator(v); err != nil {
 			return &ValidationError{Name: "group_code", err: fmt.Errorf(`ent: validator failed for field "APIKey.group_code": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.QuotaUsageDay(); ok {
+		if err := apikey.QuotaUsageDayValidator(v); err != nil {
+			return &ValidationError{Name: "quota_usage_day", err: fmt.Errorf(`ent: validator failed for field "APIKey.quota_usage_day": %w`, err)}
 		}
 	}
 	return nil
@@ -381,11 +475,11 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.SecretHash(); ok {
 		_spec.SetField(apikey.FieldSecretHash, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.SigningSecret(); ok {
-		_spec.SetField(apikey.FieldSigningSecret, field.TypeString, value)
+	if value, ok := _u.mutation.SecretCiphertext(); ok {
+		_spec.SetField(apikey.FieldSecretCiphertext, field.TypeString, value)
 	}
-	if _u.mutation.SigningSecretCleared() {
-		_spec.ClearField(apikey.FieldSigningSecret, field.TypeString)
+	if _u.mutation.SecretCiphertextCleared() {
+		_spec.ClearField(apikey.FieldSecretCiphertext, field.TypeString)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
@@ -408,6 +502,18 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.DailyQuotaPointsCleared() {
 		_spec.ClearField(apikey.FieldDailyQuotaPoints, field.TypeString)
 	}
+	if value, ok := _u.mutation.TotalQuotaUsedPoints(); ok {
+		_spec.SetField(apikey.FieldTotalQuotaUsedPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DailyQuotaUsedPoints(); ok {
+		_spec.SetField(apikey.FieldDailyQuotaUsedPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.QuotaUsageDay(); ok {
+		_spec.SetField(apikey.FieldQuotaUsageDay, field.TypeString, value)
+	}
+	if _u.mutation.QuotaUsageDayCleared() {
+		_spec.ClearField(apikey.FieldQuotaUsageDay, field.TypeString)
+	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(apikey.FieldRpmLimit, field.TypeInt, value)
 	}
@@ -416,6 +522,18 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.RpmLimitCleared() {
 		_spec.ClearField(apikey.FieldRpmLimit, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RpmWindowStartedAt(); ok {
+		_spec.SetField(apikey.FieldRpmWindowStartedAt, field.TypeTime, value)
+	}
+	if _u.mutation.RpmWindowStartedAtCleared() {
+		_spec.ClearField(apikey.FieldRpmWindowStartedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RpmWindowCount(); ok {
+		_spec.SetField(apikey.FieldRpmWindowCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRpmWindowCount(); ok {
+		_spec.AddField(apikey.FieldRpmWindowCount, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.ExpiresAt(); ok {
 		_spec.SetField(apikey.FieldExpiresAt, field.TypeTime, value)
@@ -524,23 +642,23 @@ func (_u *APIKeyUpdateOne) SetNillableSecretHash(v *string) *APIKeyUpdateOne {
 	return _u
 }
 
-// SetSigningSecret sets the "signing_secret" field.
-func (_u *APIKeyUpdateOne) SetSigningSecret(v string) *APIKeyUpdateOne {
-	_u.mutation.SetSigningSecret(v)
+// SetSecretCiphertext sets the "secret_ciphertext" field.
+func (_u *APIKeyUpdateOne) SetSecretCiphertext(v string) *APIKeyUpdateOne {
+	_u.mutation.SetSecretCiphertext(v)
 	return _u
 }
 
-// SetNillableSigningSecret sets the "signing_secret" field if the given value is not nil.
-func (_u *APIKeyUpdateOne) SetNillableSigningSecret(v *string) *APIKeyUpdateOne {
+// SetNillableSecretCiphertext sets the "secret_ciphertext" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableSecretCiphertext(v *string) *APIKeyUpdateOne {
 	if v != nil {
-		_u.SetSigningSecret(*v)
+		_u.SetSecretCiphertext(*v)
 	}
 	return _u
 }
 
-// ClearSigningSecret clears the value of the "signing_secret" field.
-func (_u *APIKeyUpdateOne) ClearSigningSecret() *APIKeyUpdateOne {
-	_u.mutation.ClearSigningSecret()
+// ClearSecretCiphertext clears the value of the "secret_ciphertext" field.
+func (_u *APIKeyUpdateOne) ClearSecretCiphertext() *APIKeyUpdateOne {
+	_u.mutation.ClearSecretCiphertext()
 	return _u
 }
 
@@ -626,6 +744,54 @@ func (_u *APIKeyUpdateOne) ClearDailyQuotaPoints() *APIKeyUpdateOne {
 	return _u
 }
 
+// SetTotalQuotaUsedPoints sets the "total_quota_used_points" field.
+func (_u *APIKeyUpdateOne) SetTotalQuotaUsedPoints(v string) *APIKeyUpdateOne {
+	_u.mutation.SetTotalQuotaUsedPoints(v)
+	return _u
+}
+
+// SetNillableTotalQuotaUsedPoints sets the "total_quota_used_points" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableTotalQuotaUsedPoints(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetTotalQuotaUsedPoints(*v)
+	}
+	return _u
+}
+
+// SetDailyQuotaUsedPoints sets the "daily_quota_used_points" field.
+func (_u *APIKeyUpdateOne) SetDailyQuotaUsedPoints(v string) *APIKeyUpdateOne {
+	_u.mutation.SetDailyQuotaUsedPoints(v)
+	return _u
+}
+
+// SetNillableDailyQuotaUsedPoints sets the "daily_quota_used_points" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableDailyQuotaUsedPoints(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetDailyQuotaUsedPoints(*v)
+	}
+	return _u
+}
+
+// SetQuotaUsageDay sets the "quota_usage_day" field.
+func (_u *APIKeyUpdateOne) SetQuotaUsageDay(v string) *APIKeyUpdateOne {
+	_u.mutation.SetQuotaUsageDay(v)
+	return _u
+}
+
+// SetNillableQuotaUsageDay sets the "quota_usage_day" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableQuotaUsageDay(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetQuotaUsageDay(*v)
+	}
+	return _u
+}
+
+// ClearQuotaUsageDay clears the value of the "quota_usage_day" field.
+func (_u *APIKeyUpdateOne) ClearQuotaUsageDay() *APIKeyUpdateOne {
+	_u.mutation.ClearQuotaUsageDay()
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *APIKeyUpdateOne) SetRpmLimit(v int) *APIKeyUpdateOne {
 	_u.mutation.ResetRpmLimit()
@@ -650,6 +816,47 @@ func (_u *APIKeyUpdateOne) AddRpmLimit(v int) *APIKeyUpdateOne {
 // ClearRpmLimit clears the value of the "rpm_limit" field.
 func (_u *APIKeyUpdateOne) ClearRpmLimit() *APIKeyUpdateOne {
 	_u.mutation.ClearRpmLimit()
+	return _u
+}
+
+// SetRpmWindowStartedAt sets the "rpm_window_started_at" field.
+func (_u *APIKeyUpdateOne) SetRpmWindowStartedAt(v time.Time) *APIKeyUpdateOne {
+	_u.mutation.SetRpmWindowStartedAt(v)
+	return _u
+}
+
+// SetNillableRpmWindowStartedAt sets the "rpm_window_started_at" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableRpmWindowStartedAt(v *time.Time) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetRpmWindowStartedAt(*v)
+	}
+	return _u
+}
+
+// ClearRpmWindowStartedAt clears the value of the "rpm_window_started_at" field.
+func (_u *APIKeyUpdateOne) ClearRpmWindowStartedAt() *APIKeyUpdateOne {
+	_u.mutation.ClearRpmWindowStartedAt()
+	return _u
+}
+
+// SetRpmWindowCount sets the "rpm_window_count" field.
+func (_u *APIKeyUpdateOne) SetRpmWindowCount(v int) *APIKeyUpdateOne {
+	_u.mutation.ResetRpmWindowCount()
+	_u.mutation.SetRpmWindowCount(v)
+	return _u
+}
+
+// SetNillableRpmWindowCount sets the "rpm_window_count" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableRpmWindowCount(v *int) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetRpmWindowCount(*v)
+	}
+	return _u
+}
+
+// AddRpmWindowCount adds value to the "rpm_window_count" field.
+func (_u *APIKeyUpdateOne) AddRpmWindowCount(v int) *APIKeyUpdateOne {
+	_u.mutation.AddRpmWindowCount(v)
 	return _u
 }
 
@@ -759,9 +966,9 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "secret_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_hash": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.SigningSecret(); ok {
-		if err := apikey.SigningSecretValidator(v); err != nil {
-			return &ValidationError{Name: "signing_secret", err: fmt.Errorf(`ent: validator failed for field "APIKey.signing_secret": %w`, err)}
+	if v, ok := _u.mutation.SecretCiphertext(); ok {
+		if err := apikey.SecretCiphertextValidator(v); err != nil {
+			return &ValidationError{Name: "secret_ciphertext", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_ciphertext": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Name(); ok {
@@ -777,6 +984,11 @@ func (_u *APIKeyUpdateOne) check() error {
 	if v, ok := _u.mutation.GroupCode(); ok {
 		if err := apikey.GroupCodeValidator(v); err != nil {
 			return &ValidationError{Name: "group_code", err: fmt.Errorf(`ent: validator failed for field "APIKey.group_code": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.QuotaUsageDay(); ok {
+		if err := apikey.QuotaUsageDayValidator(v); err != nil {
+			return &ValidationError{Name: "quota_usage_day", err: fmt.Errorf(`ent: validator failed for field "APIKey.quota_usage_day": %w`, err)}
 		}
 	}
 	return nil
@@ -832,11 +1044,11 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	if value, ok := _u.mutation.SecretHash(); ok {
 		_spec.SetField(apikey.FieldSecretHash, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.SigningSecret(); ok {
-		_spec.SetField(apikey.FieldSigningSecret, field.TypeString, value)
+	if value, ok := _u.mutation.SecretCiphertext(); ok {
+		_spec.SetField(apikey.FieldSecretCiphertext, field.TypeString, value)
 	}
-	if _u.mutation.SigningSecretCleared() {
-		_spec.ClearField(apikey.FieldSigningSecret, field.TypeString)
+	if _u.mutation.SecretCiphertextCleared() {
+		_spec.ClearField(apikey.FieldSecretCiphertext, field.TypeString)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
@@ -859,6 +1071,18 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	if _u.mutation.DailyQuotaPointsCleared() {
 		_spec.ClearField(apikey.FieldDailyQuotaPoints, field.TypeString)
 	}
+	if value, ok := _u.mutation.TotalQuotaUsedPoints(); ok {
+		_spec.SetField(apikey.FieldTotalQuotaUsedPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DailyQuotaUsedPoints(); ok {
+		_spec.SetField(apikey.FieldDailyQuotaUsedPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.QuotaUsageDay(); ok {
+		_spec.SetField(apikey.FieldQuotaUsageDay, field.TypeString, value)
+	}
+	if _u.mutation.QuotaUsageDayCleared() {
+		_spec.ClearField(apikey.FieldQuotaUsageDay, field.TypeString)
+	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(apikey.FieldRpmLimit, field.TypeInt, value)
 	}
@@ -867,6 +1091,18 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if _u.mutation.RpmLimitCleared() {
 		_spec.ClearField(apikey.FieldRpmLimit, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RpmWindowStartedAt(); ok {
+		_spec.SetField(apikey.FieldRpmWindowStartedAt, field.TypeTime, value)
+	}
+	if _u.mutation.RpmWindowStartedAtCleared() {
+		_spec.ClearField(apikey.FieldRpmWindowStartedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RpmWindowCount(); ok {
+		_spec.SetField(apikey.FieldRpmWindowCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRpmWindowCount(); ok {
+		_spec.AddField(apikey.FieldRpmWindowCount, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.ExpiresAt(); ok {
 		_spec.SetField(apikey.FieldExpiresAt, field.TypeTime, value)

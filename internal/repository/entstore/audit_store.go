@@ -3,60 +3,94 @@ package entstore
 import (
 	"context"
 
+	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
-	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 )
 
-type AuditStore struct{ client *repoent.Client }
-
-func NewAuditStore(client *repoent.Client) *AuditStore { return &AuditStore{client: client} }
-
-func (s *AuditStore) Write(ctx context.Context, event auditservice.Event) error {
-	return s.client.AuditLog.Create().
-		SetActorType(event.ActorType).
-		SetActorID(event.ActorID).
-		SetAction(event.Action).
-		SetTargetType(event.TargetType).
-		SetTargetID(event.TargetID).
-		SetResult(defaultString(event.Result, "success")).
-		SetMetadata(event.Metadata).
-		SetIPAddr(event.IPAddr).
-		SetUserAgent(event.UserAgent).
-		Exec(ctx)
+type AuditStore struct {
+	client *repoent.Client
 }
 
-func (s *AuditStore) List(ctx context.Context, filter auditservice.Filter) ([]auditservice.Event, int, error) {
-	query := s.client.AuditLog.Query()
-	if filter.ActorType != "" {
-		query = query.Where(auditlog.ActorTypeEQ(filter.ActorType))
+func NewAuditStore(client *repoent.Client) *AuditStore {
+	return &AuditStore{client: client}
+}
+
+func (s *AuditStore) Create(ctx context.Context, log domainaudit.Log) (domainaudit.Log, error) {
+	result := log.Result
+	if result == "" {
+		result = "success"
 	}
-	if filter.ActorID != "" {
-		query = query.Where(auditlog.ActorIDEQ(filter.ActorID))
-	}
-	if filter.Action != "" {
-		query = query.Where(auditlog.ActionEQ(filter.Action))
-	}
-	if filter.TargetType != "" {
-		query = query.Where(auditlog.TargetTypeEQ(filter.TargetType))
-	}
-	if filter.TargetID != "" {
-		query = query.Where(auditlog.TargetIDEQ(filter.TargetID))
-	}
-	if filter.Result != "" {
-		query = query.Where(auditlog.ResultEQ(filter.Result))
-	}
-	total, err := query.Count(ctx)
+	entity, err := s.client.AuditLog.Create().
+		SetActorType(log.ActorType).
+		SetActorID(log.ActorID).
+		SetAction(log.Action).
+		SetTargetType(log.TargetType).
+		SetTargetID(log.TargetID).
+		SetResult(result).
+		SetMetadata(cloneAuditMetadata(log.Metadata)).
+		SetIPAddr(log.IPAddr).
+		SetUserAgent(log.UserAgent).
+		Save(ctx)
 	if err != nil {
-		return nil, 0, err
+		return domainaudit.Log{}, err
 	}
-	items, err := query.Order(repoent.Desc(auditlog.FieldCreatedAt)).Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).All(ctx)
+	return mapAuditLogEntity(entity), nil
+}
+
+func (s *AuditStore) List(ctx context.Context) ([]domainaudit.Log, error) {
+	entities, err := s.client.AuditLog.Query().Order(repoent.Desc("created_at")).Limit(200).All(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	events := make([]auditservice.Event, 0, len(items))
-	for _, item := range items {
-		events = append(events, auditservice.Event{ActorType: item.ActorType, ActorID: item.ActorID, Action: item.Action, TargetType: item.TargetType, TargetID: item.TargetID, Result: item.Result, Metadata: item.Metadata, IPAddr: item.IPAddr, UserAgent: item.UserAgent, CreatedAt: item.CreatedAt})
+	logs := make([]domainaudit.Log, 0, len(entities))
+	for _, entity := range entities {
+		logs = append(logs, mapAuditLogEntity(entity))
 	}
-	return events, total, nil
+	return logs, nil
+}
+
+func mapAuditLogEntity(entity *repoent.AuditLog) domainaudit.Log {
+	if entity == nil {
+		return domainaudit.Log{}
+	}
+	return domainaudit.Log{
+		ID:         int64(entity.ID),
+		ActorType:  entity.ActorType,
+		ActorID:    entity.ActorID,
+		Action:     entity.Action,
+		TargetType: entity.TargetType,
+		TargetID:   entity.TargetID,
+		Result:     entity.Result,
+		Metadata:   cloneAuditMetadata(entity.Metadata),
+		IPAddr:     entity.IPAddr,
+		UserAgent:  entity.UserAgent,
+		CreatedAt:  entity.CreatedAt,
+		UpdatedAt:  entity.UpdatedAt,
+	}
+}
+
+func cloneAuditMetadata(input map[string]any) map[string]any {
+	if input == nil {
+		return map[string]any{}
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = cloneAuditValue(value)
+	}
+	return output
+}
+
+func cloneAuditValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneAuditMetadata(typed)
+	case []any:
+		cloned := make([]any, len(typed))
+		for i, item := range typed {
+			cloned[i] = cloneAuditValue(item)
+		}
+		return cloned
+	default:
+		return typed
+	}
 }

@@ -174,6 +174,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 	}
 
 	task := buildTask(domainimagetask.CreateRequest{
+		TaskID:              req.TaskID,
 		UserID:              req.UserID,
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,

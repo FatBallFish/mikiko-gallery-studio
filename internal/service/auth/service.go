@@ -52,22 +52,7 @@ type Claims struct {
 	Email        string `json:"email"`
 	TokenVersion int    `json:"token_version"`
 	GroupCode    string `json:"group_code"`
-	SessionID    string `json:"session_id"`
 	jwt.RegisteredClaims
-}
-
-type Service struct {
-	mu              sync.Mutex
-	cfg             config.AuthConfig
-	store           Store
-	emailSender     EmailSender
-	userMultipliers map[string]string
-	nextUserID      int64
-	usersByEmail    map[string]*domainauth.User
-	usersByID       map[int64]*domainauth.User
-	codesByEmail    map[string]emailCode
-	sessionsByHash  map[string]*refreshSession
-	familySessions  map[string][]*refreshSession
 }
 
 type EmailSender interface {
@@ -135,6 +120,20 @@ func (s *SMTPEmailSender) SendVerificationCode(email, scene, code string) error 
 	return client.Quit()
 }
 
+type Service struct {
+	mu              sync.Mutex
+	cfg             config.AuthConfig
+	store           Store
+	emailSender     EmailSender
+	userMultipliers map[string]string
+	nextUserID      int64
+	usersByEmail    map[string]*domainauth.User
+	usersByID       map[int64]*domainauth.User
+	codesByEmail    map[string]emailCode
+	sessionsByHash  map[string]*refreshSession
+	familySessions  map[string][]*refreshSession
+}
+
 func NewService(cfg config.AuthConfig, userMultipliers map[string]string) *Service {
 	return NewServiceWithStore(cfg, userMultipliers, nil)
 }
@@ -188,10 +187,10 @@ func (s *Service) SendEmailCode(email, scene string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	existing := s.codesByEmail[email]
 	now := time.Now()
-	if !existing.LastSentAt.IsZero() && now.Sub(existing.LastSentAt) < time.Minute {
-		return errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "verification code was sent recently")
+	current := s.codesByEmail[email]
+	if !current.LastSentAt.IsZero() && now.Sub(current.LastSentAt) < time.Minute {
+		return errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "verification code resend cooldown is active")
 	}
 	code := fixedEmailCode(s.cfg)
 	if code == "" {
@@ -210,7 +209,13 @@ func (s *Service) SendEmailCode(email, scene string) error {
 			return errs.Internal("failed to send email verification code")
 		}
 	}
-	s.codesByEmail[email] = emailCode{Code: code, Scene: scene, ExpiresAt: now.Add(10 * time.Minute), LastSentAt: now}
+	current.Code = code
+	current.Scene = scene
+	current.ExpiresAt = now.Add(10 * time.Minute)
+	current.LastSentAt = now
+	current.FailedAttempts = 0
+	current.LockedUntil = time.Time{}
+	s.codesByEmail[email] = current
 	return nil
 }
 
@@ -284,14 +289,15 @@ func envelopeAddress(value string) string {
 
 func (s *Service) LoginWithEmailCode(email, code string) (domainauth.User, domainauth.Session, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
+	code = strings.TrimSpace(code)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record, ok := s.codesByEmail[email]
 	now := time.Now()
 	if ok && !record.LockedUntil.IsZero() && now.Before(record.LockedUntil) {
-		return domainauth.User{}, domainauth.Session{}, errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "too many invalid verification attempts")
+		return domainauth.User{}, domainauth.Session{}, errs.New(429, errs.CodeRateLimited, "too many invalid verification attempts")
 	}
-	if !ok || record.Code != strings.TrimSpace(code) || now.After(record.ExpiresAt) {
+	if !ok || record.Code != code || now.After(record.ExpiresAt) {
 		if ok {
 			record.FailedAttempts++
 			if record.FailedAttempts >= 5 {
@@ -378,23 +384,6 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 	return user, newSession, nil
 }
 
-func (s *Service) Logout(sessionID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if strings.TrimSpace(sessionID) == "" {
-		return nil
-	}
-	if s.store != nil {
-		return s.store.MarkRefreshSessionRevoked(context.Background(), sessionID)
-	}
-	for _, session := range s.sessionsByHash {
-		if session.ID == sessionID && session.Status == "active" {
-			session.Status = "revoked"
-		}
-	}
-	return nil
-}
-
 func (s *Service) ParseAccessToken(accessToken string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(accessToken, &Claims{}, func(token *jwt.Token) (any, error) {
 		return []byte(s.cfg.AccessTokenSecret), nil
@@ -409,90 +398,65 @@ func (s *Service) ParseAccessToken(accessToken string) (*Claims, error) {
 	return claims, nil
 }
 
-func (s *Service) ValidateAccessToken(accessToken string) (domainauth.User, *Claims, error) {
-	claims, err := s.ParseAccessToken(accessToken)
-	if err != nil {
-		return domainauth.User{}, nil, err
-	}
-	user, ok := s.GetUserByID(claims.UserID)
-	if !ok {
-		return domainauth.User{}, nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "user not found")
-	}
-	if user.Status == "disabled" {
-		return domainauth.User{}, nil, errs.New(http.StatusForbidden, errs.CodeUserDisabled, "user has been disabled")
-	}
-	if user.TokenVersion != claims.TokenVersion {
-		return domainauth.User{}, nil, errs.New(http.StatusUnauthorized, errs.CodeAuthAccessExpired, "access token revoked")
-	}
-	return user, claims, nil
-}
-
 func (s *Service) GetUserByID(id int64) (domainauth.User, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.getUserByIDLocked(id)
 }
 
-func (s *Service) UpdateProfile(userID int64, nickname, bio, theme, locale, avatarObjectKey *string) (domainauth.User, error) {
+func (s *Service) Logout(refreshToken string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	user, ok := s.getUserByIDLocked(userID)
-	if !ok {
-		return domainauth.User{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "user not found")
+	if refreshToken == "" {
+		return nil
 	}
-	if nickname != nil {
-		value := strings.TrimSpace(*nickname)
-		if len([]rune(value)) < 2 || len([]rune(value)) > 30 {
-			return domainauth.User{}, errs.BadRequest("nickname must be 2-30 characters")
-		}
-		user.Nickname = value
+	hash := hashToken(refreshToken)
+	if current, ok := s.sessionsByHash[hash]; ok {
+		current.Status = "revoked"
 	}
-	if bio != nil {
-		value := strings.TrimSpace(*bio)
-		if len([]rune(value)) > 120 {
-			return domainauth.User{}, errs.BadRequest("bio must be up to 120 characters")
-		}
-		user.Bio = value
-	}
-	if theme != nil {
-		value := strings.TrimSpace(*theme)
-		if value != "light" && value != "dark" && value != "system" {
-			return domainauth.User{}, errs.BadRequest("invalid theme")
-		}
-		user.Theme = value
-	}
-	if locale != nil {
-		user.DefaultLocale = defaultString(strings.TrimSpace(*locale), "zh-CN")
-	}
-	if avatarObjectKey != nil {
-		user.AvatarObjectKey = strings.TrimSpace(*avatarObjectKey)
-	}
-	return s.saveUserLocked(user)
-}
-
-func (s *Service) ChangePassword(userID int64, _ string, newPassword string) error {
-	if strings.TrimSpace(newPassword) == "" {
-		return errs.BadRequest("new password is required")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	user, ok := s.getUserByIDLocked(userID)
-	if !ok {
-		return errs.New(http.StatusNotFound, errs.CodeNotFound, "user not found")
-	}
-	user.TokenVersion++
-	if _, err := s.saveUserLocked(user); err != nil {
-		return err
+	if s.store != nil {
+		return s.store.RevokeRefreshSessionByHash(context.Background(), hash)
 	}
 	return nil
 }
 
-func (s *Service) ResetPassword(email, code, newPassword string) error {
-	user, _, err := s.LoginWithEmailCode(email, code)
-	if err != nil {
-		return err
+func (s *Service) UpdateProfile(req domainauth.UpdateProfileRequest) (domainauth.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.UserID <= 0 {
+		return domainauth.User{}, errs.BadRequest("user_id is required")
 	}
-	return s.ChangePassword(user.ID, "", newPassword)
+	if req.Nickname == "" {
+		req.Nickname = fmt.Sprintf("user-%d", req.UserID)
+	}
+	if req.DefaultLocale == "" {
+		req.DefaultLocale = "zh-CN"
+	}
+	if req.Theme == "" {
+		req.Theme = "system"
+	}
+	if s.store != nil {
+		return s.store.UpdateUserProfile(context.Background(), req)
+	}
+	user, ok := s.usersByID[req.UserID]
+	if !ok {
+		return domainauth.User{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	user.Nickname = req.Nickname
+	user.Bio = req.Bio
+	user.AvatarObjectKey = req.AvatarObjectKey
+	user.DefaultLocale = req.DefaultLocale
+	user.Theme = req.Theme
+	return *user, nil
+}
+
+func (s *Service) DisableUserForTest(id int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if user, ok := s.usersByID[id]; ok {
+		user.Status = "disabled"
+		user.TokenVersion++
+	}
 }
 
 func (s *Service) userMultiplierFor(groupCode string) string {
@@ -513,7 +477,7 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 	accessExp := time.Now().Add(s.cfg.AccessTokenTTL)
 	refreshExp := time.Now().Add(s.cfg.RefreshTokenTTL)
 	claims := Claims{
-		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode, SessionID: sessionID,
+		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", user.ID), ExpiresAt: jwt.NewNumericDate(accessExp), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: s.cfg.Issuer},
 	}
 	accessToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.AccessTokenSecret))
@@ -580,16 +544,6 @@ func (s *Service) createUserLocked(email string) (domainauth.User, error) {
 	return user, nil
 }
 
-func (s *Service) saveUserLocked(user domainauth.User) (domainauth.User, error) {
-	if s.store != nil {
-		return s.store.UpdateUser(context.Background(), user)
-	}
-	existing := user
-	s.usersByID[user.ID] = &existing
-	s.usersByEmail[user.Email] = &existing
-	return existing, nil
-}
-
 func (s *Service) getUserByIDLocked(id int64) (domainauth.User, bool) {
 	if s.store != nil {
 		user, err := s.store.GetUserByID(context.Background(), id)
@@ -616,26 +570,4 @@ func randomToken() string {
 		panic(err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buffer)
-}
-
-func randomInt(max int) int {
-	if max <= 0 {
-		return 0
-	}
-	buffer := make([]byte, 4)
-	if _, err := rand.Read(buffer); err != nil {
-		panic(err)
-	}
-	value := int(buffer[0])<<24 | int(buffer[1])<<16 | int(buffer[2])<<8 | int(buffer[3])
-	if value < 0 {
-		value = -value
-	}
-	return value % max
-}
-
-func defaultString(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
 }

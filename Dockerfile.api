@@ -1,14 +1,33 @@
-FROM golang:1.26-alpine AS build
+# syntax=docker/dockerfile:1.7
+ARG GO_VERSION=1.26.0
+
+FROM golang:${GO_VERSION}-alpine AS build
 WORKDIR /src
+RUN apk add --no-cache build-base ca-certificates
+
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -o /out/pic-gallery-api ./cmd/api
 
-FROM alpine:3.20
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/pic-gallery-api ./cmd/api
+
+FROM alpine:3.22
 WORKDIR /app
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -S picgallery && adduser -S -G picgallery picgallery && \
+    mkdir -p /var/lib/pic-gallery/storage && \
+    chown -R picgallery:picgallery /app /var/lib/pic-gallery
 COPY --from=build /out/pic-gallery-api /usr/local/bin/pic-gallery-api
 COPY configs ./configs
-COPY api ./api
+USER picgallery
 EXPOSE 8080
+ENV APP_CONFIG_PATH=configs/config.example.yaml \
+    APP_ENV=prod \
+    APP_ADDR=:8080 \
+    STORAGE_DRIVER=local \
+    STORAGE_LOCAL_ROOT=/var/lib/pic-gallery/storage \
+    STORAGE_SHARED_VOLUME=true
+VOLUME ["/var/lib/pic-gallery/storage"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/readyz >/dev/null || exit 1
 ENTRYPOINT ["pic-gallery-api"]

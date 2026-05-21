@@ -7,6 +7,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
@@ -79,10 +80,10 @@ func init() {
 			return nil
 		}
 	}()
-	// apikeyDescSigningSecret is the schema descriptor for signing_secret field.
-	apikeyDescSigningSecret := apikeyFields[3].Descriptor()
-	// apikey.SigningSecretValidator is a validator for the "signing_secret" field. It is called by the builders before save.
-	apikey.SigningSecretValidator = apikeyDescSigningSecret.Validators[0].(func(string) error)
+	// apikeyDescSecretCiphertext is the schema descriptor for secret_ciphertext field.
+	apikeyDescSecretCiphertext := apikeyFields[3].Descriptor()
+	// apikey.SecretCiphertextValidator is a validator for the "secret_ciphertext" field. It is called by the builders before save.
+	apikey.SecretCiphertextValidator = apikeyDescSecretCiphertext.Validators[0].(func(string) error)
 	// apikeyDescName is the schema descriptor for name field.
 	apikeyDescName := apikeyFields[4].Descriptor()
 	// apikey.NameValidator is a validator for the "name" field. It is called by the builders before save.
@@ -113,6 +114,83 @@ func init() {
 	apikey.DefaultGroupCode = apikeyDescGroupCode.Default.(string)
 	// apikey.GroupCodeValidator is a validator for the "group_code" field. It is called by the builders before save.
 	apikey.GroupCodeValidator = apikeyDescGroupCode.Validators[0].(func(string) error)
+	// apikeyDescTotalQuotaUsedPoints is the schema descriptor for total_quota_used_points field.
+	apikeyDescTotalQuotaUsedPoints := apikeyFields[9].Descriptor()
+	// apikey.DefaultTotalQuotaUsedPoints holds the default value on creation for the total_quota_used_points field.
+	apikey.DefaultTotalQuotaUsedPoints = apikeyDescTotalQuotaUsedPoints.Default.(string)
+	// apikeyDescDailyQuotaUsedPoints is the schema descriptor for daily_quota_used_points field.
+	apikeyDescDailyQuotaUsedPoints := apikeyFields[10].Descriptor()
+	// apikey.DefaultDailyQuotaUsedPoints holds the default value on creation for the daily_quota_used_points field.
+	apikey.DefaultDailyQuotaUsedPoints = apikeyDescDailyQuotaUsedPoints.Default.(string)
+	// apikeyDescQuotaUsageDay is the schema descriptor for quota_usage_day field.
+	apikeyDescQuotaUsageDay := apikeyFields[11].Descriptor()
+	// apikey.QuotaUsageDayValidator is a validator for the "quota_usage_day" field. It is called by the builders before save.
+	apikey.QuotaUsageDayValidator = apikeyDescQuotaUsageDay.Validators[0].(func(string) error)
+	// apikeyDescRpmWindowCount is the schema descriptor for rpm_window_count field.
+	apikeyDescRpmWindowCount := apikeyFields[14].Descriptor()
+	// apikey.DefaultRpmWindowCount holds the default value on creation for the rpm_window_count field.
+	apikey.DefaultRpmWindowCount = apikeyDescRpmWindowCount.Default.(int)
+	apikeyquotareservationMixin := schema.APIKeyQuotaReservation{}.Mixin()
+	apikeyquotareservationMixinFields0 := apikeyquotareservationMixin[0].Fields()
+	_ = apikeyquotareservationMixinFields0
+	apikeyquotareservationFields := schema.APIKeyQuotaReservation{}.Fields()
+	_ = apikeyquotareservationFields
+	// apikeyquotareservationDescCreatedAt is the schema descriptor for created_at field.
+	apikeyquotareservationDescCreatedAt := apikeyquotareservationMixinFields0[0].Descriptor()
+	// apikeyquotareservation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	apikeyquotareservation.DefaultCreatedAt = apikeyquotareservationDescCreatedAt.Default.(func() time.Time)
+	// apikeyquotareservationDescUpdatedAt is the schema descriptor for updated_at field.
+	apikeyquotareservationDescUpdatedAt := apikeyquotareservationMixinFields0[1].Descriptor()
+	// apikeyquotareservation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	apikeyquotareservation.DefaultUpdatedAt = apikeyquotareservationDescUpdatedAt.Default.(func() time.Time)
+	// apikeyquotareservation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	apikeyquotareservation.UpdateDefaultUpdatedAt = apikeyquotareservationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// apikeyquotareservationDescReservationID is the schema descriptor for reservation_id field.
+	apikeyquotareservationDescReservationID := apikeyquotareservationFields[1].Descriptor()
+	// apikeyquotareservation.ReservationIDValidator is a validator for the "reservation_id" field. It is called by the builders before save.
+	apikeyquotareservation.ReservationIDValidator = func() func(string) error {
+		validators := apikeyquotareservationDescReservationID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(reservation_id string) error {
+			for _, fn := range fns {
+				if err := fn(reservation_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// apikeyquotareservationDescPoints is the schema descriptor for points field.
+	apikeyquotareservationDescPoints := apikeyquotareservationFields[2].Descriptor()
+	// apikeyquotareservation.PointsValidator is a validator for the "points" field. It is called by the builders before save.
+	apikeyquotareservation.PointsValidator = apikeyquotareservationDescPoints.Validators[0].(func(string) error)
+	// apikeyquotareservationDescUsageDay is the schema descriptor for usage_day field.
+	apikeyquotareservationDescUsageDay := apikeyquotareservationFields[3].Descriptor()
+	// apikeyquotareservation.UsageDayValidator is a validator for the "usage_day" field. It is called by the builders before save.
+	apikeyquotareservation.UsageDayValidator = func() func(string) error {
+		validators := apikeyquotareservationDescUsageDay.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(usage_day string) error {
+			for _, fn := range fns {
+				if err := fn(usage_day); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// apikeyquotareservationDescStatus is the schema descriptor for status field.
+	apikeyquotareservationDescStatus := apikeyquotareservationFields[4].Descriptor()
+	// apikeyquotareservation.DefaultStatus holds the default value on creation for the status field.
+	apikeyquotareservation.DefaultStatus = apikeyquotareservationDescStatus.Default.(string)
+	// apikeyquotareservation.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	apikeyquotareservation.StatusValidator = apikeyquotareservationDescStatus.Validators[0].(func(string) error)
 	adminuserMixin := schema.AdminUser{}.Mixin()
 	adminuserMixinFields0 := adminuserMixin[0].Fields()
 	_ = adminuserMixinFields0

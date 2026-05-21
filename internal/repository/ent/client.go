@@ -17,6 +17,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
@@ -39,6 +40,8 @@ type Client struct {
 	Schema *migrate.Schema
 	// APIKey is the client for interacting with the APIKey builders.
 	APIKey *APIKeyClient
+	// APIKeyQuotaReservation is the client for interacting with the APIKeyQuotaReservation builders.
+	APIKeyQuotaReservation *APIKeyQuotaReservationClient
 	// AdminUser is the client for interacting with the AdminUser builders.
 	AdminUser *AdminUserClient
 	// AuditLog is the client for interacting with the AuditLog builders.
@@ -79,6 +82,7 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.APIKey = NewAPIKeyClient(c.config)
+	c.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(c.config)
 	c.AdminUser = NewAdminUserClient(c.config)
 	c.AuditLog = NewAuditLogClient(c.config)
 	c.ConfigItem = NewConfigItemClient(c.config)
@@ -183,23 +187,24 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                 ctx,
-		config:              cfg,
-		APIKey:              NewAPIKeyClient(cfg),
-		AdminUser:           NewAdminUserClient(cfg),
-		AuditLog:            NewAuditLogClient(cfg),
-		ConfigItem:          NewConfigItemClient(cfg),
-		ImageResult:         NewImageResultClient(cfg),
-		ImageTask:           NewImageTaskClient(cfg),
-		ModelProvider:       NewModelProviderClient(cfg),
-		ModelRoute:          NewModelRouteClient(cfg),
-		PointLedger:         NewPointLedgerClient(cfg),
-		ProviderErrorPolicy: NewProviderErrorPolicyClient(cfg),
-		RedeemCode:          NewRedeemCodeClient(cfg),
-		ReferenceAsset:      NewReferenceAssetClient(cfg),
-		RefreshSession:      NewRefreshSessionClient(cfg),
-		User:                NewUserClient(cfg),
-		UserGroup:           NewUserGroupClient(cfg),
+		ctx:                    ctx,
+		config:                 cfg,
+		APIKey:                 NewAPIKeyClient(cfg),
+		APIKeyQuotaReservation: NewAPIKeyQuotaReservationClient(cfg),
+		AdminUser:              NewAdminUserClient(cfg),
+		AuditLog:               NewAuditLogClient(cfg),
+		ConfigItem:             NewConfigItemClient(cfg),
+		ImageResult:            NewImageResultClient(cfg),
+		ImageTask:              NewImageTaskClient(cfg),
+		ModelProvider:          NewModelProviderClient(cfg),
+		ModelRoute:             NewModelRouteClient(cfg),
+		PointLedger:            NewPointLedgerClient(cfg),
+		ProviderErrorPolicy:    NewProviderErrorPolicyClient(cfg),
+		RedeemCode:             NewRedeemCodeClient(cfg),
+		ReferenceAsset:         NewReferenceAssetClient(cfg),
+		RefreshSession:         NewRefreshSessionClient(cfg),
+		User:                   NewUserClient(cfg),
+		UserGroup:              NewUserGroupClient(cfg),
 	}, nil
 }
 
@@ -217,23 +222,24 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                 ctx,
-		config:              cfg,
-		APIKey:              NewAPIKeyClient(cfg),
-		AdminUser:           NewAdminUserClient(cfg),
-		AuditLog:            NewAuditLogClient(cfg),
-		ConfigItem:          NewConfigItemClient(cfg),
-		ImageResult:         NewImageResultClient(cfg),
-		ImageTask:           NewImageTaskClient(cfg),
-		ModelProvider:       NewModelProviderClient(cfg),
-		ModelRoute:          NewModelRouteClient(cfg),
-		PointLedger:         NewPointLedgerClient(cfg),
-		ProviderErrorPolicy: NewProviderErrorPolicyClient(cfg),
-		RedeemCode:          NewRedeemCodeClient(cfg),
-		ReferenceAsset:      NewReferenceAssetClient(cfg),
-		RefreshSession:      NewRefreshSessionClient(cfg),
-		User:                NewUserClient(cfg),
-		UserGroup:           NewUserGroupClient(cfg),
+		ctx:                    ctx,
+		config:                 cfg,
+		APIKey:                 NewAPIKeyClient(cfg),
+		APIKeyQuotaReservation: NewAPIKeyQuotaReservationClient(cfg),
+		AdminUser:              NewAdminUserClient(cfg),
+		AuditLog:               NewAuditLogClient(cfg),
+		ConfigItem:             NewConfigItemClient(cfg),
+		ImageResult:            NewImageResultClient(cfg),
+		ImageTask:              NewImageTaskClient(cfg),
+		ModelProvider:          NewModelProviderClient(cfg),
+		ModelRoute:             NewModelRouteClient(cfg),
+		PointLedger:            NewPointLedgerClient(cfg),
+		ProviderErrorPolicy:    NewProviderErrorPolicyClient(cfg),
+		RedeemCode:             NewRedeemCodeClient(cfg),
+		ReferenceAsset:         NewReferenceAssetClient(cfg),
+		RefreshSession:         NewRefreshSessionClient(cfg),
+		User:                   NewUserClient(cfg),
+		UserGroup:              NewUserGroupClient(cfg),
 	}, nil
 }
 
@@ -263,9 +269,10 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.AdminUser, c.AuditLog, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.ModelProvider, c.ModelRoute, c.PointLedger, c.ProviderErrorPolicy,
-		c.RedeemCode, c.ReferenceAsset, c.RefreshSession, c.User, c.UserGroup,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
+		c.ImageResult, c.ImageTask, c.ModelProvider, c.ModelRoute, c.PointLedger,
+		c.ProviderErrorPolicy, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.User, c.UserGroup,
 	} {
 		n.Use(hooks...)
 	}
@@ -275,9 +282,10 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.AdminUser, c.AuditLog, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.ModelProvider, c.ModelRoute, c.PointLedger, c.ProviderErrorPolicy,
-		c.RedeemCode, c.ReferenceAsset, c.RefreshSession, c.User, c.UserGroup,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
+		c.ImageResult, c.ImageTask, c.ModelProvider, c.ModelRoute, c.PointLedger,
+		c.ProviderErrorPolicy, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.User, c.UserGroup,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -288,6 +296,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *APIKeyMutation:
 		return c.APIKey.mutate(ctx, m)
+	case *APIKeyQuotaReservationMutation:
+		return c.APIKeyQuotaReservation.mutate(ctx, m)
 	case *AdminUserMutation:
 		return c.AdminUser.mutate(ctx, m)
 	case *AuditLogMutation:
@@ -451,6 +461,139 @@ func (c *APIKeyClient) mutate(ctx context.Context, m *APIKeyMutation) (Value, er
 		return (&APIKeyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown APIKey mutation op: %q", m.Op())
+	}
+}
+
+// APIKeyQuotaReservationClient is a client for the APIKeyQuotaReservation schema.
+type APIKeyQuotaReservationClient struct {
+	config
+}
+
+// NewAPIKeyQuotaReservationClient returns a client for the APIKeyQuotaReservation from the given config.
+func NewAPIKeyQuotaReservationClient(c config) *APIKeyQuotaReservationClient {
+	return &APIKeyQuotaReservationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `apikeyquotareservation.Hooks(f(g(h())))`.
+func (c *APIKeyQuotaReservationClient) Use(hooks ...Hook) {
+	c.hooks.APIKeyQuotaReservation = append(c.hooks.APIKeyQuotaReservation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `apikeyquotareservation.Intercept(f(g(h())))`.
+func (c *APIKeyQuotaReservationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.APIKeyQuotaReservation = append(c.inters.APIKeyQuotaReservation, interceptors...)
+}
+
+// Create returns a builder for creating a APIKeyQuotaReservation entity.
+func (c *APIKeyQuotaReservationClient) Create() *APIKeyQuotaReservationCreate {
+	mutation := newAPIKeyQuotaReservationMutation(c.config, OpCreate)
+	return &APIKeyQuotaReservationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of APIKeyQuotaReservation entities.
+func (c *APIKeyQuotaReservationClient) CreateBulk(builders ...*APIKeyQuotaReservationCreate) *APIKeyQuotaReservationCreateBulk {
+	return &APIKeyQuotaReservationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *APIKeyQuotaReservationClient) MapCreateBulk(slice any, setFunc func(*APIKeyQuotaReservationCreate, int)) *APIKeyQuotaReservationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &APIKeyQuotaReservationCreateBulk{err: fmt.Errorf("calling to APIKeyQuotaReservationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*APIKeyQuotaReservationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &APIKeyQuotaReservationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for APIKeyQuotaReservation.
+func (c *APIKeyQuotaReservationClient) Update() *APIKeyQuotaReservationUpdate {
+	mutation := newAPIKeyQuotaReservationMutation(c.config, OpUpdate)
+	return &APIKeyQuotaReservationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *APIKeyQuotaReservationClient) UpdateOne(_m *APIKeyQuotaReservation) *APIKeyQuotaReservationUpdateOne {
+	mutation := newAPIKeyQuotaReservationMutation(c.config, OpUpdateOne, withAPIKeyQuotaReservation(_m))
+	return &APIKeyQuotaReservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *APIKeyQuotaReservationClient) UpdateOneID(id int) *APIKeyQuotaReservationUpdateOne {
+	mutation := newAPIKeyQuotaReservationMutation(c.config, OpUpdateOne, withAPIKeyQuotaReservationID(id))
+	return &APIKeyQuotaReservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for APIKeyQuotaReservation.
+func (c *APIKeyQuotaReservationClient) Delete() *APIKeyQuotaReservationDelete {
+	mutation := newAPIKeyQuotaReservationMutation(c.config, OpDelete)
+	return &APIKeyQuotaReservationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *APIKeyQuotaReservationClient) DeleteOne(_m *APIKeyQuotaReservation) *APIKeyQuotaReservationDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *APIKeyQuotaReservationClient) DeleteOneID(id int) *APIKeyQuotaReservationDeleteOne {
+	builder := c.Delete().Where(apikeyquotareservation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &APIKeyQuotaReservationDeleteOne{builder}
+}
+
+// Query returns a query builder for APIKeyQuotaReservation.
+func (c *APIKeyQuotaReservationClient) Query() *APIKeyQuotaReservationQuery {
+	return &APIKeyQuotaReservationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAPIKeyQuotaReservation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a APIKeyQuotaReservation entity by its id.
+func (c *APIKeyQuotaReservationClient) Get(ctx context.Context, id int) (*APIKeyQuotaReservation, error) {
+	return c.Query().Where(apikeyquotareservation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *APIKeyQuotaReservationClient) GetX(ctx context.Context, id int) *APIKeyQuotaReservation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *APIKeyQuotaReservationClient) Hooks() []Hook {
+	return c.hooks.APIKeyQuotaReservation
+}
+
+// Interceptors returns the client interceptors.
+func (c *APIKeyQuotaReservationClient) Interceptors() []Interceptor {
+	return c.inters.APIKeyQuotaReservation
+}
+
+func (c *APIKeyQuotaReservationClient) mutate(ctx context.Context, m *APIKeyQuotaReservationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&APIKeyQuotaReservationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&APIKeyQuotaReservationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&APIKeyQuotaReservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&APIKeyQuotaReservationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown APIKeyQuotaReservation mutation op: %q", m.Op())
 	}
 }
 
@@ -2319,13 +2462,13 @@ func (c *UserGroupClient) mutate(ctx context.Context, m *UserGroupMutation) (Val
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, AdminUser, AuditLog, ConfigItem, ImageResult, ImageTask, ModelProvider,
-		ModelRoute, PointLedger, ProviderErrorPolicy, RedeemCode, ReferenceAsset,
-		RefreshSession, User, UserGroup []ent.Hook
+		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
+		ImageTask, ModelProvider, ModelRoute, PointLedger, ProviderErrorPolicy,
+		RedeemCode, ReferenceAsset, RefreshSession, User, UserGroup []ent.Hook
 	}
 	inters struct {
-		APIKey, AdminUser, AuditLog, ConfigItem, ImageResult, ImageTask, ModelProvider,
-		ModelRoute, PointLedger, ProviderErrorPolicy, RedeemCode, ReferenceAsset,
-		RefreshSession, User, UserGroup []ent.Interceptor
+		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
+		ImageTask, ModelProvider, ModelRoute, PointLedger, ProviderErrorPolicy,
+		RedeemCode, ReferenceAsset, RefreshSession, User, UserGroup []ent.Interceptor
 	}
 )

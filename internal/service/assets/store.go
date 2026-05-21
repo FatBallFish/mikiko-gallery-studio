@@ -10,6 +10,7 @@ type Store interface {
 	GetByUserAndHash(ctx context.Context, userID int64, sha string) (domainassets.ReferenceAsset, error)
 	Save(ctx context.Context, userID int64, asset domainassets.ReferenceAsset) error
 	GetByUserAndID(ctx context.Context, userID int64, assetID string) (domainassets.ReferenceAsset, error)
+	DeleteByUserAndID(ctx context.Context, userID int64, assetID string) error
 }
 
 type MetadataStore interface {

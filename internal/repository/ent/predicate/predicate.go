@@ -9,6 +9,9 @@ import (
 // APIKey is the predicate function for apikey builders.
 type APIKey func(*sql.Selector)
 
+// APIKeyQuotaReservation is the predicate function for apikeyquotareservation builders.
+type APIKeyQuotaReservation func(*sql.Selector)
+
 // AdminUser is the predicate function for adminuser builders.
 type AdminUser func(*sql.Selector)
 

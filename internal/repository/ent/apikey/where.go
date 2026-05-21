@@ -84,9 +84,9 @@ func SecretHash(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldSecretHash, v))
 }
 
-// SigningSecret applies equality check predicate on the "signing_secret" field. It's identical to SigningSecretEQ.
-func SigningSecret(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldEQ(FieldSigningSecret, v))
+// SecretCiphertext applies equality check predicate on the "secret_ciphertext" field. It's identical to SecretCiphertextEQ.
+func SecretCiphertext(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldSecretCiphertext, v))
 }
 
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
@@ -114,9 +114,34 @@ func DailyQuotaPoints(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldDailyQuotaPoints, v))
 }
 
+// TotalQuotaUsedPoints applies equality check predicate on the "total_quota_used_points" field. It's identical to TotalQuotaUsedPointsEQ.
+func TotalQuotaUsedPoints(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldTotalQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPoints applies equality check predicate on the "daily_quota_used_points" field. It's identical to DailyQuotaUsedPointsEQ.
+func DailyQuotaUsedPoints(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldDailyQuotaUsedPoints, v))
+}
+
+// QuotaUsageDay applies equality check predicate on the "quota_usage_day" field. It's identical to QuotaUsageDayEQ.
+func QuotaUsageDay(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldQuotaUsageDay, v))
+}
+
 // RpmLimit applies equality check predicate on the "rpm_limit" field. It's identical to RpmLimitEQ.
 func RpmLimit(v int) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldRpmLimit, v))
+}
+
+// RpmWindowStartedAt applies equality check predicate on the "rpm_window_started_at" field. It's identical to RpmWindowStartedAtEQ.
+func RpmWindowStartedAt(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRpmWindowStartedAt, v))
+}
+
+// RpmWindowCount applies equality check predicate on the "rpm_window_count" field. It's identical to RpmWindowCountEQ.
+func RpmWindowCount(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRpmWindowCount, v))
 }
 
 // ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
@@ -429,79 +454,79 @@ func SecretHashContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldSecretHash, v))
 }
 
-// SigningSecretEQ applies the EQ predicate on the "signing_secret" field.
-func SigningSecretEQ(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldEQ(FieldSigningSecret, v))
+// SecretCiphertextEQ applies the EQ predicate on the "secret_ciphertext" field.
+func SecretCiphertextEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldSecretCiphertext, v))
 }
 
-// SigningSecretNEQ applies the NEQ predicate on the "signing_secret" field.
-func SigningSecretNEQ(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldNEQ(FieldSigningSecret, v))
+// SecretCiphertextNEQ applies the NEQ predicate on the "secret_ciphertext" field.
+func SecretCiphertextNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldSecretCiphertext, v))
 }
 
-// SigningSecretIn applies the In predicate on the "signing_secret" field.
-func SigningSecretIn(vs ...string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldIn(FieldSigningSecret, vs...))
+// SecretCiphertextIn applies the In predicate on the "secret_ciphertext" field.
+func SecretCiphertextIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldSecretCiphertext, vs...))
 }
 
-// SigningSecretNotIn applies the NotIn predicate on the "signing_secret" field.
-func SigningSecretNotIn(vs ...string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldNotIn(FieldSigningSecret, vs...))
+// SecretCiphertextNotIn applies the NotIn predicate on the "secret_ciphertext" field.
+func SecretCiphertextNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldSecretCiphertext, vs...))
 }
 
-// SigningSecretGT applies the GT predicate on the "signing_secret" field.
-func SigningSecretGT(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldGT(FieldSigningSecret, v))
+// SecretCiphertextGT applies the GT predicate on the "secret_ciphertext" field.
+func SecretCiphertextGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldSecretCiphertext, v))
 }
 
-// SigningSecretGTE applies the GTE predicate on the "signing_secret" field.
-func SigningSecretGTE(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldGTE(FieldSigningSecret, v))
+// SecretCiphertextGTE applies the GTE predicate on the "secret_ciphertext" field.
+func SecretCiphertextGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldSecretCiphertext, v))
 }
 
-// SigningSecretLT applies the LT predicate on the "signing_secret" field.
-func SigningSecretLT(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldLT(FieldSigningSecret, v))
+// SecretCiphertextLT applies the LT predicate on the "secret_ciphertext" field.
+func SecretCiphertextLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldSecretCiphertext, v))
 }
 
-// SigningSecretLTE applies the LTE predicate on the "signing_secret" field.
-func SigningSecretLTE(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldLTE(FieldSigningSecret, v))
+// SecretCiphertextLTE applies the LTE predicate on the "secret_ciphertext" field.
+func SecretCiphertextLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldSecretCiphertext, v))
 }
 
-// SigningSecretContains applies the Contains predicate on the "signing_secret" field.
-func SigningSecretContains(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldContains(FieldSigningSecret, v))
+// SecretCiphertextContains applies the Contains predicate on the "secret_ciphertext" field.
+func SecretCiphertextContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldSecretCiphertext, v))
 }
 
-// SigningSecretHasPrefix applies the HasPrefix predicate on the "signing_secret" field.
-func SigningSecretHasPrefix(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldHasPrefix(FieldSigningSecret, v))
+// SecretCiphertextHasPrefix applies the HasPrefix predicate on the "secret_ciphertext" field.
+func SecretCiphertextHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldSecretCiphertext, v))
 }
 
-// SigningSecretHasSuffix applies the HasSuffix predicate on the "signing_secret" field.
-func SigningSecretHasSuffix(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldHasSuffix(FieldSigningSecret, v))
+// SecretCiphertextHasSuffix applies the HasSuffix predicate on the "secret_ciphertext" field.
+func SecretCiphertextHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldSecretCiphertext, v))
 }
 
-// SigningSecretIsNil applies the IsNil predicate on the "signing_secret" field.
-func SigningSecretIsNil() predicate.APIKey {
-	return predicate.APIKey(sql.FieldIsNull(FieldSigningSecret))
+// SecretCiphertextIsNil applies the IsNil predicate on the "secret_ciphertext" field.
+func SecretCiphertextIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldSecretCiphertext))
 }
 
-// SigningSecretNotNil applies the NotNil predicate on the "signing_secret" field.
-func SigningSecretNotNil() predicate.APIKey {
-	return predicate.APIKey(sql.FieldNotNull(FieldSigningSecret))
+// SecretCiphertextNotNil applies the NotNil predicate on the "secret_ciphertext" field.
+func SecretCiphertextNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldSecretCiphertext))
 }
 
-// SigningSecretEqualFold applies the EqualFold predicate on the "signing_secret" field.
-func SigningSecretEqualFold(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldEqualFold(FieldSigningSecret, v))
+// SecretCiphertextEqualFold applies the EqualFold predicate on the "secret_ciphertext" field.
+func SecretCiphertextEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldSecretCiphertext, v))
 }
 
-// SigningSecretContainsFold applies the ContainsFold predicate on the "signing_secret" field.
-func SigningSecretContainsFold(v string) predicate.APIKey {
-	return predicate.APIKey(sql.FieldContainsFold(FieldSigningSecret, v))
+// SecretCiphertextContainsFold applies the ContainsFold predicate on the "secret_ciphertext" field.
+func SecretCiphertextContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldSecretCiphertext, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.
@@ -849,6 +874,211 @@ func DailyQuotaPointsContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldDailyQuotaPoints, v))
 }
 
+// TotalQuotaUsedPointsEQ applies the EQ predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsNEQ applies the NEQ predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsIn applies the In predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldTotalQuotaUsedPoints, vs...))
+}
+
+// TotalQuotaUsedPointsNotIn applies the NotIn predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldTotalQuotaUsedPoints, vs...))
+}
+
+// TotalQuotaUsedPointsGT applies the GT predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsGTE applies the GTE predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsLT applies the LT predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsLTE applies the LTE predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsContains applies the Contains predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsHasPrefix applies the HasPrefix predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsHasSuffix applies the HasSuffix predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsEqualFold applies the EqualFold predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldTotalQuotaUsedPoints, v))
+}
+
+// TotalQuotaUsedPointsContainsFold applies the ContainsFold predicate on the "total_quota_used_points" field.
+func TotalQuotaUsedPointsContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldTotalQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsEQ applies the EQ predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsNEQ applies the NEQ predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsIn applies the In predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldDailyQuotaUsedPoints, vs...))
+}
+
+// DailyQuotaUsedPointsNotIn applies the NotIn predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldDailyQuotaUsedPoints, vs...))
+}
+
+// DailyQuotaUsedPointsGT applies the GT predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsGTE applies the GTE predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsLT applies the LT predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsLTE applies the LTE predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsContains applies the Contains predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsHasPrefix applies the HasPrefix predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsHasSuffix applies the HasSuffix predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsEqualFold applies the EqualFold predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldDailyQuotaUsedPoints, v))
+}
+
+// DailyQuotaUsedPointsContainsFold applies the ContainsFold predicate on the "daily_quota_used_points" field.
+func DailyQuotaUsedPointsContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldDailyQuotaUsedPoints, v))
+}
+
+// QuotaUsageDayEQ applies the EQ predicate on the "quota_usage_day" field.
+func QuotaUsageDayEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayNEQ applies the NEQ predicate on the "quota_usage_day" field.
+func QuotaUsageDayNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayIn applies the In predicate on the "quota_usage_day" field.
+func QuotaUsageDayIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldQuotaUsageDay, vs...))
+}
+
+// QuotaUsageDayNotIn applies the NotIn predicate on the "quota_usage_day" field.
+func QuotaUsageDayNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldQuotaUsageDay, vs...))
+}
+
+// QuotaUsageDayGT applies the GT predicate on the "quota_usage_day" field.
+func QuotaUsageDayGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayGTE applies the GTE predicate on the "quota_usage_day" field.
+func QuotaUsageDayGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayLT applies the LT predicate on the "quota_usage_day" field.
+func QuotaUsageDayLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayLTE applies the LTE predicate on the "quota_usage_day" field.
+func QuotaUsageDayLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayContains applies the Contains predicate on the "quota_usage_day" field.
+func QuotaUsageDayContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayHasPrefix applies the HasPrefix predicate on the "quota_usage_day" field.
+func QuotaUsageDayHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayHasSuffix applies the HasSuffix predicate on the "quota_usage_day" field.
+func QuotaUsageDayHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayIsNil applies the IsNil predicate on the "quota_usage_day" field.
+func QuotaUsageDayIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldQuotaUsageDay))
+}
+
+// QuotaUsageDayNotNil applies the NotNil predicate on the "quota_usage_day" field.
+func QuotaUsageDayNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldQuotaUsageDay))
+}
+
+// QuotaUsageDayEqualFold applies the EqualFold predicate on the "quota_usage_day" field.
+func QuotaUsageDayEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldQuotaUsageDay, v))
+}
+
+// QuotaUsageDayContainsFold applies the ContainsFold predicate on the "quota_usage_day" field.
+func QuotaUsageDayContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldQuotaUsageDay, v))
+}
+
 // RpmLimitEQ applies the EQ predicate on the "rpm_limit" field.
 func RpmLimitEQ(v int) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldRpmLimit, v))
@@ -897,6 +1127,96 @@ func RpmLimitIsNil() predicate.APIKey {
 // RpmLimitNotNil applies the NotNil predicate on the "rpm_limit" field.
 func RpmLimitNotNil() predicate.APIKey {
 	return predicate.APIKey(sql.FieldNotNull(FieldRpmLimit))
+}
+
+// RpmWindowStartedAtEQ applies the EQ predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRpmWindowStartedAt, v))
+}
+
+// RpmWindowStartedAtNEQ applies the NEQ predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtNEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldRpmWindowStartedAt, v))
+}
+
+// RpmWindowStartedAtIn applies the In predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldRpmWindowStartedAt, vs...))
+}
+
+// RpmWindowStartedAtNotIn applies the NotIn predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtNotIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldRpmWindowStartedAt, vs...))
+}
+
+// RpmWindowStartedAtGT applies the GT predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtGT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldRpmWindowStartedAt, v))
+}
+
+// RpmWindowStartedAtGTE applies the GTE predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtGTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldRpmWindowStartedAt, v))
+}
+
+// RpmWindowStartedAtLT applies the LT predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtLT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldRpmWindowStartedAt, v))
+}
+
+// RpmWindowStartedAtLTE applies the LTE predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtLTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldRpmWindowStartedAt, v))
+}
+
+// RpmWindowStartedAtIsNil applies the IsNil predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldRpmWindowStartedAt))
+}
+
+// RpmWindowStartedAtNotNil applies the NotNil predicate on the "rpm_window_started_at" field.
+func RpmWindowStartedAtNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldRpmWindowStartedAt))
+}
+
+// RpmWindowCountEQ applies the EQ predicate on the "rpm_window_count" field.
+func RpmWindowCountEQ(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRpmWindowCount, v))
+}
+
+// RpmWindowCountNEQ applies the NEQ predicate on the "rpm_window_count" field.
+func RpmWindowCountNEQ(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldRpmWindowCount, v))
+}
+
+// RpmWindowCountIn applies the In predicate on the "rpm_window_count" field.
+func RpmWindowCountIn(vs ...int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldRpmWindowCount, vs...))
+}
+
+// RpmWindowCountNotIn applies the NotIn predicate on the "rpm_window_count" field.
+func RpmWindowCountNotIn(vs ...int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldRpmWindowCount, vs...))
+}
+
+// RpmWindowCountGT applies the GT predicate on the "rpm_window_count" field.
+func RpmWindowCountGT(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldRpmWindowCount, v))
+}
+
+// RpmWindowCountGTE applies the GTE predicate on the "rpm_window_count" field.
+func RpmWindowCountGTE(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldRpmWindowCount, v))
+}
+
+// RpmWindowCountLT applies the LT predicate on the "rpm_window_count" field.
+func RpmWindowCountLT(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldRpmWindowCount, v))
+}
+
+// RpmWindowCountLTE applies the LTE predicate on the "rpm_window_count" field.
+func RpmWindowCountLTE(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldRpmWindowCount, v))
 }
 
 // ExpiresAtEQ applies the EQ predicate on the "expires_at" field.

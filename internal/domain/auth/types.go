@@ -26,3 +26,12 @@ type Session struct {
 	SessionID             string
 	SessionFamilyID       string
 }
+
+type UpdateProfileRequest struct {
+	UserID          int64
+	Nickname        string
+	Bio             string
+	AvatarObjectKey string
+	DefaultLocale   string
+	Theme           string
+}

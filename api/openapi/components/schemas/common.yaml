@@ -12,6 +12,26 @@ components:
           properties:
             request_id:
               type: string
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
     Pagination:
       type: object
       properties:

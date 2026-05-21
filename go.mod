@@ -9,6 +9,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/shopspring/decimal v1.4.0
+	golang.org/x/crypto v0.0.0-20220517005047-85d78b3ac167
 	gopkg.in/yaml.v3 v3.0.1
 )
 

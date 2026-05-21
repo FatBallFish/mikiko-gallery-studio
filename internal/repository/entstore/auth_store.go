@@ -73,30 +73,37 @@ func (s *AuthStore) GetUserByID(ctx context.Context, id int64) (domainauth.User,
 }
 
 func (s *AuthStore) UpdateUser(ctx context.Context, domainUser domainauth.User) (domainauth.User, error) {
+	groupEntity, err := s.ensureUserGroup(ctx, domainUser.GroupCode, domainUser.GroupMultiplier)
+	if err != nil {
+		return domainauth.User{}, err
+	}
+
 	update := s.client.User.UpdateOneID(int(domainUser.ID)).
+		SetEmail(domainUser.Email).
 		SetNickname(domainUser.Nickname).
 		SetBio(domainUser.Bio).
 		SetStatus(domainUser.Status).
+		SetUserGroupID(int64(groupEntity.ID)).
 		SetTokenVersion(domainUser.TokenVersion).
-		SetDefaultLocale(defaultAuthString(domainUser.DefaultLocale, "zh-CN")).
-		SetTheme(defaultAuthString(domainUser.Theme, "system"))
-	if domainUser.AvatarObjectKey == "" {
-		update.ClearAvatarObjectKey()
-	} else {
+		SetDefaultLocale(domainUser.DefaultLocale).
+		SetTheme(domainUser.Theme)
+	if domainUser.AvatarObjectKey != "" {
 		update.SetAvatarObjectKey(domainUser.AvatarObjectKey)
+	} else {
+		update.ClearAvatarObjectKey()
 	}
-	if err := update.Exec(ctx); err != nil {
+	entity, err := update.Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainauth.User{}, repoerr.ErrNotFound
+		}
 		return domainauth.User{}, err
 	}
-	return s.GetUserByID(ctx, domainUser.ID)
+	return s.mapUserEntity(ctx, entity)
 }
 
 func (s *AuthStore) IncrementTokenVersion(ctx context.Context, userID int64) error {
-	entity, err := s.client.User.Get(ctx, int(userID))
-	if err != nil {
-		return err
-	}
-	return s.client.User.UpdateOneID(entity.ID).SetTokenVersion(entity.TokenVersion + 1).Exec(ctx)
+	return s.client.User.UpdateOneID(int(userID)).AddTokenVersion(1).Exec(ctx)
 }
 
 func (s *AuthStore) SaveRefreshSession(ctx context.Context, session RefreshSessionRecord) error {
@@ -177,6 +184,32 @@ func (s *AuthStore) MarkFamilyReplayBlocked(ctx context.Context, familyID string
 	return err
 }
 
+func (s *AuthStore) RevokeRefreshSessionByHash(ctx context.Context, tokenHash string) error {
+	_, err := s.client.RefreshSession.Update().Where(refreshsession.RefreshTokenHashEQ(tokenHash)).SetStatus("revoked").Save(ctx)
+	return err
+}
+
+func (s *AuthStore) UpdateUserProfile(ctx context.Context, req domainauth.UpdateProfileRequest) (domainauth.User, error) {
+	update := s.client.User.UpdateOneID(int(req.UserID)).
+		SetNickname(req.Nickname).
+		SetBio(req.Bio).
+		SetDefaultLocale(req.DefaultLocale).
+		SetTheme(req.Theme)
+	if req.AvatarObjectKey != "" {
+		update.SetAvatarObjectKey(req.AvatarObjectKey)
+	} else {
+		update.ClearAvatarObjectKey()
+	}
+	entity, err := update.Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainauth.User{}, repoerr.ErrNotFound
+		}
+		return domainauth.User{}, err
+	}
+	return s.mapUserEntity(ctx, entity)
+}
+
 func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (domainauth.User, error) {
 	if entity == nil {
 		return domainauth.User{}, nil
@@ -195,11 +228,16 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 		}
 	}
 
+	avatar := ""
+	if entity.AvatarObjectKey != nil {
+		avatar = *entity.AvatarObjectKey
+	}
 	return domainauth.User{
 		ID:              int64(entity.ID),
 		Email:           entity.Email,
 		Nickname:        entity.Nickname,
 		Bio:             entity.Bio,
+		AvatarObjectKey: avatar,
 		Status:          entity.Status,
 		GroupCode:       groupCode,
 		GroupMultiplier: groupMultiplier,
@@ -251,11 +289,4 @@ func mapRefreshSessionEntity(entity *repoent.RefreshSession) RefreshSessionRecor
 
 func unixToTime(value int64) (t time.Time) {
 	return time.Unix(value, 0).UTC()
-}
-
-func defaultAuthString(value string, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
 }

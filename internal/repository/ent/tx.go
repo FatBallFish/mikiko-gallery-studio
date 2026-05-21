@@ -14,6 +14,8 @@ type Tx struct {
 	config
 	// APIKey is the client for interacting with the APIKey builders.
 	APIKey *APIKeyClient
+	// APIKeyQuotaReservation is the client for interacting with the APIKeyQuotaReservation builders.
+	APIKeyQuotaReservation *APIKeyQuotaReservationClient
 	// AdminUser is the client for interacting with the AdminUser builders.
 	AdminUser *AdminUserClient
 	// AuditLog is the client for interacting with the AuditLog builders.
@@ -174,6 +176,7 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.APIKey = NewAPIKeyClient(tx.config)
+	tx.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(tx.config)
 	tx.AdminUser = NewAdminUserClient(tx.config)
 	tx.AuditLog = NewAuditLogClient(tx.config)
 	tx.ConfigItem = NewConfigItemClient(tx.config)

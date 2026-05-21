@@ -11,17 +11,40 @@ import (
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	apphttp "github.com/fatballfish/pic-gallery/internal/http/router"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
+	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 )
+
+func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
+	email := os.Getenv("PIC_GALLERY_ADMIN_EMAIL")
+	password := os.Getenv("PIC_GALLERY_ADMIN_PASSWORD")
+	if email == "" || password == "" {
+		return
+	}
+	if _, err := store.GetAdminByEmail(ctx, email); err == nil {
+		return
+	}
+	_, err := store.CreateAdmin(ctx, domainadminauth.AdminUser{
+		Email:        email,
+		PasswordHash: adminauthservice.HashPassword(password),
+		Role:         "super_admin",
+		Status:       "active",
+	})
+	if err != nil {
+		slog.Warn("failed to seed default admin", "err", err)
+	}
+}
 
 func Run() error {
 	cfg, err := config.Load("")
@@ -54,9 +77,13 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+	adminStore := entstore.NewAdminAuthStore(client)
+	seedDefaultAdmin(context.Background(), adminStore)
+	adminAuthSvc := adminauthservice.NewService(cfg.Auth, adminStore)
+	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
 	slog.Info("database-backed stores enabled")
 
-	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc)
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc)
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,

@@ -25,8 +25,8 @@ const (
 	FieldAccessKey = "access_key"
 	// FieldSecretHash holds the string denoting the secret_hash field in the database.
 	FieldSecretHash = "secret_hash"
-	// FieldSigningSecret holds the string denoting the signing_secret field in the database.
-	FieldSigningSecret = "signing_secret"
+	// FieldSecretCiphertext holds the string denoting the secret_ciphertext field in the database.
+	FieldSecretCiphertext = "secret_ciphertext"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -37,8 +37,18 @@ const (
 	FieldTotalQuotaPoints = "total_quota_points"
 	// FieldDailyQuotaPoints holds the string denoting the daily_quota_points field in the database.
 	FieldDailyQuotaPoints = "daily_quota_points"
+	// FieldTotalQuotaUsedPoints holds the string denoting the total_quota_used_points field in the database.
+	FieldTotalQuotaUsedPoints = "total_quota_used_points"
+	// FieldDailyQuotaUsedPoints holds the string denoting the daily_quota_used_points field in the database.
+	FieldDailyQuotaUsedPoints = "daily_quota_used_points"
+	// FieldQuotaUsageDay holds the string denoting the quota_usage_day field in the database.
+	FieldQuotaUsageDay = "quota_usage_day"
 	// FieldRpmLimit holds the string denoting the rpm_limit field in the database.
 	FieldRpmLimit = "rpm_limit"
+	// FieldRpmWindowStartedAt holds the string denoting the rpm_window_started_at field in the database.
+	FieldRpmWindowStartedAt = "rpm_window_started_at"
+	// FieldRpmWindowCount holds the string denoting the rpm_window_count field in the database.
+	FieldRpmWindowCount = "rpm_window_count"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
 	// FieldLastUsedAt holds the string denoting the last_used_at field in the database.
@@ -56,13 +66,18 @@ var Columns = []string{
 	FieldUserID,
 	FieldAccessKey,
 	FieldSecretHash,
-	FieldSigningSecret,
+	FieldSecretCiphertext,
 	FieldName,
 	FieldStatus,
 	FieldGroupCode,
 	FieldTotalQuotaPoints,
 	FieldDailyQuotaPoints,
+	FieldTotalQuotaUsedPoints,
+	FieldDailyQuotaUsedPoints,
+	FieldQuotaUsageDay,
 	FieldRpmLimit,
+	FieldRpmWindowStartedAt,
+	FieldRpmWindowCount,
 	FieldExpiresAt,
 	FieldLastUsedAt,
 }
@@ -88,8 +103,8 @@ var (
 	AccessKeyValidator func(string) error
 	// SecretHashValidator is a validator for the "secret_hash" field. It is called by the builders before save.
 	SecretHashValidator func(string) error
-	// SigningSecretValidator is a validator for the "signing_secret" field. It is called by the builders before save.
-	SigningSecretValidator func(string) error
+	// SecretCiphertextValidator is a validator for the "secret_ciphertext" field. It is called by the builders before save.
+	SecretCiphertextValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -100,6 +115,14 @@ var (
 	DefaultGroupCode string
 	// GroupCodeValidator is a validator for the "group_code" field. It is called by the builders before save.
 	GroupCodeValidator func(string) error
+	// DefaultTotalQuotaUsedPoints holds the default value on creation for the "total_quota_used_points" field.
+	DefaultTotalQuotaUsedPoints string
+	// DefaultDailyQuotaUsedPoints holds the default value on creation for the "daily_quota_used_points" field.
+	DefaultDailyQuotaUsedPoints string
+	// QuotaUsageDayValidator is a validator for the "quota_usage_day" field. It is called by the builders before save.
+	QuotaUsageDayValidator func(string) error
+	// DefaultRpmWindowCount holds the default value on creation for the "rpm_window_count" field.
+	DefaultRpmWindowCount int
 )
 
 // OrderOption defines the ordering options for the APIKey queries.
@@ -140,9 +163,9 @@ func BySecretHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSecretHash, opts...).ToFunc()
 }
 
-// BySigningSecret orders the results by the signing_secret field.
-func BySigningSecret(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSigningSecret, opts...).ToFunc()
+// BySecretCiphertext orders the results by the secret_ciphertext field.
+func BySecretCiphertext(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSecretCiphertext, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.
@@ -170,9 +193,34 @@ func ByDailyQuotaPoints(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDailyQuotaPoints, opts...).ToFunc()
 }
 
+// ByTotalQuotaUsedPoints orders the results by the total_quota_used_points field.
+func ByTotalQuotaUsedPoints(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTotalQuotaUsedPoints, opts...).ToFunc()
+}
+
+// ByDailyQuotaUsedPoints orders the results by the daily_quota_used_points field.
+func ByDailyQuotaUsedPoints(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDailyQuotaUsedPoints, opts...).ToFunc()
+}
+
+// ByQuotaUsageDay orders the results by the quota_usage_day field.
+func ByQuotaUsageDay(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldQuotaUsageDay, opts...).ToFunc()
+}
+
 // ByRpmLimit orders the results by the rpm_limit field.
 func ByRpmLimit(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRpmLimit, opts...).ToFunc()
+}
+
+// ByRpmWindowStartedAt orders the results by the rpm_window_started_at field.
+func ByRpmWindowStartedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRpmWindowStartedAt, opts...).ToFunc()
+}
+
+// ByRpmWindowCount orders the results by the rpm_window_count field.
+func ByRpmWindowCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRpmWindowCount, opts...).ToFunc()
 }
 
 // ByExpiresAt orders the results by the expires_at field.

@@ -22,7 +22,7 @@ func NewAssetsStore(client *repoent.Client) *AssetsStore {
 
 func (s *AssetsStore) GetByUserAndHash(ctx context.Context, userID int64, sha string) (domainassets.ReferenceAsset, error) {
 	entity, err := s.client.ReferenceAsset.Query().
-		Where(referenceasset.UserIDEQ(userID), referenceasset.Sha256EQ(sha)).
+		Where(referenceasset.UserIDEQ(userID), referenceasset.Sha256EQ(sha), referenceasset.StatusNEQ("deleted")).
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -76,6 +76,24 @@ func (s *AssetsStore) GetByUserAndID(ctx context.Context, userID int64, assetID 
 		return domainassets.ReferenceAsset{}, err
 	}
 	return mapReferenceAssetEntity(entity), nil
+}
+
+func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, assetID string) error {
+	id, err := uuid.Parse(assetID)
+	if err != nil {
+		return err
+	}
+	updated, err := s.client.ReferenceAsset.Update().
+		Where(referenceasset.IDEQ(id), referenceasset.UserIDEQ(userID)).
+		SetStatus("deleted").
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if updated == 0 {
+		return repoerr.ErrNotFound
+	}
+	return nil
 }
 
 func mapReferenceAssetEntity(entity *repoent.ReferenceAsset) domainassets.ReferenceAsset {

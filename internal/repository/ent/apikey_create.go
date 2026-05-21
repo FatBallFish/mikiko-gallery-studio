@@ -80,16 +80,16 @@ func (_c *APIKeyCreate) SetSecretHash(v string) *APIKeyCreate {
 	return _c
 }
 
-// SetSigningSecret sets the "signing_secret" field.
-func (_c *APIKeyCreate) SetSigningSecret(v string) *APIKeyCreate {
-	_c.mutation.SetSigningSecret(v)
+// SetSecretCiphertext sets the "secret_ciphertext" field.
+func (_c *APIKeyCreate) SetSecretCiphertext(v string) *APIKeyCreate {
+	_c.mutation.SetSecretCiphertext(v)
 	return _c
 }
 
-// SetNillableSigningSecret sets the "signing_secret" field if the given value is not nil.
-func (_c *APIKeyCreate) SetNillableSigningSecret(v *string) *APIKeyCreate {
+// SetNillableSecretCiphertext sets the "secret_ciphertext" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableSecretCiphertext(v *string) *APIKeyCreate {
 	if v != nil {
-		_c.SetSigningSecret(*v)
+		_c.SetSecretCiphertext(*v)
 	}
 	return _c
 }
@@ -156,6 +156,48 @@ func (_c *APIKeyCreate) SetNillableDailyQuotaPoints(v *string) *APIKeyCreate {
 	return _c
 }
 
+// SetTotalQuotaUsedPoints sets the "total_quota_used_points" field.
+func (_c *APIKeyCreate) SetTotalQuotaUsedPoints(v string) *APIKeyCreate {
+	_c.mutation.SetTotalQuotaUsedPoints(v)
+	return _c
+}
+
+// SetNillableTotalQuotaUsedPoints sets the "total_quota_used_points" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableTotalQuotaUsedPoints(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetTotalQuotaUsedPoints(*v)
+	}
+	return _c
+}
+
+// SetDailyQuotaUsedPoints sets the "daily_quota_used_points" field.
+func (_c *APIKeyCreate) SetDailyQuotaUsedPoints(v string) *APIKeyCreate {
+	_c.mutation.SetDailyQuotaUsedPoints(v)
+	return _c
+}
+
+// SetNillableDailyQuotaUsedPoints sets the "daily_quota_used_points" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableDailyQuotaUsedPoints(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetDailyQuotaUsedPoints(*v)
+	}
+	return _c
+}
+
+// SetQuotaUsageDay sets the "quota_usage_day" field.
+func (_c *APIKeyCreate) SetQuotaUsageDay(v string) *APIKeyCreate {
+	_c.mutation.SetQuotaUsageDay(v)
+	return _c
+}
+
+// SetNillableQuotaUsageDay sets the "quota_usage_day" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableQuotaUsageDay(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetQuotaUsageDay(*v)
+	}
+	return _c
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_c *APIKeyCreate) SetRpmLimit(v int) *APIKeyCreate {
 	_c.mutation.SetRpmLimit(v)
@@ -166,6 +208,34 @@ func (_c *APIKeyCreate) SetRpmLimit(v int) *APIKeyCreate {
 func (_c *APIKeyCreate) SetNillableRpmLimit(v *int) *APIKeyCreate {
 	if v != nil {
 		_c.SetRpmLimit(*v)
+	}
+	return _c
+}
+
+// SetRpmWindowStartedAt sets the "rpm_window_started_at" field.
+func (_c *APIKeyCreate) SetRpmWindowStartedAt(v time.Time) *APIKeyCreate {
+	_c.mutation.SetRpmWindowStartedAt(v)
+	return _c
+}
+
+// SetNillableRpmWindowStartedAt sets the "rpm_window_started_at" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableRpmWindowStartedAt(v *time.Time) *APIKeyCreate {
+	if v != nil {
+		_c.SetRpmWindowStartedAt(*v)
+	}
+	return _c
+}
+
+// SetRpmWindowCount sets the "rpm_window_count" field.
+func (_c *APIKeyCreate) SetRpmWindowCount(v int) *APIKeyCreate {
+	_c.mutation.SetRpmWindowCount(v)
+	return _c
+}
+
+// SetNillableRpmWindowCount sets the "rpm_window_count" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableRpmWindowCount(v *int) *APIKeyCreate {
+	if v != nil {
+		_c.SetRpmWindowCount(*v)
 	}
 	return _c
 }
@@ -249,6 +319,18 @@ func (_c *APIKeyCreate) defaults() {
 		v := apikey.DefaultGroupCode
 		_c.mutation.SetGroupCode(v)
 	}
+	if _, ok := _c.mutation.TotalQuotaUsedPoints(); !ok {
+		v := apikey.DefaultTotalQuotaUsedPoints
+		_c.mutation.SetTotalQuotaUsedPoints(v)
+	}
+	if _, ok := _c.mutation.DailyQuotaUsedPoints(); !ok {
+		v := apikey.DefaultDailyQuotaUsedPoints
+		_c.mutation.SetDailyQuotaUsedPoints(v)
+	}
+	if _, ok := _c.mutation.RpmWindowCount(); !ok {
+		v := apikey.DefaultRpmWindowCount
+		_c.mutation.SetRpmWindowCount(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -278,9 +360,9 @@ func (_c *APIKeyCreate) check() error {
 			return &ValidationError{Name: "secret_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_hash": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.SigningSecret(); ok {
-		if err := apikey.SigningSecretValidator(v); err != nil {
-			return &ValidationError{Name: "signing_secret", err: fmt.Errorf(`ent: validator failed for field "APIKey.signing_secret": %w`, err)}
+	if v, ok := _c.mutation.SecretCiphertext(); ok {
+		if err := apikey.SecretCiphertextValidator(v); err != nil {
+			return &ValidationError{Name: "secret_ciphertext", err: fmt.Errorf(`ent: validator failed for field "APIKey.secret_ciphertext": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Name(); !ok {
@@ -306,6 +388,20 @@ func (_c *APIKeyCreate) check() error {
 		if err := apikey.GroupCodeValidator(v); err != nil {
 			return &ValidationError{Name: "group_code", err: fmt.Errorf(`ent: validator failed for field "APIKey.group_code": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.TotalQuotaUsedPoints(); !ok {
+		return &ValidationError{Name: "total_quota_used_points", err: errors.New(`ent: missing required field "APIKey.total_quota_used_points"`)}
+	}
+	if _, ok := _c.mutation.DailyQuotaUsedPoints(); !ok {
+		return &ValidationError{Name: "daily_quota_used_points", err: errors.New(`ent: missing required field "APIKey.daily_quota_used_points"`)}
+	}
+	if v, ok := _c.mutation.QuotaUsageDay(); ok {
+		if err := apikey.QuotaUsageDayValidator(v); err != nil {
+			return &ValidationError{Name: "quota_usage_day", err: fmt.Errorf(`ent: validator failed for field "APIKey.quota_usage_day": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.RpmWindowCount(); !ok {
+		return &ValidationError{Name: "rpm_window_count", err: errors.New(`ent: missing required field "APIKey.rpm_window_count"`)}
 	}
 	return nil
 }
@@ -357,9 +453,9 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 		_spec.SetField(apikey.FieldSecretHash, field.TypeString, value)
 		_node.SecretHash = value
 	}
-	if value, ok := _c.mutation.SigningSecret(); ok {
-		_spec.SetField(apikey.FieldSigningSecret, field.TypeString, value)
-		_node.SigningSecret = &value
+	if value, ok := _c.mutation.SecretCiphertext(); ok {
+		_spec.SetField(apikey.FieldSecretCiphertext, field.TypeString, value)
+		_node.SecretCiphertext = &value
 	}
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
@@ -381,9 +477,29 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 		_spec.SetField(apikey.FieldDailyQuotaPoints, field.TypeString, value)
 		_node.DailyQuotaPoints = &value
 	}
+	if value, ok := _c.mutation.TotalQuotaUsedPoints(); ok {
+		_spec.SetField(apikey.FieldTotalQuotaUsedPoints, field.TypeString, value)
+		_node.TotalQuotaUsedPoints = value
+	}
+	if value, ok := _c.mutation.DailyQuotaUsedPoints(); ok {
+		_spec.SetField(apikey.FieldDailyQuotaUsedPoints, field.TypeString, value)
+		_node.DailyQuotaUsedPoints = value
+	}
+	if value, ok := _c.mutation.QuotaUsageDay(); ok {
+		_spec.SetField(apikey.FieldQuotaUsageDay, field.TypeString, value)
+		_node.QuotaUsageDay = &value
+	}
 	if value, ok := _c.mutation.RpmLimit(); ok {
 		_spec.SetField(apikey.FieldRpmLimit, field.TypeInt, value)
 		_node.RpmLimit = &value
+	}
+	if value, ok := _c.mutation.RpmWindowStartedAt(); ok {
+		_spec.SetField(apikey.FieldRpmWindowStartedAt, field.TypeTime, value)
+		_node.RpmWindowStartedAt = &value
+	}
+	if value, ok := _c.mutation.RpmWindowCount(); ok {
+		_spec.SetField(apikey.FieldRpmWindowCount, field.TypeInt, value)
+		_node.RpmWindowCount = value
 	}
 	if value, ok := _c.mutation.ExpiresAt(); ok {
 		_spec.SetField(apikey.FieldExpiresAt, field.TypeTime, value)
