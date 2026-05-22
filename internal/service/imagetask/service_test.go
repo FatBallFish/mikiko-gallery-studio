@@ -3,6 +3,8 @@ package imagetask_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
@@ -122,7 +125,7 @@ func TestExecuteFallsBackOnRetryableProviderError(t *testing.T) {
 			if req.Model != "gpt-image-1" {
 				t.Fatalf("unexpected provider model %q", req.Model)
 			}
-			return provider.ImageResponse{Created: 1770000001, Data: []provider.ImageResult{{B64JSON: "ZmFrZQ=="}}}, nil
+			return provider.ImageResponse{Created: 1770000001, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
 		}},
 	}
 
@@ -152,6 +155,197 @@ func TestExecuteFallsBackOnRetryableProviderError(t *testing.T) {
 	}
 	if result.Task.Attempts[0].Provider != "openrouter" || result.Task.Attempts[1].Provider != "openai" {
 		t.Fatalf("unexpected attempts %#v", result.Task.Attempts)
+	}
+}
+
+func TestExecuteUsesRuntimeModelRoutingProviderOrder(t *testing.T) {
+	cfg := taskTestConfig()
+	calls := []string{}
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			calls = append(calls, "openrouter")
+			return provider.ImageResponse{Created: 1770000003, Data: []provider.ImageResult{{URL: "https://cdn.example.com/runtime-route.png"}}}, nil
+		}},
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			calls = append(calls, "openai")
+			return provider.ImageResponse{Created: 1770000004, Data: []provider.ImageResult{{URL: "https://cdn.example.com/wrong.png"}}}, nil
+		}},
+	}
+	routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Providers: []modelhub.ModelProviderConfig{
+			{ID: 1, ProviderCode: "openai", ProviderType: "openai", Enabled: true},
+			{ID: 2, ProviderCode: "openrouter", ProviderType: "openrouter", Enabled: true},
+		},
+		Routes: []modelhub.ModelRouteConfig{
+			{ID: 1, GroupCode: "plus", TaskType: string(provider.TaskTypeTextToImage), ProviderCode: "openrouter", Priority: 0, FallbackOrder: 0, Enabled: true},
+			{ID: 2, GroupCode: "plus", TaskType: string(provider.TaskTypeTextToImage), ProviderCode: "openai", Priority: 9, FallbackOrder: 9, Enabled: true},
+		},
+	}}
+
+	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc.SetModelRoutingSource(routing)
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             10,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate with DB route priority",
+		RequestedSize:      "auto",
+		RequestedQuality:   "auto",
+		OutputImageCount:   1,
+		ResponseFormat:     string(provider.ResponseFormatURL),
+		PreferredProviders: []string{"openai"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Task.Provider != "openrouter" {
+		t.Fatalf("expected DB route to choose openrouter before preferred provider, got %s calls=%v", result.Task.Provider, calls)
+	}
+}
+
+func TestExecuteUsesRuntimeModelRoutingFallbackOrder(t *testing.T) {
+	cfg := taskTestConfig()
+	calls := []string{}
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			calls = append(calls, "openrouter")
+			return provider.ImageResponse{Created: 1770000013, Data: []provider.ImageResult{{URL: "https://cdn.example.com/runtime-fallback.png"}}}, nil
+		}},
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			calls = append(calls, "openai")
+			return provider.ImageResponse{Created: 1770000014, Data: []provider.ImageResult{{URL: "https://cdn.example.com/wrong-fallback.png"}}}, nil
+		}},
+	}
+	routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Providers: []modelhub.ModelProviderConfig{
+			{ID: 1, ProviderCode: "openai", ProviderType: "openai", Enabled: true},
+			{ID: 2, ProviderCode: "openrouter", ProviderType: "openrouter", Enabled: true},
+		},
+		Routes: []modelhub.ModelRouteConfig{
+			{ID: 1, GroupCode: "plus", TaskType: string(provider.TaskTypeTextToImage), ProviderCode: "openai", Priority: 0, FallbackOrder: 9, Enabled: true},
+			{ID: 2, GroupCode: "plus", TaskType: string(provider.TaskTypeTextToImage), ProviderCode: "openrouter", Priority: 0, FallbackOrder: 1, Enabled: true},
+		},
+	}}
+
+	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc.SetModelRoutingSource(routing)
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             12,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate with DB fallback order",
+		RequestedSize:      "auto",
+		RequestedQuality:   "auto",
+		OutputImageCount:   1,
+		ResponseFormat:     string(provider.ResponseFormatURL),
+		PreferredProviders: []string{"openai"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Task.Provider != "openrouter" {
+		t.Fatalf("expected DB fallback order to choose openrouter before openai, got %s calls=%v", result.Task.Provider, calls)
+	}
+}
+
+func TestCreateAndExecuteLeasedTaskRespectDisabledRuntimeProvider(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000005, Data: []provider.ImageResult{{URL: "https://cdn.example.com/worker-runtime.png"}}}, nil
+		}},
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			t.Fatal("disabled provider should not be called")
+			return provider.ImageResponse{}, nil
+		}},
+	}
+	routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Providers: []modelhub.ModelProviderConfig{
+			{ID: 1, ProviderCode: "openai", ProviderType: "openai", Enabled: false},
+			{ID: 2, ProviderCode: "openrouter", ProviderType: "openrouter", Enabled: true},
+		},
+		Routes: []modelhub.ModelRouteConfig{
+			{ID: 1, GroupCode: "plus", TaskType: string(provider.TaskTypeTextToImage), ProviderCode: "openai", Priority: 0, FallbackOrder: 0, Enabled: true},
+			{ID: 2, GroupCode: "plus", TaskType: string(provider.TaskTypeTextToImage), ProviderCode: "openrouter", Priority: 1, FallbackOrder: 1, Enabled: true},
+		},
+	}}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	svc.SetModelRoutingSource(routing)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           11,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Worker route",
+		RequestedSize:    "auto",
+		RequestedQuality: "auto",
+		OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("AcquireNextTask ok=%v err=%v", ok, err)
+	}
+	result, err := svc.ExecuteLeasedTask(context.Background(), leased, "worker-1", []string{"openai"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.ID != created.ID || result.Task.Provider != "openrouter" {
+		t.Fatalf("expected worker execution through openrouter, got %#v", result.Task)
+	}
+}
+
+type staticModelRoutingSource struct {
+	snapshot modelhub.ModelRoutingSnapshot
+}
+
+func (s *staticModelRoutingSource) ModelRoutingConfig(ctx context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return s.snapshot, nil
+}
+
+const tinyPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="
+
+func TestDownloadImageResultRejectsLocalObjectKeyTraversal(t *testing.T) {
+	root := t.TempDir()
+	cfg := taskTestConfig()
+	cfg.Storage.LocalRoot = root
+
+	outsidePath := filepath.Join(filepath.Dir(root), "secret-image.txt")
+	if err := os.WriteFile(outsidePath, []byte("secret"), 0o644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(outsidePath)
+	})
+
+	store := imagetask.NewMemoryStore()
+	task := domainimagetask.Task{
+		UserID:                22,
+		ID:                    "99999999-9999-9999-9999-999999999999",
+		Status:                domainimagetask.StatusSucceeded,
+		AbstractModel:         "plus",
+		TaskType:              string(provider.TaskTypeTextToImage),
+		RequestedQuality:      "auto",
+		ResolvedQualityBucket: "2k",
+		OutputImageCount:      1,
+		Results: []provider.ImageResult{{
+			ID:               "bad-image",
+			StorageDriver:    "local",
+			ObjectKey:        "../secret-image.txt",
+			MimeType:         "image/png",
+			VisibilityStatus: "private",
+		}},
+	}
+	if err := store.Save(context.Background(), task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	if _, _, err := svc.DownloadImageResult(context.Background(), 22, "bad-image"); err == nil {
+		t.Fatal("expected path traversal object key to be rejected")
 	}
 }
 
@@ -234,6 +428,10 @@ func (s *failingSaveStore) GetByID(ctx context.Context, userID int64, taskID str
 	return s.base.GetByID(ctx, userID, taskID)
 }
 
+func (s *failingSaveStore) GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.base.GetImageResultByID(ctx, userID, imageID)
+}
+
 func (s *failingSaveStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	return s.base.ListByUser(ctx, userID)
 }
@@ -287,6 +485,10 @@ func (s *raceyTerminalStore) SaveTerminalState(ctx context.Context, task domaini
 
 func (s *raceyTerminalStore) GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
 	return s.base.GetByID(ctx, userID, taskID)
+}
+
+func (s *raceyTerminalStore) GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.base.GetImageResultByID(ctx, userID, imageID)
 }
 
 func (s *raceyTerminalStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {

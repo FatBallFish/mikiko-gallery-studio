@@ -41,6 +41,7 @@ type AdjustStoreRequest struct {
 	ChangePoints    string
 	Reason          string
 	OperatorAdminID int64
+	IdempotencyKey  string
 }
 
 type RedeemCodeRequest struct {
@@ -76,6 +77,7 @@ type MemoryStore struct {
 	ledgers     map[int64][]domainbilling.LedgerEntry
 	apiKeyUsage map[int64]map[string]decimal.Decimal
 	taskState   map[string]memoryTaskBillingState
+	adjustKeys  map[string]AdjustStoreRequest
 }
 
 type balanceState struct {
@@ -92,6 +94,7 @@ func NewMemoryStore(scale int) *MemoryStore {
 		ledgers:     map[int64][]domainbilling.LedgerEntry{},
 		apiKeyUsage: map[int64]map[string]decimal.Decimal{},
 		taskState:   map[string]memoryTaskBillingState{},
+		adjustKeys:  map[string]AdjustStoreRequest{},
 	}
 }
 
@@ -234,9 +237,21 @@ func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) 
 func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (BalanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
 	change, err := decimal.NewFromString(req.ChangePoints)
 	if err != nil {
 		return BalanceState{}, err
+	}
+	if idempotencyKey != "" {
+		if existing, ok := s.adjustKeys[idempotencyKey]; ok {
+			if existing.UserID != req.UserID {
+				return BalanceState{}, errs.New(409, errs.CodeConflict, "idempotency key belongs to a different user")
+			}
+			if existing.ChangePoints != change.Round(s.scale).StringFixed(s.scale) || strings.TrimSpace(existing.Reason) != strings.TrimSpace(req.Reason) || existing.OperatorAdminID != req.OperatorAdminID {
+				return BalanceState{}, errs.New(409, errs.CodeConflict, "idempotency key was already used with a different adjustment")
+			}
+			return s.formatState(s.balances[req.UserID]), nil
+		}
 	}
 	current := s.balances[req.UserID]
 	next := current.Available.Add(change)
@@ -246,6 +261,13 @@ func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (Balance
 	current.Available = next
 	s.balances[req.UserID] = current
 	s.appendLedger(req.UserID, 0, "", "admin_adjust", change, current, req.Reason)
+	if idempotencyKey != "" {
+		stored := req
+		stored.ChangePoints = change.Round(s.scale).StringFixed(s.scale)
+		stored.Reason = strings.TrimSpace(req.Reason)
+		stored.IdempotencyKey = idempotencyKey
+		s.adjustKeys[idempotencyKey] = stored
+	}
 	return s.formatState(current), nil
 }
 

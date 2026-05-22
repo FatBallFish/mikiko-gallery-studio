@@ -216,6 +216,32 @@ func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID strin
 	return mapImageTaskEntity(entity, results)
 }
 
+func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return provider.ImageResult{}, repoerr.ErrNotFound
+	}
+	result, err := s.client.ImageResult.Query().
+		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return provider.ImageResult{}, repoerr.ErrNotFound
+		}
+		return provider.ImageResult{}, err
+	}
+	_, err = s.client.ImageTask.Query().
+		Where(imagetask.IDEQ(result.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return provider.ImageResult{}, repoerr.ErrNotFound
+		}
+		return provider.ImageResult{}, err
+	}
+	return mapImageResultEntity(result), nil
+}
+
 func (s *ImageTaskStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	entities, err := s.client.ImageTask.Query().
 		Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
@@ -747,25 +773,49 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 }
 
 func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, userID int64, index int, result provider.ImageResult) error {
-	objectKey := fmt.Sprintf("task:%s:%d", taskUUID.String(), index)
-	storageDriver := "inline"
-	if strings.TrimSpace(result.URL) != "" {
+	resultID, err := imageResultUUID(result.ID)
+	if err != nil {
+		return err
+	}
+	storageDriver := defaultString(result.StorageDriver, "local")
+	objectKey := result.ObjectKey
+	if strings.TrimSpace(result.URL) != "" && storageDriver == "local" && strings.TrimSpace(result.ObjectKey) == "" {
 		storageDriver = "remote"
+		objectKey = result.URL
+	}
+	if strings.TrimSpace(objectKey) == "" {
+		objectKey = fmt.Sprintf("task:%s:%d", taskUUID.String(), index)
+	}
+	mimeType := result.MimeType
+	if strings.TrimSpace(mimeType) == "" {
+		mimeType = result.Format
+		if strings.TrimSpace(mimeType) != "" && !strings.Contains(mimeType, "/") {
+			mimeType = "image/" + strings.TrimSpace(mimeType)
+		}
 	}
 	sha := sha256.Sum256([]byte(result.URL + "|" + result.B64JSON + "|" + fmt.Sprintf("%d", index)))
-	return tx.ImageResult.Create().
+	shaValue := defaultString(result.SHA256, hex.EncodeToString(sha[:]))
+	builder := tx.ImageResult.Create().
+		SetID(resultID).
 		SetTaskID(taskUUID).
 		SetUserID(userID).
 		SetImageRole("output").
 		SetStorageDriver(storageDriver).
 		SetObjectKey(objectKey).
-		SetMimeType(defaultString(result.Format, "application/octet-stream")).
-		SetFileSizeBytes(0).
-		SetWidth(0).
-		SetHeight(0).
-		SetSha256(hex.EncodeToString(sha[:])).
-		SetVisibilityStatus("private").
-		Exec(ctx)
+		SetMimeType(defaultString(mimeType, "application/octet-stream")).
+		SetFileSizeBytes(result.FileSizeBytes).
+		SetWidth(result.Width).
+		SetHeight(result.Height).
+		SetSha256(shaValue).
+		SetVisibilityStatus(defaultString(result.VisibilityStatus, "private"))
+	return builder.Exec(ctx)
+}
+
+func imageResultUUID(value string) (uuid.UUID, error) {
+	if strings.TrimSpace(value) == "" {
+		return uuid.New(), nil
+	}
+	return uuid.Parse(value)
 }
 
 func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.ImageResult) (domainimagetask.Task, error) {
@@ -815,13 +865,8 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		if attempts, err := decodeAttempts(trace["attempts"]); err == nil {
 			task.Attempts = attempts
 		}
-		if results, err := decodeResults(trace["results"]); err == nil && len(results) > 0 {
-			task.Results = results
-		}
 	}
-	if len(task.Results) == 0 {
-		task.Results = mapFallbackResults(resultEntities)
-	}
+	task.Results = mapFallbackResults(resultEntities)
 	return task, nil
 }
 
@@ -926,13 +971,32 @@ func mapFallbackResults(resultEntities []*repoent.ImageResult) []provider.ImageR
 
 	results := make([]provider.ImageResult, 0, len(sorted))
 	for _, entity := range sorted {
-		item := provider.ImageResult{}
-		if entity.StorageDriver == "remote" {
-			item.URL = entity.ObjectKey
-		}
-		results = append(results, item)
+		results = append(results, mapImageResultEntity(entity))
 	}
 	return results
+}
+
+func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
+	item := provider.ImageResult{
+		ID:               entity.ID.String(),
+		MimeType:         entity.MimeType,
+		FileSizeBytes:    entity.FileSizeBytes,
+		Width:            entity.Width,
+		Height:           entity.Height,
+		SHA256:           entity.Sha256,
+		ObjectKey:        entity.ObjectKey,
+		StorageDriver:    entity.StorageDriver,
+		VisibilityStatus: entity.VisibilityStatus,
+	}
+	if entity.StorageDriver == "remote" {
+		item.URL = entity.ObjectKey
+		return item
+	}
+	if entity.StorageDriver == "local" {
+		item.DownloadURL = "/api/agent/image/v1/images/" + entity.ID.String()
+		item.URL = item.DownloadURL
+	}
+	return item
 }
 
 func decodeReferenceAssetIDs(value any) []string {

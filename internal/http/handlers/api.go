@@ -18,16 +18,22 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainadmincallrecord "github.com/fatballfish/pic-gallery/internal/domain/admincallrecord"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
+	domainadminuser "github.com/fatballfish/pic-gallery/internal/domain/adminuser"
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
+	domainredeem "github.com/fatballfish/pic-gallery/internal/domain/redeem"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
+	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
@@ -36,23 +42,29 @@ import (
 	capserv "github.com/fatballfish/pic-gallery/internal/service/capabilities"
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
 	"gopkg.in/yaml.v3"
 )
 
 type API struct {
-	auth      *authservice.Service
-	adminAuth *adminauthservice.Service
-	apiKeys   *apikeyservice.Service
-	billing   *billingservice.Service
-	assets    *assetservice.Service
-	caps      *capserv.Service
-	compat    *compatservice.Service
-	tasks     *imagetaskservice.Service
-	admin     *adminconfigservice.Service
-	audit     *auditservice.Service
-	cfg       config.Config
+	auth       *authservice.Service
+	adminAuth  *adminauthservice.Service
+	apiKeys    *apikeyservice.Service
+	billing    *billingservice.Service
+	assets     *assetservice.Service
+	caps       *capserv.Service
+	compat     *compatservice.Service
+	tasks      *imagetaskservice.Service
+	admin      *adminconfigservice.Service
+	adminUser  *adminuserservice.Service
+	callRecord *admincallrecordservice.Service
+	modelAdmin *modeladminservice.Service
+	redeem     *redeemservice.Service
+	audit      *auditservice.Service
+	cfg        config.Config
 }
 
 func NewAPI(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service) *API {
@@ -71,7 +83,7 @@ func NewAPIWithRuntimeServices(cfg config.Config, authSvc *authservice.Service, 
 	return NewAPIWithCompletionServices(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, firstAPIKeyService(apiKeySvcs), nil, nil)
 }
 
-func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service, taskSvc *imagetaskservice.Service, adminSvc *adminconfigservice.Service, billingSvc *billingservice.Service, apiKeySvc *apikeyservice.Service, adminAuthSvc *adminauthservice.Service, auditSvc *auditservice.Service) *API {
+func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service, taskSvc *imagetaskservice.Service, adminSvc *adminconfigservice.Service, billingSvc *billingservice.Service, apiKeySvc *apikeyservice.Service, adminAuthSvc *adminauthservice.Service, auditSvc *auditservice.Service, adminUserSvcs ...*adminuserservice.Service) *API {
 	if authSvc == nil {
 		authSvc = authservice.NewService(cfg.Auth, cfg.Billing.UserGroupMultipliers)
 	}
@@ -101,22 +113,62 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 	if auditSvc == nil {
 		auditSvc = auditservice.NewService(nil)
 	}
+	adminUserSvc := firstAdminUserService(adminUserSvcs)
+	if adminUserSvc == nil {
+		adminUserSvc = adminuserservice.NewServiceWithStore(nil, billingSvc)
+	}
+	callRecordSvc := admincallrecordservice.NewServiceWithStore(nil)
 	return &API{
-		auth:      authSvc,
-		adminAuth: adminAuthSvc,
-		apiKeys:   apiKeySvc,
-		billing:   billingSvc,
-		assets:    assetSvc,
-		caps:      capserv.NewService(cfg),
-		compat:    compatservice.NewServiceWithTaskService(cfg, taskSvc),
-		tasks:     taskSvc,
-		admin:     adminSvc,
-		audit:     auditSvc,
-		cfg:       cfg,
+		auth:       authSvc,
+		adminAuth:  adminAuthSvc,
+		apiKeys:    apiKeySvc,
+		billing:    billingSvc,
+		assets:     assetSvc,
+		caps:       capserv.NewService(cfg),
+		compat:     compatservice.NewServiceWithTaskService(cfg, taskSvc),
+		tasks:      taskSvc,
+		admin:      adminSvc,
+		adminUser:  adminUserSvc,
+		callRecord: callRecordSvc,
+		redeem:     redeemservice.NewServiceWithStore(nil),
+		audit:      auditSvc,
+		cfg:        cfg,
 	}
 }
 
+func NewAPIWithAdminServices(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service, taskSvc *imagetaskservice.Service, adminSvc *adminconfigservice.Service, billingSvc *billingservice.Service, apiKeySvc *apikeyservice.Service, adminAuthSvc *adminauthservice.Service, auditSvc *auditservice.Service, adminUserSvc *adminuserservice.Service, redeemSvc *redeemservice.Service) *API {
+	return NewAPIWithCallRecordService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, nil)
+}
+
+func NewAPIWithCallRecordService(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service, taskSvc *imagetaskservice.Service, adminSvc *adminconfigservice.Service, billingSvc *billingservice.Service, apiKeySvc *apikeyservice.Service, adminAuthSvc *adminauthservice.Service, auditSvc *auditservice.Service, adminUserSvc *adminuserservice.Service, redeemSvc *redeemservice.Service, callRecordSvc *admincallrecordservice.Service) *API {
+	return NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, nil)
+}
+
+func NewAPIWithModelAdminService(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service, taskSvc *imagetaskservice.Service, adminSvc *adminconfigservice.Service, billingSvc *billingservice.Service, apiKeySvc *apikeyservice.Service, adminAuthSvc *adminauthservice.Service, auditSvc *auditservice.Service, adminUserSvc *adminuserservice.Service, redeemSvc *redeemservice.Service, callRecordSvc *admincallrecordservice.Service, modelAdminSvc *modeladminservice.Service) *API {
+	api := NewAPIWithCompletionServices(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc)
+	if redeemSvc == nil {
+		redeemSvc = redeemservice.NewServiceWithStore(nil)
+	}
+	if callRecordSvc == nil {
+		callRecordSvc = admincallrecordservice.NewServiceWithStore(nil)
+	}
+	if modelAdminSvc == nil {
+		modelAdminSvc = modeladminservice.NewServiceWithStore(nil)
+	}
+	api.redeem = redeemSvc
+	api.callRecord = callRecordSvc
+	api.modelAdmin = modelAdminSvc
+	return api
+}
+
 func firstAPIKeyService(values []*apikeyservice.Service) *apikeyservice.Service {
+	if len(values) == 0 {
+		return nil
+	}
+	return values[0]
+}
+
+func firstAdminUserService(values []*adminuserservice.Service) *adminuserservice.Service {
 	if len(values) == 0 {
 		return nil
 	}
@@ -878,11 +930,21 @@ func (a *API) HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	if _, appErr := a.requireUser(r); appErr != nil {
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "image not found"))
+	imageID := strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/images/")
+	result, content, err := a.tasks.DownloadImageResult(r.Context(), user.ID, imageID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	w.Header().Set("Content-Type", defaultString(result.MimeType, "application/octet-stream"))
+	w.Header().Set("Content-Disposition", `attachment; filename="`+result.ID+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (a *API) HandleOpenReferenceAssetUploadSession(w http.ResponseWriter, r *http.Request) {
@@ -1136,7 +1198,10 @@ func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request)
 			httpx.WriteError(w, r, err.(*errs.Error))
 			return
 		}
-		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "config.update", "config_tab", tabKey, map[string]any{"version": req.Version})
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "config.update", "config_tab", tabKey, map[string]any{"version": req.Version}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
 		httpx.WriteSuccess(w, r, http.StatusOK, tab)
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
@@ -1174,6 +1239,308 @@ func (a *API) HandleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": logs})
 }
 
+func (a *API) HandleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	if _, appErr := a.requireAdmin(r); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	page, queryErr := parsePositiveIntQuery(r, "page", 1)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	result, err := a.adminUser.ListUsers(r.Context(), domainadminuser.ListRequest{
+		Page:     page,
+		PageSize: pageSize,
+		Query:    r.URL.Query().Get("query"),
+		Status:   r.URL.Query().Get("status"),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": result.Items,
+		"pagination": map[string]any{
+			"page":      result.Page,
+			"page_size": result.PageSize,
+			"total":     result.Total,
+		},
+	})
+}
+
+func (a *API) HandleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	userID, action, parseErr := parseAdminUserAction(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	switch action {
+	case "":
+		if r.Method != http.MethodGet {
+			httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+			return
+		}
+		detail, err := a.adminUser.GetUserDetail(r.Context(), userID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, detail)
+	case "status":
+		if r.Method != http.MethodPost {
+			httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+			return
+		}
+		var req struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.adminUser.UpdateUserStatus(r.Context(), domainadminuser.StatusRequest{UserID: userID, Status: req.Status, OperatorAdmin: admin.AdminID})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.status_update", "user", fmt.Sprintf("%d", userID), map[string]any{"status": updated.Status, "token_version": updated.TokenVersion}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case "points-adjustments":
+		if r.Method != http.MethodPost {
+			httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+			return
+		}
+		idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		if idempotencyKey == "" {
+			httpx.WriteError(w, r, errs.BadRequest("Idempotency-Key is required"))
+			return
+		}
+		var req struct {
+			ChangePoints string `json:"change_points"`
+			Reason       string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		balance, err := a.adminUser.AdjustPoints(r.Context(), domainadminuser.PointAdjustmentRequest{
+			UserID:         userID,
+			ChangePoints:   req.ChangePoints,
+			Reason:         req.Reason,
+			IdempotencyKey: idempotencyKey,
+			OperatorAdmin:  admin.AdminID,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.points_adjust", "user", fmt.Sprintf("%d", userID), map[string]any{"change_points": req.ChangePoints, "reason": req.Reason, "idempotency_key": idempotencyKey}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, balance)
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found"))
+	}
+}
+
+func (a *API) HandleAdminRedeemCodes(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		batchID, queryErr := parseNonNegativeInt64Query(r, "batch_id", 0)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		result, err := a.redeem.ListCodes(r.Context(), domainredeem.ListRequest{
+			Page:     page,
+			PageSize: pageSize,
+			Status:   r.URL.Query().Get("status"),
+			Code:     r.URL.Query().Get("code"),
+			BatchID:  batchID,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedRedeemCodesPayload(result.Items, result.Page, result.PageSize, result.Total))
+	case http.MethodPost:
+		req, ok := a.decodeAdminRedeemCreateRequest(w, r)
+		if !ok {
+			return
+		}
+		req.OperatorAdmin = admin.AdminID
+		created, err := a.redeem.CreateCode(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "redeem_code.create", "redeem_code", fmt.Sprintf("%d", created.ID), map[string]any{"code": created.Code, "batch_id": created.BatchID}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminRedeemCodeBatchCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	var req struct {
+		Count          int    `json:"count"`
+		BatchID        int64  `json:"batch_id"`
+		Status         string `json:"status"`
+		RewardType     string `json:"reward_type"`
+		RewardValue    string `json:"reward_value"`
+		ValidFrom      string `json:"valid_from"`
+		ValidUntil     string `json:"valid_until"`
+		MaxRedemptions int    `json:"max_redemptions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	validFrom, parseErr := parseOptionalTime(req.ValidFrom, "valid_from")
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	validUntil, parseErr := parseRequiredTime(req.ValidUntil, "valid_until")
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	result, err := a.redeem.BatchCreate(r.Context(), domainredeem.BatchCreateRequest{
+		Count:          req.Count,
+		BatchID:        req.BatchID,
+		Status:         req.Status,
+		RewardType:     req.RewardType,
+		RewardValue:    req.RewardValue,
+		ValidFrom:      validFrom,
+		ValidUntil:     validUntil,
+		MaxRedemptions: req.MaxRedemptions,
+		OperatorAdmin:  admin.AdminID,
+	})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "redeem_code.batch_create", "redeem_code_batch", fmt.Sprintf("%d", result.BatchID), map[string]any{"count": result.Count, "batch_id": result.BatchID}); auditErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(auditErr))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusCreated, result)
+}
+
+func (a *API) HandleAdminRedeemCodeDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	codeID, action, parseErr := parseAdminRedeemCodeAction(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	switch action {
+	case "status":
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, r)
+			return
+		}
+		var req struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.redeem.UpdateStatus(r.Context(), domainredeem.StatusRequest{ID: codeID, Status: req.Status, OperatorAdmin: admin.AdminID})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "redeem_code.status_update", "redeem_code", fmt.Sprintf("%d", codeID), map[string]any{"status": updated.Status}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case "redemptions":
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w, r)
+			return
+		}
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		result, err := a.redeem.ListRedemptions(r.Context(), codeID, page, pageSize)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+			"items": result.Items,
+			"pagination": map[string]any{
+				"page":      result.Page,
+				"page_size": result.PageSize,
+				"total":     result.Total,
+			},
+		})
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "admin redeem code route not found"))
+	}
+}
+
 func (a *API) HandleAdminCallRecords(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
@@ -1183,7 +1550,266 @@ func (a *API) HandleAdminCallRecords(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": []any{}})
+	page, queryErr := parsePositiveIntQuery(r, "page", 1)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	if pageSize > 100 {
+		httpx.WriteError(w, r, errs.BadRequest("page_size must be at most 100"))
+		return
+	}
+	userID, queryErr := parseNonNegativeInt64Query(r, "user_id", 0)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	createdFrom, queryErr := parseOptionalTime(r.URL.Query().Get("created_from"), "created_from")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	createdTo, queryErr := parseOptionalTime(r.URL.Query().Get("created_to"), "created_to")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	result, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{
+		Page:          page,
+		PageSize:      pageSize,
+		Status:        r.URL.Query().Get("status"),
+		Provider:      r.URL.Query().Get("provider"),
+		SourceChannel: r.URL.Query().Get("source_channel"),
+		UserID:        userID,
+		TaskID:        r.URL.Query().Get("task_id"),
+		CreatedFrom:   createdFrom,
+		CreatedTo:     createdTo,
+	})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": result.Items,
+		"pagination": map[string]any{
+			"page":      result.Page,
+			"page_size": result.PageSize,
+			"total":     result.Total,
+		},
+	})
+}
+
+func (a *API) HandleAdminModelProviders(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		enabled, parseErr := parseOptionalBoolQuery(r, "enabled")
+		if parseErr != nil {
+			httpx.WriteError(w, r, parseErr)
+			return
+		}
+		result, err := a.modelAdmin.ListProviders(r.Context(), domainmodeladmin.ProviderListRequest{
+			Page:         page,
+			PageSize:     pageSize,
+			ProviderType: r.URL.Query().Get("provider_type"),
+			Enabled:      enabled,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedModelProvidersPayload(result.Items, result.Page, result.PageSize, result.Total))
+	case http.MethodPost:
+		req, ok := decodeAdminModelProviderRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.modelAdmin.CreateProvider(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_provider.create", "model_provider", created.ProviderCode, map[string]any{"provider_type": created.ProviderType, "enabled": created.Enabled}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminModelProviderDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	providerCode := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ops/admin/v1/model-providers/"), "/")
+	if providerCode == "" || strings.Contains(providerCode, "/") {
+		httpx.WriteError(w, r, errs.BadRequest("invalid provider_code"))
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		item, err := a.modelAdmin.GetProvider(r.Context(), providerCode)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, item)
+	case http.MethodPut:
+		req, ok := decodeAdminModelProviderRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, err := a.modelAdmin.UpdateProvider(r.Context(), providerCode, req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_provider.update", "model_provider", updated.ProviderCode, map[string]any{"provider_type": updated.ProviderType, "enabled": updated.Enabled}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if err := a.modelAdmin.DeleteProvider(r.Context(), providerCode); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_provider.delete", "model_provider", providerCode, nil); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminModelRoutes(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		enabled, parseErr := parseOptionalBoolQuery(r, "enabled")
+		if parseErr != nil {
+			httpx.WriteError(w, r, parseErr)
+			return
+		}
+		result, err := a.modelAdmin.ListRoutes(r.Context(), domainmodeladmin.RouteListRequest{
+			Page:         page,
+			PageSize:     pageSize,
+			GroupCode:    r.URL.Query().Get("group_code"),
+			TaskType:     r.URL.Query().Get("task_type"),
+			ProviderCode: r.URL.Query().Get("provider_code"),
+			Enabled:      enabled,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedModelRoutesPayload(result.Items, result.Page, result.PageSize, result.Total))
+	case http.MethodPost:
+		req, ok := decodeAdminModelRouteRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.modelAdmin.CreateRoute(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_route.create", "model_route", fmt.Sprintf("%d", created.ID), map[string]any{"provider_code": created.ProviderCode, "group_code": created.GroupCode, "task_type": created.TaskType}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminModelRouteDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	routeID, parseErr := parseAdminModelRouteID(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		item, err := a.modelAdmin.GetRoute(r.Context(), routeID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, item)
+	case http.MethodPut:
+		req, ok := decodeAdminModelRouteRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, err := a.modelAdmin.UpdateRoute(r.Context(), routeID, req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_route.update", "model_route", fmt.Sprintf("%d", updated.ID), map[string]any{"provider_code": updated.ProviderCode, "group_code": updated.GroupCode, "task_type": updated.TaskType}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if err := a.modelAdmin.DeleteRoute(r.Context(), routeID); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_route.delete", "model_route", fmt.Sprintf("%d", routeID), nil); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
 }
 
 func (a *API) HandleDocsOpenAPIYAML(w http.ResponseWriter, r *http.Request) {
@@ -1470,6 +2096,10 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return
 	}
+	if appErr := validateNativeTaskResponseMode(req.ResponseMode); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
 
 	result, err := a.tasks.CreateTask(r.Context(), domainimagetask.CreateRequest{
 		TaskID:              idempotentTaskID(user.ID, r.Header.Get("Idempotency-Key"), req),
@@ -1513,6 +2143,10 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	if appErr := validateNativeTaskResponseMode(req.ResponseMode); appErr != nil {
+		httpx.WriteError(w, r, appErr)
 		return
 	}
 
@@ -1576,6 +2210,14 @@ func (a *API) handleAgentTaskList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, tasks)
+}
+
+func validateNativeTaskResponseMode(value string) *errs.Error {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" || mode == "async" {
+		return nil
+	}
+	return errs.BadRequest("native task creation only supports async response_mode")
 }
 
 func (a *API) requireUser(r *http.Request) (*domainauth.User, *errs.Error) {
@@ -1714,11 +2356,11 @@ func (a *API) requireAdmin(r *http.Request) (*adminauthservice.Claims, *errs.Err
 	return claims, nil
 }
 
-func (a *API) recordAudit(r *http.Request, actorType, actorID, action, targetType, targetID string, metadata map[string]any) {
+func (a *API) recordAudit(r *http.Request, actorType, actorID, action, targetType, targetID string, metadata map[string]any) error {
 	if a.audit == nil {
-		return
+		return nil
 	}
-	_, _ = a.audit.Record(r.Context(), domainaudit.RecordRequest{
+	_, err := a.audit.Record(r.Context(), domainaudit.RecordRequest{
 		ActorType:  actorType,
 		ActorID:    actorID,
 		Action:     action,
@@ -1729,6 +2371,219 @@ func (a *API) recordAudit(r *http.Request, actorType, actorID, action, targetTyp
 		IPAddr:     r.RemoteAddr,
 		UserAgent:  r.UserAgent(),
 	})
+	return err
+}
+
+func parseAdminUserAction(path string) (int64, string, *errs.Error) {
+	trimmed := strings.Trim(strings.TrimPrefix(path, "/api/ops/admin/v1/users/"), "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return 0, "", errs.BadRequest("invalid user_id")
+	}
+	userID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || userID <= 0 {
+		return 0, "", errs.BadRequest("invalid user_id")
+	}
+	if len(parts) == 1 {
+		return userID, "", nil
+	}
+	if len(parts) == 2 {
+		return userID, parts[1], nil
+	}
+	return 0, "", errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found")
+}
+
+func (a *API) decodeAdminRedeemCreateRequest(w http.ResponseWriter, r *http.Request) (domainredeem.CreateRequest, bool) {
+	var req struct {
+		Code           string `json:"code"`
+		BatchID        int64  `json:"batch_id"`
+		Status         string `json:"status"`
+		RewardType     string `json:"reward_type"`
+		RewardValue    string `json:"reward_value"`
+		ValidFrom      string `json:"valid_from"`
+		ValidUntil     string `json:"valid_until"`
+		MaxRedemptions int    `json:"max_redemptions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainredeem.CreateRequest{}, false
+	}
+	validFrom, parseErr := parseOptionalTime(req.ValidFrom, "valid_from")
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return domainredeem.CreateRequest{}, false
+	}
+	validUntil, parseErr := parseRequiredTime(req.ValidUntil, "valid_until")
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return domainredeem.CreateRequest{}, false
+	}
+	return domainredeem.CreateRequest{
+		Code:           req.Code,
+		BatchID:        req.BatchID,
+		Status:         req.Status,
+		RewardType:     req.RewardType,
+		RewardValue:    req.RewardValue,
+		ValidFrom:      validFrom,
+		ValidUntil:     validUntil,
+		MaxRedemptions: req.MaxRedemptions,
+	}, true
+}
+
+func parseAdminRedeemCodeAction(path string) (int64, string, *errs.Error) {
+	trimmed := strings.Trim(strings.TrimPrefix(path, "/api/ops/admin/v1/redeem-codes/"), "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return 0, "", errs.BadRequest("invalid code_id")
+	}
+	codeID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || codeID <= 0 {
+		return 0, "", errs.BadRequest("invalid code_id")
+	}
+	if len(parts) == 2 {
+		return codeID, parts[1], nil
+	}
+	return 0, "", errs.New(http.StatusNotFound, errs.CodeNotFound, "admin redeem code route not found")
+}
+
+func parseOptionalTime(raw, field string) (time.Time, *errs.Error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, errs.BadRequest("invalid " + field)
+	}
+	return parsed, nil
+}
+
+func parseRequiredTime(raw, field string) (time.Time, *errs.Error) {
+	parsed, err := parseOptionalTime(raw, field)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if parsed.IsZero() {
+		return time.Time{}, errs.BadRequest(field + " is required")
+	}
+	return parsed, nil
+}
+
+func parseNonNegativeInt64Query(r *http.Request, key string, fallback int64) (int64, *errs.Error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return 0, errs.BadRequest("invalid " + key)
+	}
+	return value, nil
+}
+
+func parseOptionalBoolQuery(r *http.Request, key string) (*bool, *errs.Error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil, errs.BadRequest("invalid " + key)
+	}
+	return &value, nil
+}
+
+func decodeAdminModelProviderRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.ProviderWriteRequest, bool) {
+	var req struct {
+		ProviderCode        string `json:"provider_code"`
+		ProviderType        string `json:"provider_type"`
+		AuthConfigEncrypted string `json:"auth_config_encrypted"`
+		HealthStatus        string `json:"health_status"`
+		Enabled             bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.ProviderWriteRequest{}, false
+	}
+	return domainmodeladmin.ProviderWriteRequest{
+		ProviderCode:        req.ProviderCode,
+		ProviderType:        req.ProviderType,
+		AuthConfigEncrypted: req.AuthConfigEncrypted,
+		HealthStatus:        req.HealthStatus,
+		Enabled:             req.Enabled,
+	}, true
+}
+
+func decodeAdminModelRouteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteWriteRequest, bool) {
+	var req struct {
+		GroupCode       string `json:"group_code"`
+		TaskType        string `json:"task_type"`
+		ProviderModelID int64  `json:"provider_model_id"`
+		ProviderCode    string `json:"provider_code"`
+		Priority        int    `json:"priority"`
+		WeightPercent   int    `json:"weight_percent"`
+		FallbackOrder   int    `json:"fallback_order"`
+		Enabled         bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.RouteWriteRequest{}, false
+	}
+	return domainmodeladmin.RouteWriteRequest{
+		GroupCode:       req.GroupCode,
+		TaskType:        req.TaskType,
+		ProviderModelID: req.ProviderModelID,
+		ProviderCode:    req.ProviderCode,
+		Priority:        req.Priority,
+		WeightPercent:   req.WeightPercent,
+		FallbackOrder:   req.FallbackOrder,
+		Enabled:         req.Enabled,
+	}, true
+}
+
+func parseAdminModelRouteID(path string) (int64, *errs.Error) {
+	trimmed := strings.Trim(strings.TrimPrefix(path, "/api/ops/admin/v1/model-routes/"), "/")
+	if trimmed == "" || strings.Contains(trimmed, "/") {
+		return 0, errs.BadRequest("invalid route_id")
+	}
+	routeID, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || routeID <= 0 {
+		return 0, errs.BadRequest("invalid route_id")
+	}
+	return routeID, nil
+}
+
+func pagedRedeemCodesPayload(items []domainredeem.Code, page, pageSize, total int) map[string]any {
+	return map[string]any{
+		"items": items,
+		"pagination": map[string]any{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
+	}
+}
+
+func pagedModelProvidersPayload(items []domainmodeladmin.Provider, page, pageSize, total int) map[string]any {
+	return map[string]any{
+		"items": items,
+		"pagination": map[string]any{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
+	}
+}
+
+func pagedModelRoutesPayload(items []domainmodeladmin.Route, page, pageSize, total int) map[string]any {
+	return map[string]any{
+		"items": items,
+		"pagination": map[string]any{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
+	}
 }
 
 func apiKeyPayloads(keys []domainapikey.APIKey) []map[string]any {

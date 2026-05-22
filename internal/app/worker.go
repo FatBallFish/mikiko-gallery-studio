@@ -45,14 +45,14 @@ func RunWorker() error {
 		assetservice.NewServiceWithStore(cfg.Storage, cfg.GenerationLimits, assetSvc),
 		billingSvc,
 	)
+	taskSvc.SetModelRoutingSource(entstore.NewModelAdminStore(client))
 	slog.Info("database-backed task store enabled for worker")
 
 	runner := worker.NewRunner(taskSvc, worker.Config{
-		Owner:              workerOwner(),
-		LeaseTTL:           30 * time.Second,
-		HeartbeatInterval:  10 * time.Second,
-		PollInterval:       500 * time.Millisecond,
-		PreferredProviders: taskProviderPreference(cfg),
+		Owner:             workerOwner(),
+		LeaseTTL:          30 * time.Second,
+		HeartbeatInterval: 10 * time.Second,
+		PollInterval:      500 * time.Millisecond,
 	})
 
 	slog.Info("starting pic-gallery worker")
@@ -69,13 +69,4 @@ func workerOwner() string {
 		hostname = "worker"
 	}
 	return hostname + "-" + uuid.NewString()
-}
-
-func taskProviderPreference(cfg config.Config) []string {
-	preferred := []string{}
-	if cfg.Routing.DefaultProvider != "" {
-		preferred = append(preferred, cfg.Routing.DefaultProvider)
-	}
-	preferred = append(preferred, cfg.Routing.FallbackProviders...)
-	return preferred
 }

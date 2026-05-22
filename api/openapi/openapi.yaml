@@ -16,6 +16,10 @@ tags:
   - name: Agent Image
   - name: Open Image API
   - name: Admin Config
+  - name: Admin Users
+  - name: Admin Redeem Codes
+  - name: Admin Call Records
+  - name: Admin Model Routing
   - name: OpenAI Compat
 paths:
   /:
@@ -326,6 +330,12 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+        '400':
+          description: Invalid task request, including unsupported sync response_mode
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/agent/image/v1/tasks/{task_id}:
     get:
       tags: [Agent Image]
@@ -342,6 +352,52 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+  /api/agent/image/v1/images/{image_id}:
+    get:
+      tags: [Agent Image]
+      summary: Download a locally stored generated image
+      operationId: getAgentImageDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Image bytes
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+        '404':
+          description: Image not found, not owned by caller, deleted, or not locally stored
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
   /api/agent/image/v1/history/tasks:
     get:
       tags: [Agent Image]
@@ -436,6 +492,12 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+        '400':
+          description: Invalid task request, including unsupported sync response_mode
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/open/image/v1/estimate:
     get:
       tags: [Open Image API]
@@ -496,6 +558,499 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/ConfigTabResponse
+  /api/ops/admin/v1/users:
+    get:
+      tags: [Admin Users]
+      summary: List users for admin operations
+      operationId: getAdminUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive match against email or nickname.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, active, disabled]
+      responses:
+        '200':
+          description: User page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserListResponse
+  /api/ops/admin/v1/users/{user_id}:
+    get:
+      tags: [Admin Users]
+      summary: Get admin user detail
+      operationId: getAdminUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: User detail with balance and recent ledger
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserDetailResponse
+  /api/ops/admin/v1/users/{user_id}/status:
+    post:
+      tags: [Admin Users]
+      summary: Enable or disable a user
+      operationId: postAdminUserStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUpdateUserStatusRequest
+      responses:
+        '200':
+          description: Updated user. Status changes increment token_version.
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserStatusResponse
+  /api/ops/admin/v1/users/{user_id}/points-adjustments:
+    post:
+      tags: [Admin Users]
+      summary: Adjust a user's points balance
+      operationId: postAdminUserPointsAdjustment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RequiredIdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminPointAdjustmentRequest
+      responses:
+        '200':
+          description: Updated balance. Replaying the same Idempotency-Key does not duplicate ledger entries.
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminPointAdjustmentResponse
+  /api/ops/admin/v1/redeem-codes:
+    get:
+      tags: [Admin Redeem Codes]
+      summary: List redeem codes
+      operationId: getAdminRedeemCodes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [inactive, available, redeemed, expired, disabled]
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: batch_id
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200':
+          description: Redeem code page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRedeemCodeListResponse
+    post:
+      tags: [Admin Redeem Codes]
+      summary: Create one redeem code
+      operationId: postAdminRedeemCode
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCreateRedeemCodeRequest
+      responses:
+        '201':
+          description: Redeem code created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRedeemCodeResponse
+  /api/ops/admin/v1/redeem-codes:batch-create:
+    post:
+      tags: [Admin Redeem Codes]
+      summary: Batch create redeem codes
+      operationId: postAdminRedeemCodesBatchCreate
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminBatchCreateRedeemCodesRequest
+      responses:
+        '201':
+          description: Redeem code batch created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminBatchCreateRedeemCodesResponse
+  /api/ops/admin/v1/redeem-codes/{code_id}/status:
+    post:
+      tags: [Admin Redeem Codes]
+      summary: Update redeem code status
+      operationId: postAdminRedeemCodeStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: code_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUpdateRedeemCodeStatusRequest
+      responses:
+        '200':
+          description: Redeem code updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRedeemCodeResponse
+  /api/ops/admin/v1/redeem-codes/{code_id}/redemptions:
+    get:
+      tags: [Admin Redeem Codes]
+      summary: List redemption ledger entries for one redeem code
+      operationId: getAdminRedeemCodeRedemptions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: code_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Redemption ledger page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRedeemCodeRedemptionsResponse
+  /api/ops/admin/v1/call-records:
+    get:
+      tags: [Admin Call Records]
+      summary: List image task call records
+      operationId: getAdminCallRecords
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: provider
+          in: query
+          schema: { type: string }
+        - name: source_channel
+          in: query
+          schema: { type: string }
+        - name: user_id
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: task_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: created_from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: created_to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Image task call record page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCallRecordListResponse
+  /api/ops/admin/v1/model-providers:
+    get:
+      tags: [Admin Model Routing]
+      summary: List model providers
+      operationId: getAdminModelProviders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: provider_type
+          in: query
+          schema: { type: string }
+        - name: enabled
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Model provider page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelProviderListResponse
+    post:
+      tags: [Admin Model Routing]
+      summary: Create a model provider
+      operationId: postAdminModelProvider
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelProviderWriteRequest
+      responses:
+        '201':
+          description: Model provider created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelProviderResponse
+  /api/ops/admin/v1/model-providers/{provider_code}:
+    get:
+      tags: [Admin Model Routing]
+      summary: Get a model provider
+      operationId: getAdminModelProvider
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider_code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Model provider detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelProviderResponse
+    put:
+      tags: [Admin Model Routing]
+      summary: Update a model provider
+      operationId: putAdminModelProvider
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider_code
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelProviderWriteRequest
+      responses:
+        '200':
+          description: Model provider updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelProviderResponse
+    delete:
+      tags: [Admin Model Routing]
+      summary: Delete a model provider
+      operationId: deleteAdminModelProvider
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider_code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Model provider deleted
+  /api/ops/admin/v1/model-routes:
+    get:
+      tags: [Admin Model Routing]
+      summary: List model routes
+      operationId: getAdminModelRoutes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: group_code
+          in: query
+          schema: { type: string }
+        - name: task_type
+          in: query
+          schema: { type: string }
+        - name: provider_code
+          in: query
+          schema: { type: string }
+        - name: enabled
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Model route page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelRouteListResponse
+    post:
+      tags: [Admin Model Routing]
+      summary: Create a model route
+      operationId: postAdminModelRoute
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelRouteWriteRequest
+      responses:
+        '201':
+          description: Model route created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelRouteResponse
+  /api/ops/admin/v1/model-routes/{route_id}:
+    get:
+      tags: [Admin Model Routing]
+      summary: Get a model route
+      operationId: getAdminModelRoute
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Model route detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelRouteResponse
+    put:
+      tags: [Admin Model Routing]
+      summary: Update a model route
+      operationId: putAdminModelRoute
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelRouteWriteRequest
+      responses:
+        '200':
+          description: Model route updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelRouteResponse
+    delete:
+      tags: [Admin Model Routing]
+      summary: Delete a model route
+      operationId: deleteAdminModelRoute
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '204':
+          description: Model route deleted
   /v1/images/generations:
     post:
       tags: [OpenAI Compat]

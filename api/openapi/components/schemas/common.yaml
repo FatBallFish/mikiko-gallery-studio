@@ -65,12 +65,27 @@ components:
           format: uuid
         url:
           type: string
+          description: Frontend-usable image URL. For local generated images this may be the authenticated download endpoint.
+        download_url:
+          type: string
+          description: Authenticated local download URL. Present for locally stored generated images.
         b64_json:
           type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
         width:
           type: integer
         height:
           type: integer
+        sha256:
+          type: string
+        object_key:
+          type: string
+        storage_driver:
+          type: string
         visibility_status:
           type: string
     ImageTask:

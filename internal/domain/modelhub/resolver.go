@@ -1,6 +1,7 @@
 package modelhub
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -32,11 +33,40 @@ type ProviderCandidate struct {
 	Priority               int
 }
 
+type ModelProviderConfig struct {
+	ID           int64
+	ProviderCode string
+	ProviderType string
+	Enabled      bool
+}
+
+type ModelRouteConfig struct {
+	ID              int64
+	GroupCode       string
+	TaskType        string
+	ProviderModelID int64
+	ProviderCode    string
+	Priority        int
+	WeightPercent   int
+	FallbackOrder   int
+	Enabled         bool
+}
+
+type ModelRoutingSnapshot struct {
+	Providers []ModelProviderConfig
+	Routes    []ModelRouteConfig
+}
+
+type ModelRoutingSource interface {
+	ModelRoutingConfig(ctx context.Context) (ModelRoutingSnapshot, error)
+}
+
 type ResolvedRequest struct {
 	ResolvedQualityBucket  string
 	Providers              []ProviderCandidate
 	MaxOutputImageCount    int
 	MaxReferenceImageCount int
+	RuntimeRoutingApplied  bool
 }
 
 type CapabilityItem struct {
@@ -49,11 +79,16 @@ type CapabilityItem struct {
 }
 
 type Resolver struct {
-	cfg config.Config
+	cfg    config.Config
+	source ModelRoutingSource
 }
 
 func NewResolver(cfg config.Config) *Resolver {
 	return &Resolver{cfg: cfg}
+}
+
+func (r *Resolver) SetModelRoutingSource(source ModelRoutingSource) {
+	r.source = source
 }
 
 func (r *Resolver) ResolveQuality(requestedQuality, requestedSize, abstractModel string) (string, error) {
@@ -94,6 +129,10 @@ func (r *Resolver) ResolveQuality(requestedQuality, requestedSize, abstractModel
 }
 
 func (r *Resolver) Resolve(req ResolveRequest) (ResolvedRequest, error) {
+	return r.ResolveContext(context.Background(), req)
+}
+
+func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (ResolvedRequest, error) {
 	model := strings.ToLower(req.AbstractModel)
 	quality, err := r.ResolveQuality(req.RequestedQuality, req.RequestedSize, model)
 	if err != nil {
@@ -111,10 +150,14 @@ func (r *Resolver) Resolve(req ResolveRequest) (ResolvedRequest, error) {
 	if _, ok := r.cfg.Billing.QualityPointsByModel[model]; !ok {
 		return ResolvedRequest{}, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported abstract model")
 	}
+	routing, err := r.runtimeRouting(ctx)
+	if err != nil {
+		return ResolvedRequest{}, err
+	}
 
 	candidates := make([]ProviderCandidate, 0, len(r.cfg.Routing.ProviderCapabilities))
 	for providerName, capability := range r.cfg.Routing.ProviderCapabilities {
-		if !r.providerEnabled(providerName) {
+		if !r.providerEnabledWithRouting(providerName, routing) {
 			continue
 		}
 		if !containsString(capability.SupportedModels, model) {
@@ -150,6 +193,7 @@ func (r *Resolver) Resolve(req ResolveRequest) (ResolvedRequest, error) {
 			Priority:               capability.Priority,
 		})
 	}
+	candidates = applyRuntimeRouteOrder(candidates, model, req.TaskType, routing)
 	if len(candidates) == 0 {
 		return ResolvedRequest{}, errs.New(400, errs.CodeImageCapabilityMismatch, "no eligible provider for request")
 	}
@@ -164,6 +208,7 @@ func (r *Resolver) Resolve(req ResolveRequest) (ResolvedRequest, error) {
 		Providers:              candidates,
 		MaxOutputImageCount:    r.cfg.GenerationLimits.MaxImageCount,
 		MaxReferenceImageCount: r.cfg.GenerationLimits.ReferenceImageMaxCount,
+		RuntimeRoutingApplied:  len(routing.Providers) > 0 || len(routing.Routes) > 0,
 	}, nil
 }
 
@@ -189,6 +234,19 @@ func (r *Resolver) ListCapabilities() []CapabilityItem {
 }
 
 func (r *Resolver) providerEnabled(name string) bool {
+	return r.providerEnabledWithRouting(name, ModelRoutingSnapshot{})
+}
+
+func (r *Resolver) providerEnabledWithRouting(name string, routing ModelRoutingSnapshot) bool {
+	if len(routing.Providers) > 0 {
+		normalized := strings.ToLower(name)
+		for _, provider := range routing.Providers {
+			if strings.EqualFold(provider.ProviderCode, normalized) {
+				return provider.Enabled
+			}
+		}
+		return false
+	}
 	switch strings.ToLower(name) {
 	case "openai":
 		return r.cfg.Providers.OpenAI.Enabled
@@ -197,6 +255,68 @@ func (r *Resolver) providerEnabled(name string) bool {
 	default:
 		return false
 	}
+}
+
+func (r *Resolver) runtimeRouting(ctx context.Context) (ModelRoutingSnapshot, error) {
+	if r.source == nil {
+		return ModelRoutingSnapshot{}, nil
+	}
+	snapshot, err := r.source.ModelRoutingConfig(ctx)
+	if err != nil {
+		return ModelRoutingSnapshot{}, errs.Internal("failed to load model routing config")
+	}
+	return snapshot, nil
+}
+
+func applyRuntimeRouteOrder(candidates []ProviderCandidate, model, taskType string, routing ModelRoutingSnapshot) []ProviderCandidate {
+	if len(routing.Routes) == 0 {
+		return candidates
+	}
+	byProvider := make(map[string]ProviderCandidate, len(candidates))
+	for _, candidate := range candidates {
+		byProvider[strings.ToLower(candidate.Provider)] = candidate
+	}
+	orderedRoutes := make([]ModelRouteConfig, 0, len(routing.Routes))
+	for _, route := range routing.Routes {
+		if !route.Enabled || !strings.EqualFold(route.GroupCode, model) || !strings.EqualFold(route.TaskType, taskType) {
+			continue
+		}
+		if strings.TrimSpace(route.ProviderCode) == "" {
+			continue
+		}
+		orderedRoutes = append(orderedRoutes, route)
+	}
+	if len(orderedRoutes) == 0 {
+		return candidates
+	}
+	sort.SliceStable(orderedRoutes, func(i, j int) bool {
+		if orderedRoutes[i].Priority != orderedRoutes[j].Priority {
+			return orderedRoutes[i].Priority < orderedRoutes[j].Priority
+		}
+		if orderedRoutes[i].FallbackOrder != orderedRoutes[j].FallbackOrder {
+			return orderedRoutes[i].FallbackOrder < orderedRoutes[j].FallbackOrder
+		}
+		return orderedRoutes[i].ID < orderedRoutes[j].ID
+	})
+	ordered := make([]ProviderCandidate, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for _, route := range orderedRoutes {
+		key := strings.ToLower(route.ProviderCode)
+		candidate, ok := byProvider[key]
+		if !ok {
+			continue
+		}
+		candidate.Priority = route.Priority*1000 + route.FallbackOrder
+		ordered = append(ordered, candidate)
+		seen[key] = struct{}{}
+	}
+	for _, candidate := range candidates {
+		if _, ok := seen[strings.ToLower(candidate.Provider)]; ok {
+			continue
+		}
+		ordered = append(ordered, candidate)
+	}
+	return ordered
 }
 
 func (r *Resolver) taskTypesForModel(model string) []string {

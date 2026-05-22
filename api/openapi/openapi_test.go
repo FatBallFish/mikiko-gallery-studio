@@ -28,6 +28,18 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/open/image/v1/tasks",
 		"/api/open/image/v1/estimate",
 		"/api/ops/admin/v1/config-tabs/{tab_key}",
+		"/api/ops/admin/v1/users",
+		"/api/ops/admin/v1/users/{user_id}",
+		"/api/ops/admin/v1/users/{user_id}/status",
+		"/api/ops/admin/v1/users/{user_id}/points-adjustments",
+		"/api/ops/admin/v1/redeem-codes",
+		"/api/ops/admin/v1/redeem-codes:batch-create",
+		"/api/ops/admin/v1/redeem-codes/{code_id}/status",
+		"/api/ops/admin/v1/redeem-codes/{code_id}/redemptions",
+		"/api/ops/admin/v1/model-providers",
+		"/api/ops/admin/v1/model-providers/{provider_code}",
+		"/api/ops/admin/v1/model-routes",
+		"/api/ops/admin/v1/model-routes/{route_id}",
 		"/v1/images/generations",
 		"/v1/images/edits",
 		"/v1/models",
@@ -36,6 +48,227 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 	for _, path := range expected {
 		if _, ok := doc.Paths[path]; !ok {
 			t.Fatalf("expected path %q in OpenAPI spec", path)
+		}
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Tags []struct {
+			Name string `yaml:"name"`
+		} `yaml:"tags"`
+		Paths map[string]map[string]struct {
+			Tags       []string `yaml:"tags"`
+			Parameters []struct {
+				Name string `yaml:"name"`
+				In   string `yaml:"in"`
+			} `yaml:"parameters"`
+			RequestBody struct {
+				Required bool `yaml:"required"`
+			} `yaml:"requestBody"`
+			Responses map[string]any `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	seenTag := false
+	for _, tag := range doc.Tags {
+		if tag.Name == "Admin Model Routing" {
+			seenTag = true
+			break
+		}
+	}
+	if !seenTag {
+		t.Fatal("expected Admin Model Routing tag")
+	}
+
+	for path, method := range map[string]string{
+		"/api/ops/admin/v1/model-providers":                 "get",
+		"/api/ops/admin/v1/model-providers/{provider_code}": "get",
+		"/api/ops/admin/v1/model-routes":                    "get",
+		"/api/ops/admin/v1/model-routes/{route_id}":         "get",
+	} {
+		operation := doc.Paths[path][method]
+		if len(operation.Tags) != 1 || operation.Tags[0] != "Admin Model Routing" {
+			t.Fatalf("expected %s %s to use Admin Model Routing tag, got %#v", method, path, operation.Tags)
+		}
+	}
+
+	providerListParams := map[string]bool{}
+	for _, param := range doc.Paths["/api/ops/admin/v1/model-providers"]["get"].Parameters {
+		providerListParams[param.In+":"+param.Name] = true
+	}
+	for _, key := range []string{"query:page", "query:page_size", "query:provider_type", "query:enabled"} {
+		if !providerListParams[key] {
+			t.Fatalf("expected model provider list parameter %q", key)
+		}
+	}
+	routeListParams := map[string]bool{}
+	for _, param := range doc.Paths["/api/ops/admin/v1/model-routes"]["get"].Parameters {
+		routeListParams[param.In+":"+param.Name] = true
+	}
+	for _, key := range []string{"query:page", "query:page_size", "query:group_code", "query:task_type", "query:provider_code", "query:enabled"} {
+		if !routeListParams[key] {
+			t.Fatalf("expected model route list parameter %q", key)
+		}
+	}
+
+	for path, methods := range map[string][]string{
+		"/api/ops/admin/v1/model-providers":                 {"post"},
+		"/api/ops/admin/v1/model-providers/{provider_code}": {"put"},
+		"/api/ops/admin/v1/model-routes":                    {"post"},
+		"/api/ops/admin/v1/model-routes/{route_id}":         {"put"},
+	} {
+		for _, method := range methods {
+			if !doc.Paths[path][method].RequestBody.Required {
+				t.Fatalf("expected %s %s request body to be required", method, path)
+			}
+		}
+	}
+	for path, method := range map[string]string{
+		"/api/ops/admin/v1/model-providers/{provider_code}": "delete",
+		"/api/ops/admin/v1/model-routes/{route_id}":         "delete",
+	} {
+		if _, ok := doc.Paths[path][method].Responses["204"]; !ok {
+			t.Fatalf("expected %s %s to document 204 response", method, path)
+		}
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required []string `yaml:"required"`
+				AnyOf    []struct {
+					Required []string `yaml:"required"`
+				} `yaml:"anyOf"`
+				Properties map[string]any
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+	for _, name := range []string{"AdminModelProvider", "AdminModelProviderWriteRequest", "AdminModelProviderResponse", "AdminModelProviderListResponse", "AdminModelRoute", "AdminModelRouteWriteRequest", "AdminModelRouteResponse", "AdminModelRouteListResponse"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin model routing schema %q", name)
+		}
+	}
+	for schemaName, requiredFields := range map[string][]string{
+		"AdminModelProviderWriteRequest": {"provider_code", "provider_type"},
+		"AdminModelRouteWriteRequest":    {"group_code", "task_type"},
+	} {
+		required := map[string]bool{}
+		for _, field := range schemasDoc.Components.Schemas[schemaName].Required {
+			required[field] = true
+		}
+		for _, field := range requiredFields {
+			if !required[field] {
+				t.Fatalf("expected %s to require %q", schemaName, field)
+			}
+		}
+	}
+	routeWrite := schemasDoc.Components.Schemas["AdminModelRouteWriteRequest"]
+	routeAnyOf := map[string]bool{}
+	for _, option := range routeWrite.AnyOf {
+		for _, field := range option.Required {
+			routeAnyOf[field] = true
+		}
+	}
+	for _, field := range []string{"provider_code", "provider_model_id"} {
+		if !routeAnyOf[field] {
+			t.Fatalf("expected AdminModelRouteWriteRequest anyOf to include %q", field)
+		}
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminUserManagementContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name string `yaml:"name"`
+				In   string `yaml:"in"`
+				Ref  string `yaml:"$ref"`
+			} `yaml:"parameters"`
+			RequestBody struct {
+				Required bool `yaml:"required"`
+			} `yaml:"requestBody"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	listParams := map[string]bool{}
+	for _, param := range doc.Paths["/api/ops/admin/v1/users"]["get"].Parameters {
+		listParams[param.In+":"+param.Name] = true
+	}
+	for _, key := range []string{"query:page", "query:page_size", "query:query", "query:status"} {
+		if !listParams[key] {
+			t.Fatalf("expected admin user list parameter %q", key)
+		}
+	}
+
+	adjust := doc.Paths["/api/ops/admin/v1/users/{user_id}/points-adjustments"]["post"]
+	if !adjust.RequestBody.Required {
+		t.Fatal("expected admin point adjustment body to be required")
+	}
+	seenIDKey := false
+	for _, param := range adjust.Parameters {
+		if param.Ref == "./components/parameters/common.yaml#/components/parameters/RequiredIdempotencyKey" || (param.In == "header" && param.Name == "Idempotency-Key") {
+			seenIDKey = true
+		}
+	}
+	if !seenIDKey {
+		t.Fatal("expected admin point adjustment to document Idempotency-Key header")
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required []string `yaml:"required"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+	for _, name := range []string{"AdminUserSummary", "AdminUserListResponse", "AdminUserDetailResponse", "AdminPointAdjustmentRequest", "AdminUpdateUserStatusRequest"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin schema %q", name)
+		}
+	}
+	for _, name := range []string{"AdminRedeemCode", "AdminCreateRedeemCodeRequest", "AdminBatchCreateRedeemCodesRequest", "AdminRedeemCodeResponse", "AdminRedeemCodeListResponse", "AdminRedeemCodeRedemptionsResponse"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin redeem schema %q", name)
+		}
+	}
+	required := map[string]bool{}
+	for _, field := range schemasDoc.Components.Schemas["AdminPointAdjustmentRequest"].Required {
+		required[field] = true
+	}
+	for _, field := range []string{"change_points", "reason"} {
+		if !required[field] {
+			t.Fatalf("expected AdminPointAdjustmentRequest to require %q", field)
 		}
 	}
 }
@@ -111,6 +344,47 @@ func TestOpenAPISpecDocumentsOpenImageAuthAndUploadContract(t *testing.T) {
 		if _, ok := schemaDoc.Components.Schemas[name]; !ok {
 			t.Fatalf("expected %s schema in open api schema file", name)
 		}
+	}
+}
+
+func TestOpenAPISpecDocumentsNativeTaskAsyncOnlyContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]any `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+	for _, path := range []string{"/api/agent/image/v1/tasks", "/api/open/image/v1/tasks"} {
+		if _, ok := doc.Paths[path]["post"].Responses["400"]; !ok {
+			t.Fatalf("expected %s post to document 400 for unsupported sync response_mode", path)
+		}
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	var schemaDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Enum []string `yaml:"enum"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemaDoc); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+	responseMode := schemaDoc.Components.Schemas["CreateImageTaskRequest"].Properties["response_mode"]
+	if len(responseMode.Enum) != 1 || responseMode.Enum[0] != "async" {
+		t.Fatalf("expected native CreateImageTaskRequest response_mode enum to be async-only, got %#v", responseMode.Enum)
 	}
 }
 

@@ -214,12 +214,33 @@ func (s *BillingStore) FinalizeTask(ctx context.Context, req billingservice.Fina
 }
 
 func (s *BillingStore) Adjust(ctx context.Context, req billingservice.AdjustStoreRequest) (billingservice.BalanceState, error) {
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
 	change, err := decimal.NewFromString(req.ChangePoints)
 	if err != nil {
 		return billingservice.BalanceState{}, err
 	}
 
 	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (billingservice.BalanceState, error) {
+		if idempotencyKey != "" {
+			existing, err := tx.PointLedger.Query().
+				Where(pointledger.IdempotencyKeyEQ(adminAdjustLedgerKey(req.UserID, idempotencyKey))).
+				Only(ctx)
+			if err == nil {
+				if existing.UserID != req.UserID {
+					return billingservice.BalanceState{}, errs.New(409, errs.CodeConflict, "idempotency key belongs to a different user")
+				}
+				if existing.ChangePoints != change.Round(s.scale).StringFixed(s.scale) || strings.TrimSpace(existing.Reason) != strings.TrimSpace(req.Reason) || nullableInt64(existing.OperatorAdminID) != req.OperatorAdminID {
+					return billingservice.BalanceState{}, errs.New(409, errs.CodeConflict, "idempotency key was already used with a different adjustment")
+				}
+				state, err := s.currentState(ctx, tx.Client(), req.UserID)
+				if err != nil {
+					return billingservice.BalanceState{}, err
+				}
+				return s.formatState(state), nil
+			} else if !repoent.IsNotFound(err) {
+				return billingservice.BalanceState{}, err
+			}
+		}
 		state, err := s.currentState(ctx, tx.Client(), req.UserID)
 		if err != nil {
 			return billingservice.BalanceState{}, err
@@ -229,7 +250,7 @@ func (s *BillingStore) Adjust(ctx context.Context, req billingservice.AdjustStor
 			return billingservice.BalanceState{}, errs.New(400, errs.CodeInsufficientPoints, "insufficient points")
 		}
 		state.Available = nextAvailable
-		if err := s.insertLedger(ctx, tx, req.UserID, 0, "", "admin_adjust", change, state, req.Reason, req.OperatorAdminID, ""); err != nil {
+		if err := s.insertLedger(ctx, tx, req.UserID, 0, "", "admin_adjust", change, state, req.Reason, req.OperatorAdminID, adminAdjustLedgerKey(req.UserID, idempotencyKey)); err != nil {
 			return billingservice.BalanceState{}, err
 		}
 		return s.formatState(state), nil
@@ -436,6 +457,7 @@ func (s *BillingStore) formatState(state decimalState) billingservice.BalanceSta
 func mapLedgerEntry(entry *repoent.PointLedger) domainbilling.LedgerEntry {
 	item := domainbilling.LedgerEntry{
 		ID:           int64(entry.ID),
+		UserID:       entry.UserID,
 		LedgerType:   entry.LedgerType,
 		ChangePoints: entry.ChangePoints,
 		BalanceAfter: entry.BalanceAfter,
@@ -449,12 +471,24 @@ func mapLedgerEntry(entry *repoent.PointLedger) domainbilling.LedgerEntry {
 	if entry.TaskID != nil {
 		item.TaskID = entry.TaskID.String()
 	}
+	if entry.RedeemCodeID != nil {
+		item.RedeemCodeID = *entry.RedeemCodeID
+	}
 	return item
 }
 
 func redeemLedgerKey(redeemCodeID int, userID int64, idempotencyKey string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(idempotencyKey)))
 	return fmt.Sprintf("redeem:%d:%d:%x", redeemCodeID, userID, sum)
+}
+
+func adminAdjustLedgerKey(userID int64, idempotencyKey string) string {
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(idempotencyKey))
+	return fmt.Sprintf("admin_adjust:%d:%x", userID, sum)
 }
 
 func redeemCodeNotFound() *errs.Error {

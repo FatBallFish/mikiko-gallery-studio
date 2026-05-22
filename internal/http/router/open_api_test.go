@@ -176,6 +176,24 @@ func TestOpenImageTaskRejectsAPIKeyQuotaExceeded(t *testing.T) {
 	}
 }
 
+func TestOpenImageTaskRejectsSyncResponseMode(t *testing.T) {
+	handler, creds, _ := newOpenAPIHandler(t)
+
+	taskBody := `{"task_type":"text_to_image","prompt":"cat","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"sync"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "open-sync-rejected")
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected sync response_mode rejection 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("only supports async")) {
+		t.Fatalf("expected clear async-only error, got body=%s", rec.Body.String())
+	}
+}
+
 func TestOpenAndCompatAPIRejectDisabledUserAPIKey(t *testing.T) {
 	handler, creds, authSvc, _ := newOpenAPIHandlerWithAuth(t, apikeyservice.CreateRequest{
 		Name:      "disabled-user",

@@ -99,7 +99,7 @@ func TestOpenAICompatEditWithMaskRoutesToOpenAI(t *testing.T) {
 			t.Fatalf("expected one mask file")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"created":1770000001,"data":[{"b64_json":"ZmFrZS1lZGl0"}]}`)
+		_, _ = io.WriteString(w, `{"created":1770000001,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="}]}`)
 	}))
 	defer openaiServer.Close()
 
@@ -150,7 +150,7 @@ func TestOpenAICompatEditWithMaskRoutesToOpenAI(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(resp.Data) != 1 || resp.Data[0].B64JSON != "ZmFrZS1lZGl0" {
+	if len(resp.Data) != 1 || resp.Data[0].B64JSON == "" {
 		t.Fatalf("unexpected response %#v", resp)
 	}
 }

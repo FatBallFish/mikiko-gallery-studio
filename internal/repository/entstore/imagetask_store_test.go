@@ -2,6 +2,8 @@ package entstore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"testing"
 	"time"
@@ -64,6 +66,16 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	if len(loaded.ReferenceAssetIDs) != 2 || loaded.ReferenceAssetIDs[0] != "asset-a" || loaded.ReferenceAssetIDs[1] != "asset-b" {
 		t.Fatalf("expected reference asset ids to round-trip, got %#v", loaded.ReferenceAssetIDs)
 	}
+	if len(loaded.Results) != 1 {
+		t.Fatalf("expected persisted image result, got %#v", loaded.Results)
+	}
+	result := loaded.Results[0]
+	if result.ID == "" || result.URL != "https://cdn.example.com/task.png" || result.VisibilityStatus != "private" {
+		t.Fatalf("expected frontend usable remote result metadata, got %#v", result)
+	}
+	if result.MimeType == "" || result.FileSizeBytes != 0 || result.Width != 0 || result.Height != 0 {
+		t.Fatalf("expected remote result to expose metadata fields with safe zero defaults, got %#v", result)
+	}
 
 	list, err := store.ListByUser(ctx, 12)
 	if err != nil {
@@ -87,6 +99,73 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Fatalf("expected empty list after delete, got %#v", list)
+	}
+}
+
+func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetasklocalresult?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	imageBytes := []byte("fake-png")
+	hash := sha256.Sum256(imageBytes)
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID:                41,
+		ID:                    "12121212-1212-1212-1212-121212121212",
+		Status:                domainimagetask.StatusSucceeded,
+		Provider:              "openai",
+		AbstractModel:         "plus",
+		TaskType:              string(provider.TaskTypeTextToImage),
+		Prompt:                "store local result",
+		RequestedQuality:      "auto",
+		ResolvedQualityBucket: "2k",
+		RequestedSize:         "1024x1024",
+		OutputImageCount:      1,
+		Results: []provider.ImageResult{{
+			ObjectKey:        "generated-images/41/12121212-1212-1212-1212-121212121212/0.png",
+			MimeType:         "image/png",
+			FileSizeBytes:    int64(len(imageBytes)),
+			Width:            2,
+			Height:           1,
+			SHA256:           hex.EncodeToString(hash[:]),
+			StorageDriver:    "local",
+			VisibilityStatus: "private",
+			DownloadURL:      "/api/agent/image/v1/images/local-image-id",
+		}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := store.GetByID(ctx, 41, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(loaded.Results) != 1 {
+		t.Fatalf("expected one result, got %#v", loaded.Results)
+	}
+	result := loaded.Results[0]
+	if result.ID == "" {
+		t.Fatalf("expected persisted result id, got %#v", result)
+	}
+	if result.StorageDriver != "local" || result.ObjectKey != task.Results[0].ObjectKey {
+		t.Fatalf("expected local object key to round-trip, got %#v", result)
+	}
+	if result.MimeType != "image/png" || result.FileSizeBytes != int64(len(imageBytes)) || result.Width != 2 || result.Height != 1 {
+		t.Fatalf("expected local image metadata to round-trip, got %#v", result)
+	}
+	if result.SHA256 != task.Results[0].SHA256 || result.VisibilityStatus != "private" {
+		t.Fatalf("expected hash and visibility to round-trip, got %#v", result)
+	}
+	if result.DownloadURL == "" {
+		t.Fatalf("expected local result to expose download_url, got %#v", result)
 	}
 }
 

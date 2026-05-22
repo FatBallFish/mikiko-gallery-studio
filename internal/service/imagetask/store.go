@@ -3,10 +3,12 @@ package imagetask
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 )
 
@@ -15,6 +17,7 @@ type Store interface {
 	SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error
 	SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error
 	GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error)
+	GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error)
 	ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error)
 	DeleteByID(ctx context.Context, userID int64, taskID string) error
 	AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error)
@@ -103,6 +106,23 @@ func (s *MemoryStore) GetByID(_ context.Context, userID int64, taskID string) (d
 		return domainimagetask.Task{}, repoerr.ErrNotFound
 	}
 	return cloneTask(task), nil
+}
+
+func (s *MemoryStore) GetImageResultByID(_ context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for _, result := range task.Results {
+			if result.ID == imageID && strings.TrimSpace(result.VisibilityStatus) != "deleted" {
+				return result, nil
+			}
+		}
+	}
+	return provider.ImageResult{}, repoerr.ErrNotFound
 }
 
 func (s *MemoryStore) ListByUser(_ context.Context, userID int64) ([]domainimagetask.Task, error) {
