@@ -2,9 +2,11 @@ package entstore
 
 import (
 	"context"
+	"strings"
 
 	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
 )
 
 type AuditStore struct {
@@ -37,16 +39,58 @@ func (s *AuditStore) Create(ctx context.Context, log domainaudit.Log) (domainaud
 	return mapAuditLogEntity(entity), nil
 }
 
-func (s *AuditStore) List(ctx context.Context) ([]domainaudit.Log, error) {
-	entities, err := s.client.AuditLog.Query().Order(repoent.Desc("created_at")).Limit(200).All(ctx)
+func (s *AuditStore) List(ctx context.Context, req domainaudit.ListRequest) (domainaudit.ListPage, error) {
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	query := s.client.AuditLog.Query()
+	if actorType := strings.TrimSpace(req.ActorType); actorType != "" {
+		query.Where(auditlog.ActorTypeEqualFold(actorType))
+	}
+	if actorID := strings.TrimSpace(req.ActorID); actorID != "" {
+		query.Where(auditlog.ActorIDEQ(actorID))
+	}
+	if action := strings.TrimSpace(req.Action); action != "" {
+		query.Where(auditlog.ActionEqualFold(action))
+	}
+	if targetType := strings.TrimSpace(req.TargetType); targetType != "" {
+		query.Where(auditlog.TargetTypeEqualFold(targetType))
+	}
+	if targetID := strings.TrimSpace(req.TargetID); targetID != "" {
+		query.Where(auditlog.TargetIDEQ(targetID))
+	}
+	if result := strings.TrimSpace(req.Result); result != "" {
+		query.Where(auditlog.ResultEqualFold(result))
+	}
+	if !req.CreatedFrom.IsZero() {
+		query.Where(auditlog.CreatedAtGTE(req.CreatedFrom))
+	}
+	if !req.CreatedTo.IsZero() {
+		query.Where(auditlog.CreatedAtLTE(req.CreatedTo))
+	}
+	total, err := query.Clone().Count(ctx)
 	if err != nil {
-		return nil, err
+		return domainaudit.ListPage{}, err
+	}
+	entities, err := query.Order(repoent.Desc(auditlog.FieldCreatedAt), repoent.Desc(auditlog.FieldID)).Offset((page - 1) * pageSize).Limit(pageSize).All(ctx)
+	if err != nil {
+		return domainaudit.ListPage{}, err
 	}
 	logs := make([]domainaudit.Log, 0, len(entities))
 	for _, entity := range entities {
 		logs = append(logs, mapAuditLogEntity(entity))
 	}
-	return logs, nil
+	return domainaudit.ListPage{
+		Items:    logs,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
 }
 
 func mapAuditLogEntity(entity *repoent.AuditLog) domainaudit.Log {

@@ -23,6 +23,8 @@ const (
 	FieldEmail = "email"
 	// FieldPasswordHash holds the string denoting the password_hash field in the database.
 	FieldPasswordHash = "password_hash"
+	// FieldEmailVerifiedAt holds the string denoting the email_verified_at field in the database.
+	FieldEmailVerifiedAt = "email_verified_at"
 	// FieldNickname holds the string denoting the nickname field in the database.
 	FieldNickname = "nickname"
 	// FieldBio holds the string denoting the bio field in the database.
@@ -35,10 +37,18 @@ const (
 	FieldUserGroupID = "user_group_id"
 	// FieldTokenVersion holds the string denoting the token_version field in the database.
 	FieldTokenVersion = "token_version"
+	// FieldRpmLimit holds the string denoting the rpm_limit field in the database.
+	FieldRpmLimit = "rpm_limit"
+	// FieldConcurrencyLimit holds the string denoting the concurrency_limit field in the database.
+	FieldConcurrencyLimit = "concurrency_limit"
 	// FieldDefaultLocale holds the string denoting the default_locale field in the database.
 	FieldDefaultLocale = "default_locale"
 	// FieldTheme holds the string denoting the theme field in the database.
 	FieldTheme = "theme"
+	// FieldPasswordUpdatedAt holds the string denoting the password_updated_at field in the database.
+	FieldPasswordUpdatedAt = "password_updated_at"
+	// FieldClosedAt holds the string denoting the closed_at field in the database.
+	FieldClosedAt = "closed_at"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 )
@@ -51,14 +61,19 @@ var Columns = []string{
 	FieldDeletedAt,
 	FieldEmail,
 	FieldPasswordHash,
+	FieldEmailVerifiedAt,
 	FieldNickname,
 	FieldBio,
 	FieldAvatarObjectKey,
 	FieldStatus,
 	FieldUserGroupID,
 	FieldTokenVersion,
+	FieldRpmLimit,
+	FieldConcurrencyLimit,
 	FieldDefaultLocale,
 	FieldTheme,
+	FieldPasswordUpdatedAt,
+	FieldClosedAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -100,6 +115,10 @@ var (
 	DefaultUserGroupID int64
 	// DefaultTokenVersion holds the default value on creation for the "token_version" field.
 	DefaultTokenVersion int
+	// DefaultRpmLimit holds the default value on creation for the "rpm_limit" field.
+	DefaultRpmLimit int
+	// DefaultConcurrencyLimit holds the default value on creation for the "concurrency_limit" field.
+	DefaultConcurrencyLimit int
 	// DefaultDefaultLocale holds the default value on creation for the "default_locale" field.
 	DefaultDefaultLocale string
 	// DefaultLocaleValidator is a validator for the "default_locale" field. It is called by the builders before save.
@@ -143,6 +162,11 @@ func ByPasswordHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPasswordHash, opts...).ToFunc()
 }
 
+// ByEmailVerifiedAt orders the results by the email_verified_at field.
+func ByEmailVerifiedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEmailVerifiedAt, opts...).ToFunc()
+}
+
 // ByNickname orders the results by the nickname field.
 func ByNickname(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNickname, opts...).ToFunc()
@@ -173,6 +197,16 @@ func ByTokenVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTokenVersion, opts...).ToFunc()
 }
 
+// ByRpmLimit orders the results by the rpm_limit field.
+func ByRpmLimit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRpmLimit, opts...).ToFunc()
+}
+
+// ByConcurrencyLimit orders the results by the concurrency_limit field.
+func ByConcurrencyLimit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConcurrencyLimit, opts...).ToFunc()
+}
+
 // ByDefaultLocale orders the results by the default_locale field.
 func ByDefaultLocale(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDefaultLocale, opts...).ToFunc()
@@ -181,4 +215,14 @@ func ByDefaultLocale(opts ...sql.OrderTermOption) OrderOption {
 // ByTheme orders the results by the theme field.
 func ByTheme(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTheme, opts...).ToFunc()
+}
+
+// ByPasswordUpdatedAt orders the results by the password_updated_at field.
+func ByPasswordUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPasswordUpdatedAt, opts...).ToFunc()
+}
+
+// ByClosedAt orders the results by the closed_at field.
+func ByClosedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClosedAt, opts...).ToFunc()
 }

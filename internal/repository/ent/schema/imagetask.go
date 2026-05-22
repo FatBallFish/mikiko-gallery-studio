@@ -38,6 +38,11 @@ func (ImageTask) Fields() []ent.Field {
 		field.String("save_policy").MaxLen(16).Default("private"),
 		field.String("estimated_points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
 		field.String("actual_points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
+		field.Int64("provider_model_id").Optional().Nillable(),
+		field.String("provider_cost").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
+		field.String("gross_margin").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
+		field.Int("fallback_count").Default(0),
+		field.String("route_snapshot_version").MaxLen(64).Default(""),
 		field.JSON("pricing_snapshot", map[string]any{}).Optional(),
 		field.JSON("routing_snapshot", map[string]any{}).Optional(),
 		field.JSON("error_policy_snapshot", map[string]any{}).Optional(),
@@ -53,7 +58,7 @@ func (ImageTask) Fields() []ent.Field {
 func (ImageTask) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),
-		index.Fields("status"), index.Fields("abstract_model"), index.Fields("resolved_quality_bucket"), index.Fields("lease_owner"),
+		index.Fields("status"), index.Fields("abstract_model"), index.Fields("resolved_quality_bucket"), index.Fields("provider_model_id"), index.Fields("lease_owner"),
 		index.Fields("lease_expires_at"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("deleted_at"),
 	}
 }

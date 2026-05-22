@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,8 +15,13 @@ import (
 )
 
 type BalanceState struct {
-	AvailablePoints string
-	FrozenPoints    string
+	AvailablePoints    string
+	FrozenPoints       string
+	SubscriptionPoints string
+	GiftPoints         string
+	RechargePoints     string
+	ActiveSubscription *domainbilling.UserSubscriptionSummary
+	NextExpiringGrant  *domainbilling.GrantExpirySummary
 }
 
 type ReserveStoreRequest struct {
@@ -53,6 +59,13 @@ type RedeemCodeRequest struct {
 type Store interface {
 	GetBalance(ctx context.Context, userID int64) (BalanceState, error)
 	ListLedger(ctx context.Context, userID int64, page, pageSize int) (domainbilling.LedgerPage, error)
+	ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error)
+	GetActiveSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error)
+	ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error)
+	GetOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
+	CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error)
+	CancelOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
+	MarkOrderPaid(ctx context.Context, req domainbilling.MarkOrderPaidRequest) (domainbilling.PaymentOrder, error)
 	ReserveTask(ctx context.Context, req ReserveStoreRequest) (BalanceState, error)
 	FinalizeTask(ctx context.Context, req FinalizeStoreRequest) (BalanceState, error)
 	Adjust(ctx context.Context, req AdjustStoreRequest) (BalanceState, error)
@@ -78,6 +91,17 @@ type MemoryStore struct {
 	apiKeyUsage map[int64]map[string]decimal.Decimal
 	taskState   map[string]memoryTaskBillingState
 	adjustKeys  map[string]AdjustStoreRequest
+	plans       []domainbilling.SubscriptionPlan
+	orders      map[int64]domainbilling.PaymentOrder
+	nextOrderID int64
+	breakdown   map[int64]memoryBreakdown
+	subs        map[int64]*domainbilling.UserSubscriptionSummary
+}
+
+type memoryBreakdown struct {
+	Subscription decimal.Decimal
+	Gift         decimal.Decimal
+	Recharge     decimal.Decimal
 }
 
 type balanceState struct {
@@ -95,13 +119,18 @@ func NewMemoryStore(scale int) *MemoryStore {
 		apiKeyUsage: map[int64]map[string]decimal.Decimal{},
 		taskState:   map[string]memoryTaskBillingState{},
 		adjustKeys:  map[string]AdjustStoreRequest{},
+		plans:       defaultPlans(),
+		orders:      map[int64]domainbilling.PaymentOrder{},
+		nextOrderID: 1,
+		breakdown:   map[int64]memoryBreakdown{},
+		subs:        map[int64]*domainbilling.UserSubscriptionSummary{},
 	}
 }
 
 func (s *MemoryStore) GetBalance(_ context.Context, userID int64) (BalanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.formatState(s.balances[userID]), nil
+	return s.formatState(userID, s.balances[userID]), nil
 }
 
 func (s *MemoryStore) ListLedger(_ context.Context, userID int64, page, pageSize int) (domainbilling.LedgerPage, error) {
@@ -131,6 +160,164 @@ func (s *MemoryStore) ListLedger(_ context.Context, userID int64, page, pageSize
 	}, nil
 }
 
+func (s *MemoryStore) ListPlans(_ context.Context) ([]domainbilling.SubscriptionPlan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]domainbilling.SubscriptionPlan, 0, len(s.plans))
+	items = append(items, s.plans...)
+	return items, nil
+}
+
+func (s *MemoryStore) GetActiveSubscription(_ context.Context, _ int64) (*domainbilling.UserSubscriptionSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sub := range s.subs {
+		if sub != nil {
+			cloned := *sub
+			return &cloned, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *MemoryStore) ListOrders(_ context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	items := make([]domainbilling.PaymentOrder, 0, len(s.orders))
+	for _, order := range s.orders {
+		if order.UserID == req.UserID {
+			items = append(items, order)
+		}
+	}
+	total := len(items)
+	start := (req.Page - 1) * req.PageSize
+	if start > total {
+		start = total
+	}
+	end := start + req.PageSize
+	if end > total {
+		end = total
+	}
+	return domainbilling.PaymentOrderPage{Items: items[start:end], Page: req.Page, PageSize: req.PageSize, Total: total}, nil
+}
+
+func (s *MemoryStore) GetOrder(_ context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[orderID]
+	if !ok || order.UserID != userID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	return order, nil
+}
+
+func (s *MemoryStore) CreateOrder(_ context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var plan domainbilling.SubscriptionPlan
+	found := false
+	for _, item := range s.plans {
+		if item.PlanCode == strings.TrimSpace(req.PlanCode) && item.Status == "active" {
+			plan = item
+			found = true
+			break
+		}
+	}
+	if !found {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+	}
+	now := time.Now().UTC()
+	order := domainbilling.PaymentOrder{
+		ID:          s.nextOrderID,
+		OrderNo:     fmt.Sprintf("PGO-%06d", s.nextOrderID),
+		UserID:      req.UserID,
+		PlanID:      plan.ID,
+		PlanCode:    plan.PlanCode,
+		PlanName:    plan.PlanName,
+		Provider:    strings.TrimSpace(req.Provider),
+		Status:      "pending",
+		Currency:    plan.Currency,
+		AmountCNY:   plan.PriceCNY,
+		Points:      plan.Points,
+		BonusPoints: plan.BonusPoints,
+		PaymentURL:  "mock://checkout/" + fmt.Sprintf("PGO-%06d", s.nextOrderID),
+		ExpiresAt:   now.Add(15 * time.Minute),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	s.orders[order.ID] = order
+	s.nextOrderID++
+	return order, nil
+}
+
+func (s *MemoryStore) CancelOrder(_ context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[orderID]
+	if !ok || order.UserID != userID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	if order.Status != "pending" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot be canceled")
+	}
+	now := time.Now().UTC()
+	order.Status = "closed"
+	order.ClosedAt = &now
+	order.UpdatedAt = now
+	s.orders[order.ID] = order
+	return order, nil
+}
+
+func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrderPaidRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, order := range s.orders {
+		if order.OrderNo != req.OrderNo {
+			continue
+		}
+		if order.Status == "paid" {
+			return order, nil
+		}
+		now := time.Now().UTC()
+		order.Status = "paid"
+		order.TradeNo = req.TradeNo
+		order.PaidAt = &now
+		order.UpdatedAt = now
+		s.orders[id] = order
+		current := s.balances[order.UserID]
+		points, _ := decimal.NewFromString(order.Points)
+		bonus, _ := decimal.NewFromString(order.BonusPoints)
+		current.Available = current.Available.Add(points).Add(bonus)
+		s.balances[order.UserID] = current
+		breakdown := s.breakdown[order.UserID]
+		breakdown.Subscription = breakdown.Subscription.Add(points)
+		breakdown.Gift = breakdown.Gift.Add(bonus)
+		s.breakdown[order.UserID] = breakdown
+		periodEnd := now.Add(30 * 24 * time.Hour)
+		s.subs[order.UserID] = &domainbilling.UserSubscriptionSummary{
+			ID:                 order.ID,
+			PlanID:             order.PlanID,
+			PlanCode:           order.PlanCode,
+			PlanName:           order.PlanName,
+			Status:             "active",
+			StartedAt:          now,
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   periodEnd,
+			GrantedPoints:      order.Points,
+			RemainingPoints:    order.Points,
+		}
+		s.appendLedger(order.UserID, 0, "", "order_paid", points.Add(bonus), current, "payment order "+order.OrderNo)
+		return order, nil
+	}
+	return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+}
+
 func (s *MemoryStore) ReserveTask(_ context.Context, req ReserveStoreRequest) (BalanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -139,7 +326,7 @@ func (s *MemoryStore) ReserveTask(_ context.Context, req ReserveStoreRequest) (B
 		return BalanceState{}, errs.New(409, errs.CodeConflict, "image task points belong to a different user")
 	}
 	if state.Active {
-		return s.formatState(s.balances[req.UserID]), nil
+		return s.formatState(req.UserID, s.balances[req.UserID]), nil
 	}
 	if state.Seen {
 		state.Cycle++
@@ -170,7 +357,7 @@ func (s *MemoryStore) ReserveTask(_ context.Context, req ReserveStoreRequest) (B
 	state.Active = true
 	state.Reserved = estimated
 	s.taskState[req.TaskID] = state
-	return s.formatState(current), nil
+	return s.formatState(req.UserID, current), nil
 }
 
 func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) (BalanceState, error) {
@@ -191,7 +378,7 @@ func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) 
 		if !state.Seen {
 			return BalanceState{}, errs.New(409, errs.CodeConflict, "image task points were not reserved")
 		}
-		return s.formatState(s.balances[req.UserID]), nil
+		return s.formatState(req.UserID, s.balances[req.UserID]), nil
 	}
 	actual, err := decimal.NewFromString(req.ActualPoints)
 	if err != nil {
@@ -215,7 +402,7 @@ func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) 
 		state.Active = false
 		state.Reserved = decimal.Zero
 		s.taskState[req.TaskID] = state
-		return s.formatState(current), nil
+		return s.formatState(req.UserID, current), nil
 	}
 	current.Frozen = current.Frozen.Sub(actual)
 	apiKeyID := firstPositive(req.APIKeyID, state.APIKeyID)
@@ -231,7 +418,7 @@ func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) 
 	state.Active = false
 	state.Reserved = decimal.Zero
 	s.taskState[req.TaskID] = state
-	return s.formatState(current), nil
+	return s.formatState(req.UserID, current), nil
 }
 
 func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (BalanceState, error) {
@@ -250,7 +437,7 @@ func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (Balance
 			if existing.ChangePoints != change.Round(s.scale).StringFixed(s.scale) || strings.TrimSpace(existing.Reason) != strings.TrimSpace(req.Reason) || existing.OperatorAdminID != req.OperatorAdminID {
 				return BalanceState{}, errs.New(409, errs.CodeConflict, "idempotency key was already used with a different adjustment")
 			}
-			return s.formatState(s.balances[req.UserID]), nil
+			return s.formatState(req.UserID, s.balances[req.UserID]), nil
 		}
 	}
 	current := s.balances[req.UserID]
@@ -260,6 +447,18 @@ func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (Balance
 	}
 	current.Available = next
 	s.balances[req.UserID] = current
+	breakdown := s.breakdown[req.UserID]
+	if change.IsPositive() {
+		breakdown.Gift = breakdown.Gift.Add(change)
+	} else if change.IsNegative() {
+		deduct := change.Abs()
+		if breakdown.Gift.GreaterThanOrEqual(deduct) {
+			breakdown.Gift = breakdown.Gift.Sub(deduct)
+		} else {
+			breakdown.Gift = decimal.Zero
+		}
+	}
+	s.breakdown[req.UserID] = breakdown
 	s.appendLedger(req.UserID, 0, "", "admin_adjust", change, current, req.Reason)
 	if idempotencyKey != "" {
 		stored := req
@@ -268,7 +467,7 @@ func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (Balance
 		stored.IdempotencyKey = idempotencyKey
 		s.adjustKeys[idempotencyKey] = stored
 	}
-	return s.formatState(current), nil
+	return s.formatState(req.UserID, current), nil
 }
 
 func (s *MemoryStore) RedeemCode(_ context.Context, req RedeemCodeRequest) (BalanceState, error) {
@@ -376,9 +575,22 @@ func firstPositive(values ...int64) int64 {
 	return 0
 }
 
-func (s *MemoryStore) formatState(current balanceState) BalanceState {
+func (s *MemoryStore) formatState(userID int64, current balanceState) BalanceState {
+	breakdown := s.breakdown[userID]
 	return BalanceState{
-		AvailablePoints: current.Available.Round(s.scale).StringFixed(s.scale),
-		FrozenPoints:    current.Frozen.Round(s.scale).StringFixed(s.scale),
+		AvailablePoints:    current.Available.Round(s.scale).StringFixed(s.scale),
+		FrozenPoints:       current.Frozen.Round(s.scale).StringFixed(s.scale),
+		SubscriptionPoints: breakdown.Subscription.Round(s.scale).StringFixed(s.scale),
+		GiftPoints:         breakdown.Gift.Round(s.scale).StringFixed(s.scale),
+		RechargePoints:     breakdown.Recharge.Round(s.scale).StringFixed(s.scale),
+		ActiveSubscription: s.subs[userID],
+	}
+}
+
+func defaultPlans() []domainbilling.SubscriptionPlan {
+	now := time.Now().UTC()
+	return []domainbilling.SubscriptionPlan{
+		{ID: 1, PlanCode: "basic-monthly", PlanName: "Basic Monthly", Status: "active", PriceCNY: "19.90000", Points: "100.00000", BonusPoints: "0.00000", DurationDays: 30, Currency: "CNY", CreatedAt: now, UpdatedAt: now},
+		{ID: 2, PlanCode: "plus-monthly", PlanName: "Plus Monthly", Status: "active", PriceCNY: "49.90000", Points: "300.00000", BonusPoints: "30.00000", DurationDays: 30, Currency: "CNY", CreatedAt: now, UpdatedAt: now},
 	}
 }

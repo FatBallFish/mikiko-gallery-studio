@@ -73,6 +73,16 @@ type ImageTask struct {
 	EstimatedPoints string `json:"estimated_points,omitempty"`
 	// ActualPoints holds the value of the "actual_points" field.
 	ActualPoints string `json:"actual_points,omitempty"`
+	// ProviderModelID holds the value of the "provider_model_id" field.
+	ProviderModelID *int64 `json:"provider_model_id,omitempty"`
+	// ProviderCost holds the value of the "provider_cost" field.
+	ProviderCost string `json:"provider_cost,omitempty"`
+	// GrossMargin holds the value of the "gross_margin" field.
+	GrossMargin string `json:"gross_margin,omitempty"`
+	// FallbackCount holds the value of the "fallback_count" field.
+	FallbackCount int `json:"fallback_count,omitempty"`
+	// RouteSnapshotVersion holds the value of the "route_snapshot_version" field.
+	RouteSnapshotVersion string `json:"route_snapshot_version,omitempty"`
 	// PricingSnapshot holds the value of the "pricing_snapshot" field.
 	PricingSnapshot map[string]interface{} `json:"pricing_snapshot,omitempty"`
 	// RoutingSnapshot holds the value of the "routing_snapshot" field.
@@ -105,9 +115,9 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case imagetask.FieldMaskPresent:
 			values[i] = new(sql.NullBool)
-		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed:
+		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount:
 			values[i] = new(sql.NullInt64)
-		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldRequestedQuality, imagetask.FieldResolvedQualityBucket, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
+		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldRequestedQuality, imagetask.FieldResolvedQualityBucket, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -303,6 +313,37 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field actual_points", values[i])
 			} else if value.Valid {
 				_m.ActualPoints = value.String
+			}
+		case imagetask.FieldProviderModelID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_model_id", values[i])
+			} else if value.Valid {
+				_m.ProviderModelID = new(int64)
+				*_m.ProviderModelID = value.Int64
+			}
+		case imagetask.FieldProviderCost:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_cost", values[i])
+			} else if value.Valid {
+				_m.ProviderCost = value.String
+			}
+		case imagetask.FieldGrossMargin:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field gross_margin", values[i])
+			} else if value.Valid {
+				_m.GrossMargin = value.String
+			}
+		case imagetask.FieldFallbackCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field fallback_count", values[i])
+			} else if value.Valid {
+				_m.FallbackCount = int(value.Int64)
+			}
+		case imagetask.FieldRouteSnapshotVersion:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field route_snapshot_version", values[i])
+			} else if value.Valid {
+				_m.RouteSnapshotVersion = value.String
 			}
 		case imagetask.FieldPricingSnapshot:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -510,6 +551,23 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("actual_points=")
 	builder.WriteString(_m.ActualPoints)
+	builder.WriteString(", ")
+	if v := _m.ProviderModelID; v != nil {
+		builder.WriteString("provider_model_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("provider_cost=")
+	builder.WriteString(_m.ProviderCost)
+	builder.WriteString(", ")
+	builder.WriteString("gross_margin=")
+	builder.WriteString(_m.GrossMargin)
+	builder.WriteString(", ")
+	builder.WriteString("fallback_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.FallbackCount))
+	builder.WriteString(", ")
+	builder.WriteString("route_snapshot_version=")
+	builder.WriteString(_m.RouteSnapshotVersion)
 	builder.WriteString(", ")
 	builder.WriteString("pricing_snapshot=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PricingSnapshot))

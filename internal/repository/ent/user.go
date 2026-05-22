@@ -27,6 +27,8 @@ type User struct {
 	Email string `json:"email,omitempty"`
 	// PasswordHash holds the value of the "password_hash" field.
 	PasswordHash *string `json:"password_hash,omitempty"`
+	// EmailVerifiedAt holds the value of the "email_verified_at" field.
+	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
 	// Nickname holds the value of the "nickname" field.
 	Nickname string `json:"nickname,omitempty"`
 	// Bio holds the value of the "bio" field.
@@ -39,10 +41,18 @@ type User struct {
 	UserGroupID int64 `json:"user_group_id,omitempty"`
 	// TokenVersion holds the value of the "token_version" field.
 	TokenVersion int `json:"token_version,omitempty"`
+	// RpmLimit holds the value of the "rpm_limit" field.
+	RpmLimit int `json:"rpm_limit,omitempty"`
+	// ConcurrencyLimit holds the value of the "concurrency_limit" field.
+	ConcurrencyLimit int `json:"concurrency_limit,omitempty"`
 	// DefaultLocale holds the value of the "default_locale" field.
 	DefaultLocale string `json:"default_locale,omitempty"`
 	// Theme holds the value of the "theme" field.
-	Theme        string `json:"theme,omitempty"`
+	Theme string `json:"theme,omitempty"`
+	// PasswordUpdatedAt holds the value of the "password_updated_at" field.
+	PasswordUpdatedAt *time.Time `json:"password_updated_at,omitempty"`
+	// ClosedAt holds the value of the "closed_at" field.
+	ClosedAt     *time.Time `json:"closed_at,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -51,11 +61,11 @@ func (*User) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case user.FieldID, user.FieldUserGroupID, user.FieldTokenVersion:
+		case user.FieldID, user.FieldUserGroupID, user.FieldTokenVersion, user.FieldRpmLimit, user.FieldConcurrencyLimit:
 			values[i] = new(sql.NullInt64)
 		case user.FieldEmail, user.FieldPasswordHash, user.FieldNickname, user.FieldBio, user.FieldAvatarObjectKey, user.FieldStatus, user.FieldDefaultLocale, user.FieldTheme:
 			values[i] = new(sql.NullString)
-		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt:
+		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldEmailVerifiedAt, user.FieldPasswordUpdatedAt, user.FieldClosedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -110,6 +120,13 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				_m.PasswordHash = new(string)
 				*_m.PasswordHash = value.String
 			}
+		case user.FieldEmailVerifiedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field email_verified_at", values[i])
+			} else if value.Valid {
+				_m.EmailVerifiedAt = new(time.Time)
+				*_m.EmailVerifiedAt = value.Time
+			}
 		case user.FieldNickname:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field nickname", values[i])
@@ -147,6 +164,18 @@ func (_m *User) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TokenVersion = int(value.Int64)
 			}
+		case user.FieldRpmLimit:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field rpm_limit", values[i])
+			} else if value.Valid {
+				_m.RpmLimit = int(value.Int64)
+			}
+		case user.FieldConcurrencyLimit:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field concurrency_limit", values[i])
+			} else if value.Valid {
+				_m.ConcurrencyLimit = int(value.Int64)
+			}
 		case user.FieldDefaultLocale:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field default_locale", values[i])
@@ -158,6 +187,20 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field theme", values[i])
 			} else if value.Valid {
 				_m.Theme = value.String
+			}
+		case user.FieldPasswordUpdatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field password_updated_at", values[i])
+			} else if value.Valid {
+				_m.PasswordUpdatedAt = new(time.Time)
+				*_m.PasswordUpdatedAt = value.Time
+			}
+		case user.FieldClosedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field closed_at", values[i])
+			} else if value.Valid {
+				_m.ClosedAt = new(time.Time)
+				*_m.ClosedAt = value.Time
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -214,6 +257,11 @@ func (_m *User) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
+	if v := _m.EmailVerifiedAt; v != nil {
+		builder.WriteString("email_verified_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("nickname=")
 	builder.WriteString(_m.Nickname)
 	builder.WriteString(", ")
@@ -234,11 +282,27 @@ func (_m *User) String() string {
 	builder.WriteString("token_version=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TokenVersion))
 	builder.WriteString(", ")
+	builder.WriteString("rpm_limit=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RpmLimit))
+	builder.WriteString(", ")
+	builder.WriteString("concurrency_limit=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ConcurrencyLimit))
+	builder.WriteString(", ")
 	builder.WriteString("default_locale=")
 	builder.WriteString(_m.DefaultLocale)
 	builder.WriteString(", ")
 	builder.WriteString("theme=")
 	builder.WriteString(_m.Theme)
+	builder.WriteString(", ")
+	if v := _m.PasswordUpdatedAt; v != nil {
+		builder.WriteString("password_updated_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.ClosedAt; v != nil {
+		builder.WriteString("closed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

@@ -88,6 +88,26 @@ func (_u *UserUpdate) ClearPasswordHash() *UserUpdate {
 	return _u
 }
 
+// SetEmailVerifiedAt sets the "email_verified_at" field.
+func (_u *UserUpdate) SetEmailVerifiedAt(v time.Time) *UserUpdate {
+	_u.mutation.SetEmailVerifiedAt(v)
+	return _u
+}
+
+// SetNillableEmailVerifiedAt sets the "email_verified_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableEmailVerifiedAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetEmailVerifiedAt(*v)
+	}
+	return _u
+}
+
+// ClearEmailVerifiedAt clears the value of the "email_verified_at" field.
+func (_u *UserUpdate) ClearEmailVerifiedAt() *UserUpdate {
+	_u.mutation.ClearEmailVerifiedAt()
+	return _u
+}
+
 // SetNickname sets the "nickname" field.
 func (_u *UserUpdate) SetNickname(v string) *UserUpdate {
 	_u.mutation.SetNickname(v)
@@ -192,6 +212,48 @@ func (_u *UserUpdate) AddTokenVersion(v int) *UserUpdate {
 	return _u
 }
 
+// SetRpmLimit sets the "rpm_limit" field.
+func (_u *UserUpdate) SetRpmLimit(v int) *UserUpdate {
+	_u.mutation.ResetRpmLimit()
+	_u.mutation.SetRpmLimit(v)
+	return _u
+}
+
+// SetNillableRpmLimit sets the "rpm_limit" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableRpmLimit(v *int) *UserUpdate {
+	if v != nil {
+		_u.SetRpmLimit(*v)
+	}
+	return _u
+}
+
+// AddRpmLimit adds value to the "rpm_limit" field.
+func (_u *UserUpdate) AddRpmLimit(v int) *UserUpdate {
+	_u.mutation.AddRpmLimit(v)
+	return _u
+}
+
+// SetConcurrencyLimit sets the "concurrency_limit" field.
+func (_u *UserUpdate) SetConcurrencyLimit(v int) *UserUpdate {
+	_u.mutation.ResetConcurrencyLimit()
+	_u.mutation.SetConcurrencyLimit(v)
+	return _u
+}
+
+// SetNillableConcurrencyLimit sets the "concurrency_limit" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableConcurrencyLimit(v *int) *UserUpdate {
+	if v != nil {
+		_u.SetConcurrencyLimit(*v)
+	}
+	return _u
+}
+
+// AddConcurrencyLimit adds value to the "concurrency_limit" field.
+func (_u *UserUpdate) AddConcurrencyLimit(v int) *UserUpdate {
+	_u.mutation.AddConcurrencyLimit(v)
+	return _u
+}
+
 // SetDefaultLocale sets the "default_locale" field.
 func (_u *UserUpdate) SetDefaultLocale(v string) *UserUpdate {
 	_u.mutation.SetDefaultLocale(v)
@@ -217,6 +279,46 @@ func (_u *UserUpdate) SetNillableTheme(v *string) *UserUpdate {
 	if v != nil {
 		_u.SetTheme(*v)
 	}
+	return _u
+}
+
+// SetPasswordUpdatedAt sets the "password_updated_at" field.
+func (_u *UserUpdate) SetPasswordUpdatedAt(v time.Time) *UserUpdate {
+	_u.mutation.SetPasswordUpdatedAt(v)
+	return _u
+}
+
+// SetNillablePasswordUpdatedAt sets the "password_updated_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillablePasswordUpdatedAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetPasswordUpdatedAt(*v)
+	}
+	return _u
+}
+
+// ClearPasswordUpdatedAt clears the value of the "password_updated_at" field.
+func (_u *UserUpdate) ClearPasswordUpdatedAt() *UserUpdate {
+	_u.mutation.ClearPasswordUpdatedAt()
+	return _u
+}
+
+// SetClosedAt sets the "closed_at" field.
+func (_u *UserUpdate) SetClosedAt(v time.Time) *UserUpdate {
+	_u.mutation.SetClosedAt(v)
+	return _u
+}
+
+// SetNillableClosedAt sets the "closed_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableClosedAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetClosedAt(*v)
+	}
+	return _u
+}
+
+// ClearClosedAt clears the value of the "closed_at" field.
+func (_u *UserUpdate) ClearClosedAt() *UserUpdate {
+	_u.mutation.ClearClosedAt()
 	return _u
 }
 
@@ -336,6 +438,12 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.PasswordHashCleared() {
 		_spec.ClearField(user.FieldPasswordHash, field.TypeString)
 	}
+	if value, ok := _u.mutation.EmailVerifiedAt(); ok {
+		_spec.SetField(user.FieldEmailVerifiedAt, field.TypeTime, value)
+	}
+	if _u.mutation.EmailVerifiedAtCleared() {
+		_spec.ClearField(user.FieldEmailVerifiedAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.Nickname(); ok {
 		_spec.SetField(user.FieldNickname, field.TypeString, value)
 	}
@@ -363,11 +471,35 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedTokenVersion(); ok {
 		_spec.AddField(user.FieldTokenVersion, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.RpmLimit(); ok {
+		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRpmLimit(); ok {
+		_spec.AddField(user.FieldRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ConcurrencyLimit(); ok {
+		_spec.SetField(user.FieldConcurrencyLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedConcurrencyLimit(); ok {
+		_spec.AddField(user.FieldConcurrencyLimit, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.DefaultLocale(); ok {
 		_spec.SetField(user.FieldDefaultLocale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Theme(); ok {
 		_spec.SetField(user.FieldTheme, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PasswordUpdatedAt(); ok {
+		_spec.SetField(user.FieldPasswordUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.PasswordUpdatedAtCleared() {
+		_spec.ClearField(user.FieldPasswordUpdatedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ClosedAt(); ok {
+		_spec.SetField(user.FieldClosedAt, field.TypeTime, value)
+	}
+	if _u.mutation.ClosedAtCleared() {
+		_spec.ClearField(user.FieldClosedAt, field.TypeTime)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -446,6 +578,26 @@ func (_u *UserUpdateOne) SetNillablePasswordHash(v *string) *UserUpdateOne {
 // ClearPasswordHash clears the value of the "password_hash" field.
 func (_u *UserUpdateOne) ClearPasswordHash() *UserUpdateOne {
 	_u.mutation.ClearPasswordHash()
+	return _u
+}
+
+// SetEmailVerifiedAt sets the "email_verified_at" field.
+func (_u *UserUpdateOne) SetEmailVerifiedAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetEmailVerifiedAt(v)
+	return _u
+}
+
+// SetNillableEmailVerifiedAt sets the "email_verified_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableEmailVerifiedAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetEmailVerifiedAt(*v)
+	}
+	return _u
+}
+
+// ClearEmailVerifiedAt clears the value of the "email_verified_at" field.
+func (_u *UserUpdateOne) ClearEmailVerifiedAt() *UserUpdateOne {
+	_u.mutation.ClearEmailVerifiedAt()
 	return _u
 }
 
@@ -553,6 +705,48 @@ func (_u *UserUpdateOne) AddTokenVersion(v int) *UserUpdateOne {
 	return _u
 }
 
+// SetRpmLimit sets the "rpm_limit" field.
+func (_u *UserUpdateOne) SetRpmLimit(v int) *UserUpdateOne {
+	_u.mutation.ResetRpmLimit()
+	_u.mutation.SetRpmLimit(v)
+	return _u
+}
+
+// SetNillableRpmLimit sets the "rpm_limit" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableRpmLimit(v *int) *UserUpdateOne {
+	if v != nil {
+		_u.SetRpmLimit(*v)
+	}
+	return _u
+}
+
+// AddRpmLimit adds value to the "rpm_limit" field.
+func (_u *UserUpdateOne) AddRpmLimit(v int) *UserUpdateOne {
+	_u.mutation.AddRpmLimit(v)
+	return _u
+}
+
+// SetConcurrencyLimit sets the "concurrency_limit" field.
+func (_u *UserUpdateOne) SetConcurrencyLimit(v int) *UserUpdateOne {
+	_u.mutation.ResetConcurrencyLimit()
+	_u.mutation.SetConcurrencyLimit(v)
+	return _u
+}
+
+// SetNillableConcurrencyLimit sets the "concurrency_limit" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableConcurrencyLimit(v *int) *UserUpdateOne {
+	if v != nil {
+		_u.SetConcurrencyLimit(*v)
+	}
+	return _u
+}
+
+// AddConcurrencyLimit adds value to the "concurrency_limit" field.
+func (_u *UserUpdateOne) AddConcurrencyLimit(v int) *UserUpdateOne {
+	_u.mutation.AddConcurrencyLimit(v)
+	return _u
+}
+
 // SetDefaultLocale sets the "default_locale" field.
 func (_u *UserUpdateOne) SetDefaultLocale(v string) *UserUpdateOne {
 	_u.mutation.SetDefaultLocale(v)
@@ -578,6 +772,46 @@ func (_u *UserUpdateOne) SetNillableTheme(v *string) *UserUpdateOne {
 	if v != nil {
 		_u.SetTheme(*v)
 	}
+	return _u
+}
+
+// SetPasswordUpdatedAt sets the "password_updated_at" field.
+func (_u *UserUpdateOne) SetPasswordUpdatedAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetPasswordUpdatedAt(v)
+	return _u
+}
+
+// SetNillablePasswordUpdatedAt sets the "password_updated_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillablePasswordUpdatedAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetPasswordUpdatedAt(*v)
+	}
+	return _u
+}
+
+// ClearPasswordUpdatedAt clears the value of the "password_updated_at" field.
+func (_u *UserUpdateOne) ClearPasswordUpdatedAt() *UserUpdateOne {
+	_u.mutation.ClearPasswordUpdatedAt()
+	return _u
+}
+
+// SetClosedAt sets the "closed_at" field.
+func (_u *UserUpdateOne) SetClosedAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetClosedAt(v)
+	return _u
+}
+
+// SetNillableClosedAt sets the "closed_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableClosedAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetClosedAt(*v)
+	}
+	return _u
+}
+
+// ClearClosedAt clears the value of the "closed_at" field.
+func (_u *UserUpdateOne) ClearClosedAt() *UserUpdateOne {
+	_u.mutation.ClearClosedAt()
 	return _u
 }
 
@@ -727,6 +961,12 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	if _u.mutation.PasswordHashCleared() {
 		_spec.ClearField(user.FieldPasswordHash, field.TypeString)
 	}
+	if value, ok := _u.mutation.EmailVerifiedAt(); ok {
+		_spec.SetField(user.FieldEmailVerifiedAt, field.TypeTime, value)
+	}
+	if _u.mutation.EmailVerifiedAtCleared() {
+		_spec.ClearField(user.FieldEmailVerifiedAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.Nickname(); ok {
 		_spec.SetField(user.FieldNickname, field.TypeString, value)
 	}
@@ -754,11 +994,35 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	if value, ok := _u.mutation.AddedTokenVersion(); ok {
 		_spec.AddField(user.FieldTokenVersion, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.RpmLimit(); ok {
+		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRpmLimit(); ok {
+		_spec.AddField(user.FieldRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ConcurrencyLimit(); ok {
+		_spec.SetField(user.FieldConcurrencyLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedConcurrencyLimit(); ok {
+		_spec.AddField(user.FieldConcurrencyLimit, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.DefaultLocale(); ok {
 		_spec.SetField(user.FieldDefaultLocale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Theme(); ok {
 		_spec.SetField(user.FieldTheme, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PasswordUpdatedAt(); ok {
+		_spec.SetField(user.FieldPasswordUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.PasswordUpdatedAtCleared() {
+		_spec.ClearField(user.FieldPasswordUpdatedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ClosedAt(); ok {
+		_spec.SetField(user.FieldClosedAt, field.TypeTime, value)
+	}
+	if _u.mutation.ClosedAtCleared() {
+		_spec.ClearField(user.FieldClosedAt, field.TypeTime)
 	}
 	_node = &User{config: _u.config}
 	_spec.Assign = _node.assignValues

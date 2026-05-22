@@ -14,14 +14,19 @@ func (User) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("email").MaxLen(255).NotEmpty(),
 		field.String("password_hash").MaxLen(255).Optional().Nillable(),
+		field.Time("email_verified_at").Optional().Nillable(),
 		field.String("nickname").MaxLen(64).Default(""),
 		field.String("bio").MaxLen(255).Default(""),
 		field.String("avatar_object_key").MaxLen(255).Optional().Nillable(),
 		field.String("status").MaxLen(32).Default("pending"),
 		field.Int64("user_group_id").Default(0),
 		field.Int("token_version").Default(0),
+		field.Int("rpm_limit").Default(0),
+		field.Int("concurrency_limit").Default(0),
 		field.String("default_locale").MaxLen(16).Default("zh-CN"),
 		field.String("theme").MaxLen(16).Default("system"),
+		field.Time("password_updated_at").Optional().Nillable(),
+		field.Time("closed_at").Optional().Nillable(),
 	}
 }
 func (User) Indexes() []ent.Index {

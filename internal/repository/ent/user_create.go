@@ -82,6 +82,20 @@ func (_c *UserCreate) SetNillablePasswordHash(v *string) *UserCreate {
 	return _c
 }
 
+// SetEmailVerifiedAt sets the "email_verified_at" field.
+func (_c *UserCreate) SetEmailVerifiedAt(v time.Time) *UserCreate {
+	_c.mutation.SetEmailVerifiedAt(v)
+	return _c
+}
+
+// SetNillableEmailVerifiedAt sets the "email_verified_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillableEmailVerifiedAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetEmailVerifiedAt(*v)
+	}
+	return _c
+}
+
 // SetNickname sets the "nickname" field.
 func (_c *UserCreate) SetNickname(v string) *UserCreate {
 	_c.mutation.SetNickname(v)
@@ -166,6 +180,34 @@ func (_c *UserCreate) SetNillableTokenVersion(v *int) *UserCreate {
 	return _c
 }
 
+// SetRpmLimit sets the "rpm_limit" field.
+func (_c *UserCreate) SetRpmLimit(v int) *UserCreate {
+	_c.mutation.SetRpmLimit(v)
+	return _c
+}
+
+// SetNillableRpmLimit sets the "rpm_limit" field if the given value is not nil.
+func (_c *UserCreate) SetNillableRpmLimit(v *int) *UserCreate {
+	if v != nil {
+		_c.SetRpmLimit(*v)
+	}
+	return _c
+}
+
+// SetConcurrencyLimit sets the "concurrency_limit" field.
+func (_c *UserCreate) SetConcurrencyLimit(v int) *UserCreate {
+	_c.mutation.SetConcurrencyLimit(v)
+	return _c
+}
+
+// SetNillableConcurrencyLimit sets the "concurrency_limit" field if the given value is not nil.
+func (_c *UserCreate) SetNillableConcurrencyLimit(v *int) *UserCreate {
+	if v != nil {
+		_c.SetConcurrencyLimit(*v)
+	}
+	return _c
+}
+
 // SetDefaultLocale sets the "default_locale" field.
 func (_c *UserCreate) SetDefaultLocale(v string) *UserCreate {
 	_c.mutation.SetDefaultLocale(v)
@@ -190,6 +232,34 @@ func (_c *UserCreate) SetTheme(v string) *UserCreate {
 func (_c *UserCreate) SetNillableTheme(v *string) *UserCreate {
 	if v != nil {
 		_c.SetTheme(*v)
+	}
+	return _c
+}
+
+// SetPasswordUpdatedAt sets the "password_updated_at" field.
+func (_c *UserCreate) SetPasswordUpdatedAt(v time.Time) *UserCreate {
+	_c.mutation.SetPasswordUpdatedAt(v)
+	return _c
+}
+
+// SetNillablePasswordUpdatedAt sets the "password_updated_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePasswordUpdatedAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetPasswordUpdatedAt(*v)
+	}
+	return _c
+}
+
+// SetClosedAt sets the "closed_at" field.
+func (_c *UserCreate) SetClosedAt(v time.Time) *UserCreate {
+	_c.mutation.SetClosedAt(v)
+	return _c
+}
+
+// SetNillableClosedAt sets the "closed_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillableClosedAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetClosedAt(*v)
 	}
 	return _c
 }
@@ -257,6 +327,14 @@ func (_c *UserCreate) defaults() {
 		v := user.DefaultTokenVersion
 		_c.mutation.SetTokenVersion(v)
 	}
+	if _, ok := _c.mutation.RpmLimit(); !ok {
+		v := user.DefaultRpmLimit
+		_c.mutation.SetRpmLimit(v)
+	}
+	if _, ok := _c.mutation.ConcurrencyLimit(); !ok {
+		v := user.DefaultConcurrencyLimit
+		_c.mutation.SetConcurrencyLimit(v)
+	}
 	if _, ok := _c.mutation.DefaultLocale(); !ok {
 		v := user.DefaultDefaultLocale
 		_c.mutation.SetDefaultLocale(v)
@@ -323,6 +401,12 @@ func (_c *UserCreate) check() error {
 	if _, ok := _c.mutation.TokenVersion(); !ok {
 		return &ValidationError{Name: "token_version", err: errors.New(`ent: missing required field "User.token_version"`)}
 	}
+	if _, ok := _c.mutation.RpmLimit(); !ok {
+		return &ValidationError{Name: "rpm_limit", err: errors.New(`ent: missing required field "User.rpm_limit"`)}
+	}
+	if _, ok := _c.mutation.ConcurrencyLimit(); !ok {
+		return &ValidationError{Name: "concurrency_limit", err: errors.New(`ent: missing required field "User.concurrency_limit"`)}
+	}
 	if _, ok := _c.mutation.DefaultLocale(); !ok {
 		return &ValidationError{Name: "default_locale", err: errors.New(`ent: missing required field "User.default_locale"`)}
 	}
@@ -385,6 +469,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		_spec.SetField(user.FieldPasswordHash, field.TypeString, value)
 		_node.PasswordHash = &value
 	}
+	if value, ok := _c.mutation.EmailVerifiedAt(); ok {
+		_spec.SetField(user.FieldEmailVerifiedAt, field.TypeTime, value)
+		_node.EmailVerifiedAt = &value
+	}
 	if value, ok := _c.mutation.Nickname(); ok {
 		_spec.SetField(user.FieldNickname, field.TypeString, value)
 		_node.Nickname = value
@@ -409,6 +497,14 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		_spec.SetField(user.FieldTokenVersion, field.TypeInt, value)
 		_node.TokenVersion = value
 	}
+	if value, ok := _c.mutation.RpmLimit(); ok {
+		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
+		_node.RpmLimit = value
+	}
+	if value, ok := _c.mutation.ConcurrencyLimit(); ok {
+		_spec.SetField(user.FieldConcurrencyLimit, field.TypeInt, value)
+		_node.ConcurrencyLimit = value
+	}
 	if value, ok := _c.mutation.DefaultLocale(); ok {
 		_spec.SetField(user.FieldDefaultLocale, field.TypeString, value)
 		_node.DefaultLocale = value
@@ -416,6 +512,14 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Theme(); ok {
 		_spec.SetField(user.FieldTheme, field.TypeString, value)
 		_node.Theme = value
+	}
+	if value, ok := _c.mutation.PasswordUpdatedAt(); ok {
+		_spec.SetField(user.FieldPasswordUpdatedAt, field.TypeTime, value)
+		_node.PasswordUpdatedAt = &value
+	}
+	if value, ok := _c.mutation.ClosedAt(); ok {
+		_spec.SetField(user.FieldClosedAt, field.TypeTime, value)
+		_node.ClosedAt = &value
 	}
 	return _node, _spec
 }

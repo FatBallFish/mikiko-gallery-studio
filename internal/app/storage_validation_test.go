@@ -43,9 +43,25 @@ func TestValidateStorageTopology(t *testing.T) {
 
 	if err := validateStorageTopology(config.Config{
 		App:     config.AppConfig{Env: "prod"},
-		Storage: config.StorageConfig{Driver: "s3", SharedVolume: true},
+		Storage: config.StorageConfig{Driver: "s3"},
 	}); err == nil {
-		t.Fatal("expected unsupported storage driver to be rejected")
+		t.Fatal("expected incomplete s3 config to be rejected")
+	}
+
+	if err := validateStorageTopology(config.Config{
+		App: config.AppConfig{Env: "prod"},
+		Storage: config.StorageConfig{
+			Driver: "s3",
+			S3: config.StorageS3Config{
+				Endpoint:        "http://minio.internal:9000",
+				Region:          "us-east-1",
+				Bucket:          "pic-gallery",
+				AccessKeyID:     "access",
+				SecretAccessKey: "secret",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("expected valid s3 config to be accepted, got %v", err)
 	}
 
 	if err := validateStorageTopology(config.Config{

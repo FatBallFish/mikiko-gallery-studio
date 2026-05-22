@@ -13,16 +13,32 @@ func validateStorageTopology(cfg config.Config) error {
 	if driver == "" {
 		driver = "local"
 	}
-	if driver != "local" {
-		return fmt.Errorf("storage.driver=%s is not implemented yet; only local storage is currently supported", driver)
-	}
-	if cfg.Storage.SharedVolume {
+	switch driver {
+	case "local":
+		if cfg.Storage.SharedVolume {
+			return nil
+		}
+		if strings.EqualFold(cfg.App.Env, "local") && databaseLooksLocal(cfg.Database.URL) {
+			return nil
+		}
+		return fmt.Errorf("storage.driver=local requires storage.shared_volume=true outside local env so api and worker can share reference assets")
+	case "s3":
+		if strings.TrimSpace(cfg.Storage.S3.Endpoint) == "" {
+			return fmt.Errorf("storage.driver=s3 requires storage.s3.endpoint")
+		}
+		if strings.TrimSpace(cfg.Storage.S3.Region) == "" {
+			return fmt.Errorf("storage.driver=s3 requires storage.s3.region")
+		}
+		if strings.TrimSpace(cfg.Storage.S3.Bucket) == "" {
+			return fmt.Errorf("storage.driver=s3 requires storage.s3.bucket")
+		}
+		if strings.TrimSpace(cfg.Storage.S3.AccessKeyID) == "" || strings.TrimSpace(cfg.Storage.S3.SecretAccessKey) == "" {
+			return fmt.Errorf("storage.driver=s3 requires storage.s3 credentials")
+		}
 		return nil
+	default:
+		return fmt.Errorf("storage.driver=%s is not implemented", driver)
 	}
-	if strings.EqualFold(cfg.App.Env, "local") && databaseLooksLocal(cfg.Database.URL) {
-		return nil
-	}
-	return fmt.Errorf("storage.driver=local requires storage.shared_volume=true outside local env so api and worker can share reference assets")
 }
 
 func databaseLooksLocal(rawURL string) bool {

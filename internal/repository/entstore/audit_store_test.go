@@ -41,3 +41,55 @@ func TestAuditStoreCreatesAuditLog(t *testing.T) {
 		t.Fatalf("unexpected created log %#v", created)
 	}
 }
+
+func TestAuditStoreListsAuditLogsWithFiltersAndPagination(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:auditstore-list?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewAuditStore(client)
+	createdSuccess, err := store.Create(ctx, domainaudit.Log{
+		ActorType:  "admin",
+		ActorID:    "1",
+		Action:     "config.update",
+		TargetType: "config_tab",
+		TargetID:   "billing",
+		Result:     "success",
+	})
+	if err != nil {
+		t.Fatalf("Create success: %v", err)
+	}
+	_, err = store.Create(ctx, domainaudit.Log{
+		ActorType:  "admin",
+		ActorID:    "2",
+		Action:     "config.publish",
+		TargetType: "config_tab",
+		TargetID:   "gallery",
+		Result:     "failed",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	page, err := store.List(ctx, domainaudit.ListRequest{
+		Page:       1,
+		PageSize:   10,
+		TargetType: "config_tab",
+		Result:     "success",
+	})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 {
+		t.Fatalf("unexpected page %+v", page)
+	}
+	if page.Items[0].ID != createdSuccess.ID {
+		t.Fatalf("expected createdSuccess, got %+v", page.Items[0])
+	}
+}

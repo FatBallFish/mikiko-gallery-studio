@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
@@ -124,6 +126,8 @@ type Service struct {
 	mu              sync.Mutex
 	cfg             config.AuthConfig
 	store           Store
+	redisRuntime    RedisRuntime
+	allowFallback   bool
 	emailSender     EmailSender
 	userMultipliers map[string]string
 	nextUserID      int64
@@ -139,6 +143,10 @@ func NewService(cfg config.AuthConfig, userMultipliers map[string]string) *Servi
 }
 
 func NewServiceWithStore(cfg config.AuthConfig, userMultipliers map[string]string, store Store) *Service {
+	return NewServiceWithStoreAndRedis(cfg, userMultipliers, store, nil, true)
+}
+
+func NewServiceWithStoreAndRedis(cfg config.AuthConfig, userMultipliers map[string]string, store Store, redisRuntime RedisRuntime, allowFallback bool) *Service {
 	var sender EmailSender
 	if smtpConfigured(cfg.SMTP) {
 		sender = NewSMTPEmailSender(cfg.SMTP)
@@ -146,6 +154,8 @@ func NewServiceWithStore(cfg config.AuthConfig, userMultipliers map[string]strin
 	return &Service{
 		cfg:             cfg,
 		store:           store,
+		redisRuntime:    redisRuntime,
+		allowFallback:   allowFallback,
 		emailSender:     sender,
 		userMultipliers: userMultipliers,
 		nextUserID:      1,
@@ -158,7 +168,7 @@ func NewServiceWithStore(cfg config.AuthConfig, userMultipliers map[string]strin
 }
 
 func NewServiceWithEmailSender(cfg config.AuthConfig, userMultipliers map[string]string, sender EmailSender) *Service {
-	svc := NewServiceWithStore(cfg, userMultipliers, nil)
+	svc := NewServiceWithStoreAndRedis(cfg, userMultipliers, nil, nil, true)
 	svc.emailSender = sender
 	return svc
 }
@@ -188,8 +198,18 @@ func (s *Service) SendEmailCode(email, scene string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
+	if s.redisRuntime != nil {
+		active, err := s.redisRuntime.EmailCooldownActive(context.Background(), email)
+		if err != nil {
+			if !s.handleRedisFallbackLocked("send email code cooldown check", err) {
+				return errs.Internal("failed to verify email code cooldown")
+			}
+		} else if active {
+			return errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "verification code resend cooldown is active")
+		}
+	}
 	current := s.codesByEmail[email]
-	if !current.LastSentAt.IsZero() && now.Sub(current.LastSentAt) < time.Minute {
+	if (s.redisRuntime == nil || s.allowFallback) && !current.LastSentAt.IsZero() && now.Sub(current.LastSentAt) < time.Minute {
 		return errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "verification code resend cooldown is active")
 	}
 	code := fixedEmailCode(s.cfg)
@@ -215,6 +235,13 @@ func (s *Service) SendEmailCode(email, scene string) error {
 	current.LastSentAt = now
 	current.FailedAttempts = 0
 	current.LockedUntil = time.Time{}
+	if s.redisRuntime != nil {
+		if err := s.redisRuntime.StoreEmailCode(context.Background(), email, current, 10*time.Minute, time.Minute); err != nil {
+			if !s.handleRedisFallbackLocked("store email code", err) {
+				return errs.Internal("failed to persist verification code")
+			}
+		}
+	}
 	s.codesByEmail[email] = current
 	return nil
 }
@@ -292,22 +319,9 @@ func (s *Service) LoginWithEmailCode(email, code string) (domainauth.User, domai
 	code = strings.TrimSpace(code)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record, ok := s.codesByEmail[email]
-	now := time.Now()
-	if ok && !record.LockedUntil.IsZero() && now.Before(record.LockedUntil) {
-		return domainauth.User{}, domainauth.Session{}, errs.New(429, errs.CodeRateLimited, "too many invalid verification attempts")
+	if err := s.consumeEmailCodeLocked(email, code, "login"); err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
 	}
-	if !ok || record.Code != code || now.After(record.ExpiresAt) {
-		if ok {
-			record.FailedAttempts++
-			if record.FailedAttempts >= 5 {
-				record.LockedUntil = now.Add(15 * time.Minute)
-			}
-			s.codesByEmail[email] = record
-		}
-		return domainauth.User{}, domainauth.Session{}, errs.Unauthorized("invalid or expired verification code")
-	}
-	delete(s.codesByEmail, email)
 
 	user, err := s.getUserByEmailLocked(email)
 	if err != nil && err != repoerr.ErrNotFound {
@@ -323,13 +337,165 @@ func (s *Service) LoginWithEmailCode(email, code string) (domainauth.User, domai
 	if user.Status == "disabled" {
 		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
 	}
+	if user.Status == "closed" {
+		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
+	}
 	return *user, s.issueSessionLocked(user), nil
+}
+
+func (s *Service) LoginWithPassword(email, password string) (domainauth.User, domainauth.Session, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	password = strings.TrimSpace(password)
+	if email == "" || password == "" {
+		return domainauth.User{}, domainauth.Session{}, errs.BadRequest("email and password are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, err := s.getUserByEmailLocked(email)
+	if err != nil {
+		if err == repoerr.ErrNotFound {
+			return domainauth.User{}, domainauth.Session{}, errs.Unauthorized("invalid email or password")
+		}
+		return domainauth.User{}, domainauth.Session{}, err
+	}
+	if user.Status == "disabled" {
+		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
+	}
+	if user.Status == "closed" {
+		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
+	}
+	if user.PasswordHash == "" || !verifyPassword(user.PasswordHash, password) {
+		return domainauth.User{}, domainauth.Session{}, errs.Unauthorized("invalid email or password")
+	}
+	return *user, s.issueSessionLocked(user), nil
+}
+
+func (s *Service) ChangePassword(userID int64, oldPassword, newPassword string) (domainauth.User, error) {
+	oldPassword = strings.TrimSpace(oldPassword)
+	if err := validateNewPassword(newPassword); err != nil {
+		return domainauth.User{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.getUserByIDLocked(userID)
+	if !ok {
+		return domainauth.User{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	if user.PasswordHash == "" || !verifyPassword(user.PasswordHash, oldPassword) {
+		return domainauth.User{}, errs.Unauthorized("old password is incorrect")
+	}
+	return s.updatePasswordLocked(&user, newPassword)
+}
+
+func (s *Service) RequestPasswordReset(email string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return errs.BadRequest("email is required")
+	}
+	if s.store != nil {
+		user, err := s.store.GetUserByEmail(context.Background(), email)
+		if err != nil {
+			if err == repoerr.ErrNotFound {
+				return nil
+			}
+			return err
+		}
+		if user.Status == "closed" {
+			return nil
+		}
+	}
+	return s.SendEmailCode(email, "password_reset")
+}
+
+func (s *Service) ConfirmPasswordReset(email, code, newPassword string) (domainauth.User, error) {
+	if err := validateNewPassword(newPassword); err != nil {
+		return domainauth.User{}, err
+	}
+	email = strings.TrimSpace(strings.ToLower(email))
+	code = strings.TrimSpace(code)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.consumeEmailCodeLocked(email, code, "password_reset"); err != nil {
+		return domainauth.User{}, err
+	}
+	user, err := s.getUserByEmailLocked(email)
+	if err != nil {
+		if err == repoerr.ErrNotFound {
+			return domainauth.User{}, errs.New(404, errs.CodeNotFound, "user not found")
+		}
+		return domainauth.User{}, err
+	}
+	return s.updatePasswordLocked(user, newPassword)
+}
+
+func (s *Service) SetPassword(userID int64, newPassword string) (domainauth.User, error) {
+	if err := validateNewPassword(newPassword); err != nil {
+		return domainauth.User{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.getUserByIDLocked(userID)
+	if !ok {
+		return domainauth.User{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	return s.updatePasswordLocked(&user, newPassword)
+}
+
+func (s *Service) CloseAccount(userID int64) (domainauth.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.getUserByIDLocked(userID)
+	if !ok {
+		return domainauth.User{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	closedAt := time.Now().UTC()
+	if s.store != nil {
+		updated, err := s.store.MarkUserClosed(context.Background(), userID, closedAt)
+		if err != nil {
+			return domainauth.User{}, err
+		}
+		if err := s.store.RevokeRefreshSessionsByUser(context.Background(), userID); err != nil {
+			return domainauth.User{}, err
+		}
+		s.revokeUserSessionsLocked(userID)
+		return updated, nil
+	}
+	user.Status = "closed"
+	user.ClosedAt = &closedAt
+	user.TokenVersion++
+	s.usersByID[userID] = &user
+	s.usersByEmail[user.Email] = &user
+	s.revokeUserSessionsLocked(userID)
+	return user, nil
+}
+
+func (s *Service) RevokeUserSessions(userID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.revokeUserSessionsLocked(userID)
+	if s.store != nil {
+		return s.store.RevokeRefreshSessionsByUser(context.Background(), userID)
+	}
+	return nil
 }
 
 func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	hash := hashToken(refreshToken)
+	if s.redisRuntime != nil {
+		cached, ok, err := s.redisRuntime.LoadRefreshTokenState(context.Background(), hash)
+		if err != nil {
+			if !s.handleRedisFallbackLocked("load refresh token state", err) {
+				return domainauth.User{}, domainauth.Session{}, errs.Internal("failed to load refresh session state")
+			}
+		} else if ok && cached.Status != "active" {
+			if cached.FamilyID != "" {
+				s.revokeFamilyLocked(cached.FamilyID)
+			}
+			return domainauth.User{}, domainauth.Session{}, errs.New(401, errs.CodeAuthRefreshReplayBlocked, "refresh token replay detected")
+		}
+	}
 	current, ok := s.sessionsByHash[hash]
 	if s.store != nil {
 		record, err := s.store.GetRefreshSessionByHash(context.Background(), hash)
@@ -348,6 +514,16 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 			ExpiresAt:           time.Unix(record.ExpiresAt, 0),
 			ReplacedBySessionID: record.ReplacedBySessionID,
 		}
+		if s.redisRuntime != nil {
+			blocked, err := s.redisRuntime.IsRefreshFamilyReplayBlocked(context.Background(), current.FamilyID)
+			if err != nil {
+				if !s.handleRedisFallbackLocked("check refresh family replay state", err) {
+					return domainauth.User{}, domainauth.Session{}, errs.Internal("failed to verify refresh session family state")
+				}
+			} else if blocked {
+				return domainauth.User{}, domainauth.Session{}, errs.New(401, errs.CodeAuthRefreshReplayBlocked, "refresh token replay detected")
+			}
+		}
 		ok = true
 	}
 	if !ok {
@@ -359,6 +535,7 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 	}
 	if time.Now().After(current.ExpiresAt) {
 		current.Status = "expired"
+		s.persistRefreshTokenStateLocked(*current)
 		if s.store != nil {
 			if err := s.store.MarkRefreshSessionExpired(context.Background(), current.ID); err != nil {
 				return domainauth.User{}, domainauth.Session{}, err
@@ -373,9 +550,13 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 	if user.Status == "disabled" {
 		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
 	}
+	if user.Status == "closed" {
+		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
+	}
 	current.Status = "rotated"
 	newSession := s.issueSessionWithFamilyLocked(&user, current.FamilyID)
 	current.ReplacedBySessionID = newSession.SessionID
+	s.persistRefreshTokenStateLocked(*current)
 	if s.store != nil {
 		if err := s.store.MarkRefreshSessionRotated(context.Background(), current.ID, newSession.SessionID); err != nil {
 			return domainauth.User{}, domainauth.Session{}, err
@@ -413,6 +594,7 @@ func (s *Service) Logout(refreshToken string) error {
 	hash := hashToken(refreshToken)
 	if current, ok := s.sessionsByHash[hash]; ok {
 		current.Status = "revoked"
+		s.persistRefreshTokenStateLocked(*current)
 	}
 	if s.store != nil {
 		return s.store.RevokeRefreshSessionByHash(context.Background(), hash)
@@ -484,6 +666,7 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 	session := &refreshSession{ID: sessionID, FamilyID: familyID, UserID: user.ID, RefreshTokenHash: refreshHash, Status: "active", ExpiresAt: refreshExp}
 	s.sessionsByHash[refreshHash] = session
 	s.familySessions[familyID] = append(s.familySessions[familyID], session)
+	s.persistRefreshTokenStateLocked(*session)
 	if s.store != nil {
 		_ = s.store.SaveRefreshSession(context.Background(), entstore.RefreshSessionRecord{
 			ID:               session.ID,
@@ -498,12 +681,22 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 }
 
 func (s *Service) revokeFamilyLocked(familyID string) {
+	familyTTL := s.cfg.RefreshTokenTTL
+	if familyTTL <= 0 {
+		familyTTL = 2 * time.Hour
+	}
+	if s.redisRuntime != nil {
+		if err := s.redisRuntime.MarkRefreshFamilyReplayBlocked(context.Background(), familyID, familyTTL); err != nil {
+			_ = s.handleRedisFallbackLocked("mark refresh family replay blocked", err)
+		}
+	}
 	if s.store != nil {
 		_ = s.store.MarkFamilyReplayBlocked(context.Background(), familyID)
 	}
 	for _, session := range s.familySessions[familyID] {
 		if session.Status == "active" || session.Status == "rotated" {
 			session.Status = "replay_blocked"
+			s.persistRefreshTokenStateLocked(*session)
 		}
 	}
 }
@@ -524,6 +717,7 @@ func (s *Service) getUserByEmailLocked(email string) (*domainauth.User, error) {
 }
 
 func (s *Service) createUserLocked(email string) (domainauth.User, error) {
+	now := time.Now()
 	user := domainauth.User{
 		ID:              s.nextUserID,
 		Email:           email,
@@ -533,7 +727,8 @@ func (s *Service) createUserLocked(email string) (domainauth.User, error) {
 		GroupMultiplier: s.userMultiplierFor("basic"),
 		DefaultLocale:   "zh-CN",
 		Theme:           "system",
-		CreatedAt:       time.Now(),
+		CreatedAt:       now,
+		EmailVerifiedAt: &now,
 	}
 	if s.store != nil {
 		return s.store.CreateUser(context.Background(), user)
@@ -570,4 +765,167 @@ func randomToken() string {
 		panic(err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buffer)
+}
+
+func (s *Service) consumeEmailCodeLocked(email, code string, allowedScenes ...string) error {
+	record, ok, err := s.loadEmailCodeLocked(email, allowedScenes...)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if ok && !record.LockedUntil.IsZero() && now.Before(record.LockedUntil) {
+		return errs.New(429, errs.CodeRateLimited, "too many invalid verification attempts")
+	}
+	if !ok || record.Code != code || now.After(record.ExpiresAt) || !containsScene(record.Scene, allowedScenes) {
+		if ok {
+			record.FailedAttempts++
+			if record.FailedAttempts >= 5 {
+				record.LockedUntil = now.Add(15 * time.Minute)
+			}
+			s.persistEmailCodeLocked(email, record)
+			s.codesByEmail[email] = record
+		}
+		return errs.Unauthorized("invalid or expired verification code")
+	}
+	if err := s.deleteEmailCodeLocked(email, allowedScenes...); err != nil {
+		return err
+	}
+	delete(s.codesByEmail, email)
+	return nil
+}
+
+func containsScene(scene string, allowedScenes []string) bool {
+	if len(allowedScenes) == 0 {
+		return true
+	}
+	for _, allowed := range allowedScenes {
+		if strings.EqualFold(strings.TrimSpace(scene), strings.TrimSpace(allowed)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) updatePasswordLocked(user *domainauth.User, newPassword string) (domainauth.User, error) {
+	now := time.Now().UTC()
+	passwordHash := hashPassword(newPassword)
+	if s.store != nil {
+		updated, err := s.store.UpdatePasswordHash(context.Background(), user.ID, passwordHash, now)
+		if err != nil {
+			return domainauth.User{}, err
+		}
+		if err := s.store.RevokeRefreshSessionsByUser(context.Background(), user.ID); err != nil {
+			return domainauth.User{}, err
+		}
+		s.revokeUserSessionsLocked(user.ID)
+		return updated, nil
+	}
+	user.PasswordHash = passwordHash
+	user.PasswordUpdatedAt = &now
+	user.TokenVersion++
+	s.usersByID[user.ID] = user
+	s.usersByEmail[user.Email] = user
+	s.revokeUserSessionsLocked(user.ID)
+	return *user, nil
+}
+
+func (s *Service) revokeUserSessionsLocked(userID int64) {
+	for _, session := range s.sessionsByHash {
+		if session.UserID == userID && session.Status != "expired" {
+			session.Status = "revoked"
+			s.persistRefreshTokenStateLocked(*session)
+		}
+	}
+}
+
+func (s *Service) loadEmailCodeLocked(email string, allowedScenes ...string) (emailCode, bool, error) {
+	if s.redisRuntime != nil {
+		record, ok, err := s.redisRuntime.LoadEmailCode(context.Background(), email, allowedScenes)
+		if err != nil {
+			if !s.handleRedisFallbackLocked("load email code", err) {
+				return emailCode{}, false, errs.Internal("failed to load verification code")
+			}
+		} else if ok {
+			return record, true, nil
+		}
+	}
+	record, ok := s.codesByEmail[email]
+	return record, ok, nil
+}
+
+func (s *Service) persistEmailCodeLocked(email string, record emailCode) {
+	if s.redisRuntime == nil {
+		return
+	}
+	if err := s.redisRuntime.StoreEmailCode(context.Background(), email, record, emailCodeTTL(record), time.Minute); err != nil {
+		_ = s.handleRedisFallbackLocked("persist email code", err)
+	}
+}
+
+func (s *Service) deleteEmailCodeLocked(email string, allowedScenes ...string) error {
+	if s.redisRuntime == nil {
+		return nil
+	}
+	if err := s.redisRuntime.DeleteEmailCodes(context.Background(), email, allowedScenes); err != nil {
+		if !s.handleRedisFallbackLocked("delete email code", err) {
+			return errs.Internal("failed to clear verification code")
+		}
+	}
+	return nil
+}
+
+func (s *Service) persistRefreshTokenStateLocked(session refreshSession) {
+	if s.redisRuntime == nil {
+		return
+	}
+	ttl := time.Until(session.ExpiresAt)
+	if ttl <= 0 {
+		ttl = time.Second
+	}
+	if err := s.redisRuntime.StoreRefreshTokenState(context.Background(), session.RefreshTokenHash, session, ttl); err != nil {
+		_ = s.handleRedisFallbackLocked("persist refresh token state", err)
+	}
+}
+
+func (s *Service) handleRedisFallbackLocked(operation string, err error) bool {
+	if err == nil || !s.allowFallback {
+		return false
+	}
+	slog.Warn("auth redis operation failed; using in-memory fallback", "operation", operation, "err", err)
+	return true
+}
+
+func emailCodeTTL(record emailCode) time.Duration {
+	until := record.ExpiresAt
+	if record.LockedUntil.After(until) {
+		until = record.LockedUntil
+	}
+	ttl := time.Until(until)
+	if ttl <= 0 {
+		return time.Second
+	}
+	return ttl
+}
+
+func validateNewPassword(password string) error {
+	password = strings.TrimSpace(password)
+	if len(password) < 8 {
+		return errs.BadRequest("new_password must be at least 8 characters")
+	}
+	return nil
+}
+
+func hashPassword(password string) string {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return "bcrypt$" + string(hashed)
+}
+
+func verifyPassword(encodedHash string, password string) bool {
+	if !strings.HasPrefix(encodedHash, "bcrypt$") {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(strings.TrimPrefix(encodedHash, "bcrypt$")), []byte(password)) == nil
 }

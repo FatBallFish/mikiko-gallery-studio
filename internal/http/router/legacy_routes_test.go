@@ -70,17 +70,40 @@ func TestRestoredLegacyAgentRoutes(t *testing.T) {
 		t.Fatalf("expected avatar route 200, got %d body=%s", avatarRec.Code, avatarRec.Body.String())
 	}
 
-	changeReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/password/change", bytes.NewBufferString(`{"old_password":"old","new_password":"new"}`))
-	changeReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
-	changeReq.Header.Set("Content-Type", "application/json")
-	changeRec := httptest.NewRecorder()
-	handler.ServeHTTP(changeRec, changeReq)
-	if changeRec.Code != http.StatusNotImplemented {
-		t.Fatalf("expected password change route to return 501 envelope, got %d body=%s", changeRec.Code, changeRec.Body.String())
+	resetRequestReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/password/reset/request", bytes.NewBufferString(`{"email":"legacy-agent@example.com"}`))
+	resetRequestReq.Header.Set("Content-Type", "application/json")
+	resetRequestRec := httptest.NewRecorder()
+	handler.ServeHTTP(resetRequestRec, resetRequestReq)
+	if resetRequestRec.Code != http.StatusAccepted {
+		t.Fatalf("expected password reset request 202, got %d body=%s", resetRequestRec.Code, resetRequestRec.Body.String())
+	}
+
+	resetConfirmReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/password/reset/confirm", bytes.NewBufferString(`{"email":"legacy-agent@example.com","code":"123456","new_password":"new-password"}`))
+	resetConfirmReq.Header.Set("Content-Type", "application/json")
+	resetConfirmRec := httptest.NewRecorder()
+	handler.ServeHTTP(resetConfirmRec, resetConfirmReq)
+	if resetConfirmRec.Code != http.StatusOK {
+		t.Fatalf("expected password reset confirm 200, got %d body=%s", resetConfirmRec.Code, resetConfirmRec.Body.String())
+	}
+
+	passwordLoginReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/login/password", bytes.NewBufferString(`{"email":"legacy-agent@example.com","password":"new-password"}`))
+	passwordLoginReq.Header.Set("Content-Type", "application/json")
+	passwordLoginRec := httptest.NewRecorder()
+	handler.ServeHTTP(passwordLoginRec, passwordLoginReq)
+	if passwordLoginRec.Code != http.StatusOK {
+		t.Fatalf("expected password login 200, got %d body=%s", passwordLoginRec.Code, passwordLoginRec.Body.String())
+	}
+	var passwordLoginResp struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(passwordLoginRec.Body).Decode(&passwordLoginResp); err != nil {
+		t.Fatalf("decode password login response: %v", err)
 	}
 
 	imageReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/images/missing/download", nil)
-	imageReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	imageReq.Header.Set("Authorization", "Bearer "+passwordLoginResp.Data.AccessToken)
 	imageRec := httptest.NewRecorder()
 	handler.ServeHTTP(imageRec, imageReq)
 	if imageRec.Code != http.StatusNotFound {

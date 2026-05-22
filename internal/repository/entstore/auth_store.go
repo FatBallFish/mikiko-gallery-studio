@@ -51,9 +51,17 @@ func (s *AuthStore) CreateUser(ctx context.Context, user domainauth.User) (domai
 
 	entity, err := s.client.User.Create().
 		SetEmail(user.Email).
+		SetNillablePasswordHash(authNullableString(user.PasswordHash)).
+		SetNillableEmailVerifiedAt(user.EmailVerifiedAt).
 		SetNickname(user.Nickname).
 		SetStatus(user.Status).
 		SetUserGroupID(int64(groupEntity.ID)).
+		SetRpmLimit(user.RPMLimit).
+		SetConcurrencyLimit(user.ConcurrencyLimit).
+		SetDefaultLocale(user.DefaultLocale).
+		SetTheme(user.Theme).
+		SetNillablePasswordUpdatedAt(user.PasswordUpdatedAt).
+		SetNillableClosedAt(user.ClosedAt).
 		Save(ctx)
 	if err != nil {
 		return domainauth.User{}, err
@@ -85,8 +93,26 @@ func (s *AuthStore) UpdateUser(ctx context.Context, domainUser domainauth.User) 
 		SetStatus(domainUser.Status).
 		SetUserGroupID(int64(groupEntity.ID)).
 		SetTokenVersion(domainUser.TokenVersion).
+		SetRpmLimit(domainUser.RPMLimit).
+		SetConcurrencyLimit(domainUser.ConcurrencyLimit).
 		SetDefaultLocale(domainUser.DefaultLocale).
 		SetTheme(domainUser.Theme)
+	if domainUser.PasswordHash != "" {
+		update.SetPasswordHash(domainUser.PasswordHash)
+	}
+	if domainUser.EmailVerifiedAt != nil {
+		update.SetEmailVerifiedAt(*domainUser.EmailVerifiedAt)
+	}
+	if domainUser.PasswordUpdatedAt != nil {
+		update.SetPasswordUpdatedAt(*domainUser.PasswordUpdatedAt)
+	} else {
+		update.ClearPasswordUpdatedAt()
+	}
+	if domainUser.ClosedAt != nil {
+		update.SetClosedAt(*domainUser.ClosedAt)
+	} else {
+		update.ClearClosedAt()
+	}
 	if domainUser.AvatarObjectKey != "" {
 		update.SetAvatarObjectKey(domainUser.AvatarObjectKey)
 	} else {
@@ -104,6 +130,44 @@ func (s *AuthStore) UpdateUser(ctx context.Context, domainUser domainauth.User) 
 
 func (s *AuthStore) IncrementTokenVersion(ctx context.Context, userID int64) error {
 	return s.client.User.UpdateOneID(int(userID)).AddTokenVersion(1).Exec(ctx)
+}
+
+func (s *AuthStore) UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string, passwordUpdatedAt time.Time) (domainauth.User, error) {
+	entity, err := s.client.User.UpdateOneID(int(userID)).
+		SetPasswordHash(passwordHash).
+		SetPasswordUpdatedAt(passwordUpdatedAt.UTC()).
+		AddTokenVersion(1).
+		Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainauth.User{}, repoerr.ErrNotFound
+		}
+		return domainauth.User{}, err
+	}
+	return s.mapUserEntity(ctx, entity)
+}
+
+func (s *AuthStore) MarkUserClosed(ctx context.Context, userID int64, closedAt time.Time) (domainauth.User, error) {
+	entity, err := s.client.User.UpdateOneID(int(userID)).
+		SetStatus("closed").
+		SetClosedAt(closedAt.UTC()).
+		AddTokenVersion(1).
+		Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainauth.User{}, repoerr.ErrNotFound
+		}
+		return domainauth.User{}, err
+	}
+	return s.mapUserEntity(ctx, entity)
+}
+
+func (s *AuthStore) RevokeRefreshSessionsByUser(ctx context.Context, userID int64) error {
+	_, err := s.client.RefreshSession.Update().
+		Where(refreshsession.UserIDEQ(userID)).
+		SetStatus("revoked").
+		Save(ctx)
+	return err
 }
 
 func (s *AuthStore) SaveRefreshSession(ctx context.Context, session RefreshSessionRecord) error {
@@ -233,18 +297,24 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 		avatar = *entity.AvatarObjectKey
 	}
 	return domainauth.User{
-		ID:              int64(entity.ID),
-		Email:           entity.Email,
-		Nickname:        entity.Nickname,
-		Bio:             entity.Bio,
-		AvatarObjectKey: avatar,
-		Status:          entity.Status,
-		GroupCode:       groupCode,
-		GroupMultiplier: groupMultiplier,
-		TokenVersion:    entity.TokenVersion,
-		DefaultLocale:   entity.DefaultLocale,
-		Theme:           entity.Theme,
-		CreatedAt:       entity.CreatedAt,
+		ID:                int64(entity.ID),
+		Email:             entity.Email,
+		PasswordHash:      authStringValue(entity.PasswordHash),
+		Nickname:          entity.Nickname,
+		Bio:               entity.Bio,
+		AvatarObjectKey:   avatar,
+		Status:            entity.Status,
+		GroupCode:         groupCode,
+		GroupMultiplier:   groupMultiplier,
+		TokenVersion:      entity.TokenVersion,
+		RPMLimit:          entity.RpmLimit,
+		ConcurrencyLimit:  entity.ConcurrencyLimit,
+		DefaultLocale:     entity.DefaultLocale,
+		Theme:             entity.Theme,
+		EmailVerifiedAt:   entity.EmailVerifiedAt,
+		PasswordUpdatedAt: entity.PasswordUpdatedAt,
+		ClosedAt:          entity.ClosedAt,
+		CreatedAt:         entity.CreatedAt,
 	}, nil
 }
 
@@ -289,4 +359,18 @@ func mapRefreshSessionEntity(entity *repoent.RefreshSession) RefreshSessionRecor
 
 func unixToTime(value int64) (t time.Time) {
 	return time.Unix(value, 0).UTC()
+}
+
+func authStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func authNullableString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

@@ -11,7 +11,6 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"mime"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,6 +22,7 @@ import (
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -34,7 +34,7 @@ type storedAsset struct {
 type Service struct {
 	mu           sync.Mutex
 	store        Store
-	storageRoot  string
+	backend      storage.Backend
 	maxBytes     int64
 	assetsByID   map[string]storedAsset
 	assetsByHash map[string]string
@@ -45,9 +45,18 @@ func NewService(cfg config.StorageConfig, limits config.GenerationLimitsConfig) 
 }
 
 func NewServiceWithStore(cfg config.StorageConfig, limits config.GenerationLimitsConfig, store Store) *Service {
-	root := filepath.Join(cfg.LocalRoot, "reference-assets")
-	_ = os.MkdirAll(root, 0o755)
-	return &Service{store: store, storageRoot: root, maxBytes: int64(limits.ReferenceImageMaxMB) * 1024 * 1024, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
+	backend, err := storage.NewBackend(cfg)
+	if err != nil {
+		backend = storage.NewLocalBackend(cfg.LocalRoot)
+	}
+	return NewServiceWithStoreAndBackend(cfg, limits, store, backend)
+}
+
+func NewServiceWithStoreAndBackend(_ config.StorageConfig, limits config.GenerationLimitsConfig, store Store, backend storage.Backend) *Service {
+	if backend == nil {
+		backend = storage.NewLocalBackend("")
+	}
+	return &Service{store: store, backend: backend, maxBytes: int64(limits.ReferenceImageMaxMB) * 1024 * 1024, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
 }
 
 func (s *Service) Upload(userID int64, filename string, contentType string, content []byte) (domainassets.ReferenceAsset, error) {
@@ -98,11 +107,10 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 		}
 	}
 	objectKey := filepath.Join("reference-assets", assetID+strings.ToLower(ext))
-	fullPath := filepath.Join(s.storageRoot, assetID+strings.ToLower(ext))
-	if err := os.WriteFile(fullPath, content, 0o644); err != nil {
+	if err := s.backend.Put(context.Background(), objectKey, contentType, content); err != nil {
 		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store reference asset")
 	}
-	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", MimeType: contentType, FileSizeBytes: int64(len(content)), Width: config.Width, Height: config.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
+	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageDriver: s.backend.Driver(), MimeType: contentType, FileSizeBytes: int64(len(content)), Width: config.Width, Height: config.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
 	if s.store != nil {
 		if metadataStore, ok := s.store.(MetadataStore); ok {
 			err = metadataStore.SaveWithMetadata(context.Background(), userID, asset, metadata)
@@ -110,7 +118,7 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 			err = s.store.Save(context.Background(), userID, asset)
 		}
 		if err != nil {
-			_ = os.Remove(fullPath)
+			_ = s.backend.Delete(context.Background(), objectKey)
 			return domainassets.ReferenceAsset{}, err
 		}
 	}
@@ -178,8 +186,7 @@ func (s *Service) Download(userID int64, assetID string) (domainassets.Reference
 	if err != nil {
 		return domainassets.ReferenceAsset{}, nil, err
 	}
-	fullPath := filepath.Join(s.storageRoot, filepath.Base(asset.ObjectKey))
-	content, readErr := os.ReadFile(fullPath)
+	content, readErr := s.backend.Get(context.Background(), asset.ObjectKey)
 	if readErr != nil {
 		return domainassets.ReferenceAsset{}, nil, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
 	}
@@ -191,8 +198,7 @@ func (s *Service) LoadInput(userID int64, assetID string) (provider.ImageInput, 
 	if err != nil {
 		return provider.ImageInput{}, err
 	}
-	fullPath := filepath.Join(s.storageRoot, filepath.Base(asset.ObjectKey))
-	content, readErr := os.ReadFile(fullPath)
+	content, readErr := s.backend.Get(context.Background(), asset.ObjectKey)
 	if readErr != nil {
 		return provider.ImageInput{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
 	}

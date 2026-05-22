@@ -12,12 +12,14 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"os"
+	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
@@ -27,17 +29,20 @@ import (
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type Service struct {
-	cfg       config.Config
-	resolver  *modelhub.Resolver
-	providers map[string]provider.ImageProvider
-	store     Store
-	assets    AssetLoader
-	billing   BillingManager
-	apiKeys   APIKeyUsageManager
+	cfg        config.Config
+	resolver   *modelhub.Resolver
+	providers  map[string]provider.ImageProvider
+	store      Store
+	assets     AssetLoader
+	billing    BillingManager
+	apiKeys    APIKeyUsageManager
+	backend    storage.Backend
+	httpClient *http.Client
 }
 
 type executionOptions struct {
@@ -94,16 +99,32 @@ func NewServiceWithStoreAssetsAndBilling(cfg config.Config, store Store, assets 
 }
 
 func NewServiceWithProvidersStoreAssetsAndBilling(cfg config.Config, providers map[string]provider.ImageProvider, store Store, assets AssetLoader, billing BillingManager) *Service {
+	backend, err := storage.NewBackend(cfg.Storage)
+	if err != nil {
+		backend = storage.NewLocalBackend(cfg.Storage.LocalRoot)
+	}
+	return NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, providers, store, assets, billing, backend)
+}
+
+func NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg config.Config, providers map[string]provider.ImageProvider, store Store, assets AssetLoader, billing BillingManager, backend storage.Backend) *Service {
 	if store == nil {
 		store = NewMemoryStore()
 	}
+	if providers == nil {
+		providers = defaultProviders(cfg)
+	}
+	if backend == nil {
+		backend = storage.NewLocalBackend(cfg.Storage.LocalRoot)
+	}
 	return &Service{
-		cfg:       cfg,
-		resolver:  modelhub.NewResolver(cfg),
-		providers: providers,
-		store:     store,
-		assets:    assets,
-		billing:   billing,
+		cfg:        cfg,
+		resolver:   modelhub.NewResolver(cfg),
+		providers:  providers,
+		store:      store,
+		assets:     assets,
+		billing:    billing,
+		backend:    backend,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -122,6 +143,13 @@ func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
 	s.resolver.SetModelRoutingSource(source)
 }
 
+func (s *Service) SetHTTPClient(client *http.Client) {
+	if client == nil {
+		return
+	}
+	s.httpClient = client
+}
+
 func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequest) (domainimagetask.Task, error) {
 	if strings.TrimSpace(req.TaskID) != "" {
 		existing, err := s.store.GetByID(ctx, req.UserID, req.TaskID)
@@ -134,7 +162,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 		}
 	}
 
-	resolved, err := s.resolveTask(ctx, req.AbstractModel, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
+	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
@@ -182,7 +210,7 @@ func (s *Service) HeartbeatTask(ctx context.Context, taskID, owner string, lease
 }
 
 func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteRequest) (domainimagetask.ExecuteResult, error) {
-	resolved, err := s.resolveTask(ctx, req.AbstractModel, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil)
+	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil)
 	if err != nil {
 		return domainimagetask.ExecuteResult{}, err
 	}
@@ -272,7 +300,7 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
 
-	resolved, err := s.resolveTask(ctx, task.AbstractModel, task.TaskType, task.RequestedQuality, task.RequestedSize, task.OutputImageCount, len(referenceImages), false)
+	resolved, err := s.resolveTask(ctx, task.ID, task.AbstractModel, task.TaskType, task.RequestedQuality, task.RequestedSize, task.OutputImageCount, len(referenceImages), false)
 	if err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
@@ -304,7 +332,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			continue
 		}
 		providerReq := provider.ImageRequest{
-			Model:            s.providerModelName(task.AbstractModel, candidate.Provider),
+			Model:            s.providerModelName(task.AbstractModel, candidate.Provider, candidate.ModelCode),
 			TaskType:         provider.TaskType(task.TaskType),
 			Prompt:           opts.prompt,
 			Size:             defaultString(opts.size, "auto"),
@@ -332,11 +360,16 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			}
 			task.Status = domainimagetask.StatusRunning
 			task.Provider = candidate.Provider
+			task.ProviderModelID = candidate.ProviderModelID
+			task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
+			task.FallbackCount = len(task.Attempts)
 			task.Attempts = append(task.Attempts, domainimagetask.Attempt{Provider: candidate.Provider, Status: domainimagetask.StatusSucceeded})
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
 			if billingErr := s.applyActualPoints(&task, len(resp.Data)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
 			}
+			task.ProviderCost = calculateProviderCost(candidate, len(resp.Data))
+			task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
 			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
 				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, domainimagetask.StatusSucceeded, "task succeeded after lease conflict")
 				if recoverErr != nil {
@@ -454,7 +487,7 @@ func (s *Service) resumeTerminalization(ctx context.Context, task domainimagetas
 	return domainimagetask.ExecuteResult{Task: task}, true, errs.New(500, defaultString(task.ErrorCode, errs.CodeInternal), defaultString(task.ErrorMessage, "image task failed"))
 }
 
-func (s *Service) resolveTask(ctx context.Context, abstractModel, taskType, requestedQuality, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool) (modelhub.ResolvedRequest, error) {
+func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, taskType, requestedQuality, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool) (modelhub.ResolvedRequest, error) {
 	return s.resolver.ResolveContext(ctx, modelhub.ResolveRequest{
 		AbstractModel:             abstractModel,
 		TaskType:                  taskType,
@@ -463,6 +496,7 @@ func (s *Service) resolveTask(ctx context.Context, abstractModel, taskType, requ
 		RequestedOutputImageCount: outputImageCount,
 		ReferenceImageCount:       referenceImageCount,
 		MaskPresent:               maskPresent,
+		RouteKey:                  routeKey,
 	})
 }
 
@@ -485,14 +519,10 @@ func (s *Service) DownloadImageResult(ctx context.Context, userID int64, imageID
 		}
 		return provider.ImageResult{}, nil, errs.Internal("failed to load image result")
 	}
-	if result.StorageDriver != "local" || strings.TrimSpace(result.ObjectKey) == "" {
+	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	fullPath, ok := generatedImagePath(localStorageRoot(s.cfg.Storage.LocalRoot), result.ObjectKey)
-	if !ok {
-		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
-	}
-	content, readErr := os.ReadFile(fullPath)
+	content, readErr := s.backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
@@ -518,6 +548,63 @@ func (s *Service) DeleteByID(ctx context.Context, userID int64, taskID string) e
 		return errs.Internal("failed to delete image task")
 	}
 	return nil
+}
+
+func (s *Service) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	image, err := s.store.RequestPublish(ctx, userID, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to request image publish")
+	}
+	return image, nil
+}
+
+func (s *Service) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
+	switch nextStatus {
+	case domainimagetask.VisibilityApproved, domainimagetask.VisibilityRejected, domainimagetask.VisibilityUnpublished:
+	default:
+		return domainimagetask.GalleryImage{}, errs.BadRequest("invalid review status")
+	}
+	image, err := s.store.ReviewImage(ctx, imageID, nextStatus, strings.TrimSpace(reviewReason), publishedAt)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to update image review")
+	}
+	return image, nil
+}
+
+func (s *Service) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	req.Page, req.PageSize = normalizeListPage(req.Page, req.PageSize)
+	req.Status = strings.TrimSpace(req.Status)
+	page, err := s.store.ListGallery(ctx, req)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, errs.Internal("failed to list gallery images")
+	}
+	return page, nil
+}
+
+func (s *Service) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	req.Page, req.PageSize = normalizeListPage(req.Page, req.PageSize)
+	page, err := s.store.ListPublicGallery(ctx, req)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, errs.Internal("failed to list public gallery images")
+	}
+	return page, nil
+}
+
+func (s *Service) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+	image, err := s.store.GetPublicImage(ctx, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "gallery image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to load public gallery image")
+	}
+	return image, nil
 }
 
 func (s *Service) saveOwnedTask(ctx context.Context, task domainimagetask.Task, owner string) error {
@@ -594,18 +681,17 @@ func terminalTaskResult(task domainimagetask.Task) (domainimagetask.ExecuteResul
 	}
 }
 
-func (s *Service) persistImageResults(_ context.Context, task domainimagetask.Task, results []provider.ImageResult) ([]provider.ImageResult, error) {
+func (s *Service) persistImageResults(ctx context.Context, task domainimagetask.Task, results []provider.ImageResult) ([]provider.ImageResult, error) {
 	persisted := make([]provider.ImageResult, 0, len(results))
 	for index, result := range results {
 		item := result
 		item.VisibilityStatus = defaultString(item.VisibilityStatus, "private")
 		if strings.TrimSpace(item.URL) != "" {
-			if strings.TrimSpace(item.ID) == "" {
-				item.ID = uuid.NewString()
+			mirrored, err := s.persistRemoteImageResult(ctx, task, index, item)
+			if err != nil {
+				return nil, err
 			}
-			item.StorageDriver = "remote"
-			item.MimeType = defaultString(item.MimeType, defaultString(item.Format, "application/octet-stream"))
-			persisted = append(persisted, item)
+			persisted = append(persisted, mirrored)
 			continue
 		}
 		if strings.TrimSpace(item.B64JSON) == "" {
@@ -621,6 +707,54 @@ func (s *Service) persistImageResults(_ context.Context, task domainimagetask.Ta
 	return persisted, nil
 }
 
+func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, result.URL, nil)
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image URL is invalid")
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to fetch generated image")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to fetch generated image")
+	}
+	content, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil || len(content) == 0 {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read generated image")
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(content))
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image has unsupported format")
+	}
+	mimeType := imageMimeType(format, provider.ImageResult{MimeType: defaultString(resp.Header.Get("Content-Type"), result.MimeType), Format: result.Format})
+	hash := sha256.Sum256(content)
+	sha := hex.EncodeToString(hash[:])
+	resultID := strings.TrimSpace(result.ID)
+	if resultID == "" {
+		resultID = uuid.NewString()
+	}
+	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
+	if err := s.backend.Put(ctx, objectKey, mimeType, content); err != nil {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
+	}
+	result.ID = resultID
+	result.B64JSON = ""
+	result.Format = defaultString(result.Format, format)
+	result.MimeType = mimeType
+	result.FileSizeBytes = int64(len(content))
+	result.Width = cfg.Width
+	result.Height = cfg.Height
+	result.SHA256 = sha
+	result.ObjectKey = objectKey
+	result.StorageDriver = s.backend.Driver()
+	result.VisibilityStatus = defaultString(result.VisibilityStatus, "private")
+	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
+	result.URL = result.DownloadURL
+	return result, nil
+}
+
 func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
 	content, err := decodeBase64ImageResult(result.B64JSON)
 	if err != nil {
@@ -634,13 +768,8 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])
 	resultID := uuid.NewString()
-	ext := imageExtension(format, mimeType)
-	objectKey := filepath.ToSlash(filepath.Join("generated-images", fmt.Sprintf("%d", task.UserID), task.ID, fmt.Sprintf("%d-%s%s", index, resultID, ext)))
-	fullPath := filepath.Join(localStorageRoot(s.cfg.Storage.LocalRoot), filepath.FromSlash(objectKey))
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to prepare generated image storage")
-	}
-	if err := os.WriteFile(fullPath, content, 0o644); err != nil {
+	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
+	if err := s.backend.Put(context.Background(), objectKey, mimeType, content); err != nil {
 		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
 	}
 	result.ID = resultID
@@ -652,7 +781,7 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	result.Height = cfg.Height
 	result.SHA256 = sha
 	result.ObjectKey = objectKey
-	result.StorageDriver = "local"
+	result.StorageDriver = s.backend.Driver()
 	result.VisibilityStatus = defaultString(result.VisibilityStatus, "private")
 	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
 	result.URL = result.DownloadURL
@@ -672,6 +801,19 @@ func decodeBase64ImageResult(value string) ([]byte, error) {
 		return nil, errs.New(500, errs.CodeImageStorageFailed, "generated image base64 is invalid")
 	}
 	return content, nil
+}
+
+func normalizeListPage(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize
 }
 
 func imageMimeType(format string, result provider.ImageResult) string {
@@ -711,37 +853,8 @@ func imageExtension(format, mimeType string) string {
 	}
 }
 
-func localStorageRoot(root string) string {
-	if strings.TrimSpace(root) == "" {
-		return filepath.Join(os.TempDir(), "pic-gallery")
-	}
-	return root
-}
-
-func generatedImagePath(root string, objectKey string) (string, bool) {
-	cleanKey := filepath.ToSlash(filepath.Clean(filepath.FromSlash(objectKey)))
-	if cleanKey == "." || strings.HasPrefix(cleanKey, "../") || strings.HasPrefix(cleanKey, "/") {
-		return "", false
-	}
-	if cleanKey != "generated-images" && !strings.HasPrefix(cleanKey, "generated-images/") {
-		return "", false
-	}
-	rootAbs, err := filepath.Abs(root)
-	if err != nil {
-		return "", false
-	}
-	fullPath, err := filepath.Abs(filepath.Join(rootAbs, filepath.FromSlash(cleanKey)))
-	if err != nil {
-		return "", false
-	}
-	rel, err := filepath.Rel(rootAbs, fullPath)
-	if err != nil {
-		return "", false
-	}
-	if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
-		return "", false
-	}
-	return fullPath, true
+func generatedImageObjectKey(userID int64, taskID string, index int, resultID string, ext string) string {
+	return filepath.ToSlash(filepath.Join("generated-images", fmt.Sprintf("%d", userID), taskID, fmt.Sprintf("%d-%s%s", index, resultID, ext)))
 }
 
 func leaseOwnedBy(task domainimagetask.Task, owner string, now time.Time) bool {
@@ -806,11 +919,32 @@ func (s *Service) orderedProviders(candidates []modelhub.ProviderCandidate, pref
 	return ordered
 }
 
-func (s *Service) providerModelName(abstractModel, providerName string) string {
+func (s *Service) providerModelName(abstractModel, providerName, resolvedModelCode string) string {
+	if value := strings.TrimSpace(resolvedModelCode); value != "" {
+		return value
+	}
 	if value := strings.TrimSpace(s.cfg.Routing.ProviderModelMap[strings.ToLower(abstractModel)][strings.ToLower(providerName)]); value != "" {
 		return value
 	}
 	return abstractModel
+}
+
+func calculateProviderCost(candidate modelhub.ProviderCandidate, outputImageCount int) string {
+	unitCost, err := decimal.NewFromString(strings.TrimSpace(candidate.OutputCost))
+	if err != nil {
+		return "0.00000"
+	}
+	count := decimal.NewFromInt(int64(normalizedCount(outputImageCount)))
+	return unitCost.Mul(count).Round(5).StringFixed(5)
+}
+
+func calculateGrossMargin(actualPoints, providerCost string) string {
+	actualValue, actualErr := decimal.NewFromString(strings.TrimSpace(actualPoints))
+	costValue, costErr := decimal.NewFromString(strings.TrimSpace(providerCost))
+	if actualErr != nil || costErr != nil {
+		return "0.00000"
+	}
+	return actualValue.Sub(costValue).Round(5).StringFixed(5)
 }
 
 func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.Task, req domainimagetask.CreateRequest) error {

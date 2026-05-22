@@ -42,8 +42,15 @@ func (s *Service) Record(ctx context.Context, req domainaudit.RecordRequest) (do
 	})
 }
 
-func (s *Service) List(ctx context.Context) ([]domainaudit.Log, error) {
-	return s.store.List(ctx)
+func (s *Service) List(ctx context.Context, req domainaudit.ListRequest) (domainaudit.ListPage, error) {
+	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
+	req.ActorType = strings.TrimSpace(req.ActorType)
+	req.ActorID = strings.TrimSpace(req.ActorID)
+	req.Action = strings.TrimSpace(req.Action)
+	req.TargetType = strings.TrimSpace(req.TargetType)
+	req.TargetID = strings.TrimSpace(req.TargetID)
+	req.Result = strings.TrimSpace(req.Result)
+	return s.store.List(ctx, req)
 }
 
 func redactMetadata(input map[string]any) map[string]any {
@@ -79,6 +86,19 @@ func redactValue(value any) any {
 func isSecretKey(key string) bool {
 	lower := strings.ToLower(key)
 	return strings.Contains(lower, "secret") || strings.Contains(lower, "token") || strings.Contains(lower, "password")
+}
+
+func normalizePage(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize
 }
 
 func cloneMetadata(input map[string]any) map[string]any {

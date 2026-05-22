@@ -90,12 +90,114 @@ func (s *Service) AdjustPoints(ctx context.Context, req domainadminuser.PointAdj
 	})
 }
 
+func (s *Service) UpdateUserLimits(ctx context.Context, req domainadminuser.LimitsRequest) (domainadminuser.UserSummary, error) {
+	if req.UserID <= 0 {
+		return domainadminuser.UserSummary{}, errs.BadRequest("invalid user_id")
+	}
+	if req.RPMLimit < 0 || req.ConcurrencyLimit < 0 {
+		return domainadminuser.UserSummary{}, errs.BadRequest("rpm_limit and concurrency_limit must be non-negative")
+	}
+	return s.store.UpdateUserLimits(ctx, req)
+}
+
+func (s *Service) AssignUserGroup(ctx context.Context, req domainadminuser.GroupAssignmentRequest) (domainadminuser.UserSummary, error) {
+	if req.UserID <= 0 {
+		return domainadminuser.UserSummary{}, errs.BadRequest("invalid user_id")
+	}
+	req.UserGroupCode = strings.ToLower(strings.TrimSpace(req.UserGroupCode))
+	if req.UserGroupCode == "" {
+		return domainadminuser.UserSummary{}, errs.BadRequest("user_group_code is required")
+	}
+	return s.store.AssignUserGroup(ctx, req)
+}
+
+func (s *Service) ListUserGroups(ctx context.Context, req domainadminuser.UserGroupListRequest) (domainadminuser.UserGroupListPage, error) {
+	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
+	req.Query = strings.TrimSpace(req.Query)
+	rawStatus := strings.TrimSpace(req.Status)
+	req.Status = normalizeGroupStatus(rawStatus)
+	if rawStatus != "" && req.Status == "" {
+		return domainadminuser.UserGroupListPage{}, errs.BadRequest("invalid status")
+	}
+	return s.store.ListUserGroups(ctx, req)
+}
+
+func (s *Service) GetUserGroup(ctx context.Context, groupCode string) (domainadminuser.UserGroup, error) {
+	groupCode = strings.ToLower(strings.TrimSpace(groupCode))
+	if groupCode == "" {
+		return domainadminuser.UserGroup{}, errs.BadRequest("group_code is required")
+	}
+	return s.store.GetUserGroup(ctx, groupCode)
+}
+
+func (s *Service) CreateUserGroup(ctx context.Context, req domainadminuser.UserGroupWriteRequest) (domainadminuser.UserGroup, error) {
+	normalized, err := normalizeUserGroupWrite(req, true)
+	if err != nil {
+		return domainadminuser.UserGroup{}, err
+	}
+	return s.store.CreateUserGroup(ctx, normalized)
+}
+
+func (s *Service) UpdateUserGroup(ctx context.Context, groupCode string, req domainadminuser.UserGroupWriteRequest) (domainadminuser.UserGroup, error) {
+	groupCode = strings.ToLower(strings.TrimSpace(groupCode))
+	if groupCode == "" {
+		return domainadminuser.UserGroup{}, errs.BadRequest("group_code is required")
+	}
+	req.GroupCode = groupCode
+	normalized, err := normalizeUserGroupWrite(req, false)
+	if err != nil {
+		return domainadminuser.UserGroup{}, err
+	}
+	return s.store.UpdateUserGroup(ctx, groupCode, normalized)
+}
+
+func (s *Service) DeleteUserGroup(ctx context.Context, groupCode string) error {
+	groupCode = strings.ToLower(strings.TrimSpace(groupCode))
+	if groupCode == "" {
+		return errs.BadRequest("group_code is required")
+	}
+	if groupCode == "basic" {
+		return errs.BadRequest("basic group cannot be deleted")
+	}
+	return s.store.DeleteUserGroup(ctx, groupCode)
+}
+
 func normalizeStatus(status string) string {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
-	case "", "pending", "active", "disabled":
+	case "", "pending", "active", "disabled", "closed":
 		return status
 	default:
 		return ""
 	}
+}
+
+func normalizeGroupStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	switch status {
+	case "", "active", "disabled":
+		return status
+	default:
+		return ""
+	}
+}
+
+func normalizeUserGroupWrite(req domainadminuser.UserGroupWriteRequest, requireCode bool) (domainadminuser.UserGroupWriteRequest, error) {
+	req.GroupCode = strings.ToLower(strings.TrimSpace(req.GroupCode))
+	req.GroupName = strings.TrimSpace(req.GroupName)
+	req.Multiplier = strings.TrimSpace(req.Multiplier)
+	req.Status = normalizeGroupStatus(req.Status)
+	if requireCode && req.GroupCode == "" {
+		return domainadminuser.UserGroupWriteRequest{}, errs.BadRequest("group_code is required")
+	}
+	if req.GroupName == "" || req.Multiplier == "" {
+		return domainadminuser.UserGroupWriteRequest{}, errs.BadRequest("group_name and multiplier are required")
+	}
+	if !pointValuePattern.MatchString(req.Multiplier) || strings.HasPrefix(req.Multiplier, "-") {
+		return domainadminuser.UserGroupWriteRequest{}, errs.BadRequest("multiplier must be a non-negative decimal with up to 5 fractional digits")
+	}
+	if req.Status == "" {
+		req.Status = "active"
+	}
+	return req, nil
 }

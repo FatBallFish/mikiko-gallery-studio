@@ -17,6 +17,14 @@ const (
 	StatusDeleted       = "deleted"
 )
 
+const (
+	VisibilityPrivate       = "private"
+	VisibilityPendingReview = "pending_review"
+	VisibilityApproved      = "approved"
+	VisibilityRejected      = "rejected"
+	VisibilityUnpublished   = "unpublished"
+)
+
 type ExecuteRequest struct {
 	TaskID              string
 	UserID              int64
@@ -74,6 +82,11 @@ type Task struct {
 	ID                    string                        `json:"id"`
 	Status                string                        `json:"status"`
 	Provider              string                        `json:"provider,omitempty"`
+	ProviderModelID       int64                         `json:"provider_model_id,omitempty"`
+	ProviderCost          string                        `json:"provider_cost,omitempty"`
+	GrossMargin           string                        `json:"gross_margin,omitempty"`
+	FallbackCount         int                           `json:"fallback_count,omitempty"`
+	RouteSnapshotVersion  string                        `json:"route_snapshot_version,omitempty"`
 	AbstractModel         string                        `json:"abstract_model"`
 	TaskType              string                        `json:"task_type"`
 	Prompt                string                        `json:"prompt,omitempty"`
@@ -103,4 +116,39 @@ type Task struct {
 type ExecuteResult struct {
 	Task     Task
 	Response provider.ImageResponse
+}
+
+type GalleryImage struct {
+	ID               string     `json:"id"`
+	TaskID           string     `json:"task_id"`
+	UserID           int64      `json:"user_id,omitempty"`
+	Prompt           string     `json:"prompt,omitempty"`
+	AbstractModel    string     `json:"abstract_model,omitempty"`
+	TaskType         string     `json:"task_type,omitempty"`
+	URL              string     `json:"url,omitempty"`
+	DownloadURL      string     `json:"download_url,omitempty"`
+	MimeType         string     `json:"mime_type,omitempty"`
+	FileSizeBytes    int64      `json:"file_size_bytes"`
+	Width            int        `json:"width"`
+	Height           int        `json:"height"`
+	SHA256           string     `json:"sha256,omitempty"`
+	ObjectKey        string     `json:"object_key,omitempty"`
+	StorageDriver    string     `json:"storage_driver,omitempty"`
+	VisibilityStatus string     `json:"visibility_status"`
+	ReviewReason     string     `json:"review_reason,omitempty"`
+	PublishedAt      *time.Time `json:"published_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+}
+
+type GalleryListRequest struct {
+	Page     int
+	PageSize int
+	Status   string
+}
+
+type GalleryPage struct {
+	Items    []GalleryImage `json:"items"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
+	Total    int            `json:"total"`
 }

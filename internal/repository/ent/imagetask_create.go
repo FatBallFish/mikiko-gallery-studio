@@ -367,6 +367,76 @@ func (_c *ImageTaskCreate) SetNillableActualPoints(v *string) *ImageTaskCreate {
 	return _c
 }
 
+// SetProviderModelID sets the "provider_model_id" field.
+func (_c *ImageTaskCreate) SetProviderModelID(v int64) *ImageTaskCreate {
+	_c.mutation.SetProviderModelID(v)
+	return _c
+}
+
+// SetNillableProviderModelID sets the "provider_model_id" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableProviderModelID(v *int64) *ImageTaskCreate {
+	if v != nil {
+		_c.SetProviderModelID(*v)
+	}
+	return _c
+}
+
+// SetProviderCost sets the "provider_cost" field.
+func (_c *ImageTaskCreate) SetProviderCost(v string) *ImageTaskCreate {
+	_c.mutation.SetProviderCost(v)
+	return _c
+}
+
+// SetNillableProviderCost sets the "provider_cost" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableProviderCost(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetProviderCost(*v)
+	}
+	return _c
+}
+
+// SetGrossMargin sets the "gross_margin" field.
+func (_c *ImageTaskCreate) SetGrossMargin(v string) *ImageTaskCreate {
+	_c.mutation.SetGrossMargin(v)
+	return _c
+}
+
+// SetNillableGrossMargin sets the "gross_margin" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableGrossMargin(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetGrossMargin(*v)
+	}
+	return _c
+}
+
+// SetFallbackCount sets the "fallback_count" field.
+func (_c *ImageTaskCreate) SetFallbackCount(v int) *ImageTaskCreate {
+	_c.mutation.SetFallbackCount(v)
+	return _c
+}
+
+// SetNillableFallbackCount sets the "fallback_count" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableFallbackCount(v *int) *ImageTaskCreate {
+	if v != nil {
+		_c.SetFallbackCount(*v)
+	}
+	return _c
+}
+
+// SetRouteSnapshotVersion sets the "route_snapshot_version" field.
+func (_c *ImageTaskCreate) SetRouteSnapshotVersion(v string) *ImageTaskCreate {
+	_c.mutation.SetRouteSnapshotVersion(v)
+	return _c
+}
+
+// SetNillableRouteSnapshotVersion sets the "route_snapshot_version" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableRouteSnapshotVersion(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetRouteSnapshotVersion(*v)
+	}
+	return _c
+}
+
 // SetPricingSnapshot sets the "pricing_snapshot" field.
 func (_c *ImageTaskCreate) SetPricingSnapshot(v map[string]interface{}) *ImageTaskCreate {
 	_c.mutation.SetPricingSnapshot(v)
@@ -584,6 +654,22 @@ func (_c *ImageTaskCreate) defaults() {
 		v := imagetask.DefaultActualPoints
 		_c.mutation.SetActualPoints(v)
 	}
+	if _, ok := _c.mutation.ProviderCost(); !ok {
+		v := imagetask.DefaultProviderCost
+		_c.mutation.SetProviderCost(v)
+	}
+	if _, ok := _c.mutation.GrossMargin(); !ok {
+		v := imagetask.DefaultGrossMargin
+		_c.mutation.SetGrossMargin(v)
+	}
+	if _, ok := _c.mutation.FallbackCount(); !ok {
+		v := imagetask.DefaultFallbackCount
+		_c.mutation.SetFallbackCount(v)
+	}
+	if _, ok := _c.mutation.RouteSnapshotVersion(); !ok {
+		v := imagetask.DefaultRouteSnapshotVersion
+		_c.mutation.SetRouteSnapshotVersion(v)
+	}
 	if _, ok := _c.mutation.ID(); !ok {
 		v := imagetask.DefaultID()
 		_c.mutation.SetID(v)
@@ -698,6 +784,23 @@ func (_c *ImageTaskCreate) check() error {
 	}
 	if _, ok := _c.mutation.ActualPoints(); !ok {
 		return &ValidationError{Name: "actual_points", err: errors.New(`ent: missing required field "ImageTask.actual_points"`)}
+	}
+	if _, ok := _c.mutation.ProviderCost(); !ok {
+		return &ValidationError{Name: "provider_cost", err: errors.New(`ent: missing required field "ImageTask.provider_cost"`)}
+	}
+	if _, ok := _c.mutation.GrossMargin(); !ok {
+		return &ValidationError{Name: "gross_margin", err: errors.New(`ent: missing required field "ImageTask.gross_margin"`)}
+	}
+	if _, ok := _c.mutation.FallbackCount(); !ok {
+		return &ValidationError{Name: "fallback_count", err: errors.New(`ent: missing required field "ImageTask.fallback_count"`)}
+	}
+	if _, ok := _c.mutation.RouteSnapshotVersion(); !ok {
+		return &ValidationError{Name: "route_snapshot_version", err: errors.New(`ent: missing required field "ImageTask.route_snapshot_version"`)}
+	}
+	if v, ok := _c.mutation.RouteSnapshotVersion(); ok {
+		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
+			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
+		}
 	}
 	if v, ok := _c.mutation.LeaseOwner(); ok {
 		if err := imagetask.LeaseOwnerValidator(v); err != nil {
@@ -851,6 +954,26 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ActualPoints(); ok {
 		_spec.SetField(imagetask.FieldActualPoints, field.TypeString, value)
 		_node.ActualPoints = value
+	}
+	if value, ok := _c.mutation.ProviderModelID(); ok {
+		_spec.SetField(imagetask.FieldProviderModelID, field.TypeInt64, value)
+		_node.ProviderModelID = &value
+	}
+	if value, ok := _c.mutation.ProviderCost(); ok {
+		_spec.SetField(imagetask.FieldProviderCost, field.TypeString, value)
+		_node.ProviderCost = value
+	}
+	if value, ok := _c.mutation.GrossMargin(); ok {
+		_spec.SetField(imagetask.FieldGrossMargin, field.TypeString, value)
+		_node.GrossMargin = value
+	}
+	if value, ok := _c.mutation.FallbackCount(); ok {
+		_spec.SetField(imagetask.FieldFallbackCount, field.TypeInt, value)
+		_node.FallbackCount = value
+	}
+	if value, ok := _c.mutation.RouteSnapshotVersion(); ok {
+		_spec.SetField(imagetask.FieldRouteSnapshotVersion, field.TypeString, value)
+		_node.RouteSnapshotVersion = value
 	}
 	if value, ok := _c.mutation.PricingSnapshot(); ok {
 		_spec.SetField(imagetask.FieldPricingSnapshot, field.TypeJSON, value)

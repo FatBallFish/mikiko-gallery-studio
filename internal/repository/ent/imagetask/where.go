@@ -190,6 +190,31 @@ func ActualPoints(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldActualPoints, v))
 }
 
+// ProviderModelID applies equality check predicate on the "provider_model_id" field. It's identical to ProviderModelIDEQ.
+func ProviderModelID(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProviderModelID, v))
+}
+
+// ProviderCost applies equality check predicate on the "provider_cost" field. It's identical to ProviderCostEQ.
+func ProviderCost(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProviderCost, v))
+}
+
+// GrossMargin applies equality check predicate on the "gross_margin" field. It's identical to GrossMarginEQ.
+func GrossMargin(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldGrossMargin, v))
+}
+
+// FallbackCount applies equality check predicate on the "fallback_count" field. It's identical to FallbackCountEQ.
+func FallbackCount(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldFallbackCount, v))
+}
+
+// RouteSnapshotVersion applies equality check predicate on the "route_snapshot_version" field. It's identical to RouteSnapshotVersionEQ.
+func RouteSnapshotVersion(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldRouteSnapshotVersion, v))
+}
+
 // LeaseOwner applies equality check predicate on the "lease_owner" field. It's identical to LeaseOwnerEQ.
 func LeaseOwner(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldLeaseOwner, v))
@@ -1698,6 +1723,291 @@ func ActualPointsEqualFold(v string) predicate.ImageTask {
 // ActualPointsContainsFold applies the ContainsFold predicate on the "actual_points" field.
 func ActualPointsContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldActualPoints, v))
+}
+
+// ProviderModelIDEQ applies the EQ predicate on the "provider_model_id" field.
+func ProviderModelIDEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProviderModelID, v))
+}
+
+// ProviderModelIDNEQ applies the NEQ predicate on the "provider_model_id" field.
+func ProviderModelIDNEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldProviderModelID, v))
+}
+
+// ProviderModelIDIn applies the In predicate on the "provider_model_id" field.
+func ProviderModelIDIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldProviderModelID, vs...))
+}
+
+// ProviderModelIDNotIn applies the NotIn predicate on the "provider_model_id" field.
+func ProviderModelIDNotIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldProviderModelID, vs...))
+}
+
+// ProviderModelIDGT applies the GT predicate on the "provider_model_id" field.
+func ProviderModelIDGT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldProviderModelID, v))
+}
+
+// ProviderModelIDGTE applies the GTE predicate on the "provider_model_id" field.
+func ProviderModelIDGTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldProviderModelID, v))
+}
+
+// ProviderModelIDLT applies the LT predicate on the "provider_model_id" field.
+func ProviderModelIDLT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldProviderModelID, v))
+}
+
+// ProviderModelIDLTE applies the LTE predicate on the "provider_model_id" field.
+func ProviderModelIDLTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldProviderModelID, v))
+}
+
+// ProviderModelIDIsNil applies the IsNil predicate on the "provider_model_id" field.
+func ProviderModelIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldProviderModelID))
+}
+
+// ProviderModelIDNotNil applies the NotNil predicate on the "provider_model_id" field.
+func ProviderModelIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldProviderModelID))
+}
+
+// ProviderCostEQ applies the EQ predicate on the "provider_cost" field.
+func ProviderCostEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProviderCost, v))
+}
+
+// ProviderCostNEQ applies the NEQ predicate on the "provider_cost" field.
+func ProviderCostNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldProviderCost, v))
+}
+
+// ProviderCostIn applies the In predicate on the "provider_cost" field.
+func ProviderCostIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldProviderCost, vs...))
+}
+
+// ProviderCostNotIn applies the NotIn predicate on the "provider_cost" field.
+func ProviderCostNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldProviderCost, vs...))
+}
+
+// ProviderCostGT applies the GT predicate on the "provider_cost" field.
+func ProviderCostGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldProviderCost, v))
+}
+
+// ProviderCostGTE applies the GTE predicate on the "provider_cost" field.
+func ProviderCostGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldProviderCost, v))
+}
+
+// ProviderCostLT applies the LT predicate on the "provider_cost" field.
+func ProviderCostLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldProviderCost, v))
+}
+
+// ProviderCostLTE applies the LTE predicate on the "provider_cost" field.
+func ProviderCostLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldProviderCost, v))
+}
+
+// ProviderCostContains applies the Contains predicate on the "provider_cost" field.
+func ProviderCostContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldProviderCost, v))
+}
+
+// ProviderCostHasPrefix applies the HasPrefix predicate on the "provider_cost" field.
+func ProviderCostHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldProviderCost, v))
+}
+
+// ProviderCostHasSuffix applies the HasSuffix predicate on the "provider_cost" field.
+func ProviderCostHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldProviderCost, v))
+}
+
+// ProviderCostEqualFold applies the EqualFold predicate on the "provider_cost" field.
+func ProviderCostEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldProviderCost, v))
+}
+
+// ProviderCostContainsFold applies the ContainsFold predicate on the "provider_cost" field.
+func ProviderCostContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldProviderCost, v))
+}
+
+// GrossMarginEQ applies the EQ predicate on the "gross_margin" field.
+func GrossMarginEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldGrossMargin, v))
+}
+
+// GrossMarginNEQ applies the NEQ predicate on the "gross_margin" field.
+func GrossMarginNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldGrossMargin, v))
+}
+
+// GrossMarginIn applies the In predicate on the "gross_margin" field.
+func GrossMarginIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldGrossMargin, vs...))
+}
+
+// GrossMarginNotIn applies the NotIn predicate on the "gross_margin" field.
+func GrossMarginNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldGrossMargin, vs...))
+}
+
+// GrossMarginGT applies the GT predicate on the "gross_margin" field.
+func GrossMarginGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldGrossMargin, v))
+}
+
+// GrossMarginGTE applies the GTE predicate on the "gross_margin" field.
+func GrossMarginGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldGrossMargin, v))
+}
+
+// GrossMarginLT applies the LT predicate on the "gross_margin" field.
+func GrossMarginLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldGrossMargin, v))
+}
+
+// GrossMarginLTE applies the LTE predicate on the "gross_margin" field.
+func GrossMarginLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldGrossMargin, v))
+}
+
+// GrossMarginContains applies the Contains predicate on the "gross_margin" field.
+func GrossMarginContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldGrossMargin, v))
+}
+
+// GrossMarginHasPrefix applies the HasPrefix predicate on the "gross_margin" field.
+func GrossMarginHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldGrossMargin, v))
+}
+
+// GrossMarginHasSuffix applies the HasSuffix predicate on the "gross_margin" field.
+func GrossMarginHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldGrossMargin, v))
+}
+
+// GrossMarginEqualFold applies the EqualFold predicate on the "gross_margin" field.
+func GrossMarginEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldGrossMargin, v))
+}
+
+// GrossMarginContainsFold applies the ContainsFold predicate on the "gross_margin" field.
+func GrossMarginContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldGrossMargin, v))
+}
+
+// FallbackCountEQ applies the EQ predicate on the "fallback_count" field.
+func FallbackCountEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldFallbackCount, v))
+}
+
+// FallbackCountNEQ applies the NEQ predicate on the "fallback_count" field.
+func FallbackCountNEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldFallbackCount, v))
+}
+
+// FallbackCountIn applies the In predicate on the "fallback_count" field.
+func FallbackCountIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldFallbackCount, vs...))
+}
+
+// FallbackCountNotIn applies the NotIn predicate on the "fallback_count" field.
+func FallbackCountNotIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldFallbackCount, vs...))
+}
+
+// FallbackCountGT applies the GT predicate on the "fallback_count" field.
+func FallbackCountGT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldFallbackCount, v))
+}
+
+// FallbackCountGTE applies the GTE predicate on the "fallback_count" field.
+func FallbackCountGTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldFallbackCount, v))
+}
+
+// FallbackCountLT applies the LT predicate on the "fallback_count" field.
+func FallbackCountLT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldFallbackCount, v))
+}
+
+// FallbackCountLTE applies the LTE predicate on the "fallback_count" field.
+func FallbackCountLTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldFallbackCount, v))
+}
+
+// RouteSnapshotVersionEQ applies the EQ predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionNEQ applies the NEQ predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionIn applies the In predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldRouteSnapshotVersion, vs...))
+}
+
+// RouteSnapshotVersionNotIn applies the NotIn predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldRouteSnapshotVersion, vs...))
+}
+
+// RouteSnapshotVersionGT applies the GT predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionGTE applies the GTE predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionLT applies the LT predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionLTE applies the LTE predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionContains applies the Contains predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionHasPrefix applies the HasPrefix predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionHasSuffix applies the HasSuffix predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionEqualFold applies the EqualFold predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldRouteSnapshotVersion, v))
+}
+
+// RouteSnapshotVersionContainsFold applies the ContainsFold predicate on the "route_snapshot_version" field.
+func RouteSnapshotVersionContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldRouteSnapshotVersion, v))
 }
 
 // PricingSnapshotIsNil applies the IsNil predicate on the "pricing_snapshot" field.

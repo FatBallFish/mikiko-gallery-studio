@@ -25,12 +25,19 @@ import (
 )
 
 func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
-	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
+	imageBytes := tinyPNG(t)
+	var providerServer *httptest.Server
+	providerServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"`+providerServer.URL+`/images/task.png"}}]}}]}`)
+		case "/images/task.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(imageBytes)
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"https://cdn.example.com/task.png"}}]}}]}`)
 	}))
 	defer providerServer.Close()
 
@@ -334,10 +341,20 @@ func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
 	}
 }
 
-func TestAgentTaskRemoteResultExposesUsableURLButDownload404(t *testing.T) {
-	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"https://cdn.example.com/task.png"}}]}}]}`)
+func TestAgentTaskRemoteResultIsMirroredAndDownloadable(t *testing.T) {
+	imageBytes := tinyPNG(t)
+	var providerServer *httptest.Server
+	providerServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"`+providerServer.URL+`/images/task.png"}}]}}]}`)
+		case "/images/task.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(imageBytes)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
 	}))
 	defer providerServer.Close()
 
@@ -374,24 +391,27 @@ func TestAgentTaskRemoteResultExposesUsableURLButDownload404(t *testing.T) {
 	id, _ := result["id"].(string)
 	url, _ := result["url"].(string)
 	downloadURL, _ := result["download_url"].(string)
-	if id == "" || url != "https://cdn.example.com/task.png" {
-		t.Fatalf("expected remote result to expose persisted id and frontend URL, got %#v", result)
+	if id == "" || url == "" {
+		t.Fatalf("expected mirrored result to expose persisted id and url, got %#v", result)
 	}
 	for _, key := range []string{"mime_type", "file_size_bytes", "width", "height", "visibility_status"} {
 		if _, ok := result[key]; !ok {
 			t.Fatalf("expected remote result JSON to include %q, got %#v", key, result)
 		}
 	}
-	if downloadURL != "" {
-		t.Fatalf("remote URL results are not locally mirrored in P0 and must not expose download_url, got %#v", result)
+	if downloadURL == "" {
+		t.Fatalf("expected mirrored remote result to expose download_url, got %#v", result)
 	}
 
-	downloadReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/images/"+id, nil)
+	downloadReq := httptest.NewRequest(http.MethodGet, downloadURL, nil)
 	downloadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	downloadRec := httptest.NewRecorder()
 	handler.ServeHTTP(downloadRec, downloadReq)
-	if downloadRec.Code != http.StatusNotFound {
-		t.Fatalf("expected remote-only result download 404, got %d body=%s", downloadRec.Code, downloadRec.Body.String())
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("expected mirrored result download 200, got %d body=%s", downloadRec.Code, downloadRec.Body.String())
+	}
+	if got := downloadRec.Body.Bytes(); !bytes.Equal(got, imageBytes) {
+		t.Fatalf("downloaded bytes mismatch: got %d bytes want %d", len(got), len(imageBytes))
 	}
 }
 
