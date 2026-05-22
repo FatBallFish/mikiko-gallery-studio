@@ -30,14 +30,26 @@ type DatabaseConfig struct {
 }
 
 type RedisConfig struct {
-	URL string `yaml:"url"`
+	URL       string `yaml:"url"`
+	KeyPrefix string `yaml:"key_prefix"`
 }
 
 type StorageConfig struct {
-	Driver        string `yaml:"driver"`
-	LocalRoot     string `yaml:"local_root"`
-	PublicBaseURL string `yaml:"public_base_url"`
-	SharedVolume  bool   `yaml:"shared_volume"`
+	Driver        string          `yaml:"driver"`
+	LocalRoot     string          `yaml:"local_root"`
+	PublicBaseURL string          `yaml:"public_base_url"`
+	SharedVolume  bool            `yaml:"shared_volume"`
+	S3            StorageS3Config `yaml:"s3"`
+}
+
+type StorageS3Config struct {
+	Endpoint        string `yaml:"endpoint"`
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	ForcePathStyle  bool   `yaml:"force_path_style"`
+	Prefix          string `yaml:"prefix"`
 }
 
 type AuthConfig struct {

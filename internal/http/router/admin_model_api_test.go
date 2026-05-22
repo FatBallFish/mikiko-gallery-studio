@@ -95,6 +95,36 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected provider update 200, got %d body=%s", updateProviderRec.Code, updateProviderRec.Body.String())
 	}
 
+	createProviderModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/provider-models", bytes.NewBufferString(`{"provider_code":"openai","model_code":"gpt-image-1","compat_mode":"openai_images","supports_image_input":true,"supports_mask":true,"supported_qualities":["1k","2k"],"supported_ratios":["1:1","16:9"],"max_image_count":4,"max_reference_image_count":2,"timeout_ms":45000,"input_cost":"0.12","output_cost":"0.34","currency":"USD","health_status":"healthy","enabled":true}`))
+	createProviderModelReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createProviderModelReq.Header.Set("Content-Type", "application/json")
+	createProviderModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(createProviderModelRec, createProviderModelReq)
+	if createProviderModelRec.Code != http.StatusCreated {
+		t.Fatalf("expected provider model create 201, got %d body=%s", createProviderModelRec.Code, createProviderModelRec.Body.String())
+	}
+	var providerModelResp struct {
+		Data struct {
+			ID           int64  `json:"id"`
+			ProviderCode string `json:"provider_code"`
+			ModelCode    string `json:"model_code"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(createProviderModelRec.Body).Decode(&providerModelResp); err != nil {
+		t.Fatalf("decode provider model response: %v", err)
+	}
+	if providerModelResp.Data.ID <= 0 || providerModelResp.Data.ProviderCode != "openai" || providerModelResp.Data.ModelCode != "gpt-image-1" {
+		t.Fatalf("unexpected provider model response %#v", providerModelResp)
+	}
+
+	listProviderModelsReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/provider-models?page=1&page_size=10&provider_code=openai", nil)
+	listProviderModelsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	listProviderModelsRec := httptest.NewRecorder()
+	handler.ServeHTTP(listProviderModelsRec, listProviderModelsReq)
+	if listProviderModelsRec.Code != http.StatusOK || !bytes.Contains(listProviderModelsRec.Body.Bytes(), []byte("gpt-image-1")) {
+		t.Fatalf("expected provider model list 200 with model, got %d body=%s", listProviderModelsRec.Code, listProviderModelsRec.Body.String())
+	}
+
 	createRouteReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-routes", bytes.NewBufferString(`{"group_code":"Plus","task_type":"text_to_image","provider_code":"openai","priority":1,"weight_percent":100,"fallback_order":1,"enabled":true}`))
 	createRouteReq.Header.Set("Authorization", "Bearer "+adminToken)
 	createRouteReq.Header.Set("Content-Type", "application/json")
@@ -136,6 +166,15 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected route update 200, got %d body=%s", updateRouteRec.Code, updateRouteRec.Body.String())
 	}
 
+	updateProviderModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/provider-models/"+jsonNumber(providerModelResp.Data.ID), bytes.NewBufferString(`{"provider_code":"openai","model_code":"gpt-image-1","compat_mode":"openai_images","supports_image_input":true,"supports_mask":true,"supported_qualities":["1k","2k","4k"],"supported_ratios":["1:1","16:9"],"max_image_count":5,"max_reference_image_count":2,"timeout_ms":50000,"input_cost":"0.22","output_cost":"0.44","currency":"USD","health_status":"degraded","enabled":false}`))
+	updateProviderModelReq.Header.Set("Authorization", "Bearer "+adminToken)
+	updateProviderModelReq.Header.Set("Content-Type", "application/json")
+	updateProviderModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(updateProviderModelRec, updateProviderModelReq)
+	if updateProviderModelRec.Code != http.StatusOK {
+		t.Fatalf("expected provider model update 200, got %d body=%s", updateProviderModelRec.Code, updateProviderModelRec.Body.String())
+	}
+
 	deleteProviderWithRouteReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-providers/openai", nil)
 	deleteProviderWithRouteReq.Header.Set("Authorization", "Bearer "+adminToken)
 	deleteProviderWithRouteRec := httptest.NewRecorder()
@@ -152,6 +191,14 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected route delete 204, got %d body=%s", deleteRouteRec.Code, deleteRouteRec.Body.String())
 	}
 
+	deleteProviderModelReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/provider-models/"+jsonNumber(providerModelResp.Data.ID), nil)
+	deleteProviderModelReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteProviderModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteProviderModelRec, deleteProviderModelReq)
+	if deleteProviderModelRec.Code != http.StatusNoContent {
+		t.Fatalf("expected provider model delete 204, got %d body=%s", deleteProviderModelRec.Code, deleteProviderModelRec.Body.String())
+	}
+
 	deleteProviderReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-providers/openai", nil)
 	deleteProviderReq.Header.Set("Authorization", "Bearer "+adminToken)
 	deleteProviderRec := httptest.NewRecorder()
@@ -160,14 +207,17 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected provider delete 204, got %d body=%s", deleteProviderRec.Code, deleteProviderRec.Body.String())
 	}
 
-	auditReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/audit-logs", nil)
+	auditReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/audit-logs?page=1&page_size=10&actor_type=admin", nil)
 	auditReq.Header.Set("Authorization", "Bearer "+adminToken)
 	auditRec := httptest.NewRecorder()
 	handler.ServeHTTP(auditRec, auditReq)
 	if auditRec.Code != http.StatusOK {
 		t.Fatalf("expected audit list 200, got %d body=%s", auditRec.Code, auditRec.Body.String())
 	}
-	for _, action := range []string{"model_provider.create", "model_provider.update", "model_provider.delete", "model_route.create", "model_route.update", "model_route.delete"} {
+	if !bytes.Contains(auditRec.Body.Bytes(), []byte(`"pagination"`)) {
+		t.Fatalf("expected audit pagination, got body=%s", auditRec.Body.String())
+	}
+	for _, action := range []string{"model_provider.create", "model_provider.update", "model_provider.delete", "provider_model.create", "provider_model.update", "provider_model.delete", "model_route.create", "model_route.update", "model_route.delete"} {
 		if !bytes.Contains(auditRec.Body.Bytes(), []byte(action)) {
 			t.Fatalf("expected audit log action %q, got body=%s", action, auditRec.Body.String())
 		}

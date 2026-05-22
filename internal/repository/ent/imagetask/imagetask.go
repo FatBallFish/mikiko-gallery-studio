@@ -68,6 +68,16 @@ const (
 	FieldEstimatedPoints = "estimated_points"
 	// FieldActualPoints holds the string denoting the actual_points field in the database.
 	FieldActualPoints = "actual_points"
+	// FieldProviderModelID holds the string denoting the provider_model_id field in the database.
+	FieldProviderModelID = "provider_model_id"
+	// FieldProviderCost holds the string denoting the provider_cost field in the database.
+	FieldProviderCost = "provider_cost"
+	// FieldGrossMargin holds the string denoting the gross_margin field in the database.
+	FieldGrossMargin = "gross_margin"
+	// FieldFallbackCount holds the string denoting the fallback_count field in the database.
+	FieldFallbackCount = "fallback_count"
+	// FieldRouteSnapshotVersion holds the string denoting the route_snapshot_version field in the database.
+	FieldRouteSnapshotVersion = "route_snapshot_version"
 	// FieldPricingSnapshot holds the string denoting the pricing_snapshot field in the database.
 	FieldPricingSnapshot = "pricing_snapshot"
 	// FieldRoutingSnapshot holds the string denoting the routing_snapshot field in the database.
@@ -122,6 +132,11 @@ var Columns = []string{
 	FieldSavePolicy,
 	FieldEstimatedPoints,
 	FieldActualPoints,
+	FieldProviderModelID,
+	FieldProviderCost,
+	FieldGrossMargin,
+	FieldFallbackCount,
+	FieldRouteSnapshotVersion,
 	FieldPricingSnapshot,
 	FieldRoutingSnapshot,
 	FieldErrorPolicySnapshot,
@@ -197,6 +212,16 @@ var (
 	DefaultEstimatedPoints string
 	// DefaultActualPoints holds the default value on creation for the "actual_points" field.
 	DefaultActualPoints string
+	// DefaultProviderCost holds the default value on creation for the "provider_cost" field.
+	DefaultProviderCost string
+	// DefaultGrossMargin holds the default value on creation for the "gross_margin" field.
+	DefaultGrossMargin string
+	// DefaultFallbackCount holds the default value on creation for the "fallback_count" field.
+	DefaultFallbackCount int
+	// DefaultRouteSnapshotVersion holds the default value on creation for the "route_snapshot_version" field.
+	DefaultRouteSnapshotVersion string
+	// RouteSnapshotVersionValidator is a validator for the "route_snapshot_version" field. It is called by the builders before save.
+	RouteSnapshotVersionValidator func(string) error
 	// LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	LeaseOwnerValidator func(string) error
 	// ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
@@ -346,6 +371,31 @@ func ByEstimatedPoints(opts ...sql.OrderTermOption) OrderOption {
 // ByActualPoints orders the results by the actual_points field.
 func ByActualPoints(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldActualPoints, opts...).ToFunc()
+}
+
+// ByProviderModelID orders the results by the provider_model_id field.
+func ByProviderModelID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderModelID, opts...).ToFunc()
+}
+
+// ByProviderCost orders the results by the provider_cost field.
+func ByProviderCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderCost, opts...).ToFunc()
+}
+
+// ByGrossMargin orders the results by the gross_margin field.
+func ByGrossMargin(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGrossMargin, opts...).ToFunc()
+}
+
+// ByFallbackCount orders the results by the fallback_count field.
+func ByFallbackCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFallbackCount, opts...).ToFunc()
+}
+
+// ByRouteSnapshotVersion orders the results by the route_snapshot_version field.
+func ByRouteSnapshotVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRouteSnapshotVersion, opts...).ToFunc()
 }
 
 // ByLeaseOwner orders the results by the lease_owner field.

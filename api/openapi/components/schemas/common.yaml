@@ -88,6 +88,11 @@ components:
           type: string
         visibility_status:
           type: string
+        review_reason:
+          type: string
+        published_at:
+          type: string
+          format: date-time
     ImageTask:
       type: object
       properties:
@@ -114,7 +119,45 @@ components:
         actual_points:
           type: string
           description: Decimal string with up to 5 fraction digits.
+        provider_model_id:
+          type: integer
+          format: int64
+          nullable: true
+        provider_cost:
+          type: string
+        gross_margin:
+          type: string
+        fallback_count:
+          type: integer
+        route_snapshot_version:
+          type: integer
+          format: int64
         results:
           type: array
           items:
             $ref: '#/components/schemas/ImageResult'
+    GalleryImage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        user_id:
+          type: integer
+          format: int64
+        prompt:
+          type: string
+        abstract_model:
+          type: string
+        visibility_status:
+          type: string
+        review_reason:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        image:
+          $ref: '#/components/schemas/ImageResult'

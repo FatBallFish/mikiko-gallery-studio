@@ -28,5 +28,14 @@ func (PointLedger) Fields() []ent.Field {
 	}
 }
 func (PointLedger) Indexes() []ent.Index {
-	return []ent.Index{index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("task_id"), index.Fields("ledger_type"), index.Fields("idempotency_key").Unique()}
+	return []ent.Index{
+		index.Fields("user_id"),
+		index.Fields("api_key_id"),
+		index.Fields("task_id"),
+		index.Fields("order_id"),
+		index.Fields("redeem_code_id"),
+		index.Fields("ledger_type"),
+		index.Fields("created_at"),
+		index.Fields("idempotency_key").Unique(),
+	}
 }

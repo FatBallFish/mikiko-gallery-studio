@@ -495,6 +495,96 @@ func (_u *ImageTaskUpdate) SetNillableActualPoints(v *string) *ImageTaskUpdate {
 	return _u
 }
 
+// SetProviderModelID sets the "provider_model_id" field.
+func (_u *ImageTaskUpdate) SetProviderModelID(v int64) *ImageTaskUpdate {
+	_u.mutation.ResetProviderModelID()
+	_u.mutation.SetProviderModelID(v)
+	return _u
+}
+
+// SetNillableProviderModelID sets the "provider_model_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableProviderModelID(v *int64) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetProviderModelID(*v)
+	}
+	return _u
+}
+
+// AddProviderModelID adds value to the "provider_model_id" field.
+func (_u *ImageTaskUpdate) AddProviderModelID(v int64) *ImageTaskUpdate {
+	_u.mutation.AddProviderModelID(v)
+	return _u
+}
+
+// ClearProviderModelID clears the value of the "provider_model_id" field.
+func (_u *ImageTaskUpdate) ClearProviderModelID() *ImageTaskUpdate {
+	_u.mutation.ClearProviderModelID()
+	return _u
+}
+
+// SetProviderCost sets the "provider_cost" field.
+func (_u *ImageTaskUpdate) SetProviderCost(v string) *ImageTaskUpdate {
+	_u.mutation.SetProviderCost(v)
+	return _u
+}
+
+// SetNillableProviderCost sets the "provider_cost" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableProviderCost(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetProviderCost(*v)
+	}
+	return _u
+}
+
+// SetGrossMargin sets the "gross_margin" field.
+func (_u *ImageTaskUpdate) SetGrossMargin(v string) *ImageTaskUpdate {
+	_u.mutation.SetGrossMargin(v)
+	return _u
+}
+
+// SetNillableGrossMargin sets the "gross_margin" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableGrossMargin(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetGrossMargin(*v)
+	}
+	return _u
+}
+
+// SetFallbackCount sets the "fallback_count" field.
+func (_u *ImageTaskUpdate) SetFallbackCount(v int) *ImageTaskUpdate {
+	_u.mutation.ResetFallbackCount()
+	_u.mutation.SetFallbackCount(v)
+	return _u
+}
+
+// SetNillableFallbackCount sets the "fallback_count" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableFallbackCount(v *int) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetFallbackCount(*v)
+	}
+	return _u
+}
+
+// AddFallbackCount adds value to the "fallback_count" field.
+func (_u *ImageTaskUpdate) AddFallbackCount(v int) *ImageTaskUpdate {
+	_u.mutation.AddFallbackCount(v)
+	return _u
+}
+
+// SetRouteSnapshotVersion sets the "route_snapshot_version" field.
+func (_u *ImageTaskUpdate) SetRouteSnapshotVersion(v string) *ImageTaskUpdate {
+	_u.mutation.SetRouteSnapshotVersion(v)
+	return _u
+}
+
+// SetNillableRouteSnapshotVersion sets the "route_snapshot_version" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableRouteSnapshotVersion(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetRouteSnapshotVersion(*v)
+	}
+	return _u
+}
+
 // SetPricingSnapshot sets the "pricing_snapshot" field.
 func (_u *ImageTaskUpdate) SetPricingSnapshot(v map[string]interface{}) *ImageTaskUpdate {
 	_u.mutation.SetPricingSnapshot(v)
@@ -756,6 +846,11 @@ func (_u *ImageTaskUpdate) check() error {
 			return &ValidationError{Name: "save_policy", err: fmt.Errorf(`ent: validator failed for field "ImageTask.save_policy": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RouteSnapshotVersion(); ok {
+		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
+			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
 		if err := imagetask.LeaseOwnerValidator(v); err != nil {
 			return &ValidationError{Name: "lease_owner", err: fmt.Errorf(`ent: validator failed for field "ImageTask.lease_owner": %w`, err)}
@@ -909,6 +1004,30 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.ActualPoints(); ok {
 		_spec.SetField(imagetask.FieldActualPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderModelID(); ok {
+		_spec.SetField(imagetask.FieldProviderModelID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedProviderModelID(); ok {
+		_spec.AddField(imagetask.FieldProviderModelID, field.TypeInt64, value)
+	}
+	if _u.mutation.ProviderModelIDCleared() {
+		_spec.ClearField(imagetask.FieldProviderModelID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ProviderCost(); ok {
+		_spec.SetField(imagetask.FieldProviderCost, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.GrossMargin(); ok {
+		_spec.SetField(imagetask.FieldGrossMargin, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.FallbackCount(); ok {
+		_spec.SetField(imagetask.FieldFallbackCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedFallbackCount(); ok {
+		_spec.AddField(imagetask.FieldFallbackCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.RouteSnapshotVersion(); ok {
+		_spec.SetField(imagetask.FieldRouteSnapshotVersion, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.PricingSnapshot(); ok {
 		_spec.SetField(imagetask.FieldPricingSnapshot, field.TypeJSON, value)
@@ -1457,6 +1576,96 @@ func (_u *ImageTaskUpdateOne) SetNillableActualPoints(v *string) *ImageTaskUpdat
 	return _u
 }
 
+// SetProviderModelID sets the "provider_model_id" field.
+func (_u *ImageTaskUpdateOne) SetProviderModelID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.ResetProviderModelID()
+	_u.mutation.SetProviderModelID(v)
+	return _u
+}
+
+// SetNillableProviderModelID sets the "provider_model_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableProviderModelID(v *int64) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetProviderModelID(*v)
+	}
+	return _u
+}
+
+// AddProviderModelID adds value to the "provider_model_id" field.
+func (_u *ImageTaskUpdateOne) AddProviderModelID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.AddProviderModelID(v)
+	return _u
+}
+
+// ClearProviderModelID clears the value of the "provider_model_id" field.
+func (_u *ImageTaskUpdateOne) ClearProviderModelID() *ImageTaskUpdateOne {
+	_u.mutation.ClearProviderModelID()
+	return _u
+}
+
+// SetProviderCost sets the "provider_cost" field.
+func (_u *ImageTaskUpdateOne) SetProviderCost(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetProviderCost(v)
+	return _u
+}
+
+// SetNillableProviderCost sets the "provider_cost" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableProviderCost(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetProviderCost(*v)
+	}
+	return _u
+}
+
+// SetGrossMargin sets the "gross_margin" field.
+func (_u *ImageTaskUpdateOne) SetGrossMargin(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetGrossMargin(v)
+	return _u
+}
+
+// SetNillableGrossMargin sets the "gross_margin" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableGrossMargin(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetGrossMargin(*v)
+	}
+	return _u
+}
+
+// SetFallbackCount sets the "fallback_count" field.
+func (_u *ImageTaskUpdateOne) SetFallbackCount(v int) *ImageTaskUpdateOne {
+	_u.mutation.ResetFallbackCount()
+	_u.mutation.SetFallbackCount(v)
+	return _u
+}
+
+// SetNillableFallbackCount sets the "fallback_count" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableFallbackCount(v *int) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetFallbackCount(*v)
+	}
+	return _u
+}
+
+// AddFallbackCount adds value to the "fallback_count" field.
+func (_u *ImageTaskUpdateOne) AddFallbackCount(v int) *ImageTaskUpdateOne {
+	_u.mutation.AddFallbackCount(v)
+	return _u
+}
+
+// SetRouteSnapshotVersion sets the "route_snapshot_version" field.
+func (_u *ImageTaskUpdateOne) SetRouteSnapshotVersion(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetRouteSnapshotVersion(v)
+	return _u
+}
+
+// SetNillableRouteSnapshotVersion sets the "route_snapshot_version" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableRouteSnapshotVersion(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetRouteSnapshotVersion(*v)
+	}
+	return _u
+}
+
 // SetPricingSnapshot sets the "pricing_snapshot" field.
 func (_u *ImageTaskUpdateOne) SetPricingSnapshot(v map[string]interface{}) *ImageTaskUpdateOne {
 	_u.mutation.SetPricingSnapshot(v)
@@ -1731,6 +1940,11 @@ func (_u *ImageTaskUpdateOne) check() error {
 			return &ValidationError{Name: "save_policy", err: fmt.Errorf(`ent: validator failed for field "ImageTask.save_policy": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RouteSnapshotVersion(); ok {
+		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
+			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
 		if err := imagetask.LeaseOwnerValidator(v); err != nil {
 			return &ValidationError{Name: "lease_owner", err: fmt.Errorf(`ent: validator failed for field "ImageTask.lease_owner": %w`, err)}
@@ -1901,6 +2115,30 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if value, ok := _u.mutation.ActualPoints(); ok {
 		_spec.SetField(imagetask.FieldActualPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderModelID(); ok {
+		_spec.SetField(imagetask.FieldProviderModelID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedProviderModelID(); ok {
+		_spec.AddField(imagetask.FieldProviderModelID, field.TypeInt64, value)
+	}
+	if _u.mutation.ProviderModelIDCleared() {
+		_spec.ClearField(imagetask.FieldProviderModelID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ProviderCost(); ok {
+		_spec.SetField(imagetask.FieldProviderCost, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.GrossMargin(); ok {
+		_spec.SetField(imagetask.FieldGrossMargin, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.FallbackCount(); ok {
+		_spec.SetField(imagetask.FieldFallbackCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedFallbackCount(); ok {
+		_spec.AddField(imagetask.FieldFallbackCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.RouteSnapshotVersion(); ok {
+		_spec.SetField(imagetask.FieldRouteSnapshotVersion, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.PricingSnapshot(); ok {
 		_spec.SetField(imagetask.FieldPricingSnapshot, field.TypeJSON, value)

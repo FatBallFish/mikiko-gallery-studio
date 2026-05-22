@@ -16,6 +16,15 @@ storage:
   driver: local
   local_root: ./tmp/storage
   public_base_url: http://localhost:8080/files
+  shared_volume: false
+  s3:
+    endpoint: ""
+    region: us-east-1
+    bucket: ""
+    access_key_id: ""
+    secret_access_key: ""
+    force_path_style: true
+    prefix: pic-gallery
 
 auth:
   access_token_ttl: 10m

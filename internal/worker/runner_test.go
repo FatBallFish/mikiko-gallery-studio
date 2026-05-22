@@ -14,6 +14,8 @@ import (
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
+const tinyPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="
+
 type fakeProvider struct {
 	generateFunc func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error)
 }
@@ -30,7 +32,7 @@ func TestRunnerProcessOnceExecutesQueuedTask(t *testing.T) {
 	cfg := workerTestConfig()
 	providers := map[string]provider.ImageProvider{
 		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
-			return provider.ImageResponse{Created: 1770000004, Data: []provider.ImageResult{{URL: "https://cdn.example.com/worker.png"}}}, nil
+			return provider.ImageResponse{Created: 1770000004, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
 		}},
 	}
 	store := imagetaskservice.NewMemoryStore()
@@ -108,6 +110,26 @@ func (s *countingStore) ListByUser(ctx context.Context, userID int64) ([]domaini
 	return s.base.ListByUser(ctx, userID)
 }
 
+func (s *countingStore) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.RequestPublish(ctx, userID, imageID)
+}
+
+func (s *countingStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
+	return s.base.ReviewImage(ctx, imageID, nextStatus, reviewReason, publishedAt)
+}
+
+func (s *countingStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListGallery(ctx, req)
+}
+
+func (s *countingStore) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListPublicGallery(ctx, req)
+}
+
+func (s *countingStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID)
+}
+
 func (s *countingStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
 	return s.base.DeleteByID(ctx, userID, taskID)
 }
@@ -149,7 +171,7 @@ func TestRunnerProcessOnceHeartbeatsLongRunningTask(t *testing.T) {
 			case <-ctx.Done():
 				return provider.ImageResponse{}, ctx.Err()
 			case <-gate:
-				return provider.ImageResponse{Created: 1770000005, Data: []provider.ImageResult{{URL: "https://cdn.example.com/heartbeat.png"}}}, nil
+				return provider.ImageResponse{Created: 1770000005, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
 			}
 		}},
 	}
@@ -215,7 +237,7 @@ func TestRunnerStopsWhenHeartbeatFails(t *testing.T) {
 			case <-ctx.Done():
 				return provider.ImageResponse{}, ctx.Err()
 			case <-gate:
-				return provider.ImageResponse{Created: 1770000006, Data: []provider.ImageResult{{URL: "https://cdn.example.com/never.png"}}}, nil
+				return provider.ImageResponse{Created: 1770000006, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
 			}
 		}},
 	}

@@ -21,13 +21,20 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -88,22 +95,29 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			apikey.Table:                 apikey.ValidColumn,
-			apikeyquotareservation.Table: apikeyquotareservation.ValidColumn,
-			adminuser.Table:              adminuser.ValidColumn,
-			auditlog.Table:               auditlog.ValidColumn,
-			configitem.Table:             configitem.ValidColumn,
-			imageresult.Table:            imageresult.ValidColumn,
-			imagetask.Table:              imagetask.ValidColumn,
-			modelprovider.Table:          modelprovider.ValidColumn,
-			modelroute.Table:             modelroute.ValidColumn,
-			pointledger.Table:            pointledger.ValidColumn,
-			providererrorpolicy.Table:    providererrorpolicy.ValidColumn,
-			redeemcode.Table:             redeemcode.ValidColumn,
-			referenceasset.Table:         referenceasset.ValidColumn,
-			refreshsession.Table:         refreshsession.ValidColumn,
-			user.Table:                   user.ValidColumn,
-			usergroup.Table:              usergroup.ValidColumn,
+			apikey.Table:                      apikey.ValidColumn,
+			apikeyquotareservation.Table:      apikeyquotareservation.ValidColumn,
+			adminuser.Table:                   adminuser.ValidColumn,
+			auditlog.Table:                    auditlog.ValidColumn,
+			configitem.Table:                  configitem.ValidColumn,
+			imageresult.Table:                 imageresult.ValidColumn,
+			imagetask.Table:                   imagetask.ValidColumn,
+			modelprovider.Table:               modelprovider.ValidColumn,
+			modelroute.Table:                  modelroute.ValidColumn,
+			paymentorder.Table:                paymentorder.ValidColumn,
+			paymentwebhookevent.Table:         paymentwebhookevent.ValidColumn,
+			pointledger.Table:                 pointledger.ValidColumn,
+			providererrorpolicy.Table:         providererrorpolicy.ValidColumn,
+			providermodel.Table:               providermodel.ValidColumn,
+			redeemcode.Table:                  redeemcode.ValidColumn,
+			referenceasset.Table:              referenceasset.ValidColumn,
+			refreshsession.Table:              refreshsession.ValidColumn,
+			subscriptionplan.Table:            subscriptionplan.ValidColumn,
+			user.Table:                        user.ValidColumn,
+			usergroup.Table:                   usergroup.ValidColumn,
+			usersubscription.Table:            usersubscription.ValidColumn,
+			walletgrant.Table:                 walletgrant.ValidColumn,
+			walletreservationallocation.Table: walletreservationallocation.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

@@ -293,6 +293,11 @@ var (
 		{Name: "save_policy", Type: field.TypeString, Size: 16, Default: "private"},
 		{Name: "estimated_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "actual_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "provider_model_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "provider_cost", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "gross_margin", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "fallback_count", Type: field.TypeInt, Default: 0},
+		{Name: "route_snapshot_version", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "pricing_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "routing_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "error_policy_snapshot", Type: field.TypeJSON, Nullable: true},
@@ -346,19 +351,24 @@ var (
 				Columns: []*schema.Column{ImageTasksColumns[13]},
 			},
 			{
+				Name:    "imagetask_provider_model_id",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[28]},
+			},
+			{
 				Name:    "imagetask_lease_owner",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[32]},
+				Columns: []*schema.Column{ImageTasksColumns[37]},
 			},
 			{
 				Name:    "imagetask_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[33]},
+				Columns: []*schema.Column{ImageTasksColumns[38]},
 			},
 			{
 				Name:    "imagetask_error_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[34]},
+				Columns: []*schema.Column{ImageTasksColumns[39]},
 			},
 			{
 				Name:    "imagetask_created_at",
@@ -432,6 +442,112 @@ var (
 			},
 		},
 	}
+	// PaymentOrdersColumns holds the columns for the "payment_orders" table.
+	PaymentOrdersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "plan_id", Type: field.TypeInt64},
+		{Name: "order_no", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "provider", Type: field.TypeString, Size: 32},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
+		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
+		{Name: "amount_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "bonus_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "trade_no", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "payment_url", Type: field.TypeString, Nullable: true, Size: 2048},
+		{Name: "qr_code", Type: field.TypeString, Nullable: true, Size: 4096},
+		{Name: "client_token", Type: field.TypeString, Nullable: true, Size: 4096},
+		{Name: "failure_reason", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "paid_at", Type: field.TypeTime, Nullable: true},
+		{Name: "closed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "refunded_at", Type: field.TypeTime, Nullable: true},
+		{Name: "provider_payload", Type: field.TypeJSON, Nullable: true},
+	}
+	// PaymentOrdersTable holds the schema information for the "payment_orders" table.
+	PaymentOrdersTable = &schema.Table{
+		Name:       "payment_orders",
+		Columns:    PaymentOrdersColumns,
+		PrimaryKey: []*schema.Column{PaymentOrdersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "paymentorder_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[3]},
+			},
+			{
+				Name:    "paymentorder_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[4]},
+			},
+			{
+				Name:    "paymentorder_provider",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[6]},
+			},
+			{
+				Name:    "paymentorder_status",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[7]},
+			},
+			{
+				Name:    "paymentorder_trade_no",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[12]},
+			},
+			{
+				Name:    "paymentorder_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[17]},
+			},
+		},
+	}
+	// PaymentWebhookEventsColumns holds the columns for the "payment_webhook_events" table.
+	PaymentWebhookEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider", Type: field.TypeString, Size: 32},
+		{Name: "trade_no", Type: field.TypeString, Size: 128},
+		{Name: "event_type", Type: field.TypeString, Size: 64, Default: "payment.succeeded"},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "received"},
+		{Name: "payment_order_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "signature", Type: field.TypeString, Nullable: true, Size: 512},
+		{Name: "headers", Type: field.TypeJSON, Nullable: true},
+		{Name: "payload", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "processed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// PaymentWebhookEventsTable holds the schema information for the "payment_webhook_events" table.
+	PaymentWebhookEventsTable = &schema.Table{
+		Name:       "payment_webhook_events",
+		Columns:    PaymentWebhookEventsColumns,
+		PrimaryKey: []*schema.Column{PaymentWebhookEventsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "paymentwebhookevent_provider",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentWebhookEventsColumns[3]},
+			},
+			{
+				Name:    "paymentwebhookevent_trade_no",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentWebhookEventsColumns[4]},
+			},
+			{
+				Name:    "paymentwebhookevent_payment_order_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentWebhookEventsColumns[7]},
+			},
+			{
+				Name:    "paymentwebhookevent_provider_trade_no",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentWebhookEventsColumns[3], PaymentWebhookEventsColumns[4]},
+			},
+		},
+	}
 	// PointLedgersColumns holds the columns for the "point_ledgers" table.
 	PointLedgersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -472,9 +588,24 @@ var (
 				Columns: []*schema.Column{PointLedgersColumns[5]},
 			},
 			{
+				Name:    "pointledger_order_id",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[6]},
+			},
+			{
+				Name:    "pointledger_redeem_code_id",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[7]},
+			},
+			{
 				Name:    "pointledger_ledger_type",
 				Unique:  false,
 				Columns: []*schema.Column{PointLedgersColumns[8]},
+			},
+			{
+				Name:    "pointledger_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[1]},
 			},
 			{
 				Name:    "pointledger_idempotency_key",
@@ -505,6 +636,56 @@ var (
 				Name:    "providererrorpolicy_provider_type_http_status_provider_error_code",
 				Unique:  false,
 				Columns: []*schema.Column{ProviderErrorPoliciesColumns[3], ProviderErrorPoliciesColumns[4], ProviderErrorPoliciesColumns[5]},
+			},
+		},
+	}
+	// ProviderModelsColumns holds the columns for the "provider_models" table.
+	ProviderModelsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider_id", Type: field.TypeInt64},
+		{Name: "model_code", Type: field.TypeString, Size: 128},
+		{Name: "compat_mode", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "supports_image_input", Type: field.TypeBool, Default: false},
+		{Name: "supports_mask", Type: field.TypeBool, Default: false},
+		{Name: "supported_qualities", Type: field.TypeJSON, Nullable: true},
+		{Name: "supported_ratios", Type: field.TypeJSON, Nullable: true},
+		{Name: "max_image_count", Type: field.TypeInt, Default: 1},
+		{Name: "max_reference_image_count", Type: field.TypeInt, Default: 0},
+		{Name: "timeout_ms", Type: field.TypeInt, Default: 60000},
+		{Name: "input_cost", Type: field.TypeString, Size: 32, Default: "0"},
+		{Name: "output_cost", Type: field.TypeString, Size: 32, Default: "0"},
+		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
+		{Name: "health_status", Type: field.TypeString, Size: 32, Default: "unknown"},
+		{Name: "last_health_checked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+	}
+	// ProviderModelsTable holds the schema information for the "provider_models" table.
+	ProviderModelsTable = &schema.Table{
+		Name:       "provider_models",
+		Columns:    ProviderModelsColumns,
+		PrimaryKey: []*schema.Column{ProviderModelsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "providermodel_provider_id",
+				Unique:  false,
+				Columns: []*schema.Column{ProviderModelsColumns[3]},
+			},
+			{
+				Name:    "providermodel_provider_id_model_code",
+				Unique:  true,
+				Columns: []*schema.Column{ProviderModelsColumns[3], ProviderModelsColumns[4]},
+			},
+			{
+				Name:    "providermodel_health_status",
+				Unique:  false,
+				Columns: []*schema.Column{ProviderModelsColumns[16]},
+			},
+			{
+				Name:    "providermodel_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{ProviderModelsColumns[18]},
 			},
 		},
 	}
@@ -648,6 +829,41 @@ var (
 			},
 		},
 	}
+	// SubscriptionPlansColumns holds the columns for the "subscription_plans" table.
+	SubscriptionPlansColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "plan_code", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "plan_name", Type: field.TypeString, Size: 128},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
+		{Name: "price_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "bonus_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "duration_days", Type: field.TypeInt, Default: 30},
+		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
+		{Name: "description", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// SubscriptionPlansTable holds the schema information for the "subscription_plans" table.
+	SubscriptionPlansTable = &schema.Table{
+		Name:       "subscription_plans",
+		Columns:    SubscriptionPlansColumns,
+		PrimaryKey: []*schema.Column{SubscriptionPlansColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionplan_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPlansColumns[5]},
+			},
+			{
+				Name:    "subscriptionplan_sort_order",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPlansColumns[12]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -656,14 +872,19 @@ var (
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "email", Type: field.TypeString, Size: 255},
 		{Name: "password_hash", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "email_verified_at", Type: field.TypeTime, Nullable: true},
 		{Name: "nickname", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "bio", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "avatar_object_key", Type: field.TypeString, Nullable: true, Size: 255},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
 		{Name: "user_group_id", Type: field.TypeInt64, Default: 0},
 		{Name: "token_version", Type: field.TypeInt, Default: 0},
+		{Name: "rpm_limit", Type: field.TypeInt, Default: 0},
+		{Name: "concurrency_limit", Type: field.TypeInt, Default: 0},
 		{Name: "default_locale", Type: field.TypeString, Size: 16, Default: "zh-CN"},
 		{Name: "theme", Type: field.TypeString, Size: 16, Default: "system"},
+		{Name: "password_updated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "closed_at", Type: field.TypeTime, Nullable: true},
 	}
 	// UsersTable holds the schema information for the "users" table.
 	UsersTable = &schema.Table{
@@ -679,12 +900,12 @@ var (
 			{
 				Name:    "user_status",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[9]},
+				Columns: []*schema.Column{UsersColumns[10]},
 			},
 			{
 				Name:    "user_user_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[10]},
+				Columns: []*schema.Column{UsersColumns[11]},
 			},
 		},
 	}
@@ -717,6 +938,157 @@ var (
 			},
 		},
 	}
+	// UserSubscriptionsColumns holds the columns for the "user_subscriptions" table.
+	UserSubscriptionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "plan_id", Type: field.TypeInt64},
+		{Name: "wallet_grant_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "payment_order_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
+		{Name: "started_at", Type: field.TypeTime},
+		{Name: "current_period_start", Type: field.TypeTime},
+		{Name: "current_period_end", Type: field.TypeTime},
+		{Name: "expired_at", Type: field.TypeTime, Nullable: true},
+		{Name: "canceled_at", Type: field.TypeTime, Nullable: true},
+	}
+	// UserSubscriptionsTable holds the schema information for the "user_subscriptions" table.
+	UserSubscriptionsTable = &schema.Table{
+		Name:       "user_subscriptions",
+		Columns:    UserSubscriptionsColumns,
+		PrimaryKey: []*schema.Column{UserSubscriptionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "usersubscription_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserSubscriptionsColumns[3]},
+			},
+			{
+				Name:    "usersubscription_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserSubscriptionsColumns[4]},
+			},
+			{
+				Name:    "usersubscription_wallet_grant_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserSubscriptionsColumns[5]},
+			},
+			{
+				Name:    "usersubscription_payment_order_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserSubscriptionsColumns[6]},
+			},
+			{
+				Name:    "usersubscription_status",
+				Unique:  false,
+				Columns: []*schema.Column{UserSubscriptionsColumns[7]},
+			},
+			{
+				Name:    "usersubscription_current_period_end",
+				Unique:  false,
+				Columns: []*schema.Column{UserSubscriptionsColumns[10]},
+			},
+		},
+	}
+	// WalletGrantsColumns holds the columns for the "wallet_grants" table.
+	WalletGrantsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "grant_type", Type: field.TypeString, Size: 32},
+		{Name: "source_type", Type: field.TypeString, Size: 32},
+		{Name: "source_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
+		{Name: "total_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "available_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "frozen_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "consumed_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// WalletGrantsTable holds the schema information for the "wallet_grants" table.
+	WalletGrantsTable = &schema.Table{
+		Name:       "wallet_grants",
+		Columns:    WalletGrantsColumns,
+		PrimaryKey: []*schema.Column{WalletGrantsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "walletgrant_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{WalletGrantsColumns[3]},
+			},
+			{
+				Name:    "walletgrant_grant_type",
+				Unique:  false,
+				Columns: []*schema.Column{WalletGrantsColumns[4]},
+			},
+			{
+				Name:    "walletgrant_status",
+				Unique:  false,
+				Columns: []*schema.Column{WalletGrantsColumns[7]},
+			},
+			{
+				Name:    "walletgrant_source_type_source_id",
+				Unique:  false,
+				Columns: []*schema.Column{WalletGrantsColumns[5], WalletGrantsColumns[6]},
+			},
+			{
+				Name:    "walletgrant_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{WalletGrantsColumns[12]},
+			},
+		},
+	}
+	// WalletReservationAllocationsColumns holds the columns for the "wallet_reservation_allocations" table.
+	WalletReservationAllocationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "wallet_grant_id", Type: field.TypeInt64},
+		{Name: "task_id", Type: field.TypeUUID},
+		{Name: "reservation_cycle", Type: field.TypeInt, Default: 0},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "reserved"},
+		{Name: "reserved_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "consumed_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "refunded_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+	}
+	// WalletReservationAllocationsTable holds the schema information for the "wallet_reservation_allocations" table.
+	WalletReservationAllocationsTable = &schema.Table{
+		Name:       "wallet_reservation_allocations",
+		Columns:    WalletReservationAllocationsColumns,
+		PrimaryKey: []*schema.Column{WalletReservationAllocationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "walletreservationallocation_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{WalletReservationAllocationsColumns[3]},
+			},
+			{
+				Name:    "walletreservationallocation_wallet_grant_id",
+				Unique:  false,
+				Columns: []*schema.Column{WalletReservationAllocationsColumns[4]},
+			},
+			{
+				Name:    "walletreservationallocation_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{WalletReservationAllocationsColumns[5]},
+			},
+			{
+				Name:    "walletreservationallocation_task_id_reservation_cycle",
+				Unique:  false,
+				Columns: []*schema.Column{WalletReservationAllocationsColumns[5], WalletReservationAllocationsColumns[6]},
+			},
+			{
+				Name:    "walletreservationallocation_status",
+				Unique:  false,
+				Columns: []*schema.Column{WalletReservationAllocationsColumns[7]},
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		APIKeysTable,
@@ -728,13 +1100,20 @@ var (
 		ImageTasksTable,
 		ModelProvidersTable,
 		ModelRoutesTable,
+		PaymentOrdersTable,
+		PaymentWebhookEventsTable,
 		PointLedgersTable,
 		ProviderErrorPoliciesTable,
+		ProviderModelsTable,
 		RedeemCodesTable,
 		ReferenceAssetsTable,
 		RefreshSessionsTable,
+		SubscriptionPlansTable,
 		UsersTable,
 		UserGroupsTable,
+		UserSubscriptionsTable,
+		WalletGrantsTable,
+		WalletReservationAllocationsTable,
 	}
 )
 
@@ -753,5 +1132,8 @@ func init() {
 	}
 	ProviderErrorPoliciesTable.Annotation = &entsql.Annotation{
 		Table: "provider_error_policies",
+	}
+	ProviderModelsTable.Annotation = &entsql.Annotation{
+		Table: "provider_models",
 	}
 }

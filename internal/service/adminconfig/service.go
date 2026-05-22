@@ -180,6 +180,30 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			},
 		},
 		{
+			Key:  "public_gallery",
+			Name: "Public Gallery",
+			Items: []domainadminconfig.Item{
+				valueItem("public_gallery", "publish_request_enabled", false),
+				valueItem("public_gallery", "gallery_enabled", false),
+			},
+		},
+		{
+			Key:  "moderation",
+			Name: "Moderation",
+			Items: []domainadminconfig.Item{
+				valueItem("moderation", "provider", "openai"),
+				valueItem("moderation", "enabled", false),
+			},
+		},
+		{
+			Key:  "payments",
+			Name: "Payments",
+			Items: []domainadminconfig.Item{
+				valueItem("payments", "enabled", false),
+				valueItem("payments", "providers", []string{"alipay", "wxpay"}),
+			},
+		},
+		{
 			Key:  "docs",
 			Name: "Developer Docs",
 			Items: []domainadminconfig.Item{

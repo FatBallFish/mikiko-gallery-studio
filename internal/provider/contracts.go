@@ -1,5 +1,7 @@
 package provider
 
+import "time"
+
 import "context"
 
 type ProviderType string
@@ -44,20 +46,22 @@ type ImageRequest struct {
 }
 
 type ImageResult struct {
-	ID               string `json:"id,omitempty"`
-	URL              string `json:"url,omitempty"`
-	DownloadURL      string `json:"download_url,omitempty"`
-	B64JSON          string `json:"b64_json,omitempty"`
-	RevisedPrompt    string `json:"revised_prompt,omitempty"`
-	Format           string `json:"format,omitempty"`
-	MimeType         string `json:"mime_type,omitempty"`
-	FileSizeBytes    int64  `json:"file_size_bytes"`
-	Width            int    `json:"width"`
-	Height           int    `json:"height"`
-	SHA256           string `json:"sha256,omitempty"`
-	ObjectKey        string `json:"object_key,omitempty"`
-	StorageDriver    string `json:"storage_driver,omitempty"`
-	VisibilityStatus string `json:"visibility_status,omitempty"`
+	ID               string     `json:"id,omitempty"`
+	URL              string     `json:"url,omitempty"`
+	DownloadURL      string     `json:"download_url,omitempty"`
+	B64JSON          string     `json:"b64_json,omitempty"`
+	RevisedPrompt    string     `json:"revised_prompt,omitempty"`
+	Format           string     `json:"format,omitempty"`
+	MimeType         string     `json:"mime_type,omitempty"`
+	FileSizeBytes    int64      `json:"file_size_bytes"`
+	Width            int        `json:"width"`
+	Height           int        `json:"height"`
+	SHA256           string     `json:"sha256,omitempty"`
+	ObjectKey        string     `json:"object_key,omitempty"`
+	StorageDriver    string     `json:"storage_driver,omitempty"`
+	VisibilityStatus string     `json:"visibility_status,omitempty"`
+	ReviewReason     string     `json:"review_reason,omitempty"`
+	PublishedAt      *time.Time `json:"published_at,omitempty"`
 }
 
 type ImageResponse struct {

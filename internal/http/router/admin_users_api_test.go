@@ -182,6 +182,50 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected invalid precision 400, got %d body=%s", invalidPrecisionRec.Code, invalidPrecisionRec.Body.String())
 	}
 
+	createGroupReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/user-groups", bytes.NewBufferString(`{"group_code":"vip","group_name":"VIP","multiplier":"1.50000","status":"active"}`))
+	createGroupReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createGroupReq.Header.Set("Content-Type", "application/json")
+	createGroupRec := httptest.NewRecorder()
+	handler.ServeHTTP(createGroupRec, createGroupReq)
+	if createGroupRec.Code != http.StatusCreated {
+		t.Fatalf("expected create group 201, got %d body=%s", createGroupRec.Code, createGroupRec.Body.String())
+	}
+
+	assignGroupReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users/1/group", bytes.NewBufferString(`{"user_group_code":"vip"}`))
+	assignGroupReq.Header.Set("Authorization", "Bearer "+adminToken)
+	assignGroupReq.Header.Set("Content-Type", "application/json")
+	assignGroupRec := httptest.NewRecorder()
+	handler.ServeHTTP(assignGroupRec, assignGroupReq)
+	if assignGroupRec.Code != http.StatusOK {
+		t.Fatalf("expected assign group 200, got %d body=%s", assignGroupRec.Code, assignGroupRec.Body.String())
+	}
+
+	limitsReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users/1/limits", bytes.NewBufferString(`{"rpm_limit":120,"concurrency_limit":3}`))
+	limitsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	limitsReq.Header.Set("Content-Type", "application/json")
+	limitsRec := httptest.NewRecorder()
+	handler.ServeHTTP(limitsRec, limitsReq)
+	if limitsRec.Code != http.StatusOK {
+		t.Fatalf("expected limits update 200, got %d body=%s", limitsRec.Code, limitsRec.Body.String())
+	}
+
+	resetPasswordReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users/1/reset-password", bytes.NewBufferString(`{"new_password":"reset-pass"}`))
+	resetPasswordReq.Header.Set("Authorization", "Bearer "+adminToken)
+	resetPasswordReq.Header.Set("Content-Type", "application/json")
+	resetPasswordRec := httptest.NewRecorder()
+	handler.ServeHTTP(resetPasswordRec, resetPasswordReq)
+	if resetPasswordRec.Code != http.StatusOK {
+		t.Fatalf("expected reset password 200, got %d body=%s", resetPasswordRec.Code, resetPasswordRec.Body.String())
+	}
+
+	passwordLoginReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/login/password", bytes.NewBufferString(`{"email":"managed@example.com","password":"reset-pass"}`))
+	passwordLoginReq.Header.Set("Content-Type", "application/json")
+	passwordLoginRec := httptest.NewRecorder()
+	handler.ServeHTTP(passwordLoginRec, passwordLoginReq)
+	if passwordLoginRec.Code != http.StatusOK {
+		t.Fatalf("expected password login after admin reset 200, got %d body=%s", passwordLoginRec.Code, passwordLoginRec.Body.String())
+	}
+
 	statusReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users/1/status", bytes.NewBufferString(`{"status":"disabled"}`))
 	statusReq.Header.Set("Authorization", "Bearer "+adminToken)
 	statusReq.Header.Set("Content-Type", "application/json")

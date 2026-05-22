@@ -28,6 +28,7 @@ import (
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
 func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
@@ -71,12 +72,29 @@ func Run() error {
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
+	storageBackend, err := storage.NewBackend(cfg.Storage)
+	if err != nil {
+		return fmt.Errorf("init storage backend: %w", err)
+	}
 
-	authSvc := authservice.NewServiceWithStore(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client))
+	redisClient, allowRedisFallback, err := newRedisClient(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
+	if redisClient != nil {
+		defer redisClient.Close()
+	}
+
+	var authRedisRuntime authservice.RedisRuntime
+	if redisClient != nil {
+		authRedisRuntime = authservice.NewRedisRuntime(redisClient, cfg.Redis.KeyPrefix)
+	}
+
+	authSvc := authservice.NewServiceWithStoreAndRedis(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client), authRedisRuntime, allowRedisFallback)
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
-	assetSvc := assetservice.NewServiceWithStore(cfg.Storage, cfg.GenerationLimits, entstore.NewAssetsStore(client))
-	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, entstore.NewImageTaskStore(client), assetSvc, billingSvc)
+	assetSvc := assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, entstore.NewAssetsStore(client), storageBackend)
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageBackend)
 	modelAdminStore := entstore.NewModelAdminStore(client)
 	taskSvc.SetModelRoutingSource(modelAdminStore)
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))

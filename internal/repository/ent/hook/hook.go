@@ -117,6 +117,30 @@ func (f ModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelRouteMutation", m)
 }
 
+// The PaymentOrderFunc type is an adapter to allow the use of ordinary
+// function as PaymentOrder mutator.
+type PaymentOrderFunc func(context.Context, *ent.PaymentOrderMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PaymentOrderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PaymentOrderMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PaymentOrderMutation", m)
+}
+
+// The PaymentWebhookEventFunc type is an adapter to allow the use of ordinary
+// function as PaymentWebhookEvent mutator.
+type PaymentWebhookEventFunc func(context.Context, *ent.PaymentWebhookEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PaymentWebhookEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PaymentWebhookEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PaymentWebhookEventMutation", m)
+}
+
 // The PointLedgerFunc type is an adapter to allow the use of ordinary
 // function as PointLedger mutator.
 type PointLedgerFunc func(context.Context, *ent.PointLedgerMutation) (ent.Value, error)
@@ -139,6 +163,18 @@ func (f ProviderErrorPolicyFunc) Mutate(ctx context.Context, m ent.Mutation) (en
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ProviderErrorPolicyMutation", m)
+}
+
+// The ProviderModelFunc type is an adapter to allow the use of ordinary
+// function as ProviderModel mutator.
+type ProviderModelFunc func(context.Context, *ent.ProviderModelMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ProviderModelFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ProviderModelMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ProviderModelMutation", m)
 }
 
 // The RedeemCodeFunc type is an adapter to allow the use of ordinary
@@ -177,6 +213,18 @@ func (f RefreshSessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Val
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RefreshSessionMutation", m)
 }
 
+// The SubscriptionPlanFunc type is an adapter to allow the use of ordinary
+// function as SubscriptionPlan mutator.
+type SubscriptionPlanFunc func(context.Context, *ent.SubscriptionPlanMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SubscriptionPlanFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SubscriptionPlanMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionPlanMutation", m)
+}
+
 // The UserFunc type is an adapter to allow the use of ordinary
 // function as User mutator.
 type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)
@@ -199,6 +247,42 @@ func (f UserGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserGroupMutation", m)
+}
+
+// The UserSubscriptionFunc type is an adapter to allow the use of ordinary
+// function as UserSubscription mutator.
+type UserSubscriptionFunc func(context.Context, *ent.UserSubscriptionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserSubscriptionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserSubscriptionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserSubscriptionMutation", m)
+}
+
+// The WalletGrantFunc type is an adapter to allow the use of ordinary
+// function as WalletGrant mutator.
+type WalletGrantFunc func(context.Context, *ent.WalletGrantMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f WalletGrantFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.WalletGrantMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.WalletGrantMutation", m)
+}
+
+// The WalletReservationAllocationFunc type is an adapter to allow the use of ordinary
+// function as WalletReservationAllocation mutator.
+type WalletReservationAllocationFunc func(context.Context, *ent.WalletReservationAllocationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f WalletReservationAllocationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.WalletReservationAllocationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.WalletReservationAllocationMutation", m)
 }
 
 // Condition is a hook condition function.

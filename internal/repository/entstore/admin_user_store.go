@@ -10,6 +10,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -122,6 +123,137 @@ func (s *AdminUserStore) UpdateUserStatus(ctx context.Context, userID int64, sta
 	return s.mapUser(ctx, updated)
 }
 
+func (s *AdminUserStore) UpdateUserLimits(ctx context.Context, req domainadminuser.LimitsRequest) (domainadminuser.UserSummary, error) {
+	updated, err := s.client.User.UpdateOneID(int(req.UserID)).
+		SetRpmLimit(req.RPMLimit).
+		SetConcurrencyLimit(req.ConcurrencyLimit).
+		Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+		}
+		return domainadminuser.UserSummary{}, err
+	}
+	return s.mapUser(ctx, updated)
+}
+
+func (s *AdminUserStore) AssignUserGroup(ctx context.Context, req domainadminuser.GroupAssignmentRequest) (domainadminuser.UserSummary, error) {
+	group, err := s.client.UserGroup.Query().Where(usergroup.GroupCodeEQ(req.UserGroupCode)).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user group not found")
+		}
+		return domainadminuser.UserSummary{}, err
+	}
+	updated, err := s.client.User.UpdateOneID(int(req.UserID)).SetUserGroupID(int64(group.ID)).Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+		}
+		return domainadminuser.UserSummary{}, err
+	}
+	return s.mapUser(ctx, updated)
+}
+
+func (s *AdminUserStore) ListUserGroups(ctx context.Context, req domainadminuser.UserGroupListRequest) (domainadminuser.UserGroupListPage, error) {
+	page, pageSize := normalizeAdminUserPage(req.Page, req.PageSize)
+	query := s.client.UserGroup.Query()
+	if status := strings.TrimSpace(req.Status); status != "" {
+		query = query.Where(usergroup.StatusEQ(status))
+	}
+	if q := strings.TrimSpace(req.Query); q != "" {
+		query = query.Where(usergroup.Or(usergroup.GroupCodeContainsFold(q), usergroup.GroupNameContainsFold(q)))
+	}
+	total, err := query.Count(ctx)
+	if err != nil {
+		return domainadminuser.UserGroupListPage{}, err
+	}
+	entities, err := query.Order(repoent.Asc(usergroup.FieldGroupCode)).Offset((page - 1) * pageSize).Limit(pageSize).All(ctx)
+	if err != nil {
+		return domainadminuser.UserGroupListPage{}, err
+	}
+	items := make([]domainadminuser.UserGroup, 0, len(entities))
+	for _, entity := range entities {
+		items = append(items, mapUserGroupEntity(entity))
+	}
+	return domainadminuser.UserGroupListPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *AdminUserStore) GetUserGroup(ctx context.Context, groupCode string) (domainadminuser.UserGroup, error) {
+	entity, err := s.client.UserGroup.Query().Where(usergroup.GroupCodeEQ(groupCode)).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainadminuser.UserGroup{}, errs.New(404, errs.CodeNotFound, "user group not found")
+		}
+		return domainadminuser.UserGroup{}, err
+	}
+	return mapUserGroupEntity(entity), nil
+}
+
+func (s *AdminUserStore) CreateUserGroup(ctx context.Context, req domainadminuser.UserGroupWriteRequest) (domainadminuser.UserGroup, error) {
+	create := s.client.UserGroup.Create().
+		SetGroupCode(req.GroupCode).
+		SetGroupName(req.GroupName).
+		SetMultiplier(req.Multiplier).
+		SetStatus(req.Status)
+	if req.Description != nil {
+		create.SetDescription(strings.TrimSpace(*req.Description))
+	}
+	entity, err := create.Save(ctx)
+	if err != nil {
+		if isConstraintError(err) {
+			return domainadminuser.UserGroup{}, repoerr.ErrConflict
+		}
+		return domainadminuser.UserGroup{}, err
+	}
+	return mapUserGroupEntity(entity), nil
+}
+
+func (s *AdminUserStore) UpdateUserGroup(ctx context.Context, groupCode string, req domainadminuser.UserGroupWriteRequest) (domainadminuser.UserGroup, error) {
+	update := s.client.UserGroup.Update().Where(usergroup.GroupCodeEQ(groupCode)).
+		SetGroupName(req.GroupName).
+		SetMultiplier(req.Multiplier).
+		SetStatus(req.Status)
+	if req.Description != nil {
+		update.SetDescription(strings.TrimSpace(*req.Description))
+	} else {
+		update.ClearDescription()
+	}
+	affected, err := update.Save(ctx)
+	if err != nil {
+		return domainadminuser.UserGroup{}, err
+	}
+	if affected == 0 {
+		return domainadminuser.UserGroup{}, errs.New(404, errs.CodeNotFound, "user group not found")
+	}
+	return s.GetUserGroup(ctx, groupCode)
+}
+
+func (s *AdminUserStore) DeleteUserGroup(ctx context.Context, groupCode string) error {
+	group, err := s.client.UserGroup.Query().Where(usergroup.GroupCodeEQ(groupCode)).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return errs.New(404, errs.CodeNotFound, "user group not found")
+		}
+		return err
+	}
+	count, err := s.client.User.Query().Where(user.UserGroupIDEQ(int64(group.ID))).Count(ctx)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return errs.New(409, errs.CodeConflict, "user group is still assigned to users")
+	}
+	affected, err := s.client.UserGroup.Delete().Where(usergroup.IDEQ(group.ID)).Exec(ctx)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errs.New(404, errs.CodeNotFound, "user group not found")
+	}
+	return nil
+}
+
 func (s *AdminUserStore) mapUser(ctx context.Context, entity *repoent.User) (domainadminuser.UserSummary, error) {
 	groupCode := "basic"
 	if entity.UserGroupID > 0 {
@@ -134,16 +266,19 @@ func (s *AdminUserStore) mapUser(ctx context.Context, entity *repoent.User) (dom
 		}
 	}
 	return domainadminuser.UserSummary{
-		ID:            int64(entity.ID),
-		Email:         entity.Email,
-		Nickname:      entity.Nickname,
-		Status:        entity.Status,
-		UserGroupCode: groupCode,
-		TokenVersion:  entity.TokenVersion,
-		DefaultLocale: entity.DefaultLocale,
-		Theme:         entity.Theme,
-		CreatedAt:     entity.CreatedAt,
-		UpdatedAt:     entity.UpdatedAt,
+		ID:               int64(entity.ID),
+		Email:            entity.Email,
+		Nickname:         entity.Nickname,
+		Status:           entity.Status,
+		UserGroupCode:    groupCode,
+		TokenVersion:     entity.TokenVersion,
+		RPMLimit:         entity.RpmLimit,
+		ConcurrencyLimit: entity.ConcurrencyLimit,
+		DefaultLocale:    entity.DefaultLocale,
+		Theme:            entity.Theme,
+		ClosedAt:         entity.ClosedAt,
+		CreatedAt:        entity.CreatedAt,
+		UpdatedAt:        entity.UpdatedAt,
 	}, nil
 }
 
@@ -158,4 +293,29 @@ func normalizeAdminUserPage(page, pageSize int) (int, int) {
 		pageSize = 100
 	}
 	return page, pageSize
+}
+
+func mapUserGroupEntity(entity *repoent.UserGroup) domainadminuser.UserGroup {
+	var description *string
+	if entity.Description != nil {
+		value := *entity.Description
+		description = &value
+	}
+	return domainadminuser.UserGroup{
+		GroupCode:   entity.GroupCode,
+		GroupName:   entity.GroupName,
+		Multiplier:  entity.Multiplier,
+		Status:      entity.Status,
+		Description: description,
+		CreatedAt:   entity.CreatedAt,
+		UpdatedAt:   entity.UpdatedAt,
+	}
+}
+
+func isConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "unique constraint") || strings.Contains(text, "duplicate key")
 }

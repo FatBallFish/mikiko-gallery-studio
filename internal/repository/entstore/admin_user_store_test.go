@@ -90,6 +90,30 @@ func TestAdminUserStoreListDetailAndStatus(t *testing.T) {
 	if updated.Status != "disabled" || updated.TokenVersion != 1 {
 		t.Fatalf("expected status update to increment token version, got %#v", updated)
 	}
+
+	limited, err := store.UpdateUserLimits(ctx, domainadminuser.LimitsRequest{UserID: int64(alice.ID), RPMLimit: 100, ConcurrencyLimit: 2})
+	if err != nil {
+		t.Fatalf("UpdateUserLimits: %v", err)
+	}
+	if limited.RPMLimit != 100 || limited.ConcurrencyLimit != 2 {
+		t.Fatalf("unexpected user limits %#v", limited)
+	}
+
+	if _, err := store.CreateUserGroup(ctx, domainadminuser.UserGroupWriteRequest{
+		GroupCode:  "vip",
+		GroupName:  "VIP",
+		Multiplier: "1.50000",
+		Status:     "active",
+	}); err != nil {
+		t.Fatalf("CreateUserGroup: %v", err)
+	}
+	reassigned, err := store.AssignUserGroup(ctx, domainadminuser.GroupAssignmentRequest{UserID: int64(alice.ID), UserGroupCode: "vip"})
+	if err != nil {
+		t.Fatalf("AssignUserGroup: %v", err)
+	}
+	if reassigned.UserGroupCode != "vip" {
+		t.Fatalf("expected vip group, got %#v", reassigned)
+	}
 }
 
 func testBillingConfig() config.BillingConfig {

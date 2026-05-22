@@ -59,6 +59,62 @@ func (s *Service) ListLedger(ctx context.Context, userID int64, page, pageSize i
 	return pageResult, nil
 }
 
+func (s *Service) ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error) {
+	items, err := s.store.ListPlans(ctx)
+	if err != nil {
+		return nil, errs.Internal("failed to load subscription plans")
+	}
+	return items, nil
+}
+
+func (s *Service) GetSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error) {
+	item, err := s.store.GetActiveSubscription(ctx, userID)
+	if err != nil {
+		return nil, errs.Internal("failed to load active subscription")
+	}
+	return item, nil
+}
+
+func (s *Service) ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error) {
+	items, err := s.store.ListOrders(ctx, req)
+	if err != nil {
+		return domainbilling.PaymentOrderPage{}, errs.Internal("failed to load payment orders")
+	}
+	return items, nil
+}
+
+func (s *Service) GetOrder(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, error) {
+	item, err := s.store.GetOrder(ctx, userID, orderID)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return item, nil
+}
+
+func (s *Service) CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error) {
+	item, err := s.store.CreateOrder(ctx, req)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return item, nil
+}
+
+func (s *Service) CancelOrder(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, error) {
+	item, err := s.store.CancelOrder(ctx, userID, orderID)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return item, nil
+}
+
+func (s *Service) MarkOrderPaid(ctx context.Context, req domainbilling.MarkOrderPaidRequest) (domainbilling.PaymentOrder, error) {
+	item, err := s.store.MarkOrderPaid(ctx, req)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return item, nil
+}
+
 func (s *Service) ReserveTask(ctx context.Context, req domainbilling.ReserveRequest) (domainbilling.BalanceSummary, error) {
 	state, err := s.store.ReserveTask(ctx, ReserveStoreRequest(req))
 	if err != nil {
@@ -107,8 +163,13 @@ func (s *Service) balanceSummaryFromState(state BalanceState, userGroupMultiplie
 	return domainbilling.BalanceSummary{
 		AvailablePoints:     state.AvailablePoints,
 		FrozenPoints:        state.FrozenPoints,
+		SubscriptionPoints:  state.SubscriptionPoints,
+		GiftPoints:          state.GiftPoints,
+		RechargePoints:      state.RechargePoints,
 		UserGroupMultiplier: groupMultiplier,
 		CNYPerPoint:         cnyPerPoint,
+		ActiveSubscription:  state.ActiveSubscription,
+		NextExpiringGrant:   state.NextExpiringGrant,
 	}, nil
 }
 

@@ -15,6 +15,7 @@ import (
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/internal/worker"
 )
 
@@ -36,14 +37,28 @@ func RunWorker() error {
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
+	storageBackend, err := storage.NewBackend(cfg.Storage)
+	if err != nil {
+		return fmt.Errorf("init storage backend: %w", err)
+	}
+
+	redisClient, _, err := newRedisClient(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
+	if redisClient != nil {
+		defer redisClient.Close()
+	}
 
 	assetSvc := entstore.NewAssetsStore(client)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
-	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(
 		cfg,
+		nil,
 		entstore.NewImageTaskStore(client),
-		assetservice.NewServiceWithStore(cfg.Storage, cfg.GenerationLimits, assetSvc),
+		assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, assetSvc, storageBackend),
 		billingSvc,
+		storageBackend,
 	)
 	taskSvc.SetModelRoutingSource(entstore.NewModelAdminStore(client))
 	slog.Info("database-backed task store enabled for worker")

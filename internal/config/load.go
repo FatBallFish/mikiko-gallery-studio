@@ -57,16 +57,45 @@ func applyEnvOverrides(cfg *Config) {
 	if value := os.Getenv("REDIS_URL"); value != "" {
 		cfg.Redis.URL = value
 	}
+	if value := os.Getenv("REDIS_KEY_PREFIX"); value != "" {
+		cfg.Redis.KeyPrefix = value
+	}
 	if value := os.Getenv("STORAGE_DRIVER"); value != "" {
 		cfg.Storage.Driver = value
 	}
 	if value := os.Getenv("STORAGE_LOCAL_ROOT"); value != "" {
 		cfg.Storage.LocalRoot = value
 	}
+	if value := os.Getenv("STORAGE_PUBLIC_BASE_URL"); value != "" {
+		cfg.Storage.PublicBaseURL = value
+	}
 	if value := os.Getenv("STORAGE_SHARED_VOLUME"); value != "" {
 		if parsed, err := strconv.ParseBool(value); err == nil {
 			cfg.Storage.SharedVolume = parsed
 		}
+	}
+	if value := os.Getenv("STORAGE_S3_ENDPOINT"); value != "" {
+		cfg.Storage.S3.Endpoint = value
+	}
+	if value := os.Getenv("STORAGE_S3_REGION"); value != "" {
+		cfg.Storage.S3.Region = value
+	}
+	if value := os.Getenv("STORAGE_S3_BUCKET"); value != "" {
+		cfg.Storage.S3.Bucket = value
+	}
+	if value := os.Getenv("STORAGE_S3_ACCESS_KEY_ID"); value != "" {
+		cfg.Storage.S3.AccessKeyID = value
+	}
+	if value := os.Getenv("STORAGE_S3_SECRET_ACCESS_KEY"); value != "" {
+		cfg.Storage.S3.SecretAccessKey = value
+	}
+	if value := os.Getenv("STORAGE_S3_FORCE_PATH_STYLE"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Storage.S3.ForcePathStyle = parsed
+		}
+	}
+	if value := os.Getenv("STORAGE_S3_PREFIX"); value != "" {
+		cfg.Storage.S3.Prefix = value
 	}
 	if value := os.Getenv("OPENAI_API_KEY"); value != "" {
 		cfg.Providers.OpenAI.APIKey = value
@@ -124,6 +153,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.App.Addr == "" {
 		cfg.App.Addr = ":8080"
+	}
+	if cfg.Redis.KeyPrefix == "" {
+		cfg.Redis.KeyPrefix = "pic-gallery"
 	}
 	if cfg.Auth.AccessTokenSecret == "" {
 		cfg.Auth.AccessTokenSecret = "local-dev-secret"

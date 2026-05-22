@@ -33,11 +33,20 @@ type ModelProvider func(*sql.Selector)
 // ModelRoute is the predicate function for modelroute builders.
 type ModelRoute func(*sql.Selector)
 
+// PaymentOrder is the predicate function for paymentorder builders.
+type PaymentOrder func(*sql.Selector)
+
+// PaymentWebhookEvent is the predicate function for paymentwebhookevent builders.
+type PaymentWebhookEvent func(*sql.Selector)
+
 // PointLedger is the predicate function for pointledger builders.
 type PointLedger func(*sql.Selector)
 
 // ProviderErrorPolicy is the predicate function for providererrorpolicy builders.
 type ProviderErrorPolicy func(*sql.Selector)
+
+// ProviderModel is the predicate function for providermodel builders.
+type ProviderModel func(*sql.Selector)
 
 // RedeemCode is the predicate function for redeemcode builders.
 type RedeemCode func(*sql.Selector)
@@ -48,8 +57,20 @@ type ReferenceAsset func(*sql.Selector)
 // RefreshSession is the predicate function for refreshsession builders.
 type RefreshSession func(*sql.Selector)
 
+// SubscriptionPlan is the predicate function for subscriptionplan builders.
+type SubscriptionPlan func(*sql.Selector)
+
 // User is the predicate function for user builders.
 type User func(*sql.Selector)
 
 // UserGroup is the predicate function for usergroup builders.
 type UserGroup func(*sql.Selector)
+
+// UserSubscription is the predicate function for usersubscription builders.
+type UserSubscription func(*sql.Selector)
+
+// WalletGrant is the predicate function for walletgrant builders.
+type WalletGrant func(*sql.Selector)
+
+// WalletReservationAllocation is the predicate function for walletreservationallocation builders.
+type WalletReservationAllocation func(*sql.Selector)

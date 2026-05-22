@@ -3,6 +3,7 @@ package compat_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -22,19 +23,28 @@ import (
 )
 
 func TestOpenAICompatGenerateRoutesToOpenRouter(t *testing.T) {
-	openrouterServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="
+	imageBytes := []byte{}
+	imageBytes, _ = io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(pngBase64)))
+	var openrouterServer *httptest.Server
+	openrouterServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if body["model"] != "openrouter/vision" {
+				t.Fatalf("unexpected upstream model %#v", body["model"])
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"`+openrouterServer.URL+`/files/or.png"}}]}}]}`)
+		case "/files/or.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(imageBytes)
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		if body["model"] != "openrouter/vision" {
-			t.Fatalf("unexpected upstream model %#v", body["model"])
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"https://cdn.example.com/or.png"}}]}}]}`)
 	}))
 	defer openrouterServer.Close()
 
@@ -73,7 +83,7 @@ func TestOpenAICompatGenerateRoutesToOpenRouter(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(resp.Data) != 1 || resp.Data[0].URL != "https://cdn.example.com/or.png" {
+	if len(resp.Data) != 1 || resp.Data[0].URL == "" {
 		t.Fatalf("unexpected response %#v", resp)
 	}
 }

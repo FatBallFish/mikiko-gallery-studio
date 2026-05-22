@@ -9,6 +9,8 @@ import (
 func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_ADDR", ":9090")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/1")
+	t.Setenv("REDIS_KEY_PREFIX", "test-prefix")
 	t.Setenv("OPENAI_API_KEY", "openai-test-key")
 	t.Setenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "api-key-secret-test-key")
 	t.Setenv("SMTP_HOST", "smtp.example.com")
@@ -29,6 +31,9 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	}
 	if cfg.App.Addr != ":9090" {
 		t.Fatalf("expected APP_ADDR override, got %q", cfg.App.Addr)
+	}
+	if cfg.Redis.URL != "redis://localhost:6379/1" || cfg.Redis.KeyPrefix != "test-prefix" {
+		t.Fatalf("expected Redis env overrides, got %#v", cfg.Redis)
 	}
 	if cfg.Providers.OpenAI.APIKey != "openai-test-key" {
 		t.Fatalf("expected OPENAI_API_KEY override, got %q", cfg.Providers.OpenAI.APIKey)

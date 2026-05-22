@@ -79,6 +79,11 @@ func PasswordHash(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldPasswordHash, v))
 }
 
+// EmailVerifiedAt applies equality check predicate on the "email_verified_at" field. It's identical to EmailVerifiedAtEQ.
+func EmailVerifiedAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldEmailVerifiedAt, v))
+}
+
 // Nickname applies equality check predicate on the "nickname" field. It's identical to NicknameEQ.
 func Nickname(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldNickname, v))
@@ -109,6 +114,16 @@ func TokenVersion(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTokenVersion, v))
 }
 
+// RpmLimit applies equality check predicate on the "rpm_limit" field. It's identical to RpmLimitEQ.
+func RpmLimit(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRpmLimit, v))
+}
+
+// ConcurrencyLimit applies equality check predicate on the "concurrency_limit" field. It's identical to ConcurrencyLimitEQ.
+func ConcurrencyLimit(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldConcurrencyLimit, v))
+}
+
 // DefaultLocale applies equality check predicate on the "default_locale" field. It's identical to DefaultLocaleEQ.
 func DefaultLocale(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldDefaultLocale, v))
@@ -117,6 +132,16 @@ func DefaultLocale(v string) predicate.User {
 // Theme applies equality check predicate on the "theme" field. It's identical to ThemeEQ.
 func Theme(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTheme, v))
+}
+
+// PasswordUpdatedAt applies equality check predicate on the "password_updated_at" field. It's identical to PasswordUpdatedAtEQ.
+func PasswordUpdatedAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPasswordUpdatedAt, v))
+}
+
+// ClosedAt applies equality check predicate on the "closed_at" field. It's identical to ClosedAtEQ.
+func ClosedAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldClosedAt, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -387,6 +412,56 @@ func PasswordHashEqualFold(v string) predicate.User {
 // PasswordHashContainsFold applies the ContainsFold predicate on the "password_hash" field.
 func PasswordHashContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldPasswordHash, v))
+}
+
+// EmailVerifiedAtEQ applies the EQ predicate on the "email_verified_at" field.
+func EmailVerifiedAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldEmailVerifiedAt, v))
+}
+
+// EmailVerifiedAtNEQ applies the NEQ predicate on the "email_verified_at" field.
+func EmailVerifiedAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldEmailVerifiedAt, v))
+}
+
+// EmailVerifiedAtIn applies the In predicate on the "email_verified_at" field.
+func EmailVerifiedAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldEmailVerifiedAt, vs...))
+}
+
+// EmailVerifiedAtNotIn applies the NotIn predicate on the "email_verified_at" field.
+func EmailVerifiedAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldEmailVerifiedAt, vs...))
+}
+
+// EmailVerifiedAtGT applies the GT predicate on the "email_verified_at" field.
+func EmailVerifiedAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldEmailVerifiedAt, v))
+}
+
+// EmailVerifiedAtGTE applies the GTE predicate on the "email_verified_at" field.
+func EmailVerifiedAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldEmailVerifiedAt, v))
+}
+
+// EmailVerifiedAtLT applies the LT predicate on the "email_verified_at" field.
+func EmailVerifiedAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldEmailVerifiedAt, v))
+}
+
+// EmailVerifiedAtLTE applies the LTE predicate on the "email_verified_at" field.
+func EmailVerifiedAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldEmailVerifiedAt, v))
+}
+
+// EmailVerifiedAtIsNil applies the IsNil predicate on the "email_verified_at" field.
+func EmailVerifiedAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldEmailVerifiedAt))
+}
+
+// EmailVerifiedAtNotNil applies the NotNil predicate on the "email_verified_at" field.
+func EmailVerifiedAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldEmailVerifiedAt))
 }
 
 // NicknameEQ applies the EQ predicate on the "nickname" field.
@@ -739,6 +814,86 @@ func TokenVersionLTE(v int) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldTokenVersion, v))
 }
 
+// RpmLimitEQ applies the EQ predicate on the "rpm_limit" field.
+func RpmLimitEQ(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRpmLimit, v))
+}
+
+// RpmLimitNEQ applies the NEQ predicate on the "rpm_limit" field.
+func RpmLimitNEQ(v int) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldRpmLimit, v))
+}
+
+// RpmLimitIn applies the In predicate on the "rpm_limit" field.
+func RpmLimitIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldIn(FieldRpmLimit, vs...))
+}
+
+// RpmLimitNotIn applies the NotIn predicate on the "rpm_limit" field.
+func RpmLimitNotIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldRpmLimit, vs...))
+}
+
+// RpmLimitGT applies the GT predicate on the "rpm_limit" field.
+func RpmLimitGT(v int) predicate.User {
+	return predicate.User(sql.FieldGT(FieldRpmLimit, v))
+}
+
+// RpmLimitGTE applies the GTE predicate on the "rpm_limit" field.
+func RpmLimitGTE(v int) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldRpmLimit, v))
+}
+
+// RpmLimitLT applies the LT predicate on the "rpm_limit" field.
+func RpmLimitLT(v int) predicate.User {
+	return predicate.User(sql.FieldLT(FieldRpmLimit, v))
+}
+
+// RpmLimitLTE applies the LTE predicate on the "rpm_limit" field.
+func RpmLimitLTE(v int) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldRpmLimit, v))
+}
+
+// ConcurrencyLimitEQ applies the EQ predicate on the "concurrency_limit" field.
+func ConcurrencyLimitEQ(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldConcurrencyLimit, v))
+}
+
+// ConcurrencyLimitNEQ applies the NEQ predicate on the "concurrency_limit" field.
+func ConcurrencyLimitNEQ(v int) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldConcurrencyLimit, v))
+}
+
+// ConcurrencyLimitIn applies the In predicate on the "concurrency_limit" field.
+func ConcurrencyLimitIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldIn(FieldConcurrencyLimit, vs...))
+}
+
+// ConcurrencyLimitNotIn applies the NotIn predicate on the "concurrency_limit" field.
+func ConcurrencyLimitNotIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldConcurrencyLimit, vs...))
+}
+
+// ConcurrencyLimitGT applies the GT predicate on the "concurrency_limit" field.
+func ConcurrencyLimitGT(v int) predicate.User {
+	return predicate.User(sql.FieldGT(FieldConcurrencyLimit, v))
+}
+
+// ConcurrencyLimitGTE applies the GTE predicate on the "concurrency_limit" field.
+func ConcurrencyLimitGTE(v int) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldConcurrencyLimit, v))
+}
+
+// ConcurrencyLimitLT applies the LT predicate on the "concurrency_limit" field.
+func ConcurrencyLimitLT(v int) predicate.User {
+	return predicate.User(sql.FieldLT(FieldConcurrencyLimit, v))
+}
+
+// ConcurrencyLimitLTE applies the LTE predicate on the "concurrency_limit" field.
+func ConcurrencyLimitLTE(v int) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldConcurrencyLimit, v))
+}
+
 // DefaultLocaleEQ applies the EQ predicate on the "default_locale" field.
 func DefaultLocaleEQ(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldDefaultLocale, v))
@@ -867,6 +1022,106 @@ func ThemeEqualFold(v string) predicate.User {
 // ThemeContainsFold applies the ContainsFold predicate on the "theme" field.
 func ThemeContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldTheme, v))
+}
+
+// PasswordUpdatedAtEQ applies the EQ predicate on the "password_updated_at" field.
+func PasswordUpdatedAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPasswordUpdatedAt, v))
+}
+
+// PasswordUpdatedAtNEQ applies the NEQ predicate on the "password_updated_at" field.
+func PasswordUpdatedAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPasswordUpdatedAt, v))
+}
+
+// PasswordUpdatedAtIn applies the In predicate on the "password_updated_at" field.
+func PasswordUpdatedAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPasswordUpdatedAt, vs...))
+}
+
+// PasswordUpdatedAtNotIn applies the NotIn predicate on the "password_updated_at" field.
+func PasswordUpdatedAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPasswordUpdatedAt, vs...))
+}
+
+// PasswordUpdatedAtGT applies the GT predicate on the "password_updated_at" field.
+func PasswordUpdatedAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPasswordUpdatedAt, v))
+}
+
+// PasswordUpdatedAtGTE applies the GTE predicate on the "password_updated_at" field.
+func PasswordUpdatedAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPasswordUpdatedAt, v))
+}
+
+// PasswordUpdatedAtLT applies the LT predicate on the "password_updated_at" field.
+func PasswordUpdatedAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPasswordUpdatedAt, v))
+}
+
+// PasswordUpdatedAtLTE applies the LTE predicate on the "password_updated_at" field.
+func PasswordUpdatedAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPasswordUpdatedAt, v))
+}
+
+// PasswordUpdatedAtIsNil applies the IsNil predicate on the "password_updated_at" field.
+func PasswordUpdatedAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldPasswordUpdatedAt))
+}
+
+// PasswordUpdatedAtNotNil applies the NotNil predicate on the "password_updated_at" field.
+func PasswordUpdatedAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldPasswordUpdatedAt))
+}
+
+// ClosedAtEQ applies the EQ predicate on the "closed_at" field.
+func ClosedAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldClosedAt, v))
+}
+
+// ClosedAtNEQ applies the NEQ predicate on the "closed_at" field.
+func ClosedAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldClosedAt, v))
+}
+
+// ClosedAtIn applies the In predicate on the "closed_at" field.
+func ClosedAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldClosedAt, vs...))
+}
+
+// ClosedAtNotIn applies the NotIn predicate on the "closed_at" field.
+func ClosedAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldClosedAt, vs...))
+}
+
+// ClosedAtGT applies the GT predicate on the "closed_at" field.
+func ClosedAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldClosedAt, v))
+}
+
+// ClosedAtGTE applies the GTE predicate on the "closed_at" field.
+func ClosedAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldClosedAt, v))
+}
+
+// ClosedAtLT applies the LT predicate on the "closed_at" field.
+func ClosedAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldClosedAt, v))
+}
+
+// ClosedAtLTE applies the LTE predicate on the "closed_at" field.
+func ClosedAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldClosedAt, v))
+}
+
+// ClosedAtIsNil applies the IsNil predicate on the "closed_at" field.
+func ClosedAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldClosedAt))
+}
+
+// ClosedAtNotNil applies the NotNil predicate on the "closed_at" field.
+func ClosedAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldClosedAt))
 }
 
 // And groups predicates with the AND operator between them.

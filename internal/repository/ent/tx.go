@@ -30,20 +30,34 @@ type Tx struct {
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// PaymentOrder is the client for interacting with the PaymentOrder builders.
+	PaymentOrder *PaymentOrderClient
+	// PaymentWebhookEvent is the client for interacting with the PaymentWebhookEvent builders.
+	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
 	PointLedger *PointLedgerClient
 	// ProviderErrorPolicy is the client for interacting with the ProviderErrorPolicy builders.
 	ProviderErrorPolicy *ProviderErrorPolicyClient
+	// ProviderModel is the client for interacting with the ProviderModel builders.
+	ProviderModel *ProviderModelClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
 	// ReferenceAsset is the client for interacting with the ReferenceAsset builders.
 	ReferenceAsset *ReferenceAssetClient
 	// RefreshSession is the client for interacting with the RefreshSession builders.
 	RefreshSession *RefreshSessionClient
+	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
+	SubscriptionPlan *SubscriptionPlanClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserGroup is the client for interacting with the UserGroup builders.
 	UserGroup *UserGroupClient
+	// UserSubscription is the client for interacting with the UserSubscription builders.
+	UserSubscription *UserSubscriptionClient
+	// WalletGrant is the client for interacting with the WalletGrant builders.
+	WalletGrant *WalletGrantClient
+	// WalletReservationAllocation is the client for interacting with the WalletReservationAllocation builders.
+	WalletReservationAllocation *WalletReservationAllocationClient
 
 	// lazily loaded.
 	client     *Client
@@ -184,13 +198,20 @@ func (tx *Tx) init() {
 	tx.ImageTask = NewImageTaskClient(tx.config)
 	tx.ModelProvider = NewModelProviderClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
+	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
+	tx.PaymentWebhookEvent = NewPaymentWebhookEventClient(tx.config)
 	tx.PointLedger = NewPointLedgerClient(tx.config)
 	tx.ProviderErrorPolicy = NewProviderErrorPolicyClient(tx.config)
+	tx.ProviderModel = NewProviderModelClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
 	tx.ReferenceAsset = NewReferenceAssetClient(tx.config)
 	tx.RefreshSession = NewRefreshSessionClient(tx.config)
+	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserGroup = NewUserGroupClient(tx.config)
+	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
+	tx.WalletGrant = NewWalletGrantClient(tx.config)
+	tx.WalletReservationAllocation = NewWalletReservationAllocationClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

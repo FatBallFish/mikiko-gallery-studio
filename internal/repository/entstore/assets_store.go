@@ -47,7 +47,7 @@ func (s *AssetsStore) SaveWithMetadata(ctx context.Context, userID int64, asset 
 		SetUserID(userID).
 		SetUploadSource(defaultString(metadata.UploadSource, "web")).
 		SetStatus(asset.Status).
-		SetStorageDriver("local").
+		SetStorageDriver(defaultString(asset.StorageDriver, "local")).
 		SetObjectKey(asset.ObjectKey).
 		SetMimeType(asset.MimeType).
 		SetFileSizeBytes(asset.FileSizeBytes).
@@ -102,6 +102,7 @@ func mapReferenceAssetEntity(entity *repoent.ReferenceAsset) domainassets.Refere
 		APIKeyID:      entity.APIKeyID,
 		UploadSource:  entity.UploadSource,
 		Status:        entity.Status,
+		StorageDriver: entity.StorageDriver,
 		MimeType:      entity.MimeType,
 		FileSizeBytes: entity.FileSizeBytes,
 		SHA256:        entity.Sha256,

@@ -1,8 +1,12 @@
 package imagetask_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -52,6 +56,26 @@ func (f fakeProvider) Edit(ctx context.Context, req provider.ImageRequest) (prov
 	return f.editFunc(ctx, req)
 }
 
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func withMockRemoteFetch(svc *imagetask.Service) *imagetask.Service {
+	data, _ := base64.StdEncoding.DecodeString(tinyPNGBase64)
+	svc.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"image/png"}},
+				Body:       io.NopCloser(bytes.NewReader(data)),
+			}, nil
+		}),
+	})
+	return svc
+}
+
 func TestExecuteGenerateProducesSucceededTask(t *testing.T) {
 	cfg := taskTestConfig()
 	providers := map[string]provider.ImageProvider{
@@ -63,7 +87,7 @@ func TestExecuteGenerateProducesSucceededTask(t *testing.T) {
 		}},
 	}
 
-	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
 	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID:             7,
 		AbstractModel:      "plus",
@@ -129,7 +153,7 @@ func TestExecuteFallsBackOnRetryableProviderError(t *testing.T) {
 		}},
 	}
 
-	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
 	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID:             9,
 		AbstractModel:      "plus",
@@ -182,7 +206,7 @@ func TestExecuteUsesRuntimeModelRoutingProviderOrder(t *testing.T) {
 		},
 	}}
 
-	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
 	svc.SetModelRoutingSource(routing)
 	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID:             10,
@@ -227,7 +251,7 @@ func TestExecuteUsesRuntimeModelRoutingFallbackOrder(t *testing.T) {
 		},
 	}}
 
-	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
 	svc.SetModelRoutingSource(routing)
 	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID:             12,
@@ -270,7 +294,7 @@ func TestCreateAndExecuteLeasedTaskRespectDisabledRuntimeProvider(t *testing.T) 
 		},
 	}}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, providers, store))
 	svc.SetModelRoutingSource(routing)
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
@@ -343,7 +367,7 @@ func TestDownloadImageResultRejectsLocalObjectKeyTraversal(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
 	if _, _, err := svc.DownloadImageResult(context.Background(), 22, "bad-image"); err == nil {
 		t.Fatal("expected path traversal object key to be rejected")
 	}
@@ -436,6 +460,26 @@ func (s *failingSaveStore) ListByUser(ctx context.Context, userID int64) ([]doma
 	return s.base.ListByUser(ctx, userID)
 }
 
+func (s *failingSaveStore) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.RequestPublish(ctx, userID, imageID)
+}
+
+func (s *failingSaveStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
+	return s.base.ReviewImage(ctx, imageID, nextStatus, reviewReason, publishedAt)
+}
+
+func (s *failingSaveStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListGallery(ctx, req)
+}
+
+func (s *failingSaveStore) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListPublicGallery(ctx, req)
+}
+
+func (s *failingSaveStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID)
+}
+
 func (s *failingSaveStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
 	return s.base.DeleteByID(ctx, userID, taskID)
 }
@@ -495,6 +539,26 @@ func (s *raceyTerminalStore) ListByUser(ctx context.Context, userID int64) ([]do
 	return s.base.ListByUser(ctx, userID)
 }
 
+func (s *raceyTerminalStore) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.RequestPublish(ctx, userID, imageID)
+}
+
+func (s *raceyTerminalStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
+	return s.base.ReviewImage(ctx, imageID, nextStatus, reviewReason, publishedAt)
+}
+
+func (s *raceyTerminalStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListGallery(ctx, req)
+}
+
+func (s *raceyTerminalStore) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListPublicGallery(ctx, req)
+}
+
+func (s *raceyTerminalStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID)
+}
+
 func (s *raceyTerminalStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
 	return s.base.DeleteByID(ctx, userID, taskID)
 }
@@ -526,7 +590,7 @@ func TestExecuteWithStorePersistsThroughStoreBackend(t *testing.T) {
 		}},
 	}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, providers, store))
 	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID:             21,
 		AbstractModel:      "plus",
@@ -553,7 +617,7 @@ func TestExecuteWithStorePersistsThroughStoreBackend(t *testing.T) {
 func TestCreateTaskQueuesResolvedTask(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
 
 	task, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:           33,
@@ -595,7 +659,7 @@ func TestCreateTaskReservesPointsAndRollsBackIfTaskSaveFails(t *testing.T) {
 	seedBalance(t, billingSvc, 77, "20.00000")
 
 	store := &failingSaveStore{base: imagetask.NewMemoryStore(), failSave: true}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc))
 
 	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              77,
@@ -627,7 +691,7 @@ func TestCreateTaskRetryAfterSaveFailureStillReservesPoints(t *testing.T) {
 	seedBalance(t, billingSvc, 78, "20.00000")
 
 	store := &failingSaveStore{base: imagetask.NewMemoryStore(), failSave: true}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc))
 	createReq := domainimagetask.CreateRequest{
 		TaskID:              "77777777-7777-7777-7777-777777777777",
 		UserID:              78,
@@ -672,7 +736,7 @@ func TestExecuteLeasedTaskSettlesPartialSuccessAgainstReservedEstimate(t *testin
 		}},
 	}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              81,
@@ -731,7 +795,7 @@ func TestExecuteLeasedTaskRefundsReservedPointsOnFailure(t *testing.T) {
 		}},
 	}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc))
 
 	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              82,
@@ -780,7 +844,7 @@ func TestExecuteLeasedTaskSettlesBillingWhenFirstOwnedSaveConflictsOnSuccess(t *
 		}},
 	}
 	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc))
 
 	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              83,
@@ -835,7 +899,7 @@ func TestExecuteLeasedTaskSettlesBillingWhenFirstOwnedSaveConflictsOnFailure(t *
 		}},
 	}
 	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc))
 
 	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              84,
@@ -888,7 +952,7 @@ func TestExecuteLeasedTaskDurablyPersistsSuccessAfterFirstOwnedSaveConflict(t *t
 		}},
 	}
 	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              185,
@@ -978,7 +1042,7 @@ func TestExecuteLeasedTaskDurablyPersistsFailureAfterFirstOwnedSaveConflict(t *t
 		}},
 	}
 	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              186,
@@ -1075,7 +1139,7 @@ func TestExecuteLeasedTaskReloadsPersistedTerminalSnapshotAfterReclaimRace(t *te
 		terminalSaveEntered:    make(chan struct{}),
 		releaseTerminalSave:    make(chan struct{}),
 	}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              187,
@@ -1171,7 +1235,7 @@ func TestExecuteLeasedTaskRejectsStaleWorkerAfterReclaim(t *testing.T) {
 			return provider.ImageResponse{Created: 1770000789, Data: []provider.ImageResult{{URL: "https://cdn.example.com/reclaim-owner.png"}}}, nil
 		}},
 	}
-	svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, imagetask.NewMemoryStore(), nil, billingSvc)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, imagetask.NewMemoryStore(), nil, billingSvc))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              188,
@@ -1235,7 +1299,7 @@ func TestExecuteLeasedTaskRejectsStaleWorkerAfterReclaim(t *testing.T) {
 func TestAcquireNextTaskClaimsAndReclaimsExpiredLease(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:           41,
@@ -1299,7 +1363,7 @@ func TestAcquireNextTaskClaimsAndReclaimsExpiredLease(t *testing.T) {
 func TestHeartbeatTaskExtendsLeaseForOwner(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
 
 	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:           51,
@@ -1433,7 +1497,7 @@ func TestExecuteLeasedTaskProcessesClaimedTaskWithoutCreatingNewID(t *testing.T)
 		}},
 	}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, providers, store))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:           71,
@@ -1494,7 +1558,7 @@ func TestExecuteLeasedTaskLoadsReferenceAssetsForEdit(t *testing.T) {
 		}},
 	}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersStoreAndAssets(cfg, providers, store, loader)
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAndAssets(cfg, providers, store, loader))
 
 	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
 		UserID:              72,

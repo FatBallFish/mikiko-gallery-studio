@@ -33,6 +33,47 @@ components:
               type: integer
             user_id:
               type: integer
+    PasswordLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    PasswordChangeRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password:
+          type: string
+        new_password:
+          type: string
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    PasswordResetConfirmRequest:
+      type: object
+      required: [email, code, new_password]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+        new_password:
+          type: string
+    StatusMessageResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          additionalProperties: true
     UserProfile:
       type: object
       properties:
@@ -79,12 +120,25 @@ components:
         frozen_points:
           type: string
           pattern: '^\d+\.\d{5}$'
+        subscription_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        gift_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        recharge_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
         user_group_multiplier:
           type: string
           pattern: '^\d+\.\d{5}$'
         cny_per_point:
           type: string
           pattern: '^\d+\.\d{5}$'
+        active_subscription:
+          $ref: '#/components/schemas/UserSubscription'
+        next_expiring_grant:
+          $ref: '#/components/schemas/GrantExpirySummary'
     BalanceResponse:
       type: object
       properties:
@@ -151,6 +205,133 @@ components:
               type: integer
             reference_image_count:
               type: integer
+    GrantExpirySummary:
+      type: object
+      properties:
+        grant_id:
+          type: integer
+          format: int64
+        source_type:
+          type: string
+        remaining_points:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    SubscriptionPlan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        points_grant:
+          type: string
+        price_cny:
+          type: string
+        duration_days:
+          type: integer
+        active:
+          type: boolean
+    SubscriptionPlanListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SubscriptionPlan'
+    UserSubscription:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        auto_renew:
+          type: boolean
+    UserSubscriptionResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            item:
+              $ref: '#/components/schemas/UserSubscription'
+    PaymentOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_no:
+          type: string
+        plan_code:
+          type: string
+        provider:
+          type: string
+        amount_cny:
+          type: string
+        points_grant:
+          type: string
+        status:
+          type: string
+        channel_trade_no:
+          type: string
+        paid_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PaymentOrderCreateRequest:
+      type: object
+      required: [plan_code, provider]
+      properties:
+        plan_code:
+          type: string
+        provider:
+          type: string
+          enum: [alipay, wxpay]
+    PaymentOrderResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PaymentOrder'
+    PaymentOrderListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PaymentOrder'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
     CapabilityItem:
       type: object
       properties:

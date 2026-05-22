@@ -12,6 +12,7 @@ type ReferenceAsset struct {
 	Width         int       `json:"width"`
 	Height        int       `json:"height"`
 	SHA256        string    `json:"sha256"`
+	StorageDriver string    `json:"storage_driver"`
 	ObjectKey     string    `json:"object_key"`
 	CreatedAt     time.Time `json:"created_at"`
 }

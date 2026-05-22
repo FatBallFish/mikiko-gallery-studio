@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -225,6 +227,32 @@ func (a *API) HandleEmailCodeLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *API) HandlePasswordLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	user, session, err := a.auth.LoginWithPassword(req.Email, req.Password)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.setRefreshCookie(w, session)
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"access_token":       session.AccessToken,
+		"expires_in_seconds": int(time.Until(session.AccessTokenExpiresAt).Seconds()),
+		"user_id":            user.ID,
+	})
+}
+
 func (a *API) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, r)
@@ -367,16 +395,58 @@ func (a *API) HandleAvatar(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, profilePayload(&updated))
 }
 
+func (a *API) HandleCloseAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	closed, err := a.auth.CloseAccount(user.ID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: a.cfg.Auth.RefreshCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "user.account_close", "user", fmt.Sprintf("%d", user.ID), nil)
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"id":        closed.ID,
+		"status":    closed.Status,
+		"closed_at": closed.ClosedAt,
+	})
+}
+
 func (a *API) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	if _, appErr := a.requireUser(r); appErr != nil {
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	httpx.WriteError(w, r, errs.New(http.StatusNotImplemented, errs.CodeInternal, "password change is not enabled for email-code accounts"))
+	var req struct {
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	if _, err := a.auth.ChangePassword(user.ID, req.OldPassword, req.NewPassword); err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	if cookie, err := r.Cookie(a.cfg.Auth.RefreshCookieName); err == nil {
+		_ = a.auth.Logout(cookie.Value)
+	}
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "auth.password_change", "user", fmt.Sprintf("%d", user.ID), nil)
+	http.SetCookie(w, &http.Cookie{Name: a.cfg.Auth.RefreshCookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"status": "password_updated"})
 }
 
 func (a *API) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +454,55 @@ func (a *API) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	httpx.WriteError(w, r, errs.New(http.StatusNotImplemented, errs.CodeInternal, "password reset is not enabled for email-code accounts"))
+	httpx.WriteError(w, r, errs.BadRequest("use /api/agent/auth/v1/password/reset/request and /confirm"))
+}
+
+func (a *API) HandlePasswordResetRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	if err := a.auth.RequestPasswordReset(req.Email); err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusAccepted, map[string]any{
+		"email":  strings.TrimSpace(strings.ToLower(req.Email)),
+		"status": "queued",
+	})
+}
+
+func (a *API) HandlePasswordResetConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var req struct {
+		Email       string `json:"email"`
+		Code        string `json:"code"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	user, err := a.auth.ConfirmPasswordReset(req.Email, req.Code, req.NewPassword)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "auth.password_reset", "user", fmt.Sprintf("%d", user.ID), nil)
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"status":  "password_reset",
+		"user_id": user.ID,
+	})
 }
 
 func (a *API) HandleLogout(w http.ResponseWriter, r *http.Request) {
@@ -493,6 +611,128 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
+func (a *API) HandleBillingPlans(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	if _, appErr := a.requireUser(r); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	result, err := a.billing.ListPlans(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": result})
+}
+
+func (a *API) HandleBillingSubscription(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	result, err := a.billing.GetSubscription(r.Context(), user.ID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"item": result})
+}
+
+func (a *API) HandleBillingOrders(w http.ResponseWriter, r *http.Request) {
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page := 1
+		pageSize := 20
+		if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed <= 0 {
+				httpx.WriteError(w, r, errs.BadRequest("invalid page"))
+				return
+			}
+			page = parsed
+		}
+		if raw := strings.TrimSpace(r.URL.Query().Get("page_size")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed <= 0 {
+				httpx.WriteError(w, r, errs.BadRequest("invalid page_size"))
+				return
+			}
+			pageSize = parsed
+		}
+		result, err := a.billing.ListOrders(r.Context(), domainbilling.ListOrdersRequest{UserID: user.ID, Page: page, PageSize: pageSize})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, result)
+	case http.MethodPost:
+		var req struct {
+			PlanCode string `json:"plan_code"`
+			Provider string `json:"provider"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		result, err := a.billing.CreateOrder(r.Context(), domainbilling.CreateOrderRequest{
+			UserID:   user.ID,
+			PlanCode: strings.TrimSpace(req.PlanCode),
+			Provider: strings.TrimSpace(req.Provider),
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, result)
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+	}
+}
+
+func (a *API) HandleBillingOrderDetail(w http.ResponseWriter, r *http.Request) {
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	orderID, action, parseErr := parseBillingOrderPath(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	switch {
+	case r.Method == http.MethodGet && action == "":
+		result, err := a.billing.GetOrder(r.Context(), user.ID, orderID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, result)
+	case r.Method == http.MethodPost && action == "cancel":
+		result, err := a.billing.CancelOrder(r.Context(), user.ID, orderID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, result)
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+	}
 }
 
 func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
@@ -841,6 +1081,36 @@ func (a *API) HandleRedeemCode(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, summary)
 }
 
+func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	providerCode := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/payments/webhooks/"), "/")
+	if providerCode == "" {
+		httpx.WriteError(w, r, errs.BadRequest("provider is required"))
+		return
+	}
+	var req struct {
+		OrderNo string `json:"order_no"`
+		TradeNo string `json:"trade_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
+		Provider: providerCode,
+		OrderNo:  strings.TrimSpace(req.OrderNo),
+		TradeNo:  strings.TrimSpace(req.TradeNo),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
 func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, r)
@@ -1074,6 +1344,60 @@ func (a *API) HandleAgentTaskDetail(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, task)
 }
 
+func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	imageID, action, parseErr := parseAgentGalleryImageAction(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	if action != "publish" {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
+		return
+	}
+	if !a.adminConfigBool(r.Context(), "public_gallery", "publish_request_enabled", false) {
+		httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "publish request is disabled"))
+		return
+	}
+
+	ownedImage, err := a.findOwnedGalleryImage(r.Context(), user.ID, imageID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	allowed, reason, err := a.moderatePublishRequest(r.Context(), ownedImage.Prompt)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	if !allowed {
+		rejected, reviewErr := a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityRejected, defaultString(reason, "auto_moderation_blocked"), nil)
+		if reviewErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(reviewErr))
+			return
+		}
+		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_rejected", "image_result", imageID, map[string]any{"reason": rejected.ReviewReason})
+		httpx.WriteSuccess(w, r, http.StatusOK, rejected)
+		return
+	}
+
+	image, err := a.tasks.RequestPublish(r.Context(), user.ID, imageID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_request", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
+	httpx.WriteSuccess(w, r, http.StatusAccepted, image)
+}
+
 func (a *API) HandleAgentHistoryTasks(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1137,6 +1461,255 @@ func (a *API) HandleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		"admin_id":           session.AdminID,
 		"email":              session.Email,
 		"role":               session.Role,
+	})
+}
+
+func (a *API) HandleOpenGalleryImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if !a.adminConfigBool(r.Context(), "public_gallery", "gallery_enabled", false) {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery is disabled"))
+		return
+	}
+	page, queryErr := parsePositiveIntQuery(r, "page", 1)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	result, err := a.tasks.ListPublicGallery(r.Context(), domainimagetask.GalleryListRequest{Page: page, PageSize: pageSize})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": result.Items,
+		"pagination": map[string]any{
+			"page":      result.Page,
+			"page_size": result.PageSize,
+			"total":     result.Total,
+		},
+	})
+}
+
+func (a *API) HandleOpenGalleryImageDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if !a.adminConfigBool(r.Context(), "public_gallery", "gallery_enabled", false) {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery is disabled"))
+		return
+	}
+	imageID := strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/gallery/images/")
+	image, err := a.tasks.GetPublicImage(r.Context(), imageID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, image)
+}
+
+func (a *API) HandleAdminImageReviews(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if _, appErr := a.requireAdmin(r); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	page, queryErr := parsePositiveIntQuery(r, "page", 1)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	result, err := a.tasks.ListGallery(r.Context(), domainimagetask.GalleryListRequest{
+		Page:     page,
+		PageSize: pageSize,
+		Status:   r.URL.Query().Get("status"),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": result.Items,
+		"pagination": map[string]any{
+			"page":      result.Page,
+			"page_size": result.PageSize,
+			"total":     result.Total,
+		},
+	})
+}
+
+func (a *API) HandleAdminImageReviewDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	imageID, action, parseErr := parseAdminImageReviewAction(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+	}
+	var (
+		image   domainimagetask.GalleryImage
+		err     error
+		auditOp string
+	)
+	switch action {
+	case "approve":
+		now := time.Now().UTC()
+		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityApproved, "", &now)
+		auditOp = "image_review.approve"
+	case "reject":
+		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityRejected, defaultString(strings.TrimSpace(req.Reason), "rejected by admin"), nil)
+		auditOp = "image_review.reject"
+	case "unpublish":
+		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityUnpublished, defaultString(strings.TrimSpace(req.Reason), "unpublished by admin"), nil)
+		auditOp = "image_review.unpublish"
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "image review route not found"))
+		return
+	}
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), auditOp, "image_result", imageID, map[string]any{"status": image.VisibilityStatus, "reason": image.ReviewReason})
+	httpx.WriteSuccess(w, r, http.StatusOK, image)
+}
+
+func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if _, appErr := a.requireAdmin(r); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+
+	callRecords, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{Page: 1, PageSize: 200})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	users, err := a.adminUser.ListUsers(r.Context(), domainadminuser.ListRequest{Page: 1, PageSize: 100})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	providers, err := a.modelAdmin.ListProviders(r.Context(), domainmodeladmin.ProviderListRequest{Page: 1, PageSize: 100})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	reviews, err := a.tasks.ListGallery(r.Context(), domainimagetask.GalleryListRequest{Page: 1, PageSize: 100, Status: domainimagetask.VisibilityPendingReview})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	audits, err := a.audit.List(r.Context(), domainaudit.ListRequest{Page: 1, PageSize: 6})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+
+	var (
+		successCount      int
+		failedCount       int
+		totalDurationSec  float64
+		durationCount     int
+		totalActualPoints float64
+	)
+	for _, item := range callRecords.Items {
+		switch item.Status {
+		case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed:
+			successCount++
+		case domainimagetask.StatusFailed, domainimagetask.StatusRejected:
+			failedCount++
+		}
+		if item.StartedAt != nil && item.FinishedAt != nil && item.FinishedAt.After(*item.StartedAt) {
+			totalDurationSec += item.FinishedAt.Sub(*item.StartedAt).Seconds()
+			durationCount++
+		}
+		if value, parseErr := strconv.ParseFloat(strings.TrimSpace(item.ActualPoints), 64); parseErr == nil {
+			totalActualPoints += value
+		}
+	}
+	totalRecords := len(callRecords.Items)
+	successRate := 0.0
+	if totalRecords > 0 {
+		successRate = float64(successCount) / float64(totalRecords) * 100
+	}
+	avgDuration := 0.0
+	if durationCount > 0 {
+		avgDuration = totalDurationSec / float64(durationCount)
+	}
+	activeUsers := 0
+	closedUsers := 0
+	disabledUsers := 0
+	for _, user := range users.Items {
+		switch user.Status {
+		case "active":
+			activeUsers++
+		case "closed":
+			closedUsers++
+		case "disabled":
+			disabledUsers++
+		}
+	}
+	providerItems := make([]map[string]any, 0, len(providers.Items))
+	for _, item := range providers.Items {
+		providerItems = append(providerItems, map[string]any{
+			"provider_code": item.ProviderCode,
+			"provider_type": item.ProviderType,
+			"health_status": item.HealthStatus,
+			"enabled":       item.Enabled,
+		})
+	}
+
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"metrics": []map[string]any{
+			{"key": "success_rate", "label": "成功率", "value": fmt.Sprintf("%.2f%%", successRate), "detail": fmt.Sprintf("最近 %d 条调用", totalRecords)},
+			{"key": "avg_duration_sec", "label": "平均耗时", "value": fmt.Sprintf("%.2fs", avgDuration), "detail": "已完成任务平均执行时长"},
+			{"key": "actual_points", "label": "积分消耗", "value": fmt.Sprintf("%.5f", totalActualPoints), "detail": "最近调用累计 actual_points"},
+			{"key": "active_users", "label": "活跃用户", "value": strconv.Itoa(activeUsers), "detail": fmt.Sprintf("禁用 %d / 注销 %d", disabledUsers, closedUsers)},
+		},
+		"providers": providerItems,
+		"queue": []map[string]any{
+			{"item": "公开图审核", "count": strconv.Itoa(reviews.Total), "detail": "待人工审核图片"},
+			{"item": "失败任务", "count": strconv.Itoa(failedCount), "detail": "最近调用中失败或被拒绝的任务"},
+			{"item": "用户总量", "count": strconv.Itoa(users.Total), "detail": "当前用户账户总数"},
+		},
+		"audit": audits.Items,
 	})
 }
 
@@ -1231,12 +1804,54 @@ func (a *API) HandleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	logs, err := a.audit.List(r.Context())
+	page, queryErr := parsePositiveIntQuery(r, "page", 1)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	if pageSize > 100 {
+		httpx.WriteError(w, r, errs.BadRequest("page_size must be at most 100"))
+		return
+	}
+	createdFrom, queryErr := parseOptionalTime(r.URL.Query().Get("created_from"), "created_from")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	createdTo, queryErr := parseOptionalTime(r.URL.Query().Get("created_to"), "created_to")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	logs, err := a.audit.List(r.Context(), domainaudit.ListRequest{
+		Page:        page,
+		PageSize:    pageSize,
+		ActorType:   r.URL.Query().Get("actor_type"),
+		ActorID:     r.URL.Query().Get("actor_id"),
+		Action:      r.URL.Query().Get("action"),
+		TargetType:  r.URL.Query().Get("target_type"),
+		TargetID:    r.URL.Query().Get("target_id"),
+		Result:      r.URL.Query().Get("result"),
+		CreatedFrom: createdFrom,
+		CreatedTo:   createdTo,
+	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": logs})
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": logs.Items,
+		"pagination": map[string]any{
+			"page":      logs.Page,
+			"page_size": logs.PageSize,
+			"total":     logs.Total,
+		},
+	})
 }
 
 func (a *API) HandleAdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -1318,6 +1933,9 @@ func (a *API) HandleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
+		if updated.Status == "disabled" || updated.Status == "closed" {
+			_ = a.auth.RevokeUserSessions(userID)
+		}
 		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.status_update", "user", fmt.Sprintf("%d", userID), map[string]any{"status": updated.Status, "token_version": updated.TokenVersion}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
@@ -1357,8 +1975,172 @@ func (a *API) HandleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, balance)
+	case "reset-password":
+		if r.Method != http.MethodPost {
+			httpx.WriteError(w, r, methodNotAllowedError())
+			return
+		}
+		var req struct {
+			NewPassword string `json:"new_password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		if _, err := a.auth.SetPassword(userID, req.NewPassword); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.password_reset", "user", fmt.Sprintf("%d", userID), nil); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"status": "password_reset"})
+	case "limits":
+		if r.Method != http.MethodPost {
+			httpx.WriteError(w, r, methodNotAllowedError())
+			return
+		}
+		var req struct {
+			RPMLimit         int `json:"rpm_limit"`
+			ConcurrencyLimit int `json:"concurrency_limit"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.adminUser.UpdateUserLimits(r.Context(), domainadminuser.LimitsRequest{
+			UserID:           userID,
+			RPMLimit:         req.RPMLimit,
+			ConcurrencyLimit: req.ConcurrencyLimit,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.limits_update", "user", fmt.Sprintf("%d", userID), map[string]any{"rpm_limit": req.RPMLimit, "concurrency_limit": req.ConcurrencyLimit}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case "group":
+		if r.Method != http.MethodPost {
+			httpx.WriteError(w, r, methodNotAllowedError())
+			return
+		}
+		var req struct {
+			UserGroupCode string `json:"user_group_code"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.adminUser.AssignUserGroup(r.Context(), domainadminuser.GroupAssignmentRequest{
+			UserID:        userID,
+			UserGroupCode: req.UserGroupCode,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.group_update", "user", fmt.Sprintf("%d", userID), map[string]any{"user_group_code": updated.UserGroupCode}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found"))
+	}
+}
+
+func (a *API) HandleAdminUserGroups(w http.ResponseWriter, r *http.Request) {
+	if _, appErr := a.requireAdmin(r); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		result, err := a.adminUser.ListUserGroups(r.Context(), domainadminuser.UserGroupListRequest{
+			Page:     page,
+			PageSize: pageSize,
+			Query:    r.URL.Query().Get("query"),
+			Status:   r.URL.Query().Get("status"),
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+			"items": result.Items,
+			"pagination": map[string]any{
+				"page":      result.Page,
+				"page_size": result.PageSize,
+				"total":     result.Total,
+			},
+		})
+	case http.MethodPost:
+		group, ok := a.decodeUserGroupWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.adminUser.CreateUserGroup(r.Context(), group)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		httpx.WriteError(w, r, methodNotAllowedError())
+	}
+}
+
+func (a *API) HandleAdminUserGroupDetail(w http.ResponseWriter, r *http.Request) {
+	if _, appErr := a.requireAdmin(r); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	groupCode, parseErr := parseUserGroupCode(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		group, err := a.adminUser.GetUserGroup(r.Context(), groupCode)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, group)
+	case http.MethodPut:
+		req, ok := a.decodeUserGroupWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, err := a.adminUser.UpdateUserGroup(r.Context(), groupCode, req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if err := a.adminUser.DeleteUserGroup(r.Context(), groupCode); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		httpx.WriteError(w, r, methodNotAllowedError())
 	}
 }
 
@@ -1698,6 +2480,110 @@ func (a *API) HandleAdminModelProviderDetail(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_provider.delete", "model_provider", providerCode, nil); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminProviderModels(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		enabled, parseErr := parseOptionalBoolQuery(r, "enabled")
+		if parseErr != nil {
+			httpx.WriteError(w, r, parseErr)
+			return
+		}
+		result, err := a.modelAdmin.ListProviderModels(r.Context(), domainmodeladmin.ProviderModelListRequest{
+			Page:         page,
+			PageSize:     pageSize,
+			ProviderCode: r.URL.Query().Get("provider_code"),
+			ModelCode:    r.URL.Query().Get("model_code"),
+			Enabled:      enabled,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedProviderModelsPayload(result.Items, result.Page, result.PageSize, result.Total))
+	case http.MethodPost:
+		req, ok := decodeAdminProviderModelRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.modelAdmin.CreateProviderModel(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "provider_model.create", "provider_model", fmt.Sprintf("%d", created.ID), map[string]any{"provider_code": created.ProviderCode, "model_code": created.ModelCode}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminProviderModelDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	providerModelID, parseErr := parseAdminProviderModelID(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		item, err := a.modelAdmin.GetProviderModel(r.Context(), providerModelID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, item)
+	case http.MethodPut:
+		req, ok := decodeAdminProviderModelRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, err := a.modelAdmin.UpdateProviderModel(r.Context(), providerModelID, req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "provider_model.update", "provider_model", fmt.Sprintf("%d", updated.ID), map[string]any{"provider_code": updated.ProviderCode, "model_code": updated.ModelCode}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if err := a.modelAdmin.DeleteProviderModel(r.Context(), providerModelID); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "provider_model.delete", "provider_model", fmt.Sprintf("%d", providerModelID), nil); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
@@ -2236,6 +3122,9 @@ func (a *API) requireUser(r *http.Request) (*domainauth.User, *errs.Error) {
 	if user.Status == "disabled" {
 		return nil, errs.New(http.StatusForbidden, errs.CodeUserDisabled, "user has been disabled")
 	}
+	if user.Status == "closed" {
+		return nil, errs.New(http.StatusForbidden, errs.CodeForbidden, "user account has been closed")
+	}
 	if user.TokenVersion != claims.TokenVersion {
 		return nil, errs.New(http.StatusUnauthorized, errs.CodeAuthAccessExpired, "access token has been revoked")
 	}
@@ -2341,6 +3230,9 @@ func (a *API) requireAPIKeyUserActive(identity domainapikey.Identity) *errs.Erro
 	if user.Status == "disabled" {
 		return errs.New(http.StatusForbidden, errs.CodeUserDisabled, "user has been disabled")
 	}
+	if user.Status == "closed" {
+		return errs.New(http.StatusForbidden, errs.CodeForbidden, "user account has been closed")
+	}
 	return nil
 }
 
@@ -2393,6 +3285,35 @@ func parseAdminUserAction(path string) (int64, string, *errs.Error) {
 	return 0, "", errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found")
 }
 
+func parseUserGroupCode(path string) (string, *errs.Error) {
+	groupCode := strings.ToLower(strings.Trim(strings.TrimPrefix(path, "/api/ops/admin/v1/user-groups/"), "/"))
+	if groupCode == "" {
+		return "", errs.BadRequest("group_code is required")
+	}
+	return groupCode, nil
+}
+
+func (a *API) decodeUserGroupWriteRequest(w http.ResponseWriter, r *http.Request) (domainadminuser.UserGroupWriteRequest, bool) {
+	var req struct {
+		GroupCode   string  `json:"group_code"`
+		GroupName   string  `json:"group_name"`
+		Multiplier  string  `json:"multiplier"`
+		Status      string  `json:"status"`
+		Description *string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainadminuser.UserGroupWriteRequest{}, false
+	}
+	return domainadminuser.UserGroupWriteRequest{
+		GroupCode:   req.GroupCode,
+		GroupName:   req.GroupName,
+		Multiplier:  req.Multiplier,
+		Status:      req.Status,
+		Description: req.Description,
+	}, true
+}
+
 func (a *API) decodeAdminRedeemCreateRequest(w http.ResponseWriter, r *http.Request) (domainredeem.CreateRequest, bool) {
 	var req struct {
 		Code           string `json:"code"`
@@ -2430,6 +3351,23 @@ func (a *API) decodeAdminRedeemCreateRequest(w http.ResponseWriter, r *http.Requ
 	}, true
 }
 
+func parseBillingOrderPath(path string) (int64, string, *errs.Error) {
+	trimmed := strings.Trim(strings.TrimPrefix(path, "/api/agent/billing/v1/orders/"), "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return 0, "", errs.BadRequest("invalid order_id")
+	}
+	orderID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || orderID <= 0 {
+		return 0, "", errs.BadRequest("invalid order_id")
+	}
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+	return orderID, action, nil
+}
+
 func parseAdminRedeemCodeAction(path string) (int64, string, *errs.Error) {
 	trimmed := strings.Trim(strings.TrimPrefix(path, "/api/ops/admin/v1/redeem-codes/"), "/")
 	parts := strings.Split(trimmed, "/")
@@ -2444,6 +3382,134 @@ func parseAdminRedeemCodeAction(path string) (int64, string, *errs.Error) {
 		return codeID, parts[1], nil
 	}
 	return 0, "", errs.New(http.StatusNotFound, errs.CodeNotFound, "admin redeem code route not found")
+}
+
+func parseAgentGalleryImageAction(path string) (string, string, *errs.Error) {
+	trimmed := strings.TrimPrefix(path, "/api/agent/gallery/v1/images/")
+	parts := strings.Split(strings.Trim(trimmed, "/"), "/")
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0], parts[1], nil
+	}
+	return "", "", errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found")
+}
+
+func parseAdminImageReviewAction(path string) (string, string, *errs.Error) {
+	trimmed := strings.TrimPrefix(path, "/api/ops/admin/v1/image-reviews/")
+	parts := strings.Split(strings.Trim(trimmed, "/"), ":")
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0], parts[1], nil
+	}
+	return "", "", errs.New(http.StatusNotFound, errs.CodeNotFound, "image review route not found")
+}
+
+func (a *API) adminConfigBool(ctx context.Context, tabKey, configKey string, fallback bool) bool {
+	tab, err := a.admin.GetTab(ctx, tabKey)
+	if err != nil {
+		return fallback
+	}
+	for _, item := range tab.Items {
+		if item.ConfigKey != configKey {
+			continue
+		}
+		if value, ok := item.ConfigValue["value"].(bool); ok {
+			return value
+		}
+		if value, ok := item.ConfigValue["value"].(string); ok {
+			parsed, parseErr := strconv.ParseBool(strings.TrimSpace(value))
+			if parseErr == nil {
+				return parsed
+			}
+		}
+	}
+	return fallback
+}
+
+func (a *API) moderatePublishRequest(ctx context.Context, prompt string) (bool, string, error) {
+	if !a.cfg.Providers.OpenAI.Enabled || strings.TrimSpace(a.cfg.Providers.OpenAI.BaseURL) == "" || strings.TrimSpace(a.cfg.Providers.OpenAI.APIKey) == "" {
+		return false, "", errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "moderation provider is unavailable")
+	}
+	body, err := json.Marshal(map[string]any{
+		"model": "omni-moderation-latest",
+		"input": prompt,
+	})
+	if err != nil {
+		return false, "", errs.Internal("failed to build moderation request")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.Providers.OpenAI.BaseURL, "/")+"/moderations", bytes.NewReader(body))
+	if err != nil {
+		return false, "", errs.Internal("failed to build moderation request")
+	}
+	req.Header.Set("Authorization", "Bearer "+a.cfg.Providers.OpenAI.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, "", errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "moderation provider request failed")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return false, "", errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "moderation provider rejected request")
+	}
+	var payload struct {
+		Results []struct {
+			Flagged    bool            `json:"flagged"`
+			Categories map[string]bool `json:"categories"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return false, "", errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "moderation provider returned invalid response")
+	}
+	if len(payload.Results) == 0 {
+		return true, "", nil
+	}
+	if !payload.Results[0].Flagged {
+		return true, "", nil
+	}
+	reasons := make([]string, 0, len(payload.Results[0].Categories))
+	for key, flagged := range payload.Results[0].Categories {
+		if flagged {
+			reasons = append(reasons, key)
+		}
+	}
+	sort.Strings(reasons)
+	if len(reasons) == 0 {
+		return false, "auto_moderation_blocked", nil
+	}
+	return false, "auto_moderation_blocked:" + strings.Join(reasons, ","), nil
+}
+
+func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	tasks, err := a.tasks.ListByUser(ctx, userID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	for _, task := range tasks {
+		for _, result := range task.Results {
+			if result.ID != imageID {
+				continue
+			}
+			return domainimagetask.GalleryImage{
+				ID:               result.ID,
+				TaskID:           task.ID,
+				UserID:           task.UserID,
+				Prompt:           task.Prompt,
+				AbstractModel:    task.AbstractModel,
+				TaskType:         task.TaskType,
+				URL:              result.URL,
+				DownloadURL:      result.DownloadURL,
+				MimeType:         result.MimeType,
+				FileSizeBytes:    result.FileSizeBytes,
+				Width:            result.Width,
+				Height:           result.Height,
+				SHA256:           result.SHA256,
+				ObjectKey:        result.ObjectKey,
+				StorageDriver:    result.StorageDriver,
+				VisibilityStatus: defaultString(result.VisibilityStatus, domainimagetask.VisibilityPrivate),
+				ReviewReason:     result.ReviewReason,
+				PublishedAt:      result.PublishedAt,
+			}, nil
+		}
+	}
+	return domainimagetask.GalleryImage{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "image not found")
 }
 
 func parseOptionalTime(raw, field string) (time.Time, *errs.Error) {
@@ -2514,6 +3580,58 @@ func decodeAdminModelProviderRequest(w http.ResponseWriter, r *http.Request) (do
 	}, true
 }
 
+func decodeAdminProviderModelRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.ProviderModelWriteRequest, bool) {
+	var req struct {
+		ProviderCode           string   `json:"provider_code"`
+		ModelCode              string   `json:"model_code"`
+		CompatMode             string   `json:"compat_mode"`
+		SupportsImageInput     bool     `json:"supports_image_input"`
+		SupportsMask           bool     `json:"supports_mask"`
+		SupportedQualities     []string `json:"supported_qualities"`
+		SupportedRatios        []string `json:"supported_ratios"`
+		MaxImageCount          int      `json:"max_image_count"`
+		MaxReferenceImageCount int      `json:"max_reference_image_count"`
+		TimeoutMS              int      `json:"timeout_ms"`
+		InputCost              string   `json:"input_cost"`
+		OutputCost             string   `json:"output_cost"`
+		Currency               string   `json:"currency"`
+		HealthStatus           string   `json:"health_status"`
+		LastHealthCheckedAt    string   `json:"last_health_checked_at"`
+		Enabled                bool     `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.ProviderModelWriteRequest{}, false
+	}
+	lastHealthCheckedAt, parseErr := parseOptionalTime(req.LastHealthCheckedAt, "last_health_checked_at")
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return domainmodeladmin.ProviderModelWriteRequest{}, false
+	}
+	var checkedAt *time.Time
+	if !lastHealthCheckedAt.IsZero() {
+		checkedAt = &lastHealthCheckedAt
+	}
+	return domainmodeladmin.ProviderModelWriteRequest{
+		ProviderCode:           req.ProviderCode,
+		ModelCode:              req.ModelCode,
+		CompatMode:             req.CompatMode,
+		SupportsImageInput:     req.SupportsImageInput,
+		SupportsMask:           req.SupportsMask,
+		SupportedQualities:     append([]string(nil), req.SupportedQualities...),
+		SupportedRatios:        append([]string(nil), req.SupportedRatios...),
+		MaxImageCount:          req.MaxImageCount,
+		MaxReferenceImageCount: req.MaxReferenceImageCount,
+		TimeoutMS:              req.TimeoutMS,
+		InputCost:              req.InputCost,
+		OutputCost:             req.OutputCost,
+		Currency:               req.Currency,
+		HealthStatus:           req.HealthStatus,
+		LastHealthCheckedAt:    checkedAt,
+		Enabled:                req.Enabled,
+	}, true
+}
+
 func decodeAdminModelRouteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteWriteRequest, bool) {
 	var req struct {
 		GroupCode       string `json:"group_code"`
@@ -2553,6 +3671,18 @@ func parseAdminModelRouteID(path string) (int64, *errs.Error) {
 	return routeID, nil
 }
 
+func parseAdminProviderModelID(path string) (int64, *errs.Error) {
+	raw := strings.Trim(strings.TrimPrefix(path, "/api/ops/admin/v1/provider-models/"), "/")
+	if raw == "" || strings.Contains(raw, "/") {
+		return 0, errs.BadRequest("invalid provider_model_id")
+	}
+	providerModelID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || providerModelID <= 0 {
+		return 0, errs.BadRequest("invalid provider_model_id")
+	}
+	return providerModelID, nil
+}
+
 func pagedRedeemCodesPayload(items []domainredeem.Code, page, pageSize, total int) map[string]any {
 	return map[string]any{
 		"items": items,
@@ -2565,6 +3695,17 @@ func pagedRedeemCodesPayload(items []domainredeem.Code, page, pageSize, total in
 }
 
 func pagedModelProvidersPayload(items []domainmodeladmin.Provider, page, pageSize, total int) map[string]any {
+	return map[string]any{
+		"items": items,
+		"pagination": map[string]any{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
+	}
+}
+
+func pagedProviderModelsPayload(items []domainmodeladmin.ProviderModel, page, pageSize, total int) map[string]any {
 	return map[string]any{
 		"items": items,
 		"pagination": map[string]any{

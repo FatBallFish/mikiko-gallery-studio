@@ -8,5 +8,5 @@ import (
 
 type Store interface {
 	Create(ctx context.Context, log domainaudit.Log) (domainaudit.Log, error)
-	List(ctx context.Context) ([]domainaudit.Log, error)
+	List(ctx context.Context, req domainaudit.ListRequest) (domainaudit.ListPage, error)
 }

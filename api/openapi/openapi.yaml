@@ -20,6 +20,8 @@ tags:
   - name: Admin Redeem Codes
   - name: Admin Call Records
   - name: Admin Model Routing
+  - name: Admin Gallery
+  - name: Admin Metrics
   - name: OpenAI Compat
 paths:
   /:
@@ -115,6 +117,24 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/SessionResponse
+  /api/agent/auth/v1/login/password:
+    post:
+      tags: [Agent Auth]
+      summary: Login with password
+      operationId: postAgentAuthPasswordLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/PasswordLoginRequest
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/SessionResponse
   /api/agent/auth/v1/session/refresh:
     post:
       tags: [Agent Auth]
@@ -127,6 +147,76 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/SessionResponse
+  /api/agent/auth/v1/logout:
+    post:
+      tags: [Agent Auth]
+      summary: Logout current session
+      operationId: postAgentAuthLogout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/StatusMessageResponse
+  /api/agent/auth/v1/password/change:
+    post:
+      tags: [Agent Auth]
+      summary: Change current user password
+      operationId: postAgentAuthPasswordChange
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/PasswordChangeRequest
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/StatusMessageResponse
+  /api/agent/auth/v1/password/reset/request:
+    post:
+      tags: [Agent Auth]
+      summary: Request a password reset code
+      operationId: postAgentAuthPasswordResetRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/PasswordResetRequest
+      responses:
+        '202':
+          description: Reset request accepted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/StatusMessageResponse
+  /api/agent/auth/v1/password/reset/confirm:
+    post:
+      tags: [Agent Auth]
+      summary: Confirm password reset with email code
+      operationId: postAgentAuthPasswordResetConfirm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/PasswordResetConfirmRequest
+      responses:
+        '200':
+          description: Password reset completed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/StatusMessageResponse
   /api/agent/user/v1/profile:
     get:
       tags: [Agent User]
@@ -160,6 +250,20 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/UserProfileResponse
+  /api/agent/user/v1/account/close:
+    post:
+      tags: [Agent User]
+      summary: Close current user account
+      operationId: postAgentUserAccountClose
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account closed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/StatusMessageResponse
   /api/agent/billing/v1/balance:
     get:
       tags: [Agent Billing]
@@ -237,6 +341,112 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/billing/v1/plans:
+    get:
+      tags: [Agent Billing]
+      summary: List subscription plans
+      operationId: getAgentBillingPlans
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Subscription plans
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/SubscriptionPlanListResponse
+  /api/agent/billing/v1/subscription:
+    get:
+      tags: [Agent Billing]
+      summary: Get active subscription
+      operationId: getAgentBillingSubscription
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active subscription snapshot
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/UserSubscriptionResponse
+  /api/agent/billing/v1/orders:
+    get:
+      tags: [Agent Billing]
+      summary: List payment orders
+      operationId: getAgentBillingOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+      responses:
+        '200':
+          description: Payment orders
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/PaymentOrderListResponse
+    post:
+      tags: [Agent Billing]
+      summary: Create a payment order
+      operationId: postAgentBillingOrders
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/PaymentOrderCreateRequest
+      responses:
+        '201':
+          description: Payment order created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/PaymentOrderResponse
+  /api/agent/billing/v1/orders/{order_id}:
+    get:
+      tags: [Agent Billing]
+      summary: Get payment order detail
+      operationId: getAgentBillingOrderDetail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Payment order detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/PaymentOrderResponse
+  /api/agent/billing/v1/orders/{order_id}/cancel:
+    post:
+      tags: [Agent Billing]
+      summary: Cancel a pending payment order
+      operationId: postAgentBillingOrderCancel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Payment order canceled
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/PaymentOrderResponse
   /api/agent/billing/v1/estimate:
     get:
       tags: [Agent Billing]
@@ -522,6 +732,89 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
+  /api/agent/gallery/v1/images/{image_id}/publish:
+    post:
+      tags: [Agent Image]
+      summary: Request image publication to the public gallery
+      operationId: postAgentGalleryPublish
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Publish request auto-rejected by moderation
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+        '202':
+          description: Publish request queued for review
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/open/image/v1/gallery/images:
+    get:
+      tags: [Open Image API]
+      summary: List public gallery images
+      operationId: getOpenGalleryImages
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+      responses:
+        '200':
+          description: Public gallery images
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminGalleryReviewListResponse
+  /api/open/image/v1/gallery/images/{image_id}:
+    get:
+      tags: [Open Image API]
+      summary: Get public gallery image detail
+      operationId: getOpenGalleryImageDetail
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Public gallery image detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/GalleryImage
+  /api/open/image/v1/payments/webhooks/{channel}:
+    post:
+      tags: [Open Image API]
+      summary: Payment provider webhook callback
+      operationId: postOpenPaymentWebhook
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [alipay, wxpay]
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
   /api/ops/admin/v1/config-tabs:
     get:
       tags: [Admin Config]
@@ -676,6 +969,328 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminPointAdjustmentResponse
+  /api/ops/admin/v1/users/{user_id}/reset-password:
+    post:
+      tags: [Admin Users]
+      summary: Reset a user password
+      operationId: postAdminUserResetPassword
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminResetPasswordRequest
+      responses:
+        '200':
+          description: Password reset completed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/StatusMessageResponse
+  /api/ops/admin/v1/users/{user_id}/limits:
+    post:
+      tags: [Admin Users]
+      summary: Update user runtime limits
+      operationId: postAdminUserLimits
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserLimitsRequest
+      responses:
+        '200':
+          description: Updated user summary
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserStatusResponse
+  /api/ops/admin/v1/users/{user_id}/group:
+    post:
+      tags: [Admin Users]
+      summary: Assign user group override
+      operationId: postAdminUserGroup
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserGroupAssignmentRequest
+      responses:
+        '200':
+          description: Updated user summary
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserStatusResponse
+  /api/ops/admin/v1/user-groups:
+    get:
+      tags: [Admin Users]
+      summary: List user groups
+      operationId: getAdminUserGroups
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+        - name: query
+          in: query
+          schema: {type: string}
+        - name: status
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: User groups
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserGroupListResponse
+    post:
+      tags: [Admin Users]
+      summary: Create a user group
+      operationId: postAdminUserGroups
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserGroupWriteRequest
+      responses:
+        '201':
+          description: User group created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserGroupResponse
+  /api/ops/admin/v1/user-groups/{group_code}:
+    get:
+      tags: [Admin Users]
+      summary: Get user group detail
+      operationId: getAdminUserGroup
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: group_code
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: User group detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserGroupResponse
+    put:
+      tags: [Admin Users]
+      summary: Update a user group
+      operationId: putAdminUserGroup
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: group_code
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserGroupWriteRequest
+      responses:
+        '200':
+          description: Updated user group
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserGroupResponse
+    delete:
+      tags: [Admin Users]
+      summary: Delete a user group
+      operationId: deleteAdminUserGroup
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: group_code
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '204':
+          description: User group deleted
+  /api/ops/admin/v1/audit-logs:
+    get:
+      tags: [Admin Config]
+      summary: Search audit logs
+      operationId: getAdminAuditLogs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+        - name: actor_type
+          in: query
+          schema: {type: string}
+        - name: actor_id
+          in: query
+          schema: {type: string}
+        - name: action
+          in: query
+          schema: {type: string}
+        - name: target_type
+          in: query
+          schema: {type: string}
+        - name: target_id
+          in: query
+          schema: {type: string}
+        - name: result
+          in: query
+          schema: {type: string}
+        - name: created_from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: created_to
+          in: query
+          schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminAuditLogListResponse
+  /api/ops/admin/v1/image-reviews:
+    get:
+      tags: [Admin Gallery]
+      summary: List gallery review queue
+      operationId: getAdminImageReviews
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+        - name: status
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: Gallery review queue
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminGalleryReviewListResponse
+  /api/ops/admin/v1/image-reviews/{image_id}:approve:
+    post:
+      tags: [Admin Gallery]
+      summary: Approve gallery image
+      operationId: postAdminImageReviewApprove
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Review updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/ops/admin/v1/image-reviews/{image_id}:reject:
+    post:
+      tags: [Admin Gallery]
+      summary: Reject gallery image
+      operationId: postAdminImageReviewReject
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Review updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/ops/admin/v1/image-reviews/{image_id}:unpublish:
+    post:
+      tags: [Admin Gallery]
+      summary: Unpublish gallery image
+      operationId: postAdminImageReviewUnpublish
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Review updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
   /api/ops/admin/v1/redeem-codes:
     get:
       tags: [Admin Redeem Codes]
@@ -1051,6 +1666,126 @@ paths:
       responses:
         '204':
           description: Model route deleted
+  /api/ops/admin/v1/provider-models:
+    get:
+      tags: [Admin Model Routing]
+      summary: List provider models
+      operationId: getAdminProviderModels
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: provider_code
+          in: query
+          schema: { type: string }
+        - name: model_code
+          in: query
+          schema: { type: string }
+        - name: enabled
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Provider model page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminProviderModelListResponse
+    post:
+      tags: [Admin Model Routing]
+      summary: Create a provider model
+      operationId: postAdminProviderModel
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminProviderModelWriteRequest
+      responses:
+        '201':
+          description: Provider model created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminProviderModelResponse
+  /api/ops/admin/v1/provider-models/{provider_model_id}:
+    get:
+      tags: [Admin Model Routing]
+      summary: Get provider model detail
+      operationId: getAdminProviderModel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider_model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Provider model detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminProviderModelResponse
+    put:
+      tags: [Admin Model Routing]
+      summary: Update a provider model
+      operationId: putAdminProviderModel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider_model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminProviderModelWriteRequest
+      responses:
+        '200':
+          description: Provider model updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminProviderModelResponse
+    delete:
+      tags: [Admin Model Routing]
+      summary: Delete a provider model
+      operationId: deleteAdminProviderModel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider_model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '204':
+          description: Provider model deleted
+  /api/ops/admin/v1/metrics/dashboard:
+    get:
+      tags: [Admin Metrics]
+      summary: Get dashboard metrics snapshot
+      operationId: getAdminDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminDashboardResponse
   /v1/images/generations:
     post:
       tags: [OpenAI Compat]
@@ -1105,20 +1840,6 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIModelListResponse
-  /api/agent/auth/v1/logout:
-    post:
-      tags: [Agent Auth]
-      summary: Logout current user session
-      operationId: postAgentAuthLogout
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Session logged out
-          content:
-            application/json:
-              schema:
-                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
   /api/agent/image/v1/reference-assets/{asset_id}:
     get:
       tags: [Agent Image]

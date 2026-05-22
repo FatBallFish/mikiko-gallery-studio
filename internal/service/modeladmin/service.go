@@ -70,6 +70,49 @@ func (s *Service) DeleteProvider(ctx context.Context, providerCode string) error
 	return normalizeStoreError(s.store.DeleteProvider(ctx, providerCode), "model provider not found")
 }
 
+func (s *Service) ListProviderModels(ctx context.Context, req domainmodeladmin.ProviderModelListRequest) (domainmodeladmin.ProviderModelListPage, error) {
+	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
+	req.ProviderCode = normalizeCode(req.ProviderCode)
+	req.ModelCode = normalizeCode(req.ModelCode)
+	return s.store.ListProviderModels(ctx, req)
+}
+
+func (s *Service) GetProviderModel(ctx context.Context, providerModelID int64) (domainmodeladmin.ProviderModel, error) {
+	if providerModelID <= 0 {
+		return domainmodeladmin.ProviderModel{}, errs.BadRequest("invalid provider_model_id")
+	}
+	item, err := s.store.GetProviderModel(ctx, providerModelID)
+	return item, normalizeStoreError(err, "provider model not found")
+}
+
+func (s *Service) CreateProviderModel(ctx context.Context, req domainmodeladmin.ProviderModelWriteRequest) (domainmodeladmin.ProviderModel, error) {
+	normalized, err := normalizeProviderModelWrite(req)
+	if err != nil {
+		return domainmodeladmin.ProviderModel{}, err
+	}
+	item, err := s.store.CreateProviderModel(ctx, normalized)
+	return item, normalizeStoreError(err, "provider model already exists")
+}
+
+func (s *Service) UpdateProviderModel(ctx context.Context, providerModelID int64, req domainmodeladmin.ProviderModelWriteRequest) (domainmodeladmin.ProviderModel, error) {
+	if providerModelID <= 0 {
+		return domainmodeladmin.ProviderModel{}, errs.BadRequest("invalid provider_model_id")
+	}
+	normalized, err := normalizeProviderModelWrite(req)
+	if err != nil {
+		return domainmodeladmin.ProviderModel{}, err
+	}
+	item, err := s.store.UpdateProviderModel(ctx, providerModelID, normalized)
+	return item, normalizeStoreError(err, "provider model not found")
+}
+
+func (s *Service) DeleteProviderModel(ctx context.Context, providerModelID int64) error {
+	if providerModelID <= 0 {
+		return errs.BadRequest("invalid provider_model_id")
+	}
+	return normalizeStoreError(s.store.DeleteProviderModel(ctx, providerModelID), "provider model not found")
+}
+
 func (s *Service) ListRoutes(ctx context.Context, req domainmodeladmin.RouteListRequest) (domainmodeladmin.RouteListPage, error) {
 	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
 	req.GroupCode = normalizeCode(req.GroupCode)
@@ -157,6 +200,38 @@ func normalizeRouteWrite(req domainmodeladmin.RouteWriteRequest) (domainmodeladm
 	return req, nil
 }
 
+func normalizeProviderModelWrite(req domainmodeladmin.ProviderModelWriteRequest) (domainmodeladmin.ProviderModelWriteRequest, error) {
+	req.ProviderCode = normalizeCode(req.ProviderCode)
+	req.ModelCode = normalizeCode(req.ModelCode)
+	req.CompatMode = normalizeCode(req.CompatMode)
+	req.HealthStatus = normalizeCode(req.HealthStatus)
+	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
+	if req.ProviderCode == "" {
+		return domainmodeladmin.ProviderModelWriteRequest{}, errs.BadRequest("provider_code is required")
+	}
+	if req.ModelCode == "" {
+		return domainmodeladmin.ProviderModelWriteRequest{}, errs.BadRequest("model_code is required")
+	}
+	if req.HealthStatus == "" {
+		req.HealthStatus = "unknown"
+	}
+	if req.Currency == "" {
+		req.Currency = "CNY"
+	}
+	if req.MaxImageCount <= 0 {
+		req.MaxImageCount = 1
+	}
+	if req.MaxReferenceImageCount < 0 {
+		return domainmodeladmin.ProviderModelWriteRequest{}, errs.BadRequest("max_reference_image_count must be non-negative")
+	}
+	if req.TimeoutMS <= 0 {
+		req.TimeoutMS = 60000
+	}
+	req.SupportedQualities = cloneNormalizedStrings(req.SupportedQualities)
+	req.SupportedRatios = cloneNormalizedStrings(req.SupportedRatios)
+	return req, nil
+}
+
 func normalizePage(page, pageSize int) (int, int) {
 	if page <= 0 {
 		page = 1
@@ -172,6 +247,20 @@ func normalizePage(page, pageSize int) (int, int) {
 
 func normalizeCode(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func cloneNormalizedStrings(input []string) []string {
+	if len(input) == 0 {
+		return []string{}
+	}
+	items := make([]string, 0, len(input))
+	for _, item := range input {
+		trimmed := strings.ToLower(strings.TrimSpace(item))
+		if trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
 }
 
 func normalizeStoreError(err error, notFoundMessage string) error {
