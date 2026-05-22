@@ -17,13 +17,17 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
+	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 )
 
 func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
@@ -69,9 +73,12 @@ func Run() error {
 	}
 
 	authSvc := authservice.NewServiceWithStore(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client))
-	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
+	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
+	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	assetSvc := assetservice.NewServiceWithStore(cfg.Storage, cfg.GenerationLimits, entstore.NewAssetsStore(client))
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, entstore.NewImageTaskStore(client), assetSvc, billingSvc)
+	modelAdminStore := entstore.NewModelAdminStore(client)
+	taskSvc.SetModelRoutingSource(modelAdminStore)
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	apiKeySvc, err := newRuntimeAPIKeyService(cfg, entstore.NewAPIKeyStore(client))
 	if err != nil {
@@ -81,9 +88,13 @@ func Run() error {
 	seedDefaultAdmin(context.Background(), adminStore)
 	adminAuthSvc := adminauthservice.NewService(cfg.Auth, adminStore)
 	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
+	adminUserSvc := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
+	redeemSvc := redeemservice.NewServiceWithStore(entstore.NewRedeemAdminStore(client))
+	callRecordSvc := admincallrecordservice.NewServiceWithStore(entstore.NewAdminCallRecordStore(client))
+	modelAdminSvc := modeladminservice.NewServiceWithStore(modelAdminStore)
 	slog.Info("database-backed stores enabled")
 
-	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc)
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,

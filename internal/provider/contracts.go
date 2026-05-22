@@ -44,10 +44,20 @@ type ImageRequest struct {
 }
 
 type ImageResult struct {
-	URL           string `json:"url,omitempty"`
-	B64JSON       string `json:"b64_json,omitempty"`
-	RevisedPrompt string `json:"revised_prompt,omitempty"`
-	Format        string `json:"format,omitempty"`
+	ID               string `json:"id,omitempty"`
+	URL              string `json:"url,omitempty"`
+	DownloadURL      string `json:"download_url,omitempty"`
+	B64JSON          string `json:"b64_json,omitempty"`
+	RevisedPrompt    string `json:"revised_prompt,omitempty"`
+	Format           string `json:"format,omitempty"`
+	MimeType         string `json:"mime_type,omitempty"`
+	FileSizeBytes    int64  `json:"file_size_bytes"`
+	Width            int    `json:"width"`
+	Height           int    `json:"height"`
+	SHA256           string `json:"sha256,omitempty"`
+	ObjectKey        string `json:"object_key,omitempty"`
+	StorageDriver    string `json:"storage_driver,omitempty"`
+	VisibilityStatus string `json:"visibility_status,omitempty"`
 }
 
 type ImageResponse struct {

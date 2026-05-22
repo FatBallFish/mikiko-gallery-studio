@@ -100,6 +100,10 @@ func (s *countingStore) GetByID(ctx context.Context, userID int64, taskID string
 	return s.base.GetByID(ctx, userID, taskID)
 }
 
+func (s *countingStore) GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.base.GetImageResultByID(ctx, userID, imageID)
+}
+
 func (s *countingStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	return s.base.ListByUser(ctx, userID)
 }

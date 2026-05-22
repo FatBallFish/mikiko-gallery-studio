@@ -47,8 +47,10 @@ type BalanceSummary struct {
 
 type LedgerEntry struct {
 	ID           int64     `json:"id"`
+	UserID       int64     `json:"user_id,omitempty"`
 	APIKeyID     int64     `json:"api_key_id,omitempty"`
 	TaskID       string    `json:"task_id,omitempty"`
+	RedeemCodeID int64     `json:"redeem_code_id,omitempty"`
 	LedgerType   string    `json:"ledger_type"`
 	ChangePoints string    `json:"change_points"`
 	BalanceAfter string    `json:"balance_after"`
@@ -93,4 +95,5 @@ type AdjustRequest struct {
 	ChangePoints    string
 	Reason          string
 	OperatorAdminID int64
+	IdempotencyKey  string
 }

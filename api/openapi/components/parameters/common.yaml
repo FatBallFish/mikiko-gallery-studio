@@ -20,6 +20,15 @@ components:
         type: string
         maxLength: 128
       description: Optional idempotency key for safe task create retries.
+    RequiredIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+      description: Required idempotency key for safe write retries.
     TabKey:
       name: tab_key
       in: path

@@ -50,3 +50,498 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/ConfigTab'
+    AdminUserSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, disabled]
+        user_group_code:
+          type: string
+        token_version:
+          type: integer
+        default_locale:
+          type: string
+        theme:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminUserListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminUserSummary'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminUserDetailResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/AdminUserSummary'
+            balance:
+              $ref: ./agent.yaml#/components/schemas/BalanceSummary
+            recent_ledger:
+              type: array
+              items:
+                $ref: ./agent.yaml#/components/schemas/PointLedgerEntry
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminUpdateUserStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+    AdminUserStatusResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminUserSummary'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminPointAdjustmentRequest:
+      type: object
+      required: [change_points, reason]
+      properties:
+        change_points:
+          type: string
+          pattern: '^-?[0-9]+(\.[0-9]{1,5})?$'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 255
+    AdminPointAdjustmentResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./agent.yaml#/components/schemas/BalanceSummary
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminRedeemCode:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        batch_id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        status:
+          type: string
+          enum: [inactive, available, redeemed, expired, disabled]
+        reward_type:
+          type: string
+          enum: [points]
+        reward_value:
+          type: string
+          pattern: '^[0-9]+(\.[0-9]{1,5})?$'
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        max_redemptions:
+          type: integer
+          minimum: 1
+        redeemed_count:
+          type: integer
+          minimum: 0
+        last_redeemed_by:
+          type: integer
+          format: int64
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminCreateRedeemCodeRequest:
+      type: object
+      required: [reward_value, valid_until]
+      properties:
+        code:
+          type: string
+          description: Optional manual code. Empty value lets backend generate an uppercase safe code.
+        batch_id:
+          type: integer
+          format: int64
+          minimum: 0
+        status:
+          type: string
+          enum: [inactive, available, redeemed, expired, disabled]
+        reward_type:
+          type: string
+          enum: [points]
+        reward_value:
+          type: string
+          pattern: '^[0-9]+(\.[0-9]{1,5})?$'
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        max_redemptions:
+          type: integer
+          minimum: 1
+    AdminBatchCreateRedeemCodesRequest:
+      allOf:
+        - $ref: '#/components/schemas/AdminCreateRedeemCodeRequest'
+        - type: object
+          required: [count, reward_value, valid_until]
+          properties:
+            count:
+              type: integer
+              minimum: 1
+              maximum: 100
+    AdminUpdateRedeemCodeStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [inactive, available, redeemed, expired, disabled]
+    AdminRedeemCodeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminRedeemCode'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminRedeemCodeListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRedeemCode'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminBatchCreateRedeemCodesResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRedeemCode'
+            count:
+              type: integer
+            batch_id:
+              type: integer
+              format: int64
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminRedeemCodeRedemptionEntry:
+      allOf:
+        - $ref: ./agent.yaml#/components/schemas/PointLedgerEntry
+        - type: object
+          properties:
+            user_id:
+              type: integer
+              format: int64
+            redeem_code_id:
+              type: integer
+              format: int64
+    AdminRedeemCodeRedemptionsResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRedeemCodeRedemptionEntry'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminCallRecord:
+      type: object
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        user_id:
+          type: integer
+          format: int64
+        api_key_id:
+          type: integer
+          format: int64
+          nullable: true
+        source_channel:
+          type: string
+        task_type:
+          type: string
+        status:
+          type: string
+        provider:
+          type: string
+        abstract_model:
+          type: string
+        quality:
+          type: string
+        requested_output_image_count:
+          type: integer
+        success_output_image_count:
+          type: integer
+        reference_image_count:
+          type: integer
+        estimated_points:
+          type: string
+        actual_points:
+          type: string
+        error_code:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        attempt_count:
+          type: integer
+          minimum: 0
+    AdminCallRecordListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminCallRecord'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelProvider:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        provider_code:
+          type: string
+        provider_type:
+          type: string
+        auth_config_encrypted:
+          type: string
+          description: Present only when the backend includes encrypted provider auth material.
+        health_status:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminModelProviderWriteRequest:
+      type: object
+      required: [provider_code, provider_type]
+      properties:
+        provider_code:
+          type: string
+        provider_type:
+          type: string
+        auth_config_encrypted:
+          type: string
+        health_status:
+          type: string
+          default: unknown
+        enabled:
+          type: boolean
+          default: false
+    AdminModelProviderResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminModelProvider'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelProviderListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminModelProvider'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelRoute:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        group_code:
+          type: string
+        task_type:
+          type: string
+        provider_model_id:
+          type: integer
+          format: int64
+        provider_code:
+          type: string
+        priority:
+          type: integer
+        weight_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        fallback_order:
+          type: integer
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminModelRouteWriteRequest:
+      type: object
+      required: [group_code, task_type]
+      anyOf:
+        - required: [provider_code]
+        - required: [provider_model_id]
+      properties:
+        group_code:
+          type: string
+        task_type:
+          type: string
+        provider_model_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Required when provider_code is omitted.
+        provider_code:
+          type: string
+          description: Required when provider_model_id is omitted.
+        priority:
+          type: integer
+        weight_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 100
+        fallback_order:
+          type: integer
+        enabled:
+          type: boolean
+          default: false
+    AdminModelRouteResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminModelRoute'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelRouteListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminModelRoute'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string

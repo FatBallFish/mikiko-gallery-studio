@@ -3,7 +3,11 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,7 +58,7 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
-	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_image_count":0,"response_mode":"sync"}`)
+	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_image_count":0,"response_mode":"async"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", createBody)
 	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	createReq.Header.Set("Content-Type", "application/json")
@@ -188,6 +192,209 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	}
 }
 
+func TestAgentTaskCreateRejectsSyncResponseMode(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	if err := authSvc.SendEmailCode("sync-mode@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	_, session, err := authSvc.LoginWithEmailCode("sync-mode@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: 1, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	handler := NewWithAPI(api)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"sync"}`))
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected sync response_mode rejection 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("only supports async")) {
+		t.Fatalf("expected clear async-only error, got body=%s", rec.Body.String())
+	}
+}
+
+func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
+	imageBytes := tinyPNG(t)
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"images": []map[string]any{{
+						"image_url": map[string]string{
+							"url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageBytes),
+						},
+					}},
+				},
+			}},
+		})
+	}))
+	defer providerServer.Close()
+
+	cfg := taskAPIConfig(providerServer.URL)
+	cfg.Storage.LocalRoot = t.TempDir()
+	authSvc, session := loginTestUser(t, "download-owner@example.com")
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: 1, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	handler := NewWithAPI(api)
+
+	taskID := createAndProcessAgentTask(t, handler, taskSvc, session.AccessToken)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/"+taskID, nil)
+	detailReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	detailRec := httptest.NewRecorder()
+	handler.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("expected detail 200, got %d body=%s", detailRec.Code, detailRec.Body.String())
+	}
+	var detailResp struct {
+		Data struct {
+			Results []struct {
+				ID               string `json:"id"`
+				URL              string `json:"url"`
+				DownloadURL      string `json:"download_url"`
+				MimeType         string `json:"mime_type"`
+				Width            int    `json:"width"`
+				Height           int    `json:"height"`
+				FileSizeBytes    int64  `json:"file_size_bytes"`
+				VisibilityStatus string `json:"visibility_status"`
+			} `json:"results"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(detailRec.Body).Decode(&detailResp); err != nil {
+		t.Fatalf("decode detail response: %v", err)
+	}
+	if len(detailResp.Data.Results) != 1 {
+		t.Fatalf("expected one result, got %#v", detailResp)
+	}
+	result := detailResp.Data.Results[0]
+	if result.ID == "" || result.DownloadURL == "" || result.URL == "" {
+		t.Fatalf("expected local result to expose id, url, and download_url, got %#v", result)
+	}
+	if result.MimeType != "image/png" || result.Width != 2 || result.Height != 1 || result.FileSizeBytes != int64(len(imageBytes)) || result.VisibilityStatus != "private" {
+		t.Fatalf("unexpected local result metadata %#v", result)
+	}
+
+	downloadReq := httptest.NewRequest(http.MethodGet, result.DownloadURL, nil)
+	downloadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	downloadRec := httptest.NewRecorder()
+	handler.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("expected download 200, got %d body=%s", downloadRec.Code, downloadRec.Body.String())
+	}
+	if got := downloadRec.Body.Bytes(); !bytes.Equal(got, imageBytes) {
+		t.Fatalf("downloaded bytes mismatch: got %d bytes want %d", len(got), len(imageBytes))
+	}
+	if contentType := downloadRec.Header().Get("Content-Type"); contentType != "image/png" {
+		t.Fatalf("expected image/png content type, got %q", contentType)
+	}
+
+	otherSession := loginExistingAuthUser(t, authSvc, "download-other@example.com")
+	otherReq := httptest.NewRequest(http.MethodGet, result.DownloadURL, nil)
+	otherReq.Header.Set("Authorization", "Bearer "+otherSession.AccessToken)
+	otherRec := httptest.NewRecorder()
+	handler.ServeHTTP(otherRec, otherReq)
+	if otherRec.Code != http.StatusNotFound {
+		t.Fatalf("expected non-owner download 404, got %d body=%s", otherRec.Code, otherRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/agent/image/v1/history/tasks/"+taskID, nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("expected delete 204, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	deletedDownloadReq := httptest.NewRequest(http.MethodGet, result.DownloadURL, nil)
+	deletedDownloadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	deletedDownloadRec := httptest.NewRecorder()
+	handler.ServeHTTP(deletedDownloadRec, deletedDownloadReq)
+	if deletedDownloadRec.Code != http.StatusNotFound {
+		t.Fatalf("expected deleted task image download 404, got %d body=%s", deletedDownloadRec.Code, deletedDownloadRec.Body.String())
+	}
+}
+
+func TestAgentTaskRemoteResultExposesUsableURLButDownload404(t *testing.T) {
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"https://cdn.example.com/task.png"}}]}}]}`)
+	}))
+	defer providerServer.Close()
+
+	cfg := taskAPIConfig(providerServer.URL)
+	authSvc, session := loginTestUser(t, "download-remote@example.com")
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: 1, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	handler := NewWithAPI(api)
+
+	taskID := createAndProcessAgentTask(t, handler, taskSvc, session.AccessToken)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/"+taskID, nil)
+	detailReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	detailRec := httptest.NewRecorder()
+	handler.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("expected detail 200, got %d body=%s", detailRec.Code, detailRec.Body.String())
+	}
+	var detailResp struct {
+		Data struct {
+			Results []map[string]any `json:"results"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(detailRec.Body).Decode(&detailResp); err != nil {
+		t.Fatalf("decode detail response: %v", err)
+	}
+	if len(detailResp.Data.Results) != 1 {
+		t.Fatalf("expected one remote result, got %#v", detailResp)
+	}
+	result := detailResp.Data.Results[0]
+	id, _ := result["id"].(string)
+	url, _ := result["url"].(string)
+	downloadURL, _ := result["download_url"].(string)
+	if id == "" || url != "https://cdn.example.com/task.png" {
+		t.Fatalf("expected remote result to expose persisted id and frontend URL, got %#v", result)
+	}
+	for _, key := range []string{"mime_type", "file_size_bytes", "width", "height", "visibility_status"} {
+		if _, ok := result[key]; !ok {
+			t.Fatalf("expected remote result JSON to include %q, got %#v", key, result)
+		}
+	}
+	if downloadURL != "" {
+		t.Fatalf("remote URL results are not locally mirrored in P0 and must not expose download_url, got %#v", result)
+	}
+
+	downloadReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/images/"+id, nil)
+	downloadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	downloadRec := httptest.NewRecorder()
+	handler.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusNotFound {
+		t.Fatalf("expected remote-only result download 404, got %d body=%s", downloadRec.Code, downloadRec.Body.String())
+	}
+}
+
 func taskAPIConfig(openrouterBaseURL string) config.Config {
 	cfg := config.Config{}
 	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"plus": "2k"}
@@ -233,6 +440,80 @@ func taskAPIConfig(openrouterBaseURL string) config.Config {
 	}
 	cfg.App.Name = "pic-gallery"
 	return cfg
+}
+
+func loginTestUser(t *testing.T, email string) (*authservice.Service, domainauthSession) {
+	t.Helper()
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	return authSvc, loginExistingAuthUser(t, authSvc, email)
+}
+
+func loginExistingAuthUser(t *testing.T, authSvc *authservice.Service, email string) domainauthSession {
+	t.Helper()
+	if err := authSvc.SendEmailCode(email, "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	_, session, err := authSvc.LoginWithEmailCode(email, "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+	return domainauthSession{AccessToken: session.AccessToken}
+}
+
+type domainauthSession struct {
+	AccessToken string
+}
+
+func createAndProcessAgentTask(t *testing.T, handler http.Handler, taskSvc *imagetaskservice.Service, accessToken string) string {
+	t.Helper()
+	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a downloadable banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", createBody)
+	createReq.Header.Set("Authorization", "Bearer "+accessToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusAccepted {
+		t.Fatalf("expected create 202, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createResp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	runner := worker.NewRunner(taskSvc, worker.Config{
+		Owner:              "router-test-worker",
+		LeaseTTL:           30 * time.Second,
+		PreferredProviders: []string{"openrouter"},
+	})
+	processed, err := runner.ProcessOnce(createReq.Context())
+	if err != nil {
+		t.Fatalf("ProcessOnce: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected queued task to be processed by worker")
+	}
+	return createResp.Data.ID
+}
+
+func tinyPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	img.Set(1, 0, color.RGBA{B: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func TestRedeemCodeRejectsUnknownCodeWithoutCreditingBalance(t *testing.T) {

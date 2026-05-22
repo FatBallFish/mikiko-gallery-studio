@@ -229,7 +229,8 @@ components:
           format: uuid
         response_mode:
           type: string
-          enum: [sync, async]
+          enum: [async]
+          description: Native Agent/Open API task creation is async-only; omit the field or send async, then poll task detail.
     ImageTaskResponse:
       type: object
       properties:
