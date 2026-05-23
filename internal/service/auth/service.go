@@ -724,6 +724,7 @@ func (s *Service) createUserLocked(email string) (domainauth.User, error) {
 		Nickname:        fmt.Sprintf("user-%d", s.nextUserID),
 		Status:          "active",
 		GroupCode:       "basic",
+		GroupCodes:      []string{"basic"},
 		GroupMultiplier: s.userMultiplierFor("basic"),
 		DefaultLocale:   "zh-CN",
 		Theme:           "system",

@@ -74,15 +74,25 @@ export const API_PATHS = {
     userPoints: '/api/ops/admin/v1/users/{user_id}/points-adjustments',
     userResetPassword: '/api/ops/admin/v1/users/{user_id}/reset-password',
     userLimits: '/api/ops/admin/v1/users/{user_id}/limits',
-    userGroupAssignment: '/api/ops/admin/v1/users/{user_id}/group',
-    userGroupAssign: '/api/ops/admin/v1/users/{user_id}/group',
+    userGroupAssignment: '/api/ops/admin/v1/users/{user_id}/groups',
+    userGroupAssign: '/api/ops/admin/v1/users/{user_id}/groups',
     userGroups: '/api/ops/admin/v1/user-groups',
-    userGroupDetail: '/api/ops/admin/v1/user-groups/{group_code}',
+    userGroupDetail: '/api/ops/admin/v1/user-groups/{group_id}',
     redeemCodes: '/api/ops/admin/v1/redeem-codes',
     redeemCodesBatchCreate: '/api/ops/admin/v1/redeem-codes:batch-create',
     redeemCodeStatus: '/api/ops/admin/v1/redeem-codes/{code_id}/status',
     redeemCodeRedemptions: '/api/ops/admin/v1/redeem-codes/{code_id}/redemptions',
     callRecords: '/api/ops/admin/v1/call-records',
+    modelAccounts: '/api/ops/admin/v1/model-accounts',
+    modelAccountDetail: '/api/ops/admin/v1/model-accounts/{account_id}',
+    modelAccountModels: '/api/ops/admin/v1/model-accounts/{account_id}/models',
+    modelAccountModelDetail: '/api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}',
+    routeModels: '/api/ops/admin/v1/route-models',
+    routeModelDetail: '/api/ops/admin/v1/route-models/{route_model_id}',
+    routeModelCandidates: '/api/ops/admin/v1/route-models/{route_model_id}/candidates',
+    routeModelCandidateDetail: '/api/ops/admin/v1/route-models/{route_model_id}/candidates/{candidate_id}',
+    routeModelPrices: '/api/ops/admin/v1/route-model-prices',
+    routeModelPriceDetail: '/api/ops/admin/v1/route-model-prices/{price_id}',
     modelProviders: '/api/ops/admin/v1/model-providers',
     modelProviderDetail: '/api/ops/admin/v1/model-providers/{provider_code}',
     providerModels: '/api/ops/admin/v1/provider-models',
@@ -240,27 +250,52 @@ export type LedgerEntry = {
 }
 
 export type CapabilityItem = {
-  abstract_model: string
+  route_model_code: string
   task_types: ImageTaskType[]
   qualities: string[]
   aspect_ratios: string[]
   max_output_image_count: number
   max_reference_image_count: number
 }
+export type RouteModelPriceQuote = {
+  task_type: ImageTaskType
+  quality: string
+  base_points: string
+  charged_points: string
+  display_points: string
+  reference_multiplier?: string
+}
+export type CapabilityModelGroup = {
+  id: string
+  code: string
+  name: string
+  description?: string
+  task_types: ImageTaskType[]
+  qualities: string[]
+  aspect_ratios?: string[]
+  max_output_image_count?: number
+  max_reference_image_count?: number
+  effective_multiplier?: string
+  prices: RouteModelPriceQuote[]
+  supports_reference: boolean
+  display_points?: string
+}
 export type Capability = {
   items?: CapabilityItem[]
   raw?: unknown
-  model_groups: Array<{ id: string; name: string; provider: string; supports_reference: boolean; price_hint: string }>
+  model_groups: CapabilityModelGroup[]
   qualities: string[]
   aspect_ratios: string[]
   max_image_count: number
   task_types: ImageTaskType[]
 }
-export type EstimateRequest = { task_type: ImageTaskType; model_group: string; quality: string; aspect_ratio: string; image_count: number; reference_asset_ids?: string[] }
-export type BackendEstimateRequest = { task_type: ImageTaskType; abstract_model: string; requested_quality: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
+export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; quality: string; aspect_ratio: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
+export type BackendEstimateRequest = { task_type: ImageTaskType; route_model_code: string; requested_quality: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
 export type EstimateResult = {
   resolved_quality_bucket?: string
   estimated_points?: string
+  charged_points?: string
+  display_points?: string
   user_group_multiplier?: string
   requested_output_image_count?: number
   reference_image_count?: number
@@ -309,6 +344,8 @@ export type ImageTask = {
   task_type: ImageTaskType
   status: ImageTaskStatus
   abstract_model?: string
+  route_model_code?: string
+  route_model_name?: string
   model_group: string
   requested_quality?: string
   resolved_quality_bucket?: string
@@ -436,11 +473,93 @@ export type ModelRouteWriteRequest = { group_code: string; task_type: string; pr
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
 export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; task_type?: ImageTaskType; url?: string; download_url?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; object_key?: string; storage_driver?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; created_at: string }
 export type ReviewItem = { id: string; image_id?: string; title: string; owner: string; task_type: ImageTaskType; image_url: string; status: 'pending' | 'pending_review' | 'approved' | 'rejected' | 'unpublished' | string; reason: string; created_at: string; review_reason?: string; visibility_status?: string }
-export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
+export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[] }
 export type AdminUserCreateRequest = { email: string; nickname?: string; status?: string; user_group_code?: string; password?: string; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string }
-export type UserGroup = { group_code: string; group_name: string; multiplier: string; status: string; description?: string | null; created_at: string; updated_at: string }
-export type UserGroupWriteRequest = { group_code: string; group_name: string; multiplier: string; status: string; description?: string | null }
+export type UserGroup = { id?: ID; code: string; name: string; group_code: string; group_name: string; multiplier: string; status: string; sort_order?: number; is_default?: boolean; description?: string | null; created_at: string; updated_at: string }
+export type UserGroupWriteRequest = { code: string; name: string; multiplier: string; status: string; sort_order?: number; is_default?: boolean; description?: string | null }
+export type ModelAccountStatus = 'enabled' | 'disabled' | 'error' | string
+export type ModelAccount = {
+  id: ID
+  name: string
+  adapter_type: 'openai_compatible' | 'openrouter' | string
+  auth_type: 'api_key' | string
+  base_url: string
+  credentials_status?: { has_api_key?: boolean; fingerprint?: string; updated_at?: string | null }
+  status: ModelAccountStatus
+  priority: number
+  weight: number
+  concurrency_limit: number
+  timeout_ms: number
+  error_message?: string | null
+  last_used_at?: string | null
+  extra?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+export type ModelAccountWriteRequest = Omit<Partial<ModelAccount>, 'id' | 'credentials_status' | 'created_at' | 'updated_at'> & { name: string; adapter_type: string; auth_type: string; base_url: string; credentials?: { api_key?: string }; status: string }
+export type ModelAccountModel = {
+  id: ID
+  account_id: ID
+  account_name?: string
+  model_code: string
+  display_name: string
+  task_types: ImageTaskType[]
+  qualities: string[]
+  cost_per_image: string
+  currency: string
+  enabled: boolean
+  extra?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; qualities: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type RouteModelVisibility = 'public' | 'groups' | 'hidden' | string
+export type RouteModel = {
+  id: ID
+  code: string
+  name: string
+  description?: string
+  visibility: RouteModelVisibility
+  enabled: boolean
+  sort_order: number
+  group_ids?: ID[]
+  groups?: UserGroup[]
+  candidates?: RouteModelCandidate[]
+  prices?: RouteModelPrice[]
+  created_at: string
+  updated_at: string
+}
+export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; enabled: boolean; sort_order: number; group_ids?: ID[] }
+export type RouteModelCandidate = {
+  id: ID
+  route_model_id: ID
+  account_model_id: ID
+  account_model?: ModelAccountModel
+  model_code?: string
+  account_name?: string
+  priority: number
+  weight: number
+  fallback_order: number
+  enabled: boolean
+  created_at?: string
+  updated_at?: string
+}
+export type RouteModelCandidateWriteRequest = { account_model_id: ID; priority: number; weight: number; fallback_order: number; enabled: boolean }
+export type RouteModelPrice = {
+  id: ID
+  route_model_id: ID
+  route_model_code?: string
+  route_model_name?: string
+  task_type: ImageTaskType
+  quality: string
+  base_points: string
+  reference_multiplier: string
+  enabled: boolean
+  created_at?: string
+  updated_at?: string
+}
+export type RouteModelPriceWriteRequest = { route_model_id: ID; task_type: ImageTaskType; quality: string; base_points: string; reference_multiplier: string; enabled: boolean }
 export type RedeemCode = { id: number; batch_id: number; code: string; status: string; reward_type: string; reward_value: string; valid_from: string; valid_until: string; max_redemptions: number; redeemed_count: number; last_redeemed_by?: number | null; created_at: string; updated_at: string }
 export type RedeemCodeCreateRequest = { code: string; batch_id: number; status: string; reward_type: string; reward_value: string; valid_from?: string; valid_until: string; max_redemptions: number }
 export type RedeemCodeBatchCreateRequest = Omit<RedeemCodeCreateRequest, 'code'> & { count: number }

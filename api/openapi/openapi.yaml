@@ -1058,7 +1058,7 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserStatusResponse
-  /api/ops/admin/v1/users/{user_id}/group:
+  /api/ops/admin/v1/users/{user_id}/groups:
     post:
       tags: [Admin Users]
       summary: Assign user group override
@@ -1493,6 +1493,187 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCallRecordListResponse
+  /api/ops/admin/v1/model-accounts:
+    get:
+      tags: [Admin Model Routing]
+      summary: List model accounts
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: adapter_type
+          in: query
+          schema: { type: string }
+        - name: auth_type
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: Model account page }
+    post:
+      tags: [Admin Model Routing]
+      summary: Create model account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountWriteRequest }
+      responses:
+        '201': { description: Model account created }
+  /api/ops/admin/v1/model-accounts/{account_id}:
+    put:
+      tags: [Admin Model Routing]
+      summary: Update model account
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountWriteRequest }
+      responses:
+        '200': { description: Model account updated }
+    delete:
+      tags: [Admin Model Routing]
+      summary: Delete model account
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Deleted }
+  /api/ops/admin/v1/model-accounts/{account_id}/models:
+    get:
+      tags: [Admin Model Routing]
+      summary: List real upstream models
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200': { description: Account model page }
+    post:
+      tags: [Admin Model Routing]
+      summary: Create real upstream model
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '201': { description: Account model created }
+  /api/ops/admin/v1/route-models:
+    get:
+      tags: [Admin Model Routing]
+      summary: List route models
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: visibility
+          in: query
+          schema: { type: string }
+        - name: enabled
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200': { description: Route model page }
+    post:
+      tags: [Admin Model Routing]
+      summary: Create route model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRouteModelWriteRequest }
+      responses:
+        '201': { description: Route model created }
+  /api/ops/admin/v1/route-models/{route_model_id}:
+    put:
+      tags: [Admin Model Routing]
+      summary: Update route model
+      parameters:
+        - name: route_model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRouteModelWriteRequest }
+      responses:
+        '200': { description: Route model updated }
+    delete:
+      tags: [Admin Model Routing]
+      summary: Delete route model
+      parameters:
+        - name: route_model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Deleted }
+  /api/ops/admin/v1/route-models/{route_model_id}/candidates:
+    get:
+      tags: [Admin Model Routing]
+      summary: List route model candidates
+      parameters:
+        - name: route_model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200': { description: Candidate page }
+    post:
+      tags: [Admin Model Routing]
+      summary: Create route model candidate
+      parameters:
+        - name: route_model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '201': { description: Candidate created }
+  /api/ops/admin/v1/route-model-prices:
+    get:
+      tags: [Admin Model Routing]
+      summary: List route model prices
+      responses:
+        '200': { description: Price page }
+    post:
+      tags: [Admin Model Routing]
+      summary: Create route model price
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '201': { description: Price created }
   /api/ops/admin/v1/model-providers:
     get:
       tags: [Admin Model Routing]

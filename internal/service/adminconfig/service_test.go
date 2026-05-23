@@ -2,6 +2,7 @@ package adminconfig_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -48,6 +49,14 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 	if !found {
 		t.Fatalf("expected cny_per_point item in billing tab")
 	}
+	assertTabMissing(t, tabs, "routing_models")
+	assertTabKeys(t, tabs, "billing_pricing", []string{
+		"auto_quality_default_by_group",
+		"cny_per_point",
+		"reference_image_extra",
+		"task_multipliers",
+	})
+	assertTabKeys(t, tabs, "openai_compat", []string{"openai_compat_model_map"})
 }
 
 func TestUpdateTabOverridesConfigAndBumpsVersion(t *testing.T) {
@@ -112,6 +121,75 @@ func TestUpdateTabRejectsVersionConflict(t *testing.T) {
 	}
 }
 
+func TestAdminConfigIgnoresStaleOverridesAndRejectsUnknownItems(t *testing.T) {
+	store := adminconfig.NewMemoryStore()
+	svc := adminconfig.NewServiceWithStore(testConfig(), store)
+
+	if _, err := svc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "billing_pricing",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "billing_pricing",
+			ConfigKey:      "quality_points_by_model",
+			ConfigValue:    map[string]any{"value": map[string]any{"basic": map[string]any{"1k": "1.00000"}}},
+			Scope:          "global",
+		}},
+	}); err == nil {
+		t.Fatal("expected stale billing key to be rejected")
+	}
+
+	if err := store.SaveByCategory(context.Background(), "billing_pricing", 2, 0, []domainadminconfig.Item{{
+		ConfigCategory: "billing_pricing",
+		ConfigKey:      "quality_points_by_model",
+		ConfigValue:    map[string]any{"value": map[string]any{"basic": map[string]any{"1k": "1.00000"}}},
+		Scope:          "global",
+	}}); err != nil {
+		t.Fatalf("SaveByCategory stale override: %v", err)
+	}
+
+	tab, err := svc.GetTab(context.Background(), "billing_pricing")
+	if err != nil {
+		t.Fatalf("GetTab: %v", err)
+	}
+	for _, item := range tab.Items {
+		if item.ConfigKey == "quality_points_by_model" || item.ConfigKey == "user_group_multipliers" {
+			t.Fatalf("stale config key leaked into system settings: %#v", item)
+		}
+	}
+	if tab.Version != 1 {
+		t.Fatalf("expected stale overrides to be ignored for version, got %d", tab.Version)
+	}
+}
+
+func assertTabMissing(t *testing.T, tabs []domainadminconfig.Tab, tabKey string) {
+	t.Helper()
+	for _, tab := range tabs {
+		if tab.TabKey == tabKey {
+			t.Fatalf("expected tab %q to be removed", tabKey)
+		}
+	}
+}
+
+func assertTabKeys(t *testing.T, tabs []domainadminconfig.Tab, tabKey string, expected []string) {
+	t.Helper()
+	for _, tab := range tabs {
+		if tab.TabKey != tabKey {
+			continue
+		}
+		got := make([]string, 0, len(tab.Items))
+		for _, item := range tab.Items {
+			got = append(got, item.ConfigKey)
+		}
+		slices.Sort(got)
+		slices.Sort(expected)
+		if !slices.Equal(got, expected) {
+			t.Fatalf("unexpected keys for %s: got %#v want %#v", tabKey, got, expected)
+		}
+		return
+	}
+	t.Fatalf("expected tab %q", tabKey)
+}
+
 func testConfig() config.Config {
 	return config.Config{
 		Auth: config.AuthConfig{
@@ -141,8 +219,9 @@ func testConfig() config.Config {
 			OpenRouter: config.ProviderConfig{Enabled: true, BaseURL: "https://openrouter.ai/api"},
 		},
 		Routing: config.RoutingConfig{
-			DefaultProvider:   "openai",
-			FallbackProviders: []string{"openrouter"},
+			DefaultProvider:      "openai",
+			FallbackProviders:    []string{"openrouter"},
+			OpenAICompatModelMap: map[string]string{"gpt-image-2": "plus"},
 		},
 		Docs: config.DocsConfig{
 			Title:    "Pic Gallery API Docs",

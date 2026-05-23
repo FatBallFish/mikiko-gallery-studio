@@ -38,6 +38,13 @@ func (ImageTask) Fields() []ent.Field {
 		field.String("save_policy").MaxLen(16).Default("private"),
 		field.String("estimated_points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
 		field.String("actual_points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
+		field.Int64("route_model_id").Optional().Nillable(),
+		field.String("route_model_code").MaxLen(64).Default(""),
+		field.Int64("account_model_id").Optional().Nillable(),
+		field.Int64("model_account_id").Optional().Nillable(),
+		field.String("upstream_model_code").MaxLen(128).Default(""),
+		field.String("effective_multiplier").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("1.00000"),
+		field.String("charged_points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
 		field.Int64("provider_model_id").Optional().Nillable(),
 		field.String("provider_cost").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
 		field.String("gross_margin").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
@@ -58,7 +65,7 @@ func (ImageTask) Fields() []ent.Field {
 func (ImageTask) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),
-		index.Fields("status"), index.Fields("abstract_model"), index.Fields("resolved_quality_bucket"), index.Fields("provider_model_id"), index.Fields("lease_owner"),
+		index.Fields("status"), index.Fields("abstract_model"), index.Fields("route_model_code"), index.Fields("resolved_quality_bucket"), index.Fields("provider_model_id"), index.Fields("account_model_id"), index.Fields("model_account_id"), index.Fields("lease_owner"),
 		index.Fields("lease_expires_at"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("deleted_at"),
 	}
 }

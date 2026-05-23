@@ -17,6 +17,7 @@ type Store interface {
 	UpdateUserStatus(ctx context.Context, userID int64, status string) (domainadminuser.UserSummary, error)
 	UpdateUserLimits(ctx context.Context, req domainadminuser.LimitsRequest) (domainadminuser.UserSummary, error)
 	AssignUserGroup(ctx context.Context, req domainadminuser.GroupAssignmentRequest) (domainadminuser.UserSummary, error)
+	AssignUserGroups(ctx context.Context, req domainadminuser.MultiGroupAssignmentRequest) (domainadminuser.UserSummary, error)
 	DeleteUser(ctx context.Context, userID int64) (domainadminuser.UserSummary, error)
 	ListUserGroups(ctx context.Context, req domainadminuser.UserGroupListRequest) (domainadminuser.UserGroupListPage, error)
 	GetUserGroup(ctx context.Context, groupCode string) (domainadminuser.UserGroup, error)
@@ -46,7 +47,7 @@ func NewMemoryStore(users ...domainadminuser.UserSummary) *MemoryStore {
 		GroupCode:  "basic",
 		GroupName:  "basic",
 		Multiplier: "1.00000",
-		Status:     "active",
+		Status:     "enabled",
 	}
 	return store
 }
@@ -172,6 +173,21 @@ func (s *MemoryStore) AssignUserGroup(_ context.Context, req domainadminuser.Gro
 		return domainadminuser.UserSummary{}, repoerr.ErrNotFound
 	}
 	user.UserGroupCode = req.UserGroupCode
+	user.UpdatedAt = time.Now().UTC()
+	s.users[req.UserID] = user
+	detail := s.detail[req.UserID]
+	detail.User = user
+	s.detail[req.UserID] = detail
+	return user, nil
+}
+
+func (s *MemoryStore) AssignUserGroups(_ context.Context, req domainadminuser.MultiGroupAssignmentRequest) (domainadminuser.UserSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.users[req.UserID]
+	if !ok {
+		return domainadminuser.UserSummary{}, repoerr.ErrNotFound
+	}
 	user.UpdatedAt = time.Now().UTC()
 	s.users[req.UserID] = user
 	detail := s.detail[req.UserID]

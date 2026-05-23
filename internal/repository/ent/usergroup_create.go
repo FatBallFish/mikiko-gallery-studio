@@ -102,6 +102,34 @@ func (_c *UserGroupCreate) SetNillableDescription(v *string) *UserGroupCreate {
 	return _c
 }
 
+// SetSortOrder sets the "sort_order" field.
+func (_c *UserGroupCreate) SetSortOrder(v int) *UserGroupCreate {
+	_c.mutation.SetSortOrder(v)
+	return _c
+}
+
+// SetNillableSortOrder sets the "sort_order" field if the given value is not nil.
+func (_c *UserGroupCreate) SetNillableSortOrder(v *int) *UserGroupCreate {
+	if v != nil {
+		_c.SetSortOrder(*v)
+	}
+	return _c
+}
+
+// SetIsDefault sets the "is_default" field.
+func (_c *UserGroupCreate) SetIsDefault(v bool) *UserGroupCreate {
+	_c.mutation.SetIsDefault(v)
+	return _c
+}
+
+// SetNillableIsDefault sets the "is_default" field if the given value is not nil.
+func (_c *UserGroupCreate) SetNillableIsDefault(v *bool) *UserGroupCreate {
+	if v != nil {
+		_c.SetIsDefault(*v)
+	}
+	return _c
+}
+
 // Mutation returns the UserGroupMutation object of the builder.
 func (_c *UserGroupCreate) Mutation() *UserGroupMutation {
 	return _c.mutation
@@ -153,6 +181,14 @@ func (_c *UserGroupCreate) defaults() {
 		v := usergroup.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.SortOrder(); !ok {
+		v := usergroup.DefaultSortOrder
+		_c.mutation.SetSortOrder(v)
+	}
+	if _, ok := _c.mutation.IsDefault(); !ok {
+		v := usergroup.DefaultIsDefault
+		_c.mutation.SetIsDefault(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -194,6 +230,12 @@ func (_c *UserGroupCreate) check() error {
 		if err := usergroup.DescriptionValidator(v); err != nil {
 			return &ValidationError{Name: "description", err: fmt.Errorf(`ent: validator failed for field "UserGroup.description": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.SortOrder(); !ok {
+		return &ValidationError{Name: "sort_order", err: errors.New(`ent: missing required field "UserGroup.sort_order"`)}
+	}
+	if _, ok := _c.mutation.IsDefault(); !ok {
+		return &ValidationError{Name: "is_default", err: errors.New(`ent: missing required field "UserGroup.is_default"`)}
 	}
 	return nil
 }
@@ -248,6 +290,14 @@ func (_c *UserGroupCreate) createSpec() (*UserGroup, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Description(); ok {
 		_spec.SetField(usergroup.FieldDescription, field.TypeString, value)
 		_node.Description = &value
+	}
+	if value, ok := _c.mutation.SortOrder(); ok {
+		_spec.SetField(usergroup.FieldSortOrder, field.TypeInt, value)
+		_node.SortOrder = value
+	}
+	if value, ok := _c.mutation.IsDefault(); ok {
+		_spec.SetField(usergroup.FieldIsDefault, field.TypeBool, value)
+		_node.IsDefault = value
 	}
 	return _node, _spec
 }

@@ -11,12 +11,23 @@ import type {
   ConfigTab,
   ModelProvider,
   ModelRoute,
+  ModelAccount,
+  ModelAccountModel,
+  ModelAccountModelWriteRequest,
+  ModelAccountWriteRequest,
   PageResult,
   ProviderHealth,
   ProviderModel,
   RedeemCode,
   ReviewItem,
+  RouteModel,
+  RouteModelCandidate,
+  RouteModelCandidateWriteRequest,
+  RouteModelPrice,
+  RouteModelPriceWriteRequest,
+  RouteModelWriteRequest,
   UserGroup,
+  UserGroupWriteRequest,
 } from './api-types'
 import { API_PATHS } from './api-types'
 import { normalizePage, sharedApiClient } from './http-client'
@@ -63,11 +74,13 @@ export const adminApi = {
   updateUserLimits: (user_id: string | number, rpm_limit: number, concurrency_limit: number) =>
     sharedApiClient.request(API_PATHS.ops.userLimits, { method: 'POST', pathParams: { user_id }, body: { rpm_limit, concurrency_limit } }),
   assignUserGroup: (user_id: string | number, user_group_code: string) =>
-    sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'POST', pathParams: { user_id }, body: { user_group_code } }),
-  listUserGroups: async () => (normalizePage<UserGroup>(await sharedApiClient.request(API_PATHS.ops.userGroups))).items,
-  createUserGroup: (group: UserGroup) => sharedApiClient.request<UserGroup>(API_PATHS.ops.userGroups, { method: 'POST', body: group }),
-  updateUserGroup: (group_code: string, group: Partial<UserGroup>) => sharedApiClient.request<UserGroup>(API_PATHS.ops.userGroupDetail, { method: 'PUT', pathParams: { group_code }, body: group }),
-  deleteUserGroup: (group_code: string) => sharedApiClient.request<void>(API_PATHS.ops.userGroupDetail, { method: 'DELETE', pathParams: { group_code } }),
+    sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'PUT', pathParams: { user_id }, body: { group_ids: [user_group_code] } }),
+  assignUserGroups: (user_id: string | number, group_ids: Array<string | number>) =>
+    sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'PUT', pathParams: { user_id }, body: { group_ids } }),
+  listUserGroups: async () => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.userGroups))).items.map(toUserGroup),
+  createUserGroup: async (group: UserGroupWriteRequest) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroups, { method: 'POST', body: group })),
+  updateUserGroup: async (group_id: string | number, group: Partial<UserGroupWriteRequest>) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroupDetail, { method: 'PUT', pathParams: { group_id }, body: group })),
+  deleteUserGroup: (group_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.userGroupDetail, { method: 'DELETE', pathParams: { group_id } }),
   listAudit: async (query: Record<string, string | number | undefined> = {}) => {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.auditLogs, { query }))
     return result.items.map(toAudit)
@@ -94,6 +107,30 @@ export const adminApi = {
   createProviderModel: (input: Partial<ProviderModel>) => sharedApiClient.request<ProviderModel>(API_PATHS.ops.providerModels, { method: 'POST', body: input }),
   updateProviderModel: (provider_model_id: string | number, input: Partial<ProviderModel>) => sharedApiClient.request<ProviderModel>(API_PATHS.ops.providerModelDetail, { method: 'PUT', pathParams: { provider_model_id }, body: input }),
   deleteProviderModel: (provider_model_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.providerModelDetail, { method: 'DELETE', pathParams: { provider_model_id } }),
+  listModelAccounts: async (query: Record<string, string | number | boolean | undefined> = {}) => normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.modelAccounts, { query })).items.map(toModelAccount),
+  listModelAccountsPage: async (query: Record<string, string | number | boolean | undefined> = {}) => {
+    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.modelAccounts, { query }))
+    return { ...result, items: result.items.map(toModelAccount) }
+  },
+  createModelAccount: async (input: ModelAccountWriteRequest) => toModelAccount(await sharedApiClient.request(API_PATHS.ops.modelAccounts, { method: 'POST', body: input })),
+  updateModelAccount: async (account_id: string | number, input: Partial<ModelAccountWriteRequest>) => toModelAccount(await sharedApiClient.request(API_PATHS.ops.modelAccountDetail, { method: 'PUT', pathParams: { account_id }, body: input })),
+  deleteModelAccount: (account_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.modelAccountDetail, { method: 'DELETE', pathParams: { account_id } }),
+  listModelAccountModels: async (account_id: string | number) => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.modelAccountModels, { pathParams: { account_id } }))).items.map((row) => toModelAccountModel(row, account_id)),
+  createModelAccountModel: async (account_id: string | number, input: ModelAccountModelWriteRequest) => toModelAccountModel(await sharedApiClient.request(API_PATHS.ops.modelAccountModels, { method: 'POST', pathParams: { account_id }, body: input }), account_id),
+  updateModelAccountModel: async (account_id: string | number, model_id: string | number, input: Partial<ModelAccountModelWriteRequest>) => toModelAccountModel(await sharedApiClient.request(API_PATHS.ops.modelAccountModelDetail, { method: 'PUT', pathParams: { account_id, model_id }, body: input }), account_id),
+  deleteModelAccountModel: (account_id: string | number, model_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.modelAccountModelDetail, { method: 'DELETE', pathParams: { account_id, model_id } }),
+  listRouteModels: async (query: Record<string, string | number | boolean | undefined> = {}) => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.routeModels, { query }))).items.map(toRouteModel),
+  createRouteModel: async (input: RouteModelWriteRequest) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModels, { method: 'POST', body: input })),
+  updateRouteModel: async (route_model_id: string | number, input: Partial<RouteModelWriteRequest>) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModelDetail, { method: 'PUT', pathParams: { route_model_id }, body: input })),
+  deleteRouteModel: (route_model_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.routeModelDetail, { method: 'DELETE', pathParams: { route_model_id } }),
+  listRouteModelCandidates: async (route_model_id: string | number) => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.routeModelCandidates, { pathParams: { route_model_id } }))).items.map((row) => toRouteModelCandidate(row, route_model_id)),
+  createRouteModelCandidate: async (route_model_id: string | number, input: RouteModelCandidateWriteRequest) => toRouteModelCandidate(await sharedApiClient.request(API_PATHS.ops.routeModelCandidates, { method: 'POST', pathParams: { route_model_id }, body: input }), route_model_id),
+  updateRouteModelCandidate: async (route_model_id: string | number, candidate_id: string | number, input: Partial<RouteModelCandidateWriteRequest>) => toRouteModelCandidate(await sharedApiClient.request(API_PATHS.ops.routeModelCandidateDetail, { method: 'PUT', pathParams: { route_model_id, candidate_id }, body: input }), route_model_id),
+  deleteRouteModelCandidate: (route_model_id: string | number, candidate_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.routeModelCandidateDetail, { method: 'DELETE', pathParams: { route_model_id, candidate_id } }),
+  listRouteModelPrices: async (query: Record<string, string | number | boolean | undefined> = {}) => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.routeModelPrices, { query }))).items.map(toRouteModelPrice),
+  createRouteModelPrice: async (input: RouteModelPriceWriteRequest) => toRouteModelPrice(await sharedApiClient.request(API_PATHS.ops.routeModelPrices, { method: 'POST', body: input })),
+  updateRouteModelPrice: async (price_id: string | number, input: Partial<RouteModelPriceWriteRequest>) => toRouteModelPrice(await sharedApiClient.request(API_PATHS.ops.routeModelPriceDetail, { method: 'PUT', pathParams: { price_id }, body: input })),
+  deleteRouteModelPrice: (price_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.routeModelPriceDetail, { method: 'DELETE', pathParams: { price_id } }),
   listRoutes: async () => {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.modelRoutes))
     return result.items.map(toRoute)
@@ -141,16 +178,137 @@ function toAdminUser(raw: any): AdminUser {
   const id = raw.id ?? raw.user_id ?? raw.user?.id
   const email = raw.email ?? raw.user?.email ?? ''
   const name = raw.display_name ?? raw.nickname ?? raw.user?.nickname ?? email?.split('@')[0] ?? `User ${id}`
+  const rawGroups = raw.user_groups ?? raw.groups ?? raw.memberships ?? []
+  const normalizedGroups = Array.isArray(rawGroups) ? rawGroups.map(toUserGroup) : []
+  const groupCodes = normalizedGroups.map((group) => group.code)
   return {
     ...raw,
     id: String(id ?? ''),
     email,
     display_name: name,
     status: raw.status ?? raw.user?.status ?? 'active',
-    group: raw.user_group_code ?? raw.group ?? raw.user?.user_group_code ?? 'basic',
+    group: groupCodes.length ? groupCodes.join(', ') : raw.user_group_code ?? raw.group ?? raw.user?.user_group_code ?? 'basic',
+    user_group_codes: groupCodes.length ? groupCodes : raw.user_group_codes ?? (raw.user_group_code ? [raw.user_group_code] : undefined),
+    user_groups: normalizedGroups,
     balance: String(balance ?? raw.available_points ?? raw.user?.available_points ?? '0.00000'),
     created_at: raw.created_at ?? '',
     last_seen_at: raw.last_seen_at ?? raw.updated_at ?? '',
+  }
+}
+
+function toUserGroup(raw: any): UserGroup {
+  const code = raw.code ?? raw.group_code ?? ''
+  const name = raw.name ?? raw.group_name ?? code
+  return {
+    ...raw,
+    id: raw.id ?? raw.group_id ?? code,
+    code,
+    name,
+    group_code: code,
+    group_name: name,
+    multiplier: String(raw.multiplier ?? '1.00000'),
+    status: raw.status ?? 'enabled',
+    sort_order: Number(raw.sort_order ?? 0),
+    is_default: Boolean(raw.is_default ?? false),
+    description: raw.description ?? null,
+    created_at: raw.created_at ?? '',
+    updated_at: raw.updated_at ?? '',
+  }
+}
+
+function toModelAccount(raw: any): ModelAccount {
+  return {
+    ...raw,
+    id: raw.id ?? raw.account_id,
+    name: raw.name ?? raw.account_name ?? '',
+    adapter_type: raw.adapter_type ?? 'openai_compatible',
+    auth_type: raw.auth_type ?? 'api_key',
+    base_url: raw.base_url ?? '',
+    credentials_status: raw.credentials_status ?? { has_api_key: Boolean(raw.has_api_key) },
+    status: raw.status ?? (raw.enabled === false ? 'disabled' : 'enabled'),
+    priority: Number(raw.priority ?? 1),
+    weight: Number(raw.weight ?? 100),
+    concurrency_limit: Number(raw.concurrency_limit ?? 1),
+    timeout_ms: Number(raw.timeout_ms ?? 120000),
+    error_message: raw.error_message ?? null,
+    last_used_at: raw.last_used_at ?? null,
+    extra: raw.extra ?? {},
+    created_at: raw.created_at ?? '',
+    updated_at: raw.updated_at ?? '',
+  }
+}
+
+function toModelAccountModel(raw: any, accountId?: string | number): ModelAccountModel {
+  return {
+    ...raw,
+    id: raw.id ?? raw.model_id,
+    account_id: raw.account_id ?? accountId ?? raw.model_account_id,
+    account_name: raw.account_name ?? raw.model_account?.name,
+    model_code: raw.model_code ?? '',
+    display_name: raw.display_name ?? raw.name ?? raw.model_code ?? '',
+    task_types: raw.task_types ?? ['text_to_image'],
+    qualities: raw.qualities ?? raw.supported_qualities ?? ['auto'],
+    cost_per_image: String(raw.cost_per_image ?? raw.output_cost ?? '0.00000'),
+    currency: raw.currency ?? 'USD',
+    enabled: Boolean(raw.enabled ?? true),
+    extra: raw.extra ?? {},
+    created_at: raw.created_at ?? '',
+    updated_at: raw.updated_at ?? '',
+  }
+}
+
+function toRouteModel(raw: any): RouteModel {
+  return {
+    ...raw,
+    id: raw.id ?? raw.route_model_id,
+    code: raw.code ?? raw.route_model_code ?? '',
+    name: raw.name ?? raw.display_name ?? raw.code ?? '',
+    description: raw.description ?? '',
+    visibility: raw.visibility ?? 'hidden',
+    enabled: Boolean(raw.enabled ?? true),
+    sort_order: Number(raw.sort_order ?? 0),
+    group_ids: raw.group_ids ?? (raw.groups ?? []).map((group: any) => group.id ?? group.group_id ?? group.code),
+    groups: (raw.groups ?? []).map(toUserGroup),
+    candidates: (raw.candidates ?? []).map((row: any) => toRouteModelCandidate(row, raw.id ?? raw.route_model_id)),
+    prices: (raw.prices ?? []).map(toRouteModelPrice),
+    created_at: raw.created_at ?? '',
+    updated_at: raw.updated_at ?? '',
+  }
+}
+
+function toRouteModelCandidate(raw: any, routeModelId?: string | number): RouteModelCandidate {
+  const accountModel = raw.account_model ? toModelAccountModel(raw.account_model) : undefined
+  return {
+    ...raw,
+    id: raw.id ?? raw.candidate_id,
+    route_model_id: raw.route_model_id ?? routeModelId,
+    account_model_id: raw.account_model_id ?? accountModel?.id,
+    account_model: accountModel,
+    model_code: raw.model_code ?? accountModel?.model_code,
+    account_name: raw.account_name ?? accountModel?.account_name,
+    priority: Number(raw.priority ?? 1),
+    weight: Number(raw.weight ?? 100),
+    fallback_order: Number(raw.fallback_order ?? 1),
+    enabled: Boolean(raw.enabled ?? true),
+    created_at: raw.created_at ?? '',
+    updated_at: raw.updated_at ?? '',
+  }
+}
+
+function toRouteModelPrice(raw: any): RouteModelPrice {
+  return {
+    ...raw,
+    id: raw.id ?? raw.price_id,
+    route_model_id: raw.route_model_id,
+    route_model_code: raw.route_model_code ?? raw.route_model?.code,
+    route_model_name: raw.route_model_name ?? raw.route_model?.name,
+    task_type: raw.task_type ?? 'text_to_image',
+    quality: raw.quality ?? 'auto',
+    base_points: String(raw.base_points ?? '0.00000'),
+    reference_multiplier: String(raw.reference_multiplier ?? '1.00000'),
+    enabled: Boolean(raw.enabled ?? true),
+    created_at: raw.created_at ?? '',
+    updated_at: raw.updated_at ?? '',
   }
 }
 

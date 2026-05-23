@@ -153,6 +153,16 @@ func (s *Service) AssignUserGroup(ctx context.Context, req domainadminuser.Group
 	return s.store.AssignUserGroup(ctx, req)
 }
 
+func (s *Service) AssignUserGroups(ctx context.Context, req domainadminuser.MultiGroupAssignmentRequest) (domainadminuser.UserSummary, error) {
+	if req.UserID <= 0 {
+		return domainadminuser.UserSummary{}, errs.BadRequest("invalid user_id")
+	}
+	if len(req.GroupIDs) == 0 {
+		return domainadminuser.UserSummary{}, errs.BadRequest("group_ids is required")
+	}
+	return s.store.AssignUserGroups(ctx, req)
+}
+
 func (s *Service) DeleteUser(ctx context.Context, userID int64) (domainadminuser.UserSummary, error) {
 	if userID <= 0 {
 		return domainadminuser.UserSummary{}, errs.BadRequest("invalid user_id")
@@ -228,7 +238,10 @@ func normalizeStatus(status string) string {
 func normalizeGroupStatus(status string) string {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
-	case "", "active", "disabled":
+	case "", "active", "enabled", "disabled":
+		if status == "active" {
+			return "enabled"
+		}
 		return status
 	default:
 		return ""

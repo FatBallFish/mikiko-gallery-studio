@@ -27,6 +27,10 @@ const (
 	FieldStatus = "status"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
+	// FieldSortOrder holds the string denoting the sort_order field in the database.
+	FieldSortOrder = "sort_order"
+	// FieldIsDefault holds the string denoting the is_default field in the database.
+	FieldIsDefault = "is_default"
 	// Table holds the table name of the usergroup in the database.
 	Table = "user_groups"
 )
@@ -41,6 +45,8 @@ var Columns = []string{
 	FieldMultiplier,
 	FieldStatus,
 	FieldDescription,
+	FieldSortOrder,
+	FieldIsDefault,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -72,6 +78,10 @@ var (
 	StatusValidator func(string) error
 	// DescriptionValidator is a validator for the "description" field. It is called by the builders before save.
 	DescriptionValidator func(string) error
+	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
+	DefaultSortOrder int
+	// DefaultIsDefault holds the default value on creation for the "is_default" field.
+	DefaultIsDefault bool
 )
 
 // OrderOption defines the ordering options for the UserGroup queries.
@@ -115,4 +125,14 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByDescription orders the results by the description field.
 func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDescription, opts...).ToFunc()
+}
+
+// BySortOrder orders the results by the sort_order field.
+func BySortOrder(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSortOrder, opts...).ToFunc()
+}
+
+// ByIsDefault orders the results by the is_default field.
+func ByIsDefault(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsDefault, opts...).ToFunc()
 }

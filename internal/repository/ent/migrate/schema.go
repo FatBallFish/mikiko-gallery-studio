@@ -293,6 +293,13 @@ var (
 		{Name: "save_policy", Type: field.TypeString, Size: 16, Default: "private"},
 		{Name: "estimated_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "actual_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "route_model_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "route_model_code", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "account_model_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "model_account_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "upstream_model_code", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "effective_multiplier", Type: field.TypeString, Default: "1.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "charged_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "provider_model_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "provider_cost", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "gross_margin", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
@@ -346,6 +353,11 @@ var (
 				Columns: []*schema.Column{ImageTasksColumns[11]},
 			},
 			{
+				Name:    "imagetask_route_model_code",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[29]},
+			},
+			{
 				Name:    "imagetask_resolved_quality_bucket",
 				Unique:  false,
 				Columns: []*schema.Column{ImageTasksColumns[13]},
@@ -353,22 +365,32 @@ var (
 			{
 				Name:    "imagetask_provider_model_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[28]},
+				Columns: []*schema.Column{ImageTasksColumns[35]},
+			},
+			{
+				Name:    "imagetask_account_model_id",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[30]},
+			},
+			{
+				Name:    "imagetask_model_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[31]},
 			},
 			{
 				Name:    "imagetask_lease_owner",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[37]},
+				Columns: []*schema.Column{ImageTasksColumns[44]},
 			},
 			{
 				Name:    "imagetask_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[38]},
+				Columns: []*schema.Column{ImageTasksColumns[45]},
 			},
 			{
 				Name:    "imagetask_error_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[39]},
+				Columns: []*schema.Column{ImageTasksColumns[46]},
 			},
 			{
 				Name:    "imagetask_created_at",
@@ -379,6 +401,84 @@ var (
 				Name:    "imagetask_deleted_at",
 				Unique:  false,
 				Columns: []*schema.Column{ImageTasksColumns[3]},
+			},
+		},
+	}
+	// ModelAccountsColumns holds the columns for the "model_accounts" table.
+	ModelAccountsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "adapter_type", Type: field.TypeString, Size: 64},
+		{Name: "auth_type", Type: field.TypeString, Size: 64},
+		{Name: "base_url", Type: field.TypeString, Size: 512},
+		{Name: "credentials_encrypted", Type: field.TypeJSON, Nullable: true},
+		{Name: "credentials_fingerprint", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "disabled"},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "weight", Type: field.TypeInt, Default: 100},
+		{Name: "concurrency_limit", Type: field.TypeInt, Default: 1},
+		{Name: "timeout_ms", Type: field.TypeInt, Default: 120000},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
+		{Name: "extra", Type: field.TypeJSON, Nullable: true},
+	}
+	// ModelAccountsTable holds the schema information for the "model_accounts" table.
+	ModelAccountsTable = &schema.Table{
+		Name:       "model_accounts",
+		Columns:    ModelAccountsColumns,
+		PrimaryKey: []*schema.Column{ModelAccountsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "modelaccount_adapter_type_status",
+				Unique:  false,
+				Columns: []*schema.Column{ModelAccountsColumns[5], ModelAccountsColumns[10]},
+			},
+			{
+				Name:    "modelaccount_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{ModelAccountsColumns[3]},
+			},
+		},
+	}
+	// ModelAccountModelsColumns holds the columns for the "model_account_models" table.
+	ModelAccountModelsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "model_code", Type: field.TypeString, Size: 128},
+		{Name: "display_name", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "task_types", Type: field.TypeJSON, Nullable: true},
+		{Name: "qualities", Type: field.TypeJSON, Nullable: true},
+		{Name: "cost_per_image", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
+		{Name: "currency", Type: field.TypeString, Size: 16, Default: "USD"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "extra", Type: field.TypeJSON, Nullable: true},
+	}
+	// ModelAccountModelsTable holds the schema information for the "model_account_models" table.
+	ModelAccountModelsTable = &schema.Table{
+		Name:       "model_account_models",
+		Columns:    ModelAccountModelsColumns,
+		PrimaryKey: []*schema.Column{ModelAccountModelsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "modelaccountmodel_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{ModelAccountModelsColumns[4]},
+			},
+			{
+				Name:    "modelaccountmodel_account_id_model_code",
+				Unique:  true,
+				Columns: []*schema.Column{ModelAccountModelsColumns[4], ModelAccountModelsColumns[5]},
+			},
+			{
+				Name:    "modelaccountmodel_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{ModelAccountModelsColumns[11]},
 			},
 		},
 	}
@@ -829,6 +929,112 @@ var (
 			},
 		},
 	}
+	// RouteModelsColumns holds the columns for the "route_models" table.
+	RouteModelsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "code", Type: field.TypeString, Size: 64},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "description", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "visibility", Type: field.TypeString, Size: 32, Default: "hidden"},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+	}
+	// RouteModelsTable holds the schema information for the "route_models" table.
+	RouteModelsTable = &schema.Table{
+		Name:       "route_models",
+		Columns:    RouteModelsColumns,
+		PrimaryKey: []*schema.Column{RouteModelsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "routemodel_code",
+				Unique:  true,
+				Columns: []*schema.Column{RouteModelsColumns[4]},
+			},
+			{
+				Name:    "routemodel_visibility_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{RouteModelsColumns[7], RouteModelsColumns[8]},
+			},
+		},
+	}
+	// RouteModelCandidatesColumns holds the columns for the "route_model_candidates" table.
+	RouteModelCandidatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "route_model_id", Type: field.TypeInt64},
+		{Name: "account_model_id", Type: field.TypeInt64},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "weight", Type: field.TypeInt, Default: 100},
+		{Name: "fallback_order", Type: field.TypeInt, Default: 0},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+	}
+	// RouteModelCandidatesTable holds the schema information for the "route_model_candidates" table.
+	RouteModelCandidatesTable = &schema.Table{
+		Name:       "route_model_candidates",
+		Columns:    RouteModelCandidatesColumns,
+		PrimaryKey: []*schema.Column{RouteModelCandidatesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "routemodelcandidate_route_model_id_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{RouteModelCandidatesColumns[1], RouteModelCandidatesColumns[6]},
+			},
+			{
+				Name:    "routemodelcandidate_route_model_id_account_model_id",
+				Unique:  true,
+				Columns: []*schema.Column{RouteModelCandidatesColumns[1], RouteModelCandidatesColumns[2]},
+			},
+		},
+	}
+	// RouteModelPricesColumns holds the columns for the "route_model_prices" table.
+	RouteModelPricesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "route_model_id", Type: field.TypeInt64},
+		{Name: "task_type", Type: field.TypeString, Size: 64},
+		{Name: "quality", Type: field.TypeString, Size: 32},
+		{Name: "base_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
+		{Name: "reference_multiplier", Type: field.TypeString, Default: "1.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+	}
+	// RouteModelPricesTable holds the schema information for the "route_model_prices" table.
+	RouteModelPricesTable = &schema.Table{
+		Name:       "route_model_prices",
+		Columns:    RouteModelPricesColumns,
+		PrimaryKey: []*schema.Column{RouteModelPricesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "routemodelprice_route_model_id_task_type_quality",
+				Unique:  true,
+				Columns: []*schema.Column{RouteModelPricesColumns[1], RouteModelPricesColumns[2], RouteModelPricesColumns[3]},
+			},
+		},
+	}
+	// RouteModelVisibilityGroupsColumns holds the columns for the "route_model_visibility_groups" table.
+	RouteModelVisibilityGroupsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "route_model_id", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64},
+	}
+	// RouteModelVisibilityGroupsTable holds the schema information for the "route_model_visibility_groups" table.
+	RouteModelVisibilityGroupsTable = &schema.Table{
+		Name:       "route_model_visibility_groups",
+		Columns:    RouteModelVisibilityGroupsColumns,
+		PrimaryKey: []*schema.Column{RouteModelVisibilityGroupsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "routemodelvisibilitygroup_route_model_id_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{RouteModelVisibilityGroupsColumns[1], RouteModelVisibilityGroupsColumns[2]},
+			},
+			{
+				Name:    "routemodelvisibilitygroup_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{RouteModelVisibilityGroupsColumns[2]},
+			},
+		},
+	}
 	// SubscriptionPlansColumns holds the columns for the "subscription_plans" table.
 	SubscriptionPlansColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -917,8 +1123,10 @@ var (
 		{Name: "group_code", Type: field.TypeString, Size: 32},
 		{Name: "group_name", Type: field.TypeString, Size: 64},
 		{Name: "multiplier", Type: field.TypeString, Default: "1.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
-		{Name: "status", Type: field.TypeString, Size: 16, Default: "active"},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "enabled"},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "is_default", Type: field.TypeBool, Default: false},
 	}
 	// UserGroupsTable holds the schema information for the "user_groups" table.
 	UserGroupsTable = &schema.Table{
@@ -935,6 +1143,31 @@ var (
 				Name:    "usergroup_status",
 				Unique:  false,
 				Columns: []*schema.Column{UserGroupsColumns[6]},
+			},
+		},
+	}
+	// UserGroupMembersColumns holds the columns for the "user_group_members" table.
+	UserGroupMembersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// UserGroupMembersTable holds the schema information for the "user_group_members" table.
+	UserGroupMembersTable = &schema.Table{
+		Name:       "user_group_members",
+		Columns:    UserGroupMembersColumns,
+		PrimaryKey: []*schema.Column{UserGroupMembersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "usergroupmember_user_id_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserGroupMembersColumns[1], UserGroupMembersColumns[2]},
+			},
+			{
+				Name:    "usergroupmember_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserGroupMembersColumns[2]},
 			},
 		},
 	}
@@ -1098,6 +1331,8 @@ var (
 		SystemConfigsTable,
 		TaskImagesTable,
 		ImageTasksTable,
+		ModelAccountsTable,
+		ModelAccountModelsTable,
 		ModelProvidersTable,
 		ModelRoutesTable,
 		PaymentOrdersTable,
@@ -1108,9 +1343,14 @@ var (
 		RedeemCodesTable,
 		ReferenceAssetsTable,
 		RefreshSessionsTable,
+		RouteModelsTable,
+		RouteModelCandidatesTable,
+		RouteModelPricesTable,
+		RouteModelVisibilityGroupsTable,
 		SubscriptionPlansTable,
 		UsersTable,
 		UserGroupsTable,
+		UserGroupMembersTable,
 		UserSubscriptionsTable,
 		WalletGrantsTable,
 		WalletReservationAllocationsTable,
@@ -1124,6 +1364,12 @@ func init() {
 	TaskImagesTable.Annotation = &entsql.Annotation{
 		Table: "task_images",
 	}
+	ModelAccountsTable.Annotation = &entsql.Annotation{
+		Table: "model_accounts",
+	}
+	ModelAccountModelsTable.Annotation = &entsql.Annotation{
+		Table: "model_account_models",
+	}
 	ModelProvidersTable.Annotation = &entsql.Annotation{
 		Table: "model_providers",
 	}
@@ -1135,5 +1381,20 @@ func init() {
 	}
 	ProviderModelsTable.Annotation = &entsql.Annotation{
 		Table: "provider_models",
+	}
+	RouteModelsTable.Annotation = &entsql.Annotation{
+		Table: "route_models",
+	}
+	RouteModelCandidatesTable.Annotation = &entsql.Annotation{
+		Table: "route_model_candidates",
+	}
+	RouteModelPricesTable.Annotation = &entsql.Annotation{
+		Table: "route_model_prices",
+	}
+	RouteModelVisibilityGroupsTable.Annotation = &entsql.Annotation{
+		Table: "route_model_visibility_groups",
+	}
+	UserGroupMembersTable.Annotation = &entsql.Annotation{
+		Table: "user_group_members",
 	}
 }

@@ -93,6 +93,30 @@ func (f ImageTaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ImageTaskMutation", m)
 }
 
+// The ModelAccountFunc type is an adapter to allow the use of ordinary
+// function as ModelAccount mutator.
+type ModelAccountFunc func(context.Context, *ent.ModelAccountMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ModelAccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ModelAccountMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelAccountMutation", m)
+}
+
+// The ModelAccountModelFunc type is an adapter to allow the use of ordinary
+// function as ModelAccountModel mutator.
+type ModelAccountModelFunc func(context.Context, *ent.ModelAccountModelMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ModelAccountModelFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ModelAccountModelMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelAccountModelMutation", m)
+}
+
 // The ModelProviderFunc type is an adapter to allow the use of ordinary
 // function as ModelProvider mutator.
 type ModelProviderFunc func(context.Context, *ent.ModelProviderMutation) (ent.Value, error)
@@ -213,6 +237,54 @@ func (f RefreshSessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Val
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RefreshSessionMutation", m)
 }
 
+// The RouteModelFunc type is an adapter to allow the use of ordinary
+// function as RouteModel mutator.
+type RouteModelFunc func(context.Context, *ent.RouteModelMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RouteModelFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RouteModelMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RouteModelMutation", m)
+}
+
+// The RouteModelCandidateFunc type is an adapter to allow the use of ordinary
+// function as RouteModelCandidate mutator.
+type RouteModelCandidateFunc func(context.Context, *ent.RouteModelCandidateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RouteModelCandidateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RouteModelCandidateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RouteModelCandidateMutation", m)
+}
+
+// The RouteModelPriceFunc type is an adapter to allow the use of ordinary
+// function as RouteModelPrice mutator.
+type RouteModelPriceFunc func(context.Context, *ent.RouteModelPriceMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RouteModelPriceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RouteModelPriceMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RouteModelPriceMutation", m)
+}
+
+// The RouteModelVisibilityGroupFunc type is an adapter to allow the use of ordinary
+// function as RouteModelVisibilityGroup mutator.
+type RouteModelVisibilityGroupFunc func(context.Context, *ent.RouteModelVisibilityGroupMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RouteModelVisibilityGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RouteModelVisibilityGroupMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RouteModelVisibilityGroupMutation", m)
+}
+
 // The SubscriptionPlanFunc type is an adapter to allow the use of ordinary
 // function as SubscriptionPlan mutator.
 type SubscriptionPlanFunc func(context.Context, *ent.SubscriptionPlanMutation) (ent.Value, error)
@@ -247,6 +319,18 @@ func (f UserGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserGroupMutation", m)
+}
+
+// The UserGroupMemberFunc type is an adapter to allow the use of ordinary
+// function as UserGroupMember mutator.
+type UserGroupMemberFunc func(context.Context, *ent.UserGroupMemberMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserGroupMemberFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserGroupMemberMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserGroupMemberMutation", m)
 }
 
 // The UserSubscriptionFunc type is an adapter to allow the use of ordinary

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
 import type { AdminRouteId, ToastMessage, ToastTone } from './types'
 
@@ -36,8 +37,8 @@ export const navGroups: Array<{ label: string; items: Array<{ id: Exclude<AdminR
   {
     label: '模型与路由',
     items: [
-      { id: 'routing', label: '路由策略', hint: 'Routes' },
-      { id: 'provider-models', label: '模型接入', hint: 'Models' },
+      { id: 'routing', label: '路由模型', hint: 'Routes' },
+      { id: 'provider-models', label: '接入账号', hint: 'Accounts' },
       { id: 'pricing', label: '价格配置', hint: 'Pricing' },
     ],
   },
@@ -332,13 +333,66 @@ export function Modal({
   )
 }
 
-export function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string | null }) {
+export function Field({ label, children, error, hint }: { label: string; children: React.ReactNode; error?: string | null; hint?: string }) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span className="field-label">
+        <span>{label}</span>
+        {hint ? <FieldHint text={hint} /> : null}
+      </span>
       {children}
       {error ? <em>{error}</em> : null}
     </label>
+  )
+}
+
+function FieldHint({ text }: { text: string }) {
+  const anchorRef = useRef<HTMLSpanElement | null>(null)
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number; placement: 'top' | 'bottom' }>({ left: 0, top: 0, placement: 'top' })
+
+  useEffect(() => {
+    if (!open) return
+    const update = () => {
+      const rect = anchorRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const placement = rect.top < 72 ? 'bottom' : 'top'
+      const maxWidth = 260
+      const halfWidth = maxWidth / 2
+      setPosition({
+        left: Math.min(window.innerWidth - halfWidth - 12, Math.max(halfWidth + 12, rect.left + rect.width / 2)),
+        top: placement === 'bottom' ? rect.bottom + 8 : rect.top - 8,
+        placement,
+      })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open])
+
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        className="field-hint"
+        tabIndex={0}
+        aria-label={text}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        i
+      </span>
+      {open ? createPortal(
+        <span className="field-hint-popover" role="tooltip" data-placement={position.placement} style={{ left: position.left, top: position.top }}>{text}</span>,
+        document.body,
+      ) : null}
+    </>
   )
 }
 

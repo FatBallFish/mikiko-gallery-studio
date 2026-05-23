@@ -101,7 +101,9 @@ export function toTask(raw: any): ImageTask {
     prompt: raw.prompt ?? '',
     task_type: taskType,
     status: raw.status ?? 'queued',
-    model_group: raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic-image',
+    route_model_code: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
+    route_model_name: raw.route_model_name,
+    model_group: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
     quality,
     aspect_ratio: raw.aspect_ratio ?? raw.requested_size ?? '1:1',
     image_count: Number(raw.image_count ?? raw.requested_output_image_count ?? results.length ?? 1),
@@ -120,7 +122,7 @@ export function toTask(raw: any): ImageTask {
 function toEstimateQuery(req: EstimateRequest) {
   return {
     task_type: req.task_type,
-    abstract_model: req.model_group,
+    route_model_code: req.route_model_code,
     requested_quality: req.quality,
     requested_size: sizeMap[req.aspect_ratio] ?? req.aspect_ratio,
     requested_output_image_count: req.image_count,
@@ -132,7 +134,7 @@ function toBackendTask(req: CreateTaskRequest) {
   return {
     task_type: req.task_type,
     prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
-    abstract_model: req.model_group,
+    route_model_code: req.route_model_code,
     requested_quality: req.quality,
     requested_size: sizeMap[req.aspect_ratio] ?? req.aspect_ratio,
     requested_output_image_count: req.image_count,
@@ -143,11 +145,13 @@ function toBackendTask(req: CreateTaskRequest) {
 }
 
 function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
-  const points = raw.estimated_points ?? raw.points ?? '0.00000'
+  const points = raw.display_points ?? raw.charged_points ?? raw.estimated_points ?? raw.points ?? '0.00000'
   return {
     ...raw,
     points,
-    formula: raw.formula ?? `${req?.model_group ?? raw.pricing_snapshot?.abstract_model ?? ''} x ${req?.quality ?? raw.resolved_quality_bucket ?? ''}`,
+    charged_points: raw.charged_points ?? raw.estimated_points ?? raw.points,
+    display_points: raw.display_points ?? points,
+    formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${req?.quality ?? raw.resolved_quality_bucket ?? ''}`,
     resolved_quality: raw.resolved_quality_bucket ?? raw.resolved_quality ?? req?.quality ?? 'auto',
     sufficient: raw.sufficient ?? true,
   }
@@ -203,15 +207,38 @@ export const userApi = {
   getCapabilities: async (): Promise<Capability> => {
     const raw: any = await sharedApiClient.request(API_PATHS.agent.capabilities)
     const models = raw.model_groups ?? raw.abstract_models ?? raw.models ?? []
+    const normalizedModels = models.map((item: any) => {
+      const taskTypes = item.task_types ?? ['text_to_image']
+      const qualities = item.qualities ?? item.supported_qualities ?? raw.qualities ?? raw.supported_qualities ?? ['auto']
+      const prices = (item.prices ?? []).map((price: any) => ({
+        task_type: price.task_type ?? 'text_to_image',
+        quality: price.quality ?? 'auto',
+        base_points: String(price.base_points ?? '0.00000'),
+        charged_points: String(price.charged_points ?? price.points ?? price.base_points ?? '0.00000'),
+        display_points: String(price.display_points ?? price.charged_points ?? price.points ?? price.base_points ?? '0.00'),
+        reference_multiplier: price.reference_multiplier,
+      }))
+      const code = item.code ?? item.route_model_code ?? item.group_code ?? item.model_code ?? item.id
+      const maxReference = Number(item.max_reference_image_count ?? item.max_reference_count ?? 0)
+      return {
+        id: String(code),
+        code: String(code),
+        name: item.name ?? item.group_name ?? item.model_code ?? code,
+        description: item.description ?? '',
+        task_types: taskTypes,
+        qualities,
+        aspect_ratios: item.aspect_ratios ?? raw.aspect_ratios ?? raw.supported_ratios,
+        max_output_image_count: Number(item.max_output_image_count ?? item.max_image_count ?? raw.max_image_count ?? 4),
+        max_reference_image_count: maxReference,
+        effective_multiplier: item.effective_multiplier,
+        prices,
+        supports_reference: Boolean(item.supports_reference ?? item.supports_image_input ?? (maxReference > 0)),
+        display_points: item.display_points ?? prices[0]?.display_points,
+      }
+    })
     return {
       raw,
-      model_groups: models.map((item: any) => ({
-        id: item.id ?? item.group_code ?? item.code ?? item.model_code,
-        name: item.name ?? item.group_name ?? item.model_code ?? item.group_code,
-        provider: item.provider ?? item.provider_code ?? '',
-        supports_reference: Boolean(item.supports_reference ?? item.supports_image_input ?? true),
-        price_hint: item.price_hint ?? item.base_unit_points ?? '',
-      })),
+      model_groups: normalizedModels,
       qualities: raw.qualities ?? raw.supported_qualities ?? ['auto', '1K', '2K', '4K'],
       aspect_ratios: raw.aspect_ratios ?? raw.supported_ratios ?? ['1:1', '16:9', '9:16', '4:3'],
       max_image_count: raw.max_image_count ?? 4,

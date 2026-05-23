@@ -68,6 +68,20 @@ const (
 	FieldEstimatedPoints = "estimated_points"
 	// FieldActualPoints holds the string denoting the actual_points field in the database.
 	FieldActualPoints = "actual_points"
+	// FieldRouteModelID holds the string denoting the route_model_id field in the database.
+	FieldRouteModelID = "route_model_id"
+	// FieldRouteModelCode holds the string denoting the route_model_code field in the database.
+	FieldRouteModelCode = "route_model_code"
+	// FieldAccountModelID holds the string denoting the account_model_id field in the database.
+	FieldAccountModelID = "account_model_id"
+	// FieldModelAccountID holds the string denoting the model_account_id field in the database.
+	FieldModelAccountID = "model_account_id"
+	// FieldUpstreamModelCode holds the string denoting the upstream_model_code field in the database.
+	FieldUpstreamModelCode = "upstream_model_code"
+	// FieldEffectiveMultiplier holds the string denoting the effective_multiplier field in the database.
+	FieldEffectiveMultiplier = "effective_multiplier"
+	// FieldChargedPoints holds the string denoting the charged_points field in the database.
+	FieldChargedPoints = "charged_points"
 	// FieldProviderModelID holds the string denoting the provider_model_id field in the database.
 	FieldProviderModelID = "provider_model_id"
 	// FieldProviderCost holds the string denoting the provider_cost field in the database.
@@ -132,6 +146,13 @@ var Columns = []string{
 	FieldSavePolicy,
 	FieldEstimatedPoints,
 	FieldActualPoints,
+	FieldRouteModelID,
+	FieldRouteModelCode,
+	FieldAccountModelID,
+	FieldModelAccountID,
+	FieldUpstreamModelCode,
+	FieldEffectiveMultiplier,
+	FieldChargedPoints,
 	FieldProviderModelID,
 	FieldProviderCost,
 	FieldGrossMargin,
@@ -212,6 +233,18 @@ var (
 	DefaultEstimatedPoints string
 	// DefaultActualPoints holds the default value on creation for the "actual_points" field.
 	DefaultActualPoints string
+	// DefaultRouteModelCode holds the default value on creation for the "route_model_code" field.
+	DefaultRouteModelCode string
+	// RouteModelCodeValidator is a validator for the "route_model_code" field. It is called by the builders before save.
+	RouteModelCodeValidator func(string) error
+	// DefaultUpstreamModelCode holds the default value on creation for the "upstream_model_code" field.
+	DefaultUpstreamModelCode string
+	// UpstreamModelCodeValidator is a validator for the "upstream_model_code" field. It is called by the builders before save.
+	UpstreamModelCodeValidator func(string) error
+	// DefaultEffectiveMultiplier holds the default value on creation for the "effective_multiplier" field.
+	DefaultEffectiveMultiplier string
+	// DefaultChargedPoints holds the default value on creation for the "charged_points" field.
+	DefaultChargedPoints string
 	// DefaultProviderCost holds the default value on creation for the "provider_cost" field.
 	DefaultProviderCost string
 	// DefaultGrossMargin holds the default value on creation for the "gross_margin" field.
@@ -371,6 +404,41 @@ func ByEstimatedPoints(opts ...sql.OrderTermOption) OrderOption {
 // ByActualPoints orders the results by the actual_points field.
 func ByActualPoints(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldActualPoints, opts...).ToFunc()
+}
+
+// ByRouteModelID orders the results by the route_model_id field.
+func ByRouteModelID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRouteModelID, opts...).ToFunc()
+}
+
+// ByRouteModelCode orders the results by the route_model_code field.
+func ByRouteModelCode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRouteModelCode, opts...).ToFunc()
+}
+
+// ByAccountModelID orders the results by the account_model_id field.
+func ByAccountModelID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccountModelID, opts...).ToFunc()
+}
+
+// ByModelAccountID orders the results by the model_account_id field.
+func ByModelAccountID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldModelAccountID, opts...).ToFunc()
+}
+
+// ByUpstreamModelCode orders the results by the upstream_model_code field.
+func ByUpstreamModelCode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamModelCode, opts...).ToFunc()
+}
+
+// ByEffectiveMultiplier orders the results by the effective_multiplier field.
+func ByEffectiveMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEffectiveMultiplier, opts...).ToFunc()
+}
+
+// ByChargedPoints orders the results by the charged_points field.
+func ByChargedPoints(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldChargedPoints, opts...).ToFunc()
 }
 
 // ByProviderModelID orders the results by the provider_model_id field.

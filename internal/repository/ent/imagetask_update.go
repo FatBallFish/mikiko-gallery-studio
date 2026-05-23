@@ -495,6 +495,143 @@ func (_u *ImageTaskUpdate) SetNillableActualPoints(v *string) *ImageTaskUpdate {
 	return _u
 }
 
+// SetRouteModelID sets the "route_model_id" field.
+func (_u *ImageTaskUpdate) SetRouteModelID(v int64) *ImageTaskUpdate {
+	_u.mutation.ResetRouteModelID()
+	_u.mutation.SetRouteModelID(v)
+	return _u
+}
+
+// SetNillableRouteModelID sets the "route_model_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableRouteModelID(v *int64) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetRouteModelID(*v)
+	}
+	return _u
+}
+
+// AddRouteModelID adds value to the "route_model_id" field.
+func (_u *ImageTaskUpdate) AddRouteModelID(v int64) *ImageTaskUpdate {
+	_u.mutation.AddRouteModelID(v)
+	return _u
+}
+
+// ClearRouteModelID clears the value of the "route_model_id" field.
+func (_u *ImageTaskUpdate) ClearRouteModelID() *ImageTaskUpdate {
+	_u.mutation.ClearRouteModelID()
+	return _u
+}
+
+// SetRouteModelCode sets the "route_model_code" field.
+func (_u *ImageTaskUpdate) SetRouteModelCode(v string) *ImageTaskUpdate {
+	_u.mutation.SetRouteModelCode(v)
+	return _u
+}
+
+// SetNillableRouteModelCode sets the "route_model_code" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableRouteModelCode(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetRouteModelCode(*v)
+	}
+	return _u
+}
+
+// SetAccountModelID sets the "account_model_id" field.
+func (_u *ImageTaskUpdate) SetAccountModelID(v int64) *ImageTaskUpdate {
+	_u.mutation.ResetAccountModelID()
+	_u.mutation.SetAccountModelID(v)
+	return _u
+}
+
+// SetNillableAccountModelID sets the "account_model_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableAccountModelID(v *int64) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetAccountModelID(*v)
+	}
+	return _u
+}
+
+// AddAccountModelID adds value to the "account_model_id" field.
+func (_u *ImageTaskUpdate) AddAccountModelID(v int64) *ImageTaskUpdate {
+	_u.mutation.AddAccountModelID(v)
+	return _u
+}
+
+// ClearAccountModelID clears the value of the "account_model_id" field.
+func (_u *ImageTaskUpdate) ClearAccountModelID() *ImageTaskUpdate {
+	_u.mutation.ClearAccountModelID()
+	return _u
+}
+
+// SetModelAccountID sets the "model_account_id" field.
+func (_u *ImageTaskUpdate) SetModelAccountID(v int64) *ImageTaskUpdate {
+	_u.mutation.ResetModelAccountID()
+	_u.mutation.SetModelAccountID(v)
+	return _u
+}
+
+// SetNillableModelAccountID sets the "model_account_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableModelAccountID(v *int64) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetModelAccountID(*v)
+	}
+	return _u
+}
+
+// AddModelAccountID adds value to the "model_account_id" field.
+func (_u *ImageTaskUpdate) AddModelAccountID(v int64) *ImageTaskUpdate {
+	_u.mutation.AddModelAccountID(v)
+	return _u
+}
+
+// ClearModelAccountID clears the value of the "model_account_id" field.
+func (_u *ImageTaskUpdate) ClearModelAccountID() *ImageTaskUpdate {
+	_u.mutation.ClearModelAccountID()
+	return _u
+}
+
+// SetUpstreamModelCode sets the "upstream_model_code" field.
+func (_u *ImageTaskUpdate) SetUpstreamModelCode(v string) *ImageTaskUpdate {
+	_u.mutation.SetUpstreamModelCode(v)
+	return _u
+}
+
+// SetNillableUpstreamModelCode sets the "upstream_model_code" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableUpstreamModelCode(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetUpstreamModelCode(*v)
+	}
+	return _u
+}
+
+// SetEffectiveMultiplier sets the "effective_multiplier" field.
+func (_u *ImageTaskUpdate) SetEffectiveMultiplier(v string) *ImageTaskUpdate {
+	_u.mutation.SetEffectiveMultiplier(v)
+	return _u
+}
+
+// SetNillableEffectiveMultiplier sets the "effective_multiplier" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableEffectiveMultiplier(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetEffectiveMultiplier(*v)
+	}
+	return _u
+}
+
+// SetChargedPoints sets the "charged_points" field.
+func (_u *ImageTaskUpdate) SetChargedPoints(v string) *ImageTaskUpdate {
+	_u.mutation.SetChargedPoints(v)
+	return _u
+}
+
+// SetNillableChargedPoints sets the "charged_points" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableChargedPoints(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetChargedPoints(*v)
+	}
+	return _u
+}
+
 // SetProviderModelID sets the "provider_model_id" field.
 func (_u *ImageTaskUpdate) SetProviderModelID(v int64) *ImageTaskUpdate {
 	_u.mutation.ResetProviderModelID()
@@ -846,6 +983,16 @@ func (_u *ImageTaskUpdate) check() error {
 			return &ValidationError{Name: "save_policy", err: fmt.Errorf(`ent: validator failed for field "ImageTask.save_policy": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RouteModelCode(); ok {
+		if err := imagetask.RouteModelCodeValidator(v); err != nil {
+			return &ValidationError{Name: "route_model_code", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_model_code": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.UpstreamModelCode(); ok {
+		if err := imagetask.UpstreamModelCodeValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_model_code", err: fmt.Errorf(`ent: validator failed for field "ImageTask.upstream_model_code": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RouteSnapshotVersion(); ok {
 		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
 			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
@@ -1004,6 +1151,45 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.ActualPoints(); ok {
 		_spec.SetField(imagetask.FieldActualPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RouteModelID(); ok {
+		_spec.SetField(imagetask.FieldRouteModelID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRouteModelID(); ok {
+		_spec.AddField(imagetask.FieldRouteModelID, field.TypeInt64, value)
+	}
+	if _u.mutation.RouteModelIDCleared() {
+		_spec.ClearField(imagetask.FieldRouteModelID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RouteModelCode(); ok {
+		_spec.SetField(imagetask.FieldRouteModelCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AccountModelID(); ok {
+		_spec.SetField(imagetask.FieldAccountModelID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAccountModelID(); ok {
+		_spec.AddField(imagetask.FieldAccountModelID, field.TypeInt64, value)
+	}
+	if _u.mutation.AccountModelIDCleared() {
+		_spec.ClearField(imagetask.FieldAccountModelID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ModelAccountID(); ok {
+		_spec.SetField(imagetask.FieldModelAccountID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedModelAccountID(); ok {
+		_spec.AddField(imagetask.FieldModelAccountID, field.TypeInt64, value)
+	}
+	if _u.mutation.ModelAccountIDCleared() {
+		_spec.ClearField(imagetask.FieldModelAccountID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpstreamModelCode(); ok {
+		_spec.SetField(imagetask.FieldUpstreamModelCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.EffectiveMultiplier(); ok {
+		_spec.SetField(imagetask.FieldEffectiveMultiplier, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ChargedPoints(); ok {
+		_spec.SetField(imagetask.FieldChargedPoints, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ProviderModelID(); ok {
 		_spec.SetField(imagetask.FieldProviderModelID, field.TypeInt64, value)
@@ -1576,6 +1762,143 @@ func (_u *ImageTaskUpdateOne) SetNillableActualPoints(v *string) *ImageTaskUpdat
 	return _u
 }
 
+// SetRouteModelID sets the "route_model_id" field.
+func (_u *ImageTaskUpdateOne) SetRouteModelID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.ResetRouteModelID()
+	_u.mutation.SetRouteModelID(v)
+	return _u
+}
+
+// SetNillableRouteModelID sets the "route_model_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableRouteModelID(v *int64) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetRouteModelID(*v)
+	}
+	return _u
+}
+
+// AddRouteModelID adds value to the "route_model_id" field.
+func (_u *ImageTaskUpdateOne) AddRouteModelID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.AddRouteModelID(v)
+	return _u
+}
+
+// ClearRouteModelID clears the value of the "route_model_id" field.
+func (_u *ImageTaskUpdateOne) ClearRouteModelID() *ImageTaskUpdateOne {
+	_u.mutation.ClearRouteModelID()
+	return _u
+}
+
+// SetRouteModelCode sets the "route_model_code" field.
+func (_u *ImageTaskUpdateOne) SetRouteModelCode(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetRouteModelCode(v)
+	return _u
+}
+
+// SetNillableRouteModelCode sets the "route_model_code" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableRouteModelCode(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetRouteModelCode(*v)
+	}
+	return _u
+}
+
+// SetAccountModelID sets the "account_model_id" field.
+func (_u *ImageTaskUpdateOne) SetAccountModelID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.ResetAccountModelID()
+	_u.mutation.SetAccountModelID(v)
+	return _u
+}
+
+// SetNillableAccountModelID sets the "account_model_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableAccountModelID(v *int64) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetAccountModelID(*v)
+	}
+	return _u
+}
+
+// AddAccountModelID adds value to the "account_model_id" field.
+func (_u *ImageTaskUpdateOne) AddAccountModelID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.AddAccountModelID(v)
+	return _u
+}
+
+// ClearAccountModelID clears the value of the "account_model_id" field.
+func (_u *ImageTaskUpdateOne) ClearAccountModelID() *ImageTaskUpdateOne {
+	_u.mutation.ClearAccountModelID()
+	return _u
+}
+
+// SetModelAccountID sets the "model_account_id" field.
+func (_u *ImageTaskUpdateOne) SetModelAccountID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.ResetModelAccountID()
+	_u.mutation.SetModelAccountID(v)
+	return _u
+}
+
+// SetNillableModelAccountID sets the "model_account_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableModelAccountID(v *int64) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetModelAccountID(*v)
+	}
+	return _u
+}
+
+// AddModelAccountID adds value to the "model_account_id" field.
+func (_u *ImageTaskUpdateOne) AddModelAccountID(v int64) *ImageTaskUpdateOne {
+	_u.mutation.AddModelAccountID(v)
+	return _u
+}
+
+// ClearModelAccountID clears the value of the "model_account_id" field.
+func (_u *ImageTaskUpdateOne) ClearModelAccountID() *ImageTaskUpdateOne {
+	_u.mutation.ClearModelAccountID()
+	return _u
+}
+
+// SetUpstreamModelCode sets the "upstream_model_code" field.
+func (_u *ImageTaskUpdateOne) SetUpstreamModelCode(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetUpstreamModelCode(v)
+	return _u
+}
+
+// SetNillableUpstreamModelCode sets the "upstream_model_code" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableUpstreamModelCode(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetUpstreamModelCode(*v)
+	}
+	return _u
+}
+
+// SetEffectiveMultiplier sets the "effective_multiplier" field.
+func (_u *ImageTaskUpdateOne) SetEffectiveMultiplier(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetEffectiveMultiplier(v)
+	return _u
+}
+
+// SetNillableEffectiveMultiplier sets the "effective_multiplier" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableEffectiveMultiplier(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetEffectiveMultiplier(*v)
+	}
+	return _u
+}
+
+// SetChargedPoints sets the "charged_points" field.
+func (_u *ImageTaskUpdateOne) SetChargedPoints(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetChargedPoints(v)
+	return _u
+}
+
+// SetNillableChargedPoints sets the "charged_points" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableChargedPoints(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetChargedPoints(*v)
+	}
+	return _u
+}
+
 // SetProviderModelID sets the "provider_model_id" field.
 func (_u *ImageTaskUpdateOne) SetProviderModelID(v int64) *ImageTaskUpdateOne {
 	_u.mutation.ResetProviderModelID()
@@ -1940,6 +2263,16 @@ func (_u *ImageTaskUpdateOne) check() error {
 			return &ValidationError{Name: "save_policy", err: fmt.Errorf(`ent: validator failed for field "ImageTask.save_policy": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RouteModelCode(); ok {
+		if err := imagetask.RouteModelCodeValidator(v); err != nil {
+			return &ValidationError{Name: "route_model_code", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_model_code": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.UpstreamModelCode(); ok {
+		if err := imagetask.UpstreamModelCodeValidator(v); err != nil {
+			return &ValidationError{Name: "upstream_model_code", err: fmt.Errorf(`ent: validator failed for field "ImageTask.upstream_model_code": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RouteSnapshotVersion(); ok {
 		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
 			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
@@ -2115,6 +2448,45 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if value, ok := _u.mutation.ActualPoints(); ok {
 		_spec.SetField(imagetask.FieldActualPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RouteModelID(); ok {
+		_spec.SetField(imagetask.FieldRouteModelID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRouteModelID(); ok {
+		_spec.AddField(imagetask.FieldRouteModelID, field.TypeInt64, value)
+	}
+	if _u.mutation.RouteModelIDCleared() {
+		_spec.ClearField(imagetask.FieldRouteModelID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RouteModelCode(); ok {
+		_spec.SetField(imagetask.FieldRouteModelCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AccountModelID(); ok {
+		_spec.SetField(imagetask.FieldAccountModelID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAccountModelID(); ok {
+		_spec.AddField(imagetask.FieldAccountModelID, field.TypeInt64, value)
+	}
+	if _u.mutation.AccountModelIDCleared() {
+		_spec.ClearField(imagetask.FieldAccountModelID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ModelAccountID(); ok {
+		_spec.SetField(imagetask.FieldModelAccountID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedModelAccountID(); ok {
+		_spec.AddField(imagetask.FieldModelAccountID, field.TypeInt64, value)
+	}
+	if _u.mutation.ModelAccountIDCleared() {
+		_spec.ClearField(imagetask.FieldModelAccountID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpstreamModelCode(); ok {
+		_spec.SetField(imagetask.FieldUpstreamModelCode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.EffectiveMultiplier(); ok {
+		_spec.SetField(imagetask.FieldEffectiveMultiplier, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ChargedPoints(); ok {
+		_spec.SetField(imagetask.FieldChargedPoints, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ProviderModelID(); ok {
 		_spec.SetField(imagetask.FieldProviderModelID, field.TypeInt64, value)

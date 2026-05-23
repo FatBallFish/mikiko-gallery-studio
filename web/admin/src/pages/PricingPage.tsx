@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ConfigItem, ProviderModel } from '../../../shared/api-types'
+import type { ImageTaskType, RouteModel, RouteModelPrice } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
 
-type PricingDialog = { row: ProviderModel; inputCost: string; outputCost: string; currency: string; enabled: boolean; healthStatus: string }
+type PricingDialog = { row?: RouteModelPrice; routeModelId: string; taskType: ImageTaskType; quality: string; basePoints: string; referenceMultiplier: string; enabled: boolean }
+
+const taskTypes: ImageTaskType[] = ['text_to_image', 'reference_to_image', 'image_edit']
+const priceQualities = ['1K', '2K', '4K']
 
 export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
-  const [models, setModels] = useState<ProviderModel[]>([])
-  const [configs, setConfigs] = useState<ConfigItem[]>([])
+  const [routes, setRoutes] = useState<RouteModel[]>([])
+  const [prices, setPrices] = useState<RouteModelPrice[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState('价格策略来自 provider model 成本字段与配置中心计费项。')
+  const [notice, setNotice] = useState('价格按路由模型、任务类型、质量配置；后端扣费保留 5 位，前端只展示 2 位。')
   const [dialog, setDialog] = useState<PricingDialog | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -18,9 +21,12 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     setLoading(true)
     setError(null)
     try {
-      const [providerModels, configRows] = await Promise.all([adminApi.listProviderModels({ page_size: 100 }), adminApi.listConfig()])
-      setModels(providerModels.items)
-      setConfigs(configRows.filter((row) => `${row.tab} ${row.key}`.toLowerCase().includes('pricing') || `${row.tab} ${row.key}`.includes('计费')))
+      const [nextRoutes, nextPrices] = await Promise.all([
+        adminApi.listRouteModels({ page_size: 100 }),
+        adminApi.listRouteModelPrices({ page_size: 200 }),
+      ])
+      setRoutes(nextRoutes)
+      setPrices(nextPrices)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '价格策略载入失败')
     } finally {
@@ -28,27 +34,30 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     }
   }
 
-  useEffect(() => {
-    void load()
-  }, [])
+  useEffect(() => { void load() }, [])
 
-  const enabledModels = useMemo(() => models.filter((item) => item.enabled).length, [models])
+  const stats = useMemo(() => ({
+    enabledRoutes: routes.filter((item) => item.enabled).length,
+    enabledPrices: prices.filter((item) => item.enabled).length,
+    missingRoutes: routes.filter((route) => !prices.some((price) => String(price.route_model_id) === String(route.id))).length,
+  }), [routes, prices])
 
-  const savePricing = async () => {
+  async function savePricing() {
     if (!dialog) return
     setSaving(true)
     try {
-      await adminApi.updateProviderModel(dialog.row.id, {
-        ...dialog.row,
-        input_cost: dialog.inputCost,
-        output_cost: dialog.outputCost,
-        currency: dialog.currency,
+      const payload = {
+        route_model_id: Number(dialog.routeModelId),
+        task_type: dialog.taskType,
+        quality: dialog.quality,
+        base_points: dialog.basePoints,
+        reference_multiplier: dialog.referenceMultiplier,
         enabled: dialog.enabled,
-        health_status: dialog.healthStatus,
-      })
+      }
+      const saved = dialog.row ? await adminApi.updateRouteModelPrice(dialog.row.id, payload) : await adminApi.createRouteModelPrice(payload)
       setDialog(null)
-      setNotice(`${dialog.row.model_code} 价格已更新。`)
-      onFeedback('价格配置已更新', dialog.row.model_code)
+      setNotice(`${routeName(saved.route_model_id, routes)} / ${saved.task_type} / ${saved.quality} 已保存。`)
+      onFeedback('价格配置已更新', `${saved.task_type} · ${saved.quality}`)
       await load()
     } finally {
       setSaving(false)
@@ -61,53 +70,69 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
   return (
     <section className="page-stack">
       <PageHeader
-        eyebrow="Pricing"
-        title="价格策略"
-        detail="展示真实模型成本、计费配置与发布摘要；具体配置修改在配置中心按 tab 发布。"
-        actions={<button className="btn primary" type="button" onClick={() => { setNotice('已刷新模型成本与计费配置。'); onFeedback('价格策略已刷新', `${models.length} 个 Provider Model`) ; void load() }}>刷新</button>}
+        eyebrow="Route Model Prices"
+        title="价格配置"
+        detail="基础积分和参考图倍率绑定到路由模型，不再依赖 Provider Model 成本字段。"
+        actions={<><button className="ghost" type="button" onClick={() => void load()}>刷新</button><button className="btn primary" type="button" disabled={!routes.length} onClick={() => setDialog(newPriceDialog(routes))}>新增价格</button></>}
       />
       <section className="ops-status-strip compact-strip">
-        <div className="status-cell"><label>Provider Models</label><strong>{models.length}</strong></div>
-        <div className="status-cell"><label>启用模型</label><strong>{enabledModels}</strong></div>
-        <div className="status-cell"><label>计费配置</label><strong>{configs.length}</strong></div>
-        <div className="status-cell"><label>生效来源</label><strong>Real API</strong></div>
+        <div className="status-cell"><label>路由模型</label><strong>{routes.length}</strong></div>
+        <div className="status-cell"><label>启用路由</label><strong>{stats.enabledRoutes}</strong></div>
+        <div className="status-cell"><label>价格项</label><strong>{prices.length}</strong></div>
+        <div className="status-cell"><label>缺价格路由</label><strong>{stats.missingRoutes}</strong></div>
       </section>
       <section className="pg-admin-card overview-surface">
         <section className="main-lane pricing-lane">
-          <InlineFeedback tone="neutral" message={notice} />
-          {!models.length ? <EmptyBlock title="暂无模型成本" detail="Provider Model 尚未配置成本字段。" /> : null}
-          <div className="table-head price-grid"><span>模型</span><span>输入成本</span><span>输出成本</span><span>币种</span><span>能力</span><span>状态</span><span>健康</span><span>操作</span></div>
-          {models.map((row) => (
-            <div key={row.id} className="table-row price-grid">
-              <div><strong>{row.model_code}</strong><p>{row.provider_code} · {row.compat_mode}</p></div>
-              <code>{row.input_cost}</code>
-              <code>{row.output_cost}</code>
-              <span>{row.currency}</span>
-              <span>{row.supported_qualities?.join('/') || '-'} · max {row.max_image_count}</span>
+          <InlineFeedback tone={stats.missingRoutes ? 'warning' : 'neutral'} message={stats.missingRoutes ? '存在启用路由模型未配置价格，用户侧预估可能返回配置错误。' : notice} />
+          {!prices.length ? <EmptyBlock title="暂无价格配置" detail="为每个可用路由模型配置任务类型和质量价格。" /> : null}
+          <div className="table-head route-price-grid"><span>路由模型</span><span>任务类型</span><span>质量</span><span>基础积分</span><span>参考图倍率</span><span>状态</span><span>操作</span></div>
+          {prices.map((row) => (
+            <div key={String(row.id)} className="table-row route-price-grid">
+              <div><strong>{routeName(row.route_model_id, routes)}</strong><p>{row.route_model_code ?? row.route_model_id}</p></div>
+              <span>{row.task_type}</span>
+              <code>{row.quality}</code>
+              <code>{row.base_points}</code>
+              <code>{row.reference_multiplier}</code>
               <Badge tone={row.enabled ? 'success' : 'warning'}>{row.enabled ? '启用' : '停用'}</Badge>
-              <Badge tone={row.health_status === 'healthy' ? 'success' : 'warning'}>{row.health_status}</Badge>
-              <button className="ghost small" type="button" onClick={() => setDialog({ row, inputCost: row.input_cost, outputCost: row.output_cost, currency: row.currency, enabled: row.enabled, healthStatus: row.health_status })}>调整</button>
+              <button className="ghost small" type="button" onClick={() => setDialog(editPriceDialog(row))}>调整</button>
             </div>
           ))}
         </section>
 
         <aside className="signal-rail">
-          <section className="signal-section"><strong>计费配置项</strong>{configs.length ? configs.slice(0, 6).map((item) => <p key={item.key}>{item.tab} / {item.key}: {item.value}</p>) : <p>未发现计费配置项。</p>}</section>
-          <section className="signal-section"><strong>计费公式</strong><p>总积分 = 基础单价 x 输出张数 x 参考图系数 x 用户组倍率。</p></section>
-          <section className="signal-section"><strong>修改入口</strong><p>价格与倍率的写操作统一走配置中心，确保版本发布和审计一致。</p></section>
+          <section className="signal-section"><strong>计费公式</strong><p>charged_points = base_points x effective_multiplier x task_multiplier x image_count。</p></section>
+          <section className="signal-section"><strong>展示规则</strong><p>列表和工作台只展示 display_points，余额校验由后端使用 5 位 charged_points。</p></section>
+          {routes.map((route) => {
+            const rows = prices.filter((price) => String(price.route_model_id) === String(route.id))
+            return <section key={String(route.id)} className="signal-section"><strong>{route.name}</strong><p>{rows.length ? rows.map((price) => `${price.task_type}/${price.quality}: ${price.base_points}`).join(' · ') : '未配置价格'}</p></section>
+          })}
         </aside>
       </section>
       {dialog ? (
-        <Modal title="调整价格配置" detail={`${dialog.row.provider_code} / ${dialog.row.model_code}`} onClose={() => setDialog(null)} footer={<><button className="ghost" type="button" disabled={saving} onClick={() => setDialog(null)}>取消</button><button className="btn primary" type="button" disabled={saving} onClick={() => void savePricing()}>{saving ? '保存中...' : '保存'}</button></>}>
+        <Modal title={dialog.row ? '调整价格配置' : '新增价格配置'} detail="价格项保存后立即参与 capabilities 和 estimate。" onClose={() => setDialog(null)} footer={<><button className="ghost" type="button" disabled={saving} onClick={() => setDialog(null)}>取消</button><button className="btn primary" type="button" disabled={saving || !dialog.routeModelId || !dialog.basePoints} onClick={() => void savePricing()}>{saving ? '保存中...' : '保存'}</button></>}>
           <div className="form-grid">
-            <Field label="输入成本"><input value={dialog.inputCost} onChange={(event) => setDialog({ ...dialog, inputCost: event.target.value })} /></Field>
-            <Field label="输出成本"><input value={dialog.outputCost} onChange={(event) => setDialog({ ...dialog, outputCost: event.target.value })} /></Field>
-            <Field label="币种"><input value={dialog.currency} onChange={(event) => setDialog({ ...dialog, currency: event.target.value })} /></Field>
-            <Field label="启用状态"><select value={dialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setDialog({ ...dialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
-            <Field label="健康状态"><select value={dialog.healthStatus} onChange={(event) => setDialog({ ...dialog, healthStatus: event.target.value })}><option value="healthy">healthy</option><option value="degraded">degraded</option><option value="down">down</option><option value="unknown">unknown</option></select></Field>
+            <Field label="路由模型"><select value={dialog.routeModelId} onChange={(event) => setDialog({ ...dialog, routeModelId: event.target.value })}>{routes.map((route) => <option key={String(route.id)} value={String(route.id)}>{route.name} ({route.code})</option>)}</select></Field>
+            <Field label="任务类型"><select value={dialog.taskType} onChange={(event) => setDialog({ ...dialog, taskType: event.target.value as ImageTaskType })}>{taskTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></Field>
+            <Field label="质量" hint="auto 不可直接配置价格；后端会按尺寸动态映射到 1K、2K 或 4K 档位。"><select value={dialog.quality} onChange={(event) => setDialog({ ...dialog, quality: event.target.value })}>{priceQualities.map((quality) => <option key={quality} value={quality}>{quality}</option>)}</select></Field>
+            <Field label="基础积分"><input value={dialog.basePoints} onChange={(event) => setDialog({ ...dialog, basePoints: event.target.value })} placeholder="8.00000" /></Field>
+            <Field label="参考图倍率"><input value={dialog.referenceMultiplier} onChange={(event) => setDialog({ ...dialog, referenceMultiplier: event.target.value })} placeholder="1.25000" /></Field>
+            <Field label="状态"><select value={dialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setDialog({ ...dialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
           </div>
         </Modal>
       ) : null}
     </section>
   )
+}
+
+function newPriceDialog(routes: RouteModel[]): PricingDialog {
+  return { routeModelId: String(routes[0]?.id ?? ''), taskType: 'text_to_image', quality: '1K', basePoints: '8.00000', referenceMultiplier: '1.00000', enabled: true }
+}
+
+function editPriceDialog(row: RouteModelPrice): PricingDialog {
+  return { row, routeModelId: String(row.route_model_id), taskType: row.task_type, quality: row.quality, basePoints: row.base_points, referenceMultiplier: row.reference_multiplier, enabled: row.enabled }
+}
+
+function routeName(routeModelId: string | number, routes: RouteModel[]) {
+  const route = routes.find((item) => String(item.id) === String(routeModelId))
+  return route ? `${route.name} (${route.code})` : String(routeModelId)
 }

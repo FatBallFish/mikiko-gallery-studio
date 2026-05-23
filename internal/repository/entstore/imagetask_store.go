@@ -566,6 +566,9 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetSavePolicy(defaultString(task.SavePolicy, "private")).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, "0.00000")).
 		SetActualPoints(defaultString(task.ActualPoints, "0.00000")).
+		SetRouteModelCode(defaultString(task.RouteModelCode, "")).
+		SetEffectiveMultiplier(defaultString(task.EffectiveMultiplier, "1.00000")).
+		SetChargedPoints(defaultString(task.ChargedPoints, task.EstimatedPoints)).
 		SetProviderCost(defaultString(task.ProviderCost, "0.00000")).
 		SetGrossMargin(defaultString(task.GrossMargin, "0.00000")).
 		SetFallbackCount(task.FallbackCount).
@@ -578,6 +581,18 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 	}
 	if task.ProviderModelID > 0 {
 		builder.SetProviderModelID(task.ProviderModelID)
+	}
+	if task.RouteModelID > 0 {
+		builder.SetRouteModelID(task.RouteModelID)
+	}
+	if task.AccountModelID > 0 {
+		builder.SetAccountModelID(task.AccountModelID)
+	}
+	if task.ModelAccountID > 0 {
+		builder.SetModelAccountID(task.ModelAccountID)
+	}
+	if strings.TrimSpace(task.UpstreamModelCode) != "" {
+		builder.SetUpstreamModelCode(task.UpstreamModelCode)
 	}
 	if strings.TrimSpace(task.NegativePrompt) != "" {
 		builder.SetNegativePrompt(task.NegativePrompt)
@@ -636,6 +651,9 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
 		SetActualPoints(defaultString(task.ActualPoints, entity.ActualPoints)).
+		SetRouteModelCode(defaultString(task.RouteModelCode, "")).
+		SetEffectiveMultiplier(defaultString(task.EffectiveMultiplier, "1.00000")).
+		SetChargedPoints(defaultString(task.ChargedPoints, task.EstimatedPoints)).
 		SetProviderCost(defaultString(task.ProviderCost, entity.ProviderCost)).
 		SetGrossMargin(defaultString(task.GrossMargin, entity.GrossMargin)).
 		SetFallbackCount(task.FallbackCount).
@@ -653,6 +671,38 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 	} else {
 		builder.ClearProviderModelID()
 	}
+	if task.RouteModelID > 0 {
+		builder.SetRouteModelID(task.RouteModelID)
+	} else {
+		builder.ClearRouteModelID()
+	}
+	if task.AccountModelID > 0 {
+		builder.SetAccountModelID(task.AccountModelID)
+	} else {
+		builder.ClearAccountModelID()
+	}
+	if task.ModelAccountID > 0 {
+		builder.SetModelAccountID(task.ModelAccountID)
+	} else {
+		builder.ClearModelAccountID()
+	}
+	builder.SetUpstreamModelCode(defaultString(task.UpstreamModelCode, ""))
+	if task.RouteModelID > 0 {
+		builder.SetRouteModelID(task.RouteModelID)
+	} else {
+		builder.ClearRouteModelID()
+	}
+	if task.AccountModelID > 0 {
+		builder.SetAccountModelID(task.AccountModelID)
+	} else {
+		builder.ClearAccountModelID()
+	}
+	if task.ModelAccountID > 0 {
+		builder.SetModelAccountID(task.ModelAccountID)
+	} else {
+		builder.ClearModelAccountID()
+	}
+	builder.SetUpstreamModelCode(defaultString(task.UpstreamModelCode, ""))
 	if strings.TrimSpace(task.NegativePrompt) != "" {
 		builder.SetNegativePrompt(task.NegativePrompt)
 	} else {
@@ -737,6 +787,9 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
 		SetActualPoints(defaultString(task.ActualPoints, entity.ActualPoints)).
+		SetRouteModelCode(defaultString(task.RouteModelCode, "")).
+		SetEffectiveMultiplier(defaultString(task.EffectiveMultiplier, "1.00000")).
+		SetChargedPoints(defaultString(task.ChargedPoints, task.EstimatedPoints)).
 		SetProviderCost(defaultString(task.ProviderCost, entity.ProviderCost)).
 		SetGrossMargin(defaultString(task.GrossMargin, entity.GrossMargin)).
 		SetFallbackCount(task.FallbackCount).
@@ -754,6 +807,22 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 	} else {
 		builder.ClearProviderModelID()
 	}
+	if task.RouteModelID > 0 {
+		builder.SetRouteModelID(task.RouteModelID)
+	} else {
+		builder.ClearRouteModelID()
+	}
+	if task.AccountModelID > 0 {
+		builder.SetAccountModelID(task.AccountModelID)
+	} else {
+		builder.ClearAccountModelID()
+	}
+	if task.ModelAccountID > 0 {
+		builder.SetModelAccountID(task.ModelAccountID)
+	} else {
+		builder.ClearModelAccountID()
+	}
+	builder.SetUpstreamModelCode(defaultString(task.UpstreamModelCode, ""))
 	if strings.TrimSpace(task.NegativePrompt) != "" {
 		builder.SetNegativePrompt(task.NegativePrompt)
 	} else {
@@ -838,6 +907,9 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetSavePolicy(defaultString(task.SavePolicy, entity.SavePolicy)).
 		SetEstimatedPoints(defaultString(task.EstimatedPoints, entity.EstimatedPoints)).
 		SetActualPoints(defaultString(task.ActualPoints, entity.ActualPoints)).
+		SetRouteModelCode(defaultString(task.RouteModelCode, "")).
+		SetEffectiveMultiplier(defaultString(task.EffectiveMultiplier, "1.00000")).
+		SetChargedPoints(defaultString(task.ChargedPoints, task.EstimatedPoints)).
 		SetProviderCost(defaultString(task.ProviderCost, entity.ProviderCost)).
 		SetGrossMargin(defaultString(task.GrossMargin, entity.GrossMargin)).
 		SetFallbackCount(task.FallbackCount).
@@ -968,6 +1040,13 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		ID:                    entity.ID.String(),
 		Status:                entity.Status,
 		AbstractModel:         entity.AbstractModel,
+		RouteModelCode:        entity.RouteModelCode,
+		RouteModelID:          nullableInt64(entity.RouteModelID),
+		AccountModelID:        nullableInt64(entity.AccountModelID),
+		ModelAccountID:        nullableInt64(entity.ModelAccountID),
+		UpstreamModelCode:     entity.UpstreamModelCode,
+		EffectiveMultiplier:   entity.EffectiveMultiplier,
+		ChargedPoints:         entity.ChargedPoints,
 		TaskType:              entity.TaskType,
 		Prompt:                entity.Prompt,
 		NegativePrompt:        nullableString(entity.NegativePrompt),

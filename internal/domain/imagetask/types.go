@@ -31,8 +31,10 @@ type ExecuteRequest struct {
 	APIKeyID            int64
 	SourceChannel       string
 	UserGroupCode       string
+	UserGroupCodes      []string
 	UserGroupMultiplier string
 	AbstractModel       string
+	RouteModelCode      string
 	TaskType            string
 	Prompt              string
 	RequestedSize       string
@@ -51,6 +53,7 @@ type CreateRequest struct {
 	APIKeyID            int64
 	SourceChannel       string
 	AbstractModel       string
+	RouteModelCode      string
 	TaskType            string
 	Prompt              string
 	NegativePrompt      string
@@ -63,6 +66,7 @@ type CreateRequest struct {
 	ReferenceStrength   int
 	Seed                *int64
 	UserGroupCode       string
+	UserGroupCodes      []string
 	UserGroupMultiplier string
 	MaskPresent         bool
 	ResponseMode        string
@@ -88,6 +92,13 @@ type Task struct {
 	FallbackCount         int                           `json:"fallback_count,omitempty"`
 	RouteSnapshotVersion  string                        `json:"route_snapshot_version,omitempty"`
 	AbstractModel         string                        `json:"abstract_model"`
+	RouteModelCode        string                        `json:"route_model_code,omitempty"`
+	RouteModelID          int64                         `json:"route_model_id,omitempty"`
+	AccountModelID        int64                         `json:"account_model_id,omitempty"`
+	ModelAccountID        int64                         `json:"model_account_id,omitempty"`
+	UpstreamModelCode     string                        `json:"upstream_model_code,omitempty"`
+	EffectiveMultiplier   string                        `json:"effective_multiplier,omitempty"`
+	ChargedPoints         string                        `json:"charged_points,omitempty"`
 	TaskType              string                        `json:"task_type"`
 	Prompt                string                        `json:"prompt,omitempty"`
 	NegativePrompt        string                        `json:"negative_prompt,omitempty"`

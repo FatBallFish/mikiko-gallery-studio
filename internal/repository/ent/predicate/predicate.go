@@ -27,6 +27,12 @@ type ImageResult func(*sql.Selector)
 // ImageTask is the predicate function for imagetask builders.
 type ImageTask func(*sql.Selector)
 
+// ModelAccount is the predicate function for modelaccount builders.
+type ModelAccount func(*sql.Selector)
+
+// ModelAccountModel is the predicate function for modelaccountmodel builders.
+type ModelAccountModel func(*sql.Selector)
+
 // ModelProvider is the predicate function for modelprovider builders.
 type ModelProvider func(*sql.Selector)
 
@@ -57,6 +63,18 @@ type ReferenceAsset func(*sql.Selector)
 // RefreshSession is the predicate function for refreshsession builders.
 type RefreshSession func(*sql.Selector)
 
+// RouteModel is the predicate function for routemodel builders.
+type RouteModel func(*sql.Selector)
+
+// RouteModelCandidate is the predicate function for routemodelcandidate builders.
+type RouteModelCandidate func(*sql.Selector)
+
+// RouteModelPrice is the predicate function for routemodelprice builders.
+type RouteModelPrice func(*sql.Selector)
+
+// RouteModelVisibilityGroup is the predicate function for routemodelvisibilitygroup builders.
+type RouteModelVisibilityGroup func(*sql.Selector)
+
 // SubscriptionPlan is the predicate function for subscriptionplan builders.
 type SubscriptionPlan func(*sql.Selector)
 
@@ -65,6 +83,9 @@ type User func(*sql.Selector)
 
 // UserGroup is the predicate function for usergroup builders.
 type UserGroup func(*sql.Selector)
+
+// UserGroupMember is the predicate function for usergroupmember builders.
+type UserGroupMember func(*sql.Selector)
 
 // UserSubscription is the predicate function for usersubscription builders.
 type UserSubscription func(*sql.Selector)

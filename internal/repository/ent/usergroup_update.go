@@ -110,6 +110,41 @@ func (_u *UserGroupUpdate) ClearDescription() *UserGroupUpdate {
 	return _u
 }
 
+// SetSortOrder sets the "sort_order" field.
+func (_u *UserGroupUpdate) SetSortOrder(v int) *UserGroupUpdate {
+	_u.mutation.ResetSortOrder()
+	_u.mutation.SetSortOrder(v)
+	return _u
+}
+
+// SetNillableSortOrder sets the "sort_order" field if the given value is not nil.
+func (_u *UserGroupUpdate) SetNillableSortOrder(v *int) *UserGroupUpdate {
+	if v != nil {
+		_u.SetSortOrder(*v)
+	}
+	return _u
+}
+
+// AddSortOrder adds value to the "sort_order" field.
+func (_u *UserGroupUpdate) AddSortOrder(v int) *UserGroupUpdate {
+	_u.mutation.AddSortOrder(v)
+	return _u
+}
+
+// SetIsDefault sets the "is_default" field.
+func (_u *UserGroupUpdate) SetIsDefault(v bool) *UserGroupUpdate {
+	_u.mutation.SetIsDefault(v)
+	return _u
+}
+
+// SetNillableIsDefault sets the "is_default" field if the given value is not nil.
+func (_u *UserGroupUpdate) SetNillableIsDefault(v *bool) *UserGroupUpdate {
+	if v != nil {
+		_u.SetIsDefault(*v)
+	}
+	return _u
+}
+
 // Mutation returns the UserGroupMutation object of the builder.
 func (_u *UserGroupUpdate) Mutation() *UserGroupMutation {
 	return _u.mutation
@@ -208,6 +243,15 @@ func (_u *UserGroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(usergroup.FieldDescription, field.TypeString)
+	}
+	if value, ok := _u.mutation.SortOrder(); ok {
+		_spec.SetField(usergroup.FieldSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSortOrder(); ok {
+		_spec.AddField(usergroup.FieldSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.IsDefault(); ok {
+		_spec.SetField(usergroup.FieldIsDefault, field.TypeBool, value)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -308,6 +352,41 @@ func (_u *UserGroupUpdateOne) SetNillableDescription(v *string) *UserGroupUpdate
 // ClearDescription clears the value of the "description" field.
 func (_u *UserGroupUpdateOne) ClearDescription() *UserGroupUpdateOne {
 	_u.mutation.ClearDescription()
+	return _u
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (_u *UserGroupUpdateOne) SetSortOrder(v int) *UserGroupUpdateOne {
+	_u.mutation.ResetSortOrder()
+	_u.mutation.SetSortOrder(v)
+	return _u
+}
+
+// SetNillableSortOrder sets the "sort_order" field if the given value is not nil.
+func (_u *UserGroupUpdateOne) SetNillableSortOrder(v *int) *UserGroupUpdateOne {
+	if v != nil {
+		_u.SetSortOrder(*v)
+	}
+	return _u
+}
+
+// AddSortOrder adds value to the "sort_order" field.
+func (_u *UserGroupUpdateOne) AddSortOrder(v int) *UserGroupUpdateOne {
+	_u.mutation.AddSortOrder(v)
+	return _u
+}
+
+// SetIsDefault sets the "is_default" field.
+func (_u *UserGroupUpdateOne) SetIsDefault(v bool) *UserGroupUpdateOne {
+	_u.mutation.SetIsDefault(v)
+	return _u
+}
+
+// SetNillableIsDefault sets the "is_default" field if the given value is not nil.
+func (_u *UserGroupUpdateOne) SetNillableIsDefault(v *bool) *UserGroupUpdateOne {
+	if v != nil {
+		_u.SetIsDefault(*v)
+	}
 	return _u
 }
 
@@ -439,6 +518,15 @@ func (_u *UserGroupUpdateOne) sqlSave(ctx context.Context) (_node *UserGroup, er
 	}
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(usergroup.FieldDescription, field.TypeString)
+	}
+	if value, ok := _u.mutation.SortOrder(); ok {
+		_spec.SetField(usergroup.FieldSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSortOrder(); ok {
+		_spec.AddField(usergroup.FieldSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.IsDefault(); ok {
+		_spec.SetField(usergroup.FieldIsDefault, field.TypeBool, value)
 	}
 	_node = &UserGroup{config: _u.config}
 	_spec.Assign = _node.assignValues

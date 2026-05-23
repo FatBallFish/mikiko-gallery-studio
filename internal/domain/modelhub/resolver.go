@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -14,6 +17,7 @@ import (
 
 type ResolveRequest struct {
 	AbstractModel             string
+	RouteModelCode            string
 	TaskType                  string
 	RequestedQuality          string
 	RequestedSize             string
@@ -21,9 +25,183 @@ type ResolveRequest struct {
 	ReferenceImageCount       int
 	MaskPresent               bool
 	RouteKey                  string
+	UserGroupCodes            []string
+}
+
+func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []string, taskMultiplierByType map[string]string) ([]VisibleRouteModel, error) {
+	routing, err := r.runtimeRouting(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(routing.RouteModels) == 0 {
+		return []VisibleRouteModel{}, nil
+	}
+	groupsByCode := map[string]UserGroupConfig{}
+	activeGroupIDs := map[int64]UserGroupConfig{}
+	for _, group := range routing.Groups {
+		if !strings.EqualFold(group.Status, "enabled") && !strings.EqualFold(group.Status, "active") {
+			continue
+		}
+		groupsByCode[strings.ToLower(group.Code)] = group
+	}
+	for _, code := range userGroupCodes {
+		if group, ok := groupsByCode[strings.ToLower(strings.TrimSpace(code))]; ok {
+			activeGroupIDs[group.ID] = group
+		}
+	}
+	visibility := map[int64][]UserGroupConfig{}
+	for _, item := range routing.Visibility {
+		if group, ok := activeGroupIDs[item.GroupID]; ok {
+			visibility[item.RouteModelID] = append(visibility[item.RouteModelID], group)
+		}
+	}
+	pricesByRoute := map[int64][]RoutePriceConfig{}
+	for _, price := range routing.Prices {
+		if price.Enabled {
+			pricesByRoute[price.RouteModelID] = append(pricesByRoute[price.RouteModelID], price)
+		}
+	}
+	models := make([]RouteModelConfig, 0, len(routing.RouteModels))
+	for _, routeModel := range routing.RouteModels {
+		if !routeModel.Enabled || routeModel.Visibility == "hidden" {
+			continue
+		}
+		matched := visibility[routeModel.ID]
+		if routeModel.Visibility == "groups" && len(matched) == 0 {
+			continue
+		}
+		models = append(models, routeModel)
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].SortOrder == models[j].SortOrder {
+			return models[i].Code < models[j].Code
+		}
+		return models[i].SortOrder < models[j].SortOrder
+	})
+	visible := make([]VisibleRouteModel, 0, len(models))
+	for _, routeModel := range models {
+		multiplier, ok := effectiveMultiplier(routeModel, visibility[routeModel.ID])
+		if !ok {
+			continue
+		}
+		prices := make([]VisibleRouteModelPrice, 0, len(pricesByRoute[routeModel.ID]))
+		taskTypes := map[string]struct{}{}
+		qualities := map[string]struct{}{}
+		for _, price := range pricesByRoute[routeModel.ID] {
+			base, err := decimal.NewFromString(price.BasePoints)
+			if err != nil {
+				return nil, errs.Internal("invalid route model price")
+			}
+			taskMul := decimal.NewFromInt(1)
+			if raw := strings.TrimSpace(taskMultiplierByType[price.TaskType]); raw != "" {
+				parsed, err := decimal.NewFromString(raw)
+				if err != nil {
+					return nil, errs.Internal("invalid task multiplier")
+				}
+				taskMul = parsed
+			}
+			charged := base.Mul(multiplier).Mul(taskMul).Round(5)
+			prices = append(prices, VisibleRouteModelPrice{
+				TaskType:      price.TaskType,
+				Quality:       price.Quality,
+				BasePoints:    base.StringFixed(5),
+				ChargedPoints: charged.StringFixed(5),
+				DisplayPoints: charged.Round(2).StringFixed(2),
+			})
+			taskTypes[price.TaskType] = struct{}{}
+			qualities[price.Quality] = struct{}{}
+		}
+		visible = append(visible, VisibleRouteModel{
+			ID:                  routeModel.ID,
+			Code:                routeModel.Code,
+			Name:                routeModel.Name,
+			Description:         routeModel.Description,
+			TaskTypes:           sortedSet(taskTypes),
+			Qualities:           append([]string{"auto"}, sortedSet(qualities)...),
+			EffectiveMultiplier: multiplier.StringFixed(5),
+			Prices:              prices,
+		})
+	}
+	return visible, nil
+}
+
+func effectiveMultiplier(routeModel RouteModelConfig, groups []UserGroupConfig) (decimal.Decimal, bool) {
+	values := []decimal.Decimal{}
+	if routeModel.Visibility == "public" {
+		values = append(values, decimal.NewFromInt(1))
+	}
+	for _, group := range groups {
+		parsed, err := decimal.NewFromString(strings.TrimSpace(group.Multiplier))
+		if err != nil {
+			continue
+		}
+		values = append(values, parsed)
+	}
+	if len(values) == 0 {
+		return decimal.Zero, false
+	}
+	best := values[0]
+	for _, value := range values[1:] {
+		if value.LessThan(best) {
+			best = value
+		}
+	}
+	return best, true
+}
+
+func matchedActiveGroups(routing ModelRoutingSnapshot, userGroupCodes []string, routeModelID int64) []UserGroupConfig {
+	groupsByCode := map[string]UserGroupConfig{}
+	activeGroupIDs := map[int64]UserGroupConfig{}
+	for _, group := range routing.Groups {
+		if !strings.EqualFold(group.Status, "enabled") && !strings.EqualFold(group.Status, "active") {
+			continue
+		}
+		groupsByCode[strings.ToLower(group.Code)] = group
+	}
+	for _, code := range userGroupCodes {
+		if group, ok := groupsByCode[strings.ToLower(strings.TrimSpace(code))]; ok {
+			activeGroupIDs[group.ID] = group
+		}
+	}
+	matched := make([]UserGroupConfig, 0)
+	seen := map[int64]struct{}{}
+	for _, item := range routing.Visibility {
+		if item.RouteModelID != routeModelID {
+			continue
+		}
+		group, ok := activeGroupIDs[item.GroupID]
+		if !ok {
+			continue
+		}
+		if _, exists := seen[group.ID]; exists {
+			continue
+		}
+		seen[group.ID] = struct{}{}
+		matched = append(matched, group)
+	}
+	return matched
+}
+
+func sortedSet(values map[string]struct{}) []string {
+	items := make([]string, 0, len(values))
+	for item := range values {
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	sort.Strings(items)
+	return items
 }
 
 type ProviderCandidate struct {
+	AccountModelID         int64
+	ModelAccountID         int64
+	RouteModelID           int64
+	RouteModelCode         string
+	AdapterType            string
+	AuthType               string
+	BaseURL                string
+	Credentials            map[string]string
 	ProviderModelID        int64
 	Provider               string
 	ModelCode              string
@@ -69,6 +247,54 @@ type ModelRoutingSnapshot struct {
 	Providers      []ModelProviderConfig
 	ProviderModels []ProviderCandidate
 	Routes         []ModelRouteConfig
+	RouteModels    []RouteModelConfig
+	Candidates     []RouteCandidateConfig
+	Prices         []RoutePriceConfig
+	Groups         []UserGroupConfig
+	Visibility     []RouteVisibilityConfig
+}
+
+type RouteModelConfig struct {
+	ID          int64
+	Code        string
+	Name        string
+	Description string
+	Visibility  string
+	Enabled     bool
+	SortOrder   int
+}
+
+type RouteCandidateConfig struct {
+	ID             int64
+	RouteModelID   int64
+	AccountModelID int64
+	Priority       int
+	Weight         int
+	FallbackOrder  int
+	Enabled        bool
+}
+
+type RoutePriceConfig struct {
+	ID                  int64
+	RouteModelID        int64
+	TaskType            string
+	Quality             string
+	BasePoints          string
+	ReferenceMultiplier string
+	Enabled             bool
+}
+
+type UserGroupConfig struct {
+	ID         int64
+	Code       string
+	Name       string
+	Multiplier string
+	Status     string
+}
+
+type RouteVisibilityConfig struct {
+	RouteModelID int64
+	GroupID      int64
 }
 
 type ModelRoutingSource interface {
@@ -92,6 +318,25 @@ type CapabilityItem struct {
 	MaxReferenceImageCount int
 }
 
+type VisibleRouteModel struct {
+	ID                  int64
+	Code                string
+	Name                string
+	Description         string
+	TaskTypes           []string
+	Qualities           []string
+	EffectiveMultiplier string
+	Prices              []VisibleRouteModelPrice
+}
+
+type VisibleRouteModelPrice struct {
+	TaskType      string
+	Quality       string
+	BasePoints    string
+	ChargedPoints string
+	DisplayPoints string
+}
+
 type Resolver struct {
 	cfg    config.Config
 	source ModelRoutingSource
@@ -106,40 +351,82 @@ func (r *Resolver) SetModelRoutingSource(source ModelRoutingSource) {
 }
 
 func (r *Resolver) ResolveQuality(requestedQuality, requestedSize, abstractModel string) (string, error) {
-	quality := strings.ToLower(requestedQuality)
-	if quality == "1k" || quality == "2k" || quality == "4k" {
-		return quality, nil
-	}
-	if requestedSize != "" && !strings.EqualFold(requestedSize, "auto") {
-		parts := strings.Split(strings.ToLower(requestedSize), "x")
-		if len(parts) != 2 {
-			return "", errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
-		}
-		width, errW := strconv.Atoi(parts[0])
-		height, errH := strconv.Atoi(parts[1])
-		if errW != nil || errH != nil {
-			return "", errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
-		}
-		longest := width
-		if height > longest {
-			longest = height
-		}
-		switch {
-		case longest <= 1024:
-			return "1k", nil
-		case longest <= 2048:
-			return "2k", nil
-		case longest <= 4096:
-			return "4k", nil
-		default:
-			return "", errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
-		}
+	if quality, ok, err := resolveExplicitOrSizedQuality(requestedQuality, requestedSize); ok || err != nil {
+		return quality, err
 	}
 	value := r.cfg.Billing.AutoQualityDefaultByGroup[strings.ToLower(abstractModel)]
 	if value == "" {
 		return "", errs.New(400, errs.CodeImageCapabilityMismatch, fmt.Sprintf("unsupported abstract model %s", abstractModel))
 	}
-	return value, nil
+	return strings.ToLower(strings.TrimSpace(value)), nil
+}
+
+func ResolveRouteQuality(routeModel RouteModelConfig, taskType, requestedQuality, requestedSize string, autoDefaults map[string]string, prices []RoutePriceConfig) (string, error) {
+	if quality, ok, err := resolveExplicitOrSizedQuality(requestedQuality, requestedSize); ok || err != nil {
+		if err != nil {
+			return "", err
+		}
+		if !hasRoutePrice(routeModel.ID, taskType, quality, prices) {
+			return "", errs.New(409, errs.CodeConflict, "model pricing not found")
+		}
+		return quality, nil
+	}
+
+	quality := strings.ToLower(strings.TrimSpace(autoDefaults[strings.ToLower(routeModel.Code)]))
+	source := "route_model_default"
+	if quality == "" || !hasRoutePrice(routeModel.ID, taskType, quality, prices) {
+		quality = firstRouteQuality(routeModel.ID, taskType, prices)
+		source = "first_configured_price"
+	}
+	if quality == "" {
+		return "", errs.New(409, errs.CodeConflict, "model pricing not found")
+	}
+	slog.Warn("route model auto quality fell back to default bucket",
+		"route_model_id", routeModel.ID,
+		"route_model_code", routeModel.Code,
+		"task_type", taskType,
+		"requested_quality", requestedQuality,
+		"requested_size", requestedSize,
+		"resolved_quality", quality,
+		"fallback_source", source,
+	)
+	return quality, nil
+}
+
+func resolveExplicitOrSizedQuality(requestedQuality, requestedSize string) (string, bool, error) {
+	quality := strings.ToLower(strings.TrimSpace(requestedQuality))
+	if quality == "1k" || quality == "2k" || quality == "4k" {
+		return quality, true, nil
+	}
+	if quality != "" && quality != "auto" {
+		return "", true, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported quality")
+	}
+	if strings.TrimSpace(requestedSize) == "" || strings.EqualFold(strings.TrimSpace(requestedSize), "auto") {
+		return "", false, nil
+	}
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(requestedSize)), "x")
+	if len(parts) != 2 {
+		return "", true, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
+	}
+	width, errW := strconv.Atoi(strings.TrimSpace(parts[0]))
+	height, errH := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errW != nil || errH != nil {
+		return "", true, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
+	}
+	longest := width
+	if height > longest {
+		longest = height
+	}
+	switch {
+	case longest <= 1024:
+		return "1k", true, nil
+	case longest <= 2048:
+		return "2k", true, nil
+	case longest <= 4096:
+		return "4k", true, nil
+	default:
+		return "", true, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
+	}
 }
 
 func (r *Resolver) Resolve(req ResolveRequest) (ResolvedRequest, error) {
@@ -147,6 +434,9 @@ func (r *Resolver) Resolve(req ResolveRequest) (ResolvedRequest, error) {
 }
 
 func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (ResolvedRequest, error) {
+	if strings.TrimSpace(req.RouteModelCode) != "" {
+		return r.resolveRouteContext(ctx, req)
+	}
 	model := strings.ToLower(req.AbstractModel)
 	quality, err := r.ResolveQuality(req.RequestedQuality, req.RequestedSize, model)
 	if err != nil {
@@ -255,6 +545,114 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 		MaxReferenceImageCount: r.cfg.GenerationLimits.ReferenceImageMaxCount,
 		RuntimeRoutingApplied:  len(routing.Providers) > 0 || len(routing.Routes) > 0,
 	}, nil
+}
+
+func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) (ResolvedRequest, error) {
+	routeCode := strings.ToLower(strings.TrimSpace(req.RouteModelCode))
+	routing, err := r.runtimeRouting(ctx)
+	if err != nil {
+		return ResolvedRequest{}, err
+	}
+	var routeModel RouteModelConfig
+	for _, item := range routing.RouteModels {
+		if item.Enabled && strings.EqualFold(item.Code, routeCode) {
+			routeModel = item
+			break
+		}
+	}
+	if routeModel.ID == 0 {
+		return ResolvedRequest{}, errs.New(404, errs.CodeNotFound, "route model not found")
+	}
+	if routeModel.Visibility == "hidden" {
+		return ResolvedRequest{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+	}
+	matchedGroups := matchedActiveGroups(routing, req.UserGroupCodes, routeModel.ID)
+	if _, ok := effectiveMultiplier(routeModel, matchedGroups); !ok {
+		return ResolvedRequest{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+	}
+	quality := strings.ToLower(strings.TrimSpace(req.RequestedQuality))
+	quality, err = ResolveRouteQuality(routeModel, req.TaskType, req.RequestedQuality, req.RequestedSize, r.cfg.Billing.AutoQualityDefaultByGroup, routing.Prices)
+	if err != nil {
+		return ResolvedRequest{}, err
+	}
+	if req.RequestedOutputImageCount <= 0 {
+		req.RequestedOutputImageCount = 1
+	}
+	if req.RequestedOutputImageCount > r.cfg.GenerationLimits.MaxImageCount {
+		return ResolvedRequest{}, errs.New(400, errs.CodeImageCapabilityMismatch, "requested output image count exceeds platform limit")
+	}
+	if req.ReferenceImageCount > r.cfg.GenerationLimits.ReferenceImageMaxCount {
+		return ResolvedRequest{}, errs.New(400, errs.CodeImageReferenceExceeded, "reference image count exceeds platform limit")
+	}
+	accountModels := make(map[int64]ProviderCandidate, len(routing.ProviderModels))
+	for _, candidate := range routing.ProviderModels {
+		accountModels[candidate.AccountModelID] = candidate
+	}
+	candidates := make([]ProviderCandidate, 0, len(routing.Candidates))
+	for _, item := range routing.Candidates {
+		if !item.Enabled || item.RouteModelID != routeModel.ID {
+			continue
+		}
+		candidate, ok := accountModels[item.AccountModelID]
+		if !ok {
+			continue
+		}
+		if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, req.TaskType) {
+			continue
+		}
+		if len(candidate.SupportedQualities) > 0 && !containsString(candidate.SupportedQualities, quality) {
+			continue
+		}
+		candidate.RouteModelID = routeModel.ID
+		candidate.RouteModelCode = routeModel.Code
+		candidate.Priority = item.Priority
+		candidate.WeightPercent = item.Weight
+		candidate.FallbackOrder = item.FallbackOrder
+		candidate.RouteSnapshotVersion = routing.Version
+		candidates = append(candidates, candidate)
+	}
+	if len(candidates) == 0 {
+		return ResolvedRequest{}, errs.New(409, errs.CodeConflict, "route model has no available candidate")
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority < candidates[j].Priority
+		}
+		if candidates[i].FallbackOrder != candidates[j].FallbackOrder {
+			return candidates[i].FallbackOrder < candidates[j].FallbackOrder
+		}
+		return candidates[i].AccountModelID < candidates[j].AccountModelID
+	})
+	return ResolvedRequest{
+		ResolvedQualityBucket:  quality,
+		Providers:              candidates,
+		MaxOutputImageCount:    r.cfg.GenerationLimits.MaxImageCount,
+		MaxReferenceImageCount: r.cfg.GenerationLimits.ReferenceImageMaxCount,
+		RuntimeRoutingApplied:  true,
+	}, nil
+}
+
+func firstRouteQuality(routeModelID int64, taskType string, prices []RoutePriceConfig) string {
+	qualities := []string{}
+	for _, price := range prices {
+		if price.Enabled && price.RouteModelID == routeModelID && strings.EqualFold(price.TaskType, taskType) {
+			qualities = append(qualities, strings.ToLower(price.Quality))
+		}
+	}
+	sort.Strings(qualities)
+	if len(qualities) == 0 {
+		return ""
+	}
+	return qualities[0]
+}
+
+func hasRoutePrice(routeModelID int64, taskType, quality string, prices []RoutePriceConfig) bool {
+	for _, price := range prices {
+		if price.Enabled && price.RouteModelID == routeModelID && strings.EqualFold(price.TaskType, taskType) && strings.EqualFold(price.Quality, quality) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Resolver) ListCapabilities() []CapabilityItem {
