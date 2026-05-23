@@ -6,10 +6,11 @@ import { errorMessage } from '../useApiResource'
 
 export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   const app = useApp()
-  const [mode, setMode] = useState<'password' | 'code'>('password')
-  const [email, setEmail] = useState('fatballfish@example.com')
-  const [password, setPassword] = useState('vault2026')
-  const [code, setCode] = useState('123456')
+  const env = import.meta.env as Record<string, string | undefined>
+  const [mode, setMode] = useState<'password' | 'code'>(env.VITE_AUTH_DEFAULT_MODE === 'code' ? 'code' : 'password')
+  const [email, setEmail] = useState(env.VITE_DEFAULT_USER_EMAIL ?? 'fatballfish@example.com')
+  const [password, setPassword] = useState(env.VITE_DEFAULT_USER_PASSWORD ?? 'vault2026')
+  const [code, setCode] = useState(env.VITE_DEFAULT_USER_CODE ?? '123456')
   const [resetMode, setResetMode] = useState(false)
   const [resetPassword, setResetPassword] = useState('')
   const [cooldown, setCooldown] = useState(0)

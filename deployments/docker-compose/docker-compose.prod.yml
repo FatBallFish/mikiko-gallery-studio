@@ -74,6 +74,8 @@ services:
     image: pic-gallery-worker:${IMAGE_TAG:-local}
     restart: unless-stopped
     depends_on:
+      api:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:

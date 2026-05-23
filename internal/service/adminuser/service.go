@@ -2,11 +2,14 @@ package adminuser
 
 import (
 	"context"
+	"errors"
+	"net/mail"
 	"regexp"
 	"strings"
 
 	domainadminuser "github.com/fatballfish/pic-gallery/internal/domain/adminuser"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -44,6 +47,45 @@ func (s *Service) GetUserDetail(ctx context.Context, userID int64) (domainadminu
 		return domainadminuser.Detail{}, errs.BadRequest("invalid user_id")
 	}
 	return s.store.GetUserDetail(ctx, userID, 10)
+}
+
+func (s *Service) CreateUser(ctx context.Context, req domainadminuser.CreateUserRequest) (domainadminuser.UserSummary, error) {
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Nickname = strings.TrimSpace(req.Nickname)
+	rawStatus := strings.TrimSpace(req.Status)
+	req.Status = normalizeStatus(rawStatus)
+	req.UserGroupCode = strings.ToLower(strings.TrimSpace(req.UserGroupCode))
+	req.DefaultLocale = strings.TrimSpace(req.DefaultLocale)
+	req.Theme = strings.TrimSpace(req.Theme)
+	if req.Email == "" {
+		return domainadminuser.UserSummary{}, errs.BadRequest("email is required")
+	}
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		return domainadminuser.UserSummary{}, errs.BadRequest("email is invalid")
+	}
+	if rawStatus != "" && req.Status == "" {
+		return domainadminuser.UserSummary{}, errs.BadRequest("invalid status")
+	}
+	if req.Status == "" {
+		req.Status = "active"
+	}
+	if req.UserGroupCode == "" {
+		req.UserGroupCode = "basic"
+	}
+	if req.DefaultLocale == "" {
+		req.DefaultLocale = "zh-CN"
+	}
+	if req.Theme == "" {
+		req.Theme = "system"
+	}
+	if req.RPMLimit < 0 || req.ConcurrencyLimit < 0 {
+		return domainadminuser.UserSummary{}, errs.BadRequest("rpm_limit and concurrency_limit must be non-negative")
+	}
+	user, err := s.store.CreateUser(ctx, req)
+	if err != nil {
+		return domainadminuser.UserSummary{}, normalizeStoreError(err, "user already exists")
+	}
+	return user, nil
 }
 
 func (s *Service) UpdateUserStatus(ctx context.Context, req domainadminuser.StatusRequest) (domainadminuser.UserSummary, error) {
@@ -109,6 +151,17 @@ func (s *Service) AssignUserGroup(ctx context.Context, req domainadminuser.Group
 		return domainadminuser.UserSummary{}, errs.BadRequest("user_group_code is required")
 	}
 	return s.store.AssignUserGroup(ctx, req)
+}
+
+func (s *Service) DeleteUser(ctx context.Context, userID int64) (domainadminuser.UserSummary, error) {
+	if userID <= 0 {
+		return domainadminuser.UserSummary{}, errs.BadRequest("invalid user_id")
+	}
+	user, err := s.store.DeleteUser(ctx, userID)
+	if err != nil {
+		return domainadminuser.UserSummary{}, normalizeStoreError(err, "user delete conflict")
+	}
+	return user, nil
 }
 
 func (s *Service) ListUserGroups(ctx context.Context, req domainadminuser.UserGroupListRequest) (domainadminuser.UserGroupListPage, error) {
@@ -200,4 +253,18 @@ func normalizeUserGroupWrite(req domainadminuser.UserGroupWriteRequest, requireC
 		req.Status = "active"
 	}
 	return req, nil
+}
+
+func normalizeStoreError(err error, conflictMessage string) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, repoerr.ErrNotFound):
+		return errs.New(404, errs.CodeNotFound, "user group not found")
+	case errors.Is(err, repoerr.ErrConflict):
+		return errs.New(409, errs.CodeConflict, conflictMessage)
+	default:
+		return err
+	}
 }

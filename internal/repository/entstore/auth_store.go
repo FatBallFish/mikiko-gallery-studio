@@ -33,7 +33,7 @@ func NewAuthStore(client *repoent.Client) *AuthStore {
 }
 
 func (s *AuthStore) GetUserByEmail(ctx context.Context, email string) (domainauth.User, error) {
-	entity, err := s.client.User.Query().Where(user.EmailEQ(email)).Only(ctx)
+	entity, err := s.client.User.Query().Where(user.EmailEQ(email), user.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainauth.User{}, repoerr.ErrNotFound
@@ -70,7 +70,7 @@ func (s *AuthStore) CreateUser(ctx context.Context, user domainauth.User) (domai
 }
 
 func (s *AuthStore) GetUserByID(ctx context.Context, id int64) (domainauth.User, error) {
-	entity, err := s.client.User.Get(ctx, int(id))
+	entity, err := s.client.User.Query().Where(user.IDEQ(int(id)), user.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainauth.User{}, repoerr.ErrNotFound
@@ -86,7 +86,8 @@ func (s *AuthStore) UpdateUser(ctx context.Context, domainUser domainauth.User) 
 		return domainauth.User{}, err
 	}
 
-	update := s.client.User.UpdateOneID(int(domainUser.ID)).
+	update := s.client.User.Update().
+		Where(user.IDEQ(int(domainUser.ID)), user.DeletedAtIsNil()).
 		SetEmail(domainUser.Email).
 		SetNickname(domainUser.Nickname).
 		SetBio(domainUser.Bio).
@@ -118,48 +119,57 @@ func (s *AuthStore) UpdateUser(ctx context.Context, domainUser domainauth.User) 
 	} else {
 		update.ClearAvatarObjectKey()
 	}
-	entity, err := update.Save(ctx)
+	affected, err := update.Save(ctx)
 	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainauth.User{}, repoerr.ErrNotFound
-		}
 		return domainauth.User{}, err
 	}
-	return s.mapUserEntity(ctx, entity)
+	if affected == 0 {
+		return domainauth.User{}, repoerr.ErrNotFound
+	}
+	return s.GetUserByID(ctx, domainUser.ID)
 }
 
 func (s *AuthStore) IncrementTokenVersion(ctx context.Context, userID int64) error {
-	return s.client.User.UpdateOneID(int(userID)).AddTokenVersion(1).Exec(ctx)
+	affected, err := s.client.User.Update().Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).AddTokenVersion(1).Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return repoerr.ErrNotFound
+	}
+	return nil
 }
 
 func (s *AuthStore) UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string, passwordUpdatedAt time.Time) (domainauth.User, error) {
-	entity, err := s.client.User.UpdateOneID(int(userID)).
+	affected, err := s.client.User.Update().
+		Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).
 		SetPasswordHash(passwordHash).
 		SetPasswordUpdatedAt(passwordUpdatedAt.UTC()).
 		AddTokenVersion(1).
 		Save(ctx)
 	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainauth.User{}, repoerr.ErrNotFound
-		}
 		return domainauth.User{}, err
 	}
-	return s.mapUserEntity(ctx, entity)
+	if affected == 0 {
+		return domainauth.User{}, repoerr.ErrNotFound
+	}
+	return s.GetUserByID(ctx, userID)
 }
 
 func (s *AuthStore) MarkUserClosed(ctx context.Context, userID int64, closedAt time.Time) (domainauth.User, error) {
-	entity, err := s.client.User.UpdateOneID(int(userID)).
+	affected, err := s.client.User.Update().
+		Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).
 		SetStatus("closed").
 		SetClosedAt(closedAt.UTC()).
 		AddTokenVersion(1).
 		Save(ctx)
 	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainauth.User{}, repoerr.ErrNotFound
-		}
 		return domainauth.User{}, err
 	}
-	return s.mapUserEntity(ctx, entity)
+	if affected == 0 {
+		return domainauth.User{}, repoerr.ErrNotFound
+	}
+	return s.GetUserByID(ctx, userID)
 }
 
 func (s *AuthStore) RevokeRefreshSessionsByUser(ctx context.Context, userID int64) error {

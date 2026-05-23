@@ -108,6 +108,7 @@ func newMux(api *handlers.API) http.Handler {
 	handler := middleware.Recovery(mux)
 	handler = middleware.RequestID(handler)
 	handler = middleware.Metrics(handler)
+	handler = middleware.CORS(handler)
 	handler = observability.RequestLogger(handler)
 	return handler
 }

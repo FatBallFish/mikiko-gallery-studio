@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
 import { adminApi } from '../../shared/admin-api'
 import { AdminLayout, normalizeRoute, protectedRoutes, routeHref, ToastRail, useHashRoute, useToasts } from './components'
@@ -28,10 +28,25 @@ export default function App() {
   const { toasts, pushToast, dismissToast } = useToasts()
   const isAuthed = Boolean(session)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     sessionRef.current = session
-    adminApi.configureAuth({ getToken: () => sessionRef.current?.token })
-  }, [session])
+    adminApi.configureAuth({
+      getToken: () => sessionRef.current?.token,
+      onError: (error) => {
+        pushToast({ tone: 'danger', title: '接口调用失败', detail: error.message })
+      },
+      onUnauthorized: () => {
+        if (sessionRef.current) {
+          window.sessionStorage.removeItem(sessionKey)
+          sessionRef.current = null
+          setSession(null)
+          setRoute('login')
+          pushToast({ tone: 'danger', title: '登录已过期', detail: '请重新登录后继续操作。' })
+        }
+        return undefined
+      },
+    })
+  }, [session, pushToast, setRoute])
 
   const refreshShell = async () => {
     if (!session) return
@@ -66,6 +81,7 @@ export default function App() {
   }
 
   const handleLogin = (nextSession: AdminSession) => {
+    sessionRef.current = nextSession
     setSession(nextSession)
     window.sessionStorage.setItem(sessionKey, JSON.stringify(nextSession))
     const returnRoute = normalizeRoute(`#/${window.sessionStorage.getItem(returnKey) ?? 'overview'}`)

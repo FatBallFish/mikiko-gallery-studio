@@ -893,6 +893,25 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserListResponse
+    post:
+      tags: [Admin Users]
+      summary: Create a user from the admin console without email-code verification
+      operationId: postAdminUsers
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCreateUserRequest
+      responses:
+        '201':
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCreateUserResponse
   /api/ops/admin/v1/users/{user_id}:
     get:
       tags: [Admin Users]
@@ -914,6 +933,26 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserDetailResponse
+    delete:
+      tags: [Admin Users]
+      summary: Soft delete an admin-managed user
+      operationId: deleteAdminUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Soft-deleted user summary
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminUserStatusResponse
   /api/ops/admin/v1/users/{user_id}/status:
     post:
       tags: [Admin Users]

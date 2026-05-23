@@ -36,6 +36,17 @@ type ListPage struct {
 	Total    int           `json:"total"`
 }
 
+type CreateUserRequest struct {
+	Email            string
+	Nickname         string
+	Status           string
+	UserGroupCode    string
+	RPMLimit         int
+	ConcurrencyLimit int
+	DefaultLocale    string
+	Theme            string
+}
+
 type Detail struct {
 	User         UserSummary                  `json:"user"`
 	Balance      domainbilling.BalanceSummary `json:"balance"`

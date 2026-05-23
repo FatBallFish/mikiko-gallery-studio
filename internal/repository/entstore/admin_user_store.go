@@ -2,7 +2,9 @@ package entstore
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	domainadminuser "github.com/fatballfish/pic-gallery/internal/domain/adminuser"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
@@ -30,6 +32,7 @@ func NewAdminUserStore(client *repoent.Client, billing *BillingStore) *AdminUser
 func (s *AdminUserStore) ListUsers(ctx context.Context, req domainadminuser.ListRequest) (domainadminuser.ListPage, error) {
 	page, pageSize := normalizeAdminUserPage(req.Page, req.PageSize)
 	query := s.client.User.Query()
+	query = query.Where(user.DeletedAtIsNil())
 	if status := strings.TrimSpace(req.Status); status != "" {
 		query = query.Where(user.StatusEQ(status))
 	}
@@ -58,8 +61,32 @@ func (s *AdminUserStore) ListUsers(ctx context.Context, req domainadminuser.List
 	return domainadminuser.ListPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
+func (s *AdminUserStore) CreateUser(ctx context.Context, req domainadminuser.CreateUserRequest) (domainadminuser.UserSummary, error) {
+	group, err := s.ensureUserGroup(ctx, req.UserGroupCode)
+	if err != nil {
+		return domainadminuser.UserSummary{}, err
+	}
+	create := s.client.User.Create().
+		SetEmail(req.Email).
+		SetNickname(req.Nickname).
+		SetStatus(req.Status).
+		SetUserGroupID(int64(group.ID)).
+		SetRpmLimit(req.RPMLimit).
+		SetConcurrencyLimit(req.ConcurrencyLimit).
+		SetDefaultLocale(req.DefaultLocale).
+		SetTheme(req.Theme)
+	entity, err := create.Save(ctx)
+	if err != nil {
+		if isConstraintError(err) {
+			return domainadminuser.UserSummary{}, repoerr.ErrConflict
+		}
+		return domainadminuser.UserSummary{}, err
+	}
+	return s.mapUser(ctx, entity)
+}
+
 func (s *AdminUserStore) GetUserDetail(ctx context.Context, userID int64, recentLedgerLimit int) (domainadminuser.Detail, error) {
-	entity, err := s.client.User.Get(ctx, int(userID))
+	entity, err := s.client.User.Query().Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainadminuser.Detail{}, errs.New(404, errs.CodeNotFound, "user not found")
@@ -104,37 +131,64 @@ func (s *AdminUserStore) GetUserDetail(ctx context.Context, userID int64, recent
 	}, nil
 }
 
+func (s *AdminUserStore) ensureUserGroup(ctx context.Context, groupCode string) (*repoent.UserGroup, error) {
+	groupCode = strings.ToLower(strings.TrimSpace(groupCode))
+	if groupCode == "" {
+		groupCode = "basic"
+	}
+	group, err := s.client.UserGroup.Query().Where(usergroup.GroupCodeEQ(groupCode)).Only(ctx)
+	if err == nil {
+		return group, nil
+	}
+	if !repoent.IsNotFound(err) {
+		return nil, err
+	}
+	if groupCode != "basic" {
+		return nil, errs.New(404, errs.CodeNotFound, "user group not found")
+	}
+	return s.client.UserGroup.Create().
+		SetGroupCode("basic").
+		SetGroupName("basic").
+		SetMultiplier("1.00000").
+		SetStatus("active").
+		Save(ctx)
+}
+
 func (s *AdminUserStore) UpdateUserStatus(ctx context.Context, userID int64, status string) (domainadminuser.UserSummary, error) {
-	entity, err := s.client.User.Get(ctx, int(userID))
+	entity, err := s.client.User.Query().Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
 		}
 		return domainadminuser.UserSummary{}, err
 	}
-	update := s.client.User.UpdateOneID(int(userID)).SetStatus(status)
+	update := s.client.User.Update().Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).SetStatus(status)
 	if entity.Status != status {
 		update.AddTokenVersion(1)
 	}
-	updated, err := update.Save(ctx)
+	affected, err := update.Save(ctx)
 	if err != nil {
 		return domainadminuser.UserSummary{}, err
 	}
-	return s.mapUser(ctx, updated)
+	if affected == 0 {
+		return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	return s.GetUserSummary(ctx, userID)
 }
 
 func (s *AdminUserStore) UpdateUserLimits(ctx context.Context, req domainadminuser.LimitsRequest) (domainadminuser.UserSummary, error) {
-	updated, err := s.client.User.UpdateOneID(int(req.UserID)).
+	affected, err := s.client.User.Update().
+		Where(user.IDEQ(int(req.UserID)), user.DeletedAtIsNil()).
 		SetRpmLimit(req.RPMLimit).
 		SetConcurrencyLimit(req.ConcurrencyLimit).
 		Save(ctx)
 	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
-		}
 		return domainadminuser.UserSummary{}, err
 	}
-	return s.mapUser(ctx, updated)
+	if affected == 0 {
+		return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	return s.GetUserSummary(ctx, req.UserID)
 }
 
 func (s *AdminUserStore) AssignUserGroup(ctx context.Context, req domainadminuser.GroupAssignmentRequest) (domainadminuser.UserSummary, error) {
@@ -145,14 +199,57 @@ func (s *AdminUserStore) AssignUserGroup(ctx context.Context, req domainadminuse
 		}
 		return domainadminuser.UserSummary{}, err
 	}
-	updated, err := s.client.User.UpdateOneID(int(req.UserID)).SetUserGroupID(int64(group.ID)).Save(ctx)
+	affected, err := s.client.User.Update().Where(user.IDEQ(int(req.UserID)), user.DeletedAtIsNil()).SetUserGroupID(int64(group.ID)).Save(ctx)
+	if err != nil {
+		return domainadminuser.UserSummary{}, err
+	}
+	if affected == 0 {
+		return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	return s.GetUserSummary(ctx, req.UserID)
+}
+
+func (s *AdminUserStore) GetUserSummary(ctx context.Context, userID int64) (domainadminuser.UserSummary, error) {
+	entity, err := s.client.User.Query().Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
 		}
 		return domainadminuser.UserSummary{}, err
 	}
-	return s.mapUser(ctx, updated)
+	return s.mapUser(ctx, entity)
+}
+
+func (s *AdminUserStore) DeleteUser(ctx context.Context, userID int64) (domainadminuser.UserSummary, error) {
+	entity, err := s.client.User.Query().Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+		}
+		return domainadminuser.UserSummary{}, err
+	}
+	deletedAt := time.Now().UTC()
+	deletedEmail := fmt.Sprintf("deleted+%d+%d@deleted.local", entity.ID, deletedAt.UnixNano())
+	affected, err := s.client.User.Update().
+		Where(user.IDEQ(entity.ID), user.DeletedAtIsNil()).
+		SetEmail(deletedEmail).
+		SetStatus("closed").
+		SetDeletedAt(deletedAt).
+		SetClosedAt(deletedAt).
+		AddTokenVersion(1).
+		Save(ctx)
+	if err != nil {
+		return domainadminuser.UserSummary{}, err
+	}
+	if affected == 0 {
+		return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	entity.Email = deletedEmail
+	entity.Status = "closed"
+	entity.DeletedAt = &deletedAt
+	entity.ClosedAt = &deletedAt
+	entity.TokenVersion++
+	return s.mapUser(ctx, entity)
 }
 
 func (s *AdminUserStore) ListUserGroups(ctx context.Context, req domainadminuser.UserGroupListRequest) (domainadminuser.UserGroupListPage, error) {

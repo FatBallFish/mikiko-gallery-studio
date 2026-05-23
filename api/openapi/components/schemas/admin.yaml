@@ -122,6 +122,49 @@ components:
           properties:
             request_id:
               type: string
+    AdminCreateUserRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, disabled]
+          default: active
+        user_group_code:
+          type: string
+          default: basic
+        password:
+          type: string
+          description: Optional initial password. If omitted, the user can still log in through email code.
+        rpm_limit:
+          type: integer
+          minimum: 0
+          default: 0
+        concurrency_limit:
+          type: integer
+          minimum: 0
+          default: 0
+        default_locale:
+          type: string
+          default: zh-CN
+        theme:
+          type: string
+          default: system
+    AdminCreateUserResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminUserSummary'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
     AdminUpdateUserStatusRequest:
       type: object
       required: [status]
