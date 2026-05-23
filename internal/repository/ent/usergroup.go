@@ -30,7 +30,11 @@ type UserGroup struct {
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// Description holds the value of the "description" field.
-	Description  *string `json:"description,omitempty"`
+	Description *string `json:"description,omitempty"`
+	// SortOrder holds the value of the "sort_order" field.
+	SortOrder int `json:"sort_order,omitempty"`
+	// IsDefault holds the value of the "is_default" field.
+	IsDefault    bool `json:"is_default,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -39,7 +43,9 @@ func (*UserGroup) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case usergroup.FieldID:
+		case usergroup.FieldIsDefault:
+			values[i] = new(sql.NullBool)
+		case usergroup.FieldID, usergroup.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
 		case usergroup.FieldGroupCode, usergroup.FieldGroupName, usergroup.FieldMultiplier, usergroup.FieldStatus, usergroup.FieldDescription:
 			values[i] = new(sql.NullString)
@@ -109,6 +115,18 @@ func (_m *UserGroup) assignValues(columns []string, values []any) error {
 				_m.Description = new(string)
 				*_m.Description = value.String
 			}
+		case usergroup.FieldSortOrder:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field sort_order", values[i])
+			} else if value.Valid {
+				_m.SortOrder = int(value.Int64)
+			}
+		case usergroup.FieldIsDefault:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field is_default", values[i])
+			} else if value.Valid {
+				_m.IsDefault = value.Bool
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -167,6 +185,12 @@ func (_m *UserGroup) String() string {
 		builder.WriteString("description=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	builder.WriteString("sort_order=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SortOrder))
+	builder.WriteString(", ")
+	builder.WriteString("is_default=")
+	builder.WriteString(fmt.Sprintf("%v", _m.IsDefault))
 	builder.WriteByte(')')
 	return builder.String()
 }

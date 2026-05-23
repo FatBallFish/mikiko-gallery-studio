@@ -22,6 +22,84 @@ func NewServiceWithStore(store Store) *Service {
 	return &Service{store: store}
 }
 
+func (s *Service) ListModelAccounts(ctx context.Context, req domainmodeladmin.ModelAccountListRequest) (domainmodeladmin.ModelAccountListPage, error) {
+	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
+	req.AdapterType = normalizeCode(req.AdapterType)
+	req.AuthType = normalizeCode(req.AuthType)
+	req.Status = normalizeCode(req.Status)
+	return s.store.ListModelAccounts(ctx, req)
+}
+
+func (s *Service) GetModelAccount(ctx context.Context, accountID int64) (domainmodeladmin.ModelAccount, error) {
+	if accountID <= 0 {
+		return domainmodeladmin.ModelAccount{}, errs.BadRequest("invalid account_id")
+	}
+	item, err := s.store.GetModelAccount(ctx, accountID)
+	return item, normalizeStoreError(err, "model account not found")
+}
+
+func (s *Service) CreateModelAccount(ctx context.Context, req domainmodeladmin.ModelAccountWriteRequest) (domainmodeladmin.ModelAccount, error) {
+	normalized, err := normalizeModelAccountWrite(req, true)
+	if err != nil {
+		return domainmodeladmin.ModelAccount{}, err
+	}
+	item, err := s.store.CreateModelAccount(ctx, normalized)
+	return item, normalizeStoreError(err, "model account already exists")
+}
+
+func (s *Service) UpdateModelAccount(ctx context.Context, accountID int64, req domainmodeladmin.ModelAccountWriteRequest) (domainmodeladmin.ModelAccount, error) {
+	if accountID <= 0 {
+		return domainmodeladmin.ModelAccount{}, errs.BadRequest("invalid account_id")
+	}
+	normalized, err := normalizeModelAccountWrite(req, false)
+	if err != nil {
+		return domainmodeladmin.ModelAccount{}, err
+	}
+	item, err := s.store.UpdateModelAccount(ctx, accountID, normalized)
+	return item, normalizeStoreError(err, "model account not found")
+}
+
+func (s *Service) DeleteModelAccount(ctx context.Context, accountID int64) error {
+	if accountID <= 0 {
+		return errs.BadRequest("invalid account_id")
+	}
+	return normalizeStoreError(s.store.DeleteModelAccount(ctx, accountID), "model account not found")
+}
+
+func (s *Service) ListModelAccountModels(ctx context.Context, req domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error) {
+	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
+	req.ModelCode = strings.TrimSpace(req.ModelCode)
+	return s.store.ListModelAccountModels(ctx, req)
+}
+
+func (s *Service) CreateModelAccountModel(ctx context.Context, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error) {
+	normalized, err := normalizeModelAccountModelWrite(req)
+	if err != nil {
+		return domainmodeladmin.ModelAccountModel{}, err
+	}
+	item, err := s.store.CreateModelAccountModel(ctx, normalized)
+	return item, normalizeStoreError(err, "model account model already exists")
+}
+
+func (s *Service) UpdateModelAccountModel(ctx context.Context, accountModelID int64, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error) {
+	if accountModelID <= 0 {
+		return domainmodeladmin.ModelAccountModel{}, errs.BadRequest("invalid account_model_id")
+	}
+	normalized, err := normalizeModelAccountModelWrite(req)
+	if err != nil {
+		return domainmodeladmin.ModelAccountModel{}, err
+	}
+	item, err := s.store.UpdateModelAccountModel(ctx, accountModelID, normalized)
+	return item, normalizeStoreError(err, "model account model not found")
+}
+
+func (s *Service) DeleteModelAccountModel(ctx context.Context, accountModelID int64) error {
+	if accountModelID <= 0 {
+		return errs.BadRequest("invalid account_model_id")
+	}
+	return normalizeStoreError(s.store.DeleteModelAccountModel(ctx, accountModelID), "model account model not found")
+}
+
 func (s *Service) ListProviders(ctx context.Context, req domainmodeladmin.ProviderListRequest) (domainmodeladmin.ProviderListPage, error) {
 	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
 	req.ProviderType = strings.ToLower(strings.TrimSpace(req.ProviderType))
@@ -157,6 +235,107 @@ func (s *Service) DeleteRoute(ctx context.Context, routeID int64) error {
 	return normalizeStoreError(s.store.DeleteRoute(ctx, routeID), "model route not found")
 }
 
+func (s *Service) ListRouteModels(ctx context.Context, req domainmodeladmin.RouteModelListRequest) (domainmodeladmin.RouteModelListPage, error) {
+	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
+	req.Visibility = normalizeCode(req.Visibility)
+	return s.store.ListRouteModels(ctx, req)
+}
+
+func (s *Service) CreateRouteModel(ctx context.Context, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error) {
+	normalized, err := normalizeRouteModelWrite(req, true)
+	if err != nil {
+		return domainmodeladmin.RouteModel{}, err
+	}
+	item, err := s.store.CreateRouteModel(ctx, normalized)
+	return item, normalizeStoreError(err, "route model already exists")
+}
+
+func (s *Service) UpdateRouteModel(ctx context.Context, routeModelID int64, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error) {
+	if routeModelID <= 0 {
+		return domainmodeladmin.RouteModel{}, errs.BadRequest("invalid route_model_id")
+	}
+	normalized, err := normalizeRouteModelWrite(req, false)
+	if err != nil {
+		return domainmodeladmin.RouteModel{}, err
+	}
+	item, err := s.store.UpdateRouteModel(ctx, routeModelID, normalized)
+	return item, normalizeStoreError(err, "route model not found")
+}
+
+func (s *Service) DeleteRouteModel(ctx context.Context, routeModelID int64) error {
+	if routeModelID <= 0 {
+		return errs.BadRequest("invalid route_model_id")
+	}
+	return normalizeStoreError(s.store.DeleteRouteModel(ctx, routeModelID), "route model not found")
+}
+
+func (s *Service) ListRouteModelCandidates(ctx context.Context, routeModelID int64) ([]domainmodeladmin.RouteModelCandidate, error) {
+	return s.store.ListRouteModelCandidates(ctx, routeModelID)
+}
+
+func (s *Service) CreateRouteModelCandidate(ctx context.Context, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error) {
+	normalized, err := normalizeRouteModelCandidateWrite(req)
+	if err != nil {
+		return domainmodeladmin.RouteModelCandidate{}, err
+	}
+	item, err := s.store.CreateRouteModelCandidate(ctx, normalized)
+	return item, normalizeStoreError(err, "route model candidate already exists")
+}
+
+func (s *Service) UpdateRouteModelCandidate(ctx context.Context, candidateID int64, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error) {
+	if candidateID <= 0 {
+		return domainmodeladmin.RouteModelCandidate{}, errs.BadRequest("invalid candidate_id")
+	}
+	normalized, err := normalizeRouteModelCandidateWrite(req)
+	if err != nil {
+		return domainmodeladmin.RouteModelCandidate{}, err
+	}
+	item, err := s.store.UpdateRouteModelCandidate(ctx, candidateID, normalized)
+	return item, normalizeStoreError(err, "route model candidate not found")
+}
+
+func (s *Service) DeleteRouteModelCandidate(ctx context.Context, candidateID int64) error {
+	if candidateID <= 0 {
+		return errs.BadRequest("invalid candidate_id")
+	}
+	return normalizeStoreError(s.store.DeleteRouteModelCandidate(ctx, candidateID), "route model candidate not found")
+}
+
+func (s *Service) ListRouteModelPrices(ctx context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error) {
+	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
+	req.TaskType = normalizeCode(req.TaskType)
+	req.Quality = normalizeCode(req.Quality)
+	return s.store.ListRouteModelPrices(ctx, req)
+}
+
+func (s *Service) CreateRouteModelPrice(ctx context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
+	normalized, err := normalizeRouteModelPriceWrite(req)
+	if err != nil {
+		return domainmodeladmin.RouteModelPrice{}, err
+	}
+	item, err := s.store.CreateRouteModelPrice(ctx, normalized)
+	return item, normalizeStoreError(err, "route model price already exists")
+}
+
+func (s *Service) UpdateRouteModelPrice(ctx context.Context, priceID int64, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
+	if priceID <= 0 {
+		return domainmodeladmin.RouteModelPrice{}, errs.BadRequest("invalid price_id")
+	}
+	normalized, err := normalizeRouteModelPriceWrite(req)
+	if err != nil {
+		return domainmodeladmin.RouteModelPrice{}, err
+	}
+	item, err := s.store.UpdateRouteModelPrice(ctx, priceID, normalized)
+	return item, normalizeStoreError(err, "route model price not found")
+}
+
+func (s *Service) DeleteRouteModelPrice(ctx context.Context, priceID int64) error {
+	if priceID <= 0 {
+		return errs.BadRequest("invalid price_id")
+	}
+	return normalizeStoreError(s.store.DeleteRouteModelPrice(ctx, priceID), "route model price not found")
+}
+
 func (s *Service) ModelRoutingConfig(ctx context.Context) (modelhub.ModelRoutingSnapshot, error) {
 	return s.store.ModelRoutingConfig(ctx)
 }
@@ -177,6 +356,116 @@ func normalizeProviderWrite(req domainmodeladmin.ProviderWriteRequest, create bo
 	}
 	if create && !req.Enabled {
 		req.Enabled = false
+	}
+	return req, nil
+}
+
+func normalizeModelAccountWrite(req domainmodeladmin.ModelAccountWriteRequest, create bool) (domainmodeladmin.ModelAccountWriteRequest, error) {
+	req.Name = strings.TrimSpace(req.Name)
+	req.AdapterType = normalizeCode(req.AdapterType)
+	req.AuthType = normalizeCode(req.AuthType)
+	req.BaseURL = strings.TrimSpace(req.BaseURL)
+	req.Status = normalizeCode(req.Status)
+	if req.Name == "" || req.AdapterType == "" || req.AuthType == "" || req.BaseURL == "" {
+		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("name, adapter_type, auth_type and base_url are required")
+	}
+	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter {
+		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("unsupported adapter_type")
+	}
+	if req.AuthType != domainmodeladmin.AuthTypeAPIKey {
+		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("unsupported auth_type")
+	}
+	if req.Status == "" {
+		req.Status = domainmodeladmin.ModelAccountStatusDisabled
+	}
+	if req.Status != domainmodeladmin.ModelAccountStatusEnabled && req.Status != domainmodeladmin.ModelAccountStatusDisabled && req.Status != domainmodeladmin.ModelAccountStatusError {
+		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("invalid status")
+	}
+	if req.Status == domainmodeladmin.ModelAccountStatusEnabled && (req.Credentials == nil || strings.TrimSpace(req.Credentials["api_key"]) == "") && create {
+		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("api_key credentials are required to enable account")
+	}
+	if req.Weight <= 0 {
+		req.Weight = 100
+	}
+	if req.ConcurrencyLimit <= 0 {
+		req.ConcurrencyLimit = 1
+	}
+	if req.TimeoutMS <= 0 {
+		req.TimeoutMS = 120000
+	}
+	if req.Extra == nil {
+		req.Extra = map[string]any{}
+	}
+	return req, nil
+}
+
+func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModelWriteRequest, error) {
+	req.ModelCode = strings.TrimSpace(req.ModelCode)
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
+	if req.AccountID <= 0 || req.ModelCode == "" {
+		return domainmodeladmin.ModelAccountModelWriteRequest{}, errs.BadRequest("account_id and model_code are required")
+	}
+	if req.DisplayName == "" {
+		req.DisplayName = req.ModelCode
+	}
+	if req.CostPerImage == "" {
+		req.CostPerImage = "0.00000"
+	}
+	if req.Currency == "" {
+		req.Currency = "USD"
+	}
+	req.TaskTypes = cloneNormalizedStrings(req.TaskTypes)
+	req.Qualities = cloneNormalizedStrings(req.Qualities)
+	if req.Extra == nil {
+		req.Extra = map[string]any{}
+	}
+	return req, nil
+}
+
+func normalizeRouteModelWrite(req domainmodeladmin.RouteModelWriteRequest, requireCode bool) (domainmodeladmin.RouteModelWriteRequest, error) {
+	req.Code = normalizeCode(req.Code)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Description = strings.TrimSpace(req.Description)
+	req.Visibility = normalizeCode(req.Visibility)
+	if requireCode && req.Code == "" {
+		return domainmodeladmin.RouteModelWriteRequest{}, errs.BadRequest("code is required")
+	}
+	if req.Name == "" {
+		return domainmodeladmin.RouteModelWriteRequest{}, errs.BadRequest("name is required")
+	}
+	if req.Visibility == "" {
+		req.Visibility = domainmodeladmin.RouteModelVisibilityHidden
+	}
+	if req.Visibility != domainmodeladmin.RouteModelVisibilityPublic && req.Visibility != domainmodeladmin.RouteModelVisibilityGroups && req.Visibility != domainmodeladmin.RouteModelVisibilityHidden {
+		return domainmodeladmin.RouteModelWriteRequest{}, errs.BadRequest("invalid visibility")
+	}
+	return req, nil
+}
+
+func normalizeRouteModelCandidateWrite(req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidateWriteRequest, error) {
+	if req.RouteModelID <= 0 || req.AccountModelID <= 0 {
+		return domainmodeladmin.RouteModelCandidateWriteRequest{}, errs.BadRequest("route_model_id and account_model_id are required")
+	}
+	if req.Weight <= 0 {
+		req.Weight = 100
+	}
+	return req, nil
+}
+
+func normalizeRouteModelPriceWrite(req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPriceWriteRequest, error) {
+	req.TaskType = normalizeCode(req.TaskType)
+	req.Quality = normalizeCode(req.Quality)
+	req.BasePoints = strings.TrimSpace(req.BasePoints)
+	req.ReferenceMultiplier = strings.TrimSpace(req.ReferenceMultiplier)
+	if req.RouteModelID <= 0 || req.TaskType == "" || req.Quality == "" {
+		return domainmodeladmin.RouteModelPriceWriteRequest{}, errs.BadRequest("route_model_id, task_type and quality are required")
+	}
+	if req.BasePoints == "" {
+		req.BasePoints = "0.00000"
+	}
+	if req.ReferenceMultiplier == "" {
+		req.ReferenceMultiplier = "1.00000"
 	}
 	return req, nil
 }

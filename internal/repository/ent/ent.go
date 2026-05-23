@@ -19,6 +19,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
@@ -29,9 +31,14 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
@@ -102,6 +109,8 @@ func checkColumn(t, c string) error {
 			configitem.Table:                  configitem.ValidColumn,
 			imageresult.Table:                 imageresult.ValidColumn,
 			imagetask.Table:                   imagetask.ValidColumn,
+			modelaccount.Table:                modelaccount.ValidColumn,
+			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
 			paymentorder.Table:                paymentorder.ValidColumn,
@@ -112,9 +121,14 @@ func checkColumn(t, c string) error {
 			redeemcode.Table:                  redeemcode.ValidColumn,
 			referenceasset.Table:              referenceasset.ValidColumn,
 			refreshsession.Table:              refreshsession.ValidColumn,
+			routemodel.Table:                  routemodel.ValidColumn,
+			routemodelcandidate.Table:         routemodelcandidate.ValidColumn,
+			routemodelprice.Table:             routemodelprice.ValidColumn,
+			routemodelvisibilitygroup.Table:   routemodelvisibilitygroup.ValidColumn,
 			subscriptionplan.Table:            subscriptionplan.ValidColumn,
 			user.Table:                        user.ValidColumn,
 			usergroup.Table:                   usergroup.ValidColumn,
+			usergroupmember.Table:             usergroupmember.ValidColumn,
 			usersubscription.Table:            usersubscription.ValidColumn,
 			walletgrant.Table:                 walletgrant.ValidColumn,
 			walletreservationallocation.Table: walletreservationallocation.ValidColumn,

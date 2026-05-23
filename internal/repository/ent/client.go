@@ -22,6 +22,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
@@ -32,9 +34,14 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
@@ -59,6 +66,10 @@ type Client struct {
 	ImageResult *ImageResultClient
 	// ImageTask is the client for interacting with the ImageTask builders.
 	ImageTask *ImageTaskClient
+	// ModelAccount is the client for interacting with the ModelAccount builders.
+	ModelAccount *ModelAccountClient
+	// ModelAccountModel is the client for interacting with the ModelAccountModel builders.
+	ModelAccountModel *ModelAccountModelClient
 	// ModelProvider is the client for interacting with the ModelProvider builders.
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
@@ -79,12 +90,22 @@ type Client struct {
 	ReferenceAsset *ReferenceAssetClient
 	// RefreshSession is the client for interacting with the RefreshSession builders.
 	RefreshSession *RefreshSessionClient
+	// RouteModel is the client for interacting with the RouteModel builders.
+	RouteModel *RouteModelClient
+	// RouteModelCandidate is the client for interacting with the RouteModelCandidate builders.
+	RouteModelCandidate *RouteModelCandidateClient
+	// RouteModelPrice is the client for interacting with the RouteModelPrice builders.
+	RouteModelPrice *RouteModelPriceClient
+	// RouteModelVisibilityGroup is the client for interacting with the RouteModelVisibilityGroup builders.
+	RouteModelVisibilityGroup *RouteModelVisibilityGroupClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserGroup is the client for interacting with the UserGroup builders.
 	UserGroup *UserGroupClient
+	// UserGroupMember is the client for interacting with the UserGroupMember builders.
+	UserGroupMember *UserGroupMemberClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 	// WalletGrant is the client for interacting with the WalletGrant builders.
@@ -109,6 +130,8 @@ func (c *Client) init() {
 	c.ConfigItem = NewConfigItemClient(c.config)
 	c.ImageResult = NewImageResultClient(c.config)
 	c.ImageTask = NewImageTaskClient(c.config)
+	c.ModelAccount = NewModelAccountClient(c.config)
+	c.ModelAccountModel = NewModelAccountModelClient(c.config)
 	c.ModelProvider = NewModelProviderClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
@@ -119,9 +142,14 @@ func (c *Client) init() {
 	c.RedeemCode = NewRedeemCodeClient(c.config)
 	c.ReferenceAsset = NewReferenceAssetClient(c.config)
 	c.RefreshSession = NewRefreshSessionClient(c.config)
+	c.RouteModel = NewRouteModelClient(c.config)
+	c.RouteModelCandidate = NewRouteModelCandidateClient(c.config)
+	c.RouteModelPrice = NewRouteModelPriceClient(c.config)
+	c.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserGroup = NewUserGroupClient(c.config)
+	c.UserGroupMember = NewUserGroupMemberClient(c.config)
 	c.UserSubscription = NewUserSubscriptionClient(c.config)
 	c.WalletGrant = NewWalletGrantClient(c.config)
 	c.WalletReservationAllocation = NewWalletReservationAllocationClient(c.config)
@@ -224,6 +252,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ConfigItem:                  NewConfigItemClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
+		ModelAccount:                NewModelAccountClient(cfg),
+		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
@@ -234,9 +264,14 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		RedeemCode:                  NewRedeemCodeClient(cfg),
 		ReferenceAsset:              NewReferenceAssetClient(cfg),
 		RefreshSession:              NewRefreshSessionClient(cfg),
+		RouteModel:                  NewRouteModelClient(cfg),
+		RouteModelCandidate:         NewRouteModelCandidateClient(cfg),
+		RouteModelPrice:             NewRouteModelPriceClient(cfg),
+		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SubscriptionPlan:            NewSubscriptionPlanClient(cfg),
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
+		UserGroupMember:             NewUserGroupMemberClient(cfg),
 		UserSubscription:            NewUserSubscriptionClient(cfg),
 		WalletGrant:                 NewWalletGrantClient(cfg),
 		WalletReservationAllocation: NewWalletReservationAllocationClient(cfg),
@@ -266,6 +301,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ConfigItem:                  NewConfigItemClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
+		ModelAccount:                NewModelAccountClient(cfg),
+		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
@@ -276,9 +313,14 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		RedeemCode:                  NewRedeemCodeClient(cfg),
 		ReferenceAsset:              NewReferenceAssetClient(cfg),
 		RefreshSession:              NewRefreshSessionClient(cfg),
+		RouteModel:                  NewRouteModelClient(cfg),
+		RouteModelCandidate:         NewRouteModelCandidateClient(cfg),
+		RouteModelPrice:             NewRouteModelPriceClient(cfg),
+		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SubscriptionPlan:            NewSubscriptionPlanClient(cfg),
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
+		UserGroupMember:             NewUserGroupMemberClient(cfg),
 		UserSubscription:            NewUserSubscriptionClient(cfg),
 		WalletGrant:                 NewWalletGrantClient(cfg),
 		WalletReservationAllocation: NewWalletReservationAllocationClient(cfg),
@@ -312,10 +354,13 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
-		c.ImageResult, c.ImageTask, c.ModelProvider, c.ModelRoute, c.PaymentOrder,
-		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
-		c.RedeemCode, c.ReferenceAsset, c.RefreshSession, c.SubscriptionPlan, c.User,
-		c.UserGroup, c.UserSubscription, c.WalletGrant, c.WalletReservationAllocation,
+		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
+		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentWebhookEvent,
+		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel, c.RedeemCode,
+		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
+		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User,
+		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -326,10 +371,13 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
-		c.ImageResult, c.ImageTask, c.ModelProvider, c.ModelRoute, c.PaymentOrder,
-		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
-		c.RedeemCode, c.ReferenceAsset, c.RefreshSession, c.SubscriptionPlan, c.User,
-		c.UserGroup, c.UserSubscription, c.WalletGrant, c.WalletReservationAllocation,
+		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
+		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentWebhookEvent,
+		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel, c.RedeemCode,
+		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
+		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User,
+		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -352,6 +400,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ImageResult.mutate(ctx, m)
 	case *ImageTaskMutation:
 		return c.ImageTask.mutate(ctx, m)
+	case *ModelAccountMutation:
+		return c.ModelAccount.mutate(ctx, m)
+	case *ModelAccountModelMutation:
+		return c.ModelAccountModel.mutate(ctx, m)
 	case *ModelProviderMutation:
 		return c.ModelProvider.mutate(ctx, m)
 	case *ModelRouteMutation:
@@ -372,12 +424,22 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ReferenceAsset.mutate(ctx, m)
 	case *RefreshSessionMutation:
 		return c.RefreshSession.mutate(ctx, m)
+	case *RouteModelMutation:
+		return c.RouteModel.mutate(ctx, m)
+	case *RouteModelCandidateMutation:
+		return c.RouteModelCandidate.mutate(ctx, m)
+	case *RouteModelPriceMutation:
+		return c.RouteModelPrice.mutate(ctx, m)
+	case *RouteModelVisibilityGroupMutation:
+		return c.RouteModelVisibilityGroup.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	case *UserGroupMutation:
 		return c.UserGroup.mutate(ctx, m)
+	case *UserGroupMemberMutation:
+		return c.UserGroupMember.mutate(ctx, m)
 	case *UserSubscriptionMutation:
 		return c.UserSubscription.mutate(ctx, m)
 	case *WalletGrantMutation:
@@ -1317,6 +1379,272 @@ func (c *ImageTaskClient) mutate(ctx context.Context, m *ImageTaskMutation) (Val
 		return (&ImageTaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ImageTask mutation op: %q", m.Op())
+	}
+}
+
+// ModelAccountClient is a client for the ModelAccount schema.
+type ModelAccountClient struct {
+	config
+}
+
+// NewModelAccountClient returns a client for the ModelAccount from the given config.
+func NewModelAccountClient(c config) *ModelAccountClient {
+	return &ModelAccountClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `modelaccount.Hooks(f(g(h())))`.
+func (c *ModelAccountClient) Use(hooks ...Hook) {
+	c.hooks.ModelAccount = append(c.hooks.ModelAccount, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `modelaccount.Intercept(f(g(h())))`.
+func (c *ModelAccountClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ModelAccount = append(c.inters.ModelAccount, interceptors...)
+}
+
+// Create returns a builder for creating a ModelAccount entity.
+func (c *ModelAccountClient) Create() *ModelAccountCreate {
+	mutation := newModelAccountMutation(c.config, OpCreate)
+	return &ModelAccountCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ModelAccount entities.
+func (c *ModelAccountClient) CreateBulk(builders ...*ModelAccountCreate) *ModelAccountCreateBulk {
+	return &ModelAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ModelAccountClient) MapCreateBulk(slice any, setFunc func(*ModelAccountCreate, int)) *ModelAccountCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ModelAccountCreateBulk{err: fmt.Errorf("calling to ModelAccountClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ModelAccountCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ModelAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ModelAccount.
+func (c *ModelAccountClient) Update() *ModelAccountUpdate {
+	mutation := newModelAccountMutation(c.config, OpUpdate)
+	return &ModelAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ModelAccountClient) UpdateOne(_m *ModelAccount) *ModelAccountUpdateOne {
+	mutation := newModelAccountMutation(c.config, OpUpdateOne, withModelAccount(_m))
+	return &ModelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ModelAccountClient) UpdateOneID(id int) *ModelAccountUpdateOne {
+	mutation := newModelAccountMutation(c.config, OpUpdateOne, withModelAccountID(id))
+	return &ModelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ModelAccount.
+func (c *ModelAccountClient) Delete() *ModelAccountDelete {
+	mutation := newModelAccountMutation(c.config, OpDelete)
+	return &ModelAccountDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ModelAccountClient) DeleteOne(_m *ModelAccount) *ModelAccountDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ModelAccountClient) DeleteOneID(id int) *ModelAccountDeleteOne {
+	builder := c.Delete().Where(modelaccount.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ModelAccountDeleteOne{builder}
+}
+
+// Query returns a query builder for ModelAccount.
+func (c *ModelAccountClient) Query() *ModelAccountQuery {
+	return &ModelAccountQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeModelAccount},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ModelAccount entity by its id.
+func (c *ModelAccountClient) Get(ctx context.Context, id int) (*ModelAccount, error) {
+	return c.Query().Where(modelaccount.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ModelAccountClient) GetX(ctx context.Context, id int) *ModelAccount {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ModelAccountClient) Hooks() []Hook {
+	return c.hooks.ModelAccount
+}
+
+// Interceptors returns the client interceptors.
+func (c *ModelAccountClient) Interceptors() []Interceptor {
+	return c.inters.ModelAccount
+}
+
+func (c *ModelAccountClient) mutate(ctx context.Context, m *ModelAccountMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ModelAccountCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ModelAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ModelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ModelAccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ModelAccount mutation op: %q", m.Op())
+	}
+}
+
+// ModelAccountModelClient is a client for the ModelAccountModel schema.
+type ModelAccountModelClient struct {
+	config
+}
+
+// NewModelAccountModelClient returns a client for the ModelAccountModel from the given config.
+func NewModelAccountModelClient(c config) *ModelAccountModelClient {
+	return &ModelAccountModelClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `modelaccountmodel.Hooks(f(g(h())))`.
+func (c *ModelAccountModelClient) Use(hooks ...Hook) {
+	c.hooks.ModelAccountModel = append(c.hooks.ModelAccountModel, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `modelaccountmodel.Intercept(f(g(h())))`.
+func (c *ModelAccountModelClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ModelAccountModel = append(c.inters.ModelAccountModel, interceptors...)
+}
+
+// Create returns a builder for creating a ModelAccountModel entity.
+func (c *ModelAccountModelClient) Create() *ModelAccountModelCreate {
+	mutation := newModelAccountModelMutation(c.config, OpCreate)
+	return &ModelAccountModelCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ModelAccountModel entities.
+func (c *ModelAccountModelClient) CreateBulk(builders ...*ModelAccountModelCreate) *ModelAccountModelCreateBulk {
+	return &ModelAccountModelCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ModelAccountModelClient) MapCreateBulk(slice any, setFunc func(*ModelAccountModelCreate, int)) *ModelAccountModelCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ModelAccountModelCreateBulk{err: fmt.Errorf("calling to ModelAccountModelClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ModelAccountModelCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ModelAccountModelCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ModelAccountModel.
+func (c *ModelAccountModelClient) Update() *ModelAccountModelUpdate {
+	mutation := newModelAccountModelMutation(c.config, OpUpdate)
+	return &ModelAccountModelUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ModelAccountModelClient) UpdateOne(_m *ModelAccountModel) *ModelAccountModelUpdateOne {
+	mutation := newModelAccountModelMutation(c.config, OpUpdateOne, withModelAccountModel(_m))
+	return &ModelAccountModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ModelAccountModelClient) UpdateOneID(id int) *ModelAccountModelUpdateOne {
+	mutation := newModelAccountModelMutation(c.config, OpUpdateOne, withModelAccountModelID(id))
+	return &ModelAccountModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ModelAccountModel.
+func (c *ModelAccountModelClient) Delete() *ModelAccountModelDelete {
+	mutation := newModelAccountModelMutation(c.config, OpDelete)
+	return &ModelAccountModelDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ModelAccountModelClient) DeleteOne(_m *ModelAccountModel) *ModelAccountModelDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ModelAccountModelClient) DeleteOneID(id int) *ModelAccountModelDeleteOne {
+	builder := c.Delete().Where(modelaccountmodel.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ModelAccountModelDeleteOne{builder}
+}
+
+// Query returns a query builder for ModelAccountModel.
+func (c *ModelAccountModelClient) Query() *ModelAccountModelQuery {
+	return &ModelAccountModelQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeModelAccountModel},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ModelAccountModel entity by its id.
+func (c *ModelAccountModelClient) Get(ctx context.Context, id int) (*ModelAccountModel, error) {
+	return c.Query().Where(modelaccountmodel.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ModelAccountModelClient) GetX(ctx context.Context, id int) *ModelAccountModel {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ModelAccountModelClient) Hooks() []Hook {
+	return c.hooks.ModelAccountModel
+}
+
+// Interceptors returns the client interceptors.
+func (c *ModelAccountModelClient) Interceptors() []Interceptor {
+	return c.inters.ModelAccountModel
+}
+
+func (c *ModelAccountModelClient) mutate(ctx context.Context, m *ModelAccountModelMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ModelAccountModelCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ModelAccountModelUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ModelAccountModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ModelAccountModelDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ModelAccountModel mutation op: %q", m.Op())
 	}
 }
 
@@ -2650,6 +2978,538 @@ func (c *RefreshSessionClient) mutate(ctx context.Context, m *RefreshSessionMuta
 	}
 }
 
+// RouteModelClient is a client for the RouteModel schema.
+type RouteModelClient struct {
+	config
+}
+
+// NewRouteModelClient returns a client for the RouteModel from the given config.
+func NewRouteModelClient(c config) *RouteModelClient {
+	return &RouteModelClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `routemodel.Hooks(f(g(h())))`.
+func (c *RouteModelClient) Use(hooks ...Hook) {
+	c.hooks.RouteModel = append(c.hooks.RouteModel, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `routemodel.Intercept(f(g(h())))`.
+func (c *RouteModelClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RouteModel = append(c.inters.RouteModel, interceptors...)
+}
+
+// Create returns a builder for creating a RouteModel entity.
+func (c *RouteModelClient) Create() *RouteModelCreate {
+	mutation := newRouteModelMutation(c.config, OpCreate)
+	return &RouteModelCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RouteModel entities.
+func (c *RouteModelClient) CreateBulk(builders ...*RouteModelCreate) *RouteModelCreateBulk {
+	return &RouteModelCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RouteModelClient) MapCreateBulk(slice any, setFunc func(*RouteModelCreate, int)) *RouteModelCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RouteModelCreateBulk{err: fmt.Errorf("calling to RouteModelClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RouteModelCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RouteModelCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RouteModel.
+func (c *RouteModelClient) Update() *RouteModelUpdate {
+	mutation := newRouteModelMutation(c.config, OpUpdate)
+	return &RouteModelUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RouteModelClient) UpdateOne(_m *RouteModel) *RouteModelUpdateOne {
+	mutation := newRouteModelMutation(c.config, OpUpdateOne, withRouteModel(_m))
+	return &RouteModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RouteModelClient) UpdateOneID(id int) *RouteModelUpdateOne {
+	mutation := newRouteModelMutation(c.config, OpUpdateOne, withRouteModelID(id))
+	return &RouteModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RouteModel.
+func (c *RouteModelClient) Delete() *RouteModelDelete {
+	mutation := newRouteModelMutation(c.config, OpDelete)
+	return &RouteModelDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RouteModelClient) DeleteOne(_m *RouteModel) *RouteModelDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RouteModelClient) DeleteOneID(id int) *RouteModelDeleteOne {
+	builder := c.Delete().Where(routemodel.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RouteModelDeleteOne{builder}
+}
+
+// Query returns a query builder for RouteModel.
+func (c *RouteModelClient) Query() *RouteModelQuery {
+	return &RouteModelQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRouteModel},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RouteModel entity by its id.
+func (c *RouteModelClient) Get(ctx context.Context, id int) (*RouteModel, error) {
+	return c.Query().Where(routemodel.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RouteModelClient) GetX(ctx context.Context, id int) *RouteModel {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RouteModelClient) Hooks() []Hook {
+	return c.hooks.RouteModel
+}
+
+// Interceptors returns the client interceptors.
+func (c *RouteModelClient) Interceptors() []Interceptor {
+	return c.inters.RouteModel
+}
+
+func (c *RouteModelClient) mutate(ctx context.Context, m *RouteModelMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RouteModelCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RouteModelUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RouteModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RouteModelDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RouteModel mutation op: %q", m.Op())
+	}
+}
+
+// RouteModelCandidateClient is a client for the RouteModelCandidate schema.
+type RouteModelCandidateClient struct {
+	config
+}
+
+// NewRouteModelCandidateClient returns a client for the RouteModelCandidate from the given config.
+func NewRouteModelCandidateClient(c config) *RouteModelCandidateClient {
+	return &RouteModelCandidateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `routemodelcandidate.Hooks(f(g(h())))`.
+func (c *RouteModelCandidateClient) Use(hooks ...Hook) {
+	c.hooks.RouteModelCandidate = append(c.hooks.RouteModelCandidate, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `routemodelcandidate.Intercept(f(g(h())))`.
+func (c *RouteModelCandidateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RouteModelCandidate = append(c.inters.RouteModelCandidate, interceptors...)
+}
+
+// Create returns a builder for creating a RouteModelCandidate entity.
+func (c *RouteModelCandidateClient) Create() *RouteModelCandidateCreate {
+	mutation := newRouteModelCandidateMutation(c.config, OpCreate)
+	return &RouteModelCandidateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RouteModelCandidate entities.
+func (c *RouteModelCandidateClient) CreateBulk(builders ...*RouteModelCandidateCreate) *RouteModelCandidateCreateBulk {
+	return &RouteModelCandidateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RouteModelCandidateClient) MapCreateBulk(slice any, setFunc func(*RouteModelCandidateCreate, int)) *RouteModelCandidateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RouteModelCandidateCreateBulk{err: fmt.Errorf("calling to RouteModelCandidateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RouteModelCandidateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RouteModelCandidateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RouteModelCandidate.
+func (c *RouteModelCandidateClient) Update() *RouteModelCandidateUpdate {
+	mutation := newRouteModelCandidateMutation(c.config, OpUpdate)
+	return &RouteModelCandidateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RouteModelCandidateClient) UpdateOne(_m *RouteModelCandidate) *RouteModelCandidateUpdateOne {
+	mutation := newRouteModelCandidateMutation(c.config, OpUpdateOne, withRouteModelCandidate(_m))
+	return &RouteModelCandidateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RouteModelCandidateClient) UpdateOneID(id int) *RouteModelCandidateUpdateOne {
+	mutation := newRouteModelCandidateMutation(c.config, OpUpdateOne, withRouteModelCandidateID(id))
+	return &RouteModelCandidateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RouteModelCandidate.
+func (c *RouteModelCandidateClient) Delete() *RouteModelCandidateDelete {
+	mutation := newRouteModelCandidateMutation(c.config, OpDelete)
+	return &RouteModelCandidateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RouteModelCandidateClient) DeleteOne(_m *RouteModelCandidate) *RouteModelCandidateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RouteModelCandidateClient) DeleteOneID(id int) *RouteModelCandidateDeleteOne {
+	builder := c.Delete().Where(routemodelcandidate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RouteModelCandidateDeleteOne{builder}
+}
+
+// Query returns a query builder for RouteModelCandidate.
+func (c *RouteModelCandidateClient) Query() *RouteModelCandidateQuery {
+	return &RouteModelCandidateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRouteModelCandidate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RouteModelCandidate entity by its id.
+func (c *RouteModelCandidateClient) Get(ctx context.Context, id int) (*RouteModelCandidate, error) {
+	return c.Query().Where(routemodelcandidate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RouteModelCandidateClient) GetX(ctx context.Context, id int) *RouteModelCandidate {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RouteModelCandidateClient) Hooks() []Hook {
+	return c.hooks.RouteModelCandidate
+}
+
+// Interceptors returns the client interceptors.
+func (c *RouteModelCandidateClient) Interceptors() []Interceptor {
+	return c.inters.RouteModelCandidate
+}
+
+func (c *RouteModelCandidateClient) mutate(ctx context.Context, m *RouteModelCandidateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RouteModelCandidateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RouteModelCandidateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RouteModelCandidateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RouteModelCandidateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RouteModelCandidate mutation op: %q", m.Op())
+	}
+}
+
+// RouteModelPriceClient is a client for the RouteModelPrice schema.
+type RouteModelPriceClient struct {
+	config
+}
+
+// NewRouteModelPriceClient returns a client for the RouteModelPrice from the given config.
+func NewRouteModelPriceClient(c config) *RouteModelPriceClient {
+	return &RouteModelPriceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `routemodelprice.Hooks(f(g(h())))`.
+func (c *RouteModelPriceClient) Use(hooks ...Hook) {
+	c.hooks.RouteModelPrice = append(c.hooks.RouteModelPrice, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `routemodelprice.Intercept(f(g(h())))`.
+func (c *RouteModelPriceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RouteModelPrice = append(c.inters.RouteModelPrice, interceptors...)
+}
+
+// Create returns a builder for creating a RouteModelPrice entity.
+func (c *RouteModelPriceClient) Create() *RouteModelPriceCreate {
+	mutation := newRouteModelPriceMutation(c.config, OpCreate)
+	return &RouteModelPriceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RouteModelPrice entities.
+func (c *RouteModelPriceClient) CreateBulk(builders ...*RouteModelPriceCreate) *RouteModelPriceCreateBulk {
+	return &RouteModelPriceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RouteModelPriceClient) MapCreateBulk(slice any, setFunc func(*RouteModelPriceCreate, int)) *RouteModelPriceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RouteModelPriceCreateBulk{err: fmt.Errorf("calling to RouteModelPriceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RouteModelPriceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RouteModelPriceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RouteModelPrice.
+func (c *RouteModelPriceClient) Update() *RouteModelPriceUpdate {
+	mutation := newRouteModelPriceMutation(c.config, OpUpdate)
+	return &RouteModelPriceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RouteModelPriceClient) UpdateOne(_m *RouteModelPrice) *RouteModelPriceUpdateOne {
+	mutation := newRouteModelPriceMutation(c.config, OpUpdateOne, withRouteModelPrice(_m))
+	return &RouteModelPriceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RouteModelPriceClient) UpdateOneID(id int) *RouteModelPriceUpdateOne {
+	mutation := newRouteModelPriceMutation(c.config, OpUpdateOne, withRouteModelPriceID(id))
+	return &RouteModelPriceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RouteModelPrice.
+func (c *RouteModelPriceClient) Delete() *RouteModelPriceDelete {
+	mutation := newRouteModelPriceMutation(c.config, OpDelete)
+	return &RouteModelPriceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RouteModelPriceClient) DeleteOne(_m *RouteModelPrice) *RouteModelPriceDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RouteModelPriceClient) DeleteOneID(id int) *RouteModelPriceDeleteOne {
+	builder := c.Delete().Where(routemodelprice.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RouteModelPriceDeleteOne{builder}
+}
+
+// Query returns a query builder for RouteModelPrice.
+func (c *RouteModelPriceClient) Query() *RouteModelPriceQuery {
+	return &RouteModelPriceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRouteModelPrice},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RouteModelPrice entity by its id.
+func (c *RouteModelPriceClient) Get(ctx context.Context, id int) (*RouteModelPrice, error) {
+	return c.Query().Where(routemodelprice.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RouteModelPriceClient) GetX(ctx context.Context, id int) *RouteModelPrice {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RouteModelPriceClient) Hooks() []Hook {
+	return c.hooks.RouteModelPrice
+}
+
+// Interceptors returns the client interceptors.
+func (c *RouteModelPriceClient) Interceptors() []Interceptor {
+	return c.inters.RouteModelPrice
+}
+
+func (c *RouteModelPriceClient) mutate(ctx context.Context, m *RouteModelPriceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RouteModelPriceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RouteModelPriceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RouteModelPriceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RouteModelPriceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RouteModelPrice mutation op: %q", m.Op())
+	}
+}
+
+// RouteModelVisibilityGroupClient is a client for the RouteModelVisibilityGroup schema.
+type RouteModelVisibilityGroupClient struct {
+	config
+}
+
+// NewRouteModelVisibilityGroupClient returns a client for the RouteModelVisibilityGroup from the given config.
+func NewRouteModelVisibilityGroupClient(c config) *RouteModelVisibilityGroupClient {
+	return &RouteModelVisibilityGroupClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `routemodelvisibilitygroup.Hooks(f(g(h())))`.
+func (c *RouteModelVisibilityGroupClient) Use(hooks ...Hook) {
+	c.hooks.RouteModelVisibilityGroup = append(c.hooks.RouteModelVisibilityGroup, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `routemodelvisibilitygroup.Intercept(f(g(h())))`.
+func (c *RouteModelVisibilityGroupClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RouteModelVisibilityGroup = append(c.inters.RouteModelVisibilityGroup, interceptors...)
+}
+
+// Create returns a builder for creating a RouteModelVisibilityGroup entity.
+func (c *RouteModelVisibilityGroupClient) Create() *RouteModelVisibilityGroupCreate {
+	mutation := newRouteModelVisibilityGroupMutation(c.config, OpCreate)
+	return &RouteModelVisibilityGroupCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RouteModelVisibilityGroup entities.
+func (c *RouteModelVisibilityGroupClient) CreateBulk(builders ...*RouteModelVisibilityGroupCreate) *RouteModelVisibilityGroupCreateBulk {
+	return &RouteModelVisibilityGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RouteModelVisibilityGroupClient) MapCreateBulk(slice any, setFunc func(*RouteModelVisibilityGroupCreate, int)) *RouteModelVisibilityGroupCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RouteModelVisibilityGroupCreateBulk{err: fmt.Errorf("calling to RouteModelVisibilityGroupClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RouteModelVisibilityGroupCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RouteModelVisibilityGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RouteModelVisibilityGroup.
+func (c *RouteModelVisibilityGroupClient) Update() *RouteModelVisibilityGroupUpdate {
+	mutation := newRouteModelVisibilityGroupMutation(c.config, OpUpdate)
+	return &RouteModelVisibilityGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RouteModelVisibilityGroupClient) UpdateOne(_m *RouteModelVisibilityGroup) *RouteModelVisibilityGroupUpdateOne {
+	mutation := newRouteModelVisibilityGroupMutation(c.config, OpUpdateOne, withRouteModelVisibilityGroup(_m))
+	return &RouteModelVisibilityGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RouteModelVisibilityGroupClient) UpdateOneID(id int) *RouteModelVisibilityGroupUpdateOne {
+	mutation := newRouteModelVisibilityGroupMutation(c.config, OpUpdateOne, withRouteModelVisibilityGroupID(id))
+	return &RouteModelVisibilityGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RouteModelVisibilityGroup.
+func (c *RouteModelVisibilityGroupClient) Delete() *RouteModelVisibilityGroupDelete {
+	mutation := newRouteModelVisibilityGroupMutation(c.config, OpDelete)
+	return &RouteModelVisibilityGroupDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RouteModelVisibilityGroupClient) DeleteOne(_m *RouteModelVisibilityGroup) *RouteModelVisibilityGroupDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RouteModelVisibilityGroupClient) DeleteOneID(id int) *RouteModelVisibilityGroupDeleteOne {
+	builder := c.Delete().Where(routemodelvisibilitygroup.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RouteModelVisibilityGroupDeleteOne{builder}
+}
+
+// Query returns a query builder for RouteModelVisibilityGroup.
+func (c *RouteModelVisibilityGroupClient) Query() *RouteModelVisibilityGroupQuery {
+	return &RouteModelVisibilityGroupQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRouteModelVisibilityGroup},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RouteModelVisibilityGroup entity by its id.
+func (c *RouteModelVisibilityGroupClient) Get(ctx context.Context, id int) (*RouteModelVisibilityGroup, error) {
+	return c.Query().Where(routemodelvisibilitygroup.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RouteModelVisibilityGroupClient) GetX(ctx context.Context, id int) *RouteModelVisibilityGroup {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RouteModelVisibilityGroupClient) Hooks() []Hook {
+	return c.hooks.RouteModelVisibilityGroup
+}
+
+// Interceptors returns the client interceptors.
+func (c *RouteModelVisibilityGroupClient) Interceptors() []Interceptor {
+	return c.inters.RouteModelVisibilityGroup
+}
+
+func (c *RouteModelVisibilityGroupClient) mutate(ctx context.Context, m *RouteModelVisibilityGroupMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RouteModelVisibilityGroupCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RouteModelVisibilityGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RouteModelVisibilityGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RouteModelVisibilityGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RouteModelVisibilityGroup mutation op: %q", m.Op())
+	}
+}
+
 // SubscriptionPlanClient is a client for the SubscriptionPlan schema.
 type SubscriptionPlanClient struct {
 	config
@@ -3046,6 +3906,139 @@ func (c *UserGroupClient) mutate(ctx context.Context, m *UserGroupMutation) (Val
 		return (&UserGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown UserGroup mutation op: %q", m.Op())
+	}
+}
+
+// UserGroupMemberClient is a client for the UserGroupMember schema.
+type UserGroupMemberClient struct {
+	config
+}
+
+// NewUserGroupMemberClient returns a client for the UserGroupMember from the given config.
+func NewUserGroupMemberClient(c config) *UserGroupMemberClient {
+	return &UserGroupMemberClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `usergroupmember.Hooks(f(g(h())))`.
+func (c *UserGroupMemberClient) Use(hooks ...Hook) {
+	c.hooks.UserGroupMember = append(c.hooks.UserGroupMember, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `usergroupmember.Intercept(f(g(h())))`.
+func (c *UserGroupMemberClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserGroupMember = append(c.inters.UserGroupMember, interceptors...)
+}
+
+// Create returns a builder for creating a UserGroupMember entity.
+func (c *UserGroupMemberClient) Create() *UserGroupMemberCreate {
+	mutation := newUserGroupMemberMutation(c.config, OpCreate)
+	return &UserGroupMemberCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserGroupMember entities.
+func (c *UserGroupMemberClient) CreateBulk(builders ...*UserGroupMemberCreate) *UserGroupMemberCreateBulk {
+	return &UserGroupMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserGroupMemberClient) MapCreateBulk(slice any, setFunc func(*UserGroupMemberCreate, int)) *UserGroupMemberCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserGroupMemberCreateBulk{err: fmt.Errorf("calling to UserGroupMemberClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserGroupMemberCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserGroupMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserGroupMember.
+func (c *UserGroupMemberClient) Update() *UserGroupMemberUpdate {
+	mutation := newUserGroupMemberMutation(c.config, OpUpdate)
+	return &UserGroupMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserGroupMemberClient) UpdateOne(_m *UserGroupMember) *UserGroupMemberUpdateOne {
+	mutation := newUserGroupMemberMutation(c.config, OpUpdateOne, withUserGroupMember(_m))
+	return &UserGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserGroupMemberClient) UpdateOneID(id int) *UserGroupMemberUpdateOne {
+	mutation := newUserGroupMemberMutation(c.config, OpUpdateOne, withUserGroupMemberID(id))
+	return &UserGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserGroupMember.
+func (c *UserGroupMemberClient) Delete() *UserGroupMemberDelete {
+	mutation := newUserGroupMemberMutation(c.config, OpDelete)
+	return &UserGroupMemberDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserGroupMemberClient) DeleteOne(_m *UserGroupMember) *UserGroupMemberDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserGroupMemberClient) DeleteOneID(id int) *UserGroupMemberDeleteOne {
+	builder := c.Delete().Where(usergroupmember.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserGroupMemberDeleteOne{builder}
+}
+
+// Query returns a query builder for UserGroupMember.
+func (c *UserGroupMemberClient) Query() *UserGroupMemberQuery {
+	return &UserGroupMemberQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserGroupMember},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserGroupMember entity by its id.
+func (c *UserGroupMemberClient) Get(ctx context.Context, id int) (*UserGroupMember, error) {
+	return c.Query().Where(usergroupmember.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserGroupMemberClient) GetX(ctx context.Context, id int) *UserGroupMember {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UserGroupMemberClient) Hooks() []Hook {
+	return c.hooks.UserGroupMember
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserGroupMemberClient) Interceptors() []Interceptor {
+	return c.inters.UserGroupMember
+}
+
+func (c *UserGroupMemberClient) mutate(ctx context.Context, m *UserGroupMemberMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserGroupMemberCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserGroupMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserGroupMemberDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserGroupMember mutation op: %q", m.Op())
 	}
 }
 
@@ -3452,16 +4445,20 @@ func (c *WalletReservationAllocationClient) mutate(ctx context.Context, m *Walle
 type (
 	hooks struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
-		ImageTask, ModelProvider, ModelRoute, PaymentOrder, PaymentWebhookEvent,
-		PointLedger, ProviderErrorPolicy, ProviderModel, RedeemCode, ReferenceAsset,
-		RefreshSession, SubscriptionPlan, User, UserGroup, UserSubscription,
+		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
+		PaymentOrder, PaymentWebhookEvent, PointLedger, ProviderErrorPolicy,
+		ProviderModel, RedeemCode, ReferenceAsset, RefreshSession, RouteModel,
+		RouteModelCandidate, RouteModelPrice, RouteModelVisibilityGroup,
+		SubscriptionPlan, User, UserGroup, UserGroupMember, UserSubscription,
 		WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
-		ImageTask, ModelProvider, ModelRoute, PaymentOrder, PaymentWebhookEvent,
-		PointLedger, ProviderErrorPolicy, ProviderModel, RedeemCode, ReferenceAsset,
-		RefreshSession, SubscriptionPlan, User, UserGroup, UserSubscription,
+		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
+		PaymentOrder, PaymentWebhookEvent, PointLedger, ProviderErrorPolicy,
+		ProviderModel, RedeemCode, ReferenceAsset, RefreshSession, RouteModel,
+		RouteModelCandidate, RouteModelPrice, RouteModelVisibilityGroup,
+		SubscriptionPlan, User, UserGroup, UserGroupMember, UserSubscription,
 		WalletGrant, WalletReservationAllocation []ent.Interceptor
 	}
 )

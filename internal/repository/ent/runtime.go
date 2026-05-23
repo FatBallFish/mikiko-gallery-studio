@@ -12,6 +12,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
@@ -22,10 +24,14 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/schema"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
@@ -664,36 +670,224 @@ func init() {
 	imagetaskDescActualPoints := imagetaskFields[24].Descriptor()
 	// imagetask.DefaultActualPoints holds the default value on creation for the actual_points field.
 	imagetask.DefaultActualPoints = imagetaskDescActualPoints.Default.(string)
+	// imagetaskDescRouteModelCode is the schema descriptor for route_model_code field.
+	imagetaskDescRouteModelCode := imagetaskFields[26].Descriptor()
+	// imagetask.DefaultRouteModelCode holds the default value on creation for the route_model_code field.
+	imagetask.DefaultRouteModelCode = imagetaskDescRouteModelCode.Default.(string)
+	// imagetask.RouteModelCodeValidator is a validator for the "route_model_code" field. It is called by the builders before save.
+	imagetask.RouteModelCodeValidator = imagetaskDescRouteModelCode.Validators[0].(func(string) error)
+	// imagetaskDescUpstreamModelCode is the schema descriptor for upstream_model_code field.
+	imagetaskDescUpstreamModelCode := imagetaskFields[29].Descriptor()
+	// imagetask.DefaultUpstreamModelCode holds the default value on creation for the upstream_model_code field.
+	imagetask.DefaultUpstreamModelCode = imagetaskDescUpstreamModelCode.Default.(string)
+	// imagetask.UpstreamModelCodeValidator is a validator for the "upstream_model_code" field. It is called by the builders before save.
+	imagetask.UpstreamModelCodeValidator = imagetaskDescUpstreamModelCode.Validators[0].(func(string) error)
+	// imagetaskDescEffectiveMultiplier is the schema descriptor for effective_multiplier field.
+	imagetaskDescEffectiveMultiplier := imagetaskFields[30].Descriptor()
+	// imagetask.DefaultEffectiveMultiplier holds the default value on creation for the effective_multiplier field.
+	imagetask.DefaultEffectiveMultiplier = imagetaskDescEffectiveMultiplier.Default.(string)
+	// imagetaskDescChargedPoints is the schema descriptor for charged_points field.
+	imagetaskDescChargedPoints := imagetaskFields[31].Descriptor()
+	// imagetask.DefaultChargedPoints holds the default value on creation for the charged_points field.
+	imagetask.DefaultChargedPoints = imagetaskDescChargedPoints.Default.(string)
 	// imagetaskDescProviderCost is the schema descriptor for provider_cost field.
-	imagetaskDescProviderCost := imagetaskFields[26].Descriptor()
+	imagetaskDescProviderCost := imagetaskFields[33].Descriptor()
 	// imagetask.DefaultProviderCost holds the default value on creation for the provider_cost field.
 	imagetask.DefaultProviderCost = imagetaskDescProviderCost.Default.(string)
 	// imagetaskDescGrossMargin is the schema descriptor for gross_margin field.
-	imagetaskDescGrossMargin := imagetaskFields[27].Descriptor()
+	imagetaskDescGrossMargin := imagetaskFields[34].Descriptor()
 	// imagetask.DefaultGrossMargin holds the default value on creation for the gross_margin field.
 	imagetask.DefaultGrossMargin = imagetaskDescGrossMargin.Default.(string)
 	// imagetaskDescFallbackCount is the schema descriptor for fallback_count field.
-	imagetaskDescFallbackCount := imagetaskFields[28].Descriptor()
+	imagetaskDescFallbackCount := imagetaskFields[35].Descriptor()
 	// imagetask.DefaultFallbackCount holds the default value on creation for the fallback_count field.
 	imagetask.DefaultFallbackCount = imagetaskDescFallbackCount.Default.(int)
 	// imagetaskDescRouteSnapshotVersion is the schema descriptor for route_snapshot_version field.
-	imagetaskDescRouteSnapshotVersion := imagetaskFields[29].Descriptor()
+	imagetaskDescRouteSnapshotVersion := imagetaskFields[36].Descriptor()
 	// imagetask.DefaultRouteSnapshotVersion holds the default value on creation for the route_snapshot_version field.
 	imagetask.DefaultRouteSnapshotVersion = imagetaskDescRouteSnapshotVersion.Default.(string)
 	// imagetask.RouteSnapshotVersionValidator is a validator for the "route_snapshot_version" field. It is called by the builders before save.
 	imagetask.RouteSnapshotVersionValidator = imagetaskDescRouteSnapshotVersion.Validators[0].(func(string) error)
 	// imagetaskDescLeaseOwner is the schema descriptor for lease_owner field.
-	imagetaskDescLeaseOwner := imagetaskFields[34].Descriptor()
+	imagetaskDescLeaseOwner := imagetaskFields[41].Descriptor()
 	// imagetask.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	imagetask.LeaseOwnerValidator = imagetaskDescLeaseOwner.Validators[0].(func(string) error)
 	// imagetaskDescErrorCode is the schema descriptor for error_code field.
-	imagetaskDescErrorCode := imagetaskFields[36].Descriptor()
+	imagetaskDescErrorCode := imagetaskFields[43].Descriptor()
 	// imagetask.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
 	imagetask.ErrorCodeValidator = imagetaskDescErrorCode.Validators[0].(func(string) error)
 	// imagetaskDescID is the schema descriptor for id field.
 	imagetaskDescID := imagetaskFields[0].Descriptor()
 	// imagetask.DefaultID holds the default value on creation for the id field.
 	imagetask.DefaultID = imagetaskDescID.Default.(func() uuid.UUID)
+	modelaccountMixin := schema.ModelAccount{}.Mixin()
+	modelaccountMixinFields0 := modelaccountMixin[0].Fields()
+	_ = modelaccountMixinFields0
+	modelaccountFields := schema.ModelAccount{}.Fields()
+	_ = modelaccountFields
+	// modelaccountDescCreatedAt is the schema descriptor for created_at field.
+	modelaccountDescCreatedAt := modelaccountMixinFields0[0].Descriptor()
+	// modelaccount.DefaultCreatedAt holds the default value on creation for the created_at field.
+	modelaccount.DefaultCreatedAt = modelaccountDescCreatedAt.Default.(func() time.Time)
+	// modelaccountDescUpdatedAt is the schema descriptor for updated_at field.
+	modelaccountDescUpdatedAt := modelaccountMixinFields0[1].Descriptor()
+	// modelaccount.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	modelaccount.DefaultUpdatedAt = modelaccountDescUpdatedAt.Default.(func() time.Time)
+	// modelaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	modelaccount.UpdateDefaultUpdatedAt = modelaccountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// modelaccountDescName is the schema descriptor for name field.
+	modelaccountDescName := modelaccountFields[0].Descriptor()
+	// modelaccount.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	modelaccount.NameValidator = func() func(string) error {
+		validators := modelaccountDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// modelaccountDescAdapterType is the schema descriptor for adapter_type field.
+	modelaccountDescAdapterType := modelaccountFields[1].Descriptor()
+	// modelaccount.AdapterTypeValidator is a validator for the "adapter_type" field. It is called by the builders before save.
+	modelaccount.AdapterTypeValidator = func() func(string) error {
+		validators := modelaccountDescAdapterType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(adapter_type string) error {
+			for _, fn := range fns {
+				if err := fn(adapter_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// modelaccountDescAuthType is the schema descriptor for auth_type field.
+	modelaccountDescAuthType := modelaccountFields[2].Descriptor()
+	// modelaccount.AuthTypeValidator is a validator for the "auth_type" field. It is called by the builders before save.
+	modelaccount.AuthTypeValidator = func() func(string) error {
+		validators := modelaccountDescAuthType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(auth_type string) error {
+			for _, fn := range fns {
+				if err := fn(auth_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// modelaccountDescBaseURL is the schema descriptor for base_url field.
+	modelaccountDescBaseURL := modelaccountFields[3].Descriptor()
+	// modelaccount.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
+	modelaccount.BaseURLValidator = func() func(string) error {
+		validators := modelaccountDescBaseURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(base_url string) error {
+			for _, fn := range fns {
+				if err := fn(base_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// modelaccountDescCredentialsFingerprint is the schema descriptor for credentials_fingerprint field.
+	modelaccountDescCredentialsFingerprint := modelaccountFields[5].Descriptor()
+	// modelaccount.DefaultCredentialsFingerprint holds the default value on creation for the credentials_fingerprint field.
+	modelaccount.DefaultCredentialsFingerprint = modelaccountDescCredentialsFingerprint.Default.(string)
+	// modelaccount.CredentialsFingerprintValidator is a validator for the "credentials_fingerprint" field. It is called by the builders before save.
+	modelaccount.CredentialsFingerprintValidator = modelaccountDescCredentialsFingerprint.Validators[0].(func(string) error)
+	// modelaccountDescStatus is the schema descriptor for status field.
+	modelaccountDescStatus := modelaccountFields[6].Descriptor()
+	// modelaccount.DefaultStatus holds the default value on creation for the status field.
+	modelaccount.DefaultStatus = modelaccountDescStatus.Default.(string)
+	// modelaccount.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	modelaccount.StatusValidator = modelaccountDescStatus.Validators[0].(func(string) error)
+	// modelaccountDescPriority is the schema descriptor for priority field.
+	modelaccountDescPriority := modelaccountFields[7].Descriptor()
+	// modelaccount.DefaultPriority holds the default value on creation for the priority field.
+	modelaccount.DefaultPriority = modelaccountDescPriority.Default.(int)
+	// modelaccountDescWeight is the schema descriptor for weight field.
+	modelaccountDescWeight := modelaccountFields[8].Descriptor()
+	// modelaccount.DefaultWeight holds the default value on creation for the weight field.
+	modelaccount.DefaultWeight = modelaccountDescWeight.Default.(int)
+	// modelaccountDescConcurrencyLimit is the schema descriptor for concurrency_limit field.
+	modelaccountDescConcurrencyLimit := modelaccountFields[9].Descriptor()
+	// modelaccount.DefaultConcurrencyLimit holds the default value on creation for the concurrency_limit field.
+	modelaccount.DefaultConcurrencyLimit = modelaccountDescConcurrencyLimit.Default.(int)
+	// modelaccountDescTimeoutMs is the schema descriptor for timeout_ms field.
+	modelaccountDescTimeoutMs := modelaccountFields[10].Descriptor()
+	// modelaccount.DefaultTimeoutMs holds the default value on creation for the timeout_ms field.
+	modelaccount.DefaultTimeoutMs = modelaccountDescTimeoutMs.Default.(int)
+	modelaccountmodelMixin := schema.ModelAccountModel{}.Mixin()
+	modelaccountmodelMixinFields0 := modelaccountmodelMixin[0].Fields()
+	_ = modelaccountmodelMixinFields0
+	modelaccountmodelFields := schema.ModelAccountModel{}.Fields()
+	_ = modelaccountmodelFields
+	// modelaccountmodelDescCreatedAt is the schema descriptor for created_at field.
+	modelaccountmodelDescCreatedAt := modelaccountmodelMixinFields0[0].Descriptor()
+	// modelaccountmodel.DefaultCreatedAt holds the default value on creation for the created_at field.
+	modelaccountmodel.DefaultCreatedAt = modelaccountmodelDescCreatedAt.Default.(func() time.Time)
+	// modelaccountmodelDescUpdatedAt is the schema descriptor for updated_at field.
+	modelaccountmodelDescUpdatedAt := modelaccountmodelMixinFields0[1].Descriptor()
+	// modelaccountmodel.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	modelaccountmodel.DefaultUpdatedAt = modelaccountmodelDescUpdatedAt.Default.(func() time.Time)
+	// modelaccountmodel.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	modelaccountmodel.UpdateDefaultUpdatedAt = modelaccountmodelDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// modelaccountmodelDescModelCode is the schema descriptor for model_code field.
+	modelaccountmodelDescModelCode := modelaccountmodelFields[1].Descriptor()
+	// modelaccountmodel.ModelCodeValidator is a validator for the "model_code" field. It is called by the builders before save.
+	modelaccountmodel.ModelCodeValidator = func() func(string) error {
+		validators := modelaccountmodelDescModelCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model_code string) error {
+			for _, fn := range fns {
+				if err := fn(model_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// modelaccountmodelDescDisplayName is the schema descriptor for display_name field.
+	modelaccountmodelDescDisplayName := modelaccountmodelFields[2].Descriptor()
+	// modelaccountmodel.DefaultDisplayName holds the default value on creation for the display_name field.
+	modelaccountmodel.DefaultDisplayName = modelaccountmodelDescDisplayName.Default.(string)
+	// modelaccountmodel.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
+	modelaccountmodel.DisplayNameValidator = modelaccountmodelDescDisplayName.Validators[0].(func(string) error)
+	// modelaccountmodelDescCostPerImage is the schema descriptor for cost_per_image field.
+	modelaccountmodelDescCostPerImage := modelaccountmodelFields[5].Descriptor()
+	// modelaccountmodel.DefaultCostPerImage holds the default value on creation for the cost_per_image field.
+	modelaccountmodel.DefaultCostPerImage = modelaccountmodelDescCostPerImage.Default.(string)
+	// modelaccountmodelDescCurrency is the schema descriptor for currency field.
+	modelaccountmodelDescCurrency := modelaccountmodelFields[6].Descriptor()
+	// modelaccountmodel.DefaultCurrency holds the default value on creation for the currency field.
+	modelaccountmodel.DefaultCurrency = modelaccountmodelDescCurrency.Default.(string)
+	// modelaccountmodel.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	modelaccountmodel.CurrencyValidator = modelaccountmodelDescCurrency.Validators[0].(func(string) error)
+	// modelaccountmodelDescEnabled is the schema descriptor for enabled field.
+	modelaccountmodelDescEnabled := modelaccountmodelFields[7].Descriptor()
+	// modelaccountmodel.DefaultEnabled holds the default value on creation for the enabled field.
+	modelaccountmodel.DefaultEnabled = modelaccountmodelDescEnabled.Default.(bool)
 	modelproviderMixin := schema.ModelProvider{}.Mixin()
 	modelproviderMixinFields0 := modelproviderMixin[0].Fields()
 	_ = modelproviderMixinFields0
@@ -1440,6 +1634,143 @@ func init() {
 	refreshsessionDescID := refreshsessionFields[0].Descriptor()
 	// refreshsession.DefaultID holds the default value on creation for the id field.
 	refreshsession.DefaultID = refreshsessionDescID.Default.(func() uuid.UUID)
+	routemodelMixin := schema.RouteModel{}.Mixin()
+	routemodelMixinFields0 := routemodelMixin[0].Fields()
+	_ = routemodelMixinFields0
+	routemodelFields := schema.RouteModel{}.Fields()
+	_ = routemodelFields
+	// routemodelDescCreatedAt is the schema descriptor for created_at field.
+	routemodelDescCreatedAt := routemodelMixinFields0[0].Descriptor()
+	// routemodel.DefaultCreatedAt holds the default value on creation for the created_at field.
+	routemodel.DefaultCreatedAt = routemodelDescCreatedAt.Default.(func() time.Time)
+	// routemodelDescUpdatedAt is the schema descriptor for updated_at field.
+	routemodelDescUpdatedAt := routemodelMixinFields0[1].Descriptor()
+	// routemodel.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	routemodel.DefaultUpdatedAt = routemodelDescUpdatedAt.Default.(func() time.Time)
+	// routemodel.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	routemodel.UpdateDefaultUpdatedAt = routemodelDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// routemodelDescCode is the schema descriptor for code field.
+	routemodelDescCode := routemodelFields[0].Descriptor()
+	// routemodel.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	routemodel.CodeValidator = func() func(string) error {
+		validators := routemodelDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// routemodelDescName is the schema descriptor for name field.
+	routemodelDescName := routemodelFields[1].Descriptor()
+	// routemodel.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	routemodel.NameValidator = func() func(string) error {
+		validators := routemodelDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// routemodelDescDescription is the schema descriptor for description field.
+	routemodelDescDescription := routemodelFields[2].Descriptor()
+	// routemodel.DefaultDescription holds the default value on creation for the description field.
+	routemodel.DefaultDescription = routemodelDescDescription.Default.(string)
+	// routemodelDescVisibility is the schema descriptor for visibility field.
+	routemodelDescVisibility := routemodelFields[3].Descriptor()
+	// routemodel.DefaultVisibility holds the default value on creation for the visibility field.
+	routemodel.DefaultVisibility = routemodelDescVisibility.Default.(string)
+	// routemodel.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
+	routemodel.VisibilityValidator = routemodelDescVisibility.Validators[0].(func(string) error)
+	// routemodelDescEnabled is the schema descriptor for enabled field.
+	routemodelDescEnabled := routemodelFields[4].Descriptor()
+	// routemodel.DefaultEnabled holds the default value on creation for the enabled field.
+	routemodel.DefaultEnabled = routemodelDescEnabled.Default.(bool)
+	// routemodelDescSortOrder is the schema descriptor for sort_order field.
+	routemodelDescSortOrder := routemodelFields[5].Descriptor()
+	// routemodel.DefaultSortOrder holds the default value on creation for the sort_order field.
+	routemodel.DefaultSortOrder = routemodelDescSortOrder.Default.(int)
+	routemodelcandidateFields := schema.RouteModelCandidate{}.Fields()
+	_ = routemodelcandidateFields
+	// routemodelcandidateDescPriority is the schema descriptor for priority field.
+	routemodelcandidateDescPriority := routemodelcandidateFields[2].Descriptor()
+	// routemodelcandidate.DefaultPriority holds the default value on creation for the priority field.
+	routemodelcandidate.DefaultPriority = routemodelcandidateDescPriority.Default.(int)
+	// routemodelcandidateDescWeight is the schema descriptor for weight field.
+	routemodelcandidateDescWeight := routemodelcandidateFields[3].Descriptor()
+	// routemodelcandidate.DefaultWeight holds the default value on creation for the weight field.
+	routemodelcandidate.DefaultWeight = routemodelcandidateDescWeight.Default.(int)
+	// routemodelcandidateDescFallbackOrder is the schema descriptor for fallback_order field.
+	routemodelcandidateDescFallbackOrder := routemodelcandidateFields[4].Descriptor()
+	// routemodelcandidate.DefaultFallbackOrder holds the default value on creation for the fallback_order field.
+	routemodelcandidate.DefaultFallbackOrder = routemodelcandidateDescFallbackOrder.Default.(int)
+	// routemodelcandidateDescEnabled is the schema descriptor for enabled field.
+	routemodelcandidateDescEnabled := routemodelcandidateFields[5].Descriptor()
+	// routemodelcandidate.DefaultEnabled holds the default value on creation for the enabled field.
+	routemodelcandidate.DefaultEnabled = routemodelcandidateDescEnabled.Default.(bool)
+	routemodelpriceFields := schema.RouteModelPrice{}.Fields()
+	_ = routemodelpriceFields
+	// routemodelpriceDescTaskType is the schema descriptor for task_type field.
+	routemodelpriceDescTaskType := routemodelpriceFields[1].Descriptor()
+	// routemodelprice.TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.
+	routemodelprice.TaskTypeValidator = func() func(string) error {
+		validators := routemodelpriceDescTaskType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(task_type string) error {
+			for _, fn := range fns {
+				if err := fn(task_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// routemodelpriceDescQuality is the schema descriptor for quality field.
+	routemodelpriceDescQuality := routemodelpriceFields[2].Descriptor()
+	// routemodelprice.QualityValidator is a validator for the "quality" field. It is called by the builders before save.
+	routemodelprice.QualityValidator = func() func(string) error {
+		validators := routemodelpriceDescQuality.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(quality string) error {
+			for _, fn := range fns {
+				if err := fn(quality); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// routemodelpriceDescBasePoints is the schema descriptor for base_points field.
+	routemodelpriceDescBasePoints := routemodelpriceFields[3].Descriptor()
+	// routemodelprice.DefaultBasePoints holds the default value on creation for the base_points field.
+	routemodelprice.DefaultBasePoints = routemodelpriceDescBasePoints.Default.(string)
+	// routemodelpriceDescReferenceMultiplier is the schema descriptor for reference_multiplier field.
+	routemodelpriceDescReferenceMultiplier := routemodelpriceFields[4].Descriptor()
+	// routemodelprice.DefaultReferenceMultiplier holds the default value on creation for the reference_multiplier field.
+	routemodelprice.DefaultReferenceMultiplier = routemodelpriceDescReferenceMultiplier.Default.(string)
+	// routemodelpriceDescEnabled is the schema descriptor for enabled field.
+	routemodelpriceDescEnabled := routemodelpriceFields[5].Descriptor()
+	// routemodelprice.DefaultEnabled holds the default value on creation for the enabled field.
+	routemodelprice.DefaultEnabled = routemodelpriceDescEnabled.Default.(bool)
 	subscriptionplanMixin := schema.SubscriptionPlan{}.Mixin()
 	subscriptionplanMixinFields0 := subscriptionplanMixin[0].Fields()
 	_ = subscriptionplanMixinFields0
@@ -1681,6 +2012,20 @@ func init() {
 	usergroupDescDescription := usergroupFields[4].Descriptor()
 	// usergroup.DescriptionValidator is a validator for the "description" field. It is called by the builders before save.
 	usergroup.DescriptionValidator = usergroupDescDescription.Validators[0].(func(string) error)
+	// usergroupDescSortOrder is the schema descriptor for sort_order field.
+	usergroupDescSortOrder := usergroupFields[5].Descriptor()
+	// usergroup.DefaultSortOrder holds the default value on creation for the sort_order field.
+	usergroup.DefaultSortOrder = usergroupDescSortOrder.Default.(int)
+	// usergroupDescIsDefault is the schema descriptor for is_default field.
+	usergroupDescIsDefault := usergroupFields[6].Descriptor()
+	// usergroup.DefaultIsDefault holds the default value on creation for the is_default field.
+	usergroup.DefaultIsDefault = usergroupDescIsDefault.Default.(bool)
+	usergroupmemberFields := schema.UserGroupMember{}.Fields()
+	_ = usergroupmemberFields
+	// usergroupmemberDescCreatedAt is the schema descriptor for created_at field.
+	usergroupmemberDescCreatedAt := usergroupmemberFields[2].Descriptor()
+	// usergroupmember.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usergroupmember.DefaultCreatedAt = usergroupmemberDescCreatedAt.Default.(func() time.Time)
 	usersubscriptionMixin := schema.UserSubscription{}.Mixin()
 	usersubscriptionMixinFields0 := usersubscriptionMixin[0].Fields()
 	_ = usersubscriptionMixinFields0

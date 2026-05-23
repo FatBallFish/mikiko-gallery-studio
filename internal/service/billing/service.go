@@ -2,19 +2,22 @@ package billing
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type Service struct {
-	cfg   config.BillingConfig
-	calc  *domainbilling.Calculator
-	store Store
+	cfg     config.BillingConfig
+	calc    *domainbilling.Calculator
+	store   Store
+	routing modelhub.ModelRoutingSource
 }
 
 func NewService(cfg config.BillingConfig) *Service {
@@ -35,8 +38,107 @@ func normalizeBillingConfig(cfg config.BillingConfig) config.BillingConfig {
 	return cfg
 }
 
+func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
+	s.routing = source
+}
+
 func (s *Service) Estimate(req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
+	if strings.TrimSpace(req.RouteModelCode) != "" {
+		return s.estimateRouteModel(req)
+	}
 	return s.calc.Estimate(req)
+}
+
+func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
+	if s.routing == nil {
+		return domainbilling.EstimateResult{}, errs.New(409, errs.CodeConflict, "model routing is not configured")
+	}
+	resolver := modelhub.NewResolver(config.Config{
+		Billing: s.cfg,
+		GenerationLimits: config.GenerationLimitsConfig{
+			MaxImageCount:          1 << 30,
+			ReferenceImageMaxCount: 1 << 30,
+		},
+	})
+	resolver.SetModelRoutingSource(s.routing)
+	groupCodes := append([]string(nil), req.UserGroupCodes...)
+	if len(groupCodes) == 0 && strings.TrimSpace(req.UserGroupCode) != "" {
+		groupCodes = append(groupCodes, req.UserGroupCode)
+	}
+	resolved, err := resolver.ResolveContext(context.Background(), modelhub.ResolveRequest{
+		RouteModelCode:            req.RouteModelCode,
+		TaskType:                  req.TaskType,
+		RequestedQuality:          req.RequestedQuality,
+		RequestedSize:             req.RequestedSize,
+		RequestedOutputImageCount: req.RequestedOutputImageCount,
+		ReferenceImageCount:       req.ReferenceImageCount,
+		UserGroupCodes:            groupCodes,
+	})
+	if err != nil {
+		return domainbilling.EstimateResult{}, err
+	}
+	quality := resolved.ResolvedQualityBucket
+	models, err := resolver.ListVisibleRouteModels(context.Background(), groupCodes, s.cfg.TaskMultipliers)
+	if err != nil {
+		return domainbilling.EstimateResult{}, err
+	}
+	routeCode := strings.ToLower(strings.TrimSpace(req.RouteModelCode))
+	for _, model := range models {
+		if !strings.EqualFold(model.Code, routeCode) {
+			continue
+		}
+		for _, price := range model.Prices {
+			if !strings.EqualFold(price.TaskType, req.TaskType) {
+				continue
+			}
+			if !strings.EqualFold(price.Quality, quality) {
+				continue
+			}
+			count := req.RequestedOutputImageCount
+			if count <= 0 {
+				count = 1
+			}
+			charged, err := decimal.NewFromString(price.ChargedPoints)
+			if err != nil {
+				return domainbilling.EstimateResult{}, errs.Internal("invalid route model price")
+			}
+			total := charged.Mul(decimal.NewFromInt(int64(count))).Round(5)
+			snapshot := domainbilling.PricingSnapshot{
+				RouteModelCode:            model.Code,
+				AbstractModel:             model.Code,
+				TaskType:                  req.TaskType,
+				RequestedQuality:          req.RequestedQuality,
+				RequestedSize:             req.RequestedSize,
+				ResolvedQualityBucket:     price.Quality,
+				RequestedOutputImageCount: count,
+				ReferenceImageCount:       req.ReferenceImageCount,
+				UserGroupCode:             strings.Join(groupCodes, ","),
+				UserGroupMultiplier:       model.EffectiveMultiplier,
+				BaseUnitPoints:            price.BasePoints,
+				TaskMultiplier:            defaultBillingString(s.cfg.TaskMultipliers[req.TaskType], "1.00000"),
+				ReferenceExtraMultiplier:  "0.00000",
+				EstimatedPoints:           total.StringFixed(5),
+			}
+			return domainbilling.EstimateResult{
+				ResolvedQualityBucket:     price.Quality,
+				EstimatedPoints:           snapshot.EstimatedPoints,
+				ChargedPoints:             snapshot.EstimatedPoints,
+				DisplayPoints:             total.Round(2).StringFixed(2),
+				UserGroupMultiplier:       model.EffectiveMultiplier,
+				RequestedOutputImageCount: count,
+				ReferenceImageCount:       req.ReferenceImageCount,
+				PricingSnapshot:           snapshot,
+			}, nil
+		}
+	}
+	return domainbilling.EstimateResult{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+}
+
+func defaultBillingString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(value)
 }
 
 func (s *Service) ActualPoints(snapshot domainbilling.PricingSnapshot, successOutputImageCount int) (string, error) {

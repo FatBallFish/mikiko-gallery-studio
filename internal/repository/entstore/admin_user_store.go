@@ -12,6 +12,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -150,7 +151,7 @@ func (s *AdminUserStore) ensureUserGroup(ctx context.Context, groupCode string) 
 		SetGroupCode("basic").
 		SetGroupName("basic").
 		SetMultiplier("1.00000").
-		SetStatus("active").
+		SetStatus("enabled").
 		Save(ctx)
 }
 
@@ -205,6 +206,36 @@ func (s *AdminUserStore) AssignUserGroup(ctx context.Context, req domainadminuse
 	}
 	if affected == 0 {
 		return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+	}
+	return s.GetUserSummary(ctx, req.UserID)
+}
+
+func (s *AdminUserStore) AssignUserGroups(ctx context.Context, req domainadminuser.MultiGroupAssignmentRequest) (domainadminuser.UserSummary, error) {
+	if _, err := s.client.User.Query().Where(user.IDEQ(int(req.UserID)), user.DeletedAtIsNil()).Only(ctx); err != nil {
+		if repoent.IsNotFound(err) {
+			return domainadminuser.UserSummary{}, errs.New(404, errs.CodeNotFound, "user not found")
+		}
+		return domainadminuser.UserSummary{}, err
+	}
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainadminuser.UserSummary{}, err
+	}
+	if _, err := tx.UserGroupMember.Delete().Where(usergroupmember.UserIDEQ(req.UserID)).Exec(ctx); err != nil {
+		_ = tx.Rollback()
+		return domainadminuser.UserSummary{}, err
+	}
+	for _, groupID := range req.GroupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, err := tx.UserGroupMember.Create().SetUserID(req.UserID).SetGroupID(groupID).Save(ctx); err != nil {
+			_ = tx.Rollback()
+			return domainadminuser.UserSummary{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return domainadminuser.UserSummary{}, err
 	}
 	return s.GetUserSummary(ctx, req.UserID)
 }
@@ -399,6 +430,7 @@ func mapUserGroupEntity(entity *repoent.UserGroup) domainadminuser.UserGroup {
 		description = &value
 	}
 	return domainadminuser.UserGroup{
+		ID:          int64(entity.ID),
 		GroupCode:   entity.GroupCode,
 		GroupName:   entity.GroupName,
 		Multiplier:  entity.Multiplier,

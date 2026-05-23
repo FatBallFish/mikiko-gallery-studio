@@ -73,6 +73,20 @@ type ImageTask struct {
 	EstimatedPoints string `json:"estimated_points,omitempty"`
 	// ActualPoints holds the value of the "actual_points" field.
 	ActualPoints string `json:"actual_points,omitempty"`
+	// RouteModelID holds the value of the "route_model_id" field.
+	RouteModelID *int64 `json:"route_model_id,omitempty"`
+	// RouteModelCode holds the value of the "route_model_code" field.
+	RouteModelCode string `json:"route_model_code,omitempty"`
+	// AccountModelID holds the value of the "account_model_id" field.
+	AccountModelID *int64 `json:"account_model_id,omitempty"`
+	// ModelAccountID holds the value of the "model_account_id" field.
+	ModelAccountID *int64 `json:"model_account_id,omitempty"`
+	// UpstreamModelCode holds the value of the "upstream_model_code" field.
+	UpstreamModelCode string `json:"upstream_model_code,omitempty"`
+	// EffectiveMultiplier holds the value of the "effective_multiplier" field.
+	EffectiveMultiplier string `json:"effective_multiplier,omitempty"`
+	// ChargedPoints holds the value of the "charged_points" field.
+	ChargedPoints string `json:"charged_points,omitempty"`
 	// ProviderModelID holds the value of the "provider_model_id" field.
 	ProviderModelID *int64 `json:"provider_model_id,omitempty"`
 	// ProviderCost holds the value of the "provider_cost" field.
@@ -115,9 +129,9 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case imagetask.FieldMaskPresent:
 			values[i] = new(sql.NullBool)
-		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount:
+		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount:
 			values[i] = new(sql.NullInt64)
-		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldRequestedQuality, imagetask.FieldResolvedQualityBucket, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
+		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldRequestedQuality, imagetask.FieldResolvedQualityBucket, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -313,6 +327,51 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field actual_points", values[i])
 			} else if value.Valid {
 				_m.ActualPoints = value.String
+			}
+		case imagetask.FieldRouteModelID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field route_model_id", values[i])
+			} else if value.Valid {
+				_m.RouteModelID = new(int64)
+				*_m.RouteModelID = value.Int64
+			}
+		case imagetask.FieldRouteModelCode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field route_model_code", values[i])
+			} else if value.Valid {
+				_m.RouteModelCode = value.String
+			}
+		case imagetask.FieldAccountModelID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field account_model_id", values[i])
+			} else if value.Valid {
+				_m.AccountModelID = new(int64)
+				*_m.AccountModelID = value.Int64
+			}
+		case imagetask.FieldModelAccountID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field model_account_id", values[i])
+			} else if value.Valid {
+				_m.ModelAccountID = new(int64)
+				*_m.ModelAccountID = value.Int64
+			}
+		case imagetask.FieldUpstreamModelCode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_model_code", values[i])
+			} else if value.Valid {
+				_m.UpstreamModelCode = value.String
+			}
+		case imagetask.FieldEffectiveMultiplier:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field effective_multiplier", values[i])
+			} else if value.Valid {
+				_m.EffectiveMultiplier = value.String
+			}
+		case imagetask.FieldChargedPoints:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field charged_points", values[i])
+			} else if value.Valid {
+				_m.ChargedPoints = value.String
 			}
 		case imagetask.FieldProviderModelID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -551,6 +610,33 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("actual_points=")
 	builder.WriteString(_m.ActualPoints)
+	builder.WriteString(", ")
+	if v := _m.RouteModelID; v != nil {
+		builder.WriteString("route_model_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("route_model_code=")
+	builder.WriteString(_m.RouteModelCode)
+	builder.WriteString(", ")
+	if v := _m.AccountModelID; v != nil {
+		builder.WriteString("account_model_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.ModelAccountID; v != nil {
+		builder.WriteString("model_account_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("upstream_model_code=")
+	builder.WriteString(_m.UpstreamModelCode)
+	builder.WriteString(", ")
+	builder.WriteString("effective_multiplier=")
+	builder.WriteString(_m.EffectiveMultiplier)
+	builder.WriteString(", ")
+	builder.WriteString("charged_points=")
+	builder.WriteString(_m.ChargedPoints)
 	builder.WriteString(", ")
 	if v := _m.ProviderModelID; v != nil {
 		builder.WriteString("provider_model_id=")

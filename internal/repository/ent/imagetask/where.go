@@ -190,6 +190,41 @@ func ActualPoints(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldActualPoints, v))
 }
 
+// RouteModelID applies equality check predicate on the "route_model_id" field. It's identical to RouteModelIDEQ.
+func RouteModelID(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldRouteModelID, v))
+}
+
+// RouteModelCode applies equality check predicate on the "route_model_code" field. It's identical to RouteModelCodeEQ.
+func RouteModelCode(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldRouteModelCode, v))
+}
+
+// AccountModelID applies equality check predicate on the "account_model_id" field. It's identical to AccountModelIDEQ.
+func AccountModelID(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldAccountModelID, v))
+}
+
+// ModelAccountID applies equality check predicate on the "model_account_id" field. It's identical to ModelAccountIDEQ.
+func ModelAccountID(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldModelAccountID, v))
+}
+
+// UpstreamModelCode applies equality check predicate on the "upstream_model_code" field. It's identical to UpstreamModelCodeEQ.
+func UpstreamModelCode(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldUpstreamModelCode, v))
+}
+
+// EffectiveMultiplier applies equality check predicate on the "effective_multiplier" field. It's identical to EffectiveMultiplierEQ.
+func EffectiveMultiplier(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldEffectiveMultiplier, v))
+}
+
+// ChargedPoints applies equality check predicate on the "charged_points" field. It's identical to ChargedPointsEQ.
+func ChargedPoints(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldChargedPoints, v))
+}
+
 // ProviderModelID applies equality check predicate on the "provider_model_id" field. It's identical to ProviderModelIDEQ.
 func ProviderModelID(v int64) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldProviderModelID, v))
@@ -1723,6 +1758,416 @@ func ActualPointsEqualFold(v string) predicate.ImageTask {
 // ActualPointsContainsFold applies the ContainsFold predicate on the "actual_points" field.
 func ActualPointsContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldActualPoints, v))
+}
+
+// RouteModelIDEQ applies the EQ predicate on the "route_model_id" field.
+func RouteModelIDEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldRouteModelID, v))
+}
+
+// RouteModelIDNEQ applies the NEQ predicate on the "route_model_id" field.
+func RouteModelIDNEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldRouteModelID, v))
+}
+
+// RouteModelIDIn applies the In predicate on the "route_model_id" field.
+func RouteModelIDIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldRouteModelID, vs...))
+}
+
+// RouteModelIDNotIn applies the NotIn predicate on the "route_model_id" field.
+func RouteModelIDNotIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldRouteModelID, vs...))
+}
+
+// RouteModelIDGT applies the GT predicate on the "route_model_id" field.
+func RouteModelIDGT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldRouteModelID, v))
+}
+
+// RouteModelIDGTE applies the GTE predicate on the "route_model_id" field.
+func RouteModelIDGTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldRouteModelID, v))
+}
+
+// RouteModelIDLT applies the LT predicate on the "route_model_id" field.
+func RouteModelIDLT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldRouteModelID, v))
+}
+
+// RouteModelIDLTE applies the LTE predicate on the "route_model_id" field.
+func RouteModelIDLTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldRouteModelID, v))
+}
+
+// RouteModelIDIsNil applies the IsNil predicate on the "route_model_id" field.
+func RouteModelIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldRouteModelID))
+}
+
+// RouteModelIDNotNil applies the NotNil predicate on the "route_model_id" field.
+func RouteModelIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldRouteModelID))
+}
+
+// RouteModelCodeEQ applies the EQ predicate on the "route_model_code" field.
+func RouteModelCodeEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeNEQ applies the NEQ predicate on the "route_model_code" field.
+func RouteModelCodeNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeIn applies the In predicate on the "route_model_code" field.
+func RouteModelCodeIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldRouteModelCode, vs...))
+}
+
+// RouteModelCodeNotIn applies the NotIn predicate on the "route_model_code" field.
+func RouteModelCodeNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldRouteModelCode, vs...))
+}
+
+// RouteModelCodeGT applies the GT predicate on the "route_model_code" field.
+func RouteModelCodeGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeGTE applies the GTE predicate on the "route_model_code" field.
+func RouteModelCodeGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeLT applies the LT predicate on the "route_model_code" field.
+func RouteModelCodeLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeLTE applies the LTE predicate on the "route_model_code" field.
+func RouteModelCodeLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeContains applies the Contains predicate on the "route_model_code" field.
+func RouteModelCodeContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeHasPrefix applies the HasPrefix predicate on the "route_model_code" field.
+func RouteModelCodeHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeHasSuffix applies the HasSuffix predicate on the "route_model_code" field.
+func RouteModelCodeHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeEqualFold applies the EqualFold predicate on the "route_model_code" field.
+func RouteModelCodeEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldRouteModelCode, v))
+}
+
+// RouteModelCodeContainsFold applies the ContainsFold predicate on the "route_model_code" field.
+func RouteModelCodeContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldRouteModelCode, v))
+}
+
+// AccountModelIDEQ applies the EQ predicate on the "account_model_id" field.
+func AccountModelIDEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldAccountModelID, v))
+}
+
+// AccountModelIDNEQ applies the NEQ predicate on the "account_model_id" field.
+func AccountModelIDNEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldAccountModelID, v))
+}
+
+// AccountModelIDIn applies the In predicate on the "account_model_id" field.
+func AccountModelIDIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldAccountModelID, vs...))
+}
+
+// AccountModelIDNotIn applies the NotIn predicate on the "account_model_id" field.
+func AccountModelIDNotIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldAccountModelID, vs...))
+}
+
+// AccountModelIDGT applies the GT predicate on the "account_model_id" field.
+func AccountModelIDGT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldAccountModelID, v))
+}
+
+// AccountModelIDGTE applies the GTE predicate on the "account_model_id" field.
+func AccountModelIDGTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldAccountModelID, v))
+}
+
+// AccountModelIDLT applies the LT predicate on the "account_model_id" field.
+func AccountModelIDLT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldAccountModelID, v))
+}
+
+// AccountModelIDLTE applies the LTE predicate on the "account_model_id" field.
+func AccountModelIDLTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldAccountModelID, v))
+}
+
+// AccountModelIDIsNil applies the IsNil predicate on the "account_model_id" field.
+func AccountModelIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldAccountModelID))
+}
+
+// AccountModelIDNotNil applies the NotNil predicate on the "account_model_id" field.
+func AccountModelIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldAccountModelID))
+}
+
+// ModelAccountIDEQ applies the EQ predicate on the "model_account_id" field.
+func ModelAccountIDEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldModelAccountID, v))
+}
+
+// ModelAccountIDNEQ applies the NEQ predicate on the "model_account_id" field.
+func ModelAccountIDNEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldModelAccountID, v))
+}
+
+// ModelAccountIDIn applies the In predicate on the "model_account_id" field.
+func ModelAccountIDIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldModelAccountID, vs...))
+}
+
+// ModelAccountIDNotIn applies the NotIn predicate on the "model_account_id" field.
+func ModelAccountIDNotIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldModelAccountID, vs...))
+}
+
+// ModelAccountIDGT applies the GT predicate on the "model_account_id" field.
+func ModelAccountIDGT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldModelAccountID, v))
+}
+
+// ModelAccountIDGTE applies the GTE predicate on the "model_account_id" field.
+func ModelAccountIDGTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldModelAccountID, v))
+}
+
+// ModelAccountIDLT applies the LT predicate on the "model_account_id" field.
+func ModelAccountIDLT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldModelAccountID, v))
+}
+
+// ModelAccountIDLTE applies the LTE predicate on the "model_account_id" field.
+func ModelAccountIDLTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldModelAccountID, v))
+}
+
+// ModelAccountIDIsNil applies the IsNil predicate on the "model_account_id" field.
+func ModelAccountIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldModelAccountID))
+}
+
+// ModelAccountIDNotNil applies the NotNil predicate on the "model_account_id" field.
+func ModelAccountIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldModelAccountID))
+}
+
+// UpstreamModelCodeEQ applies the EQ predicate on the "upstream_model_code" field.
+func UpstreamModelCodeEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeNEQ applies the NEQ predicate on the "upstream_model_code" field.
+func UpstreamModelCodeNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeIn applies the In predicate on the "upstream_model_code" field.
+func UpstreamModelCodeIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldUpstreamModelCode, vs...))
+}
+
+// UpstreamModelCodeNotIn applies the NotIn predicate on the "upstream_model_code" field.
+func UpstreamModelCodeNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldUpstreamModelCode, vs...))
+}
+
+// UpstreamModelCodeGT applies the GT predicate on the "upstream_model_code" field.
+func UpstreamModelCodeGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeGTE applies the GTE predicate on the "upstream_model_code" field.
+func UpstreamModelCodeGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeLT applies the LT predicate on the "upstream_model_code" field.
+func UpstreamModelCodeLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeLTE applies the LTE predicate on the "upstream_model_code" field.
+func UpstreamModelCodeLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeContains applies the Contains predicate on the "upstream_model_code" field.
+func UpstreamModelCodeContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeHasPrefix applies the HasPrefix predicate on the "upstream_model_code" field.
+func UpstreamModelCodeHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeHasSuffix applies the HasSuffix predicate on the "upstream_model_code" field.
+func UpstreamModelCodeHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeEqualFold applies the EqualFold predicate on the "upstream_model_code" field.
+func UpstreamModelCodeEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldUpstreamModelCode, v))
+}
+
+// UpstreamModelCodeContainsFold applies the ContainsFold predicate on the "upstream_model_code" field.
+func UpstreamModelCodeContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldUpstreamModelCode, v))
+}
+
+// EffectiveMultiplierEQ applies the EQ predicate on the "effective_multiplier" field.
+func EffectiveMultiplierEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierNEQ applies the NEQ predicate on the "effective_multiplier" field.
+func EffectiveMultiplierNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierIn applies the In predicate on the "effective_multiplier" field.
+func EffectiveMultiplierIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldEffectiveMultiplier, vs...))
+}
+
+// EffectiveMultiplierNotIn applies the NotIn predicate on the "effective_multiplier" field.
+func EffectiveMultiplierNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldEffectiveMultiplier, vs...))
+}
+
+// EffectiveMultiplierGT applies the GT predicate on the "effective_multiplier" field.
+func EffectiveMultiplierGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierGTE applies the GTE predicate on the "effective_multiplier" field.
+func EffectiveMultiplierGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierLT applies the LT predicate on the "effective_multiplier" field.
+func EffectiveMultiplierLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierLTE applies the LTE predicate on the "effective_multiplier" field.
+func EffectiveMultiplierLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierContains applies the Contains predicate on the "effective_multiplier" field.
+func EffectiveMultiplierContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierHasPrefix applies the HasPrefix predicate on the "effective_multiplier" field.
+func EffectiveMultiplierHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierHasSuffix applies the HasSuffix predicate on the "effective_multiplier" field.
+func EffectiveMultiplierHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierEqualFold applies the EqualFold predicate on the "effective_multiplier" field.
+func EffectiveMultiplierEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldEffectiveMultiplier, v))
+}
+
+// EffectiveMultiplierContainsFold applies the ContainsFold predicate on the "effective_multiplier" field.
+func EffectiveMultiplierContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldEffectiveMultiplier, v))
+}
+
+// ChargedPointsEQ applies the EQ predicate on the "charged_points" field.
+func ChargedPointsEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldChargedPoints, v))
+}
+
+// ChargedPointsNEQ applies the NEQ predicate on the "charged_points" field.
+func ChargedPointsNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldChargedPoints, v))
+}
+
+// ChargedPointsIn applies the In predicate on the "charged_points" field.
+func ChargedPointsIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldChargedPoints, vs...))
+}
+
+// ChargedPointsNotIn applies the NotIn predicate on the "charged_points" field.
+func ChargedPointsNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldChargedPoints, vs...))
+}
+
+// ChargedPointsGT applies the GT predicate on the "charged_points" field.
+func ChargedPointsGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldChargedPoints, v))
+}
+
+// ChargedPointsGTE applies the GTE predicate on the "charged_points" field.
+func ChargedPointsGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldChargedPoints, v))
+}
+
+// ChargedPointsLT applies the LT predicate on the "charged_points" field.
+func ChargedPointsLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldChargedPoints, v))
+}
+
+// ChargedPointsLTE applies the LTE predicate on the "charged_points" field.
+func ChargedPointsLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldChargedPoints, v))
+}
+
+// ChargedPointsContains applies the Contains predicate on the "charged_points" field.
+func ChargedPointsContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldChargedPoints, v))
+}
+
+// ChargedPointsHasPrefix applies the HasPrefix predicate on the "charged_points" field.
+func ChargedPointsHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldChargedPoints, v))
+}
+
+// ChargedPointsHasSuffix applies the HasSuffix predicate on the "charged_points" field.
+func ChargedPointsHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldChargedPoints, v))
+}
+
+// ChargedPointsEqualFold applies the EqualFold predicate on the "charged_points" field.
+func ChargedPointsEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldChargedPoints, v))
+}
+
+// ChargedPointsContainsFold applies the ContainsFold predicate on the "charged_points" field.
+func ChargedPointsContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldChargedPoints, v))
 }
 
 // ProviderModelIDEQ applies the EQ predicate on the "provider_model_id" field.

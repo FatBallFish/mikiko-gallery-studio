@@ -15,8 +15,10 @@ func (UserGroup) Fields() []ent.Field {
 		field.String("group_code").MaxLen(32).NotEmpty(),
 		field.String("group_name").MaxLen(64).NotEmpty(),
 		field.String("multiplier").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("1.00000"),
-		field.String("status").MaxLen(16).Default("active"),
+		field.String("status").MaxLen(16).Default("enabled"),
 		field.String("description").MaxLen(255).Optional().Nillable(),
+		field.Int("sort_order").Default(0),
+		field.Bool("is_default").Default(false),
 	}
 }
 func (UserGroup) Indexes() []ent.Index {

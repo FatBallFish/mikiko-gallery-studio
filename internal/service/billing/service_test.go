@@ -8,8 +8,17 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+type staticRoutingSource struct {
+	snapshot modelhub.ModelRoutingSnapshot
+}
+
+func (s staticRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return s.snapshot, nil
+}
 
 func TestReserveFinalizeAndLedger(t *testing.T) {
 	svc := NewService(config.BillingConfig{
@@ -313,6 +322,100 @@ func TestNewServiceDefaultsPointsScaleToFiveDecimals(t *testing.T) {
 	}
 	if actual != "8.00000" {
 		t.Fatalf("expected normalized 5-decimal actual points, got %q", actual)
+	}
+}
+
+func TestEstimateRouteModelAutoQualityUsesExplicitSize(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint:               "0.31250",
+		PointsScale:               5,
+		TaskMultipliers:           map[string]string{"text_to_image": "1.00000"},
+		AutoQualityDefaultByGroup: map[string]string{"plus": "4k"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices: []modelhub.RoutePriceConfig{
+			{RouteModelID: 1, TaskType: "text_to_image", Quality: "1k", BasePoints: "2.00000", Enabled: true},
+			{RouteModelID: 1, TaskType: "text_to_image", Quality: "2k", BasePoints: "4.00000", Enabled: true},
+			{RouteModelID: 1, TaskType: "text_to_image", Quality: "4k", BasePoints: "8.00000", Enabled: true},
+		},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"2k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType:                  "text_to_image",
+		RouteModelCode:            "plus",
+		RequestedQuality:          "auto",
+		RequestedSize:             "1536x1024",
+		RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Estimate: %v", err)
+	}
+	if result.ResolvedQualityBucket != "2k" {
+		t.Fatalf("expected route billing to resolve 2k from explicit size, got %s", result.ResolvedQualityBucket)
+	}
+	if result.EstimatedPoints != "4.00000" {
+		t.Fatalf("expected 2k price, got %#v", result)
+	}
+}
+
+func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedQuality(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint:               "0.31250",
+		PointsScale:               5,
+		TaskMultipliers:           map[string]string{"text_to_image": "1.00000"},
+		AutoQualityDefaultByGroup: map[string]string{"plus": "2k"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", Quality: "2k", BasePoints: "4.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	_, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType:                  "text_to_image",
+		RouteModelCode:            "plus",
+		RequestedQuality:          "auto",
+		RequestedOutputImageCount: 1,
+	})
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 409 || appErr.Code != errs.CodeConflict {
+		t.Fatalf("expected estimate to reject route model without matching candidate, got %#v", err)
+	}
+}
+
+func TestEstimateRouteModelRejectsInvisibleGroupBeforePricing(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint:     "0.31250",
+		PointsScale:     5,
+		TaskMultipliers: map[string]string{"text_to_image": "1.00000"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "staff", Name: "Staff", Visibility: "groups", Enabled: true}},
+		Groups:      []modelhub.UserGroupConfig{{ID: 10, Code: "staff", Multiplier: "0.50000", Status: "enabled"}},
+		Visibility:  []modelhub.RouteVisibilityConfig{{RouteModelID: 1, GroupID: 10}},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	_, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType:                  "text_to_image",
+		RouteModelCode:            "staff",
+		RequestedQuality:          "1k",
+		RequestedOutputImageCount: 1,
+	})
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 403 {
+		t.Fatalf("expected invisible group model to return 403 before pricing, got %#v", err)
 	}
 }
 

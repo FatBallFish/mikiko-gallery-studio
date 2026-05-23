@@ -160,6 +160,9 @@ func NewAPIWithModelAdminService(cfg config.Config, authSvc *authservice.Service
 	api.redeem = redeemSvc
 	api.callRecord = callRecordSvc
 	api.modelAdmin = modelAdminSvc
+	api.caps.SetModelRoutingSource(modelAdminSvc)
+	api.tasks.SetModelRoutingSource(modelAdminSvc)
+	api.billing.SetModelRoutingSource(modelAdminSvc)
 	return api
 }
 
@@ -599,11 +602,13 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 	result, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
+		RouteModelCode:            r.URL.Query().Get("route_model_code"),
 		RequestedQuality:          r.URL.Query().Get("requested_quality"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
 		RequestedOutputImageCount: outputCount,
 		ReferenceImageCount:       refCount,
 		UserGroupCode:             user.GroupCode,
+		UserGroupCodes:            userGroupCodes(user),
 		UserGroupMultiplier:       user.GroupMultiplier,
 	})
 	if err != nil {
@@ -758,11 +763,13 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 	result, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
+		RouteModelCode:            r.URL.Query().Get("route_model_code"),
 		RequestedQuality:          r.URL.Query().Get("requested_quality"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
 		RequestedOutputImageCount: outputCount,
 		ReferenceImageCount:       refCount,
 		UserGroupCode:             identity.GroupCode,
+		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
 	})
 	if err != nil {
@@ -777,11 +784,17 @@ func (a *API) HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	if _, appErr := a.requireUser(r); appErr != nil {
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	httpx.WriteSuccess(w, r, http.StatusOK, a.caps.List())
+	result, err := a.caps.ListForGroups(r.Context(), userGroupCodes(user), a.cfg.Billing.TaskMultipliers)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, result)
 }
 
 func (a *API) HandleOpenCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -789,11 +802,17 @@ func (a *API) HandleOpenCapabilities(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	if _, appErr := a.requireOpenAPIKey(r); appErr != nil {
+	identity, appErr := a.requireOpenAPIKey(r)
+	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	httpx.WriteSuccess(w, r, http.StatusOK, a.caps.List())
+	result, err := a.caps.ListForGroups(r.Context(), []string{identity.GroupCode}, a.cfg.Billing.TaskMultipliers)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, result)
 }
 
 func (a *API) HandleOpenBalance(w http.ResponseWriter, r *http.Request) {
@@ -2112,6 +2131,28 @@ func (a *API) HandleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case "groups":
+		if r.Method != http.MethodPut && r.Method != http.MethodPost {
+			httpx.WriteError(w, r, methodNotAllowedError())
+			return
+		}
+		var req struct {
+			GroupIDs []int64 `json:"group_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.adminUser.AssignUserGroups(r.Context(), domainadminuser.MultiGroupAssignmentRequest{UserID: userID, GroupIDs: req.GroupIDs})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.groups_update", "user", fmt.Sprintf("%d", userID), map[string]any{"group_ids": req.GroupIDs}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found"))
 	}
@@ -2448,6 +2489,347 @@ func (a *API) HandleAdminCallRecords(w http.ResponseWriter, r *http.Request) {
 			"total":     result.Total,
 		},
 	})
+}
+
+func (a *API) HandleAdminModelAccounts(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, _ := parsePositiveIntQuery(r, "page", 1)
+		pageSize, _ := parsePositiveIntQuery(r, "page_size", 20)
+		result, err := a.modelAdmin.ListModelAccounts(r.Context(), domainmodeladmin.ModelAccountListRequest{Page: page, PageSize: pageSize, AdapterType: r.URL.Query().Get("adapter_type"), AuthType: r.URL.Query().Get("auth_type"), Status: r.URL.Query().Get("status"), Keyword: r.URL.Query().Get("keyword")})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(result.Items, result.Page, result.PageSize, result.Total))
+	case http.MethodPost:
+		req, ok := decodeModelAccountWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.modelAdmin.CreateModelAccount(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if err := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_account.create", "model_account", fmt.Sprintf("%d", created.ID), map[string]any{"adapter_type": created.AdapterType, "status": created.Status}); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminModelAccountDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/model-accounts/")
+	accountID, err := parseInt64Part(parts, 0, "account_id")
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "models" {
+		a.handleAdminModelAccountModels(w, r, admin.AdminID, accountID, parts)
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		req, ok := decodeModelAccountWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, updateErr := a.modelAdmin.UpdateModelAccount(r.Context(), accountID, req)
+		if updateErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(updateErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_account.update", "model_account", fmt.Sprintf("%d", updated.ID), map[string]any{"adapter_type": updated.AdapterType, "status": updated.Status})
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if deleteErr := a.modelAdmin.DeleteModelAccount(r.Context(), accountID); deleteErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(deleteErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_account.delete", "model_account", fmt.Sprintf("%d", accountID), nil)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) handleAdminModelAccountModels(w http.ResponseWriter, r *http.Request, adminID, accountID int64, parts []string) {
+	if len(parts) == 2 {
+		switch r.Method {
+		case http.MethodGet:
+			result, err := a.modelAdmin.ListModelAccountModels(r.Context(), domainmodeladmin.ModelAccountModelListRequest{Page: 1, PageSize: 100, AccountID: accountID})
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(result.Items, result.Page, result.PageSize, result.Total))
+		case http.MethodPost:
+			req, ok := decodeModelAccountModelWriteRequest(w, r, accountID)
+			if !ok {
+				return
+			}
+			created, err := a.modelAdmin.CreateModelAccountModel(r.Context(), req)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account_model.create", "model_account_model", fmt.Sprintf("%d", created.ID), map[string]any{"account_id": accountID, "model_code": created.ModelCode})
+			httpx.WriteSuccess(w, r, http.StatusCreated, created)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+		return
+	}
+	modelID, appErr := parseInt64Part(parts, 2, "model_id")
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		req, ok := decodeModelAccountModelWriteRequest(w, r, accountID)
+		if !ok {
+			return
+		}
+		updated, err := a.modelAdmin.UpdateModelAccountModel(r.Context(), modelID, req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account_model.update", "model_account_model", fmt.Sprintf("%d", updated.ID), map[string]any{"account_id": accountID, "model_code": updated.ModelCode})
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if err := a.modelAdmin.DeleteModelAccountModel(r.Context(), modelID); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account_model.delete", "model_account_model", fmt.Sprintf("%d", modelID), nil)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminRouteModels(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, _ := parsePositiveIntQuery(r, "page", 1)
+		pageSize, _ := parsePositiveIntQuery(r, "page_size", 20)
+		enabled, parseErr := parseOptionalBoolQuery(r, "enabled")
+		if parseErr != nil {
+			httpx.WriteError(w, r, parseErr)
+			return
+		}
+		result, err := a.modelAdmin.ListRouteModels(r.Context(), domainmodeladmin.RouteModelListRequest{Page: page, PageSize: pageSize, Visibility: r.URL.Query().Get("visibility"), Enabled: enabled, Keyword: r.URL.Query().Get("keyword")})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(result.Items, result.Page, result.PageSize, result.Total))
+	case http.MethodPost:
+		req, ok := decodeRouteModelWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.modelAdmin.CreateRouteModel(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model.create", "route_model", fmt.Sprintf("%d", created.ID), map[string]any{"code": created.Code, "visibility": created.Visibility})
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminRouteModelDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/route-models/")
+	routeModelID, err := parseInt64Part(parts, 0, "route_model_id")
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "candidates" {
+		a.handleAdminRouteModelCandidates(w, r, admin.AdminID, routeModelID, parts)
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		req, ok := decodeRouteModelWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, updateErr := a.modelAdmin.UpdateRouteModel(r.Context(), routeModelID, req)
+		if updateErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(updateErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model.update", "route_model", fmt.Sprintf("%d", updated.ID), map[string]any{"code": updated.Code, "visibility": updated.Visibility})
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if deleteErr := a.modelAdmin.DeleteRouteModel(r.Context(), routeModelID); deleteErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(deleteErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model.delete", "route_model", fmt.Sprintf("%d", routeModelID), nil)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) handleAdminRouteModelCandidates(w http.ResponseWriter, r *http.Request, adminID, routeModelID int64, parts []string) {
+	if len(parts) == 2 {
+		switch r.Method {
+		case http.MethodGet:
+			items, err := a.modelAdmin.ListRouteModelCandidates(r.Context(), routeModelID)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(items, 1, len(items), len(items)))
+		case http.MethodPost:
+			req, ok := decodeRouteModelCandidateWriteRequest(w, r, routeModelID)
+			if !ok {
+				return
+			}
+			created, err := a.modelAdmin.CreateRouteModelCandidate(r.Context(), req)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "route_model_candidate.create", "route_model_candidate", fmt.Sprintf("%d", created.ID), map[string]any{"route_model_id": routeModelID, "account_model_id": created.AccountModelID})
+			httpx.WriteSuccess(w, r, http.StatusCreated, created)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+		return
+	}
+	candidateID, appErr := parseInt64Part(parts, 2, "candidate_id")
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		req, ok := decodeRouteModelCandidateWriteRequest(w, r, routeModelID)
+		if !ok {
+			return
+		}
+		updated, err := a.modelAdmin.UpdateRouteModelCandidate(r.Context(), candidateID, req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "route_model_candidate.update", "route_model_candidate", fmt.Sprintf("%d", updated.ID), nil)
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if err := a.modelAdmin.DeleteRouteModelCandidate(r.Context(), candidateID); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "route_model_candidate.delete", "route_model_candidate", fmt.Sprintf("%d", candidateID), nil)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminRouteModelPrices(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, _ := parsePositiveIntQuery(r, "page", 1)
+		pageSize, _ := parsePositiveIntQuery(r, "page_size", 20)
+		routeModelID, _ := parseOptionalInt64Query(r, "route_model_id")
+		result, err := a.modelAdmin.ListRouteModelPrices(r.Context(), domainmodeladmin.RouteModelPriceListRequest{Page: page, PageSize: pageSize, RouteModelID: routeModelID, TaskType: r.URL.Query().Get("task_type"), Quality: r.URL.Query().Get("quality")})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(result.Items, result.Page, result.PageSize, result.Total))
+	case http.MethodPost:
+		req, ok := decodeRouteModelPriceWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.modelAdmin.CreateRouteModelPrice(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_price.create", "route_model_price", fmt.Sprintf("%d", created.ID), map[string]any{"route_model_id": created.RouteModelID, "task_type": created.TaskType, "quality": created.Quality})
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminRouteModelPriceDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/route-model-prices/")
+	priceID, err := parseInt64Part(parts, 0, "price_id")
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		req, ok := decodeRouteModelPriceWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, updateErr := a.modelAdmin.UpdateRouteModelPrice(r.Context(), priceID, req)
+		if updateErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(updateErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_price.update", "route_model_price", fmt.Sprintf("%d", updated.ID), nil)
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if deleteErr := a.modelAdmin.DeleteRouteModelPrice(r.Context(), priceID); deleteErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(deleteErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_price.delete", "route_model_price", fmt.Sprintf("%d", priceID), nil)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
 }
 
 func (a *API) HandleAdminModelProviders(w http.ResponseWriter, r *http.Request) {
@@ -3036,6 +3418,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
+		RouteModelCode            string   `json:"route_model_code"`
 		RequestedQuality          string   `json:"requested_quality"`
 		RequestedSize             string   `json:"requested_size"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
@@ -3055,6 +3438,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		TaskID:              idempotentTaskID(user.ID, r.Header.Get("Idempotency-Key"), req),
 		UserID:              user.ID,
 		AbstractModel:       req.AbstractModel,
+		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
 		RequestedSize:       req.RequestedSize,
@@ -3063,6 +3447,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
 		UserGroupCode:       user.GroupCode,
+		UserGroupCodes:      userGroupCodes(user),
 		UserGroupMultiplier: user.GroupMultiplier,
 		ResponseMode:        req.ResponseMode,
 		SavePolicy:          "private",
@@ -3085,6 +3470,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
+		RouteModelCode            string   `json:"route_model_code"`
 		RequestedQuality          string   `json:"requested_quality"`
 		RequestedSize             string   `json:"requested_size"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
@@ -3107,11 +3493,13 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
+		RouteModelCode:            req.RouteModelCode,
 		RequestedQuality:          req.RequestedQuality,
 		RequestedSize:             req.RequestedSize,
 		RequestedOutputImageCount: req.RequestedOutputImageCount,
 		ReferenceImageCount:       len(req.ReferenceAssetIDs),
 		UserGroupCode:             identity.GroupCode,
+		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
 	})
 	if err != nil {
@@ -3128,6 +3516,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		APIKeyID:            identity.APIKeyID,
 		SourceChannel:       "openapi",
 		AbstractModel:       req.AbstractModel,
+		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
 		RequestedSize:       req.RequestedSize,
@@ -3136,6 +3525,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
 		UserGroupCode:       identity.GroupCode,
+		UserGroupCodes:      []string{identity.GroupCode},
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
 		ResponseMode:        req.ResponseMode,
 		SavePolicy:          "private",
@@ -3696,6 +4086,93 @@ func decodeAdminProviderModelRequest(w http.ResponseWriter, r *http.Request) (do
 	}, true
 }
 
+func decodeModelAccountWriteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.ModelAccountWriteRequest, bool) {
+	var req struct {
+		Name             string            `json:"name"`
+		AdapterType      string            `json:"adapter_type"`
+		AuthType         string            `json:"auth_type"`
+		BaseURL          string            `json:"base_url"`
+		Credentials      map[string]string `json:"credentials"`
+		Status           string            `json:"status"`
+		Priority         int               `json:"priority"`
+		Weight           int               `json:"weight"`
+		ConcurrencyLimit int               `json:"concurrency_limit"`
+		TimeoutMS        int               `json:"timeout_ms"`
+		Extra            map[string]any    `json:"extra"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.ModelAccountWriteRequest{}, false
+	}
+	return domainmodeladmin.ModelAccountWriteRequest{Name: req.Name, AdapterType: req.AdapterType, AuthType: req.AuthType, BaseURL: req.BaseURL, Credentials: req.Credentials, Status: req.Status, Priority: req.Priority, Weight: req.Weight, ConcurrencyLimit: req.ConcurrencyLimit, TimeoutMS: req.TimeoutMS, Extra: req.Extra}, true
+}
+
+func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request, accountID int64) (domainmodeladmin.ModelAccountModelWriteRequest, bool) {
+	var req struct {
+		ModelCode    string         `json:"model_code"`
+		DisplayName  string         `json:"display_name"`
+		TaskTypes    []string       `json:"task_types"`
+		Qualities    []string       `json:"qualities"`
+		CostPerImage string         `json:"cost_per_image"`
+		Currency     string         `json:"currency"`
+		Enabled      bool           `json:"enabled"`
+		Extra        map[string]any `json:"extra"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.ModelAccountModelWriteRequest{}, false
+	}
+	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, Qualities: req.Qualities, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
+}
+
+func decodeRouteModelWriteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteModelWriteRequest, bool) {
+	var req struct {
+		Code        string  `json:"code"`
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		Visibility  string  `json:"visibility"`
+		Enabled     bool    `json:"enabled"`
+		SortOrder   int     `json:"sort_order"`
+		GroupIDs    []int64 `json:"group_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.RouteModelWriteRequest{}, false
+	}
+	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs}, true
+}
+
+func decodeRouteModelCandidateWriteRequest(w http.ResponseWriter, r *http.Request, routeModelID int64) (domainmodeladmin.RouteModelCandidateWriteRequest, bool) {
+	var req struct {
+		AccountModelID int64 `json:"account_model_id"`
+		Priority       int   `json:"priority"`
+		Weight         int   `json:"weight"`
+		FallbackOrder  int   `json:"fallback_order"`
+		Enabled        bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.RouteModelCandidateWriteRequest{}, false
+	}
+	return domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: routeModelID, AccountModelID: req.AccountModelID, Priority: req.Priority, Weight: req.Weight, FallbackOrder: req.FallbackOrder, Enabled: req.Enabled}, true
+}
+
+func decodeRouteModelPriceWriteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteModelPriceWriteRequest, bool) {
+	var req struct {
+		RouteModelID        int64  `json:"route_model_id"`
+		TaskType            string `json:"task_type"`
+		Quality             string `json:"quality"`
+		BasePoints          string `json:"base_points"`
+		ReferenceMultiplier string `json:"reference_multiplier"`
+		Enabled             bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.RouteModelPriceWriteRequest{}, false
+	}
+	return domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: req.RouteModelID, TaskType: req.TaskType, Quality: req.Quality, BasePoints: req.BasePoints, ReferenceMultiplier: req.ReferenceMultiplier, Enabled: req.Enabled}, true
+}
+
 func decodeAdminModelRouteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteWriteRequest, bool) {
 	var req struct {
 		GroupCode       string `json:"group_code"`
@@ -3759,6 +4236,20 @@ func pagedRedeemCodesPayload(items []domainredeem.Code, page, pageSize, total in
 }
 
 func pagedModelProvidersPayload(items []domainmodeladmin.Provider, page, pageSize, total int) map[string]any {
+	return map[string]any{
+		"items": items,
+		"pagination": map[string]any{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
+	}
+}
+
+func pagedPayload[T any](items []T, page, pageSize, total int) map[string]any {
+	if pageSize <= 0 {
+		pageSize = len(items)
+	}
 	return map[string]any{
 		"items": items,
 		"pagination": map[string]any{
@@ -3913,6 +4404,29 @@ func (a *API) userGroupMultiplier(groupCode string) string {
 	return "1.00000"
 }
 
+func userGroupCodes(user *domainauth.User) []string {
+	if user == nil {
+		return []string{"basic"}
+	}
+	seen := map[string]struct{}{}
+	codes := make([]string, 0, len(user.GroupCodes)+1)
+	for _, code := range append([]string{user.GroupCode}, user.GroupCodes...) {
+		normalized := strings.ToLower(strings.TrimSpace(code))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		codes = append(codes, normalized)
+	}
+	if len(codes) == 0 {
+		return []string{"basic"}
+	}
+	return codes
+}
+
 func (a *API) writeCompatError(w http.ResponseWriter, err *errs.Error) {
 	if err == nil {
 		err = errs.Internal("")
@@ -3982,6 +4496,37 @@ func parsePositiveIntQuery(r *http.Request, key string, fallback int) (int, *err
 		return 0, errs.BadRequest("invalid " + key)
 	}
 	return value, nil
+}
+
+func parseOptionalInt64Query(r *http.Request, key string) (int64, *errs.Error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed < 0 {
+		return 0, errs.BadRequest("invalid " + key)
+	}
+	return parsed, nil
+}
+
+func splitAdminSuffix(path, prefix string) []string {
+	suffix := strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	if suffix == "" {
+		return []string{}
+	}
+	return strings.Split(suffix, "/")
+}
+
+func parseInt64Part(parts []string, index int, label string) (int64, *errs.Error) {
+	if index >= len(parts) {
+		return 0, errs.BadRequest("invalid " + label)
+	}
+	parsed, err := strconv.ParseInt(parts[index], 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0, errs.BadRequest("invalid " + label)
+	}
+	return parsed, nil
 }
 
 func parseNonNegativeIntQuery(r *http.Request, key string, fallback int) (int, *errs.Error) {

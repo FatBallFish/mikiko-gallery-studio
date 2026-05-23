@@ -20,7 +20,7 @@ export function WorkspacePage() {
   const [refs, setRefs] = useState<ReferenceAsset[]>([])
   const [prompt, setPrompt] = useState(promptSeeds[mode])
   const [negative, setNegative] = useState('低清晰度、畸形手部、重复主体、文字水印')
-  const [model, setModel] = useState('plus-image')
+  const [model, setModel] = useState('plus')
   const [quality, setQuality] = useState('auto')
   const [ratio, setRatio] = useState('16:9')
   const [count, setCount] = useState(2)
@@ -41,7 +41,7 @@ export function WorkspacePage() {
         if (!mounted) return
         setCapability(nextCapability)
         setRefs(nextRefs)
-        setModel(nextCapability.model_groups.find((item) => item.supports_reference || mode === 'text')?.id ?? nextCapability.model_groups[0]?.id ?? 'plus-image')
+        setModel(nextCapability.model_groups.find((item) => item.supports_reference || mode === 'text')?.code ?? nextCapability.model_groups[0]?.code ?? 'plus')
       } catch (err) {
         if (mounted) setError(errorMessage(err))
       } finally {
@@ -58,17 +58,17 @@ export function WorkspacePage() {
     setError(null)
     // Update model selection if current model doesn't support reference mode
     if (capability) {
-      const currentModel = capability.model_groups.find((m) => m.id === model)
+      const currentModel = capability.model_groups.find((m) => m.code === model)
       if (mode === 'reference' && currentModel && !currentModel.supports_reference) {
         const refModel = capability.model_groups.find((m) => m.supports_reference)
-        if (refModel) setModel(refModel.id)
+        if (refModel) setModel(refModel.code)
       }
     }
   }, [mode, capability])
 
   const estimatePayload = useMemo(() => ({
     task_type: taskType,
-    model_group: model,
+    route_model_code: model,
     quality,
     aspect_ratio: ratio,
     image_count: count,
@@ -228,15 +228,15 @@ export function WorkspacePage() {
             <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 8 }}>模型选择</label>
             {capability?.model_groups.map((m) => (
               <button
-                key={m.id}
+                key={m.code}
                 type="button"
-                className={model === m.id ? 'select-item active' : 'select-item'}
+                className={model === m.code ? 'select-item active' : 'select-item'}
                 style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}
-                onClick={() => setModel(m.id)}
+                onClick={() => setModel(m.code)}
                 disabled={mode !== 'text' && !m.supports_reference}
               >
                 <span>{m.name}</span>
-                <span className="num" style={{ fontSize: 12, color: model === m.id ? 'var(--accent)' : 'var(--muted)' }}>{m.provider}</span>
+                <span className="num" style={{ fontSize: 12, color: model === m.code ? 'var(--accent)' : 'var(--muted)' }}>{m.display_points ? `${m.display_points} ◈` : m.effective_multiplier ? `${m.effective_multiplier}x` : ''}</span>
               </button>
             ))}
           </div>
@@ -297,7 +297,7 @@ export function WorkspacePage() {
         <div className="panel-section" style={{ borderBottom: 'none', marginTop: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, fontSize: 13, color: 'var(--muted)' }}>
             <span>预估消耗</span>
-            <span className="num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{estimate?.points ?? '...'} ◈</span>
+            <span className="num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{estimate?.display_points ?? estimate?.points ?? '...'} ◈</span>
           </div>
           {estimate && !estimate.sufficient ? (
             <div className="form-error" style={{ marginBottom: 12 }}>积分不足，请降低质量或充值。</div>

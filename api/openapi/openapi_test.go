@@ -47,18 +47,20 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/ops/admin/v1/users/{user_id}/status",
 		"/api/ops/admin/v1/users/{user_id}/reset-password",
 		"/api/ops/admin/v1/users/{user_id}/limits",
-		"/api/ops/admin/v1/users/{user_id}/group",
+		"/api/ops/admin/v1/users/{user_id}/groups",
 		"/api/ops/admin/v1/user-groups",
 		"/api/ops/admin/v1/users/{user_id}/points-adjustments",
 		"/api/ops/admin/v1/redeem-codes",
 		"/api/ops/admin/v1/redeem-codes:batch-create",
 		"/api/ops/admin/v1/redeem-codes/{code_id}/status",
 		"/api/ops/admin/v1/redeem-codes/{code_id}/redemptions",
-		"/api/ops/admin/v1/model-providers",
-		"/api/ops/admin/v1/provider-models",
-		"/api/ops/admin/v1/model-providers/{provider_code}",
-		"/api/ops/admin/v1/model-routes",
-		"/api/ops/admin/v1/model-routes/{route_id}",
+		"/api/ops/admin/v1/model-accounts",
+		"/api/ops/admin/v1/model-accounts/{account_id}",
+		"/api/ops/admin/v1/model-accounts/{account_id}/models",
+		"/api/ops/admin/v1/route-models",
+		"/api/ops/admin/v1/route-models/{route_model_id}",
+		"/api/ops/admin/v1/route-models/{route_model_id}/candidates",
+		"/api/ops/admin/v1/route-model-prices",
 		"/api/ops/admin/v1/metrics/dashboard",
 		"/v1/images/generations",
 		"/v1/images/edits",
@@ -110,10 +112,10 @@ func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
 	}
 
 	for path, method := range map[string]string{
-		"/api/ops/admin/v1/model-providers":                 "get",
-		"/api/ops/admin/v1/model-providers/{provider_code}": "get",
-		"/api/ops/admin/v1/model-routes":                    "get",
-		"/api/ops/admin/v1/model-routes/{route_id}":         "get",
+		"/api/ops/admin/v1/model-accounts":                "get",
+		"/api/ops/admin/v1/model-accounts/{account_id}":   "put",
+		"/api/ops/admin/v1/route-models":                  "get",
+		"/api/ops/admin/v1/route-models/{route_model_id}": "put",
 	} {
 		operation := doc.Paths[path][method]
 		if len(operation.Tags) != 1 || operation.Tags[0] != "Admin Model Routing" {
@@ -122,29 +124,29 @@ func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
 	}
 
 	providerListParams := map[string]bool{}
-	for _, param := range doc.Paths["/api/ops/admin/v1/model-providers"]["get"].Parameters {
+	for _, param := range doc.Paths["/api/ops/admin/v1/model-accounts"]["get"].Parameters {
 		providerListParams[param.In+":"+param.Name] = true
 	}
-	for _, key := range []string{"query:page", "query:page_size", "query:provider_type", "query:enabled"} {
+	for _, key := range []string{"query:page", "query:page_size", "query:adapter_type", "query:auth_type", "query:status"} {
 		if !providerListParams[key] {
 			t.Fatalf("expected model provider list parameter %q", key)
 		}
 	}
 	routeListParams := map[string]bool{}
-	for _, param := range doc.Paths["/api/ops/admin/v1/model-routes"]["get"].Parameters {
+	for _, param := range doc.Paths["/api/ops/admin/v1/route-models"]["get"].Parameters {
 		routeListParams[param.In+":"+param.Name] = true
 	}
-	for _, key := range []string{"query:page", "query:page_size", "query:group_code", "query:task_type", "query:provider_code", "query:enabled"} {
+	for _, key := range []string{"query:page", "query:page_size", "query:visibility", "query:enabled"} {
 		if !routeListParams[key] {
 			t.Fatalf("expected model route list parameter %q", key)
 		}
 	}
 
 	for path, methods := range map[string][]string{
-		"/api/ops/admin/v1/model-providers":                 {"post"},
-		"/api/ops/admin/v1/model-providers/{provider_code}": {"put"},
-		"/api/ops/admin/v1/model-routes":                    {"post"},
-		"/api/ops/admin/v1/model-routes/{route_id}":         {"put"},
+		"/api/ops/admin/v1/model-accounts":                {"post"},
+		"/api/ops/admin/v1/model-accounts/{account_id}":   {"put"},
+		"/api/ops/admin/v1/route-models":                  {"post"},
+		"/api/ops/admin/v1/route-models/{route_model_id}": {"put"},
 	} {
 		for _, method := range methods {
 			if !doc.Paths[path][method].RequestBody.Required {
@@ -153,8 +155,8 @@ func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
 		}
 	}
 	for path, method := range map[string]string{
-		"/api/ops/admin/v1/model-providers/{provider_code}": "delete",
-		"/api/ops/admin/v1/model-routes/{route_id}":         "delete",
+		"/api/ops/admin/v1/model-accounts/{account_id}":   "delete",
+		"/api/ops/admin/v1/route-models/{route_model_id}": "delete",
 	} {
 		if _, ok := doc.Paths[path][method].Responses["204"]; !ok {
 			t.Fatalf("expected %s %s to document 204 response", method, path)
@@ -179,14 +181,14 @@ func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
 	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
 		t.Fatalf("unmarshal admin schema: %v", err)
 	}
-	for _, name := range []string{"AdminModelProvider", "AdminModelProviderWriteRequest", "AdminModelProviderResponse", "AdminModelProviderListResponse", "AdminModelRoute", "AdminModelRouteWriteRequest", "AdminModelRouteResponse", "AdminModelRouteListResponse"} {
+	for _, name := range []string{"AdminModelAccount", "AdminModelAccountWriteRequest", "AdminModelAccountResponse", "AdminModelAccountListResponse", "AdminRouteModel", "AdminRouteModelWriteRequest", "AdminRouteModelResponse", "AdminRouteModelListResponse"} {
 		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
 			t.Fatalf("expected admin model routing schema %q", name)
 		}
 	}
 	for schemaName, requiredFields := range map[string][]string{
-		"AdminModelProviderWriteRequest": {"provider_code", "provider_type"},
-		"AdminModelRouteWriteRequest":    {"group_code", "task_type"},
+		"AdminModelAccountWriteRequest": {"name", "adapter_type", "auth_type", "base_url"},
+		"AdminRouteModelWriteRequest":   {"code", "name", "visibility"},
 	} {
 		required := map[string]bool{}
 		for _, field := range schemasDoc.Components.Schemas[schemaName].Required {
@@ -196,18 +198,6 @@ func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
 			if !required[field] {
 				t.Fatalf("expected %s to require %q", schemaName, field)
 			}
-		}
-	}
-	routeWrite := schemasDoc.Components.Schemas["AdminModelRouteWriteRequest"]
-	routeAnyOf := map[string]bool{}
-	for _, option := range routeWrite.AnyOf {
-		for _, field := range option.Required {
-			routeAnyOf[field] = true
-		}
-	}
-	for _, field := range []string{"provider_code", "provider_model_id"} {
-		if !routeAnyOf[field] {
-			t.Fatalf("expected AdminModelRouteWriteRequest anyOf to include %q", field)
 		}
 	}
 }

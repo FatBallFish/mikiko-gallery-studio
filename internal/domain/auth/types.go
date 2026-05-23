@@ -11,6 +11,7 @@ type User struct {
 	AvatarObjectKey   string
 	Status            string
 	GroupCode         string
+	GroupCodes        []string
 	GroupMultiplier   string
 	TokenVersion      int
 	RPMLimit          int

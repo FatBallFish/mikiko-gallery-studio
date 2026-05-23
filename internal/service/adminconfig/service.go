@@ -2,7 +2,6 @@ package adminconfig
 
 import (
 	"context"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -66,11 +65,17 @@ func (s *Service) GetTab(ctx context.Context, tabKey string) (domainadminconfig.
 		Items:   cloneItems(definition.Items),
 	}
 	itemsByKey := map[string]domainadminconfig.Item{}
+	definedKeys := map[string]struct{}{}
 	for _, item := range tab.Items {
-		itemsByKey[itemKey(item.ConfigKey, item.Scope)] = item
+		key := itemKey(item.ConfigKey, item.Scope)
+		itemsByKey[key] = item
+		definedKeys[key] = struct{}{}
 	}
 	for _, override := range overrides {
 		key := itemKey(override.ConfigKey, defaultString(override.Scope, "global"))
+		if _, ok := definedKeys[key]; !ok {
+			continue
+		}
 		itemsByKey[key] = cloneItem(override)
 		if override.Version > tab.Version {
 			tab.Version = override.Version
@@ -110,6 +115,9 @@ func (s *Service) UpdateTab(ctx context.Context, req domainadminconfig.UpdateTab
 		if item.ConfigCategory != "" && !strings.EqualFold(item.ConfigCategory, req.TabKey) {
 			return domainadminconfig.Tab{}, errs.BadRequest("config_category does not match tab_key")
 		}
+		if !definitionContainsItem(current.Items, item.ConfigKey, defaultString(item.Scope, "global")) {
+			return domainadminconfig.Tab{}, errs.BadRequest("unknown config item")
+		}
 	}
 
 	nextVersion := current.Version + 1
@@ -126,6 +134,15 @@ func (s *Service) findDefinition(tabKey string) (tabDefinition, bool) {
 		}
 	}
 	return tabDefinition{}, false
+}
+
+func definitionContainsItem(items []domainadminconfig.Item, configKey, scope string) bool {
+	for _, item := range items {
+		if item.ConfigKey == configKey && defaultString(item.Scope, "global") == scope {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultDefinitions(cfg config.Config) []tabDefinition {
@@ -159,8 +176,6 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			Items: []domainadminconfig.Item{
 				valueItem("billing_pricing", "cny_per_point", cfg.Billing.CNYPerPoint),
 				valueItem("billing_pricing", "auto_quality_default_by_group", cloneMap(cfg.Billing.AutoQualityDefaultByGroup)),
-				valueItem("billing_pricing", "quality_points_by_model", cloneNestedStringMap(cfg.Billing.QualityPointsByModel)),
-				valueItem("billing_pricing", "user_group_multipliers", cloneMap(cfg.Billing.UserGroupMultipliers)),
 				valueItem("billing_pricing", "task_multipliers", cloneMap(cfg.Billing.TaskMultipliers)),
 				valueItem("billing_pricing", "reference_image_extra", map[string]any{
 					"first":      cfg.Billing.ReferenceImageExtra.First,
@@ -169,14 +184,10 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			},
 		},
 		{
-			Key:  "routing_models",
-			Name: "Routing & Models",
+			Key:  "openai_compat",
+			Name: "OpenAI Compatibility",
 			Items: []domainadminconfig.Item{
-				valueItem("routing_models", "default_provider", cfg.Routing.DefaultProvider),
-				valueItem("routing_models", "fallback_providers", slices.Clone(cfg.Routing.FallbackProviders)),
-				valueItem("routing_models", "openai_compat_model_map", cloneMap(cfg.Routing.OpenAICompatModelMap)),
-				valueItem("routing_models", "provider_model_map", cloneNestedStringMap(cfg.Routing.ProviderModelMap)),
-				valueItem("routing_models", "provider_capabilities", providerCapabilitiesValue(cfg.Routing.ProviderCapabilities)),
+				valueItem("openai_compat", "openai_compat_model_map", cloneMap(cfg.Routing.OpenAICompatModelMap)),
 			},
 		},
 		{
@@ -254,30 +265,6 @@ func cloneNestedStringMap(input any) map[string]any {
 		}
 	case map[string]string:
 		return cloneMap(typed)
-	}
-	return output
-}
-
-func providerCapabilitiesValue(input map[string]config.ProviderCapabilityConfig) map[string]any {
-	output := make(map[string]any, len(input))
-	keys := make([]string, 0, len(input))
-	for key := range input {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		item := input[key]
-		output[key] = map[string]any{
-			"supported_models":          slices.Clone(item.SupportedModels),
-			"supported_task_types":      slices.Clone(item.SupportedTaskTypes),
-			"supported_qualities":       slices.Clone(item.SupportedQualities),
-			"supported_aspect_ratios":   slices.Clone(item.SupportedAspectRatios),
-			"max_image_count":           item.MaxImageCount,
-			"max_reference_image_count": item.MaxReferenceImageCount,
-			"supports_image_input":      item.SupportsImageInput,
-			"supports_mask":             item.SupportsMask,
-			"priority":                  item.Priority,
-		}
 	}
 	return output
 }

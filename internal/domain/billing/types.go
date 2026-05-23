@@ -5,17 +5,21 @@ import "time"
 type EstimateRequest struct {
 	TaskType                  string
 	AbstractModel             string
+	RouteModelCode            string
 	RequestedQuality          string
 	RequestedSize             string
 	RequestedOutputImageCount int
 	ReferenceImageCount       int
 	UserGroupCode             string
+	UserGroupCodes            []string
 	UserGroupMultiplier       string
 }
 
 type EstimateResult struct {
 	ResolvedQualityBucket     string          `json:"resolved_quality_bucket"`
 	EstimatedPoints           string          `json:"estimated_points"`
+	ChargedPoints             string          `json:"charged_points,omitempty"`
+	DisplayPoints             string          `json:"display_points,omitempty"`
 	UserGroupMultiplier       string          `json:"user_group_multiplier"`
 	RequestedOutputImageCount int             `json:"requested_output_image_count"`
 	ReferenceImageCount       int             `json:"reference_image_count"`
@@ -24,6 +28,7 @@ type EstimateResult struct {
 
 type PricingSnapshot struct {
 	AbstractModel             string `json:"abstract_model"`
+	RouteModelCode            string `json:"route_model_code,omitempty"`
 	TaskType                  string `json:"task_type"`
 	RequestedQuality          string `json:"requested_quality"`
 	RequestedSize             string `json:"requested_size,omitempty"`

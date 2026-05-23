@@ -162,7 +162,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 		}
 	}
 
-	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
+	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
@@ -210,7 +210,7 @@ func (s *Service) HeartbeatTask(ctx context.Context, taskID, owner string, lease
 }
 
 func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteRequest) (domainimagetask.ExecuteResult, error) {
-	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil)
+	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil)
 	if err != nil {
 		return domainimagetask.ExecuteResult{}, err
 	}
@@ -221,8 +221,10 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,
 		UserGroupCode:       req.UserGroupCode,
+		UserGroupCodes:      append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier: req.UserGroupMultiplier,
 		AbstractModel:       req.AbstractModel,
+		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
 		RequestedSize:       req.RequestedSize,
@@ -243,6 +245,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,
 		UserGroupCode:       req.UserGroupCode,
+		UserGroupCodes:      append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier: req.UserGroupMultiplier,
 		AbstractModel:       req.AbstractModel,
 		TaskType:            req.TaskType,
@@ -300,7 +303,7 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
 
-	resolved, err := s.resolveTask(ctx, task.ID, task.AbstractModel, task.TaskType, task.RequestedQuality, task.RequestedSize, task.OutputImageCount, len(referenceImages), false)
+	resolved, err := s.resolveTask(ctx, task.ID, task.AbstractModel, task.RouteModelCode, nil, task.TaskType, task.RequestedQuality, task.RequestedSize, task.OutputImageCount, len(referenceImages), false)
 	if err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
@@ -327,7 +330,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 
 	var lastErr error
 	for _, candidate := range orderedProviders {
-		providerClient, ok := s.providers[candidate.Provider]
+		providerClient, ok := s.providerClientForCandidate(candidate)
 		if !ok {
 			continue
 		}
@@ -361,6 +364,11 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.Status = domainimagetask.StatusRunning
 			task.Provider = candidate.Provider
 			task.ProviderModelID = candidate.ProviderModelID
+			task.RouteModelID = candidate.RouteModelID
+			task.RouteModelCode = candidate.RouteModelCode
+			task.AccountModelID = candidate.AccountModelID
+			task.ModelAccountID = candidate.ModelAccountID
+			task.UpstreamModelCode = candidate.ModelCode
 			task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
 			task.FallbackCount = len(task.Attempts)
 			task.Attempts = append(task.Attempts, domainimagetask.Attempt{Provider: candidate.Provider, Status: domainimagetask.StatusSucceeded})
@@ -411,6 +419,28 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 	}
 
 	return s.failOwnedTask(ctx, task, owner, lastErr)
+}
+
+func (s *Service) providerClientForCandidate(candidate modelhub.ProviderCandidate) (provider.ImageProvider, bool) {
+	if candidate.AdapterType != "" {
+		if candidate.AuthType != "" && candidate.AuthType != "api_key" {
+			return nil, false
+		}
+		apiKey := strings.TrimSpace(candidate.Credentials["api_key"])
+		if apiKey == "" || strings.TrimSpace(candidate.BaseURL) == "" {
+			return nil, false
+		}
+		switch candidate.AdapterType {
+		case "openai_compatible":
+			return openaiprovider.NewClient(openaiprovider.Config{BaseURL: candidate.BaseURL, APIKey: apiKey}), true
+		case "openrouter":
+			return openrouterprovider.NewClient(openrouterprovider.Config{BaseURL: candidate.BaseURL, APIKey: apiKey}), true
+		default:
+			return nil, false
+		}
+	}
+	providerClient, ok := s.providers[candidate.Provider]
+	return providerClient, ok
 }
 
 func (s *Service) failOwnedTask(ctx context.Context, task domainimagetask.Task, owner string, failure error) (domainimagetask.ExecuteResult, error) {
@@ -487,9 +517,10 @@ func (s *Service) resumeTerminalization(ctx context.Context, task domainimagetas
 	return domainimagetask.ExecuteResult{Task: task}, true, errs.New(500, defaultString(task.ErrorCode, errs.CodeInternal), defaultString(task.ErrorMessage, "image task failed"))
 }
 
-func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, taskType, requestedQuality, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool) (modelhub.ResolvedRequest, error) {
+func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, routeModelCode string, userGroupCodes []string, taskType, requestedQuality, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool) (modelhub.ResolvedRequest, error) {
 	return s.resolver.ResolveContext(ctx, modelhub.ResolveRequest{
 		AbstractModel:             abstractModel,
+		RouteModelCode:            routeModelCode,
 		TaskType:                  taskType,
 		RequestedQuality:          requestedQuality,
 		RequestedSize:             requestedSize,
@@ -497,6 +528,7 @@ func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, task
 		ReferenceImageCount:       referenceImageCount,
 		MaskPresent:               maskPresent,
 		RouteKey:                  routeKey,
+		UserGroupCodes:            append([]string(nil), userGroupCodes...),
 	})
 }
 
@@ -955,11 +987,13 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 	estimate, err := s.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
+		RouteModelCode:            req.RouteModelCode,
 		RequestedQuality:          req.RequestedQuality,
 		RequestedSize:             req.RequestedSize,
 		RequestedOutputImageCount: task.OutputImageCount,
 		ReferenceImageCount:       req.ReferenceImageCount,
 		UserGroupCode:             req.UserGroupCode,
+		UserGroupCodes:            append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier:       req.UserGroupMultiplier,
 	})
 	if err != nil {
@@ -968,6 +1002,8 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 
 	task.ResolvedQualityBucket = estimate.ResolvedQualityBucket
 	task.EstimatedPoints = estimate.EstimatedPoints
+	task.ChargedPoints = defaultString(estimate.ChargedPoints, estimate.EstimatedPoints)
+	task.EffectiveMultiplier = estimate.UserGroupMultiplier
 	task.ActualPoints = s.zeroPoints()
 	task.PricingSnapshot = estimate.PricingSnapshot
 
@@ -1051,7 +1087,8 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		SourceChannel:         defaultString(req.SourceChannel, "web"),
 		ID:                    taskID,
 		Status:                status,
-		AbstractModel:         req.AbstractModel,
+		AbstractModel:         defaultString(req.AbstractModel, req.RouteModelCode),
+		RouteModelCode:        req.RouteModelCode,
 		TaskType:              req.TaskType,
 		Prompt:                req.Prompt,
 		NegativePrompt:        req.NegativePrompt,

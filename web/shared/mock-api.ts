@@ -117,13 +117,16 @@ class MockPicGalleryApi {
 
   async estimate(req: EstimateRequest): Promise<EstimateResult> {
     await wait(220)
-    const modelBase = req.model_group.includes('pro') ? 8 : req.model_group.includes('plus') ? 5.125 : 2
+    const routeCode = req.route_model_code ?? req.model_group ?? 'basic'
+    const modelBase = routeCode.includes('pro') ? 8 : routeCode.includes('plus') ? 5.125 : 2
     const qualityMulti = req.quality === '4K' ? 2 : req.quality === '2K' ? 1.45 : req.quality === 'auto' ? 1.25 : 1
     const refMulti = req.task_type === 'reference_to_image' || req.task_type === 'image_edit' ? 1.2 : 1
     const points = modelBase * qualityMulti * refMulti * req.image_count
     return {
-      points: formatPoints(points),
-      formula: `${req.model_group} x ${req.quality} x ${req.task_type} x ${req.image_count}`,
+      points: points.toFixed(2),
+      charged_points: formatPoints(points),
+      display_points: points.toFixed(2),
+      formula: `${routeCode} x ${req.quality} x ${req.task_type} x ${req.image_count}`,
       resolved_quality: req.quality === 'auto' ? '2K' : req.quality,
       sufficient: this.balanceValue >= points,
     }
@@ -146,21 +149,23 @@ class MockPicGalleryApi {
     if (req.prompt.trim().length < 8) throw new Error('请至少输入 8 个字符的提示词')
     const estimate = await this.estimate(req)
     if (!estimate.sufficient) throw new Error('积分余额不足，请充值或降低输出质量')
-    this.balanceValue -= toNumber(estimate.points)
-    this.ledger.unshift({ id: id('led'), title: `生图任务: ${req.prompt.slice(0, 28)}...`, occurred_at: now(), amount: `-${estimate.points}`, type: 'debit', detail: `${req.model_group} / ${estimate.resolved_quality} / ${req.image_count} 张` })
+    this.balanceValue -= toNumber(estimate.charged_points ?? estimate.points)
+    const routeCode = req.route_model_code ?? req.model_group ?? 'basic'
+    this.ledger.unshift({ id: id('led'), title: `生图任务: ${req.prompt.slice(0, 28)}...`, occurred_at: now(), amount: `-${estimate.charged_points ?? estimate.points}`, type: 'debit', detail: `${routeCode} / ${estimate.resolved_quality} / ${req.image_count} 张` })
     const task: ImageTask = {
       id: id('task'),
       title: req.prompt.split(/[，,。.]/)[0].slice(0, 54) || 'Untitled generation',
       prompt: req.prompt,
       task_type: req.task_type,
       status: 'queued',
-      model_group: req.model_group,
+      route_model_code: routeCode,
+      model_group: routeCode,
       quality: estimate.resolved_quality,
       aspect_ratio: req.aspect_ratio,
       image_count: req.image_count,
-      estimate_points: estimate.points,
+      estimate_points: estimate.display_points ?? estimate.points,
       progress: 8,
-      provider: req.model_group.includes('basic') ? 'OpenRouter' : 'OpenAI',
+      provider: routeCode.includes('basic') ? 'OpenRouter' : 'OpenAI',
       route: req.task_type === 'text_to_image' ? 'primary' : 'capability-matrix',
       created_at: now(),
       updated_at: now(),

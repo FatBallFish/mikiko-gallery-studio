@@ -2,6 +2,7 @@ package entstore
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 )
 
@@ -290,6 +292,7 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 	}
 
 	groupCode := "basic"
+	groupCodes := []string{}
 	groupMultiplier := "1.00000"
 	if entity.UserGroupID > 0 {
 		groupEntity, err := s.client.UserGroup.Query().Where(usergroup.IDEQ(int(entity.UserGroupID))).Only(ctx)
@@ -299,7 +302,34 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 		if err == nil {
 			groupCode = groupEntity.GroupCode
 			groupMultiplier = groupEntity.Multiplier
+			groupCodes = append(groupCodes, groupEntity.GroupCode)
 		}
+	}
+	members, err := s.client.UserGroupMember.Query().Where(usergroupmember.UserIDEQ(int64(entity.ID))).All(ctx)
+	if err != nil {
+		return domainauth.User{}, err
+	}
+	seenGroups := map[string]struct{}{}
+	for _, code := range groupCodes {
+		seenGroups[strings.ToLower(code)] = struct{}{}
+	}
+	for _, member := range members {
+		groupEntity, err := s.client.UserGroup.Query().Where(usergroup.IDEQ(int(member.GroupID))).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				continue
+			}
+			return domainauth.User{}, err
+		}
+		normalized := strings.ToLower(groupEntity.GroupCode)
+		if _, ok := seenGroups[normalized]; ok {
+			continue
+		}
+		seenGroups[normalized] = struct{}{}
+		groupCodes = append(groupCodes, groupEntity.GroupCode)
+	}
+	if len(groupCodes) == 0 {
+		groupCodes = []string{groupCode}
 	}
 
 	avatar := ""
@@ -315,6 +345,7 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 		AvatarObjectKey:   avatar,
 		Status:            entity.Status,
 		GroupCode:         groupCode,
+		GroupCodes:        groupCodes,
 		GroupMultiplier:   groupMultiplier,
 		TokenVersion:      entity.TokenVersion,
 		RPMLimit:          entity.RpmLimit,
@@ -348,7 +379,7 @@ func (s *AuthStore) ensureUserGroup(ctx context.Context, code string, multiplier
 		SetGroupCode(code).
 		SetGroupName(code).
 		SetMultiplier(multiplier).
-		SetStatus("active").
+		SetStatus("enabled").
 		Save(ctx)
 }
 

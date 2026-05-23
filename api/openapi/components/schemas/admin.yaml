@@ -844,3 +844,87 @@ components:
           properties:
             request_id:
               type: string
+    AdminModelAccount:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        adapter_type: { type: string, enum: [openai_compatible, openrouter] }
+        auth_type: { type: string, enum: [api_key] }
+        base_url: { type: string }
+        credentials_status:
+          type: object
+          properties:
+            has_api_key: { type: boolean }
+        status: { type: string, enum: [enabled, disabled, error] }
+    AdminModelAccountWriteRequest:
+      type: object
+      required: [name, adapter_type, auth_type, base_url]
+      properties:
+        name: { type: string }
+        adapter_type: { type: string, enum: [openai_compatible, openrouter] }
+        auth_type: { type: string, enum: [api_key] }
+        base_url: { type: string }
+        credentials:
+          type: object
+          additionalProperties: { type: string }
+        status: { type: string, enum: [enabled, disabled, error] }
+    AdminModelAccountResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminModelAccount'
+    AdminModelAccountListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminModelAccount'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminRouteModel:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        visibility: { type: string, enum: [public, groups, hidden] }
+        enabled: { type: boolean }
+        group_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    AdminRouteModelWriteRequest:
+      type: object
+      required: [code, name, visibility]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        visibility: { type: string, enum: [public, groups, hidden] }
+        enabled: { type: boolean }
+        sort_order: { type: integer }
+        group_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    AdminRouteModelResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminRouteModel'
+    AdminRouteModelListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRouteModel'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination

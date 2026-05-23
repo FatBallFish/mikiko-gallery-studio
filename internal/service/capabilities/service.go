@@ -1,6 +1,8 @@
 package capabilities
 
 import (
+	"context"
+
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 )
@@ -15,7 +17,8 @@ type Item struct {
 }
 
 type Response struct {
-	Items []Item `json:"items"`
+	Items       []Item                       `json:"items,omitempty"`
+	ModelGroups []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
 }
 
 type Service struct {
@@ -24,6 +27,10 @@ type Service struct {
 
 func NewService(cfg config.Config) *Service {
 	return &Service{resolver: modelhub.NewResolver(cfg)}
+}
+
+func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
+	s.resolver.SetModelRoutingSource(source)
 }
 
 func (s *Service) List() Response {
@@ -40,4 +47,12 @@ func (s *Service) List() Response {
 		})
 	}
 	return Response{Items: items}
+}
+
+func (s *Service) ListForGroups(ctx context.Context, groupCodes []string, taskMultipliers map[string]string) (Response, error) {
+	items, err := s.resolver.ListVisibleRouteModels(ctx, groupCodes, taskMultipliers)
+	if err != nil {
+		return Response{}, err
+	}
+	return Response{ModelGroups: items}, nil
 }

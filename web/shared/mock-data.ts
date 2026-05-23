@@ -13,9 +13,9 @@ export const demoProfile: UserProfile = {
 
 export const demoCapability: Capability = {
   model_groups: [
-    { id: 'basic-image', name: 'Basic Image', provider: 'OpenRouter', supports_reference: false, price_hint: '2.00000 / 1K' },
-    { id: 'plus-image', name: 'Plus Image', provider: 'OpenAI', supports_reference: true, price_hint: '5.12500 / auto' },
-    { id: 'pro-image', name: 'Pro Studio', provider: 'OpenAI', supports_reference: true, price_hint: '8.00000 / 2K' },
+    { id: 'basic', code: 'basic', name: 'Basic', description: 'Fast public route', task_types: ['text_to_image'], qualities: ['auto', '1K'], effective_multiplier: '1.00000', prices: [{ task_type: 'text_to_image', quality: '1K', base_points: '2.00000', charged_points: '2.00000', display_points: '2.00' }], supports_reference: false, max_reference_image_count: 0 },
+    { id: 'plus', code: 'plus', name: 'Plus', description: 'Balanced route with reference support', task_types: ['text_to_image', 'reference_to_image', 'image_edit'], qualities: ['auto', '1K', '2K'], effective_multiplier: '0.90000', prices: [{ task_type: 'text_to_image', quality: 'auto', base_points: '5.12500', charged_points: '4.61250', display_points: '4.61' }], supports_reference: true, max_reference_image_count: 3 },
+    { id: 'pro', code: 'pro', name: 'Pro Studio', description: 'High quality grouped route', task_types: ['text_to_image', 'reference_to_image', 'image_edit'], qualities: ['auto', '2K', '4K'], effective_multiplier: '0.80000', prices: [{ task_type: 'text_to_image', quality: '2K', base_points: '8.00000', charged_points: '6.40000', display_points: '6.40' }], supports_reference: true, max_reference_image_count: 3 },
   ],
   qualities: ['auto', '1K', '2K', '4K'],
   aspect_ratios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
@@ -92,9 +92,9 @@ export const endpointDocs: EndpointDoc[] = [
   { group: 'Agent API', method: 'POST', path: API_PATHS.agent.loginEmailCode, title: '邮箱验证码登录/注册', auth: 'none', requestExample: '{"email":"you@example.com","code":"123456"}', responseExample: '{"access_token":"mock_access","profile":{...}}' },
   { group: 'Agent API', method: 'GET', path: API_PATHS.agent.profile, title: '获取个人资料', auth: 'Access Token', requestExample: 'curl /api/agent/user/v1/profile', responseExample: '{"id":"usr_01","display_name":"Fatball Fish","preferences":{...}}' },
   { group: 'Agent API', method: 'GET', path: API_PATHS.agent.balance, title: '获取积分余额', auth: 'Access Token', requestExample: 'curl /api/agent/billing/v1/balance', responseExample: '{"available_points":"182.50000","frozen_points":"0.00000"}' },
-  { group: 'Agent API', method: 'GET', path: API_PATHS.agent.estimate, title: '价格预估', auth: 'Access Token', requestExample: '{"task_type":"reference_to_image","model_group":"plus-image"}', responseExample: '{"points":"15.37500","resolved_quality":"2K"}' },
+  { group: 'Agent API', method: 'GET', path: API_PATHS.agent.estimate, title: '价格预估', auth: 'Access Token', requestExample: '{"task_type":"reference_to_image","route_model_code":"plus"}', responseExample: '{"charged_points":"15.37500","display_points":"15.38","resolved_quality":"2K"}' },
   { group: 'Agent API', method: 'POST', path: API_PATHS.agent.referenceAssets, title: '上传参考图', auth: 'Access Token', requestExample: 'multipart/form-data image=@ref.png', responseExample: '{"reference_asset_id":"refasset_01","status":"ready"}' },
-  { group: 'Agent API', method: 'POST', path: API_PATHS.agent.tasks, title: '创建图片生成任务', auth: 'Access Token', requestExample: '{"task_type":"reference_to_image","prompt":"...","abstract_model":"plus"}', responseExample: '{"task_id":"task_x","status":"queued","poll_after_ms":2000}' },
+  { group: 'Agent API', method: 'POST', path: API_PATHS.agent.tasks, title: '创建图片生成任务', auth: 'Access Token', requestExample: '{"task_type":"reference_to_image","prompt":"...","route_model_code":"plus"}', responseExample: '{"task_id":"task_x","status":"queued","poll_after_ms":2000}' },
   { group: 'Agent API', method: 'GET', path: API_PATHS.agent.historyTasks, title: '历史任务列表', auth: 'Access Token', requestExample: 'curl /api/agent/image/v1/history/tasks', responseExample: '{"items":[{"task_id":"task_x","status":"succeeded"}]}' },
   { group: 'Open API', method: 'POST', path: API_PATHS.open.tasks, title: 'AK/SK 创建生图任务', auth: 'X-Access-Key + X-Signature', requestExample: '{"prompt":"...","response_mode":"sync"}', responseExample: '{"task_id":"task_x","images":[...]}' },
   { group: 'Open API', method: 'GET', path: API_PATHS.open.capabilities, title: '查询 Key 能力矩阵', auth: 'AK/SK', requestExample: 'curl /api/open/image/v1/capabilities', responseExample: '{"model_groups":[...]}' },
@@ -120,11 +120,13 @@ export const providerHealth: ProviderHealth[] = [
 ]
 
 export const initialConfig: ConfigItem[] = [
-  { tab: '生成限制', key: 'generation.max_image_count', value: '4', draft_value: '4', state: 'active', version: 7, description: '单次最大输出图片数量' },
-  { tab: '生成限制', key: 'generation.reference_max_count', value: '3', draft_value: '3', state: 'active', version: 4, description: '参考图最大数量' },
-  { tab: '价格策略', key: 'billing.exchange_rate', value: '3.20000', draft_value: '3.20000', state: 'active', version: 9, description: '人民币兑换积分比例' },
-  { tab: '认证安全', key: 'auth.access_token_ttl_sec', value: '600', draft_value: '600', state: 'active', version: 2, description: 'Access Token 有效期' },
-  { tab: '公开审核', key: 'gallery.review_required', value: 'true', draft_value: 'true', state: 'active', version: 5, description: '公开图是否必须人工审核' },
+  { tab: 'Generation Limits', key: 'max_image_count', value: '{"value":4}', draft_value: '{"value":4}', state: 'active', version: 7, description: '单次最大输出图片数量' },
+  { tab: 'Generation Limits', key: 'reference_image_max_count', value: '{"value":3}', draft_value: '{"value":3}', state: 'active', version: 4, description: '参考图最大数量' },
+  { tab: 'Billing & Pricing', key: 'cny_per_point', value: '{"value":"0.31250"}', draft_value: '{"value":"0.31250"}', state: 'active', version: 9, description: '人民币兑换积分比例' },
+  { tab: 'Billing & Pricing', key: 'task_multipliers', value: '{"value":{"text_to_image":"1.00000","image_edit":"1.25000","reference_generate":"1.15000"}}', draft_value: '{"value":{"text_to_image":"1.00000","image_edit":"1.25000","reference_generate":"1.15000"}}', state: 'active', version: 9, description: '任务类型倍率' },
+  { tab: 'OpenAI Compatibility', key: 'openai_compat_model_map', value: '{"value":{"gpt-image-2":"plus"}}', draft_value: '{"value":{"gpt-image-2":"plus"}}', state: 'active', version: 3, description: 'OpenAI 兼容模型 ID 到路由模型 code 的映射' },
+  { tab: 'Auth & Security', key: 'access_token_ttl_sec', value: '{"value":600}', draft_value: '{"value":600}', state: 'active', version: 2, description: 'Access Token 有效期' },
+  { tab: 'Public Gallery', key: 'publish_request_enabled', value: '{"value":true}', draft_value: '{"value":true}', state: 'active', version: 5, description: '公开图是否允许申请发布' },
 ]
 
 export const initialRoutes: ModelRoute[] = [

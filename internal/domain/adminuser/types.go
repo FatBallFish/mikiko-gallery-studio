@@ -78,7 +78,13 @@ type GroupAssignmentRequest struct {
 	UserGroupCode string
 }
 
+type MultiGroupAssignmentRequest struct {
+	UserID   int64
+	GroupIDs []int64
+}
+
 type UserGroup struct {
+	ID          int64     `json:"id,omitempty"`
 	GroupCode   string    `json:"group_code"`
 	GroupName   string    `json:"group_name"`
 	Multiplier  string    `json:"multiplier"`

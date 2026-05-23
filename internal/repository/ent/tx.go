@@ -26,6 +26,10 @@ type Tx struct {
 	ImageResult *ImageResultClient
 	// ImageTask is the client for interacting with the ImageTask builders.
 	ImageTask *ImageTaskClient
+	// ModelAccount is the client for interacting with the ModelAccount builders.
+	ModelAccount *ModelAccountClient
+	// ModelAccountModel is the client for interacting with the ModelAccountModel builders.
+	ModelAccountModel *ModelAccountModelClient
 	// ModelProvider is the client for interacting with the ModelProvider builders.
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
@@ -46,12 +50,22 @@ type Tx struct {
 	ReferenceAsset *ReferenceAssetClient
 	// RefreshSession is the client for interacting with the RefreshSession builders.
 	RefreshSession *RefreshSessionClient
+	// RouteModel is the client for interacting with the RouteModel builders.
+	RouteModel *RouteModelClient
+	// RouteModelCandidate is the client for interacting with the RouteModelCandidate builders.
+	RouteModelCandidate *RouteModelCandidateClient
+	// RouteModelPrice is the client for interacting with the RouteModelPrice builders.
+	RouteModelPrice *RouteModelPriceClient
+	// RouteModelVisibilityGroup is the client for interacting with the RouteModelVisibilityGroup builders.
+	RouteModelVisibilityGroup *RouteModelVisibilityGroupClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserGroup is the client for interacting with the UserGroup builders.
 	UserGroup *UserGroupClient
+	// UserGroupMember is the client for interacting with the UserGroupMember builders.
+	UserGroupMember *UserGroupMemberClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 	// WalletGrant is the client for interacting with the WalletGrant builders.
@@ -196,6 +210,8 @@ func (tx *Tx) init() {
 	tx.ConfigItem = NewConfigItemClient(tx.config)
 	tx.ImageResult = NewImageResultClient(tx.config)
 	tx.ImageTask = NewImageTaskClient(tx.config)
+	tx.ModelAccount = NewModelAccountClient(tx.config)
+	tx.ModelAccountModel = NewModelAccountModelClient(tx.config)
 	tx.ModelProvider = NewModelProviderClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
@@ -206,9 +222,14 @@ func (tx *Tx) init() {
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
 	tx.ReferenceAsset = NewReferenceAssetClient(tx.config)
 	tx.RefreshSession = NewRefreshSessionClient(tx.config)
+	tx.RouteModel = NewRouteModelClient(tx.config)
+	tx.RouteModelCandidate = NewRouteModelCandidateClient(tx.config)
+	tx.RouteModelPrice = NewRouteModelPriceClient(tx.config)
+	tx.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserGroup = NewUserGroupClient(tx.config)
+	tx.UserGroupMember = NewUserGroupMemberClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
 	tx.WalletGrant = NewWalletGrantClient(tx.config)
 	tx.WalletReservationAllocation = NewWalletReservationAllocationClient(tx.config)

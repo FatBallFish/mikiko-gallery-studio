@@ -64,7 +64,7 @@ export type OpenApiHeaders = {
 function toEstimateQuery(req: EstimateRequest) {
   return {
     task_type: req.task_type,
-    abstract_model: req.model_group,
+    route_model_code: req.route_model_code,
     requested_quality: req.quality,
     requested_size: req.aspect_ratio,
     requested_output_image_count: req.image_count,
