@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -124,6 +125,58 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	handler.ServeHTTP(invalidStatusListRec, invalidStatusListReq)
 	if invalidStatusListRec.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid list status 400, got %d body=%s", invalidStatusListRec.Code, invalidStatusListRec.Body.String())
+	}
+
+	createUserReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users", bytes.NewBufferString(`{"email":"manual-created@example.com","nickname":"Manual","status":"active","user_group_code":"basic","password":"manual-pass","rpm_limit":30,"concurrency_limit":1}`))
+	createUserReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createUserReq.Header.Set("Content-Type", "application/json")
+	createUserRec := httptest.NewRecorder()
+	handler.ServeHTTP(createUserRec, createUserReq)
+	if createUserRec.Code != http.StatusCreated {
+		t.Fatalf("expected create user 201, got %d body=%s", createUserRec.Code, createUserRec.Body.String())
+	}
+	var createUserResp struct {
+		Data struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(createUserRec.Body).Decode(&createUserResp); err != nil {
+		t.Fatalf("decode create user response: %v", err)
+	}
+	duplicateUserReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users", bytes.NewBufferString(`{"email":"manual-created@example.com","nickname":"Manual","status":"active","user_group_code":"basic"}`))
+	duplicateUserReq.Header.Set("Authorization", "Bearer "+adminToken)
+	duplicateUserReq.Header.Set("Content-Type", "application/json")
+	duplicateUserRec := httptest.NewRecorder()
+	handler.ServeHTTP(duplicateUserRec, duplicateUserReq)
+	if duplicateUserRec.Code != http.StatusConflict {
+		t.Fatalf("expected duplicate create user 409, got %d body=%s", duplicateUserRec.Code, duplicateUserRec.Body.String())
+	}
+	deleteUserReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/users/"+strconv.FormatInt(createUserResp.Data.ID, 10), nil)
+	deleteUserReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteUserRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteUserRec, deleteUserReq)
+	if deleteUserRec.Code != http.StatusOK {
+		t.Fatalf("expected delete user 200, got %d body=%s", deleteUserRec.Code, deleteUserRec.Body.String())
+	}
+	deletedListReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/users?query=manual-created@example.com", nil)
+	deletedListReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deletedListRec := httptest.NewRecorder()
+	handler.ServeHTTP(deletedListRec, deletedListReq)
+	if deletedListRec.Code != http.StatusOK {
+		t.Fatalf("expected deleted user list 200, got %d body=%s", deletedListRec.Code, deletedListRec.Body.String())
+	}
+	if bytes.Contains(deletedListRec.Body.Bytes(), []byte("manual-created@example.com")) {
+		t.Fatalf("expected soft-deleted user to be hidden from list, got body=%s", deletedListRec.Body.String())
+	}
+	if err := authSvc.SendEmailCode("manual-created@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode for soft-deleted email: %v", err)
+	}
+	reloginReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/login/email-code", bytes.NewBufferString(`{"email":"manual-created@example.com","code":"123456"}`))
+	reloginReq.Header.Set("Content-Type", "application/json")
+	reloginRec := httptest.NewRecorder()
+	handler.ServeHTTP(reloginRec, reloginReq)
+	if reloginRec.Code != http.StatusOK {
+		t.Fatalf("expected same email login after soft delete 200, got %d body=%s", reloginRec.Code, reloginRec.Body.String())
 	}
 
 	detailReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/users/1", nil)
@@ -250,7 +303,7 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	if auditRec.Code != http.StatusOK {
 		t.Fatalf("expected audit list 200, got %d body=%s", auditRec.Code, auditRec.Body.String())
 	}
-	if !bytes.Contains(auditRec.Body.Bytes(), []byte("user.points_adjust")) || !bytes.Contains(auditRec.Body.Bytes(), []byte("user.status_update")) {
+	if !bytes.Contains(auditRec.Body.Bytes(), []byte("user.points_adjust")) || !bytes.Contains(auditRec.Body.Bytes(), []byte("user.status_update")) || !bytes.Contains(auditRec.Body.Bytes(), []byte("user.delete")) {
 		t.Fatalf("expected audit logs for admin writes, got body=%s", auditRec.Body.String())
 	}
 }

@@ -1,7 +1,11 @@
 import { FormEvent, useEffect, useState } from 'react'
 import type { RedeemCode } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
+
+type RedeemDialog =
+  | { type: 'create' }
+  | { type: 'status'; row: RedeemCode; status: string }
 
 export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<RedeemCode[]>([])
@@ -11,6 +15,8 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
   const [error, setError] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [rewardValue, setRewardValue] = useState('20.00000')
+  const [dialog, setDialog] = useState<RedeemDialog | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -41,7 +47,21 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
     })
     onFeedback('兑换码已创建', code)
     setCode('')
+    setDialog(null)
     await load()
+  }
+
+  const saveStatus = async () => {
+    if (!dialog || dialog.type !== 'status') return
+    setSaving(true)
+    try {
+      await adminApi.updateRedeemCodeStatus(dialog.row.id, dialog.status)
+      onFeedback('兑换码状态已更新', `${dialog.row.code} · ${dialog.status}`)
+      setDialog(null)
+      await load()
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) return <LoadingBlock label="载入兑换码" />
@@ -49,7 +69,7 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
 
   return (
     <section className="page-stack">
-      <PageHeader eyebrow="Redeem" title="兑换码管理" detail="创建、停用与核销记录全部连接真实后台接口。" actions={<form className="search-form" onSubmit={create}><input value={code} onChange={(event) => setCode(event.target.value)} placeholder="新兑换码" required /><input value={rewardValue} onChange={(event) => setRewardValue(event.target.value)} placeholder="奖励积分" /><button className="btn" type="submit">创建</button></form>} />
+      <PageHeader eyebrow="Redeem" title="兑换码管理" detail="创建、停用与核销记录全部连接真实后台接口。" actions={<button className="btn primary" type="button" onClick={() => setDialog({ type: 'create' })}>创建兑换码</button>} />
       <section className="pg-admin-card ops-surface full-main">
         <section className="main-lane table-lane no-divider">
           <div className="card-header lane-head compact"><span>第 {page} 页 / 共 {total} 条</span><div className="row-actions buttons"><button className="ghost small" type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="ghost small" type="button" disabled={page * 20 >= total} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
@@ -63,13 +83,26 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
                   <span>{row.reward_type} / {row.reward_value}</span>
                   <span>{row.batch_id}</span>
                   <span>{row.valid_until}</span>
-                  <button type="button" className="ghost small" onClick={async () => { await adminApi.updateRedeemCodeStatus(row.id, row.status === 'available' ? 'disabled' : 'available'); await load() }}>{row.status === 'available' ? '停用' : '启用'}</button>
+                  <button type="button" className="ghost small" onClick={() => setDialog({ type: 'status', row, status: row.status === 'available' ? 'disabled' : 'available' })}>变更状态</button>
                 </div>
               ))}
             </>
           )}
         </section>
       </section>
+      {dialog?.type === 'create' ? (
+        <Modal title="创建兑换码" detail="创建后可在用户工作台兑换积分。" onClose={() => setDialog(null)} footer={<><button className="ghost" type="button" onClick={() => setDialog(null)}>取消</button><button className="btn primary" type="submit" form="redeem-create-form">保存</button></>}>
+          <form id="redeem-create-form" className="form-grid" onSubmit={create}>
+            <Field label="兑换码"><input value={code} onChange={(event) => setCode(event.target.value)} placeholder="新兑换码" required /></Field>
+            <Field label="奖励积分"><input value={rewardValue} onChange={(event) => setRewardValue(event.target.value)} placeholder="奖励积分" /></Field>
+          </form>
+        </Modal>
+      ) : null}
+      {dialog?.type === 'status' ? (
+        <Modal title="变更兑换码状态" detail={dialog.row.code} onClose={() => setDialog(null)} footer={<><button className="ghost" type="button" disabled={saving} onClick={() => setDialog(null)}>取消</button><button className="btn primary" type="button" disabled={saving} onClick={() => void saveStatus()}>{saving ? '保存中...' : '保存'}</button></>}>
+          <Field label="新状态"><select value={dialog.status} onChange={(event) => setDialog({ ...dialog, status: event.target.value })}><option value="available">available</option><option value="disabled">disabled</option></select></Field>
+        </Modal>
+      ) : null}
     </section>
   )
 }

@@ -12,10 +12,12 @@ import (
 
 type Store interface {
 	ListUsers(ctx context.Context, req domainadminuser.ListRequest) (domainadminuser.ListPage, error)
+	CreateUser(ctx context.Context, req domainadminuser.CreateUserRequest) (domainadminuser.UserSummary, error)
 	GetUserDetail(ctx context.Context, userID int64, recentLedgerLimit int) (domainadminuser.Detail, error)
 	UpdateUserStatus(ctx context.Context, userID int64, status string) (domainadminuser.UserSummary, error)
 	UpdateUserLimits(ctx context.Context, req domainadminuser.LimitsRequest) (domainadminuser.UserSummary, error)
 	AssignUserGroup(ctx context.Context, req domainadminuser.GroupAssignmentRequest) (domainadminuser.UserSummary, error)
+	DeleteUser(ctx context.Context, userID int64) (domainadminuser.UserSummary, error)
 	ListUserGroups(ctx context.Context, req domainadminuser.UserGroupListRequest) (domainadminuser.UserGroupListPage, error)
 	GetUserGroup(ctx context.Context, groupCode string) (domainadminuser.UserGroup, error)
 	CreateUserGroup(ctx context.Context, req domainadminuser.UserGroupWriteRequest) (domainadminuser.UserGroup, error)
@@ -75,6 +77,42 @@ func (s *MemoryStore) ListUsers(_ context.Context, req domainadminuser.ListReque
 		end = total
 	}
 	return domainadminuser.ListPage{Items: items[start:end], Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *MemoryStore) CreateUser(_ context.Context, req domainadminuser.CreateUserRequest) (domainadminuser.UserSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.users {
+		if strings.EqualFold(item.Email, req.Email) {
+			return domainadminuser.UserSummary{}, repoerr.ErrConflict
+		}
+	}
+	if _, ok := s.userGroups[req.UserGroupCode]; !ok {
+		return domainadminuser.UserSummary{}, repoerr.ErrNotFound
+	}
+	now := time.Now().UTC()
+	var nextID int64 = 1
+	for id := range s.users {
+		if id >= nextID {
+			nextID = id + 1
+		}
+	}
+	item := domainadminuser.UserSummary{
+		ID:               nextID,
+		Email:            req.Email,
+		Nickname:         req.Nickname,
+		Status:           req.Status,
+		UserGroupCode:    req.UserGroupCode,
+		RPMLimit:         req.RPMLimit,
+		ConcurrencyLimit: req.ConcurrencyLimit,
+		DefaultLocale:    req.DefaultLocale,
+		Theme:            req.Theme,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	s.users[item.ID] = item
+	s.detail[item.ID] = domainadminuser.Detail{User: item}
+	return item, nil
 }
 
 func (s *MemoryStore) GetUserDetail(_ context.Context, userID int64, _ int) (domainadminuser.Detail, error) {
@@ -139,6 +177,24 @@ func (s *MemoryStore) AssignUserGroup(_ context.Context, req domainadminuser.Gro
 	detail := s.detail[req.UserID]
 	detail.User = user
 	s.detail[req.UserID] = detail
+	return user, nil
+}
+
+func (s *MemoryStore) DeleteUser(_ context.Context, userID int64) (domainadminuser.UserSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.users[userID]
+	if !ok {
+		return domainadminuser.UserSummary{}, repoerr.ErrNotFound
+	}
+	user.Email = "deleted+" + user.Email
+	user.Status = "closed"
+	now := time.Now().UTC()
+	user.ClosedAt = &now
+	user.TokenVersion++
+	user.UpdatedAt = now
+	delete(s.users, userID)
+	delete(s.detail, userID)
 	return user, nil
 }
 

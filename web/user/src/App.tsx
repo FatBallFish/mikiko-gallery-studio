@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Balance, UserProfile } from '../../shared/api-types'
 import { userApi } from '../../shared/user-api'
 import { AppContext, protectedRoutes, Shell, ToastViewport } from './components'
@@ -56,7 +56,7 @@ export default function App() {
     sessionRef.current = session
   }, [session])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     userApi.configureAuth({
       getToken: () => sessionRef.current?.token,
       onUnauthorized: async () => {

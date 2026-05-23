@@ -1855,12 +1855,62 @@ func (a *API) HandleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+	admin, appErr := a.requireAdmin(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
 		return
 	}
-	if _, appErr := a.requireAdmin(r); appErr != nil {
-		httpx.WriteError(w, r, appErr)
+	if r.Method == http.MethodPost {
+		var req struct {
+			Email            string `json:"email"`
+			Nickname         string `json:"nickname"`
+			Status           string `json:"status"`
+			UserGroupCode    string `json:"user_group_code"`
+			Password         string `json:"password"`
+			RPMLimit         int    `json:"rpm_limit"`
+			ConcurrencyLimit int    `json:"concurrency_limit"`
+			DefaultLocale    string `json:"default_locale"`
+			Theme            string `json:"theme"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		created, err := a.adminUser.CreateUser(r.Context(), domainadminuser.CreateUserRequest{
+			Email:            req.Email,
+			Nickname:         req.Nickname,
+			Status:           req.Status,
+			UserGroupCode:    req.UserGroupCode,
+			RPMLimit:         req.RPMLimit,
+			ConcurrencyLimit: req.ConcurrencyLimit,
+			DefaultLocale:    req.DefaultLocale,
+			Theme:            req.Theme,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if strings.TrimSpace(req.Password) != "" {
+			if _, err := a.auth.SetPassword(created.ID, req.Password); err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			refreshed, err := a.adminUser.GetUserDetail(r.Context(), created.ID)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			created = refreshed.User
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.create", "user", fmt.Sprintf("%d", created.ID), map[string]any{"email": created.Email, "status": created.Status, "user_group_code": created.UserGroupCode}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
 	page, queryErr := parsePositiveIntQuery(r, "page", 1)
@@ -1906,6 +1956,20 @@ func (a *API) HandleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	switch action {
 	case "":
+		if r.Method == http.MethodDelete {
+			deleted, err := a.adminUser.DeleteUser(r.Context(), userID)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			_ = a.auth.RevokeUserSessions(userID)
+			if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "user.delete", "user", fmt.Sprintf("%d", userID), map[string]any{"email": deleted.Email, "token_version": deleted.TokenVersion}); auditErr != nil {
+				httpx.WriteError(w, r, normalizeAppError(auditErr))
+				return
+			}
+			httpx.WriteSuccess(w, r, http.StatusOK, deleted)
+			return
+		}
 		if r.Method != http.MethodGet {
 			httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 			return

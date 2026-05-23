@@ -2,13 +2,26 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BASE_URL="${BASE_URL:-http://127.0.0.1:18080}"
+if [[ -z "${BASE_URL:-}" ]]; then
+  SMOKE_PORT="$(python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
+  BASE_URL="http://127.0.0.1:${SMOKE_PORT}"
+fi
 API_ADDR="${BASE_URL#http://127.0.0.1}"
 API_ADDR="${API_ADDR#http://localhost}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke.XXXXXX")"
+SMOKE_ID="$(basename "$TMP_DIR" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 DB_PATH="$TMP_DIR/smoke.db"
 SERVER_LOG="$TMP_DIR/api.log"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
+SMOKE_USER_EMAIL="smoke-user-${SMOKE_ID}@example.com"
+SMOKE_ADMIN_EMAIL="admin-smoke-${SMOKE_ID}@example.com"
 SERVER_PID=""
 ADMIN_PASSWORD="$(python3 - <<'PY'
 import secrets
@@ -120,10 +133,11 @@ cd "$ROOT_DIR"
 APP_ADDR="$API_ADDR" \
 DATABASE_URL="file:$DB_PATH?cache=shared&_fk=1" \
 PIC_GALLERY_AUTH_DEV_EMAIL_CODES=true \
-PIC_GALLERY_ADMIN_EMAIL="admin-smoke@example.com" \
+PIC_GALLERY_ADMIN_EMAIL="$SMOKE_ADMIN_EMAIL" \
 PIC_GALLERY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 AUTH_ACCESS_TOKEN_SECRET="$ACCESS_TOKEN_SECRET" \
 API_KEY_SIGNING_SECRET_ENCRYPTION_KEY="$API_KEY_ENCRYPTION_KEY" \
+REDIS_KEY_PREFIX="pic-gallery-smoke-${SMOKE_ID}" \
 OPENAI_API_KEY="" \
 OPENROUTER_API_KEY="" \
 go run ./cmd/api >"$SERVER_LOG" 2>&1 &
@@ -146,16 +160,34 @@ ready_body="$(request "$BASE_URL/readyz")"
 
 request -X POST "$BASE_URL/api/agent/auth/v1/email/send-code" \
   -H "Content-Type: application/json" \
-  --data '{"email":"smoke-user@example.com","scene":"login"}' >/dev/null
+  --data "$(SMOKE_USER_EMAIL="$SMOKE_USER_EMAIL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "email": os.environ["SMOKE_USER_EMAIL"],
+    "scene": "login",
+}))
+PY
+)" >/dev/null
 
 login_body="$(request -X POST "$BASE_URL/api/agent/auth/v1/login/email-code" \
   -H "Content-Type: application/json" \
   -c "$COOKIE_JAR" \
-  --data '{"email":"smoke-user@example.com","code":"123456"}')"
+  --data "$(SMOKE_USER_EMAIL="$SMOKE_USER_EMAIL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "email": os.environ["SMOKE_USER_EMAIL"],
+    "code": "123456",
+}))
+PY
+)")"
 ACCESS_TOKEN="$(assert_json_field "$login_body" "data.access_token")"
 
 profile_body="$(request "$BASE_URL/api/agent/user/v1/profile" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$profile_body" "data.email")" == "smoke-user@example.com" ]]
+[[ "$(assert_json_field "$profile_body" "data.email")" == "$SMOKE_USER_EMAIL" ]]
 USER_ID="$(assert_json_field "$profile_body" "data.id")"
 
 python3 - "$DB_PATH" "$USER_ID" <<'PY'
@@ -206,12 +238,12 @@ assert_json_field "$(cat "$TMP_DIR/wrong-method.json")" "error.code" >/dev/null
 
 admin_login_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/auth/login" \
   -H "Content-Type: application/json" \
-  --data "$(ADMIN_PASSWORD="$ADMIN_PASSWORD" python3 - <<'PY'
+  --data "$(ADMIN_PASSWORD="$ADMIN_PASSWORD" SMOKE_ADMIN_EMAIL="$SMOKE_ADMIN_EMAIL" python3 - <<'PY'
 import json
 import os
 
 print(json.dumps({
-    "email": "admin-smoke@example.com",
+    "email": os.environ["SMOKE_ADMIN_EMAIL"],
     "password": os.environ["ADMIN_PASSWORD"],
 }))
 PY

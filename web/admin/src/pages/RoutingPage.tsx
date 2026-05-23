@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ModelRoute } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
+
+type RouteDialog = { route: ModelRoute; provider: string; priority: string; weightPercent: string; fallbackOrder: string; enabled: boolean }
 
 export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ModelRoute[]>([])
@@ -9,6 +11,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [notice, setNotice] = useState('路由策略修改会立即写入审计日志。')
+  const [dialog, setDialog] = useState<RouteDialog | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -26,21 +29,23 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
     void load()
   }, [])
 
-  const updateRoute = async (route: ModelRoute, patch: Partial<ModelRoute>) => {
-    setSavingId(route.id)
+  const updateRoute = async () => {
+    if (!dialog) return
+    setSavingId(dialog.route.id)
     try {
-      const updated = await adminApi.updateRoute(route.id, {
-        group_code: route.group_code,
-        task_type: route.task_type,
-        provider_model_id: route.provider_model_id,
-        provider_code: patch.provider ?? route.provider_code ?? route.provider,
-        priority: patch.priority ?? route.priority,
-        weight_percent: route.weight_percent,
-        fallback_order: route.fallback_order,
-        enabled: patch.enabled ?? route.enabled,
+      const updated = await adminApi.updateRoute(dialog.route.id, {
+        group_code: dialog.route.group_code,
+        task_type: dialog.route.task_type,
+        provider_model_id: dialog.route.provider_model_id,
+        provider_code: dialog.provider,
+        priority: Number(dialog.priority),
+        weight_percent: Number(dialog.weightPercent),
+        fallback_order: Number(dialog.fallbackOrder),
+        enabled: dialog.enabled,
       })
-      setRows((current) => current.map((item) => item.id === route.id ? updated : item))
-      setNotice(`${updated.scene} 已更新：${Object.keys(patch).join(', ')}`)
+      setRows((current) => current.map((item) => item.id === dialog.route.id ? updated : item))
+      setDialog(null)
+      setNotice(`${updated.scene} 已更新`)
       onFeedback('路由策略已更新', updated.scene)
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : '路由更新失败')
@@ -61,17 +66,14 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
           <InlineFeedback tone="neutral" message={notice} />
           <div className="table-head route-grid"><span>场景</span><span>Provider</span><span>策略</span><span>优先级</span><span>状态</span><span>操作</span></div>
           {rows.map((row) => (
-            <div key={row.id} className="table-row route-grid editable-row">
+            <div key={row.id} className="table-row route-grid">
               <div><strong>{row.scene}</strong><p>{row.note}</p></div>
-              <select value={row.provider} onChange={(event) => void updateRoute(row, { provider: event.target.value })} disabled={savingId === row.id}>
-                <option>OpenAI</option><option>OpenRouter</option><option>Internal</option>
-              </select>
-              <input value={row.policy} onChange={(event) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, policy: event.target.value } : item))} />
-              <input type="number" min="1" max="9" value={row.priority} onChange={(event) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, priority: Number(event.target.value) } : item))} />
+              <span>{row.provider}</span>
+              <span>{row.policy}</span>
+              <code>{row.priority}</code>
               <Badge tone={row.enabled ? 'success' : 'warning'}>{row.enabled ? '启用' : '停用'}</Badge>
               <div className="row-actions buttons">
-                <button type="button" className="ghost small" onClick={() => void updateRoute(row, { enabled: !row.enabled })} disabled={savingId === row.id}>{row.enabled ? '停用' : '启用'}</button>
-                <button type="button" className="btn small" onClick={() => void updateRoute(row, { policy: row.policy, priority: row.priority })} disabled={savingId === row.id}>{savingId === row.id ? '保存中' : '保存'}</button>
+                <button type="button" className="ghost small" onClick={() => setDialog({ route: row, provider: row.provider_code ?? row.provider, priority: String(row.priority), weightPercent: String(row.weight_percent ?? 100), fallbackOrder: String(row.fallback_order ?? 0), enabled: row.enabled })} disabled={savingId === row.id}>编辑</button>
               </div>
             </div>
           ))}
@@ -84,6 +86,17 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
           </div>
         </section>
       </section>
+      {dialog ? (
+        <Modal title="编辑路由策略" detail={dialog.route.scene} onClose={() => setDialog(null)} footer={<><button className="ghost" type="button" disabled={Boolean(savingId)} onClick={() => setDialog(null)}>取消</button><button className="btn primary" type="button" disabled={Boolean(savingId)} onClick={() => void updateRoute()}>{savingId ? '保存中...' : '保存'}</button></>}>
+          <div className="form-grid">
+            <Field label="Provider"><input value={dialog.provider} onChange={(event) => setDialog({ ...dialog, provider: event.target.value })} /></Field>
+            <Field label="优先级"><input type="number" min="0" value={dialog.priority} onChange={(event) => setDialog({ ...dialog, priority: event.target.value })} /></Field>
+            <Field label="权重"><input type="number" min="0" max="100" value={dialog.weightPercent} onChange={(event) => setDialog({ ...dialog, weightPercent: event.target.value })} /></Field>
+            <Field label="Fallback 顺序"><input type="number" min="0" value={dialog.fallbackOrder} onChange={(event) => setDialog({ ...dialog, fallbackOrder: event.target.value })} /></Field>
+            <Field label="状态"><select value={dialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setDialog({ ...dialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
+          </div>
+        </Modal>
+      ) : null}
     </section>
   )
 }

@@ -21,6 +21,7 @@ export type ApiClientOptions = {
   getToken?: () => string | null | undefined
   getAccessToken?: () => string | null | undefined
   onUnauthorized?: () => Promise<string | null | undefined> | string | null | undefined
+  onError?: (error: ApiError) => void
 }
 
 export type RequestOptions = {
@@ -58,7 +59,7 @@ export function withQuery(path: string, query: Record<string, QueryValue> = {}) 
 }
 
 function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
-  return Boolean(value && typeof value === 'object' && 'code' in value && 'data' in value)
+  return Boolean(value && typeof value === 'object' && 'data' in value && ('meta' in value || 'code' in value || 'message' in value || 'request_id' in value))
 }
 
 async function readResponse(response: Response) {
@@ -100,17 +101,20 @@ export class ApiClient {
   private baseUrl: string
   private getToken?: ApiClientOptions['getToken']
   private onUnauthorized?: ApiClientOptions['onUnauthorized']
+  private onError?: ApiClientOptions['onError']
   private refreshPromise: Promise<string | null | undefined> | null = null
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? getDefaultBaseUrl()).replace(/\/$/, '')
     this.getToken = options.getToken ?? options.getAccessToken
     this.onUnauthorized = options.onUnauthorized
+    this.onError = options.onError
   }
 
-  setAuth(options: Pick<ApiClientOptions, 'getToken' | 'onUnauthorized'>) {
+  setAuth(options: Pick<ApiClientOptions, 'getToken' | 'onUnauthorized' | 'onError'>) {
     this.getToken = options.getToken
     this.onUnauthorized = options.onUnauthorized
+    this.onError = options.onError
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -179,7 +183,9 @@ export class ApiClient {
       if (nextToken) return this.send<T>(path, options, false)
     }
 
-    throw errorFromPayload(payload, response.status)
+    const error = errorFromPayload(payload, response.status)
+    if (!(response.status === 401 && this.onUnauthorized)) this.onError?.(error)
+    throw error
   }
 }
 

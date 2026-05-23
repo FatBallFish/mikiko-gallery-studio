@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ModelProvider, ProviderModel } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
+
+type ModelDialog = { row: ProviderModel; healthStatus: string; enabled: boolean; inputCost: string; outputCost: string; timeoutMS: string; maxImageCount: string; maxReferenceImageCount: string }
 
 export function ProviderModelsPage() {
   const [providers, setProviders] = useState<ModelProvider[]>([])
@@ -10,6 +12,8 @@ export function ProviderModelsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [dialog, setDialog] = useState<ModelDialog | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -28,6 +32,27 @@ export function ProviderModelsPage() {
 
   useEffect(() => { void load() }, [page])
 
+  const saveModel = async () => {
+    if (!dialog) return
+    setSaving(true)
+    try {
+      await adminApi.updateProviderModel(dialog.row.id, {
+        ...dialog.row,
+        health_status: dialog.healthStatus,
+        enabled: dialog.enabled,
+        input_cost: dialog.inputCost,
+        output_cost: dialog.outputCost,
+        timeout_ms: Number(dialog.timeoutMS),
+        max_image_count: Number(dialog.maxImageCount),
+        max_reference_image_count: Number(dialog.maxReferenceImageCount),
+      })
+      setDialog(null)
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) return <LoadingBlock label="载入模型接入" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
 
@@ -45,21 +70,34 @@ export function ProviderModelsPage() {
           <div className="card-header lane-head compact"><span>第 {page} 页 / 共 {total} 条</span><div className="row-actions buttons"><button className="ghost small" type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="ghost small" type="button" disabled={page * 20 >= total} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
           {!models.length ? <EmptyBlock title="暂无 Provider Model" detail="先通过接口或种子数据创建模型接入。" /> : (
             <>
-              <div className="table-head route-grid"><span>模型</span><span>Provider</span><span>能力</span><span>成本</span><span>健康</span><span>状态</span></div>
+              <div className="table-head route-grid"><span>模型</span><span>Provider</span><span>能力</span><span>成本</span><span>健康</span><span>操作</span></div>
               {models.map((row) => (
                 <div key={row.id} className="table-row route-grid">
                   <div><strong>{row.model_code}</strong><p>{row.compat_mode}</p></div>
                   <span>{row.provider_code}</span>
                   <span>{row.supported_qualities?.join('/')} · max {row.max_image_count}</span>
                   <span>{row.input_cost}/{row.output_cost} {row.currency}</span>
-                  <Badge tone={row.health_status === 'healthy' ? 'success' : 'warning'}>{row.health_status}</Badge>
-                  <Badge tone={row.enabled ? 'success' : 'warning'}>{row.enabled ? '启用' : '停用'}</Badge>
+                  <div className="row-actions buttons"><Badge tone={row.health_status === 'healthy' ? 'success' : 'warning'}>{row.health_status}</Badge><Badge tone={row.enabled ? 'success' : 'warning'}>{row.enabled ? '启用' : '停用'}</Badge></div>
+                  <button className="ghost small" type="button" onClick={() => setDialog({ row, healthStatus: row.health_status, enabled: row.enabled, inputCost: row.input_cost, outputCost: row.output_cost, timeoutMS: String(row.timeout_ms), maxImageCount: String(row.max_image_count), maxReferenceImageCount: String(row.max_reference_image_count) })}>编辑</button>
                 </div>
               ))}
             </>
           )}
         </section>
       </section>
+      {dialog ? (
+        <Modal title="编辑模型接入" detail={`${dialog.row.provider_code} / ${dialog.row.model_code}`} onClose={() => setDialog(null)} footer={<><button className="ghost" type="button" disabled={saving} onClick={() => setDialog(null)}>取消</button><button className="btn primary" type="button" disabled={saving} onClick={() => void saveModel()}>{saving ? '保存中...' : '保存'}</button></>}>
+          <div className="form-grid">
+            <Field label="健康状态"><select value={dialog.healthStatus} onChange={(event) => setDialog({ ...dialog, healthStatus: event.target.value })}><option value="healthy">healthy</option><option value="degraded">degraded</option><option value="down">down</option><option value="unknown">unknown</option></select></Field>
+            <Field label="启用状态"><select value={dialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setDialog({ ...dialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
+            <Field label="输入成本"><input value={dialog.inputCost} onChange={(event) => setDialog({ ...dialog, inputCost: event.target.value })} /></Field>
+            <Field label="输出成本"><input value={dialog.outputCost} onChange={(event) => setDialog({ ...dialog, outputCost: event.target.value })} /></Field>
+            <Field label="超时毫秒"><input type="number" min="1" value={dialog.timeoutMS} onChange={(event) => setDialog({ ...dialog, timeoutMS: event.target.value })} /></Field>
+            <Field label="最大出图数"><input type="number" min="1" value={dialog.maxImageCount} onChange={(event) => setDialog({ ...dialog, maxImageCount: event.target.value })} /></Field>
+            <Field label="最大参考图"><input type="number" min="0" value={dialog.maxReferenceImageCount} onChange={(event) => setDialog({ ...dialog, maxReferenceImageCount: event.target.value })} /></Field>
+          </div>
+        </Modal>
+      ) : null}
     </section>
   )
 }

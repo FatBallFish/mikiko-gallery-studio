@@ -4,8 +4,9 @@ import { adminApi } from '../../../shared/admin-api'
 import { Field, InlineFeedback } from '../components'
 
 export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => void }) {
-  const [email, setEmail] = useState('ops@example.com')
-  const [password, setPassword] = useState('admin123')
+  const env = import.meta.env as Record<string, string | undefined>
+  const [email, setEmail] = useState(env.VITE_DEFAULT_ADMIN_EMAIL ?? 'ops@example.com')
+  const [password, setPassword] = useState(env.VITE_DEFAULT_ADMIN_PASSWORD ?? 'admin123')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

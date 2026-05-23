@@ -3,6 +3,8 @@ import type {
   AdminMetric,
   AdminSession,
   AdminUser,
+  AdminUserCreateRequest,
+  AdminUserDetail,
   AuditLog,
   CallRecord,
   ConfigItem,
@@ -50,7 +52,9 @@ export const adminApi = {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.users, { query: { query, page, page_size } }))
     return { ...result, items: result.items.map(toAdminUser) }
   },
-  getUser: async (user_id: string | number) => toAdminUser(await sharedApiClient.request(API_PATHS.ops.userDetail, { pathParams: { user_id } })),
+  createUser: async (input: AdminUserCreateRequest) => toAdminUser(await sharedApiClient.request(API_PATHS.ops.users, { method: 'POST', body: input })),
+  getUser: async (user_id: string | number) => toAdminUserDetail(await sharedApiClient.request<AdminUserDetail>(API_PATHS.ops.userDetail, { pathParams: { user_id } })),
+  deleteUser: async (user_id: string | number) => toAdminUser(await sharedApiClient.request(API_PATHS.ops.userDetail, { method: 'DELETE', pathParams: { user_id } })),
   updateUserStatus: async (user_id: string | number, status: string) => toAdminUser(await sharedApiClient.request(API_PATHS.ops.userStatus, { method: 'POST', pathParams: { user_id }, body: { status } })),
   adjustUserPoints: (user_id: string | number, change_points: string, reason: string, idempotencyKey?: string) =>
     sharedApiClient.request(API_PATHS.ops.userPoints, { method: 'POST', pathParams: { user_id }, headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined, body: { change_points, reason } }),
@@ -132,29 +136,63 @@ function toConfigItems(tab: any): ConfigItem[] {
 }
 
 function toAdminUser(raw: any): AdminUser {
-  const name = raw.display_name ?? raw.nickname ?? raw.email?.split('@')[0] ?? `User ${raw.id}`
+  const rawBalance = raw.balance
+  const balance = typeof rawBalance === 'object' && rawBalance !== null ? rawBalance.available_points : rawBalance
+  const id = raw.id ?? raw.user_id ?? raw.user?.id
+  const email = raw.email ?? raw.user?.email ?? ''
+  const name = raw.display_name ?? raw.nickname ?? raw.user?.nickname ?? email?.split('@')[0] ?? `User ${id}`
   return {
     ...raw,
-    id: String(raw.id ?? raw.user_id),
-    email: raw.email ?? '',
+    id: String(id ?? ''),
+    email,
     display_name: name,
-    status: raw.status ?? 'active',
-    group: raw.user_group_code ?? raw.group ?? 'DEFAULT',
-    balance: raw.balance ?? raw.available_points ?? '0.00000',
+    status: raw.status ?? raw.user?.status ?? 'active',
+    group: raw.user_group_code ?? raw.group ?? raw.user?.user_group_code ?? 'basic',
+    balance: String(balance ?? raw.available_points ?? raw.user?.available_points ?? '0.00000'),
     created_at: raw.created_at ?? '',
     last_seen_at: raw.last_seen_at ?? raw.updated_at ?? '',
   }
 }
 
+function toAdminUserDetail(raw: AdminUserDetail | any): AdminUser {
+  if (raw?.user) {
+    return toAdminUser({
+      ...raw.user,
+      balance: raw.balance?.available_points ?? raw.user.balance,
+    })
+  }
+  return toAdminUser(raw)
+}
+
 function toAudit(raw: any): AuditLog {
+  const id = raw.id ?? raw.ID
+  const actorType = raw.actor_type ?? raw.ActorType
+  const actorId = raw.actor_id ?? raw.ActorID
+  const action = raw.action ?? raw.Action ?? ''
+  const targetType = raw.target_type ?? raw.TargetType
+  const targetId = raw.target_id ?? raw.TargetID
+  const result = raw.result ?? raw.Result
+  const metadata = raw.metadata ?? raw.Metadata ?? {}
+  const actor = raw.actor ?? [actorType, actorId].filter(Boolean).join(':')
+  const target = raw.target ?? [targetType, targetId].filter(Boolean).join(':')
+  const detail = raw.detail ?? result ?? (Object.keys(metadata).length ? JSON.stringify(metadata) : '')
   return {
     ...raw,
-    id: String(raw.id),
-    actor: raw.actor ?? `${raw.actor_type ?? ''}:${raw.actor_id ?? ''}`,
-    action: raw.action ?? '',
-    target: raw.target ?? `${raw.target_type ?? ''}:${raw.target_id ?? ''}`,
-    detail: raw.detail ?? raw.result ?? '',
-    created_at: raw.created_at ?? '',
+    id: String(id),
+    actor,
+    action,
+    target,
+    detail,
+    actor_type: actorType,
+    actor_id: actorId,
+    target_type: targetType,
+    target_id: targetId,
+    result,
+    metadata,
+    ip_addr: raw.ip_addr ?? raw.IPAddr,
+    user_agent: raw.user_agent ?? raw.UserAgent,
+    created_at: raw.created_at ?? raw.CreatedAt ?? '',
+    updated_at: raw.updated_at ?? raw.UpdatedAt ?? '',
   }
 }
 

@@ -294,6 +294,44 @@ export function InlineFeedback({ tone, message }: { tone: ToastTone; message: st
   return <div className={`inline-feedback ${tone}`}>{message}</div>
 }
 
+export function Modal({
+  title,
+  detail,
+  children,
+  footer,
+  onClose,
+}: {
+  title: string
+  detail?: string
+  children: React.ReactNode
+  footer: React.ReactNode
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="modal-panel" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <header className="modal-head">
+          <div>
+            <strong>{title}</strong>
+            {detail ? <p>{detail}</p> : null}
+          </div>
+          <button type="button" className="ghost small" onClick={onClose}>关闭</button>
+        </header>
+        <div className="modal-body">{children}</div>
+        <footer className="modal-actions">{footer}</footer>
+      </section>
+    </div>
+  )
+}
+
 export function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string | null }) {
   return (
     <label className="field">
