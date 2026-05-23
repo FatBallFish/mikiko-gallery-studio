@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ModelRoute } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
 
 export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -14,7 +14,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
     setLoading(true)
     setError(null)
     try {
-      setRows(await mockApi.listRoutes())
+      setRows(await adminApi.listRoutes())
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '路由载入失败')
     } finally {
@@ -29,7 +29,16 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
   const updateRoute = async (route: ModelRoute, patch: Partial<ModelRoute>) => {
     setSavingId(route.id)
     try {
-      const updated = await mockApi.updateRoute(route.id, patch)
+      const updated = await adminApi.updateRoute(route.id, {
+        group_code: route.group_code,
+        task_type: route.task_type,
+        provider_model_id: route.provider_model_id,
+        provider_code: patch.provider ?? route.provider_code ?? route.provider,
+        priority: patch.priority ?? route.priority,
+        weight_percent: route.weight_percent,
+        fallback_order: route.fallback_order,
+        enabled: patch.enabled ?? route.enabled,
+      })
       setRows((current) => current.map((item) => item.id === route.id ? updated : item))
       setNotice(`${updated.scene} 已更新：${Object.keys(patch).join(', ')}`)
       onFeedback('路由策略已更新', updated.scene)

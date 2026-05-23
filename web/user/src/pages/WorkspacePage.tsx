@@ -1,8 +1,8 @@
 import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import type { Capability, EstimateResult, ImageTask, ImageTaskType, ReferenceAsset } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, LoadingState, StatusPill, copyText, useApp } from '../components'
-import { errorMessage } from '../useMockResource'
+import { errorMessage } from '../useApiResource'
 
 type WorkspaceMode = 'reference' | 'text'
 
@@ -37,7 +37,7 @@ export function WorkspacePage() {
       setLoading(true)
       setError(null)
       try {
-        const [nextCapability, nextRefs] = await Promise.all([mockApi.getCapabilities(), mockApi.listReferenceAssets()])
+        const [nextCapability, nextRefs] = await Promise.all([userApi.getCapabilities(), userApi.listReferenceAssets()])
         if (!mounted) return
         setCapability(nextCapability)
         setRefs(nextRefs)
@@ -80,7 +80,7 @@ export function WorkspacePage() {
     let cancelled = false
     const timer = window.setTimeout(async () => {
       try {
-        setEstimate(await mockApi.estimate(estimatePayload))
+        setEstimate(await userApi.estimate(estimatePayload))
       } catch (err) {
         if (!cancelled) setError(errorMessage(err))
       }
@@ -95,7 +95,7 @@ export function WorkspacePage() {
     if (!activeTask || activeTask.status === 'succeeded' || activeTask.status === 'failed' || activeTask.status === 'cancelled') return undefined
     const timer = window.setTimeout(async () => {
       try {
-        const next = await mockApi.getTask(activeTask.id)
+        const next = await userApi.getTask(activeTask.id)
         setActiveTask(next)
         if (next.status === 'succeeded') {
           app.notify('success', '任务已完成，结果已同步到历史图库')
@@ -114,7 +114,7 @@ export function WorkspacePage() {
     setBusy(true)
     setError(null)
     try {
-      const uploaded = await Promise.all(files.map((file) => mockApi.uploadReferenceAsset(file.name, file.size)))
+      const uploaded = await Promise.all(files.map((file) => userApi.uploadReferenceAsset(file)))
       setRefs((items) => [...uploaded, ...items])
       app.notify('success', `已上传 ${uploaded.length} 张参考图`)
     } catch (err) {
@@ -129,7 +129,7 @@ export function WorkspacePage() {
     setBusy(true)
     setError(null)
     try {
-      const task = await mockApi.createTask({ ...estimatePayload, prompt, negative_prompt: negative, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({ ...estimatePayload, prompt, negative_prompt: negative, idempotency_key: crypto.randomUUID() })
       setActiveTask(task)
       app.notify('info', '任务已进入队列，正在轮询进度')
       await app.refreshAccount()
@@ -141,7 +141,7 @@ export function WorkspacePage() {
   }
 
   async function applyAsReference(url: string) {
-    const asset = await mockApi.uploadReferenceAsset(`result-${Date.now()}.png`, 1_024_000)
+    const asset = await userApi.uploadReferenceAsset(`result-${Date.now()}.png`, 1_024_000)
     setRefs((items) => [{ ...asset, preview_url: url }, ...items])
     app.notify('success', '已作为参考素材加入工作台')
   }

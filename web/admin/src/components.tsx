@@ -9,6 +9,9 @@ export const protectedRoutes: Exclude<AdminRouteId, 'login'>[] = [
   'pricing',
   'reviews',
   'users',
+  'redeem',
+  'call-records',
+  'provider-models',
   'audit',
   'health',
 ]
@@ -25,13 +28,16 @@ export const navGroups: Array<{ label: string; items: Array<{ id: Exclude<AdminR
     label: '业务管理',
     items: [
       { id: 'users', label: '用户管理', hint: 'Users' },
+      { id: 'redeem', label: '兑换码', hint: 'Redeem' },
       { id: 'reviews', label: '审核队列', hint: 'Review' },
+      { id: 'call-records', label: '调用记录', hint: 'Calls' },
     ],
   },
   {
     label: '模型与路由',
     items: [
       { id: 'routing', label: '路由策略', hint: 'Routes' },
+      { id: 'provider-models', label: '模型接入', hint: 'Models' },
       { id: 'pricing', label: '价格配置', hint: 'Pricing' },
     ],
   },
@@ -170,7 +176,7 @@ export function AdminLayout({
           <div className="console-meta-row">
             <div className="console-provider-pill">
               <span className="pill-dot" />
-              <em>{generationMetric ? `${generationMetric.label} ${generationMetric.value}` : 'Mock API online'}</em>
+              <em>{generationMetric ? `${generationMetric.label} ${generationMetric.value}` : 'Real API online'}</em>
             </div>
             <div className="avatar-widget admin-avatar-widget">
               <span className="avatar-orb">{session.admin_name.slice(0, 2).toUpperCase()}</span>
@@ -256,7 +262,7 @@ export function LoadingBlock({ label = '载入运营数据中' }: { label?: stri
     <section className="state-block loading">
       <span className="loader" />
       <strong>{label}</strong>
-      <p>Mock transport 正在模拟真实 API 延迟。</p>
+      <p>正在请求真实后台 API。</p>
     </section>
   )
 }

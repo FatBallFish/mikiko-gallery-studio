@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AdminUser } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 
 const userStatusLabel: Record<AdminUser['status'], string> = {
@@ -20,7 +20,7 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
     setLoading(true)
     setError(null)
     try {
-      setRows(await mockApi.listUsers(nextQuery))
+      setRows(await adminApi.listUsers(nextQuery))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '用户载入失败')
     } finally {
@@ -41,7 +41,10 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   const updateUser = async (user: AdminUser, patch: Partial<AdminUser>) => {
     setSavingId(user.id)
     try {
-      const updated = await mockApi.updateUser(user.id, patch)
+      if (patch.status) await adminApi.updateUserStatus(user.id, patch.status)
+      if (patch.group) await adminApi.assignUserGroup(user.id, patch.group)
+      if (patch.balance && patch.balance !== user.balance) await adminApi.adjustUserPoints(user.id, patch.balance, 'manual admin adjustment', crypto.randomUUID())
+      const updated = await adminApi.getUser(user.id)
       setRows((current) => current.map((item) => item.id === user.id ? updated : item))
       onFeedback('用户状态已更新', `${updated.display_name} · ${userStatusLabel[updated.status]}`)
     } finally {

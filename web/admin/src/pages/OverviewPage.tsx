@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AdminMetric, AdminUser, AuditLog, ProviderHealth } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, MetricGrid } from '../components'
 
 type DashboardData = {
@@ -32,7 +32,7 @@ export function OverviewPage() {
     setLoading(true)
     setError(null)
     try {
-      const [dashboard, users] = await Promise.all([mockApi.getAdminDashboard(), mockApi.listUsers()])
+      const [dashboard, users] = await Promise.all([adminApi.dashboard(), adminApi.listUsers()])
       setData({
         ...dashboard,
         users: users
@@ -53,7 +53,7 @@ export function OverviewPage() {
 
   if (loading) return <LoadingBlock />
   if (error) return <ErrorBlock message={error} onRetry={load} />
-  if (!data) return <EmptyBlock title="暂无总览数据" detail="Mock transport 未返回指标。" />
+  if (!data) return <EmptyBlock title="暂无总览数据" detail="后台接口未返回指标。" />
 
   return (
     <section className="content page-stack">

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
-import { mockApi } from '../../shared/mock-api'
+import { adminApi } from '../../shared/admin-api'
 import { AdminLayout, normalizeRoute, protectedRoutes, routeHref, ToastRail, useHashRoute, useToasts } from './components'
-import { AuditPage, ConfigPage, HealthPage, LoginPage, OverviewPage, PricingPage, ReviewPage, RoutingPage, UsersPage } from './pages/index'
+import { AuditPage, CallRecordsPage, ConfigPage, HealthPage, LoginPage, OverviewPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, UsersPage } from './pages/index'
 import type { AdminRouteId } from './types'
 
 const sessionKey = 'pic_gallery_admin_session'
@@ -20,6 +20,7 @@ function readStoredSession(): AdminSession | null {
 export default function App() {
   const [route, setRoute] = useHashRoute()
   const [session, setSession] = useState<AdminSession | null>(() => readStoredSession())
+  const sessionRef = useRef<AdminSession | null>(session)
   const [shellMetrics, setShellMetrics] = useState<AdminMetric[]>([])
   const [shellProviders, setShellProviders] = useState<ProviderHealth[]>([])
   const [reviewCount, setReviewCount] = useState(0)
@@ -27,12 +28,17 @@ export default function App() {
   const { toasts, pushToast, dismissToast } = useToasts()
   const isAuthed = Boolean(session)
 
+  useEffect(() => {
+    sessionRef.current = session
+    adminApi.configureAuth({ getToken: () => sessionRef.current?.token })
+  }, [session])
+
   const refreshShell = async () => {
     if (!session) return
-    const [dashboard, config] = await Promise.all([mockApi.getAdminDashboard(), mockApi.listConfig()])
+    const [dashboard, config] = await Promise.all([adminApi.dashboard(), adminApi.listConfig()])
     setShellMetrics(dashboard.metrics)
     setShellProviders(dashboard.providers)
-    setReviewCount(Number(dashboard.queue.find((item) => item.item.includes('审核'))?.count ?? 0))
+    setReviewCount(Number(dashboard.queue.find((item: { item: string; count: string }) => item.item.includes('审核'))?.count ?? 0))
     setConfigDrafts(config.filter((item) => item.state !== 'active').length)
   }
 
@@ -69,6 +75,7 @@ export default function App() {
   }
 
   const handleLogout = () => {
+    void adminApi.logout().catch(() => undefined)
     window.sessionStorage.removeItem(sessionKey)
     setSession(null)
     setRoute('login')
@@ -87,6 +94,12 @@ export default function App() {
         return <ReviewPage onFeedback={feedback} />
       case 'users':
         return <UsersPage onFeedback={feedback} />
+      case 'redeem':
+        return <RedeemPage onFeedback={feedback} />
+      case 'call-records':
+        return <CallRecordsPage />
+      case 'provider-models':
+        return <ProviderModelsPage />
       case 'audit':
         return <AuditPage onFeedback={feedback} />
       case 'health':

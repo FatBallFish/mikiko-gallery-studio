@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReviewItem } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 
-type ReviewDecision = 'approved' | 'rejected' | 'unpublished'
+type ReviewDecision = 'approve' | 'reject' | 'unpublish'
 
 type DrawerState = { item: ReviewItem; decision: ReviewDecision } | null
 
 const statusLabel: Record<ReviewItem['status'], string> = {
   pending: '待审核',
+  pending_review: '待审核',
   approved: '已通过',
   rejected: '已驳回',
   unpublished: '已下架',
@@ -27,7 +28,7 @@ export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?
     setLoading(true)
     setError(null)
     try {
-      setRows(await mockApi.listReviews())
+      setRows(await adminApi.listReviews())
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '审核队列载入失败')
     } finally {
@@ -43,14 +44,14 @@ export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?
 
   const openDrawer = (item: ReviewItem, decision: ReviewDecision) => {
     setDrawer({ item, decision })
-    setReason(decision === 'approved' ? '内容质量稳定，准许公开展示。' : decision === 'rejected' ? '内容不符合公开展示规范。' : '运营复核后下架公开展示。')
+    setReason(decision === 'approve' ? '内容质量稳定，准许公开展示。' : decision === 'reject' ? '内容不符合公开展示规范。' : '运营复核后下架公开展示。')
   }
 
   const submitDecision = async () => {
     if (!drawer) return
     setBusy(true)
     try {
-      const updated = await mockApi.decideReview(drawer.item.id, drawer.decision, reason)
+      const updated = await adminApi.decideReview(drawer.item.image_id ?? drawer.item.id, drawer.decision, reason)
       setRows((current) => current.map((item) => item.id === updated.id ? updated : item))
       onFeedback('审核决策已提交', `${updated.title}: ${statusLabel[updated.status]}`)
       setDrawer(null)
@@ -82,9 +83,9 @@ export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?
                   <span>{row.reason}</span>
                   <Badge tone={row.status === 'approved' ? 'success' : row.status === 'pending' ? 'warning' : 'danger'}>{statusLabel[row.status]}</Badge>
                   <div className="row-actions buttons">
-                    <button type="button" className="btn small" onClick={() => openDrawer(row, 'approved')} disabled={row.status === 'approved'}>通过</button>
-                    <button type="button" className="ghost small" onClick={() => openDrawer(row, 'rejected')} disabled={row.status === 'rejected'}>驳回</button>
-                    <button type="button" className="ghost small danger-text" onClick={() => openDrawer(row, 'unpublished')} disabled={row.status === 'unpublished'}>下架</button>
+                    <button type="button" className="btn small" onClick={() => openDrawer(row, 'approve')} disabled={row.status === 'approved'}>通过</button>
+                    <button type="button" className="ghost small" onClick={() => openDrawer(row, 'reject')} disabled={row.status === 'rejected'}>驳回</button>
+                    <button type="button" className="ghost small danger-text" onClick={() => openDrawer(row, 'unpublish')} disabled={row.status === 'unpublished'}>下架</button>
                   </div>
                 </div>
               ))}
@@ -93,11 +94,11 @@ export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?
         </section>
         {drawer ? (
           <ConfirmDrawer
-            title={`${drawer.item.title} · ${drawer.decision === 'approved' ? '通过' : drawer.decision === 'rejected' ? '驳回' : '下架'}`}
+            title={`${drawer.item.title} · ${drawer.decision === 'approve' ? '通过' : drawer.decision === 'reject' ? '驳回' : '下架'}`}
             detail="原因会显示在审核上下文并进入审计日志。"
             value={reason}
             decisionLabel="提交决策"
-            tone={drawer.decision === 'approved' ? 'success' : 'danger'}
+            tone={drawer.decision === 'approve' ? 'success' : 'danger'}
             busy={busy}
             onChange={setReason}
             onCancel={() => setDrawer(null)}
