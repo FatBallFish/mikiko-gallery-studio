@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react'
 import type { Balance, GenerationPreferences, LedgerEntry, UserProfile } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, Field, LoadingState, useApp } from '../components'
-import { errorMessage } from '../useMockResource'
+import { errorMessage } from '../useApiResource'
 
 const layout = {
   content: { padding: 40, maxWidth: 960, marginInline: 'auto', width: '100%' } as const,
@@ -27,7 +27,7 @@ export function ProfilePage() {
     setLoading(true)
     setError(null)
     try {
-      const [nextProfile, nextBalance, nextLedger] = await Promise.all([mockApi.getProfile(), mockApi.getBalance(), mockApi.getLedger()])
+      const [nextProfile, nextBalance, nextLedger] = await Promise.all([userApi.getProfile(), userApi.getBalance(), userApi.getLedger()])
       setProfile(nextProfile)
       setBalance(nextBalance)
       setLedger(nextLedger)
@@ -45,7 +45,7 @@ export function ProfilePage() {
     setBusy(true)
     setError(null)
     try {
-      await mockApi.redeemCode(redeem)
+      await userApi.redeemCode(redeem)
       await Promise.all([load(), app.refreshAccount()])
       app.notify('success', '兑换成功，余额已更新')
     } catch (err) {
@@ -59,7 +59,7 @@ export function ProfilePage() {
     setBusy(true)
     setError(null)
     try {
-      const next = await mockApi.updateProfile(patch)
+      const next = await userApi.updateProfile(patch)
       setProfile(next)
       await app.refreshAccount()
       app.notify('success', '账户偏好已保存')

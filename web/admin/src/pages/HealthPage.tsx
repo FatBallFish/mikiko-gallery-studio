@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ProviderHealth } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 
 const probeRows = [
@@ -19,7 +19,7 @@ export function HealthPage() {
     setLoading(true)
     setError(null)
     try {
-      setRows(await mockApi.getHealth())
+      setRows((await adminApi.dashboard()).providers)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '健康探针载入失败')
     } finally {

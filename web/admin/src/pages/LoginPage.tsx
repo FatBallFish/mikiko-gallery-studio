@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react'
 import type { AdminSession } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Field, InlineFeedback } from '../components'
 
 export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => void }) {
@@ -10,7 +10,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
   const [error, setError] = useState<string | null>(null)
 
   const emailError = email && !/^\S+@\S+\.\S+$/.test(email) ? '请输入有效管理员邮箱' : null
-  const passwordError = password && password.length < 6 ? 'Mock 密码至少 6 位' : null
+  const passwordError = password && password.length < 6 ? '密码至少 6 位' : null
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -21,7 +21,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
     setBusy(true)
     setError(null)
     try {
-      const session = await mockApi.adminLogin(email, password)
+      const session = await adminApi.login(email, password)
       onLogin(session)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '管理员登录失败')
@@ -36,7 +36,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
         <div className="login-copy">
           <label>Soft Grid Ops</label>
           <strong>Pic Gallery Admin</strong>
-          <p>面向配置、路由、审核、计费与审计的高密度运营控制台。Mock 凭据可使用任意有效邮箱与 6 位以上密码。</p>
+          <p>面向配置、路由、审核、计费与审计的高密度运营控制台。使用真实后台账号进入管理面板。</p>
           <div className="login-proof-grid">
             <span>Provider 健康</span>
             <span>配置草稿</span>

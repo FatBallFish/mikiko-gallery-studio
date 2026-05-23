@@ -1,8 +1,8 @@
 import { FormEvent, useMemo, useState } from 'react'
 import type { ApiKey } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { userApi } from '../../../shared/user-api'
 import { Button, CopyButton, EmptyState, ErrorState, Field, LoadingState, Modal, useApp } from '../components'
-import { errorMessage, useMockResource } from '../useMockResource'
+import { errorMessage, useApiResource } from '../useApiResource'
 
 const allScopes = ['images:write', 'images:read', 'balance:read', 'profile:read']
 
@@ -20,7 +20,7 @@ function maskKey(key: string) {
 
 export function ApiKeysPage() {
   const app = useApp()
-  const keys = useMockResource(() => mockApi.listApiKeys(), [])
+  const keys = useApiResource(() => userApi.listApiKeys(), [])
   const [creating, setCreating] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [revealed, setRevealed] = useState<Record<string, boolean>>({})
@@ -38,7 +38,7 @@ export function ApiKeysPage() {
 
   async function toggle(key: ApiKey) {
     try {
-      await mockApi.updateApiKey(key.id, { status: key.status === 'active' ? 'disabled' : 'active' })
+      await userApi.updateApiKey(key.id, { status: key.status === 'active' ? 'disabled' : 'active' })
       app.notify('success', key.status === 'active' ? '密钥已禁用' : '密钥已启用')
       await keys.reload()
     } catch (err) {
@@ -48,7 +48,7 @@ export function ApiKeysPage() {
 
   async function remove(key: ApiKey) {
     try {
-      await mockApi.deleteApiKey(key.id)
+      await userApi.deleteApiKey(key.id)
       app.notify('success', '密钥已删除')
       if (selectedId === key.id) setSelectedId(null)
       await keys.reload()
@@ -148,7 +148,7 @@ function CreateKeyModal({ onClose, onCreated }: { onClose: () => void; onCreated
     setBusy(true)
     setError(null)
     try {
-      const key = await mockApi.createApiKey({ name, scopes, rpm_limit: rpm, expires_at: expiresAt || null })
+      const key = await userApi.createApiKey({ name, scopes, rpm_limit: rpm, expires_at: expiresAt || null })
       setSecret(key.secret_preview ?? null)
       app.notify('success', '密钥已创建，Secret 仅展示一次')
       await onCreated(key)

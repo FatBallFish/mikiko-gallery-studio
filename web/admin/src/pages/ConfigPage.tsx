@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ConfigItem } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader, useFilteredTabs } from '../components'
 
 type DraftMap = Record<string, string>
+
+function safeJson(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { value: parsed }
+  } catch {
+    return { value }
+  }
+}
 
 function detectConfigConflict(row: ConfigItem, nextValue: string) {
   if (!nextValue.trim()) return '值不能为空'
@@ -20,13 +29,13 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
   const [error, setError] = useState<string | null>(null)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
-  const [notice, setNotice] = useState<string>('配置主表已连接 Mock API。')
+  const [notice, setNotice] = useState<string>('配置主表已连接真实 API。')
 
   const load = async () => {
     setLoading(true)
     setError(null)
     try {
-      const nextRows = await mockApi.listConfig()
+      const nextRows = await adminApi.listConfig()
       setRows(nextRows)
       setDrafts(Object.fromEntries(nextRows.map((row) => [row.key, row.draft_value])))
     } catch (caught) {
@@ -56,8 +65,7 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
     }
     setSavingKey(row.key)
     try {
-      const updated = await mockApi.editConfig(row.key, draftValue)
-      setRows((current) => current.map((item) => item.key === row.key ? updated : item))
+      setRows((current) => current.map((item) => item.key === row.key ? { ...item, draft_value: draftValue, state: 'draft' } : item))
       setNotice(`${row.key} 已保存为草稿。`)
       onFeedback('配置草稿已保存', row.key)
     } catch (caught) {
@@ -74,7 +82,21 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
     }
     setPublishing(true)
     try {
-      const nextRows = await mockApi.publishConfig()
+      const byTab = new Map<string, ConfigItem[]>()
+      rows.forEach((row) => byTab.set(row.tab, [...(byTab.get(row.tab) ?? []), row]))
+      for (const [tab, tabRows] of byTab) {
+        const version = Math.max(...tabRows.map((row) => row.version || 1))
+        await adminApi.updateConfigTab(tab, {
+          version,
+          items: tabRows.map((row) => ({
+            config_category: row.config_category ?? row.tab,
+            config_key: row.config_key ?? row.key,
+            config_value: safeJson(drafts[row.key] ?? row.draft_value),
+            scope: row.scope ?? 'global',
+          })),
+        })
+      }
+      const nextRows = await adminApi.listConfig()
       setRows(nextRows)
       setDrafts(Object.fromEntries(nextRows.map((row) => [row.key, row.draft_value])))
       setNotice('配置已发布，全量 API 节点将在 1 分钟内生效。')
@@ -87,7 +109,7 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
   const revert = async () => {
     setPublishing(true)
     try {
-      const nextRows = await mockApi.revertConfig()
+      const nextRows = await adminApi.listConfig()
       setRows(nextRows)
       setDrafts(Object.fromEntries(nextRows.map((row) => [row.key, row.value])))
       setNotice('所有配置草稿已回滚到当前生效值。')
@@ -128,7 +150,7 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
             <div className="config-mode-tabs">
               {tabs.map((tab) => <button key={tab} className={activeTab === tab ? 'active' : ''} type="button" onClick={() => setActiveTab(tab)}>{tab}</button>)}
             </div>
-            <div className="config-toolbar-meta"><span>Draft {dirtyCount}</span><span>{conflicts.length ? 'Conflict' : 'Clean'}</span><span>Mock API</span></div>
+            <div className="config-toolbar-meta"><span>Draft {dirtyCount}</span><span>{conflicts.length ? 'Conflict' : 'Clean'}</span><span>Real API</span></div>
           </div>
 
           <div className="config-sheet-head config-board-grid"><span>分类</span><span>配置项</span><span>草稿值</span><span>状态</span><span>操作</span></div>
@@ -152,7 +174,7 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
         <aside className="config-side-rail">
           <section className="side-strip"><label>发布反馈</label><strong>{notice}</strong></section>
           <section className="side-strip"><label>冲突检测</label>{conflicts.length ? conflicts.map((item) => <p key={item.key}>{item.key}: {item.conflict}</p>) : <p>所有草稿均可进入发布流程。</p>}</section>
-          <section className="side-strip"><label>发布策略</label><p>预发布写入草稿，点击发布后 Mock API 统一升级版本并写审计。</p></section>
+          <section className="side-strip"><label>发布策略</label><p>预发布写入草稿，点击发布后真实 API 按 tab 更新版本并写审计。</p></section>
         </aside>
       </section>
     </section>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AuditLog } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 
 export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -14,7 +14,7 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
     setLoading(true)
     setError(null)
     try {
-      setRows(await mockApi.listAudit())
+      setRows(await adminApi.listAudit())
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '审计日志载入失败')
     } finally {
@@ -41,7 +41,7 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
       <PageHeader
         eyebrow="Audit"
         title="审计日志"
-        detail="所有 Mock 写操作都会追加审计行，便于回溯配置、价格、路由、审核与用户变更。"
+        detail="所有关键写操作都会追加审计行，便于回溯配置、价格、路由、审核与用户变更。"
         actions={<button type="button" className="ghost" onClick={() => onFeedback('审计导出已生成', `${visibleRows.length} 行日志已准备下载`)}>导出日志</button>}
       />
       <section className="pg-admin-card filter-band">
@@ -58,7 +58,7 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
           <article key={row.id} className="timeline-item">
             <div><Badge tone={row.actor === 'System' ? 'neutral' : 'primary'}>{row.action}</Badge><strong>{row.target}</strong><span>{row.created_at}</span></div>
             <p>{row.detail}</p>
-            <small>{row.actor} · request_id mock-{row.id}</small>
+            <small>{row.actor} · audit_id {row.id}</small>
           </article>
         ))}
       </section>

@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { mockApi } from '../../../shared/mock-api'
+import { userApi } from '../../../shared/user-api'
 import { useApp } from '../components'
 import type { RouteId } from '../types'
-import { errorMessage } from '../useMockResource'
+import { errorMessage } from '../useApiResource'
 
 export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   const app = useApp()
@@ -10,6 +10,8 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   const [email, setEmail] = useState('fatballfish@example.com')
   const [password, setPassword] = useState('vault2026')
   const [code, setCode] = useState('123456')
+  const [resetMode, setResetMode] = useState(false)
+  const [resetPassword, setResetPassword] = useState('')
   const [cooldown, setCooldown] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,9 +25,10 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   async function sendCode() {
     setError(null)
     try {
-      const result = await mockApi.sendEmailCode(email)
-      setCooldown(result.cooldown_seconds)
-      app.notify('success', '验证码已发送，Mock 验证码为 123456')
+      if (resetMode) await userApi.requestPasswordReset(email)
+      else await userApi.sendEmailCode(email, 'login')
+      setCooldown(60)
+      app.notify('success', '验证码已发送，请查看邮箱')
     } catch (err) {
       setError(errorMessage(err))
     }
@@ -36,10 +39,20 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
     setBusy(true)
     setError(null)
     try {
+      if (resetMode) {
+        await userApi.confirmPasswordReset(email, code, resetPassword)
+        app.notify('success', '密码已重置，请使用新密码登录')
+        setResetMode(false)
+        setMode('password')
+        setPassword(resetPassword)
+        return
+      }
       const result = mode === 'password'
-        ? await mockApi.loginWithPassword(email, password)
-        : await mockApi.loginWithEmailCode(email, code)
-      await app.login({ token: result.access_token, profile: result.profile }, returnTo)
+        ? await userApi.loginWithPassword(email, password)
+        : await userApi.loginWithEmailCode(email, code)
+      userApi.configureAuth({ getToken: () => result.access_token })
+      const profile = await userApi.getProfile()
+      await app.login({ token: result.access_token, profile }, returnTo)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -98,7 +111,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
             <div className="auth-field">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <label>密码</label>
-                <span style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>忘记密码?</span>
+                <button type="button" className="link-button" style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer', background: 'transparent', border: 0 }} onClick={() => { setResetMode(true); setMode('code') }}>忘记密码?</button>
               </div>
               <input
                 value={password}
@@ -112,7 +125,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
             </div>
           ) : (
             <div className="auth-field">
-              <label>验证码</label>
+              <label>{resetMode ? '重置验证码' : '验证码'}</label>
               <div className="inline-control">
                 <input
                   value={code}
@@ -136,6 +149,21 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
             </div>
           )}
 
+          {resetMode ? (
+            <div className="auth-field">
+              <label>新密码</label>
+              <input
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder="输入新密码"
+                type="password"
+                minLength={6}
+                required
+                className="input"
+              />
+            </div>
+          ) : null}
+
           {error ? <div className="form-error" style={{ marginBottom: 12 }}>{error}</div> : null}
 
           <button
@@ -143,7 +171,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
             className="btn-login"
             disabled={busy}
           >
-            {busy ? '登录中...' : '登 录'}
+            {busy ? '提交中...' : resetMode ? '重置密码' : '登 录'}
           </button>
         </form>
 
@@ -161,7 +189,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
 
         {/* Footer */}
         <div className="auth-footer">
-          还没有账号？ <span>立即注册</span>
+          还没有账号？ <button type="button" className="link-button" onClick={() => { setMode('code'); setResetMode(false) }}>验证码注册/登录</button>
         </div>
       </div>
     </main>

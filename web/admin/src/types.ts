@@ -1,6 +1,6 @@
 import type { AdminSession } from '../../shared/api-types'
 
-export type AdminRouteId = 'login' | 'overview' | 'config' | 'routing' | 'pricing' | 'reviews' | 'users' | 'audit' | 'health'
+export type AdminRouteId = 'login' | 'overview' | 'config' | 'routing' | 'pricing' | 'reviews' | 'users' | 'redeem' | 'call-records' | 'provider-models' | 'audit' | 'health'
 
 export type ToastTone = 'success' | 'warning' | 'danger' | 'neutral'
 

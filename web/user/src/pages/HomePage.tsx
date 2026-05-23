@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ImageTask } from '../../../shared/api-types'
-import { mockApi } from '../../../shared/mock-api'
+import { userApi } from '../../../shared/user-api'
 import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
 import neonImage from '../../../../docs/template/PicGallery/mpdhfj5l-image.png'
 import { formatDate, taskTypeLabel, useApp } from '../components'
-import { useMockResource } from '../useMockResource'
+import { useApiResource } from '../useApiResource'
 
 type FilterMode = 'latest' | 'hot'
 
@@ -200,7 +200,7 @@ const styles = {
 export function HomePage() {
   const app = useApp()
   const [filter, setFilter] = useState<FilterMode>('hot')
-  const tasks = useMockResource(() => mockApi.listTasks(), [])
+  const tasks = useApiResource(() => userApi.listTasks(), [])
 
   const cards = useMemo(() => {
     const fromTasks = toTaskCards(tasks.data ?? [], () => app.navigate('gallery'))
@@ -245,7 +245,7 @@ export function HomePage() {
           <div>
             <h3 id="inspiration-title" style={styles.sectionTitle}>灵感瀑布流</h3>
             <span style={styles.sectionDetail}>
-              {tasks.loading ? '正在刷新最近任务...' : tasks.error ? `Mock 数据读取失败：${tasks.error}` : `已同步 ${tasks.data?.length ?? 0} 个最近任务`}
+              {tasks.loading ? '正在刷新最近任务...' : tasks.error ? `实时数据读取失败：${tasks.error}` : `已同步 ${tasks.data?.length ?? 0} 个最近任务`}
             </span>
           </div>
           <div style={styles.filterGroup} aria-label="灵感筛选">
@@ -267,7 +267,7 @@ export function HomePage() {
           ))}
         </div>
 
-        {tasks.error ? <p style={styles.smallNote}>点击“刷新”会重新读取 mockApi.listTasks()，模板卡片仍会保留作为兜底灵感。</p> : null}
+        {tasks.error ? <p style={styles.smallNote}>点击“刷新”会重新读取真实任务数据，模板卡片仍会保留作为兜底灵感。</p> : null}
       </section>
     </div>
   )

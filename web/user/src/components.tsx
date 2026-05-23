@@ -148,7 +148,7 @@ export function PageIntro({ eyebrow, title, detail, action }: { eyebrow: string;
   )
 }
 
-export function LoadingState({ label = '正在读取 Mock 数据...' }: { label?: string }) {
+export function LoadingState({ label = '正在读取实时数据...' }: { label?: string }) {
   return <div className="state-line"><span className="spinner" />{label}</div>
 }
 
