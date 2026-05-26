@@ -8,12 +8,13 @@ import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { GalleryPage } from './pages/GalleryPage'
+import { PublicGalleryPage } from './pages/PublicGalleryPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { DocsPage } from './pages/DocsPage'
 
 const sessionKey = 'pic-gallery-user-session'
-const routeSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'gallery', 'api-keys', 'profile', 'docs'])
+const routeSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'gallery', 'public-gallery', 'api-keys', 'profile', 'docs'])
 
 function parseHash() {
   const raw = window.location.hash.replace(/^#\/?/, '')
@@ -44,33 +45,70 @@ export default function App() {
   const [returnTo, setReturnTo] = useState<RouteId | undefined>(initial.returnTo)
   const [session, setSession] = useState<SessionState | null>(() => readStoredSession())
   const sessionRef = useRef<SessionState | null>(session)
+  const routeRef = useRef<RouteId>(initial.route)
+  const expiredNoticeRef = useRef(false)
   const [profile, setProfile] = useState<UserProfile | null>(() => readStoredSession()?.profile ?? null)
   const [balance, setBalance] = useState<Balance | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const notify = useCallback((tone: ToastTone, message: string) => {
-    setToasts((items) => [...items, { id: Date.now() + Math.random(), tone, message }])
+    setToasts((items) => [...items, { id: Date.now() + Math.random(), tone, message, durationMs: 4200 }])
   }, [])
 
   useEffect(() => {
     sessionRef.current = session
   }, [session])
 
+  useEffect(() => {
+    routeRef.current = route
+  }, [route])
+
+  const expireSession = useCallback(() => {
+    sessionRef.current = null
+    setSession(null)
+    setProfile(null)
+    setBalance(null)
+    window.localStorage.removeItem(sessionKey)
+    if (!expiredNoticeRef.current) {
+      expiredNoticeRef.current = true
+      notify('error', '登录已过期，需要重新登录')
+    }
+    const currentRoute = routeRef.current
+    writeHash('login', protectedRoutes.includes(currentRoute) ? currentRoute : undefined)
+  }, [notify])
+
   useLayoutEffect(() => {
     userApi.configureAuth({
       getToken: () => sessionRef.current?.token,
       onUnauthorized: async () => {
-        const refreshed = await userApi.refreshSession()
-        const currentProfile = sessionRef.current?.profile ?? profile
-        if (!currentProfile) return null
-        const nextSession = { token: refreshed.access_token, profile: currentProfile }
-        sessionRef.current = nextSession
-        setSession(nextSession)
-        window.localStorage.setItem(sessionKey, JSON.stringify(nextSession))
-        return refreshed.access_token
+        try {
+          const refreshed = await userApi.refreshSession()
+          const currentProfile = sessionRef.current?.profile ?? profile ?? refreshed.profile ?? {
+            id: String(refreshed.user_id ?? ''),
+            email: '',
+            display_name: 'Pic User',
+            avatar_initials: 'PG',
+            tier: 'FREE' as const,
+            group: 'DEFAULT',
+            signature: '',
+            preferences: { model_group: 'plus-image', quality: 'auto', aspect_ratio: '16:9', image_count: 1 },
+          }
+          const nextSession = { token: refreshed.access_token, profile: currentProfile }
+          sessionRef.current = nextSession
+          setSession(nextSession)
+          window.localStorage.setItem(sessionKey, JSON.stringify(nextSession))
+          expiredNoticeRef.current = false
+          return refreshed.access_token
+        } catch {
+          expireSession()
+          return null
+        }
+      },
+      onError: (error) => {
+        if (error.status === 401) expireSession()
       },
     })
-  }, [profile])
+  }, [expireSession, profile])
 
   const installSession = useCallback((nextSession: SessionState) => {
     sessionRef.current = nextSession
@@ -144,6 +182,7 @@ export default function App() {
   }, [])
 
   const login = useCallback(async (nextSession: SessionState, target?: RouteId) => {
+    expiredNoticeRef.current = false
     installSession(nextSession)
     notify('success', '登录成功，欢迎回到 Vault')
     writeHash(target ?? returnTo ?? 'home')
@@ -156,7 +195,7 @@ export default function App() {
     setProfile(null)
     setBalance(null)
     notify('info', '已退出登录')
-    writeHash('landing')
+    writeHash('login')
   }, [notify])
 
   const appValue = useMemo(() => ({
@@ -173,6 +212,9 @@ export default function App() {
   }), [route, session, profile, balance, refreshAccount, navigate, login, logout, notify])
 
   const page = useMemo(() => {
+    if (!session && protectedRoutes.includes(route)) {
+      return <LoginPage returnTo={route} />
+    }
     switch (route) {
       case 'login':
         return <LoginPage returnTo={returnTo} />
@@ -182,6 +224,8 @@ export default function App() {
         return <Shell><WorkspacePage /></Shell>
       case 'gallery':
         return <Shell><GalleryPage /></Shell>
+      case 'public-gallery':
+        return <Shell><PublicGalleryPage /></Shell>
       case 'api-keys':
         return <Shell><ApiKeysPage /></Shell>
       case 'profile':
@@ -192,7 +236,7 @@ export default function App() {
       default:
         return <LandingPage />
     }
-  }, [route, returnTo])
+  }, [route, returnTo, session])
 
   return (
     <AppContext.Provider value={appValue}>

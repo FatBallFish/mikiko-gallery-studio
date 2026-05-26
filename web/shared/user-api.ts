@@ -6,6 +6,7 @@ import type {
   CreateTaskRequest,
   EstimateRequest,
   EstimateResult,
+  GalleryImage,
   ImageResult,
   ImageTask,
   LedgerEntry,
@@ -17,7 +18,7 @@ import type {
   UserProfile,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { normalizePage, sharedApiClient } from './http-client'
+import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
 
 const sizeMap: Record<string, string> = {
   '1:1': '1024x1024',
@@ -63,8 +64,20 @@ export function toBalance(raw: any): Balance {
 
 function normalizeTaskType(type: string): ImageTask['task_type'] {
   if (type === 'image_edit') return 'image_edit'
-  if (type === 'reference_to_image' || type === 'image_to_image') return 'reference_to_image'
+  if (type === 'reference_to_image' || type === 'reference_generate' || type === 'image_to_image') return 'reference_to_image'
   return 'text_to_image'
+}
+
+function toBackendTaskType(type: ImageTask['task_type'] | string) {
+  return type === 'reference_to_image' ? 'reference_generate' : type
+}
+
+function pick<T = unknown>(source: any, ...keys: string[]): T | undefined {
+  for (const key of keys) {
+    const value = source?.[key]
+    if (value !== undefined && value !== null) return value as T
+  }
+  return undefined
 }
 
 export function toReferenceAsset(raw: any): ReferenceAsset {
@@ -87,6 +100,11 @@ export function toImageResult(raw: any): ImageResult {
     width: Number(raw.width ?? 0),
     height: Number(raw.height ?? 0),
     publish_status: raw.publish_status ?? raw.visibility_status ?? 'private',
+    like_count: Number(raw.like_count ?? 0),
+    favorite_count: Number(raw.favorite_count ?? 0),
+    comment_count: Number(raw.comment_count ?? 0),
+    liked_by_viewer: Boolean(raw.liked_by_viewer),
+    favorited_by_viewer: Boolean(raw.favorited_by_viewer),
   }
 }
 
@@ -108,7 +126,7 @@ export function toTask(raw: any): ImageTask {
     aspect_ratio: raw.aspect_ratio ?? raw.requested_size ?? '1:1',
     image_count: Number(raw.image_count ?? raw.requested_output_image_count ?? results.length ?? 1),
     estimate_points: raw.estimate_points ?? raw.estimated_points ?? raw.actual_points ?? '0.00000',
-    progress: Number(raw.progress ?? (raw.status === 'succeeded' ? 100 : raw.status === 'running' ? 48 : 8)),
+    progress: Number(raw.progress ?? (raw.status === 'succeeded' || raw.status === 'partial_failed' ? 100 : 0)),
     provider: raw.provider ?? raw.provider_code ?? '',
     route: raw.route ?? raw.route_policy ?? '',
     created_at: raw.created_at ?? '',
@@ -121,7 +139,7 @@ export function toTask(raw: any): ImageTask {
 
 function toEstimateQuery(req: EstimateRequest) {
   return {
-    task_type: req.task_type,
+    task_type: toBackendTaskType(req.task_type),
     route_model_code: req.route_model_code,
     requested_quality: req.quality,
     requested_size: sizeMap[req.aspect_ratio] ?? req.aspect_ratio,
@@ -132,7 +150,7 @@ function toEstimateQuery(req: EstimateRequest) {
 
 function toBackendTask(req: CreateTaskRequest) {
   return {
-    task_type: req.task_type,
+    task_type: toBackendTaskType(req.task_type),
     prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
     route_model_code: req.route_model_code,
     requested_quality: req.quality,
@@ -157,6 +175,31 @@ function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
   }
 }
 
+function toGalleryImage(raw: any): GalleryImage {
+  const taskType = raw.task_type ? normalizeTaskType(raw.task_type) : undefined
+  return {
+    ...raw,
+    id: String(raw.id ?? raw.image_id ?? ''),
+    task_id: String(raw.task_id ?? ''),
+    task_type: taskType,
+    reference_asset_ids: raw.reference_asset_ids ?? [],
+    reference_assets: (raw.reference_assets ?? []).map(toReferenceAsset),
+    url: raw.url ?? raw.download_url ?? '',
+    download_url: raw.download_url,
+    file_size_bytes: Number(raw.file_size_bytes ?? raw.size_bytes ?? 0),
+    width: Number(raw.width ?? 0),
+    height: Number(raw.height ?? 0),
+    image_group: raw.image_group ?? raw.group ?? '',
+    visibility_status: raw.visibility_status ?? raw.publish_status ?? 'private',
+    like_count: Number(raw.like_count ?? 0),
+    favorite_count: Number(raw.favorite_count ?? 0),
+    comment_count: Number(raw.comment_count ?? 0),
+    liked_by_viewer: Boolean(raw.liked_by_viewer),
+    favorited_by_viewer: Boolean(raw.favorited_by_viewer),
+    created_at: raw.created_at ?? '',
+  }
+}
+
 export const userApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
   sendEmailCode: (email: string, scene: 'login' | 'register' | 'password_reset' = 'login') =>
@@ -175,6 +218,7 @@ export const userApi = {
   confirmPasswordReset: (email: string, code: string, new_password: string) =>
     sharedApiClient.request<{ ok: boolean }>(API_PATHS.agent.passwordResetConfirm, { method: 'POST', body: { email, code, new_password }, auth: false }),
   getProfile: async () => toUserProfile(await sharedApiClient.request(API_PATHS.agent.profile)),
+  getProfileWithToken: async (token: string) => toUserProfile(await sharedApiClient.request(API_PATHS.agent.profile, { auth: false, retryUnauthorized: false, headers: { Authorization: `Bearer ${token}` } })),
   updateProfile: async (patch: Partial<UserProfile>) => toUserProfile(await sharedApiClient.request(API_PATHS.agent.profile, {
     method: 'PUT',
     body: {
@@ -207,42 +251,47 @@ export const userApi = {
   getCapabilities: async (): Promise<Capability> => {
     const raw: any = await sharedApiClient.request(API_PATHS.agent.capabilities)
     const models = raw.model_groups ?? raw.abstract_models ?? raw.models ?? []
-    const normalizedModels = models.map((item: any) => {
-      const taskTypes = item.task_types ?? ['text_to_image']
-      const qualities = item.qualities ?? item.supported_qualities ?? raw.qualities ?? raw.supported_qualities ?? ['auto']
-      const prices = (item.prices ?? []).map((price: any) => ({
-        task_type: price.task_type ?? 'text_to_image',
-        quality: price.quality ?? 'auto',
-        base_points: String(price.base_points ?? '0.00000'),
-        charged_points: String(price.charged_points ?? price.points ?? price.base_points ?? '0.00000'),
-        display_points: String(price.display_points ?? price.charged_points ?? price.points ?? price.base_points ?? '0.00'),
-        reference_multiplier: price.reference_multiplier,
+    const normalizedModels = models.flatMap((item: any) => {
+      const taskTypes = pick<string[]>(item, 'task_types', 'TaskTypes') ?? ['text_to_image']
+      const normalizedTaskTypes = taskTypes.map(normalizeTaskType)
+      const qualities = pick<string[]>(item, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
+        ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
+        ?? ['auto']
+      const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => ({
+        task_type: normalizeTaskType(pick<string>(price, 'task_type', 'TaskType') ?? 'text_to_image'),
+        quality: pick<string>(price, 'quality', 'Quality') ?? 'auto',
+        base_points: String(pick(price, 'base_points', 'BasePoints') ?? '0.00000'),
+        charged_points: String(pick(price, 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00000'),
+        display_points: String(pick(price, 'display_points', 'DisplayPoints', 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00'),
+        reference_multiplier: pick(price, 'reference_multiplier', 'ReferenceMultiplier'),
       }))
-      const code = item.code ?? item.route_model_code ?? item.group_code ?? item.model_code ?? item.id
-      const maxReference = Number(item.max_reference_image_count ?? item.max_reference_count ?? 0)
-      return {
-        id: String(code),
-        code: String(code),
-        name: item.name ?? item.group_name ?? item.model_code ?? code,
-        description: item.description ?? '',
-        task_types: taskTypes,
+      const code = pick(item, 'code', 'Code', 'route_model_code', 'RouteModelCode', 'group_code', 'GroupCode', 'model_code', 'ModelCode', 'id', 'ID')
+      const normalizedCode = String(code ?? '').trim()
+      if (!normalizedCode || normalizedCode === 'undefined') return []
+      const maxReference = Number(pick(item, 'max_reference_image_count', 'MaxReferenceImageCount', 'max_reference_count', 'MaxReferenceCount') ?? 0)
+      return [{
+        id: normalizedCode,
+        code: normalizedCode,
+        name: pick(item, 'name', 'Name', 'group_name', 'GroupName', 'model_code', 'ModelCode') ?? normalizedCode,
+        description: pick<string>(item, 'description', 'Description') ?? '',
+        task_types: normalizedTaskTypes,
         qualities,
-        aspect_ratios: item.aspect_ratios ?? raw.aspect_ratios ?? raw.supported_ratios,
-        max_output_image_count: Number(item.max_output_image_count ?? item.max_image_count ?? raw.max_image_count ?? 4),
+        aspect_ratios: pick(item, 'aspect_ratios', 'AspectRatios') ?? pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios'),
+        max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
         max_reference_image_count: maxReference,
-        effective_multiplier: item.effective_multiplier,
+        effective_multiplier: pick(item, 'effective_multiplier', 'EffectiveMultiplier'),
         prices,
-        supports_reference: Boolean(item.supports_reference ?? item.supports_image_input ?? (maxReference > 0)),
-        display_points: item.display_points ?? prices[0]?.display_points,
-      }
+        supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.some((type) => type === 'reference_to_image' || type === 'image_edit'))),
+        display_points: pick(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
+      }]
     })
     return {
       raw,
       model_groups: normalizedModels,
-      qualities: raw.qualities ?? raw.supported_qualities ?? ['auto', '1K', '2K', '4K'],
-      aspect_ratios: raw.aspect_ratios ?? raw.supported_ratios ?? ['1:1', '16:9', '9:16', '4:3'],
-      max_image_count: raw.max_image_count ?? 4,
-      task_types: raw.task_types ?? ['text_to_image', 'reference_to_image', 'image_edit'],
+      qualities: pick(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K'],
+      aspect_ratios: pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? ['1:1', '16:9', '9:16', '4:3'],
+      max_image_count: pick(raw, 'max_image_count', 'MaxImageCount') ?? 4,
+      task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? ['text_to_image', 'reference_to_image', 'image_edit']).map(normalizeTaskType),
     } satisfies Capability
   },
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: toEstimateQuery(req) }), req),
@@ -257,8 +306,11 @@ export const userApi = {
   listReferenceAssets: async () => [] as ReferenceAsset[],
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
   deleteReferenceAsset: (asset_id: string) => sharedApiClient.request<void>(API_PATHS.agent.referenceAssetDetail, { method: 'DELETE', pathParams: { asset_id } }),
+  imageAssetUrl: (url: string, accessToken?: string | null) => apiEventUrl(url, accessToken),
   createTask: async (req: CreateTaskRequest) => toTask(await sharedApiClient.request(API_PATHS.agent.tasks, { method: 'POST', body: toBackendTask(req) })),
   getTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.taskDetail, { pathParams: { task_id } })),
+  taskEventsUrl: (task_id: string, accessToken?: string | null) => apiEventUrl(fillPath(API_PATHS.agent.taskEvents, { task_id }), accessToken),
+  taskStreamUrl: (accessToken?: string | null) => apiEventUrl(API_PATHS.agent.taskStream, accessToken),
   listTasks: async (filters?: { query?: string; status?: string; type?: string }) => {
     const page = normalizePage<any>(await sharedApiClient.request(API_PATHS.agent.tasks, {
       query: { status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
@@ -271,8 +323,13 @@ export const userApi = {
     }))
     return page.items.map(toTask)
   },
+  listGalleryImages: async (page = 1, page_size = 100) => normalizePage<GalleryImage>(await sharedApiClient.request(API_PATHS.agent.galleryImages, { query: { page, page_size } })).items.map(toGalleryImage),
   deleteTask: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
+  deleteGalleryImage: (image_id: string) => sharedApiClient.request<void>(API_PATHS.agent.galleryImageDetail, { method: 'DELETE', pathParams: { image_id } }),
+  updateGalleryImageGroup: async (image_id: string, image_group: string) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.galleryImageGroup, { method: 'PUT', pathParams: { image_id }, body: { image_group } })),
   publishImage: async (image_id: string) => toImageResult(await sharedApiClient.request(API_PATHS.agent.publishImage, { method: 'POST', pathParams: { image_id } })),
+  likePublicImage: async (image_id: string, active: boolean) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.likePublicImage, { method: 'POST', pathParams: { image_id }, body: { active } })),
+  favoritePublicImage: async (image_id: string, active: boolean) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.favoritePublicImage, { method: 'POST', pathParams: { image_id }, body: { active } })),
   listApiKeys: async () => ((await sharedApiClient.request<{ items: any[] }>(API_PATHS.agent.apiKeys)).items ?? []).map(toApiKey),
   createApiKey: async (input: { name: string; scopes?: string[]; rpm_limit: number; expires_at: string | null }) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeys, {
     method: 'POST',
@@ -281,6 +338,12 @@ export const userApi = {
   updateApiKey: async (key_id: string | number, patch: Partial<ApiKey>) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeyDetail, { method: 'PUT', pathParams: { key_id }, body: patch })),
   resetApiKeySecret: async (key_id: string | number) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeyResetSecret, { method: 'POST', pathParams: { key_id } })),
   deleteApiKey: (key_id: string | number) => sharedApiClient.request<void>(API_PATHS.agent.apiKeyDetail, { method: 'DELETE', pathParams: { key_id } }),
+}
+
+function apiEventUrl(path: string, accessToken?: string | null) {
+  if (/^https?:\/\//i.test(path)) return path
+  const baseUrl = getDefaultBaseUrl() || globalThis.location?.origin || ''
+  return `${baseUrl}${withQuery(path, { access_token: accessToken })}`
 }
 
 function toApiKey(raw: any): ApiKey {

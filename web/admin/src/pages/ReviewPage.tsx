@@ -7,7 +7,8 @@ type ReviewDecision = 'approve' | 'reject' | 'unpublish'
 
 type DrawerState = { item: ReviewItem; decision: ReviewDecision } | null
 
-const statusLabel: Record<ReviewItem['status'], string> = {
+const statusLabel: Record<string, string> = {
+  private: '待申请',
   pending: '待审核',
   pending_review: '待审核',
   approved: '已通过',
@@ -15,9 +16,9 @@ const statusLabel: Record<ReviewItem['status'], string> = {
   unpublished: '已下架',
 }
 
-export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
+export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ReviewItem[]>([])
-  const [filter, setFilter] = useState<ReviewItem['status'] | 'all'>('pending')
+  const [filter, setFilter] = useState<ReviewItem['status'] | 'all'>('pending_review')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [drawer, setDrawer] = useState<DrawerState>(null)
@@ -53,7 +54,7 @@ export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?
     try {
       const updated = await adminApi.decideReview(drawer.item.image_id ?? drawer.item.id, drawer.decision, reason)
       setRows((current) => current.map((item) => item.id === updated.id ? updated : item))
-      onFeedback('审核决策已提交', `${updated.title}: ${statusLabel[updated.status]}`)
+      onFeedback('审核决策已提交', `${updated.title}: ${statusLabel[updated.status] ?? updated.status}`)
       setDrawer(null)
     } finally {
       setBusy(false)
@@ -69,7 +70,7 @@ export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?
       <section className="pg-admin-card ops-surface full-main review-workspace">
         <section className="main-lane table-lane no-divider">
           <div className="micro-tabs as-buttons">
-            {(['pending', 'approved', 'rejected', 'unpublished', 'all'] as const).map((tab) => <button key={tab} type="button" className={filter === tab ? 'active' : ''} onClick={() => setFilter(tab)}>{tab === 'all' ? '全部' : statusLabel[tab]}</button>)}
+            {(['pending_review', 'approved', 'rejected', 'unpublished', 'all'] as const).map((tab) => <button key={tab} type="button" className={filter === tab ? 'active' : ''} onClick={() => setFilter(tab)}>{tab === 'all' ? '全部' : statusLabel[tab]}</button>)}
           </div>
 
           {!visibleRows.length ? <EmptyBlock title="没有匹配的审核项" detail="切换筛选或等待用户提交公开申请。" /> : (
@@ -77,11 +78,11 @@ export function ReviewPage({ onFeedback }: { onFeedback: (title: string, detail?
               <div className="table-head review-grid"><span>图片</span><span>用户</span><span>类型</span><span>上下文</span><span>状态</span><span>动作</span></div>
               {visibleRows.map((row) => (
                 <div key={row.id} className="table-row review-grid">
-                  <div className="review-image-cell"><img src={row.image_url} alt="" /><div><strong>{row.title}</strong><p>{row.created_at}</p></div></div>
+                  <div className="review-image-cell"><img src={adminApi.imageReviewUrl(row.image_id ?? row.id, accessToken)} alt="" /><div><strong>{row.title}</strong><p>{row.created_at}</p></div></div>
                   <span>{row.owner}</span>
                   <span>{row.task_type}</span>
                   <span>{row.reason}</span>
-                  <Badge tone={row.status === 'approved' ? 'success' : row.status === 'pending' ? 'warning' : 'danger'}>{statusLabel[row.status]}</Badge>
+                  <Badge tone={row.status === 'approved' ? 'success' : row.status === 'pending_review' ? 'warning' : 'danger'}>{statusLabel[row.status] ?? row.status}</Badge>
                   <div className="row-actions buttons">
                     <button type="button" className="btn small" onClick={() => openDrawer(row, 'approve')} disabled={row.status === 'approved'}>通过</button>
                     <button type="button" className="ghost small" onClick={() => openDrawer(row, 'reject')} disabled={row.status === 'rejected'}>驳回</button>

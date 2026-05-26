@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import type { AdminUser, AdminUserCreateRequest, UserGroup, UserGroupWriteRequest } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal, PageHeader } from '../components'
 
 const pageSize = 20
 
@@ -247,7 +247,7 @@ function renderActionForm(action: UserAction, groups: UserGroup[], setAction: (a
     return <><p>删除后该用户会从列表隐藏，并撤销登录会话。为避免误操作，请输入用户邮箱确认。</p><Field label="确认邮箱"><input value={action.confirmEmail} onChange={(event) => setAction({ ...action, confirmEmail: event.target.value })} placeholder={action.user.email} /></Field></>
   }
   if (action.type === 'group') {
-    return <Field label="用户分组"><MultiGroupSelect selected={action.groupIds} groups={groups} onChange={(groupIds) => setAction({ ...action, groupIds })} /></Field>
+    return <Field label="用户分组"><GroupOptionGrid selected={action.groupIds} groups={groups} onChange={(groupIds) => setAction({ ...action, groupIds })} /></Field>
   }
   if (action.type === 'user-group') {
     return (
@@ -274,17 +274,6 @@ function renderActionForm(action: UserAction, groups: UserGroup[], setAction: (a
 function GroupSelect({ value, groups, onChange }: { value: string; groups: UserGroup[]; onChange: (value: string) => void }) {
   const options = groups.length ? groups : [{ code: 'basic', name: 'basic', group_code: 'basic', group_name: 'basic', multiplier: '1.00000', status: 'enabled', created_at: '', updated_at: '' }] as UserGroup[]
   return <select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((group) => <option key={group.code} value={group.code}>{group.code}</option>)}</select>
-}
-
-function MultiGroupSelect({ selected, groups, onChange }: { selected: string[]; groups: UserGroup[]; onChange: (value: string[]) => void }) {
-  return (
-    <div className="check-stack">
-      {groups.map((group) => {
-        const id = String(group.id ?? group.code)
-        return <label key={id}><input type="checkbox" checked={selected.includes(id) || selected.includes(group.code)} onChange={(event) => onChange(event.target.checked ? [...selected, id] : selected.filter((item) => item !== id && item !== group.code))} />{group.name} ({group.multiplier}x)</label>
-      })}
-    </div>
-  )
 }
 
 function currentGroupIds(user: AdminUser, groups: UserGroup[]) {

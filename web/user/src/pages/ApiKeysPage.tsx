@@ -1,7 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 import type { ApiKey } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
-import { Button, CopyButton, EmptyState, ErrorState, Field, LoadingState, Modal, useApp } from '../components'
+import { Button, CopyButton, EmptyState, Field, LoadingState, Modal, useApp } from '../components'
 import { errorMessage, useApiResource } from '../useApiResource'
 
 const allScopes = ['images:write', 'images:read', 'balance:read', 'profile:read']
@@ -69,7 +69,6 @@ export function ApiKeysPage() {
 
       <div className="card" style={pageStyle.card}>
         {keys.loading ? <LoadingState /> : null}
-        {keys.error ? <ErrorState message={keys.error} onRetry={keys.reload} /> : null}
         {!keys.loading && !keys.data?.length ? <EmptyState title="暂无密钥" detail="创建一个密钥后即可调试开放 API。" action={<Button onClick={() => setCreating(true)}>创建密钥</Button>} /> : null}
         {keys.data?.length ? (
           <div className="table-container" style={{ overflowX: 'auto' }}>
@@ -137,7 +136,6 @@ function CreateKeyModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [scopes, setScopes] = useState<string[]>(['images:write', 'images:read'])
   const [secret, setSecret] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   function toggleScope(scope: string) {
     setScopes((items) => items.includes(scope) ? items.filter((item) => item !== scope) : [...items, scope])
@@ -146,14 +144,13 @@ function CreateKeyModal({ onClose, onCreated }: { onClose: () => void; onCreated
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
-    setError(null)
     try {
       const key = await userApi.createApiKey({ name, scopes, rpm_limit: rpm, expires_at: expiresAt || null })
       setSecret(key.secret_preview ?? null)
       app.notify('success', '密钥已创建，Secret 仅展示一次')
       await onCreated(key)
     } catch (err) {
-      setError(errorMessage(err))
+      app.notify('error', errorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -169,7 +166,6 @@ function CreateKeyModal({ onClose, onCreated }: { onClose: () => void; onCreated
           {allScopes.map((scope) => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} />{scope}</label>)}
         </div>
         {secret ? <div className="secret-once"><strong>Secret Key</strong><code>{secret}</code><CopyButton text={secret} label="复制 Secret" /></div> : null}
-        {error ? <div className="form-error">{error}</div> : null}
         <div className="action-row"><Button type="submit" busy={busy}>创建</Button><Button type="button" tone="ghost" onClick={onClose}>关闭</Button></div>
       </form>
     </Modal>

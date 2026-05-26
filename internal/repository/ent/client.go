@@ -31,6 +31,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
@@ -84,6 +86,10 @@ type Client struct {
 	ProviderErrorPolicy *ProviderErrorPolicyClient
 	// ProviderModel is the client for interacting with the ProviderModel builders.
 	ProviderModel *ProviderModelClient
+	// PublicImageInteraction is the client for interacting with the PublicImageInteraction builders.
+	PublicImageInteraction *PublicImageInteractionClient
+	// PublicImageStat is the client for interacting with the PublicImageStat builders.
+	PublicImageStat *PublicImageStatClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
 	// ReferenceAsset is the client for interacting with the ReferenceAsset builders.
@@ -139,6 +145,8 @@ func (c *Client) init() {
 	c.PointLedger = NewPointLedgerClient(c.config)
 	c.ProviderErrorPolicy = NewProviderErrorPolicyClient(c.config)
 	c.ProviderModel = NewProviderModelClient(c.config)
+	c.PublicImageInteraction = NewPublicImageInteractionClient(c.config)
+	c.PublicImageStat = NewPublicImageStatClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
 	c.ReferenceAsset = NewReferenceAssetClient(c.config)
 	c.RefreshSession = NewRefreshSessionClient(c.config)
@@ -261,6 +269,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PointLedger:                 NewPointLedgerClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
+		PublicImageInteraction:      NewPublicImageInteractionClient(cfg),
+		PublicImageStat:             NewPublicImageStatClient(cfg),
 		RedeemCode:                  NewRedeemCodeClient(cfg),
 		ReferenceAsset:              NewReferenceAssetClient(cfg),
 		RefreshSession:              NewRefreshSessionClient(cfg),
@@ -310,6 +320,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PointLedger:                 NewPointLedgerClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
+		PublicImageInteraction:      NewPublicImageInteractionClient(cfg),
+		PublicImageStat:             NewPublicImageStatClient(cfg),
 		RedeemCode:                  NewRedeemCodeClient(cfg),
 		ReferenceAsset:              NewReferenceAssetClient(cfg),
 		RefreshSession:              NewRefreshSessionClient(cfg),
@@ -356,10 +368,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
 		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentWebhookEvent,
-		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel, c.RedeemCode,
-		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
-		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
+		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User, c.UserGroup,
+		c.UserGroupMember, c.UserSubscription, c.WalletGrant,
 		c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
@@ -373,10 +386,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
 		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentWebhookEvent,
-		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel, c.RedeemCode,
-		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
-		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
+		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User, c.UserGroup,
+		c.UserGroupMember, c.UserSubscription, c.WalletGrant,
 		c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
@@ -418,6 +432,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ProviderErrorPolicy.mutate(ctx, m)
 	case *ProviderModelMutation:
 		return c.ProviderModel.mutate(ctx, m)
+	case *PublicImageInteractionMutation:
+		return c.PublicImageInteraction.mutate(ctx, m)
+	case *PublicImageStatMutation:
+		return c.PublicImageStat.mutate(ctx, m)
 	case *RedeemCodeMutation:
 		return c.RedeemCode.mutate(ctx, m)
 	case *ReferenceAssetMutation:
@@ -2579,6 +2597,272 @@ func (c *ProviderModelClient) mutate(ctx context.Context, m *ProviderModelMutati
 	}
 }
 
+// PublicImageInteractionClient is a client for the PublicImageInteraction schema.
+type PublicImageInteractionClient struct {
+	config
+}
+
+// NewPublicImageInteractionClient returns a client for the PublicImageInteraction from the given config.
+func NewPublicImageInteractionClient(c config) *PublicImageInteractionClient {
+	return &PublicImageInteractionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `publicimageinteraction.Hooks(f(g(h())))`.
+func (c *PublicImageInteractionClient) Use(hooks ...Hook) {
+	c.hooks.PublicImageInteraction = append(c.hooks.PublicImageInteraction, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `publicimageinteraction.Intercept(f(g(h())))`.
+func (c *PublicImageInteractionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PublicImageInteraction = append(c.inters.PublicImageInteraction, interceptors...)
+}
+
+// Create returns a builder for creating a PublicImageInteraction entity.
+func (c *PublicImageInteractionClient) Create() *PublicImageInteractionCreate {
+	mutation := newPublicImageInteractionMutation(c.config, OpCreate)
+	return &PublicImageInteractionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PublicImageInteraction entities.
+func (c *PublicImageInteractionClient) CreateBulk(builders ...*PublicImageInteractionCreate) *PublicImageInteractionCreateBulk {
+	return &PublicImageInteractionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PublicImageInteractionClient) MapCreateBulk(slice any, setFunc func(*PublicImageInteractionCreate, int)) *PublicImageInteractionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PublicImageInteractionCreateBulk{err: fmt.Errorf("calling to PublicImageInteractionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PublicImageInteractionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PublicImageInteractionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PublicImageInteraction.
+func (c *PublicImageInteractionClient) Update() *PublicImageInteractionUpdate {
+	mutation := newPublicImageInteractionMutation(c.config, OpUpdate)
+	return &PublicImageInteractionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PublicImageInteractionClient) UpdateOne(_m *PublicImageInteraction) *PublicImageInteractionUpdateOne {
+	mutation := newPublicImageInteractionMutation(c.config, OpUpdateOne, withPublicImageInteraction(_m))
+	return &PublicImageInteractionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PublicImageInteractionClient) UpdateOneID(id int) *PublicImageInteractionUpdateOne {
+	mutation := newPublicImageInteractionMutation(c.config, OpUpdateOne, withPublicImageInteractionID(id))
+	return &PublicImageInteractionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PublicImageInteraction.
+func (c *PublicImageInteractionClient) Delete() *PublicImageInteractionDelete {
+	mutation := newPublicImageInteractionMutation(c.config, OpDelete)
+	return &PublicImageInteractionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PublicImageInteractionClient) DeleteOne(_m *PublicImageInteraction) *PublicImageInteractionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PublicImageInteractionClient) DeleteOneID(id int) *PublicImageInteractionDeleteOne {
+	builder := c.Delete().Where(publicimageinteraction.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PublicImageInteractionDeleteOne{builder}
+}
+
+// Query returns a query builder for PublicImageInteraction.
+func (c *PublicImageInteractionClient) Query() *PublicImageInteractionQuery {
+	return &PublicImageInteractionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePublicImageInteraction},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PublicImageInteraction entity by its id.
+func (c *PublicImageInteractionClient) Get(ctx context.Context, id int) (*PublicImageInteraction, error) {
+	return c.Query().Where(publicimageinteraction.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PublicImageInteractionClient) GetX(ctx context.Context, id int) *PublicImageInteraction {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PublicImageInteractionClient) Hooks() []Hook {
+	return c.hooks.PublicImageInteraction
+}
+
+// Interceptors returns the client interceptors.
+func (c *PublicImageInteractionClient) Interceptors() []Interceptor {
+	return c.inters.PublicImageInteraction
+}
+
+func (c *PublicImageInteractionClient) mutate(ctx context.Context, m *PublicImageInteractionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PublicImageInteractionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PublicImageInteractionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PublicImageInteractionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PublicImageInteractionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PublicImageInteraction mutation op: %q", m.Op())
+	}
+}
+
+// PublicImageStatClient is a client for the PublicImageStat schema.
+type PublicImageStatClient struct {
+	config
+}
+
+// NewPublicImageStatClient returns a client for the PublicImageStat from the given config.
+func NewPublicImageStatClient(c config) *PublicImageStatClient {
+	return &PublicImageStatClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `publicimagestat.Hooks(f(g(h())))`.
+func (c *PublicImageStatClient) Use(hooks ...Hook) {
+	c.hooks.PublicImageStat = append(c.hooks.PublicImageStat, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `publicimagestat.Intercept(f(g(h())))`.
+func (c *PublicImageStatClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PublicImageStat = append(c.inters.PublicImageStat, interceptors...)
+}
+
+// Create returns a builder for creating a PublicImageStat entity.
+func (c *PublicImageStatClient) Create() *PublicImageStatCreate {
+	mutation := newPublicImageStatMutation(c.config, OpCreate)
+	return &PublicImageStatCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PublicImageStat entities.
+func (c *PublicImageStatClient) CreateBulk(builders ...*PublicImageStatCreate) *PublicImageStatCreateBulk {
+	return &PublicImageStatCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PublicImageStatClient) MapCreateBulk(slice any, setFunc func(*PublicImageStatCreate, int)) *PublicImageStatCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PublicImageStatCreateBulk{err: fmt.Errorf("calling to PublicImageStatClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PublicImageStatCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PublicImageStatCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PublicImageStat.
+func (c *PublicImageStatClient) Update() *PublicImageStatUpdate {
+	mutation := newPublicImageStatMutation(c.config, OpUpdate)
+	return &PublicImageStatUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PublicImageStatClient) UpdateOne(_m *PublicImageStat) *PublicImageStatUpdateOne {
+	mutation := newPublicImageStatMutation(c.config, OpUpdateOne, withPublicImageStat(_m))
+	return &PublicImageStatUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PublicImageStatClient) UpdateOneID(id int) *PublicImageStatUpdateOne {
+	mutation := newPublicImageStatMutation(c.config, OpUpdateOne, withPublicImageStatID(id))
+	return &PublicImageStatUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PublicImageStat.
+func (c *PublicImageStatClient) Delete() *PublicImageStatDelete {
+	mutation := newPublicImageStatMutation(c.config, OpDelete)
+	return &PublicImageStatDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PublicImageStatClient) DeleteOne(_m *PublicImageStat) *PublicImageStatDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PublicImageStatClient) DeleteOneID(id int) *PublicImageStatDeleteOne {
+	builder := c.Delete().Where(publicimagestat.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PublicImageStatDeleteOne{builder}
+}
+
+// Query returns a query builder for PublicImageStat.
+func (c *PublicImageStatClient) Query() *PublicImageStatQuery {
+	return &PublicImageStatQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePublicImageStat},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PublicImageStat entity by its id.
+func (c *PublicImageStatClient) Get(ctx context.Context, id int) (*PublicImageStat, error) {
+	return c.Query().Where(publicimagestat.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PublicImageStatClient) GetX(ctx context.Context, id int) *PublicImageStat {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PublicImageStatClient) Hooks() []Hook {
+	return c.hooks.PublicImageStat
+}
+
+// Interceptors returns the client interceptors.
+func (c *PublicImageStatClient) Interceptors() []Interceptor {
+	return c.inters.PublicImageStat
+}
+
+func (c *PublicImageStatClient) mutate(ctx context.Context, m *PublicImageStatMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PublicImageStatCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PublicImageStatUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PublicImageStatUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PublicImageStatDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PublicImageStat mutation op: %q", m.Op())
+	}
+}
+
 // RedeemCodeClient is a client for the RedeemCode schema.
 type RedeemCodeClient struct {
 	config
@@ -4447,18 +4731,20 @@ type (
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
 		PaymentOrder, PaymentWebhookEvent, PointLedger, ProviderErrorPolicy,
-		ProviderModel, RedeemCode, ReferenceAsset, RefreshSession, RouteModel,
-		RouteModelCandidate, RouteModelPrice, RouteModelVisibilityGroup,
-		SubscriptionPlan, User, UserGroup, UserGroupMember, UserSubscription,
-		WalletGrant, WalletReservationAllocation []ent.Hook
+		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
+		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelPrice, RouteModelVisibilityGroup, SubscriptionPlan, User, UserGroup,
+		UserGroupMember, UserSubscription, WalletGrant,
+		WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
 		PaymentOrder, PaymentWebhookEvent, PointLedger, ProviderErrorPolicy,
-		ProviderModel, RedeemCode, ReferenceAsset, RefreshSession, RouteModel,
-		RouteModelCandidate, RouteModelPrice, RouteModelVisibilityGroup,
-		SubscriptionPlan, User, UserGroup, UserGroupMember, UserSubscription,
-		WalletGrant, WalletReservationAllocation []ent.Interceptor
+		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
+		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelPrice, RouteModelVisibilityGroup, SubscriptionPlan, User, UserGroup,
+		UserGroupMember, UserSubscription, WalletGrant,
+		WalletReservationAllocation []ent.Interceptor
 	}
 )

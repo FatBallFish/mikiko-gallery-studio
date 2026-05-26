@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
+import type { AdminMetric, AdminSession, ProviderHealth, UserGroup } from '../../shared/api-types'
 import type { AdminRouteId, ToastMessage, ToastTone } from './types'
 
 export const protectedRoutes: Exclude<AdminRouteId, 'login'>[] = [
@@ -293,6 +293,42 @@ export function Badge({ tone = 'neutral', children }: { tone?: ToastTone | 'succ
 
 export function InlineFeedback({ tone, message }: { tone: ToastTone; message: string }) {
   return <div className={`inline-feedback ${tone}`}>{message}</div>
+}
+
+export function GroupOptionGrid({
+  selected,
+  groups,
+  onChange,
+  emptyText = '暂无可选分组',
+}: {
+  selected: string[]
+  groups: UserGroup[]
+  onChange: (ids: string[]) => void
+  emptyText?: string
+}) {
+  if (!groups.length) return <div className="check-grid-scroll empty"><span>{emptyText}</span></div>
+
+  return (
+    <div className="check-grid-scroll">
+      {groups.map((group) => {
+        const id = String(group.id ?? group.code)
+        const checked = selected.includes(id) || selected.includes(group.code)
+        const nextSelected = (isChecked: boolean) => (
+          isChecked
+            ? Array.from(new Set([...selected.filter((item) => item !== group.code), id]))
+            : selected.filter((item) => item !== id && item !== group.code)
+        )
+
+        return (
+          <label key={id} className="check-option">
+            <input type="checkbox" checked={checked} onChange={(event) => onChange(nextSelected(event.target.checked))} />
+            <span>{group.name}</span>
+            <em>{group.multiplier}x</em>
+          </label>
+        )
+      })}
+    </div>
+  )
 }
 
 export function Modal({

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { EndpointDoc } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
-import { CopyButton, EmptyState, ErrorState, LoadingState } from '../components'
+import { CopyButton, EmptyState, LoadingState } from '../components'
 import { useApiResource } from '../useApiResource'
 
 const groups = ['All', 'Agent API', 'Open API', 'OpenAI Compat', 'Ops API']
@@ -45,7 +45,6 @@ export function DocsPage() {
             <span>OpenAPI 实时目录</span>
           </div>
           {docs.loading ? <LoadingState label="正在读取 OpenAPI 文档..." /> : null}
-          {docs.error ? <ErrorState message={docs.error} onRetry={docs.reload} /> : null}
           {!docs.loading && !filtered.length ? <EmptyState title="没有匹配端点" detail="尝试搜索 tasks、images、balance 或 OpenAI。" /> : null}
           {filtered.map((doc) => (
             <article key={`${doc.method}-${doc.path}`} className="endpoint-card" style={{ marginBottom: 14 }}>

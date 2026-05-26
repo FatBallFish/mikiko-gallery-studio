@@ -29,8 +29,8 @@ func TestGenerateUsesImagesEndpoint(t *testing.T) {
 		if got := body["model"]; got != "gpt-image-2" {
 			t.Fatalf("unexpected model %#v", got)
 		}
-		if got := body["n"]; got != float64(3) {
-			t.Fatalf("unexpected n %#v", got)
+		if _, ok := body["n"]; ok {
+			t.Fatalf("generation request must not send unsupported n field: %#v", body["n"])
 		}
 		if got := body["response_format"]; got != "b64_json" {
 			t.Fatalf("unexpected response_format %#v", got)
@@ -81,8 +81,8 @@ func TestEditUsesMultipartImagesEndpoint(t *testing.T) {
 		if got := r.FormValue("model"); got != "gpt-image-2" {
 			t.Fatalf("unexpected model %q", got)
 		}
-		if got := r.FormValue("n"); got != "2" {
-			t.Fatalf("unexpected n %q", got)
+		if got := r.FormValue("n"); got != "" {
+			t.Fatalf("edit request must not send unsupported n field, got %q", got)
 		}
 		images := r.MultipartForm.File["image"]
 		if len(images) != 2 {

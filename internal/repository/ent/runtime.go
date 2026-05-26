@@ -21,6 +21,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
@@ -535,14 +537,20 @@ func init() {
 			return nil
 		}
 	}()
+	// imageresultDescImageGroup is the schema descriptor for image_group field.
+	imageresultDescImageGroup := imageresultFields[11].Descriptor()
+	// imageresult.DefaultImageGroup holds the default value on creation for the image_group field.
+	imageresult.DefaultImageGroup = imageresultDescImageGroup.Default.(string)
+	// imageresult.ImageGroupValidator is a validator for the "image_group" field. It is called by the builders before save.
+	imageresult.ImageGroupValidator = imageresultDescImageGroup.Validators[0].(func(string) error)
 	// imageresultDescVisibilityStatus is the schema descriptor for visibility_status field.
-	imageresultDescVisibilityStatus := imageresultFields[11].Descriptor()
+	imageresultDescVisibilityStatus := imageresultFields[12].Descriptor()
 	// imageresult.DefaultVisibilityStatus holds the default value on creation for the visibility_status field.
 	imageresult.DefaultVisibilityStatus = imageresultDescVisibilityStatus.Default.(string)
 	// imageresult.VisibilityStatusValidator is a validator for the "visibility_status" field. It is called by the builders before save.
 	imageresult.VisibilityStatusValidator = imageresultDescVisibilityStatus.Validators[0].(func(string) error)
 	// imageresultDescReviewReason is the schema descriptor for review_reason field.
-	imageresultDescReviewReason := imageresultFields[12].Descriptor()
+	imageresultDescReviewReason := imageresultFields[13].Descriptor()
 	// imageresult.ReviewReasonValidator is a validator for the "review_reason" field. It is called by the builders before save.
 	imageresult.ReviewReasonValidator = imageresultDescReviewReason.Validators[0].(func(string) error)
 	// imageresultDescID is the schema descriptor for id field.
@@ -1411,6 +1419,56 @@ func init() {
 	providermodelDescEnabled := providermodelFields[15].Descriptor()
 	// providermodel.DefaultEnabled holds the default value on creation for the enabled field.
 	providermodel.DefaultEnabled = providermodelDescEnabled.Default.(bool)
+	publicimageinteractionMixin := schema.PublicImageInteraction{}.Mixin()
+	publicimageinteractionMixinFields0 := publicimageinteractionMixin[0].Fields()
+	_ = publicimageinteractionMixinFields0
+	publicimageinteractionFields := schema.PublicImageInteraction{}.Fields()
+	_ = publicimageinteractionFields
+	// publicimageinteractionDescCreatedAt is the schema descriptor for created_at field.
+	publicimageinteractionDescCreatedAt := publicimageinteractionMixinFields0[0].Descriptor()
+	// publicimageinteraction.DefaultCreatedAt holds the default value on creation for the created_at field.
+	publicimageinteraction.DefaultCreatedAt = publicimageinteractionDescCreatedAt.Default.(func() time.Time)
+	// publicimageinteractionDescUpdatedAt is the schema descriptor for updated_at field.
+	publicimageinteractionDescUpdatedAt := publicimageinteractionMixinFields0[1].Descriptor()
+	// publicimageinteraction.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	publicimageinteraction.DefaultUpdatedAt = publicimageinteractionDescUpdatedAt.Default.(func() time.Time)
+	// publicimageinteraction.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	publicimageinteraction.UpdateDefaultUpdatedAt = publicimageinteractionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// publicimageinteractionDescLiked is the schema descriptor for liked field.
+	publicimageinteractionDescLiked := publicimageinteractionFields[2].Descriptor()
+	// publicimageinteraction.DefaultLiked holds the default value on creation for the liked field.
+	publicimageinteraction.DefaultLiked = publicimageinteractionDescLiked.Default.(bool)
+	// publicimageinteractionDescFavorited is the schema descriptor for favorited field.
+	publicimageinteractionDescFavorited := publicimageinteractionFields[3].Descriptor()
+	// publicimageinteraction.DefaultFavorited holds the default value on creation for the favorited field.
+	publicimageinteraction.DefaultFavorited = publicimageinteractionDescFavorited.Default.(bool)
+	publicimagestatMixin := schema.PublicImageStat{}.Mixin()
+	publicimagestatMixinFields0 := publicimagestatMixin[0].Fields()
+	_ = publicimagestatMixinFields0
+	publicimagestatFields := schema.PublicImageStat{}.Fields()
+	_ = publicimagestatFields
+	// publicimagestatDescCreatedAt is the schema descriptor for created_at field.
+	publicimagestatDescCreatedAt := publicimagestatMixinFields0[0].Descriptor()
+	// publicimagestat.DefaultCreatedAt holds the default value on creation for the created_at field.
+	publicimagestat.DefaultCreatedAt = publicimagestatDescCreatedAt.Default.(func() time.Time)
+	// publicimagestatDescUpdatedAt is the schema descriptor for updated_at field.
+	publicimagestatDescUpdatedAt := publicimagestatMixinFields0[1].Descriptor()
+	// publicimagestat.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	publicimagestat.DefaultUpdatedAt = publicimagestatDescUpdatedAt.Default.(func() time.Time)
+	// publicimagestat.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	publicimagestat.UpdateDefaultUpdatedAt = publicimagestatDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// publicimagestatDescLikeCount is the schema descriptor for like_count field.
+	publicimagestatDescLikeCount := publicimagestatFields[1].Descriptor()
+	// publicimagestat.DefaultLikeCount holds the default value on creation for the like_count field.
+	publicimagestat.DefaultLikeCount = publicimagestatDescLikeCount.Default.(int)
+	// publicimagestatDescFavoriteCount is the schema descriptor for favorite_count field.
+	publicimagestatDescFavoriteCount := publicimagestatFields[2].Descriptor()
+	// publicimagestat.DefaultFavoriteCount holds the default value on creation for the favorite_count field.
+	publicimagestat.DefaultFavoriteCount = publicimagestatDescFavoriteCount.Default.(int)
+	// publicimagestatDescCommentCount is the schema descriptor for comment_count field.
+	publicimagestatDescCommentCount := publicimagestatFields[3].Descriptor()
+	// publicimagestat.DefaultCommentCount holds the default value on creation for the comment_count field.
+	publicimagestat.DefaultCommentCount = publicimagestatDescCommentCount.Default.(int)
 	redeemcodeMixin := schema.RedeemCode{}.Mixin()
 	redeemcodeMixinFields0 := redeemcodeMixin[0].Fields()
 	_ = redeemcodeMixinFields0

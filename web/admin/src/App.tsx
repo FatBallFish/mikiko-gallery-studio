@@ -107,7 +107,7 @@ export default function App() {
       case 'pricing':
         return <PricingPage onFeedback={feedback} />
       case 'reviews':
-        return <ReviewPage onFeedback={feedback} />
+        return <ReviewPage accessToken={session?.token} onFeedback={feedback} />
       case 'users':
         return <UsersPage onFeedback={feedback} />
       case 'redeem':
@@ -124,7 +124,7 @@ export default function App() {
       default:
         return <OverviewPage />
     }
-  }, [route])
+  }, [route, session?.token])
 
   if (route === 'login' || !session) {
     return (

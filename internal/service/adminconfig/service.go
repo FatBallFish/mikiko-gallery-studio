@@ -195,7 +195,7 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			Name: "Public Gallery",
 			Items: []domainadminconfig.Item{
 				valueItem("public_gallery", "publish_request_enabled", false),
-				valueItem("public_gallery", "gallery_enabled", false),
+				valueItem("public_gallery", "gallery_enabled", true),
 			},
 		},
 		{

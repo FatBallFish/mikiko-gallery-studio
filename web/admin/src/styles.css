@@ -836,19 +836,6 @@ code {
 
 .text-button:hover strong { color: var(--accent); }
 
-.check-stack {
-  display: grid;
-  gap: 8px;
-}
-
-.check-stack label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
-  color: var(--ink);
-}
-
 .check-grid-scroll {
   max-height: 176px;
   overflow-y: auto;
@@ -859,6 +846,13 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--pg-radius-sm);
   background: rgba(255, 255, 255, 0.58);
+}
+
+.check-grid-scroll.empty {
+  grid-template-columns: 1fr;
+  color: var(--soft);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .check-option {
@@ -877,6 +871,15 @@ code {
   letter-spacing: 0;
   text-transform: none;
   cursor: pointer;
+}
+
+.check-option input {
+  accent-color: var(--accent);
+}
+
+.check-option:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, #ffffff);
 }
 
 .check-option span {

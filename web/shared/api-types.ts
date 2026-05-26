@@ -35,9 +35,16 @@ export const API_PATHS = {
     imageDownload: '/api/agent/image/v1/images/{image_id}',
     tasks: '/api/agent/image/v1/tasks',
     taskDetail: '/api/agent/image/v1/tasks/{task_id}',
+    taskEvents: '/api/agent/image/v1/tasks/{task_id}/events',
+    taskStream: '/api/agent/image/v1/tasks/events',
     historyTasks: '/api/agent/image/v1/history/tasks',
     historyTaskDetail: '/api/agent/image/v1/history/tasks/{task_id}',
+    galleryImages: '/api/agent/gallery/v1/images',
+    galleryImageDetail: '/api/agent/gallery/v1/images/{image_id}',
+    galleryImageGroup: '/api/agent/gallery/v1/images/{image_id}/group',
     publishImage: '/api/agent/gallery/v1/images/{image_id}/publish',
+    likePublicImage: '/api/agent/gallery/v1/images/{image_id}/like',
+    favoritePublicImage: '/api/agent/gallery/v1/images/{image_id}/favorite',
     apiKeys: '/api/agent/account/v1/api-keys',
     apiKeyDetail: '/api/agent/account/v1/api-keys/{key_id}',
     apiKeyResetSecret: '/api/agent/account/v1/api-keys/{key_id}/reset-secret',
@@ -56,6 +63,7 @@ export const API_PATHS = {
     estimate: '/api/open/image/v1/estimate',
     galleryImages: '/api/open/image/v1/gallery/images',
     galleryImageDetail: '/api/open/image/v1/gallery/images/{image_id}',
+    galleryImageDownload: '/api/open/image/v1/gallery/images/{image_id}/image',
     paymentWebhook: '/api/open/image/v1/payments/webhooks/{channel}',
   },
   compat: {
@@ -102,6 +110,7 @@ export const API_PATHS = {
     configTabs: '/api/ops/admin/v1/config-tabs',
     configTabDetail: '/api/ops/admin/v1/config-tabs/{tab_key}',
     imageReviews: '/api/ops/admin/v1/image-reviews',
+    imageReviewImage: '/api/ops/admin/v1/image-reviews/{image_id}/image',
     imageReviewApprove: '/api/ops/admin/v1/image-reviews/{image_id}:approve',
     imageReviewReject: '/api/ops/admin/v1/image-reviews/{image_id}:reject',
     imageReviewUnpublish: '/api/ops/admin/v1/image-reviews/{image_id}:unpublish',
@@ -335,6 +344,19 @@ export type ImageResult = {
   review_reason?: string
   published_at?: string | null
   publish_status: PublishStatus
+  prompt?: string
+  task_type?: ImageTaskType
+  quality?: string
+  aspect_ratio?: string
+  route_model_code?: string
+  abstract_model?: string
+  author_name?: string
+  like_count?: number
+  favorite_count?: number
+  comment_count?: number
+  liked_by_viewer?: boolean
+  favorited_by_viewer?: boolean
+  created_at?: string
 }
 export type ImageTask = {
   id: string
@@ -471,7 +493,7 @@ export type ModelRoute = {
 }
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
-export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; task_type?: ImageTaskType; url?: string; download_url?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; object_key?: string; storage_driver?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; created_at: string }
+export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; quality?: string; aspect_ratio?: string; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; comment_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
 export type ReviewItem = { id: string; image_id?: string; title: string; owner: string; task_type: ImageTaskType; image_url: string; status: 'pending' | 'pending_review' | 'approved' | 'rejected' | 'unpublished' | string; reason: string; created_at: string; review_reason?: string; visibility_status?: string }
 export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[] }

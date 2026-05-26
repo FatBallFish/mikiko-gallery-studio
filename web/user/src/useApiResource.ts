@@ -1,5 +1,6 @@
 import { DependencyList, useCallback, useEffect, useState } from 'react'
 import { errorMessage } from '../../shared/http-client'
+import { useApp } from './components'
 
 export type ResourceState<T> = {
   data: T | null
@@ -9,6 +10,7 @@ export type ResourceState<T> = {
 }
 
 export function useApiResource<T>(loader: () => Promise<T>, deps: DependencyList = []): ResourceState<T> {
+  const app = useApp()
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -19,7 +21,9 @@ export function useApiResource<T>(loader: () => Promise<T>, deps: DependencyList
     try {
       setData(await loader())
     } catch (caught) {
-      setError(errorMessage(caught))
+      const message = errorMessage(caught)
+      setError(message)
+      app.notify('error', message)
     } finally {
       setLoading(false)
     }

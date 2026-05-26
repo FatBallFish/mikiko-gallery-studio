@@ -44,6 +44,10 @@ type Tx struct {
 	ProviderErrorPolicy *ProviderErrorPolicyClient
 	// ProviderModel is the client for interacting with the ProviderModel builders.
 	ProviderModel *ProviderModelClient
+	// PublicImageInteraction is the client for interacting with the PublicImageInteraction builders.
+	PublicImageInteraction *PublicImageInteractionClient
+	// PublicImageStat is the client for interacting with the PublicImageStat builders.
+	PublicImageStat *PublicImageStatClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
 	// ReferenceAsset is the client for interacting with the ReferenceAsset builders.
@@ -219,6 +223,8 @@ func (tx *Tx) init() {
 	tx.PointLedger = NewPointLedgerClient(tx.config)
 	tx.ProviderErrorPolicy = NewProviderErrorPolicyClient(tx.config)
 	tx.ProviderModel = NewProviderModelClient(tx.config)
+	tx.PublicImageInteraction = NewPublicImageInteractionClient(tx.config)
+	tx.PublicImageStat = NewPublicImageStatClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
 	tx.ReferenceAsset = NewReferenceAssetClient(tx.config)
 	tx.RefreshSession = NewRefreshSessionClient(tx.config)

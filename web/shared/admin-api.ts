@@ -30,7 +30,11 @@ import type {
   UserGroupWriteRequest,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { normalizePage, sharedApiClient } from './http-client'
+import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
+
+function normalizeGroupIds(ids: Array<string | number>) {
+  return ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+}
 
 export const adminApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
@@ -74,9 +78,9 @@ export const adminApi = {
   updateUserLimits: (user_id: string | number, rpm_limit: number, concurrency_limit: number) =>
     sharedApiClient.request(API_PATHS.ops.userLimits, { method: 'POST', pathParams: { user_id }, body: { rpm_limit, concurrency_limit } }),
   assignUserGroup: (user_id: string | number, user_group_code: string) =>
-    sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'PUT', pathParams: { user_id }, body: { group_ids: [user_group_code] } }),
+    sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'PUT', pathParams: { user_id }, body: { group_ids: normalizeGroupIds([user_group_code]) } }),
   assignUserGroups: (user_id: string | number, group_ids: Array<string | number>) =>
-    sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'PUT', pathParams: { user_id }, body: { group_ids } }),
+    sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'PUT', pathParams: { user_id }, body: { group_ids: normalizeGroupIds(group_ids) } }),
   listUserGroups: async () => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.userGroups))).items.map(toUserGroup),
   createUserGroup: async (group: UserGroupWriteRequest) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroups, { method: 'POST', body: group })),
   updateUserGroup: async (group_id: string | number, group: Partial<UserGroupWriteRequest>) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroupDetail, { method: 'PUT', pathParams: { group_id }, body: group })),
@@ -89,6 +93,7 @@ export const adminApi = {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.imageReviews, { query: { status, page, page_size } }))
     return result.items.map(toReview)
   },
+  imageReviewUrl: (image_id: string, accessToken?: string | null) => adminAssetUrl(fillPath(API_PATHS.ops.imageReviewImage, { image_id }), accessToken),
   decideReview: async (image_id: string, decision: 'approve' | 'reject' | 'unpublish', reason = '') => {
     const path = decision === 'approve' ? API_PATHS.ops.imageReviewApprove : decision === 'reject' ? API_PATHS.ops.imageReviewReject : API_PATHS.ops.imageReviewUnpublish
     return toReview(await sharedApiClient.request(path, { method: 'POST', pathParams: { image_id }, body: { reason } }))
@@ -355,6 +360,7 @@ function toAudit(raw: any): AuditLog {
 }
 
 function toReview(raw: any): ReviewItem {
+  const status = normalizeReviewStatus(raw.status ?? raw.visibility_status)
   return {
     ...raw,
     id: String(raw.id ?? raw.image_id),
@@ -363,10 +369,22 @@ function toReview(raw: any): ReviewItem {
     owner: raw.owner ?? raw.user_id ?? '',
     task_type: raw.task_type ?? 'text_to_image',
     image_url: raw.image_url ?? raw.download_url ?? raw.url ?? '',
-    status: raw.status ?? raw.visibility_status ?? 'pending',
+    status,
     reason: raw.reason ?? raw.review_reason ?? '',
     created_at: raw.created_at ?? '',
   }
+}
+
+function normalizeReviewStatus(status: unknown) {
+  const value = String(status ?? '').trim()
+  if (value === 'pending') return 'pending_review'
+  return value || 'private'
+}
+
+function adminAssetUrl(path: string, accessToken?: string | null) {
+  if (/^https?:\/\//i.test(path)) return path
+  const baseUrl = getDefaultBaseUrl() || globalThis.location?.origin || ''
+  return `${baseUrl}${withQuery(path, { access_token: accessToken })}`
 }
 
 function toRoute(raw: any): ModelRoute {

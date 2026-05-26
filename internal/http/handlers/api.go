@@ -1168,7 +1168,7 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 			writeMethodNotAllowed(w, r)
 			return
 		}
-		user, appErr := a.requireUser(r)
+		user, appErr := a.requireUserWithQueryToken(r)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
@@ -1219,7 +1219,7 @@ func (a *API) HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	user, appErr := a.requireUser(r)
+	user, appErr := a.requireUserWithQueryToken(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
@@ -1231,9 +1231,33 @@ func (a *API) HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", defaultString(result.MimeType, "application/octet-stream"))
-	w.Header().Set("Content-Disposition", `attachment; filename="`+result.ID+`"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+imageDownloadFilename(result)+`"`)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+func imageDownloadFilename(result provider.ImageResult) string {
+	name := strings.TrimSpace(result.ID)
+	if name == "" {
+		name = "image"
+	}
+	if ext := filepath.Ext(name); ext != "" {
+		return name
+	}
+	ext := filepath.Ext(strings.TrimSpace(result.ObjectKey))
+	if ext == "" {
+		switch strings.ToLower(strings.TrimSpace(result.MimeType)) {
+		case "image/jpeg", "image/jpg":
+			ext = ".jpg"
+		case "image/webp":
+			ext = ".webp"
+		case "image/gif":
+			ext = ".gif"
+		default:
+			ext = ".png"
+		}
+	}
+	return name + ext
 }
 
 func (a *API) HandleOpenReferenceAssetUploadSession(w http.ResponseWriter, r *http.Request) {
@@ -1349,12 +1373,17 @@ func (a *API) HandleAgentTaskDetail(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	user, appErr := a.requireUser(r)
+	user, appErr := a.requireUserWithQueryToken(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
 	taskID := strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/tasks/")
+	if strings.HasSuffix(taskID, "/events") {
+		taskID = strings.TrimSuffix(taskID, "/events")
+		a.handleAgentTaskEvents(w, r, user, taskID)
+		return
+	}
 	task, err := a.tasks.GetByID(r.Context(), user.ID, taskID)
 	if err != nil {
 		httpx.WriteError(w, r, err.(*errs.Error))
@@ -1363,8 +1392,227 @@ func (a *API) HandleAgentTaskDetail(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, task)
 }
 
+func (a *API) HandleAgentTaskEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUserWithQueryToken(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	a.handleAgentTaskStream(w, r, user)
+}
+
+func (a *API) requireUserWithQueryToken(r *http.Request) (*domainauth.User, *errs.Error) {
+	if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" && r.Header.Get("Authorization") == "" {
+		r = r.Clone(r.Context())
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	return a.requireUser(r)
+}
+
+func (a *API) requireAdminWithQueryToken(r *http.Request) (*adminauthservice.Claims, *errs.Error) {
+	if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" && r.Header.Get("Authorization") == "" {
+		r = r.Clone(r.Context())
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	return a.requireAdmin(r)
+}
+
+func (a *API) handleAgentTaskEvents(w http.ResponseWriter, r *http.Request, user *domainauth.User, taskID string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, errs.CodeInternal, "streaming is not supported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	sendTask := func() bool {
+		task, err := a.tasks.GetByID(r.Context(), user.ID, taskID)
+		if err != nil {
+			writeSSE(w, "error", normalizeAppError(err))
+			flusher.Flush()
+			return true
+		}
+		writeSSE(w, "task", task)
+		flusher.Flush()
+		return isTerminalTaskStatus(task.Status)
+	}
+	if sendTask() {
+		return
+	}
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			if sendTask() {
+				return
+			}
+		}
+	}
+}
+
+func (a *API) handleAgentTaskStream(w http.ResponseWriter, r *http.Request, user *domainauth.User) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, errs.CodeInternal, "streaming is not supported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	seen := map[string]string{}
+	sendSnapshot := func(initial bool) {
+		tasks, err := a.latestUserTasks(r.Context(), user.ID, 20)
+		if err != nil {
+			writeSSE(w, "error", normalizeAppError(err))
+			flusher.Flush()
+			return
+		}
+		if initial {
+			writeSSE(w, "history", tasks)
+			for _, task := range tasks {
+				seen[task.ID] = taskStreamSignature(task)
+			}
+			flusher.Flush()
+			return
+		}
+		sent := false
+		for _, task := range tasks {
+			signature := taskStreamSignature(task)
+			if seen[task.ID] == signature {
+				continue
+			}
+			seen[task.ID] = signature
+			writeSSE(w, "task", task)
+			sent = true
+		}
+		if !sent {
+			writeSSE(w, "ping", map[string]string{"time": time.Now().UTC().Format(time.RFC3339)})
+		}
+		flusher.Flush()
+	}
+
+	sendSnapshot(true)
+	if strings.EqualFold(r.URL.Query().Get("once"), "true") {
+		return
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			sendSnapshot(false)
+		}
+	}
+}
+
+func (a *API) latestUserTasks(ctx context.Context, userID int64, limit int) ([]domainimagetask.Task, error) {
+	tasks, err := a.tasks.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(tasks, func(i, j int) bool {
+		return taskSortTime(tasks[i]).After(taskSortTime(tasks[j]))
+	})
+	if limit > 0 && len(tasks) > limit {
+		tasks = tasks[:limit]
+	}
+	sort.SliceStable(tasks, func(i, j int) bool {
+		return taskSortTime(tasks[i]).Before(taskSortTime(tasks[j]))
+	})
+	return tasks, nil
+}
+
+func taskSortTime(task domainimagetask.Task) time.Time {
+	if !task.CreatedAt.IsZero() {
+		return task.CreatedAt
+	}
+	if !task.UpdatedAt.IsZero() {
+		return task.UpdatedAt
+	}
+	return time.Time{}
+}
+
+func taskStreamSignature(task domainimagetask.Task) string {
+	return fmt.Sprintf("%s:%s:%s:%d", task.ID, task.Status, task.UpdatedAt.Format(time.RFC3339Nano), len(task.Results))
+}
+
+func writeSSE(w io.Writer, event string, payload any) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		data = []byte(`{"error":{"code":"INTERNAL_ERROR","message":"failed to encode event"}}`)
+	}
+	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+}
+
+func isTerminalTaskStatus(status string) bool {
+	switch status {
+	case "succeeded", "partial_failed", "failed", "cancelled", "rejected", "deleted":
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *API) HandleAgentGalleryImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	page, queryErr := parsePositiveIntQuery(r, "page", 1)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	result, err := a.tasks.ListGalleryByUser(r.Context(), user.ID, domainimagetask.GalleryListRequest{
+		Page:     page,
+		PageSize: pageSize,
+		Status:   r.URL.Query().Get("visibility_status"),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": result.Items,
+		"pagination": map[string]any{
+			"page":      result.Page,
+			"page_size": result.PageSize,
+			"total":     result.Total,
+		},
+	})
+}
+
 func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method == http.MethodGet && strings.TrimSuffix(r.URL.Path, "/") == "/api/agent/gallery/v1/images" {
+		a.HandleAgentGalleryImages(w, r)
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete && r.Method != http.MethodPut && r.Method != http.MethodPatch {
 		writeMethodNotAllowed(w, r)
 		return
 	}
@@ -1378,15 +1626,69 @@ func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, r, parseErr)
 		return
 	}
+	if r.Method == http.MethodDelete {
+		if action != "" {
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
+			return
+		}
+		if err := a.tasks.DeleteImageResult(r.Context(), user.ID, imageID); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.image_delete", "image_result", imageID, nil)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method == http.MethodPut || r.Method == http.MethodPatch {
+		if action != "group" {
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
+			return
+		}
+		var payload struct {
+			ImageGroup string `json:"image_group"`
+			Group      string `json:"group"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		imageGroup := payload.ImageGroup
+		if imageGroup == "" {
+			imageGroup = payload.Group
+		}
+		image, err := a.tasks.SetImageGroup(r.Context(), user.ID, imageID, imageGroup)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.image_group_update", "image_result", imageID, map[string]any{"image_group": image.ImageGroup})
+		httpx.WriteSuccess(w, r, http.StatusOK, image)
+		return
+	}
+	if action == "like" || action == "favorite" {
+		var payload struct {
+			Active *bool `json:"active"`
+		}
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+		}
+		active := true
+		if payload.Active != nil {
+			active = *payload.Active
+		}
+		image, err := a.tasks.SetPublicImageInteraction(r.Context(), user.ID, imageID, action, active)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.public_"+action, "image_result", imageID, map[string]any{"active": active})
+		httpx.WriteSuccess(w, r, http.StatusOK, image)
+		return
+	}
 	if action != "publish" {
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
 		return
 	}
-	if !a.adminConfigBool(r.Context(), "public_gallery", "publish_request_enabled", false) {
-		httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "publish request is disabled"))
-		return
-	}
-
 	ownedImage, err := a.findOwnedGalleryImage(r.Context(), user.ID, imageID)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -1394,8 +1696,8 @@ func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Reque
 	}
 	allowed, reason, err := a.moderatePublishRequest(r.Context(), ownedImage.Prompt)
 	if err != nil {
-		httpx.WriteError(w, r, normalizeAppError(err))
-		return
+		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_moderation_skipped", "image_result", imageID, map[string]any{"reason": err.Error()})
+		allowed = true
 	}
 	if !allowed {
 		rejected, reviewErr := a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityRejected, defaultString(reason, "auto_moderation_blocked"), nil)
@@ -1488,8 +1790,15 @@ func (a *API) HandleOpenGalleryImages(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	if !a.adminConfigBool(r.Context(), "public_gallery", "gallery_enabled", false) {
-		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery is disabled"))
+	if !a.adminConfigBool(r.Context(), "public_gallery", "gallery_enabled", true) {
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+			"items": []domainimagetask.GalleryImage{},
+			"pagination": map[string]any{
+				"page":      1,
+				"page_size": 20,
+				"total":     0,
+			},
+		})
 		return
 	}
 	page, queryErr := parsePositiveIntQuery(r, "page", 1)
@@ -1502,7 +1811,19 @@ func (a *API) HandleOpenGalleryImages(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.tasks.ListPublicGallery(r.Context(), domainimagetask.GalleryListRequest{Page: page, PageSize: pageSize})
+	viewer := a.optionalUserWithQueryToken(r)
+	var viewerID int64
+	if viewer != nil {
+		viewerID = viewer.ID
+	}
+	result, err := a.tasks.ListPublicGallery(r.Context(), domainimagetask.GalleryListRequest{
+		Page:          page,
+		PageSize:      pageSize,
+		Sort:          r.URL.Query().Get("sort"),
+		ViewerUserID:  viewerID,
+		LikedOnly:     parseBoolQuery(r, "liked"),
+		FavoritedOnly: parseBoolQuery(r, "favorited"),
+	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -1517,16 +1838,45 @@ func (a *API) HandleOpenGalleryImages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *API) optionalUserWithQueryToken(r *http.Request) *domainauth.User {
+	if r.Header.Get("Authorization") == "" && strings.TrimSpace(r.URL.Query().Get("access_token")) == "" {
+		return nil
+	}
+	user, appErr := a.requireUserWithQueryToken(r)
+	if appErr != nil {
+		return nil
+	}
+	return user
+}
+
+func parseBoolQuery(r *http.Request, key string) bool {
+	value := strings.TrimSpace(strings.ToLower(r.URL.Query().Get(key)))
+	return value == "1" || value == "true" || value == "yes"
+}
+
 func (a *API) HandleOpenGalleryImageDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	if !a.adminConfigBool(r.Context(), "public_gallery", "gallery_enabled", false) {
+	if !a.adminConfigBool(r.Context(), "public_gallery", "gallery_enabled", true) {
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery is disabled"))
 		return
 	}
 	imageID := strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/gallery/images/")
+	if strings.HasSuffix(imageID, "/image") {
+		imageID = strings.TrimSuffix(imageID, "/image")
+		result, content, err := a.tasks.DownloadPublicImageResult(r.Context(), imageID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		w.Header().Set("Content-Type", defaultString(result.MimeType, "application/octet-stream"))
+		w.Header().Set("Content-Disposition", `inline; filename="`+imageDownloadFilename(result)+`"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(content)
+		return
+	}
 	image, err := a.tasks.GetPublicImage(r.Context(), imageID)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -1555,9 +1905,10 @@ func (a *API) HandleAdminImageReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := a.tasks.ListGallery(r.Context(), domainimagetask.GalleryListRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Status:   r.URL.Query().Get("status"),
+		Page:       page,
+		PageSize:   pageSize,
+		Status:     r.URL.Query().Get("status"),
+		ReviewOnly: true,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -1574,9 +1925,30 @@ func (a *API) HandleAdminImageReviews(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleAdminImageReviewDetail(w http.ResponseWriter, r *http.Request) {
-	admin, appErr := a.requireAdmin(r)
+	admin, appErr := a.requireAdminWithQueryToken(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method == http.MethodGet {
+		imageID, action, parseErr := parseAdminImageReviewAction(r.URL.Path)
+		if parseErr != nil {
+			httpx.WriteError(w, r, parseErr)
+			return
+		}
+		if action != "image" {
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "image review route not found"))
+			return
+		}
+		result, content, err := a.tasks.DownloadImageResultForAdmin(r.Context(), imageID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		w.Header().Set("Content-Type", defaultString(result.MimeType, "application/octet-stream"))
+		w.Header().Set("Content-Disposition", `inline; filename="`+imageDownloadFilename(result)+`"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(content)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -3841,6 +4213,9 @@ func parseAdminRedeemCodeAction(path string) (int64, string, *errs.Error) {
 func parseAgentGalleryImageAction(path string) (string, string, *errs.Error) {
 	trimmed := strings.TrimPrefix(path, "/api/agent/gallery/v1/images/")
 	parts := strings.Split(strings.Trim(trimmed, "/"), "/")
+	if len(parts) == 1 && parts[0] != "" {
+		return parts[0], "", nil
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
 		return parts[0], parts[1], nil
 	}
@@ -3849,6 +4224,9 @@ func parseAgentGalleryImageAction(path string) (string, string, *errs.Error) {
 
 func parseAdminImageReviewAction(path string) (string, string, *errs.Error) {
 	trimmed := strings.TrimPrefix(path, "/api/ops/admin/v1/image-reviews/")
+	if parts := strings.Split(strings.Trim(trimmed, "/"), "/"); len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0], parts[1], nil
+	}
 	parts := strings.Split(strings.Trim(trimmed, "/"), ":")
 	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
 		return parts[0], parts[1], nil

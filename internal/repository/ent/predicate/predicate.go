@@ -54,6 +54,12 @@ type ProviderErrorPolicy func(*sql.Selector)
 // ProviderModel is the predicate function for providermodel builders.
 type ProviderModel func(*sql.Selector)
 
+// PublicImageInteraction is the predicate function for publicimageinteraction builders.
+type PublicImageInteraction func(*sql.Selector)
+
+// PublicImageStat is the predicate function for publicimagestat builders.
+type PublicImageStat func(*sql.Selector)
+
 // RedeemCode is the predicate function for redeemcode builders.
 type RedeemCode func(*sql.Selector)
 

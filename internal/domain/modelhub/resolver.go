@@ -111,18 +111,59 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			taskTypes[price.TaskType] = struct{}{}
 			qualities[price.Quality] = struct{}{}
 		}
+		aspectRatios, maxOutputCount, maxReferenceCount := r.visibleRouteModelLimits(routeModel, routing)
 		visible = append(visible, VisibleRouteModel{
-			ID:                  routeModel.ID,
-			Code:                routeModel.Code,
-			Name:                routeModel.Name,
-			Description:         routeModel.Description,
-			TaskTypes:           sortedSet(taskTypes),
-			Qualities:           append([]string{"auto"}, sortedSet(qualities)...),
-			EffectiveMultiplier: multiplier.StringFixed(5),
-			Prices:              prices,
+			ID:                     routeModel.ID,
+			Code:                   routeModel.Code,
+			Name:                   routeModel.Name,
+			Description:            routeModel.Description,
+			TaskTypes:              sortedSet(taskTypes),
+			Qualities:              append([]string{"auto"}, sortedSet(qualities)...),
+			AspectRatios:           aspectRatios,
+			MaxOutputImageCount:    maxOutputCount,
+			MaxReferenceImageCount: maxReferenceCount,
+			EffectiveMultiplier:    multiplier.StringFixed(5),
+			Prices:                 prices,
 		})
 	}
 	return visible, nil
+}
+
+func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing ModelRoutingSnapshot) ([]string, int, int) {
+	candidateByID := map[int64]ProviderCandidate{}
+	for _, candidate := range routing.ProviderModels {
+		candidateByID[candidate.AccountModelID] = candidate
+	}
+	ratios := map[string]struct{}{}
+	maxOutputCount := 0
+	maxReferenceCount := 0
+	for _, route := range routing.Candidates {
+		if !route.Enabled || route.RouteModelID != routeModel.ID {
+			continue
+		}
+		candidate, ok := candidateByID[route.AccountModelID]
+		if !ok {
+			continue
+		}
+		for _, ratio := range candidate.SupportedAspectRatios {
+			if trimmed := strings.TrimSpace(ratio); trimmed != "" {
+				ratios[trimmed] = struct{}{}
+			}
+		}
+		if candidate.MaxImageCount > maxOutputCount {
+			maxOutputCount = candidate.MaxImageCount
+		}
+		if candidate.MaxReferenceImageCount > maxReferenceCount {
+			maxReferenceCount = candidate.MaxReferenceImageCount
+		}
+	}
+	if maxOutputCount <= 0 {
+		maxOutputCount = r.cfg.GenerationLimits.MaxImageCount
+	}
+	if maxReferenceCount <= 0 {
+		maxReferenceCount = r.cfg.GenerationLimits.ReferenceImageMaxCount
+	}
+	return sortedSet(ratios), maxOutputCount, maxReferenceCount
 }
 
 func effectiveMultiplier(routeModel RouteModelConfig, groups []UserGroupConfig) (decimal.Decimal, bool) {
@@ -319,14 +360,17 @@ type CapabilityItem struct {
 }
 
 type VisibleRouteModel struct {
-	ID                  int64
-	Code                string
-	Name                string
-	Description         string
-	TaskTypes           []string
-	Qualities           []string
-	EffectiveMultiplier string
-	Prices              []VisibleRouteModelPrice
+	ID                     int64
+	Code                   string
+	Name                   string
+	Description            string
+	TaskTypes              []string
+	Qualities              []string
+	AspectRatios           []string
+	MaxOutputImageCount    int
+	MaxReferenceImageCount int
+	EffectiveMultiplier    string
+	Prices                 []VisibleRouteModelPrice
 }
 
 type VisibleRouteModelPrice struct {

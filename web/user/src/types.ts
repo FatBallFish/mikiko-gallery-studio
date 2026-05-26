@@ -1,6 +1,6 @@
 import type { Balance, UserProfile } from '../../shared/api-types'
 
-export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'gallery' | 'api-keys' | 'profile' | 'docs'
+export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'gallery' | 'public-gallery' | 'api-keys' | 'profile' | 'docs'
 
 export type ToastTone = 'success' | 'error' | 'info'
 
@@ -8,6 +8,7 @@ export type Toast = {
   id: number
   tone: ToastTone
   message: string
+  durationMs?: number
 }
 
 export type SessionState = {

@@ -8,7 +8,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 
 	"github.com/fatballfish/pic-gallery/internal/provider"
@@ -39,7 +38,6 @@ func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provi
 		"model":           req.Model,
 		"prompt":          req.Prompt,
 		"size":            req.Size,
-		"n":               normalizeCount(req.OutputImageCount),
 		"quality":         req.Quality,
 		"response_format": string(req.ResponseFormat),
 	}
@@ -69,9 +67,6 @@ func (c *Client) Edit(ctx context.Context, req provider.ImageRequest) (provider.
 		return provider.ImageResponse{}, err
 	}
 	if err := writeField("quality", req.Quality); err != nil {
-		return provider.ImageResponse{}, err
-	}
-	if err := writeField("n", strconv.Itoa(normalizeCount(req.OutputImageCount))); err != nil {
 		return provider.ImageResponse{}, err
 	}
 	if err := writeField("response_format", string(req.ResponseFormat)); err != nil {

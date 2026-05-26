@@ -28,6 +28,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
@@ -70,6 +72,8 @@ const (
 	TypePointLedger                 = "PointLedger"
 	TypeProviderErrorPolicy         = "ProviderErrorPolicy"
 	TypeProviderModel               = "ProviderModel"
+	TypePublicImageInteraction      = "PublicImageInteraction"
+	TypePublicImageStat             = "PublicImageStat"
 	TypeRedeemCode                  = "RedeemCode"
 	TypeReferenceAsset              = "ReferenceAsset"
 	TypeRefreshSession              = "RefreshSession"
@@ -4627,6 +4631,7 @@ type ImageResultMutation struct {
 	height             *int
 	addheight          *int
 	sha256             *string
+	image_group        *string
 	visibility_status  *string
 	review_reason      *string
 	published_at       *time.Time
@@ -5301,6 +5306,42 @@ func (m *ImageResultMutation) ResetSha256() {
 	m.sha256 = nil
 }
 
+// SetImageGroup sets the "image_group" field.
+func (m *ImageResultMutation) SetImageGroup(s string) {
+	m.image_group = &s
+}
+
+// ImageGroup returns the value of the "image_group" field in the mutation.
+func (m *ImageResultMutation) ImageGroup() (r string, exists bool) {
+	v := m.image_group
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageGroup returns the old "image_group" field's value of the ImageResult entity.
+// If the ImageResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageResultMutation) OldImageGroup(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageGroup is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageGroup requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageGroup: %w", err)
+	}
+	return oldValue.ImageGroup, nil
+}
+
+// ResetImageGroup resets all changes to the "image_group" field.
+func (m *ImageResultMutation) ResetImageGroup() {
+	m.image_group = nil
+}
+
 // SetVisibilityStatus sets the "visibility_status" field.
 func (m *ImageResultMutation) SetVisibilityStatus(s string) {
 	m.visibility_status = &s
@@ -5469,7 +5510,7 @@ func (m *ImageResultMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImageResultMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 17)
 	if m.created_at != nil {
 		fields = append(fields, imageresult.FieldCreatedAt)
 	}
@@ -5508,6 +5549,9 @@ func (m *ImageResultMutation) Fields() []string {
 	}
 	if m.sha256 != nil {
 		fields = append(fields, imageresult.FieldSha256)
+	}
+	if m.image_group != nil {
+		fields = append(fields, imageresult.FieldImageGroup)
 	}
 	if m.visibility_status != nil {
 		fields = append(fields, imageresult.FieldVisibilityStatus)
@@ -5552,6 +5596,8 @@ func (m *ImageResultMutation) Field(name string) (ent.Value, bool) {
 		return m.Height()
 	case imageresult.FieldSha256:
 		return m.Sha256()
+	case imageresult.FieldImageGroup:
+		return m.ImageGroup()
 	case imageresult.FieldVisibilityStatus:
 		return m.VisibilityStatus()
 	case imageresult.FieldReviewReason:
@@ -5593,6 +5639,8 @@ func (m *ImageResultMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldHeight(ctx)
 	case imageresult.FieldSha256:
 		return m.OldSha256(ctx)
+	case imageresult.FieldImageGroup:
+		return m.OldImageGroup(ctx)
 	case imageresult.FieldVisibilityStatus:
 		return m.OldVisibilityStatus(ctx)
 	case imageresult.FieldReviewReason:
@@ -5698,6 +5746,13 @@ func (m *ImageResultMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSha256(v)
+		return nil
+	case imageresult.FieldImageGroup:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageGroup(v)
 		return nil
 	case imageresult.FieldVisibilityStatus:
 		v, ok := value.(string)
@@ -5879,6 +5934,9 @@ func (m *ImageResultMutation) ResetField(name string) error {
 		return nil
 	case imageresult.FieldSha256:
 		m.ResetSha256()
+		return nil
+	case imageresult.FieldImageGroup:
+		m.ResetImageGroup()
 		return nil
 	case imageresult.FieldVisibilityStatus:
 		m.ResetVisibilityStatus()
@@ -20006,6 +20064,1336 @@ func (m *ProviderModelMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ProviderModelMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ProviderModel edge %s", name)
+}
+
+// PublicImageInteractionMutation represents an operation that mutates the PublicImageInteraction nodes in the graph.
+type PublicImageInteractionMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	created_at    *time.Time
+	updated_at    *time.Time
+	image_id      *uuid.UUID
+	user_id       *int64
+	adduser_id    *int64
+	liked         *bool
+	favorited     *bool
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*PublicImageInteraction, error)
+	predicates    []predicate.PublicImageInteraction
+}
+
+var _ ent.Mutation = (*PublicImageInteractionMutation)(nil)
+
+// publicimageinteractionOption allows management of the mutation configuration using functional options.
+type publicimageinteractionOption func(*PublicImageInteractionMutation)
+
+// newPublicImageInteractionMutation creates new mutation for the PublicImageInteraction entity.
+func newPublicImageInteractionMutation(c config, op Op, opts ...publicimageinteractionOption) *PublicImageInteractionMutation {
+	m := &PublicImageInteractionMutation{
+		config:        c,
+		op:            op,
+		typ:           TypePublicImageInteraction,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withPublicImageInteractionID sets the ID field of the mutation.
+func withPublicImageInteractionID(id int) publicimageinteractionOption {
+	return func(m *PublicImageInteractionMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *PublicImageInteraction
+		)
+		m.oldValue = func(ctx context.Context) (*PublicImageInteraction, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().PublicImageInteraction.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withPublicImageInteraction sets the old PublicImageInteraction of the mutation.
+func withPublicImageInteraction(node *PublicImageInteraction) publicimageinteractionOption {
+	return func(m *PublicImageInteractionMutation) {
+		m.oldValue = func(context.Context) (*PublicImageInteraction, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m PublicImageInteractionMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m PublicImageInteractionMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *PublicImageInteractionMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *PublicImageInteractionMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().PublicImageInteraction.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *PublicImageInteractionMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *PublicImageInteractionMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the PublicImageInteraction entity.
+// If the PublicImageInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageInteractionMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *PublicImageInteractionMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *PublicImageInteractionMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *PublicImageInteractionMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the PublicImageInteraction entity.
+// If the PublicImageInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageInteractionMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *PublicImageInteractionMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetImageID sets the "image_id" field.
+func (m *PublicImageInteractionMutation) SetImageID(u uuid.UUID) {
+	m.image_id = &u
+}
+
+// ImageID returns the value of the "image_id" field in the mutation.
+func (m *PublicImageInteractionMutation) ImageID() (r uuid.UUID, exists bool) {
+	v := m.image_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageID returns the old "image_id" field's value of the PublicImageInteraction entity.
+// If the PublicImageInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageInteractionMutation) OldImageID(ctx context.Context) (v uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageID: %w", err)
+	}
+	return oldValue.ImageID, nil
+}
+
+// ResetImageID resets all changes to the "image_id" field.
+func (m *PublicImageInteractionMutation) ResetImageID() {
+	m.image_id = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *PublicImageInteractionMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *PublicImageInteractionMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the PublicImageInteraction entity.
+// If the PublicImageInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageInteractionMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *PublicImageInteractionMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *PublicImageInteractionMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *PublicImageInteractionMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetLiked sets the "liked" field.
+func (m *PublicImageInteractionMutation) SetLiked(b bool) {
+	m.liked = &b
+}
+
+// Liked returns the value of the "liked" field in the mutation.
+func (m *PublicImageInteractionMutation) Liked() (r bool, exists bool) {
+	v := m.liked
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLiked returns the old "liked" field's value of the PublicImageInteraction entity.
+// If the PublicImageInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageInteractionMutation) OldLiked(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLiked is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLiked requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLiked: %w", err)
+	}
+	return oldValue.Liked, nil
+}
+
+// ResetLiked resets all changes to the "liked" field.
+func (m *PublicImageInteractionMutation) ResetLiked() {
+	m.liked = nil
+}
+
+// SetFavorited sets the "favorited" field.
+func (m *PublicImageInteractionMutation) SetFavorited(b bool) {
+	m.favorited = &b
+}
+
+// Favorited returns the value of the "favorited" field in the mutation.
+func (m *PublicImageInteractionMutation) Favorited() (r bool, exists bool) {
+	v := m.favorited
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFavorited returns the old "favorited" field's value of the PublicImageInteraction entity.
+// If the PublicImageInteraction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageInteractionMutation) OldFavorited(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFavorited is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFavorited requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFavorited: %w", err)
+	}
+	return oldValue.Favorited, nil
+}
+
+// ResetFavorited resets all changes to the "favorited" field.
+func (m *PublicImageInteractionMutation) ResetFavorited() {
+	m.favorited = nil
+}
+
+// Where appends a list predicates to the PublicImageInteractionMutation builder.
+func (m *PublicImageInteractionMutation) Where(ps ...predicate.PublicImageInteraction) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the PublicImageInteractionMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *PublicImageInteractionMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.PublicImageInteraction, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *PublicImageInteractionMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *PublicImageInteractionMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (PublicImageInteraction).
+func (m *PublicImageInteractionMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *PublicImageInteractionMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.created_at != nil {
+		fields = append(fields, publicimageinteraction.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, publicimageinteraction.FieldUpdatedAt)
+	}
+	if m.image_id != nil {
+		fields = append(fields, publicimageinteraction.FieldImageID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, publicimageinteraction.FieldUserID)
+	}
+	if m.liked != nil {
+		fields = append(fields, publicimageinteraction.FieldLiked)
+	}
+	if m.favorited != nil {
+		fields = append(fields, publicimageinteraction.FieldFavorited)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *PublicImageInteractionMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case publicimageinteraction.FieldCreatedAt:
+		return m.CreatedAt()
+	case publicimageinteraction.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case publicimageinteraction.FieldImageID:
+		return m.ImageID()
+	case publicimageinteraction.FieldUserID:
+		return m.UserID()
+	case publicimageinteraction.FieldLiked:
+		return m.Liked()
+	case publicimageinteraction.FieldFavorited:
+		return m.Favorited()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *PublicImageInteractionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case publicimageinteraction.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case publicimageinteraction.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case publicimageinteraction.FieldImageID:
+		return m.OldImageID(ctx)
+	case publicimageinteraction.FieldUserID:
+		return m.OldUserID(ctx)
+	case publicimageinteraction.FieldLiked:
+		return m.OldLiked(ctx)
+	case publicimageinteraction.FieldFavorited:
+		return m.OldFavorited(ctx)
+	}
+	return nil, fmt.Errorf("unknown PublicImageInteraction field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PublicImageInteractionMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case publicimageinteraction.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case publicimageinteraction.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case publicimageinteraction.FieldImageID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageID(v)
+		return nil
+	case publicimageinteraction.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case publicimageinteraction.FieldLiked:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLiked(v)
+		return nil
+	case publicimageinteraction.FieldFavorited:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFavorited(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PublicImageInteraction field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *PublicImageInteractionMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, publicimageinteraction.FieldUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *PublicImageInteractionMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case publicimageinteraction.FieldUserID:
+		return m.AddedUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PublicImageInteractionMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case publicimageinteraction.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PublicImageInteraction numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *PublicImageInteractionMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *PublicImageInteractionMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *PublicImageInteractionMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown PublicImageInteraction nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *PublicImageInteractionMutation) ResetField(name string) error {
+	switch name {
+	case publicimageinteraction.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case publicimageinteraction.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case publicimageinteraction.FieldImageID:
+		m.ResetImageID()
+		return nil
+	case publicimageinteraction.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case publicimageinteraction.FieldLiked:
+		m.ResetLiked()
+		return nil
+	case publicimageinteraction.FieldFavorited:
+		m.ResetFavorited()
+		return nil
+	}
+	return fmt.Errorf("unknown PublicImageInteraction field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *PublicImageInteractionMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *PublicImageInteractionMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *PublicImageInteractionMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *PublicImageInteractionMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *PublicImageInteractionMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *PublicImageInteractionMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *PublicImageInteractionMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown PublicImageInteraction unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *PublicImageInteractionMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown PublicImageInteraction edge %s", name)
+}
+
+// PublicImageStatMutation represents an operation that mutates the PublicImageStat nodes in the graph.
+type PublicImageStatMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *int
+	created_at        *time.Time
+	updated_at        *time.Time
+	image_id          *uuid.UUID
+	like_count        *int
+	addlike_count     *int
+	favorite_count    *int
+	addfavorite_count *int
+	comment_count     *int
+	addcomment_count  *int
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*PublicImageStat, error)
+	predicates        []predicate.PublicImageStat
+}
+
+var _ ent.Mutation = (*PublicImageStatMutation)(nil)
+
+// publicimagestatOption allows management of the mutation configuration using functional options.
+type publicimagestatOption func(*PublicImageStatMutation)
+
+// newPublicImageStatMutation creates new mutation for the PublicImageStat entity.
+func newPublicImageStatMutation(c config, op Op, opts ...publicimagestatOption) *PublicImageStatMutation {
+	m := &PublicImageStatMutation{
+		config:        c,
+		op:            op,
+		typ:           TypePublicImageStat,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withPublicImageStatID sets the ID field of the mutation.
+func withPublicImageStatID(id int) publicimagestatOption {
+	return func(m *PublicImageStatMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *PublicImageStat
+		)
+		m.oldValue = func(ctx context.Context) (*PublicImageStat, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().PublicImageStat.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withPublicImageStat sets the old PublicImageStat of the mutation.
+func withPublicImageStat(node *PublicImageStat) publicimagestatOption {
+	return func(m *PublicImageStatMutation) {
+		m.oldValue = func(context.Context) (*PublicImageStat, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m PublicImageStatMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m PublicImageStatMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *PublicImageStatMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *PublicImageStatMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().PublicImageStat.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *PublicImageStatMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *PublicImageStatMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the PublicImageStat entity.
+// If the PublicImageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageStatMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *PublicImageStatMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *PublicImageStatMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *PublicImageStatMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the PublicImageStat entity.
+// If the PublicImageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageStatMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *PublicImageStatMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetImageID sets the "image_id" field.
+func (m *PublicImageStatMutation) SetImageID(u uuid.UUID) {
+	m.image_id = &u
+}
+
+// ImageID returns the value of the "image_id" field in the mutation.
+func (m *PublicImageStatMutation) ImageID() (r uuid.UUID, exists bool) {
+	v := m.image_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageID returns the old "image_id" field's value of the PublicImageStat entity.
+// If the PublicImageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageStatMutation) OldImageID(ctx context.Context) (v uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageID: %w", err)
+	}
+	return oldValue.ImageID, nil
+}
+
+// ResetImageID resets all changes to the "image_id" field.
+func (m *PublicImageStatMutation) ResetImageID() {
+	m.image_id = nil
+}
+
+// SetLikeCount sets the "like_count" field.
+func (m *PublicImageStatMutation) SetLikeCount(i int) {
+	m.like_count = &i
+	m.addlike_count = nil
+}
+
+// LikeCount returns the value of the "like_count" field in the mutation.
+func (m *PublicImageStatMutation) LikeCount() (r int, exists bool) {
+	v := m.like_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLikeCount returns the old "like_count" field's value of the PublicImageStat entity.
+// If the PublicImageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageStatMutation) OldLikeCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLikeCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLikeCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLikeCount: %w", err)
+	}
+	return oldValue.LikeCount, nil
+}
+
+// AddLikeCount adds i to the "like_count" field.
+func (m *PublicImageStatMutation) AddLikeCount(i int) {
+	if m.addlike_count != nil {
+		*m.addlike_count += i
+	} else {
+		m.addlike_count = &i
+	}
+}
+
+// AddedLikeCount returns the value that was added to the "like_count" field in this mutation.
+func (m *PublicImageStatMutation) AddedLikeCount() (r int, exists bool) {
+	v := m.addlike_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLikeCount resets all changes to the "like_count" field.
+func (m *PublicImageStatMutation) ResetLikeCount() {
+	m.like_count = nil
+	m.addlike_count = nil
+}
+
+// SetFavoriteCount sets the "favorite_count" field.
+func (m *PublicImageStatMutation) SetFavoriteCount(i int) {
+	m.favorite_count = &i
+	m.addfavorite_count = nil
+}
+
+// FavoriteCount returns the value of the "favorite_count" field in the mutation.
+func (m *PublicImageStatMutation) FavoriteCount() (r int, exists bool) {
+	v := m.favorite_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFavoriteCount returns the old "favorite_count" field's value of the PublicImageStat entity.
+// If the PublicImageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageStatMutation) OldFavoriteCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFavoriteCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFavoriteCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFavoriteCount: %w", err)
+	}
+	return oldValue.FavoriteCount, nil
+}
+
+// AddFavoriteCount adds i to the "favorite_count" field.
+func (m *PublicImageStatMutation) AddFavoriteCount(i int) {
+	if m.addfavorite_count != nil {
+		*m.addfavorite_count += i
+	} else {
+		m.addfavorite_count = &i
+	}
+}
+
+// AddedFavoriteCount returns the value that was added to the "favorite_count" field in this mutation.
+func (m *PublicImageStatMutation) AddedFavoriteCount() (r int, exists bool) {
+	v := m.addfavorite_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFavoriteCount resets all changes to the "favorite_count" field.
+func (m *PublicImageStatMutation) ResetFavoriteCount() {
+	m.favorite_count = nil
+	m.addfavorite_count = nil
+}
+
+// SetCommentCount sets the "comment_count" field.
+func (m *PublicImageStatMutation) SetCommentCount(i int) {
+	m.comment_count = &i
+	m.addcomment_count = nil
+}
+
+// CommentCount returns the value of the "comment_count" field in the mutation.
+func (m *PublicImageStatMutation) CommentCount() (r int, exists bool) {
+	v := m.comment_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommentCount returns the old "comment_count" field's value of the PublicImageStat entity.
+// If the PublicImageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PublicImageStatMutation) OldCommentCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommentCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommentCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommentCount: %w", err)
+	}
+	return oldValue.CommentCount, nil
+}
+
+// AddCommentCount adds i to the "comment_count" field.
+func (m *PublicImageStatMutation) AddCommentCount(i int) {
+	if m.addcomment_count != nil {
+		*m.addcomment_count += i
+	} else {
+		m.addcomment_count = &i
+	}
+}
+
+// AddedCommentCount returns the value that was added to the "comment_count" field in this mutation.
+func (m *PublicImageStatMutation) AddedCommentCount() (r int, exists bool) {
+	v := m.addcomment_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCommentCount resets all changes to the "comment_count" field.
+func (m *PublicImageStatMutation) ResetCommentCount() {
+	m.comment_count = nil
+	m.addcomment_count = nil
+}
+
+// Where appends a list predicates to the PublicImageStatMutation builder.
+func (m *PublicImageStatMutation) Where(ps ...predicate.PublicImageStat) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the PublicImageStatMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *PublicImageStatMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.PublicImageStat, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *PublicImageStatMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *PublicImageStatMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (PublicImageStat).
+func (m *PublicImageStatMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *PublicImageStatMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.created_at != nil {
+		fields = append(fields, publicimagestat.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, publicimagestat.FieldUpdatedAt)
+	}
+	if m.image_id != nil {
+		fields = append(fields, publicimagestat.FieldImageID)
+	}
+	if m.like_count != nil {
+		fields = append(fields, publicimagestat.FieldLikeCount)
+	}
+	if m.favorite_count != nil {
+		fields = append(fields, publicimagestat.FieldFavoriteCount)
+	}
+	if m.comment_count != nil {
+		fields = append(fields, publicimagestat.FieldCommentCount)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *PublicImageStatMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case publicimagestat.FieldCreatedAt:
+		return m.CreatedAt()
+	case publicimagestat.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case publicimagestat.FieldImageID:
+		return m.ImageID()
+	case publicimagestat.FieldLikeCount:
+		return m.LikeCount()
+	case publicimagestat.FieldFavoriteCount:
+		return m.FavoriteCount()
+	case publicimagestat.FieldCommentCount:
+		return m.CommentCount()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *PublicImageStatMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case publicimagestat.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case publicimagestat.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case publicimagestat.FieldImageID:
+		return m.OldImageID(ctx)
+	case publicimagestat.FieldLikeCount:
+		return m.OldLikeCount(ctx)
+	case publicimagestat.FieldFavoriteCount:
+		return m.OldFavoriteCount(ctx)
+	case publicimagestat.FieldCommentCount:
+		return m.OldCommentCount(ctx)
+	}
+	return nil, fmt.Errorf("unknown PublicImageStat field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PublicImageStatMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case publicimagestat.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case publicimagestat.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case publicimagestat.FieldImageID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageID(v)
+		return nil
+	case publicimagestat.FieldLikeCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLikeCount(v)
+		return nil
+	case publicimagestat.FieldFavoriteCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFavoriteCount(v)
+		return nil
+	case publicimagestat.FieldCommentCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommentCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PublicImageStat field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *PublicImageStatMutation) AddedFields() []string {
+	var fields []string
+	if m.addlike_count != nil {
+		fields = append(fields, publicimagestat.FieldLikeCount)
+	}
+	if m.addfavorite_count != nil {
+		fields = append(fields, publicimagestat.FieldFavoriteCount)
+	}
+	if m.addcomment_count != nil {
+		fields = append(fields, publicimagestat.FieldCommentCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *PublicImageStatMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case publicimagestat.FieldLikeCount:
+		return m.AddedLikeCount()
+	case publicimagestat.FieldFavoriteCount:
+		return m.AddedFavoriteCount()
+	case publicimagestat.FieldCommentCount:
+		return m.AddedCommentCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PublicImageStatMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case publicimagestat.FieldLikeCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLikeCount(v)
+		return nil
+	case publicimagestat.FieldFavoriteCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFavoriteCount(v)
+		return nil
+	case publicimagestat.FieldCommentCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCommentCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PublicImageStat numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *PublicImageStatMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *PublicImageStatMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *PublicImageStatMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown PublicImageStat nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *PublicImageStatMutation) ResetField(name string) error {
+	switch name {
+	case publicimagestat.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case publicimagestat.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case publicimagestat.FieldImageID:
+		m.ResetImageID()
+		return nil
+	case publicimagestat.FieldLikeCount:
+		m.ResetLikeCount()
+		return nil
+	case publicimagestat.FieldFavoriteCount:
+		m.ResetFavoriteCount()
+		return nil
+	case publicimagestat.FieldCommentCount:
+		m.ResetCommentCount()
+		return nil
+	}
+	return fmt.Errorf("unknown PublicImageStat field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *PublicImageStatMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *PublicImageStatMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *PublicImageStatMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *PublicImageStatMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *PublicImageStatMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *PublicImageStatMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *PublicImageStatMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown PublicImageStat unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *PublicImageStatMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown PublicImageStat edge %s", name)
 }
 
 // RedeemCodeMutation represents an operation that mutates the RedeemCode nodes in the graph.

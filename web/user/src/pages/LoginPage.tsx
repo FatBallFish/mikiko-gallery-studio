@@ -4,18 +4,66 @@ import { useApp } from '../components'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
 
+const lastLoginEmailKey = 'pic-gallery-last-login-email'
+
+const loginCopy = {
+  zh: {
+    emailPlaceholder: '输入邮箱地址',
+    passwordPlaceholder: '输入密码',
+    codePlaceholder: '6 位验证码',
+    resetPasswordPlaceholder: '输入新密码',
+    sendCodeFailed: '验证码发送失败',
+    passwordLoginFailed: '账号密码登录失败',
+    codeLoginFailed: '验证码登录失败',
+    resetPasswordFailed: '密码重置失败',
+    socialUnavailable: '该登录方式暂不可用',
+  },
+  en: {
+    emailPlaceholder: 'Enter email address',
+    passwordPlaceholder: 'Enter password',
+    codePlaceholder: '6-digit code',
+    resetPasswordPlaceholder: 'Enter new password',
+    sendCodeFailed: 'Failed to send verification code',
+    passwordLoginFailed: 'Password sign-in failed',
+    codeLoginFailed: 'Verification code sign-in failed',
+    resetPasswordFailed: 'Password reset failed',
+    socialUnavailable: 'This sign-in method is not available yet',
+  },
+} as const
+
+function loginLocale() {
+  return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+}
+
+function readLastLoginEmail() {
+  try {
+    return window.localStorage.getItem(lastLoginEmailKey) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function rememberLoginEmail(email: string) {
+  try {
+    window.localStorage.setItem(lastLoginEmailKey, email)
+  } catch {
+    // Ignore storage errors; login itself should not depend on local persistence.
+  }
+}
+
 export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   const app = useApp()
   const env = import.meta.env as Record<string, string | undefined>
+  const copy = loginCopy[loginLocale()]
   const [mode, setMode] = useState<'password' | 'code'>(env.VITE_AUTH_DEFAULT_MODE === 'code' ? 'code' : 'password')
-  const [email, setEmail] = useState(env.VITE_DEFAULT_USER_EMAIL ?? 'fatballfish@example.com')
-  const [password, setPassword] = useState(env.VITE_DEFAULT_USER_PASSWORD ?? 'vault2026')
-  const [code, setCode] = useState(env.VITE_DEFAULT_USER_CODE ?? '123456')
+  const [email, setEmail] = useState(() => readLastLoginEmail())
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
   const [resetMode, setResetMode] = useState(false)
   const [resetPassword, setResetPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (cooldown <= 0) return undefined
@@ -24,21 +72,19 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   }, [cooldown])
 
   async function sendCode() {
-    setError(null)
     try {
       if (resetMode) await userApi.requestPasswordReset(email)
       else await userApi.sendEmailCode(email, 'login')
       setCooldown(60)
       app.notify('success', '验证码已发送，请查看邮箱')
     } catch (err) {
-      setError(errorMessage(err))
+      app.notify('error', `${copy.sendCodeFailed}: ${errorMessage(err)}`)
     }
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
-    setError(null)
     try {
       if (resetMode) {
         await userApi.confirmPasswordReset(email, code, resetPassword)
@@ -51,11 +97,12 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
       const result = mode === 'password'
         ? await userApi.loginWithPassword(email, password)
         : await userApi.loginWithEmailCode(email, code)
-      userApi.configureAuth({ getToken: () => result.access_token })
-      const profile = await userApi.getProfile()
+      const profile = await userApi.getProfileWithToken(result.access_token)
+      rememberLoginEmail(email)
       await app.login({ token: result.access_token, profile }, returnTo)
     } catch (err) {
-      setError(errorMessage(err))
+      const title = resetMode ? copy.resetPasswordFailed : mode === 'password' ? copy.passwordLoginFailed : copy.codeLoginFailed
+      app.notify('error', `${title}: ${errorMessage(err)}`)
     } finally {
       setBusy(false)
     }
@@ -101,7 +148,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="输入邮箱地址"
+              placeholder={copy.emailPlaceholder}
               type="email"
               required
               className="input"
@@ -110,19 +157,28 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
 
           {mode === 'password' ? (
             <div className="auth-field">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>密码</label>
-                <button type="button" className="link-button" style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer', background: 'transparent', border: 0 }} onClick={() => { setResetMode(true); setMode('code') }}>忘记密码?</button>
+              <label>密码</label>
+              <div className="password-input-wrap">
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={copy.passwordPlaceholder}
+                  type={showPassword ? 'text' : 'password'}
+                  minLength={6}
+                  required
+                  className="input"
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeIcon /> : <EyeOffIcon />}
+                </button>
               </div>
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="输入密码"
-                type="password"
-                minLength={6}
-                required
-                className="input"
-              />
+              <button type="button" className="forgot-password-link" onClick={() => { setResetMode(true); setMode('code') }}>忘记密码?</button>
             </div>
           ) : (
             <div className="auth-field">
@@ -131,7 +187,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
                 <input
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="6 位验证码"
+                  placeholder={copy.codePlaceholder}
                   inputMode="numeric"
                   required
                   className="input"
@@ -156,7 +212,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
               <input
                 value={resetPassword}
                 onChange={(e) => setResetPassword(e.target.value)}
-                placeholder="输入新密码"
+                placeholder={copy.resetPasswordPlaceholder}
                 type="password"
                 minLength={6}
                 required
@@ -164,8 +220,6 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
               />
             </div>
           ) : null}
-
-          {error ? <div className="form-error" style={{ marginBottom: 12 }}>{error}</div> : null}
 
           <button
             type="submit"
@@ -183,9 +237,9 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
 
         {/* Social Login */}
         <div className="auth-social">
-          <SocialButton icon={<EyeIcon />}>WeChat</SocialButton>
-          <SocialButton icon={<LayersIcon />}>钉钉</SocialButton>
-          <SocialButton icon={<GoogleIcon />}>Google</SocialButton>
+          <SocialButton icon={<WeChatIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>WeChat</SocialButton>
+          <SocialButton icon={<DingTalkIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>钉钉</SocialButton>
+          <SocialButton icon={<GoogleIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>Google</SocialButton>
         </div>
 
         {/* Footer */}
@@ -197,9 +251,9 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   )
 }
 
-function SocialButton({ children, icon }: { children: React.ReactNode; icon: React.ReactNode }) {
+function SocialButton({ children, icon, onClick }: { children: React.ReactNode; icon: React.ReactNode; onClick: () => void }) {
   return (
-    <button type="button" className="btn" style={{ borderRadius: 8, padding: 12, fontSize: 14 }}>
+    <button type="button" className="social-login-btn" onClick={onClick}>
       {icon}
       {children}
     </button>
@@ -208,28 +262,53 @@ function SocialButton({ children, icon }: { children: React.ReactNode; icon: Rea
 
 function EyeIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M21 12c0 1.2-4 6-9 6s-9-4.8-9-6c0-1.2 4-6 9-6s9 4.8 9 6z" />
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
   )
 }
 
-function LayersIcon() {
+function EyeOffIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6A3 3 0 0012 15a3 3 0 002.4-4.8" />
+      <path d="M9.9 5.2A10.6 10.6 0 0112 5c6.5 0 10 7 10 7a18.5 18.5 0 01-3.3 4.4" />
+      <path d="M6.7 6.7C3.7 8.6 2 12 2 12s3.5 7 10 7c1.5 0 2.9-.4 4.1-1" />
+    </svg>
+  )
+}
+
+function WeChatIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#07C160" d="M9.3 5.1c-4 0-7.3 2.6-7.3 5.9 0 1.9 1.1 3.6 2.8 4.7l-.7 2.2 2.6-1.3c.8.2 1.6.3 2.6.3 4 0 7.3-2.6 7.3-5.9s-3.3-5.9-7.3-5.9z" />
+      <path fill="#1AAD19" d="M15.2 10.1c-3.4 0-6.2 2.2-6.2 5 0 2.7 2.8 5 6.2 5 .8 0 1.5-.1 2.2-.3l2.2 1.1-.6-1.9c1.5-.9 2.4-2.3 2.4-3.9 0-2.8-2.8-5-6.2-5z" />
+      <circle cx="6.9" cy="9.8" r=".7" fill="#fff" />
+      <circle cx="11.5" cy="9.8" r=".7" fill="#fff" />
+      <circle cx="13.1" cy="14.3" r=".6" fill="#fff" />
+      <circle cx="17" cy="14.3" r=".6" fill="#fff" />
+    </svg>
+  )
+}
+
+function DingTalkIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#1677FF" d="M20.8 4.4C16.7 2.7 11.4 1.5 4.9 1c-.8-.1-1.2.9-.6 1.4l4.4 3.7-5.4-.5c-.8-.1-1.2.9-.6 1.4l4.7 4-3.1.2c-.7.1-1 .9-.5 1.4l4.2 3.5-.9 4.7c-.1.6.6 1 1.1.6l12.9-11c2.4-2.2 2.3-4.8-.3-6z" />
+      <path fill="#fff" d="M9.3 8.6l5.9.8-4.9 1.8 4.1.6-5.2 1.9 1-2.2-3.6-3.1 2.7.2z" opacity=".88" />
     </svg>
   )
 }
 
 function GoogleIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M21.5 12c0-.8-.1-1.6-.2-2.4H12v4.5h5.4c-.2 1.5-.9 2.7-2 3.6v3h3.2c1.9-1.7 3-4.2 3-6.7z" />
-      <path d="M12 21.6c2.7 0 4.9-.9 6.6-2.4l-3.2-3c-.9.6-2 .9-3.4.9-2.6 0-4.8-1.7-5.6-4H3v3.1c1.7 3.4 5.3 5.4 9 5.4z" />
-      <path d="M6.4 13.1c-.2-.6-.3-1.2-.3-1.8s.1-1.2.3-1.8V6.4H3C2.3 7.8 2 9.4 2 11c0 1.7.4 3.2 1 4.7l3.4-2.6z" />
-      <path d="M12 6.6c1.5 0 2.8.5 3.9 1.5l2.9-2.9C17 3.5 14.7 2.4 12 2.4 8.3 2.4 4.7 4.4 3 7.8l3.4 2.6c.8-2.3 3-4 5.6-4z" />
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4c-.2 1.2-.9 2.3-1.9 3v2.5h3c1.9-1.7 3.1-4.2 3.1-7.3z" />
+      <path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.5l-3-2.5c-.8.6-1.9.9-3.6.9-2.6 0-4.7-1.7-5.5-4.1H3.4v2.6C5 19.7 8.3 22 12 22z" />
+      <path fill="#FBBC05" d="M6.5 13.8c-.2-.6-.3-1.2-.3-1.8s.1-1.2.3-1.8V7.6H3.4C2.8 8.9 2.4 10.4 2.4 12s.4 3.1 1 4.4l3.1-2.6z" />
+      <path fill="#EA4335" d="M12 6.1c1.5 0 2.8.5 3.8 1.5l2.8-2.8C16.9 3 14.7 2 12 2 8.3 2 5 4.3 3.4 7.6l3.1 2.6c.8-2.4 2.9-4.1 5.5-4.1z" />
     </svg>
   )
 }

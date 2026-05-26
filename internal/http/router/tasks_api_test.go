@@ -9,8 +9,10 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +25,58 @@ import (
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/worker"
 )
+
+func TestReferenceAssetDownloadAcceptsQueryToken(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	cfg.Storage.LocalRoot = t.TempDir()
+	authSvc, session := loginTestUser(t, "reference-query-token@example.com")
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil)
+	handler := NewWithAPI(api)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "reference.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	imageBytes := tinyPNG(t)
+	if _, err := part.Write(imageBytes); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart: %v", err)
+	}
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets", &body)
+	uploadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	handler.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("upload reference asset: %d body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+	var uploadResp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(uploadRec.Body).Decode(&uploadResp); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+	if uploadResp.Data.ID == "" {
+		t.Fatalf("expected reference asset id body=%s", uploadRec.Body.String())
+	}
+
+	downloadReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/reference-assets/"+uploadResp.Data.ID+"/download?access_token="+session.AccessToken, nil)
+	downloadRec := httptest.NewRecorder()
+	handler.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("download reference asset with query token: %d body=%s", downloadRec.Code, downloadRec.Body.String())
+	}
+	if got := downloadRec.Body.Bytes(); !bytes.Equal(got, imageBytes) {
+		t.Fatalf("downloaded reference bytes mismatch: got %d bytes want %d", len(got), len(imageBytes))
+	}
+}
 
 func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	imageBytes := tinyPNG(t)
@@ -148,6 +202,36 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 		t.Fatalf("unexpected detail response %#v", detailResp)
 	}
 
+	eventsReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/"+createResp.Data.ID+"/events", nil)
+	eventsReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	eventsRec := &flushRecorder{ResponseRecorder: httptest.NewRecorder()}
+	handler.ServeHTTP(eventsRec, eventsReq)
+
+	if eventsRec.Code != http.StatusOK {
+		t.Fatalf("expected events 200, got %d body=%s", eventsRec.Code, eventsRec.Body.String())
+	}
+	if got := eventsRec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("expected SSE content type, got %q", got)
+	}
+	if body := eventsRec.Body.String(); !strings.Contains(body, "event: task") || !strings.Contains(body, `"status":"succeeded"`) {
+		t.Fatalf("unexpected SSE body %q", body)
+	}
+
+	streamReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/events?once=true", nil)
+	streamReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	streamRec := &flushRecorder{ResponseRecorder: httptest.NewRecorder()}
+	handler.ServeHTTP(streamRec, streamReq)
+
+	if streamRec.Code != http.StatusOK {
+		t.Fatalf("expected stream 200, got %d body=%s", streamRec.Code, streamRec.Body.String())
+	}
+	if got := streamRec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("expected stream SSE content type, got %q", got)
+	}
+	if body := streamRec.Body.String(); !strings.Contains(body, "event: history") || !strings.Contains(body, createResp.Data.ID) {
+		t.Fatalf("unexpected stream body %q", body)
+	}
+
 	historyListReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/history/tasks", nil)
 	historyListReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	historyListRec := httptest.NewRecorder()
@@ -155,6 +239,39 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 
 	if historyListRec.Code != http.StatusOK {
 		t.Fatalf("expected history list 200, got %d body=%s", historyListRec.Code, historyListRec.Body.String())
+	}
+
+	privateGalleryReq := httptest.NewRequest(http.MethodGet, "/api/agent/gallery/v1/images?page=1&page_size=10", nil)
+	privateGalleryReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	privateGalleryRec := httptest.NewRecorder()
+	handler.ServeHTTP(privateGalleryRec, privateGalleryReq)
+	if privateGalleryRec.Code != http.StatusOK {
+		t.Fatalf("expected private gallery 200, got %d body=%s", privateGalleryRec.Code, privateGalleryRec.Body.String())
+	}
+	var privateGalleryResp struct {
+		Data struct {
+			Items []struct {
+				ID          string `json:"id"`
+				TaskID      string `json:"task_id"`
+				TaskType    string `json:"task_type"`
+				TaskStatus  string `json:"task_status"`
+				DownloadURL string `json:"download_url"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(privateGalleryRec.Body).Decode(&privateGalleryResp); err != nil {
+		t.Fatalf("decode private gallery response: %v", err)
+	}
+	if len(privateGalleryResp.Data.Items) != 1 || privateGalleryResp.Data.Items[0].TaskID != createResp.Data.ID || privateGalleryResp.Data.Items[0].TaskStatus != "succeeded" || privateGalleryResp.Data.Items[0].DownloadURL == "" {
+		t.Fatalf("unexpected private gallery response %#v", privateGalleryResp)
+	}
+
+	privateGallerySlashReq := httptest.NewRequest(http.MethodGet, "/api/agent/gallery/v1/images/?page=1&page_size=10", nil)
+	privateGallerySlashReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	privateGallerySlashRec := httptest.NewRecorder()
+	handler.ServeHTTP(privateGallerySlashRec, privateGallerySlashReq)
+	if privateGallerySlashRec.Code != http.StatusOK {
+		t.Fatalf("expected private gallery with trailing slash 200, got %d body=%s", privateGallerySlashRec.Code, privateGallerySlashRec.Body.String())
 	}
 
 	historyDetailReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/history/tasks/"+createResp.Data.ID, nil)
@@ -198,6 +315,12 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 		t.Fatalf("expected history detail 404 after delete, got %d body=%s", historyDetailRec.Code, historyDetailRec.Body.String())
 	}
 }
+
+type flushRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (r *flushRecorder) Flush() {}
 
 func TestAgentTaskCreateRejectsSyncResponseMode(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
@@ -313,6 +436,16 @@ func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
 	}
 	if contentType := downloadRec.Header().Get("Content-Type"); contentType != "image/png" {
 		t.Fatalf("expected image/png content type, got %q", contentType)
+	}
+
+	queryTokenReq := httptest.NewRequest(http.MethodGet, result.DownloadURL+"?access_token="+session.AccessToken, nil)
+	queryTokenRec := httptest.NewRecorder()
+	handler.ServeHTTP(queryTokenRec, queryTokenReq)
+	if queryTokenRec.Code != http.StatusOK {
+		t.Fatalf("expected query-token download 200, got %d body=%s", queryTokenRec.Code, queryTokenRec.Body.String())
+	}
+	if got := queryTokenRec.Body.Bytes(); !bytes.Equal(got, imageBytes) {
+		t.Fatalf("query-token downloaded bytes mismatch: got %d bytes want %d", len(got), len(imageBytes))
 	}
 
 	otherSession := loginExistingAuthUser(t, authSvc, "download-other@example.com")

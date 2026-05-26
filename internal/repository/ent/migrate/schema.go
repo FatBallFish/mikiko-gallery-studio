@@ -221,6 +221,7 @@ var (
 		{Name: "width", Type: field.TypeInt, Default: 0},
 		{Name: "height", Type: field.TypeInt, Default: 0},
 		{Name: "sha256", Type: field.TypeString, Size: 64},
+		{Name: "image_group", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "visibility_status", Type: field.TypeString, Size: 32, Default: "private"},
 		{Name: "review_reason", Type: field.TypeString, Nullable: true, Size: 255},
 		{Name: "published_at", Type: field.TypeTime, Nullable: true},
@@ -259,7 +260,7 @@ var (
 			{
 				Name:    "imageresult_visibility_status",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[14]},
+				Columns: []*schema.Column{TaskImagesColumns[15]},
 			},
 		},
 	}
@@ -786,6 +787,77 @@ var (
 				Name:    "providermodel_enabled",
 				Unique:  false,
 				Columns: []*schema.Column{ProviderModelsColumns[18]},
+			},
+		},
+	}
+	// PublicImageInteractionsColumns holds the columns for the "public_image_interactions" table.
+	PublicImageInteractionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "image_id", Type: field.TypeUUID},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "liked", Type: field.TypeBool, Default: false},
+		{Name: "favorited", Type: field.TypeBool, Default: false},
+	}
+	// PublicImageInteractionsTable holds the schema information for the "public_image_interactions" table.
+	PublicImageInteractionsTable = &schema.Table{
+		Name:       "public_image_interactions",
+		Columns:    PublicImageInteractionsColumns,
+		PrimaryKey: []*schema.Column{PublicImageInteractionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "publicimageinteraction_image_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{PublicImageInteractionsColumns[3], PublicImageInteractionsColumns[4]},
+			},
+			{
+				Name:    "publicimageinteraction_user_id_liked",
+				Unique:  false,
+				Columns: []*schema.Column{PublicImageInteractionsColumns[4], PublicImageInteractionsColumns[5]},
+			},
+			{
+				Name:    "publicimageinteraction_user_id_favorited",
+				Unique:  false,
+				Columns: []*schema.Column{PublicImageInteractionsColumns[4], PublicImageInteractionsColumns[6]},
+			},
+		},
+	}
+	// PublicImageStatsColumns holds the columns for the "public_image_stats" table.
+	PublicImageStatsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "image_id", Type: field.TypeUUID},
+		{Name: "like_count", Type: field.TypeInt, Default: 0},
+		{Name: "favorite_count", Type: field.TypeInt, Default: 0},
+		{Name: "comment_count", Type: field.TypeInt, Default: 0},
+	}
+	// PublicImageStatsTable holds the schema information for the "public_image_stats" table.
+	PublicImageStatsTable = &schema.Table{
+		Name:       "public_image_stats",
+		Columns:    PublicImageStatsColumns,
+		PrimaryKey: []*schema.Column{PublicImageStatsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "publicimagestat_image_id",
+				Unique:  true,
+				Columns: []*schema.Column{PublicImageStatsColumns[3]},
+			},
+			{
+				Name:    "publicimagestat_like_count",
+				Unique:  false,
+				Columns: []*schema.Column{PublicImageStatsColumns[4]},
+			},
+			{
+				Name:    "publicimagestat_favorite_count",
+				Unique:  false,
+				Columns: []*schema.Column{PublicImageStatsColumns[5]},
+			},
+			{
+				Name:    "publicimagestat_comment_count",
+				Unique:  false,
+				Columns: []*schema.Column{PublicImageStatsColumns[6]},
 			},
 		},
 	}
@@ -1340,6 +1412,8 @@ var (
 		PointLedgersTable,
 		ProviderErrorPoliciesTable,
 		ProviderModelsTable,
+		PublicImageInteractionsTable,
+		PublicImageStatsTable,
 		RedeemCodesTable,
 		ReferenceAssetsTable,
 		RefreshSessionsTable,
@@ -1381,6 +1455,12 @@ func init() {
 	}
 	ProviderModelsTable.Annotation = &entsql.Annotation{
 		Table: "provider_models",
+	}
+	PublicImageInteractionsTable.Annotation = &entsql.Annotation{
+		Table: "public_image_interactions",
+	}
+	PublicImageStatsTable.Annotation = &entsql.Annotation{
+		Table: "public_image_stats",
 	}
 	RouteModelsTable.Annotation = &entsql.Annotation{
 		Table: "route_models",
