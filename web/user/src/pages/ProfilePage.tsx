@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import type { Balance, GenerationPreferences, LedgerEntry, UserProfile } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, Field, LoadingState, useApp } from '../components'
+import { Button, EmptyState, Field, LoadingState, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 
 const layout = {
@@ -21,18 +21,16 @@ export function ProfilePage() {
   const [showRedeemInput, setShowRedeemInput] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    setError(null)
     try {
       const [nextProfile, nextBalance, nextLedger] = await Promise.all([userApi.getProfile(), userApi.getBalance(), userApi.getLedger()])
       setProfile(nextProfile)
       setBalance(nextBalance)
       setLedger(nextLedger)
     } catch (err) {
-      setError(errorMessage(err))
+      app.notify('error', errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -43,13 +41,12 @@ export function ProfilePage() {
   async function redeemCode(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
-    setError(null)
     try {
       await userApi.redeemCode(redeem)
       await Promise.all([load(), app.refreshAccount()])
       app.notify('success', '兑换成功，余额已更新')
     } catch (err) {
-      setError(errorMessage(err))
+      app.notify('error', errorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -57,21 +54,19 @@ export function ProfilePage() {
 
   async function saveProfile(patch: Partial<UserProfile>) {
     setBusy(true)
-    setError(null)
     try {
       const next = await userApi.updateProfile(patch)
       setProfile(next)
       await app.refreshAccount()
       app.notify('success', '账户偏好已保存')
     } catch (err) {
-      setError(errorMessage(err))
+      app.notify('error', errorMessage(err))
     } finally {
       setBusy(false)
     }
   }
 
   if (loading) return <LoadingState />
-  if (error && !profile) return <ErrorState message={error} onRetry={load} />
 
   return (
     <div className="content" style={layout.content}>
@@ -98,7 +93,6 @@ export function ProfilePage() {
                 </form>
               ) : null}
             </div>
-            {error ? <div className="form-error" style={{ marginTop: 14 }}>{error}</div> : null}
             <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--vault-line)' }}>
               <div style={planRowStyle}><span style={{ color: 'var(--vault-muted)' }}>当前套餐</span><span style={{ fontWeight: 700 }}>{balance?.plan_name ?? profile?.tier ?? '免费计划'}</span></div>
               <div style={planRowStyle}><span style={{ color: 'var(--vault-muted)' }}>用户分组</span><span className="num">{profile?.group ?? 'DEFAULT (1.0x)'}</span></div>

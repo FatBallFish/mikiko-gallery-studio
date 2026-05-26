@@ -2,6 +2,7 @@ package imagetask
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -18,30 +19,60 @@ type Store interface {
 	SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error
 	GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error)
 	GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error)
+	GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error)
 	ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error)
 	RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error)
+	SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error)
 	ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error)
+	DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error)
+	ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
 	ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
 	ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
 	GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error)
+	SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error)
 	DeleteByID(ctx context.Context, userID int64, taskID string) error
 	AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error)
 	RenewTaskLease(ctx context.Context, taskID, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error)
 }
 
 type MemoryStore struct {
-	mu        sync.Mutex
-	tasksByID map[string]domainimagetask.Task
+	mu           sync.Mutex
+	tasksByID    map[string]domainimagetask.Task
+	publicStats  map[string]*memoryPublicStats
+	interactions map[string]map[int64]*memoryPublicInteraction
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{tasksByID: map[string]domainimagetask.Task{}}
+	return &MemoryStore{
+		tasksByID:    map[string]domainimagetask.Task{},
+		publicStats:  map[string]*memoryPublicStats{},
+		interactions: map[string]map[int64]*memoryPublicInteraction{},
+	}
+}
+
+type memoryPublicStats struct {
+	likes     int
+	favorites int
+	comments  int
+}
+
+type memoryPublicInteraction struct {
+	liked     bool
+	favorited bool
 }
 
 func (s *MemoryStore) Save(_ context.Context, task domainimagetask.Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := time.Now().UTC()
+	if current, ok := s.tasksByID[task.ID]; ok && !current.CreatedAt.IsZero() {
+		task.CreatedAt = current.CreatedAt
+	}
+	if task.CreatedAt.IsZero() {
+		task.CreatedAt = now
+	}
+	task.UpdatedAt = now
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
 }
@@ -72,6 +103,8 @@ func (s *MemoryStore) SaveIfOwned(_ context.Context, task domainimagetask.Task, 
 			task.LeaseExpiresAt = nil
 		}
 	}
+	task.CreatedAt = current.CreatedAt
+	task.UpdatedAt = now.UTC()
 
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
@@ -97,6 +130,8 @@ func (s *MemoryStore) SaveTerminalState(_ context.Context, task domainimagetask.
 			task.LeaseExpiresAt = nil
 		}
 	}
+	task.CreatedAt = current.CreatedAt
+	task.UpdatedAt = time.Now().UTC()
 
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
@@ -119,6 +154,23 @@ func (s *MemoryStore) GetImageResultByID(_ context.Context, userID int64, imageI
 
 	for _, task := range s.tasksByID {
 		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for _, result := range task.Results {
+			if result.ID == imageID && strings.TrimSpace(result.VisibilityStatus) != "deleted" {
+				return result, nil
+			}
+		}
+	}
+	return provider.ImageResult{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) GetImageResultForAdmin(_ context.Context, imageID string) (provider.ImageResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, task := range s.tasksByID {
+		if task.Status == domainimagetask.StatusDeleted {
 			continue
 		}
 		for _, result := range task.Results {
@@ -176,6 +228,28 @@ func (s *MemoryStore) RequestPublish(_ context.Context, userID int64, imageID st
 	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 }
 
+func (s *MemoryStore) SetImageGroup(_ context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	imageGroup = strings.TrimSpace(imageGroup)
+	for taskID, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for idx, result := range task.Results {
+			if result.ID != imageID {
+				continue
+			}
+			result.ImageGroup = imageGroup
+			task.Results[idx] = result
+			s.tasksByID[taskID] = cloneTask(task)
+			return galleryImageFromMemoryTask(task, result), nil
+		}
+	}
+	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+}
+
 func (s *MemoryStore) ReviewImage(_ context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -203,6 +277,52 @@ func (s *MemoryStore) ReviewImage(_ context.Context, imageID, nextStatus, review
 	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 }
 
+func (s *MemoryStore) DeleteImageResult(_ context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for taskID, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for idx, result := range task.Results {
+			if result.ID != imageID {
+				continue
+			}
+			task.Results = append(task.Results[:idx], task.Results[idx+1:]...)
+			s.tasksByID[taskID] = cloneTask(task)
+			return result, nil
+		}
+	}
+	return provider.ImageResult{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	page, pageSize := normalizeGalleryPage(req.Page, req.PageSize)
+	items := make([]domainimagetask.GalleryImage, 0)
+	for _, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for _, result := range task.Results {
+			image := galleryImageFromMemoryTask(task, result)
+			if req.ReviewOnly && image.VisibilityStatus == domainimagetask.VisibilityPrivate {
+				continue
+			}
+			if req.Status != "" && !strings.EqualFold(image.VisibilityStatus, req.Status) {
+				continue
+			}
+			items = append(items, image)
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
+	return sliceGalleryPage(items, page, pageSize), nil
+}
+
 func (s *MemoryStore) ListGallery(_ context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -214,6 +334,9 @@ func (s *MemoryStore) ListGallery(_ context.Context, req domainimagetask.Gallery
 		}
 		for _, result := range task.Results {
 			image := galleryImageFromMemoryTask(task, result)
+			if req.ReviewOnly && image.VisibilityStatus == domainimagetask.VisibilityPrivate {
+				continue
+			}
 			if req.Status != "" && !strings.EqualFold(image.VisibilityStatus, req.Status) {
 				continue
 			}
@@ -239,10 +362,24 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 			if defaultVisibilityStatus(result.VisibilityStatus) != domainimagetask.VisibilityApproved {
 				continue
 			}
-			items = append(items, galleryImageFromMemoryTask(task, result))
+			image := s.decoratePublicImage(galleryImageFromMemoryTask(task, result), req.ViewerUserID)
+			if req.LikedOnly && !image.LikedByViewer {
+				continue
+			}
+			if req.FavoritedOnly && !image.FavoritedByViewer {
+				continue
+			}
+			items = append(items, image)
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
+		if req.Sort == "hot" {
+			left := items[i].LikeCount*2 + items[i].FavoriteCount*3 + items[i].CommentCount
+			right := items[j].LikeCount*2 + items[j].FavoriteCount*3 + items[j].CommentCount
+			if left != right {
+				return left > right
+			}
+		}
 		return items[i].ID > items[j].ID
 	})
 	return sliceGalleryPage(items, page, pageSize), nil
@@ -257,11 +394,81 @@ func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string) (domaini
 		}
 		for _, result := range task.Results {
 			if result.ID == imageID && defaultVisibilityStatus(result.VisibilityStatus) == domainimagetask.VisibilityApproved {
-				return galleryImageFromMemoryTask(task, result), nil
+				return s.decoratePublicImage(galleryImageFromMemoryTask(task, result), 0), nil
 			}
 		}
 	}
 	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) SetPublicImageInteraction(_ context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var found domainimagetask.GalleryImage
+	for _, task := range s.tasksByID {
+		if task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for _, result := range task.Results {
+			if result.ID == imageID && defaultVisibilityStatus(result.VisibilityStatus) == domainimagetask.VisibilityApproved {
+				found = galleryImageFromMemoryTask(task, result)
+			}
+		}
+	}
+	if found.ID == "" {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	if s.interactions[imageID] == nil {
+		s.interactions[imageID] = map[int64]*memoryPublicInteraction{}
+	}
+	if s.publicStats[imageID] == nil {
+		s.publicStats[imageID] = &memoryPublicStats{}
+	}
+	interaction := s.interactions[imageID][userID]
+	if interaction == nil {
+		interaction = &memoryPublicInteraction{}
+		s.interactions[imageID][userID] = interaction
+	}
+	stats := s.publicStats[imageID]
+	switch kind {
+	case "like":
+		if interaction.liked != active {
+			if active {
+				stats.likes++
+			} else if stats.likes > 0 {
+				stats.likes--
+			}
+			interaction.liked = active
+		}
+	case "favorite":
+		if interaction.favorited != active {
+			if active {
+				stats.favorites++
+			} else if stats.favorites > 0 {
+				stats.favorites--
+			}
+			interaction.favorited = active
+		}
+	}
+	return s.decoratePublicImage(found, userID), nil
+}
+
+func (s *MemoryStore) decoratePublicImage(image domainimagetask.GalleryImage, viewerUserID int64) domainimagetask.GalleryImage {
+	stats := s.publicStats[image.ID]
+	if stats != nil {
+		image.LikeCount = stats.likes
+		image.FavoriteCount = stats.favorites
+		image.CommentCount = stats.comments
+	}
+	image.AuthorName = fmt.Sprintf("user-%d", image.UserID)
+	if viewerUserID > 0 {
+		if interaction := s.interactions[image.ID][viewerUserID]; interaction != nil {
+			image.LikedByViewer = interaction.liked
+			image.FavoritedByViewer = interaction.favorited
+		}
+	}
+	return image
 }
 
 func (s *MemoryStore) DeleteByID(_ context.Context, userID int64, taskID string) error {
@@ -338,25 +545,49 @@ func taskEligibleForLease(task domainimagetask.Task, now time.Time) bool {
 
 func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.ImageResult) domainimagetask.GalleryImage {
 	return domainimagetask.GalleryImage{
-		ID:               result.ID,
-		TaskID:           task.ID,
-		UserID:           task.UserID,
-		Prompt:           task.Prompt,
-		AbstractModel:    task.AbstractModel,
-		TaskType:         task.TaskType,
-		URL:              result.URL,
-		DownloadURL:      result.DownloadURL,
-		MimeType:         result.MimeType,
-		FileSizeBytes:    result.FileSizeBytes,
-		Width:            result.Width,
-		Height:           result.Height,
-		SHA256:           result.SHA256,
-		ObjectKey:        result.ObjectKey,
-		StorageDriver:    result.StorageDriver,
-		VisibilityStatus: defaultVisibilityStatus(result.VisibilityStatus),
-		ReviewReason:     result.ReviewReason,
-		PublishedAt:      result.PublishedAt,
+		ID:                result.ID,
+		TaskID:            task.ID,
+		UserID:            task.UserID,
+		Prompt:            task.Prompt,
+		AbstractModel:     task.AbstractModel,
+		RouteModelCode:    task.RouteModelCode,
+		TaskType:          task.TaskType,
+		TaskStatus:        task.Status,
+		Quality:           task.ResolvedQualityBucket,
+		AspectRatio:       task.AspectRatio,
+		ActualPoints:      task.ActualPoints,
+		ReferenceAssetIDs: append([]string(nil), task.ReferenceAssetIDs...),
+		ReferenceAssets:   galleryReferenceAssets(task.ReferenceAssetIDs),
+		URL:               result.URL,
+		DownloadURL:       result.DownloadURL,
+		MimeType:          result.MimeType,
+		FileSizeBytes:     result.FileSizeBytes,
+		Width:             result.Width,
+		Height:            result.Height,
+		SHA256:            result.SHA256,
+		ObjectKey:         result.ObjectKey,
+		StorageDriver:     result.StorageDriver,
+		ImageGroup:        result.ImageGroup,
+		VisibilityStatus:  defaultVisibilityStatus(result.VisibilityStatus),
+		ReviewReason:      result.ReviewReason,
+		PublishedAt:       result.PublishedAt,
 	}
+}
+
+func galleryReferenceAssets(assetIDs []string) []domainimagetask.GalleryReferenceAsset {
+	assets := make([]domainimagetask.GalleryReferenceAsset, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		assets = append(assets, domainimagetask.GalleryReferenceAsset{
+			ID:         id,
+			Name:       "reference",
+			PreviewURL: "/api/agent/image/v1/reference-assets/" + id + "/download",
+		})
+	}
+	return assets
 }
 
 func defaultVisibilityStatus(value string) string {

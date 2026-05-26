@@ -201,6 +201,30 @@ func (f ProviderModelFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ProviderModelMutation", m)
 }
 
+// The PublicImageInteractionFunc type is an adapter to allow the use of ordinary
+// function as PublicImageInteraction mutator.
+type PublicImageInteractionFunc func(context.Context, *ent.PublicImageInteractionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PublicImageInteractionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PublicImageInteractionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PublicImageInteractionMutation", m)
+}
+
+// The PublicImageStatFunc type is an adapter to allow the use of ordinary
+// function as PublicImageStat mutator.
+type PublicImageStatFunc func(context.Context, *ent.PublicImageStatMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PublicImageStatFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PublicImageStatMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PublicImageStatMutation", m)
+}
+
 // The RedeemCodeFunc type is an adapter to allow the use of ordinary
 // function as RedeemCode mutator.
 type RedeemCodeFunc func(context.Context, *ent.RedeemCodeMutation) (ent.Value, error)

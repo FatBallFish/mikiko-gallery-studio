@@ -44,6 +44,8 @@ type ImageResult struct {
 	Height int `json:"height,omitempty"`
 	// Sha256 holds the value of the "sha256" field.
 	Sha256 string `json:"sha256,omitempty"`
+	// ImageGroup holds the value of the "image_group" field.
+	ImageGroup string `json:"image_group,omitempty"`
 	// VisibilityStatus holds the value of the "visibility_status" field.
 	VisibilityStatus string `json:"visibility_status,omitempty"`
 	// ReviewReason holds the value of the "review_reason" field.
@@ -60,7 +62,7 @@ func (*ImageResult) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case imageresult.FieldUserID, imageresult.FieldFileSizeBytes, imageresult.FieldWidth, imageresult.FieldHeight:
 			values[i] = new(sql.NullInt64)
-		case imageresult.FieldImageRole, imageresult.FieldStorageDriver, imageresult.FieldObjectKey, imageresult.FieldMimeType, imageresult.FieldSha256, imageresult.FieldVisibilityStatus, imageresult.FieldReviewReason:
+		case imageresult.FieldImageRole, imageresult.FieldStorageDriver, imageresult.FieldObjectKey, imageresult.FieldMimeType, imageresult.FieldSha256, imageresult.FieldImageGroup, imageresult.FieldVisibilityStatus, imageresult.FieldReviewReason:
 			values[i] = new(sql.NullString)
 		case imageresult.FieldCreatedAt, imageresult.FieldUpdatedAt, imageresult.FieldDeletedAt, imageresult.FieldPublishedAt:
 			values[i] = new(sql.NullTime)
@@ -166,6 +168,12 @@ func (_m *ImageResult) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Sha256 = value.String
 			}
+		case imageresult.FieldImageGroup:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field image_group", values[i])
+			} else if value.Valid {
+				_m.ImageGroup = value.String
+			}
 		case imageresult.FieldVisibilityStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field visibility_status", values[i])
@@ -262,6 +270,9 @@ func (_m *ImageResult) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("sha256=")
 	builder.WriteString(_m.Sha256)
+	builder.WriteString(", ")
+	builder.WriteString("image_group=")
+	builder.WriteString(_m.ImageGroup)
 	builder.WriteString(", ")
 	builder.WriteString("visibility_status=")
 	builder.WriteString(_m.VisibilityStatus)

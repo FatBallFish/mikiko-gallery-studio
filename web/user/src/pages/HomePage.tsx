@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import type { ImageTask } from '../../../shared/api-types'
+import type { ImageResult } from '../../../shared/api-types'
+import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
 import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
-import neonImage from '../../../../docs/template/PicGallery/mpdhfj5l-image.png'
-import { formatDate, taskTypeLabel, useApp } from '../components'
+import { Modal, PublicImageDetail, copyText, formatDate, taskTypeLabel, useApp } from '../components'
 import { useApiResource } from '../useApiResource'
 
 type FilterMode = 'latest' | 'hot'
@@ -16,48 +16,9 @@ type MasonryCard = {
   imageUrl?: string
   createdAt: string
   hotScore: number
+  image: ImageResult
   onClick: () => void
 }
-
-const templateCards = [
-  {
-    id: 'template-neon-workspace',
-    title: 'Neon Creative Workspace',
-    meta: 'BASIC · 1K',
-    imageUrl: neonImage,
-    createdAt: '2026-05-21 12:20',
-    hotScore: 82,
-  },
-  {
-    id: 'template-abstract-geo',
-    title: 'Abstract Geometric Shapes',
-    meta: 'PRO · 4K',
-    createdAt: '2026-05-21 11:05',
-    hotScore: 76,
-  },
-  {
-    id: 'template-cyber-city',
-    title: 'Cyberpunk Cityscape',
-    meta: 'PLUS · 2K',
-    createdAt: '2026-05-20 22:10',
-    hotScore: 68,
-  },
-  {
-    id: 'template-watch',
-    title: 'Cinematic Luxury Watch',
-    meta: 'PRO · 4K',
-    imageUrl: heroImage,
-    createdAt: '2026-05-20 18:36',
-    hotScore: 94,
-  },
-  {
-    id: 'template-mystic-portrait',
-    title: 'Mystical Portrait',
-    meta: 'PLUS · 2K',
-    createdAt: '2026-05-19 20:18',
-    hotScore: 62,
-  },
-]
 
 const styles = {
   content: {
@@ -200,18 +161,63 @@ const styles = {
 export function HomePage() {
   const app = useApp()
   const [filter, setFilter] = useState<FilterMode>('hot')
-  const tasks = useApiResource(() => userApi.listTasks(), [])
+  const [selected, setSelected] = useState<ImageResult | null>(null)
+  const gallery = useApiResource(() => openApi.listPublicGallery(1, 30, { sort: filter, accessToken: app.session?.token }), [filter, app.session?.token])
 
   const cards = useMemo(() => {
-    const fromTasks = toTaskCards(tasks.data ?? [], () => app.navigate('gallery'))
-    const fromTemplates = templateCards.map((card) => ({ ...card, onClick: () => app.navigate('genpic') }))
-    const rows: MasonryCard[] = [...fromTasks, ...fromTemplates]
+    return (gallery.data?.items ?? []).map((image) => ({
+      id: image.id,
+      title: image.prompt || image.id,
+      meta: `${taskTypeLabel(image.task_type ?? 'text_to_image')} · ${image.route_model_code || image.abstract_model || '-'} · ${image.quality || '-'} · ${formatDate(image.created_at ?? '')}`,
+      imageUrl: image.url ? userApi.imageAssetUrl(image.url, app.session?.token) : undefined,
+      createdAt: image.created_at ?? '',
+      hotScore: (image.like_count ?? 0) * 2 + (image.favorite_count ?? 0) * 3 + (image.comment_count ?? 0),
+      image,
+      onClick: () => setSelected(image),
+    }))
+  }, [app.session?.token, gallery.data])
 
-    return rows.sort((left, right) => {
-      if (filter === 'latest') return right.createdAt.localeCompare(left.createdAt)
-      return right.hotScore - left.hotScore || right.createdAt.localeCompare(left.createdAt)
-    })
-  }, [app, filter, tasks.data])
+  async function toggleReaction(image: ImageResult, kind: 'like' | 'favorite') {
+    const active = kind === 'like' ? !image.liked_by_viewer : !image.favorited_by_viewer
+    try {
+      const updated = kind === 'like'
+        ? await userApi.likePublicImage(image.id, active)
+        : await userApi.favoritePublicImage(image.id, active)
+      setSelected((current) => current?.id === image.id ? { ...current, ...updated, publish_status: updated.visibility_status } : current)
+      await gallery.reload()
+    } catch {
+      app.notify('error', '操作失败，请稍后重试')
+    }
+  }
+
+  function imageUrl(image: ImageResult) {
+    const url = image.url || image.download_url
+    return url ? userApi.imageAssetUrl(url, null) : undefined
+  }
+
+  function downloadImage(image: ImageResult) {
+    const url = image.url || image.download_url
+    if (!url) return
+    const link = document.createElement('a')
+    link.href = userApi.imageAssetUrl(url, null)
+    link.download = downloadFilename(image)
+    link.rel = 'noopener noreferrer'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  function downloadFilename(image: ImageResult) {
+    const source = image.download_url ?? image.url ?? ''
+    const clean = source.split('?')[0]
+    const ext = clean.match(/\.(png|jpe?g|webp|gif)$/i)?.[0] ?? '.png'
+    return `${image.id || 'image'}${ext}`
+  }
+
+  async function copyPrompt(prompt: string) {
+    await copyText(prompt)
+    app.notify('success', 'Prompt 已复制')
+  }
 
   return (
     <div className="content" style={styles.content}>
@@ -233,7 +239,7 @@ export function HomePage() {
           <p style={styles.heroText}>探索如何通过精确的提示词与全能 PRO 模型，生成令人惊叹的高奢产品视觉资产。</p>
           <div style={styles.actionRow}>
             <HomeButton isActive onClick={(event) => navigateFromButton(event, () => app.navigate('genpic'))}>从参考图开始</HomeButton>
-            <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('gallery'))}>查看公开图库</HomeButton>
+            <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('public-gallery'))}>查看公开图库</HomeButton>
             <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('api-keys'))}>API 开放平台</HomeButton>
             <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('profile'))}>{app.profile?.avatar_initials ?? '账户'}</HomeButton>
           </div>
@@ -245,13 +251,13 @@ export function HomePage() {
           <div>
             <h3 id="inspiration-title" style={styles.sectionTitle}>灵感瀑布流</h3>
             <span style={styles.sectionDetail}>
-              {tasks.loading ? '正在刷新最近任务...' : tasks.error ? `实时数据读取失败：${tasks.error}` : `已同步 ${tasks.data?.length ?? 0} 个最近任务`}
+              {gallery.loading ? '正在刷新公开图库...' : `已同步 ${gallery.data?.items.length ?? 0} 张公开图片`}
             </span>
           </div>
           <div style={styles.filterGroup} aria-label="灵感筛选">
             <FilterButton active={filter === 'latest'} onClick={() => setFilter('latest')}>最新</FilterButton>
             <FilterButton active={filter === 'hot'} onClick={() => setFilter('hot')}>最热</FilterButton>
-            <HomeButton onClick={() => void tasks.reload()}>刷新</HomeButton>
+            <HomeButton onClick={() => void gallery.reload()}>刷新</HomeButton>
           </div>
         </div>
 
@@ -266,26 +272,21 @@ export function HomePage() {
             </button>
           ))}
         </div>
-
-        {tasks.error ? <p style={styles.smallNote}>点击“刷新”会重新读取真实任务数据，模板卡片仍会保留作为兜底灵感。</p> : null}
       </section>
+      {selected ? (
+        <Modal title="公开图片详情" onClose={() => setSelected(null)}>
+          <PublicImageDetail
+            image={selected}
+            imageUrl={imageUrl(selected)}
+            onLike={(image) => void toggleReaction(image as ImageResult, 'like')}
+            onFavorite={(image) => void toggleReaction(image as ImageResult, 'favorite')}
+            onDownload={(image) => downloadImage(image as ImageResult)}
+            onCopyPrompt={(prompt) => void copyPrompt(prompt)}
+          />
+        </Modal>
+      ) : null}
     </div>
   )
-}
-
-function toTaskCards(tasks: ImageTask[], onClick: () => void): MasonryCard[] {
-  return tasks.flatMap((task) => {
-    const images = task.results.length ? task.results : [undefined]
-    return images.map((image, index) => ({
-      id: `${task.id}-${image?.id ?? index}`,
-      title: task.title,
-      meta: `${taskTypeLabel(task.task_type)} · ${task.model_group} · ${task.quality} · ${formatDate(task.created_at)}`,
-      imageUrl: image?.url,
-      createdAt: task.created_at,
-      hotScore: Number.parseFloat(task.estimate_points) * 10 + task.progress + (image?.publish_status === 'public' ? 40 : 0),
-      onClick,
-    }))
-  })
 }
 
 function navigateFromButton(event: React.MouseEvent<HTMLButtonElement>, navigate: () => void) {

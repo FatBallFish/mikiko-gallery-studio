@@ -28,6 +28,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
@@ -118,6 +120,8 @@ func checkColumn(t, c string) error {
 			pointledger.Table:                 pointledger.ValidColumn,
 			providererrorpolicy.Table:         providererrorpolicy.ValidColumn,
 			providermodel.Table:               providermodel.ValidColumn,
+			publicimageinteraction.Table:      publicimageinteraction.ValidColumn,
+			publicimagestat.Table:             publicimagestat.ValidColumn,
 			redeemcode.Table:                  redeemcode.ValidColumn,
 			referenceasset.Table:              referenceasset.ValidColumn,
 			refreshsession.Table:              refreshsession.ValidColumn,

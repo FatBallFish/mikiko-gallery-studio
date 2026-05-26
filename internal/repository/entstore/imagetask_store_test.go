@@ -169,6 +169,82 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	}
 }
 
+func TestImageTaskStoreListsApprovedPublicImagesWithoutPublishedAt(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetaskpublicgallery?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID:                61,
+		ID:                    "61616161-6161-6161-6161-616161616161",
+		Status:                domainimagetask.StatusSucceeded,
+		Provider:              "openai",
+		AbstractModel:         "basic",
+		TaskType:              string(provider.TaskTypeTextToImage),
+		Prompt:                "public gallery image",
+		RequestedQuality:      "auto",
+		ResolvedQualityBucket: "1k",
+		OutputImageCount:      1,
+		Results: []provider.ImageResult{{
+			ObjectKey:        "generated-images/61/61616161-6161-6161-6161-616161616161/0.png",
+			MimeType:         "image/png",
+			SHA256:           "abc123",
+			StorageDriver:    "local",
+			VisibilityStatus: domainimagetask.VisibilityPrivate,
+		}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := store.GetByID(ctx, 61, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	imageID := loaded.Results[0].ID
+	if _, err := store.RequestPublish(ctx, 61, imageID); err != nil {
+		t.Fatalf("RequestPublish: %v", err)
+	}
+	if _, err := store.ReviewImage(ctx, imageID, domainimagetask.VisibilityApproved, "", nil); err != nil {
+		t.Fatalf("ReviewImage: %v", err)
+	}
+
+	publicPage, err := store.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListPublicGallery: %v", err)
+	}
+	if publicPage.Total != 1 || len(publicPage.Items) != 1 || publicPage.Items[0].ID != imageID {
+		t.Fatalf("expected approved image in public gallery, got %#v", publicPage)
+	}
+
+	if _, err := store.SetPublicImageInteraction(ctx, 62, imageID, "like", true); err != nil {
+		t.Fatalf("SetPublicImageInteraction like: %v", err)
+	}
+	if _, err := store.SetPublicImageInteraction(ctx, 62, imageID, "favorite", true); err != nil {
+		t.Fatalf("SetPublicImageInteraction favorite: %v", err)
+	}
+	likedPage, err := store.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ViewerUserID: 62, LikedOnly: true})
+	if err != nil {
+		t.Fatalf("ListPublicGallery liked: %v", err)
+	}
+	if len(likedPage.Items) != 1 || !likedPage.Items[0].LikedByViewer || likedPage.Items[0].LikeCount != 1 {
+		t.Fatalf("expected liked viewer state, got %#v", likedPage)
+	}
+	favoritedPage, err := store.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ViewerUserID: 62, FavoritedOnly: true})
+	if err != nil {
+		t.Fatalf("ListPublicGallery favorited: %v", err)
+	}
+	if len(favoritedPage.Items) != 1 || !favoritedPage.Items[0].FavoritedByViewer || favoritedPage.Items[0].FavoriteCount != 1 {
+		t.Fatalf("expected favorited viewer state, got %#v", favoritedPage)
+	}
+}
+
 func TestImageTaskStoreAcquireNextQueuedTaskAndReclaimExpiredLease(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:imagetasklease?mode=memory&cache=shared&_fk=1")

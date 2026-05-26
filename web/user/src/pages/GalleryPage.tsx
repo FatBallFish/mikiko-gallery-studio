@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
-import type { ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../../shared/api-types'
-import { openApi } from '../../../shared/open-api'
+import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { GalleryImage, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, LoadingState, Modal, formatDate, taskTypeLabel, useApp } from '../components'
+import { Button, EmptyState, ImageLightbox, LoadingState, Modal, PublicDetailIcon, PublicImageDetail, copyText, formatDate, taskTypeLabel, useApp } from '../components'
 import { errorMessage, useApiResource } from '../useApiResource'
+
+const editContextKey = 'pic-gallery-edit-context'
 
 const shell = {
   content: { padding: 40 } as const,
@@ -30,6 +32,15 @@ const statusFilters: Array<{ value: 'all' | ImageTaskStatus; label: string }> = 
   { value: 'failed', label: '失败' },
 ]
 
+const publishFilters: Array<{ value: 'all' | PublishStatus; label: string }> = [
+  { value: 'all', label: '全部公开状态' },
+  { value: 'private', label: '私有' },
+  { value: 'pending_review', label: '审核中' },
+  { value: 'approved', label: '已公开' },
+  { value: 'rejected', label: '已拒绝' },
+  { value: 'unpublished', label: '已下架' },
+]
+
 function publishLabel(status?: PublishStatus) {
   if (status === 'public' || status === 'approved') return '已公开'
   if (status === 'reviewing' || status === 'pending_review') return '审核中'
@@ -38,38 +49,93 @@ function publishLabel(status?: PublishStatus) {
   return '私有'
 }
 
+function Icon({ name }: { name: 'eye' | 'download' | 'public' | 'delete' | 'edit' | 'copy' | 'group' }) {
+  const common = { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  if (name === 'eye') return <svg {...common}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+  if (name === 'download') return <svg {...common}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+  if (name === 'public') return <svg {...common}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20" /><path d="M12 2a15 15 0 0 0 0 20" /></svg>
+  if (name === 'delete') return <svg {...common}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /></svg>
+  if (name === 'edit') return <svg {...common}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+  if (name === 'copy') return <svg {...common}><rect x="9" y="9" width="13" height="13" rx="2" /><rect x="2" y="2" width="13" height="13" rx="2" /></svg>
+  return <svg {...common}><path d="M20 12V7a2 2 0 0 0-2-2h-6.2a2 2 0 0 1-1.4-.6L9.6 3.6A2 2 0 0 0 8.2 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /><path d="M16 11h6" /><path d="M19 8v6" /></svg>
+}
+
+function iconButton(label: string, icon: ReactNode, onClick: () => void, disabled?: boolean, busy?: boolean, tone = '') {
+  return (
+    <button type="button" className={`icon-action ${tone}`} title={label} aria-label={label} disabled={disabled || busy} onClick={onClick}>
+      {busy ? <span className="spinner" /> : icon}
+    </button>
+  )
+}
+
 export function GalleryPage() {
   const app = useApp()
-  const privateGallery = useApiResource(() => userApi.listHistoryTasks(), [])
-  const publicGallery = useApiResource(() => openApi.listPublicGallery().then((page) => page.items), [])
-  const [view, setView] = useState<'private' | 'public'>('private')
+  const privateGallery = useApiResource(() => userApi.listGalleryImages(), [])
   const [query, setQuery] = useState('')
   const [type, setType] = useState<(typeof typeFilters)[number]['value']>('all')
   const [status, setStatus] = useState<(typeof statusFilters)[number]['value']>('all')
-  const [selected, setSelected] = useState<ImageTask | null>(null)
-  const [publicSelected, setPublicSelected] = useState<ImageResult | null>(null)
+  const [publishStatus, setPublishStatus] = useState<(typeof publishFilters)[number]['value']>('all')
+  const [imageGroup, setImageGroup] = useState('all')
+  const [selected, setSelected] = useState<GalleryImage | null>(null)
+  const [imagePreview, setImagePreview] = useState<{ url: string; alt: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [groupDialog, setGroupDialog] = useState<{ ids: string[] } | null>(null)
+  const [groupDraft, setGroupDraft] = useState('')
+  const [deleteDialog, setDeleteDialog] = useState<{ images: GalleryImage[] } | null>(null)
+
+  useEffect(() => {
+    setImageGroup('all')
+  }, [type])
+
+  const typeRows = useMemo(() => {
+    const rows = privateGallery.data ?? []
+    return rows.filter((image) => {
+      const matchType = type === 'all' || (type === 'api' ? false : image.task_type === type)
+      return matchType
+    })
+  }, [privateGallery.data, type])
+
+  const groupFilters = useMemo(() => {
+    const groups = new Set<string>()
+    typeRows.forEach((image) => {
+      const group = image.image_group?.trim()
+      if (group) groups.add(group)
+    })
+    return Array.from(groups).sort()
+  }, [typeRows])
+
+  const allGroupFilters = useMemo(() => {
+    const groups = new Set<string>()
+    ;(privateGallery.data ?? []).forEach((image) => {
+      const group = image.image_group?.trim()
+      if (group) groups.add(group)
+    })
+    return Array.from(groups).sort()
+  }, [privateGallery.data])
 
   const filtered = useMemo(() => {
-    const rows = privateGallery.data ?? []
-    return rows.filter((task) => {
-      const search = `${task.title} ${task.prompt} ${task.model_group} ${task.provider}`.toLowerCase()
+    return typeRows.filter((image) => {
+      const model = image.route_model_code || image.abstract_model || ''
+      const group = image.image_group?.trim() || ''
+      const search = `${image.id} ${image.prompt ?? ''} ${model} ${group}`.toLowerCase()
       const matchQuery = !query || search.includes(query.trim().toLowerCase())
-      const matchType = type === 'all' || (type === 'api' ? task.route.includes('open') || task.route.includes('api') : task.task_type === type)
-      const matchStatus = status === 'all' || task.status === status
-      return matchQuery && matchType && matchStatus
+      const matchStatus = status === 'all' || image.task_status === status
+      const normalizedPublishStatus = image.visibility_status ?? 'private'
+      const matchPublishStatus = publishStatus === 'all' || normalizedPublishStatus === publishStatus
+      const matchGroup = imageGroup === 'all' || (imageGroup === 'ungrouped' ? !group : group === imageGroup)
+      return matchQuery && matchStatus && matchPublishStatus && matchGroup
     })
-  }, [privateGallery.data, query, type, status])
+  }, [typeRows, query, status, publishStatus, imageGroup])
 
-  async function publishFirst(task: ImageTask) {
-    const image = task.results[0]
-    if (!image) return
+  const selectedImages = useMemo(() => filtered.filter((image) => selectedIds.has(image.id)), [filtered, selectedIds])
+
+  async function publishImage(image: GalleryImage) {
     setBusyId(image.id)
     try {
       await userApi.publishImage(image.id)
       app.notify('success', '已提交公开审核')
       await privateGallery.reload()
-      if (selected?.id === task.id) setSelected(await userApi.getTask(task.id))
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -77,12 +143,12 @@ export function GalleryPage() {
     }
   }
 
-  async function deleteTask(task: ImageTask) {
-    setBusyId(task.id)
+  async function publishImages(images: GalleryImage[]) {
+    if (!images.length) return
+    setBusyId('batch')
     try {
-      await userApi.deleteTask(task.id)
-      app.notify('success', '已从图库隐藏该任务')
-      if (selected?.id === task.id) setSelected(null)
+      await Promise.all(images.map((image) => userApi.publishImage(image.id)))
+      app.notify('success', `已提交 ${images.length} 张图片公开审核`)
       await privateGallery.reload()
     } catch (err) {
       app.notify('error', errorMessage(err))
@@ -91,162 +157,279 @@ export function GalleryPage() {
     }
   }
 
-  function downloadImage(image?: ImageResult) {
-    if (!image) return
-    window.open(image.download_url ?? image.url, '_blank', 'noopener,noreferrer')
+  function requestDeleteImages(images: GalleryImage[]) {
+    if (!images.length) return
+    setDeleteDialog({ images })
   }
 
-  function exportRecords() {
-    const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
+  async function confirmDeleteImages() {
+    const images = deleteDialog?.images ?? []
+    if (!images.length) return
+    setBusyId(images.length === 1 ? images[0].id : 'batch')
+    try {
+      await Promise.all(images.map((image) => userApi.deleteGalleryImage(image.id)))
+      const deleted = new Set(images.map((image) => image.id))
+      setSelectedIds((current) => new Set(Array.from(current).filter((id) => !deleted.has(id))))
+      if (selected && deleted.has(selected.id)) setSelected(null)
+      setDeleteDialog(null)
+      app.notify('success', `已永久删除 ${images.length} 张图片`)
+      await privateGallery.reload()
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  function continueEdit(image: GalleryImage) {
+    const sources = image.reference_assets?.length ? image.reference_assets : []
+    window.sessionStorage.setItem(editContextKey, JSON.stringify({
+      prompt: image.prompt ?? '',
+      sources,
+      fallbackImageUrl: sources.length ? '' : assetUrl(image.url || image.download_url || ''),
+    }))
+    app.navigate('genpic')
+  }
+
+  function downloadImage(image?: Pick<GalleryImage, 'url' | 'download_url' | 'id'>) {
+    const url = image?.download_url ?? image?.url
+    if (!image || !url) return
     const link = document.createElement('a')
-    link.href = url
-    link.download = 'pic-gallery-assets.json'
+    link.href = assetUrl(url)
+    link.download = downloadFilename(image)
+    link.rel = 'noopener noreferrer'
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
-    app.notify('success', `已导出 ${filtered.length} 条记录`)
+    link.remove()
+  }
+
+  function assetUrl(url: string) {
+    return userApi.imageAssetUrl(url, app.session?.token)
+  }
+
+  function downloadImages(images: GalleryImage[]) {
+    images.forEach((image, index) => {
+      window.setTimeout(() => downloadImage(image), index * 120)
+    })
+    app.notify('success', `已开始下载 ${images.length} 张图片`)
+  }
+
+  function downloadFilename(image: Pick<GalleryImage, 'id' | 'url' | 'download_url'>) {
+    const source = image.download_url ?? image.url ?? ''
+    const clean = source.split('?')[0]
+    const ext = clean.match(/\.(png|jpe?g|webp|gif)$/i)?.[0] ?? '.png'
+    return `${image.id || 'image'}${ext}`
+  }
+
+  function toggleSelected(imageID: string, checked?: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      const shouldCheck = checked ?? !next.has(imageID)
+      if (shouldCheck) next.add(imageID)
+      else next.delete(imageID)
+      return next
+    })
+  }
+
+  function selectAllVisible(checked: boolean) {
+    setSelectedIds(checked ? new Set(filtered.map((image) => image.id)) : new Set())
+  }
+
+  function openGroupDialog(images: GalleryImage[]) {
+    if (!images.length) return
+    setGroupDialog({ ids: images.map((image) => image.id) })
+    setGroupDraft(images.length === 1 ? images[0].image_group ?? '' : '')
+  }
+
+  async function applyGroup() {
+    const name = groupDraft.trim()
+    if (!groupDialog) return
+    setBusyId('group')
+    try {
+      const updated = await Promise.all(groupDialog.ids.map((id) => userApi.updateGalleryImageGroup(id, name)))
+      await privateGallery.reload()
+      if (selected) {
+        const nextSelected = updated.find((image) => image.id === selected.id)
+        if (nextSelected) setSelected(nextSelected)
+      }
+      setGroupDialog(null)
+      setGroupDraft('')
+      app.notify('success', name ? '已设置图片分组' : '已清除图片分组')
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    } finally {
+      setBusyId(null)
+    }
   }
 
   return (
     <div className="content" style={shell.content}>
       <div className="header" style={shell.header}>
         <div>
-          <p className="eyebrow">{view === 'private' ? 'YOUR COLLECTION' : 'PUBLIC GALLERY'}</p>
-          <h1 style={shell.title}>{view === 'private' ? '历史资产' : '公开广场'}</h1>
+          <p className="eyebrow">YOUR COLLECTION</p>
+          <h1 style={shell.title}>历史资产</h1>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button tone={view === 'private' ? 'primary' : 'ghost'} onClick={() => setView('private')}>私有图库</Button>
-          <Button tone={view === 'public' ? 'primary' : 'ghost'} onClick={() => setView('public')}>公开广场</Button>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、提示词或模型" style={{ width: 280, borderRadius: 8 }} />
-          {view === 'private' ? <button type="button" className="filter-btn" style={{ ...shell.filterButton, background: 'var(--vault-gold)', color: 'var(--vault-bg)', border: 'none' }} onClick={exportRecords}>导出记录</button> : null}
         </div>
       </div>
 
-      {view === 'private' ? (
-        <>
-          <div className="filters" style={shell.filters}>
-            {typeFilters.map((item) => (
-              <button key={item.value} type="button" className={`filter-btn${type === item.value ? ' active' : ''}`} style={{ ...shell.filterButton, ...(type === item.value ? shell.activeFilter : {}) }} onClick={() => setType(item.value)}>{item.label}</button>
-            ))}
-            <span style={{ flex: 1 }} />
-            {statusFilters.map((item) => (
-              <button key={item.value} type="button" className={`filter-btn${status === item.value ? ' active' : ''}`} style={{ ...shell.filterButton, ...(status === item.value ? shell.activeFilter : {}) }} onClick={() => setStatus(item.value)}>{item.label}</button>
-            ))}
+      <div className="filters" style={shell.filters}>
+            <div style={{ flexBasis: '100%', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {typeFilters.map((item) => (
+                <button key={item.value} type="button" className={`filter-btn${type === item.value ? ' active' : ''}`} style={{ ...shell.filterButton, ...(type === item.value ? shell.activeFilter : {}) }} onClick={() => setType(item.value)}>{item.label}</button>
+              ))}
+            </div>
+            <div style={{ flexBasis: '100%', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" className={`filter-btn${imageGroup === 'all' ? ' active' : ''}`} style={{ ...shell.filterButton, ...(imageGroup === 'all' ? shell.activeFilter : {}) }} onClick={() => setImageGroup('all')}>全部分组</button>
+              <button type="button" className={`filter-btn${imageGroup === 'ungrouped' ? ' active' : ''}`} style={{ ...shell.filterButton, ...(imageGroup === 'ungrouped' ? shell.activeFilter : {}) }} onClick={() => setImageGroup('ungrouped')}>未分组</button>
+              {groupFilters.map((group) => (
+                <button key={group} type="button" className={`filter-btn${imageGroup === group ? ' active' : ''}`} style={{ ...shell.filterButton, ...(imageGroup === group ? shell.activeFilter : {}) }} onClick={() => setImageGroup(group)}>{group}</button>
+              ))}
+            </div>
+            <div style={{ flexBasis: '100%', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {statusFilters.map((item) => (
+                <button key={item.value} type="button" className={`filter-btn${status === item.value ? ' active' : ''}`} style={{ ...shell.filterButton, ...(status === item.value ? shell.activeFilter : {}) }} onClick={() => setStatus(item.value)}>{item.label}</button>
+              ))}
+            </div>
+            <div style={{ flexBasis: '100%', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {publishFilters.map((item) => (
+                <button key={item.value} type="button" className={`filter-btn${publishStatus === item.value ? ' active' : ''}`} style={{ ...shell.filterButton, ...(publishStatus === item.value ? shell.activeFilter : {}) }} onClick={() => setPublishStatus(item.value)}>{item.label}</button>
+              ))}
+            </div>
           </div>
 
           {privateGallery.loading ? <LoadingState label="正在读取历史任务..." /> : null}
-          {privateGallery.error ? <ErrorState message={privateGallery.error} onRetry={privateGallery.reload} /> : null}
           {!privateGallery.loading && !filtered.length ? <EmptyState title="没有匹配的图片" detail="换一个筛选条件，或回工作台创建新任务。" action={<Button onClick={() => app.navigate('genpic')}>继续生成</Button>} /> : null}
 
-          <TaskGrid rows={filtered} busyId={busyId} onPreview={setSelected} onDownload={(task) => downloadImage(task.results[0])} onPublish={publishFirst} onDelete={deleteTask} />
-        </>
-      ) : (
-        <>
-          {publicGallery.loading ? <LoadingState label="正在读取公开广场..." /> : null}
-          {publicGallery.error ? <ErrorState message={publicGallery.error} onRetry={publicGallery.reload} /> : null}
-          {!publicGallery.loading && !publicGallery.data?.length ? <EmptyState title="暂无公开作品" detail="公开广场未开启或暂无审核通过的图片。" /> : null}
-          <div className="gallery-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 24 }}>
-            {(publicGallery.data ?? []).filter((image) => !query || image.id.toLowerCase().includes(query.toLowerCase())).map((image) => (
-              <article key={image.id} className="asset-card" style={{ background: 'var(--vault-panel)', borderRadius: 12, border: '1px solid var(--vault-line)', overflow: 'hidden' }}>
-                <button type="button" className="asset-thumb" style={{ width: '100%', aspectRatio: '1', background: 'var(--vault-bg)', overflow: 'hidden' }} onClick={() => setPublicSelected(image)}>
-                  {image.url ? <img src={image.url} alt={image.id} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
-                </button>
-                <div className="asset-info" style={{ padding: 16 }}>
-                  <div className="asset-title" style={{ fontSize: 14, fontWeight: 700 }}>{image.id}</div>
-                  <div className="asset-meta" style={{ fontSize: 12, color: 'var(--vault-muted)' }}>{publishLabel(image.publish_status)}</div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                    <Button tone="ghost" onClick={() => setPublicSelected(image)}>预览</Button>
-                    <Button tone="ghost" onClick={() => downloadImage(image)}>下载</Button>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
+          {filtered.length ? (
+            <div className="gallery-batchbar">
+              <label className="select-check"><input type="checkbox" checked={filtered.length > 0 && selectedImages.length === filtered.length} onChange={(event) => selectAllVisible(event.target.checked)} /> 全选</label>
+              <span>{selectedImages.length ? `已选择 ${selectedImages.length} 张` : `共 ${filtered.length} 张`}</span>
+              <span style={{ flex: 1 }} />
+              {iconButton('批量下载', <Icon name="download" />, () => downloadImages(selectedImages), !selectedImages.length)}
+              {iconButton('批量公开', <Icon name="public" />, () => void publishImages(selectedImages), !selectedImages.length, busyId === 'batch')}
+              {iconButton('批量设置分组', <Icon name="group" />, () => openGroupDialog(selectedImages), !selectedImages.length)}
+              {iconButton('批量删除', <Icon name="delete" />, () => requestDeleteImages(selectedImages), !selectedImages.length, busyId === 'batch', 'danger')}
+            </div>
+          ) : null}
+
+      <ImageGrid rows={filtered} accessToken={app.session?.token} busyId={busyId} selectedIds={selectedIds} onToggleSelected={toggleSelected} onPreview={setSelected} onContinue={continueEdit} onDownload={(image) => downloadImage(image)} onPublish={publishImage} onDelete={(image) => requestDeleteImages([image])} onGroup={(image) => openGroupDialog([image])} />
 
       {selected ? (
-        <Modal title={selected.title} onClose={() => setSelected(null)}>
-          <Preview task={selected} busyId={busyId} onContinue={() => app.navigate('genpic')} onDownload={() => downloadImage(selected.results[0])} onPublish={() => void publishFirst(selected)} onDelete={() => void deleteTask(selected)} />
+        <Modal title="图片详情" onClose={() => setSelected(null)}>
+          <PublicImageDetail
+            image={selected}
+            imageUrl={selected.url || selected.download_url ? assetUrl(selected.url || selected.download_url || '') : undefined}
+            referenceImages={(selected.reference_assets ?? []).filter((asset) => asset.preview_url).map((asset) => {
+              const url = assetUrl(asset.preview_url || '')
+              return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图', onPreview: () => setImagePreview({ url, alt: asset.name || '原图' }) }
+            })}
+            showPublicStats={false}
+            onPreviewImage={(url, alt) => setImagePreview({ url, alt })}
+            onCopyPrompt={async (prompt) => {
+              await copyText(prompt)
+              app.notify('success', 'Prompt 已复制')
+            }}
+            actions={[
+              { key: 'edit', label: '继续编辑', icon: <PublicDetailIcon name="edit" />, onClick: () => continueEdit(selected) },
+              { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !selected.url && !selected.download_url },
+              { key: 'public', label: '申请公开', icon: <PublicDetailIcon name="public" />, onClick: () => void publishImage(selected), disabled: !selected.url },
+              { key: 'group', label: '设置分组', icon: <PublicDetailIcon name="group" />, onClick: () => openGroupDialog([selected]) },
+              { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
+            ]}
+          />
         </Modal>
       ) : null}
-      {publicSelected ? (
-        <Modal title={publicSelected.id} onClose={() => setPublicSelected(null)}>
-          <div className="preview-images">{publicSelected.url ? <img src={publicSelected.url} alt={publicSelected.id} /> : null}</div>
-          <div className="action-row"><Button onClick={() => downloadImage(publicSelected)}>下载</Button></div>
+      {deleteDialog ? (
+        <Modal title="永久删除图片" onClose={() => setDeleteDialog(null)}>
+          <div className="delete-confirm">
+            <div className="delete-confirm-mark"><Icon name="delete" /></div>
+            <div>
+              <h3>确认删除 {deleteDialog.images.length} 张图片？</h3>
+              <p>删除后会同步清理图片文件和数据库记录，无法恢复。公开审核中的图片也会从审核队列移除。</p>
+            </div>
+            <div className="delete-confirm-list">
+              {deleteDialog.images.slice(0, 4).map((image) => (
+                <span key={image.id}>{image.prompt || image.id}</span>
+              ))}
+              {deleteDialog.images.length > 4 ? <span>还有 {deleteDialog.images.length - 4} 张...</span> : null}
+            </div>
+            <div className="action-row delete-confirm-actions">
+              <Button tone="ghost" onClick={() => setDeleteDialog(null)} disabled={busyId === 'batch'}>取消</Button>
+              <Button tone="danger" busy={busyId === 'batch' || busyId === deleteDialog.images[0]?.id} onClick={() => void confirmDeleteImages()}>确认删除</Button>
+            </div>
+          </div>
         </Modal>
       ) : null}
+      {groupDialog ? (
+        <Modal title="设置图片分组" onClose={() => setGroupDialog(null)}>
+          <div className="group-editor">
+            <label>
+              <span>分组名称</span>
+              <input value={groupDraft} onChange={(event) => setGroupDraft(event.target.value)} placeholder="输入新分组，或选择已有分组" list="gallery-groups" autoFocus />
+              <datalist id="gallery-groups">
+                {allGroupFilters.map((group) => <option key={group} value={group} />)}
+              </datalist>
+            </label>
+            <p>留空保存会清除所选图片的分组。</p>
+            <div className="action-row">
+              <Button tone="ghost" onClick={() => setGroupDialog(null)}>取消</Button>
+              <Button busy={busyId === 'group'} onClick={() => void applyGroup()}>保存分组</Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} />
     </div>
   )
 }
 
-function TaskGrid({ rows, busyId, onPreview, onDownload, onPublish, onDelete }: {
-  rows: ImageTask[]
+function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onPreview, onContinue, onDownload, onPublish, onDelete, onGroup }: {
+  rows: GalleryImage[]
+  accessToken?: string
   busyId: string | null
-  onPreview: (task: ImageTask) => void
-  onDownload: (task: ImageTask) => void
-  onPublish: (task: ImageTask) => void
-  onDelete: (task: ImageTask) => void
+  selectedIds: Set<string>
+  onToggleSelected: (imageID: string, checked?: boolean) => void
+  onPreview: (image: GalleryImage) => void
+  onContinue: (image: GalleryImage) => void
+  onDownload: (image: GalleryImage) => void
+  onPublish: (image: GalleryImage) => void
+  onDelete: (image: GalleryImage) => void
+  onGroup: (image: GalleryImage) => void
 }) {
   return (
     <div className="gallery-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24 }}>
-      {rows.map((task) => {
-        const image = task.results[0]
+      {rows.map((image) => {
+        const model = image.route_model_code || image.abstract_model || '-'
+        const group = image.image_group || '未分组'
         return (
-          <article key={task.id} className="asset-card" style={{ background: 'var(--vault-panel)', borderRadius: 12, border: '1px solid var(--vault-line)', overflow: 'hidden', position: 'relative' }}>
-            <button type="button" className="asset-thumb" style={{ width: '100%', aspectRatio: '1', background: 'var(--vault-bg)', overflow: 'hidden', display: 'grid', placeItems: 'center', color: 'var(--vault-muted)' }} onClick={() => onPreview(task)}>
-              {image ? <img src={image.url} alt={task.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>{task.progress}%</span>}
+          <article key={image.id} className="asset-card" style={{ background: 'var(--vault-panel)', borderRadius: 12, border: '1px solid var(--vault-line)', overflow: 'hidden', position: 'relative' }}>
+            <label className="asset-select" title="选择图片">
+              <input type="checkbox" checked={selectedIds.has(image.id)} onChange={(event) => onToggleSelected(image.id, event.target.checked)} />
+            </label>
+            <button type="button" className="asset-thumb" style={{ width: '100%', aspectRatio: '1', background: 'var(--vault-bg)', overflow: 'hidden', display: 'grid', placeItems: 'center', color: 'var(--vault-muted)' }} onClick={() => onPreview(image)}>
+              {image.url ? <img src={userApi.imageAssetUrl(image.url, accessToken)} alt={image.prompt || image.id} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>无预览</span>}
             </button>
-            <span className="status-pill" style={{ position: 'absolute', top: 12, right: 12, padding: '4px 8px', background: 'rgba(0,0,0,0.6)', borderRadius: 6, fontSize: 10 }}>{publishLabel(image?.publish_status)}</span>
+            <span className="status-pill" style={{ position: 'absolute', top: 12, right: 12, padding: '4px 8px', background: 'rgba(0,0,0,0.6)', borderRadius: 6, fontSize: 10 }}>{publishLabel(image.visibility_status)}</span>
             <div className="asset-info" style={{ padding: 16 }}>
-              <div className="asset-title" style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.title}</div>
+              <div className="asset-title" style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{image.prompt || image.id}</div>
               <div className="asset-meta" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--vault-muted)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                <span>{taskTypeLabel(task.task_type)} · {task.quality}</span>
-                <span>{formatDate(task.created_at).slice(0, 10)}</span>
+                <span>{taskTypeLabel(image.task_type ?? 'text_to_image')} · {model}</span>
+                <span>{formatDate(image.created_at).slice(0, 10)}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-                <Button tone="ghost" onClick={() => onPreview(task)}>预览</Button>
-                <Button tone="ghost" disabled={!image} onClick={() => onDownload(task)}>下载</Button>
-                <Button tone="ghost" disabled={!image} busy={busyId === image?.id} onClick={() => onPublish(task)}>申请公开</Button>
-                <Button tone="danger" busy={busyId === task.id} onClick={() => onDelete(task)}>隐藏</Button>
+              <div className="asset-group-label">{group}</div>
+              <div className="asset-icon-actions">
+                {iconButton('编辑', <Icon name="edit" />, () => onContinue(image))}
+                {iconButton('下载', <Icon name="download" />, () => onDownload(image), !image.url)}
+                {iconButton('申请公开', <Icon name="public" />, () => onPublish(image), !image.url, busyId === image.id)}
+                {iconButton('设置分组', <Icon name="group" />, () => onGroup(image))}
+                {iconButton('删除', <Icon name="delete" />, () => onDelete(image), false, busyId === image.id, 'danger')}
               </div>
             </div>
           </article>
         )
       })}
-    </div>
-  )
-}
-
-function Preview({ task, busyId, onContinue, onDownload, onPublish, onDelete }: {
-  task: ImageTask
-  busyId: string | null
-  onContinue: () => void
-  onDownload: () => void
-  onPublish: () => void
-  onDelete: () => void
-}) {
-  return (
-    <div className="preview-drawer">
-      <div className="preview-images">
-        {task.results.length ? task.results.map((image) => <img key={image.id} src={image.url} alt={task.title} />) : <EmptyState title="任务尚未完成" detail={`${task.status} / ${task.progress}%`} />}
-      </div>
-      <div className="preview-copy">
-        <span className="status-pill">{task.status}</span>
-        <p>{task.prompt}</p>
-        <div className="meta-grid">
-          <span>模型 <b>{task.model_group}</b></span>
-          <span>质量 <b>{task.quality}</b></span>
-          <span>比例 <b>{task.aspect_ratio}</b></span>
-          <span>费用 <b>{task.estimate_points}</b></span>
-        </div>
-        <div className="action-row">
-          <Button onClick={onContinue}>继续编辑</Button>
-          <Button tone="ghost" disabled={!task.results[0]} onClick={onDownload}>下载首图</Button>
-          <Button tone="ghost" disabled={!task.results[0]} busy={busyId === task.results[0]?.id} onClick={onPublish}>申请公开</Button>
-          <Button tone="danger" busy={busyId === task.id} onClick={onDelete}>隐藏任务</Button>
-        </div>
-      </div>
     </div>
   )
 }

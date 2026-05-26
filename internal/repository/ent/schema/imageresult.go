@@ -25,6 +25,7 @@ func (ImageResult) Fields() []ent.Field {
 		field.Int("width").Default(0),
 		field.Int("height").Default(0),
 		field.String("sha256").MaxLen(64).NotEmpty(),
+		field.String("image_group").MaxLen(64).Default(""),
 		field.String("visibility_status").MaxLen(32).Default("private"),
 		field.String("review_reason").MaxLen(255).Optional().Nillable(),
 		field.Time("published_at").Optional().Nillable(),

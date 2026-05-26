@@ -223,6 +223,20 @@ func (_u *ImageResultUpdate) SetNillableSha256(v *string) *ImageResultUpdate {
 	return _u
 }
 
+// SetImageGroup sets the "image_group" field.
+func (_u *ImageResultUpdate) SetImageGroup(v string) *ImageResultUpdate {
+	_u.mutation.SetImageGroup(v)
+	return _u
+}
+
+// SetNillableImageGroup sets the "image_group" field if the given value is not nil.
+func (_u *ImageResultUpdate) SetNillableImageGroup(v *string) *ImageResultUpdate {
+	if v != nil {
+		_u.SetImageGroup(*v)
+	}
+	return _u
+}
+
 // SetVisibilityStatus sets the "visibility_status" field.
 func (_u *ImageResultUpdate) SetVisibilityStatus(v string) *ImageResultUpdate {
 	_u.mutation.SetVisibilityStatus(v)
@@ -345,6 +359,11 @@ func (_u *ImageResultUpdate) check() error {
 			return &ValidationError{Name: "sha256", err: fmt.Errorf(`ent: validator failed for field "ImageResult.sha256": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ImageGroup(); ok {
+		if err := imageresult.ImageGroupValidator(v); err != nil {
+			return &ValidationError{Name: "image_group", err: fmt.Errorf(`ent: validator failed for field "ImageResult.image_group": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.VisibilityStatus(); ok {
 		if err := imageresult.VisibilityStatusValidator(v); err != nil {
 			return &ValidationError{Name: "visibility_status", err: fmt.Errorf(`ent: validator failed for field "ImageResult.visibility_status": %w`, err)}
@@ -420,6 +439,9 @@ func (_u *ImageResultUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	}
 	if value, ok := _u.mutation.Sha256(); ok {
 		_spec.SetField(imageresult.FieldSha256, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ImageGroup(); ok {
+		_spec.SetField(imageresult.FieldImageGroup, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.VisibilityStatus(); ok {
 		_spec.SetField(imageresult.FieldVisibilityStatus, field.TypeString, value)
@@ -650,6 +672,20 @@ func (_u *ImageResultUpdateOne) SetNillableSha256(v *string) *ImageResultUpdateO
 	return _u
 }
 
+// SetImageGroup sets the "image_group" field.
+func (_u *ImageResultUpdateOne) SetImageGroup(v string) *ImageResultUpdateOne {
+	_u.mutation.SetImageGroup(v)
+	return _u
+}
+
+// SetNillableImageGroup sets the "image_group" field if the given value is not nil.
+func (_u *ImageResultUpdateOne) SetNillableImageGroup(v *string) *ImageResultUpdateOne {
+	if v != nil {
+		_u.SetImageGroup(*v)
+	}
+	return _u
+}
+
 // SetVisibilityStatus sets the "visibility_status" field.
 func (_u *ImageResultUpdateOne) SetVisibilityStatus(v string) *ImageResultUpdateOne {
 	_u.mutation.SetVisibilityStatus(v)
@@ -785,6 +821,11 @@ func (_u *ImageResultUpdateOne) check() error {
 			return &ValidationError{Name: "sha256", err: fmt.Errorf(`ent: validator failed for field "ImageResult.sha256": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ImageGroup(); ok {
+		if err := imageresult.ImageGroupValidator(v); err != nil {
+			return &ValidationError{Name: "image_group", err: fmt.Errorf(`ent: validator failed for field "ImageResult.image_group": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.VisibilityStatus(); ok {
 		if err := imageresult.VisibilityStatusValidator(v); err != nil {
 			return &ValidationError{Name: "visibility_status", err: fmt.Errorf(`ent: validator failed for field "ImageResult.visibility_status": %w`, err)}
@@ -877,6 +918,9 @@ func (_u *ImageResultUpdateOne) sqlSave(ctx context.Context) (_node *ImageResult
 	}
 	if value, ok := _u.mutation.Sha256(); ok {
 		_spec.SetField(imageresult.FieldSha256, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ImageGroup(); ok {
+		_spec.SetField(imageresult.FieldImageGroup, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.VisibilityStatus(); ok {
 		_spec.SetField(imageresult.FieldVisibilityStatus, field.TypeString, value)

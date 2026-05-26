@@ -37,6 +37,15 @@ func TestListVisibleRouteModelsMergesGroupsAndUsesLowestMultiplier(t *testing.T)
 		Prices: []RoutePriceConfig{
 			{RouteModelID: 1, TaskType: "text_to_image", Quality: "1k", BasePoints: "10.00000", Enabled: true},
 			{RouteModelID: 2, TaskType: "text_to_image", Quality: "1k", BasePoints: "10.00000", Enabled: true},
+			{RouteModelID: 2, TaskType: "reference_generate", Quality: "1k", BasePoints: "12.00000", Enabled: true},
+		},
+		ProviderModels: []ProviderCandidate{
+			{AccountModelID: 101, ProviderModelID: 101, ModelCode: "text-model", SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 2},
+			{AccountModelID: 102, ProviderModelID: 102, ModelCode: "ref-model", SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 4, MaxReferenceImageCount: 3},
+		},
+		Candidates: []RouteCandidateConfig{
+			{RouteModelID: 2, AccountModelID: 101, Enabled: true},
+			{RouteModelID: 2, AccountModelID: 102, Enabled: true},
 		},
 	}})
 
@@ -58,6 +67,9 @@ func TestListVisibleRouteModelsMergesGroupsAndUsesLowestMultiplier(t *testing.T)
 	}
 	if got := items[1].Prices[0].DisplayPoints; got != "6.00" {
 		t.Fatalf("expected display points at 2 decimal places, got %s", got)
+	}
+	if !containsString(items[1].TaskTypes, "reference_generate") || items[1].MaxReferenceImageCount != 3 || items[1].MaxOutputImageCount != 4 {
+		t.Fatalf("expected visible reference capabilities, got %#v", items[1])
 	}
 }
 

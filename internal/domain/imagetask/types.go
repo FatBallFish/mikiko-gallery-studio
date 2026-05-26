@@ -122,6 +122,8 @@ type Task struct {
 	ErrorMessage          string                        `json:"error_message,omitempty"`
 	Results               []provider.ImageResult        `json:"results,omitempty"`
 	PricingSnapshot       domainbilling.PricingSnapshot `json:"-"`
+	CreatedAt             time.Time                     `json:"created_at"`
+	UpdatedAt             time.Time                     `json:"updated_at"`
 }
 
 type ExecuteResult struct {
@@ -130,31 +132,56 @@ type ExecuteResult struct {
 }
 
 type GalleryImage struct {
-	ID               string     `json:"id"`
-	TaskID           string     `json:"task_id"`
-	UserID           int64      `json:"user_id,omitempty"`
-	Prompt           string     `json:"prompt,omitempty"`
-	AbstractModel    string     `json:"abstract_model,omitempty"`
-	TaskType         string     `json:"task_type,omitempty"`
-	URL              string     `json:"url,omitempty"`
-	DownloadURL      string     `json:"download_url,omitempty"`
-	MimeType         string     `json:"mime_type,omitempty"`
-	FileSizeBytes    int64      `json:"file_size_bytes"`
-	Width            int        `json:"width"`
-	Height           int        `json:"height"`
-	SHA256           string     `json:"sha256,omitempty"`
-	ObjectKey        string     `json:"object_key,omitempty"`
-	StorageDriver    string     `json:"storage_driver,omitempty"`
-	VisibilityStatus string     `json:"visibility_status"`
-	ReviewReason     string     `json:"review_reason,omitempty"`
-	PublishedAt      *time.Time `json:"published_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID                string                  `json:"id"`
+	TaskID            string                  `json:"task_id"`
+	UserID            int64                   `json:"user_id,omitempty"`
+	Prompt            string                  `json:"prompt,omitempty"`
+	AbstractModel     string                  `json:"abstract_model,omitempty"`
+	RouteModelCode    string                  `json:"route_model_code,omitempty"`
+	TaskType          string                  `json:"task_type,omitempty"`
+	TaskStatus        string                  `json:"task_status,omitempty"`
+	Quality           string                  `json:"quality,omitempty"`
+	AspectRatio       string                  `json:"aspect_ratio,omitempty"`
+	ActualPoints      string                  `json:"actual_points,omitempty"`
+	ReferenceAssetIDs []string                `json:"reference_asset_ids,omitempty"`
+	ReferenceAssets   []GalleryReferenceAsset `json:"reference_assets,omitempty"`
+	URL               string                  `json:"url,omitempty"`
+	DownloadURL       string                  `json:"download_url,omitempty"`
+	MimeType          string                  `json:"mime_type,omitempty"`
+	FileSizeBytes     int64                   `json:"file_size_bytes"`
+	Width             int                     `json:"width"`
+	Height            int                     `json:"height"`
+	SHA256            string                  `json:"sha256,omitempty"`
+	ObjectKey         string                  `json:"object_key,omitempty"`
+	StorageDriver     string                  `json:"storage_driver,omitempty"`
+	ImageGroup        string                  `json:"image_group,omitempty"`
+	VisibilityStatus  string                  `json:"visibility_status"`
+	ReviewReason      string                  `json:"review_reason,omitempty"`
+	PublishedAt       *time.Time              `json:"published_at,omitempty"`
+	AuthorName        string                  `json:"author_name,omitempty"`
+	LikeCount         int                     `json:"like_count"`
+	FavoriteCount     int                     `json:"favorite_count"`
+	CommentCount      int                     `json:"comment_count"`
+	LikedByViewer     bool                    `json:"liked_by_viewer,omitempty"`
+	FavoritedByViewer bool                    `json:"favorited_by_viewer,omitempty"`
+	CreatedAt         time.Time               `json:"created_at"`
+}
+
+type GalleryReferenceAsset struct {
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	PreviewURL string `json:"preview_url,omitempty"`
 }
 
 type GalleryListRequest struct {
-	Page     int
-	PageSize int
-	Status   string
+	Page          int
+	PageSize      int
+	Status        string
+	ReviewOnly    bool
+	Sort          string
+	ViewerUserID  int64
+	LikedOnly     bool
+	FavoritedOnly bool
 }
 
 type GalleryPage struct {

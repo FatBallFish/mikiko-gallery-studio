@@ -59,6 +59,7 @@ type ImageResult struct {
 	SHA256           string     `json:"sha256,omitempty"`
 	ObjectKey        string     `json:"object_key,omitempty"`
 	StorageDriver    string     `json:"storage_driver,omitempty"`
+	ImageGroup       string     `json:"image_group,omitempty"`
 	VisibilityStatus string     `json:"visibility_status,omitempty"`
 	ReviewReason     string     `json:"review_reason,omitempty"`
 	PublishedAt      *time.Time `json:"published_at,omitempty"`

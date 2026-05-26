@@ -456,6 +456,10 @@ func (s *failingSaveStore) GetImageResultByID(ctx context.Context, userID int64,
 	return s.base.GetImageResultByID(ctx, userID, imageID)
 }
 
+func (s *failingSaveStore) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
+	return s.base.GetImageResultForAdmin(ctx, imageID)
+}
+
 func (s *failingSaveStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	return s.base.ListByUser(ctx, userID)
 }
@@ -464,12 +468,24 @@ func (s *failingSaveStore) RequestPublish(ctx context.Context, userID int64, ima
 	return s.base.RequestPublish(ctx, userID, imageID)
 }
 
+func (s *failingSaveStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	return s.base.SetImageGroup(ctx, userID, imageID, imageGroup)
+}
+
 func (s *failingSaveStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
 	return s.base.ReviewImage(ctx, imageID, nextStatus, reviewReason, publishedAt)
 }
 
+func (s *failingSaveStore) DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.base.DeleteImageResult(ctx, userID, imageID)
+}
+
 func (s *failingSaveStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	return s.base.ListGallery(ctx, req)
+}
+
+func (s *failingSaveStore) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListGalleryByUser(ctx, userID, req)
 }
 
 func (s *failingSaveStore) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -478,6 +494,10 @@ func (s *failingSaveStore) ListPublicGallery(ctx context.Context, req domainimag
 
 func (s *failingSaveStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
 	return s.base.GetPublicImage(ctx, imageID)
+}
+
+func (s *failingSaveStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
+	return s.base.SetPublicImageInteraction(ctx, userID, imageID, kind, active)
 }
 
 func (s *failingSaveStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
@@ -535,6 +555,10 @@ func (s *raceyTerminalStore) GetImageResultByID(ctx context.Context, userID int6
 	return s.base.GetImageResultByID(ctx, userID, imageID)
 }
 
+func (s *raceyTerminalStore) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
+	return s.base.GetImageResultForAdmin(ctx, imageID)
+}
+
 func (s *raceyTerminalStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	return s.base.ListByUser(ctx, userID)
 }
@@ -543,12 +567,24 @@ func (s *raceyTerminalStore) RequestPublish(ctx context.Context, userID int64, i
 	return s.base.RequestPublish(ctx, userID, imageID)
 }
 
+func (s *raceyTerminalStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	return s.base.SetImageGroup(ctx, userID, imageID, imageGroup)
+}
+
 func (s *raceyTerminalStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
 	return s.base.ReviewImage(ctx, imageID, nextStatus, reviewReason, publishedAt)
 }
 
+func (s *raceyTerminalStore) DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.base.DeleteImageResult(ctx, userID, imageID)
+}
+
 func (s *raceyTerminalStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	return s.base.ListGallery(ctx, req)
+}
+
+func (s *raceyTerminalStore) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListGalleryByUser(ctx, userID, req)
 }
 
 func (s *raceyTerminalStore) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -557,6 +593,10 @@ func (s *raceyTerminalStore) ListPublicGallery(ctx context.Context, req domainim
 
 func (s *raceyTerminalStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
 	return s.base.GetPublicImage(ctx, imageID)
+}
+
+func (s *raceyTerminalStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
+	return s.base.SetPublicImageInteraction(ctx, userID, imageID, kind, active)
 }
 
 func (s *raceyTerminalStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
@@ -579,6 +619,58 @@ func seedBalance(t *testing.T, svc *billingservice.Service, userID int64, points
 		Reason:       "seed balance",
 	}); err != nil {
 		t.Fatalf("AdminAdjust: %v", err)
+	}
+}
+
+func TestExecuteOpenAIFormatMultiImageFansOutAndChargesActualSuccesses(t *testing.T) {
+	cfg := taskTestConfig()
+	var (
+		mu    sync.Mutex
+		calls int
+	)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			mu.Lock()
+			calls++
+			call := calls
+			mu.Unlock()
+			if req.OutputImageCount != 1 {
+				t.Fatalf("expected OpenAI-format fanout request count 1, got %d", req.OutputImageCount)
+			}
+			if call == 1 {
+				return provider.ImageResponse{}, errors.New("upstream single image failed")
+			}
+			return provider.ImageResponse{Created: 1770000000 + int64(call), Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	seedBalance(t, billingSvc, 77, "40.00000")
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, imagetask.NewMemoryStore(), nil, billingSvc))
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             77,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate a three image set",
+		RequestedSize:      "1536x1024",
+		RequestedQuality:   "2k",
+		OutputImageCount:   3,
+		ResponseFormat:     string(provider.ResponseFormatB64JSON),
+		PreferredProviders: []string{"openai"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("expected 3 single-image OpenAI calls, got %d", calls)
+	}
+	if result.Task.Status != domainimagetask.StatusPartialFailed {
+		t.Fatalf("expected partial_failed, got %s", result.Task.Status)
+	}
+	if len(result.Task.Results) != 2 {
+		t.Fatalf("expected 2 persisted images, got %d", len(result.Task.Results))
+	}
+	if result.Task.ActualPoints != "16.00000" {
+		t.Fatalf("expected actual charge for 2 successful images, got %s", result.Task.ActualPoints)
 	}
 }
 

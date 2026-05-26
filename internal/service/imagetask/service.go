@@ -16,10 +16,12 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
@@ -347,19 +349,16 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			User:             opts.user,
 		}
 
-		var (
-			resp provider.ImageResponse
-			err  error
-		)
-		if task.TaskType == string(provider.TaskTypeImageEdit) {
-			resp, err = providerClient.Edit(ctx, providerReq)
-		} else {
-			resp, err = providerClient.Generate(ctx, providerReq)
-		}
+		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
 		if err == nil {
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
 				return s.failOwnedTask(ctx, task, owner, persistErr)
+			}
+			finalStatus := domainimagetask.StatusSucceeded
+			openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
+			if openAIFormat && len(persistedResults) < normalizedCount(task.OutputImageCount) {
+				finalStatus = domainimagetask.StatusPartialFailed
 			}
 			task.Status = domainimagetask.StatusRunning
 			task.Provider = candidate.Provider
@@ -373,10 +372,10 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.FallbackCount = len(task.Attempts)
 			task.Attempts = append(task.Attempts, domainimagetask.Attempt{Provider: candidate.Provider, Status: domainimagetask.StatusSucceeded})
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
-			if billingErr := s.applyActualPoints(&task, len(resp.Data)); billingErr != nil {
+			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
 			}
-			task.ProviderCost = calculateProviderCost(candidate, len(resp.Data))
+			task.ProviderCost = calculateProviderCost(candidate, len(persistedResults))
 			task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
 			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
 				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, domainimagetask.StatusSucceeded, "task succeeded after lease conflict")
@@ -391,7 +390,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			if settleErr := s.settleTaskBilling(ctx, task, "task succeeded"); settleErr != nil {
 				return domainimagetask.ExecuteResult{}, settleErr
 			}
-			task.Status = domainimagetask.StatusSucceeded
+			task.Status = finalStatus
 			task.LeaseOwner = ""
 			task.LeaseExpiresAt = nil
 			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
@@ -419,6 +418,63 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 	}
 
 	return s.failOwnedTask(ctx, task, owner, lastErr)
+}
+
+func (s *Service) executeProviderRequest(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, taskType string, req provider.ImageRequest) (provider.ImageResponse, error) {
+	call := func(ctx context.Context, singleReq provider.ImageRequest) (provider.ImageResponse, error) {
+		if taskType == string(provider.TaskTypeImageEdit) {
+			return client.Edit(ctx, singleReq)
+		}
+		return client.Generate(ctx, singleReq)
+	}
+
+	count := normalizedCount(req.OutputImageCount)
+	openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
+	if !openAIFormat || count <= 1 {
+		return call(ctx, req)
+	}
+
+	results := make([]provider.ImageResult, 0, count)
+	var (
+		mu        sync.Mutex
+		firstResp provider.ImageResponse
+		firstErr  error
+	)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(count)
+	for i := 0; i < count; i++ {
+		group.Go(func() error {
+			singleReq := req
+			singleReq.OutputImageCount = 1
+			resp, err := call(groupCtx, singleReq)
+			mu.Lock()
+			defer mu.Unlock()
+			if firstResp.Created == 0 {
+				firstResp.Created = resp.Created
+			}
+			if firstResp.ProviderRequestID == "" {
+				firstResp.ProviderRequestID = resp.ProviderRequestID
+			}
+			if len(resp.Data) > 0 {
+				results = append(results, resp.Data...)
+			}
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return provider.ImageResponse{}, err
+	}
+	if len(results) == 0 {
+		if firstErr != nil {
+			return provider.ImageResponse{}, firstErr
+		}
+		return provider.ImageResponse{}, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images")
+	}
+	firstResp.Data = results
+	return firstResp, nil
 }
 
 func (s *Service) providerClientForCandidate(candidate modelhub.ProviderCandidate) (provider.ImageProvider, bool) {
@@ -561,6 +617,56 @@ func (s *Service) DownloadImageResult(ctx context.Context, userID int64, imageID
 	return result, content, nil
 }
 
+func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, []byte, error) {
+	result, err := s.store.GetImageResultForAdmin(ctx, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return provider.ImageResult{}, nil, errs.Internal("failed to load image result")
+	}
+	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
+		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	if readErr != nil {
+		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	return result, content, nil
+}
+
+func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string) (provider.ImageResult, []byte, error) {
+	image, err := s.store.GetPublicImage(ctx, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return provider.ImageResult{}, nil, errs.Internal("failed to load public image result")
+	}
+	result := provider.ImageResult{
+		ID:               image.ID,
+		MimeType:         image.MimeType,
+		FileSizeBytes:    image.FileSizeBytes,
+		Width:            image.Width,
+		Height:           image.Height,
+		SHA256:           image.SHA256,
+		ObjectKey:        image.ObjectKey,
+		StorageDriver:    image.StorageDriver,
+		ImageGroup:       image.ImageGroup,
+		VisibilityStatus: image.VisibilityStatus,
+		ReviewReason:     image.ReviewReason,
+		PublishedAt:      image.PublishedAt,
+	}
+	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
+		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	if readErr != nil {
+		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	return result, content, nil
+}
+
 func (s *Service) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	list, err := s.store.ListByUser(ctx, userID)
 	if err != nil {
@@ -582,6 +688,28 @@ func (s *Service) DeleteByID(ctx context.Context, userID int64, taskID string) e
 	return nil
 }
 
+func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID string) error {
+	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return errs.Internal("failed to load image result")
+	}
+	if result.StorageDriver != "remote" && strings.TrimSpace(result.ObjectKey) != "" {
+		if err := s.backend.Delete(ctx, result.ObjectKey); err != nil {
+			return errs.Internal("failed to delete image file")
+		}
+	}
+	if _, err := s.store.DeleteImageResult(ctx, userID, imageID); err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return errs.Internal("failed to delete image result")
+	}
+	return nil
+}
+
 func (s *Service) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
 	image, err := s.store.RequestPublish(ctx, userID, imageID)
 	if err != nil {
@@ -589,6 +717,21 @@ func (s *Service) RequestPublish(ctx context.Context, userID int64, imageID stri
 			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
 		}
 		return domainimagetask.GalleryImage{}, errs.Internal("failed to request image publish")
+	}
+	return image, nil
+}
+
+func (s *Service) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	imageGroup = strings.TrimSpace(imageGroup)
+	if len([]rune(imageGroup)) > 64 {
+		return domainimagetask.GalleryImage{}, errs.BadRequest("image group is too long")
+	}
+	image, err := s.store.SetImageGroup(ctx, userID, imageID, imageGroup)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to update image group")
 	}
 	return image, nil
 }
@@ -619,8 +762,19 @@ func (s *Service) ListGallery(ctx context.Context, req domainimagetask.GalleryLi
 	return page, nil
 }
 
+func (s *Service) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	req.Page, req.PageSize = normalizeListPage(req.Page, req.PageSize)
+	req.Status = strings.TrimSpace(req.Status)
+	page, err := s.store.ListGalleryByUser(ctx, userID, req)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, errs.Internal("failed to list user gallery images")
+	}
+	return page, nil
+}
+
 func (s *Service) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	req.Page, req.PageSize = normalizeListPage(req.Page, req.PageSize)
+	req.Sort = strings.TrimSpace(req.Sort)
 	page, err := s.store.ListPublicGallery(ctx, req)
 	if err != nil {
 		return domainimagetask.GalleryPage{}, errs.Internal("failed to list public gallery images")
@@ -635,6 +789,21 @@ func (s *Service) GetPublicImage(ctx context.Context, imageID string) (domainima
 			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "gallery image not found")
 		}
 		return domainimagetask.GalleryImage{}, errs.Internal("failed to load public gallery image")
+	}
+	return image, nil
+}
+
+func (s *Service) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
+	kind = strings.TrimSpace(kind)
+	if kind != "like" && kind != "favorite" {
+		return domainimagetask.GalleryImage{}, errs.BadRequest("invalid interaction type")
+	}
+	image, err := s.store.SetPublicImageInteraction(ctx, userID, imageID, kind, active)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "gallery image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to update public image interaction")
 	}
 	return image, nil
 }

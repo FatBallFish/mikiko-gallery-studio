@@ -106,6 +106,10 @@ func (s *countingStore) GetImageResultByID(ctx context.Context, userID int64, im
 	return s.base.GetImageResultByID(ctx, userID, imageID)
 }
 
+func (s *countingStore) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
+	return s.base.GetImageResultForAdmin(ctx, imageID)
+}
+
 func (s *countingStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	return s.base.ListByUser(ctx, userID)
 }
@@ -114,12 +118,24 @@ func (s *countingStore) RequestPublish(ctx context.Context, userID int64, imageI
 	return s.base.RequestPublish(ctx, userID, imageID)
 }
 
+func (s *countingStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	return s.base.SetImageGroup(ctx, userID, imageID, imageGroup)
+}
+
 func (s *countingStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
 	return s.base.ReviewImage(ctx, imageID, nextStatus, reviewReason, publishedAt)
 }
 
+func (s *countingStore) DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.base.DeleteImageResult(ctx, userID, imageID)
+}
+
 func (s *countingStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	return s.base.ListGallery(ctx, req)
+}
+
+func (s *countingStore) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	return s.base.ListGalleryByUser(ctx, userID, req)
 }
 
 func (s *countingStore) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -128,6 +144,10 @@ func (s *countingStore) ListPublicGallery(ctx context.Context, req domainimageta
 
 func (s *countingStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
 	return s.base.GetPublicImage(ctx, imageID)
+}
+
+func (s *countingStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
+	return s.base.SetPublicImageInteraction(ctx, userID, imageID, kind, active)
 }
 
 func (s *countingStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {

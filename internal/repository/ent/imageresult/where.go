@@ -120,6 +120,11 @@ func Sha256(v string) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldEQ(FieldSha256, v))
 }
 
+// ImageGroup applies equality check predicate on the "image_group" field. It's identical to ImageGroupEQ.
+func ImageGroup(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldEQ(FieldImageGroup, v))
+}
+
 // VisibilityStatus applies equality check predicate on the "visibility_status" field. It's identical to VisibilityStatusEQ.
 func VisibilityStatus(v string) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldEQ(FieldVisibilityStatus, v))
@@ -788,6 +793,71 @@ func Sha256EqualFold(v string) predicate.ImageResult {
 // Sha256ContainsFold applies the ContainsFold predicate on the "sha256" field.
 func Sha256ContainsFold(v string) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldContainsFold(FieldSha256, v))
+}
+
+// ImageGroupEQ applies the EQ predicate on the "image_group" field.
+func ImageGroupEQ(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldEQ(FieldImageGroup, v))
+}
+
+// ImageGroupNEQ applies the NEQ predicate on the "image_group" field.
+func ImageGroupNEQ(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNEQ(FieldImageGroup, v))
+}
+
+// ImageGroupIn applies the In predicate on the "image_group" field.
+func ImageGroupIn(vs ...string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldIn(FieldImageGroup, vs...))
+}
+
+// ImageGroupNotIn applies the NotIn predicate on the "image_group" field.
+func ImageGroupNotIn(vs ...string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNotIn(FieldImageGroup, vs...))
+}
+
+// ImageGroupGT applies the GT predicate on the "image_group" field.
+func ImageGroupGT(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldGT(FieldImageGroup, v))
+}
+
+// ImageGroupGTE applies the GTE predicate on the "image_group" field.
+func ImageGroupGTE(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldGTE(FieldImageGroup, v))
+}
+
+// ImageGroupLT applies the LT predicate on the "image_group" field.
+func ImageGroupLT(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldLT(FieldImageGroup, v))
+}
+
+// ImageGroupLTE applies the LTE predicate on the "image_group" field.
+func ImageGroupLTE(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldLTE(FieldImageGroup, v))
+}
+
+// ImageGroupContains applies the Contains predicate on the "image_group" field.
+func ImageGroupContains(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldContains(FieldImageGroup, v))
+}
+
+// ImageGroupHasPrefix applies the HasPrefix predicate on the "image_group" field.
+func ImageGroupHasPrefix(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldHasPrefix(FieldImageGroup, v))
+}
+
+// ImageGroupHasSuffix applies the HasSuffix predicate on the "image_group" field.
+func ImageGroupHasSuffix(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldHasSuffix(FieldImageGroup, v))
+}
+
+// ImageGroupEqualFold applies the EqualFold predicate on the "image_group" field.
+func ImageGroupEqualFold(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldEqualFold(FieldImageGroup, v))
+}
+
+// ImageGroupContainsFold applies the ContainsFold predicate on the "image_group" field.
+func ImageGroupContainsFold(v string) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldContainsFold(FieldImageGroup, v))
 }
 
 // VisibilityStatusEQ applies the EQ predicate on the "visibility_status" field.

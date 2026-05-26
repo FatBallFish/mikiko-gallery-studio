@@ -19,6 +19,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
+	entuser "github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 )
 
@@ -242,6 +245,32 @@ func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, i
 	return mapImageResultEntity(result), nil
 }
 
+func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return provider.ImageResult{}, repoerr.ErrNotFound
+	}
+	result, err := s.client.ImageResult.Query().
+		Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return provider.ImageResult{}, repoerr.ErrNotFound
+		}
+		return provider.ImageResult{}, err
+	}
+	_, err = s.client.ImageTask.Query().
+		Where(imagetask.IDEQ(result.TaskID), imagetask.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return provider.ImageResult{}, repoerr.ErrNotFound
+		}
+		return provider.ImageResult{}, err
+	}
+	return mapImageResultEntity(result), nil
+}
+
 func (s *ImageTaskStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
 	entities, err := s.client.ImageTask.Query().
 		Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
@@ -310,6 +339,31 @@ func (s *ImageTaskStore) RequestPublish(ctx context.Context, userID int64, image
 	return mapGalleryImageEntity(updated, taskEntity), nil
 }
 
+func (s *ImageTaskStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	entity, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if taskEntity.UserID != userID {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	imageGroup = strings.TrimSpace(imageGroup)
+	if entity.ImageGroup == imageGroup {
+		return mapGalleryImageEntity(entity, taskEntity), nil
+	}
+	updated, err := s.client.ImageResult.UpdateOneID(entity.ID).
+		SetImageGroup(imageGroup).
+		Save(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	return mapGalleryImageEntity(updated, taskEntity), nil
+}
+
 func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
@@ -347,10 +401,53 @@ func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, r
 	return mapGalleryImageEntity(updated, taskEntity), nil
 }
 
+func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return provider.ImageResult{}, repoerr.ErrNotFound
+	}
+	entity, err := s.client.ImageResult.Query().
+		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return provider.ImageResult{}, repoerr.ErrNotFound
+		}
+		return provider.ImageResult{}, err
+	}
+	if _, err := s.client.ImageTask.Query().
+		Where(imagetask.IDEQ(entity.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		Only(ctx); err != nil {
+		if repoent.IsNotFound(err) {
+			return provider.ImageResult{}, repoerr.ErrNotFound
+		}
+		return provider.ImageResult{}, err
+	}
+	result := mapImageResultEntity(entity)
+	if err := s.client.ImageResult.DeleteOneID(entity.ID).Exec(ctx); err != nil {
+		return provider.ImageResult{}, err
+	}
+	return result, nil
+}
+
 func (s *ImageTaskStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	page, pageSize := normalizePageBounds(req.Page, req.PageSize)
 	query := s.client.ImageResult.Query().
 		Where(imageresult.DeletedAtIsNil()).
+		Order(repoent.Desc(imageresult.FieldCreatedAt), repoent.Desc(imageresult.FieldID))
+	if req.ReviewOnly {
+		query.Where(imageresult.VisibilityStatusNEQ(domainimagetask.VisibilityPrivate))
+	}
+	if status := strings.TrimSpace(req.Status); status != "" {
+		query.Where(imageresult.VisibilityStatusEQ(status))
+	}
+	return s.galleryPageFromQuery(ctx, query, page, pageSize)
+}
+
+func (s *ImageTaskStore) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
+	page, pageSize := normalizePageBounds(req.Page, req.PageSize)
+	query := s.client.ImageResult.Query().
+		Where(imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
 		Order(repoent.Desc(imageresult.FieldCreatedAt), repoent.Desc(imageresult.FieldID))
 	if status := strings.TrimSpace(req.Status); status != "" {
 		query.Where(imageresult.VisibilityStatusEQ(status))
@@ -364,10 +461,62 @@ func (s *ImageTaskStore) ListPublicGallery(ctx context.Context, req domainimaget
 		Where(
 			imageresult.DeletedAtIsNil(),
 			imageresult.VisibilityStatusEQ(domainimagetask.VisibilityApproved),
-			imageresult.PublishedAtNotNil(),
 		).
 		Order(repoent.Desc(imageresult.FieldPublishedAt), repoent.Desc(imageresult.FieldCreatedAt), repoent.Desc(imageresult.FieldID))
-	return s.galleryPageFromQuery(ctx, query, page, pageSize)
+	if req.ViewerUserID > 0 && (req.LikedOnly || req.FavoritedOnly) {
+		interactionQuery := s.client.PublicImageInteraction.Query().Where(publicimageinteraction.UserIDEQ(req.ViewerUserID))
+		if req.LikedOnly {
+			interactionQuery.Where(publicimageinteraction.LikedEQ(true))
+		}
+		if req.FavoritedOnly {
+			interactionQuery.Where(publicimageinteraction.FavoritedEQ(true))
+		}
+		interactions, err := interactionQuery.All(ctx)
+		if err != nil {
+			return domainimagetask.GalleryPage{}, err
+		}
+		if len(interactions) == 0 {
+			return domainimagetask.GalleryPage{Items: []domainimagetask.GalleryImage{}, Page: page, PageSize: pageSize, Total: 0}, nil
+		}
+		imageIDs := make([]uuid.UUID, 0, len(interactions))
+		for _, interaction := range interactions {
+			imageIDs = append(imageIDs, interaction.ImageID)
+		}
+		query.Where(imageresult.IDIn(imageIDs...))
+	}
+	total, err := query.Clone().Count(ctx)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, err
+	}
+	entities, err := query.All(ctx)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, err
+	}
+	items, err := s.galleryImagesFromEntities(ctx, entities, req.ViewerUserID)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, err
+	}
+	if req.Sort == "hot" {
+		sort.SliceStable(items, func(i, j int) bool {
+			left := items[i].LikeCount*2 + items[i].FavoriteCount*3 + items[i].CommentCount
+			right := items[j].LikeCount*2 + items[j].FavoriteCount*3 + items[j].CommentCount
+			if left != right {
+				return left > right
+			}
+			return items[i].CreatedAt.After(items[j].CreatedAt)
+		})
+	}
+	start := (page - 1) * pageSize
+	if start >= len(items) {
+		items = []domainimagetask.GalleryImage{}
+	} else {
+		end := start + pageSize
+		if end > len(items) {
+			end = len(items)
+		}
+		items = items[start:end]
+	}
+	return domainimagetask.GalleryPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
 func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
@@ -379,10 +528,75 @@ func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string) (do
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	if entity.VisibilityStatus != domainimagetask.VisibilityApproved || entity.PublishedAt == nil {
+	if entity.VisibilityStatus != domainimagetask.VisibilityApproved {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	return mapGalleryImageEntity(entity, taskEntity), nil
+	image := mapGalleryImageEntity(entity, taskEntity)
+	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, 0)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	return items[0], nil
+}
+
+func (s *ImageTaskStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	entity, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if entity.VisibilityStatus != domainimagetask.VisibilityApproved {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	interaction, err := s.client.PublicImageInteraction.Query().
+		Where(publicimageinteraction.ImageIDEQ(imageUUID), publicimageinteraction.UserIDEQ(userID)).
+		Only(ctx)
+	if err != nil && !repoent.IsNotFound(err) {
+		return domainimagetask.GalleryImage{}, err
+	}
+	liked := false
+	favorited := false
+	if interaction != nil {
+		liked = interaction.Liked
+		favorited = interaction.Favorited
+	}
+	nextLiked, nextFavorited := liked, favorited
+	switch kind {
+	case "like":
+		nextLiked = active
+	case "favorite":
+		nextFavorited = active
+	default:
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	if interaction == nil {
+		_, err = s.client.PublicImageInteraction.Create().
+			SetImageID(imageUUID).
+			SetUserID(userID).
+			SetLiked(nextLiked).
+			SetFavorited(nextFavorited).
+			Save(ctx)
+	} else {
+		_, err = s.client.PublicImageInteraction.UpdateOneID(interaction.ID).
+			SetLiked(nextLiked).
+			SetFavorited(nextFavorited).
+			Save(ctx)
+	}
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if err := s.recalculatePublicImageStats(ctx, imageUUID); err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	image := mapGalleryImageEntity(entity, taskEntity)
+	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, userID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	return items[0], nil
 }
 
 func (s *ImageTaskStore) DeleteByID(ctx context.Context, userID int64, taskID string) error {
@@ -1016,6 +1230,7 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 		SetWidth(result.Width).
 		SetHeight(result.Height).
 		SetSha256(shaValue).
+		SetImageGroup(strings.TrimSpace(result.ImageGroup)).
 		SetVisibilityStatus(defaultString(result.VisibilityStatus, "private"))
 	if strings.TrimSpace(result.ReviewReason) != "" {
 		builder.SetReviewReason(strings.TrimSpace(result.ReviewReason))
@@ -1072,6 +1287,8 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		LeaseExpiresAt:        entity.LeaseExpiresAt,
 		ErrorCode:             nullableString(entity.ErrorCode),
 		ErrorMessage:          nullableString(entity.ErrorMessage),
+		CreatedAt:             entity.CreatedAt,
+		UpdatedAt:             entity.UpdatedAt,
 	}
 	if entity.APIKeyID != nil {
 		task.APIKeyID = *entity.APIKeyID
@@ -1221,6 +1438,7 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 		SHA256:           entity.Sha256,
 		ObjectKey:        entity.ObjectKey,
 		StorageDriver:    entity.StorageDriver,
+		ImageGroup:       entity.ImageGroup,
 		VisibilityStatus: entity.VisibilityStatus,
 		ReviewReason:     nullableString(entity.ReviewReason),
 		PublishedAt:      entity.PublishedAt,
@@ -1267,6 +1485,19 @@ func (s *ImageTaskStore) galleryPageFromQuery(ctx context.Context, query *repoen
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
+	items, err := s.galleryImagesFromEntities(ctx, entities, 0)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, err
+	}
+	return domainimagetask.GalleryPage{
+		Items:    items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
+}
+
+func (s *ImageTaskStore) galleryImagesFromEntities(ctx context.Context, entities []*repoent.ImageResult, viewerUserID int64) ([]domainimagetask.GalleryImage, error) {
 	taskIDs := make([]uuid.UUID, 0, len(entities))
 	for _, entity := range entities {
 		taskIDs = append(taskIDs, entity.TaskID)
@@ -1275,7 +1506,7 @@ func (s *ImageTaskStore) galleryPageFromQuery(ctx context.Context, query *repoen
 	if len(taskIDs) > 0 {
 		tasks, err := s.client.ImageTask.Query().Where(imagetask.IDIn(taskIDs...), imagetask.DeletedAtIsNil()).All(ctx)
 		if err != nil {
-			return domainimagetask.GalleryPage{}, err
+			return nil, err
 		}
 		for _, task := range tasks {
 			taskMap[task.ID] = task
@@ -1289,37 +1520,161 @@ func (s *ImageTaskStore) galleryPageFromQuery(ctx context.Context, query *repoen
 		}
 		items = append(items, mapGalleryImageEntity(entity, taskEntity))
 	}
-	return domainimagetask.GalleryPage{
-		Items:    items,
-		Page:     page,
-		PageSize: pageSize,
-		Total:    total,
-	}, nil
+	return s.decoratePublicImages(ctx, items, viewerUserID)
+}
+
+func (s *ImageTaskStore) decoratePublicImages(ctx context.Context, items []domainimagetask.GalleryImage, viewerUserID int64) ([]domainimagetask.GalleryImage, error) {
+	if len(items) == 0 {
+		return items, nil
+	}
+	imageIDs := make([]uuid.UUID, 0, len(items))
+	imageIDByString := map[string]uuid.UUID{}
+	for _, item := range items {
+		imageUUID, err := uuid.Parse(item.ID)
+		if err != nil {
+			continue
+		}
+		imageIDs = append(imageIDs, imageUUID)
+		imageIDByString[item.ID] = imageUUID
+	}
+	stats, err := s.client.PublicImageStat.Query().Where(publicimagestat.ImageIDIn(imageIDs...)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	statsByImage := map[uuid.UUID]*repoent.PublicImageStat{}
+	for _, stat := range stats {
+		statsByImage[stat.ImageID] = stat
+	}
+	interactionsByImage := map[uuid.UUID]*repoent.PublicImageInteraction{}
+	if viewerUserID > 0 {
+		interactions, err := s.client.PublicImageInteraction.Query().
+			Where(publicimageinteraction.ImageIDIn(imageIDs...), publicimageinteraction.UserIDEQ(viewerUserID)).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, interaction := range interactions {
+			interactionsByImage[interaction.ImageID] = interaction
+		}
+	}
+	userIDs := make([]int, 0, len(items))
+	seenUsers := map[int64]struct{}{}
+	for _, item := range items {
+		if item.UserID <= 0 {
+			continue
+		}
+		if _, ok := seenUsers[item.UserID]; ok {
+			continue
+		}
+		seenUsers[item.UserID] = struct{}{}
+		userIDs = append(userIDs, int(item.UserID))
+	}
+	authorsByID := map[int64]string{}
+	if len(userIDs) > 0 {
+		users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...), entuser.DeletedAtIsNil()).All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, userEntity := range users {
+			displayName := strings.TrimSpace(userEntity.Nickname)
+			if displayName == "" {
+				displayName = strings.TrimSpace(strings.Split(userEntity.Email, "@")[0])
+			}
+			if displayName != "" {
+				authorsByID[int64(userEntity.ID)] = displayName
+			}
+		}
+	}
+	for idx := range items {
+		items[idx].AuthorName = authorsByID[items[idx].UserID]
+		if items[idx].AuthorName == "" {
+			items[idx].AuthorName = fmt.Sprintf("user-%d", items[idx].UserID)
+		}
+		imageUUID, ok := imageIDByString[items[idx].ID]
+		if !ok {
+			continue
+		}
+		if stat := statsByImage[imageUUID]; stat != nil {
+			items[idx].LikeCount = stat.LikeCount
+			items[idx].FavoriteCount = stat.FavoriteCount
+			items[idx].CommentCount = stat.CommentCount
+		}
+		if interaction := interactionsByImage[imageUUID]; interaction != nil {
+			items[idx].LikedByViewer = interaction.Liked
+			items[idx].FavoritedByViewer = interaction.Favorited
+		}
+	}
+	return items, nil
+}
+
+func (s *ImageTaskStore) recalculatePublicImageStats(ctx context.Context, imageID uuid.UUID) error {
+	likeCount, err := s.client.PublicImageInteraction.Query().Where(publicimageinteraction.ImageIDEQ(imageID), publicimageinteraction.LikedEQ(true)).Count(ctx)
+	if err != nil {
+		return err
+	}
+	favoriteCount, err := s.client.PublicImageInteraction.Query().Where(publicimageinteraction.ImageIDEQ(imageID), publicimageinteraction.FavoritedEQ(true)).Count(ctx)
+	if err != nil {
+		return err
+	}
+	stat, err := s.client.PublicImageStat.Query().Where(publicimagestat.ImageIDEQ(imageID)).Only(ctx)
+	if err != nil {
+		if !repoent.IsNotFound(err) {
+			return err
+		}
+		_, err = s.client.PublicImageStat.Create().SetImageID(imageID).SetLikeCount(likeCount).SetFavoriteCount(favoriteCount).SetCommentCount(0).Save(ctx)
+		return err
+	}
+	_, err = s.client.PublicImageStat.UpdateOneID(stat.ID).SetLikeCount(likeCount).SetFavoriteCount(favoriteCount).Save(ctx)
+	return err
 }
 
 func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.ImageTask) domainimagetask.GalleryImage {
 	item := mapImageResultEntity(entity)
 	return domainimagetask.GalleryImage{
-		ID:               entity.ID.String(),
-		TaskID:           entity.TaskID.String(),
-		UserID:           taskEntity.UserID,
-		Prompt:           taskEntity.Prompt,
-		AbstractModel:    taskEntity.AbstractModel,
-		TaskType:         taskEntity.TaskType,
-		URL:              item.URL,
-		DownloadURL:      item.DownloadURL,
-		MimeType:         item.MimeType,
-		FileSizeBytes:    item.FileSizeBytes,
-		Width:            item.Width,
-		Height:           item.Height,
-		SHA256:           item.SHA256,
-		ObjectKey:        item.ObjectKey,
-		StorageDriver:    item.StorageDriver,
-		VisibilityStatus: defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate),
-		ReviewReason:     nullableString(entity.ReviewReason),
-		PublishedAt:      entity.PublishedAt,
-		CreatedAt:        entity.CreatedAt,
+		ID:                entity.ID.String(),
+		TaskID:            entity.TaskID.String(),
+		UserID:            taskEntity.UserID,
+		Prompt:            taskEntity.Prompt,
+		AbstractModel:     taskEntity.AbstractModel,
+		RouteModelCode:    taskEntity.RouteModelCode,
+		TaskType:          taskEntity.TaskType,
+		TaskStatus:        taskEntity.Status,
+		Quality:           taskEntity.ResolvedQualityBucket,
+		AspectRatio:       taskEntity.AspectRatio,
+		ActualPoints:      taskEntity.ActualPoints,
+		ReferenceAssetIDs: decodeReferenceAssetIDs(taskEntity.RoutingSnapshot),
+		ReferenceAssets:   galleryReferenceAssets(decodeReferenceAssetIDs(taskEntity.RoutingSnapshot)),
+		URL:               item.URL,
+		DownloadURL:       item.DownloadURL,
+		MimeType:          item.MimeType,
+		FileSizeBytes:     item.FileSizeBytes,
+		Width:             item.Width,
+		Height:            item.Height,
+		SHA256:            item.SHA256,
+		ObjectKey:         item.ObjectKey,
+		StorageDriver:     item.StorageDriver,
+		ImageGroup:        item.ImageGroup,
+		VisibilityStatus:  defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate),
+		ReviewReason:      nullableString(entity.ReviewReason),
+		PublishedAt:       entity.PublishedAt,
+		CreatedAt:         entity.CreatedAt,
 	}
+}
+
+func galleryReferenceAssets(assetIDs []string) []domainimagetask.GalleryReferenceAsset {
+	assets := make([]domainimagetask.GalleryReferenceAsset, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		assets = append(assets, domainimagetask.GalleryReferenceAsset{
+			ID:         id,
+			Name:       "reference",
+			PreviewURL: "/api/agent/image/v1/reference-assets/" + id + "/download",
+		})
+	}
+	return assets
 }
 
 func canTransitionVisibility(currentStatus, nextStatus string) bool {

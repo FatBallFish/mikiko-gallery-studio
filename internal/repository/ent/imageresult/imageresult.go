@@ -40,6 +40,8 @@ const (
 	FieldHeight = "height"
 	// FieldSha256 holds the string denoting the sha256 field in the database.
 	FieldSha256 = "sha256"
+	// FieldImageGroup holds the string denoting the image_group field in the database.
+	FieldImageGroup = "image_group"
 	// FieldVisibilityStatus holds the string denoting the visibility_status field in the database.
 	FieldVisibilityStatus = "visibility_status"
 	// FieldReviewReason holds the string denoting the review_reason field in the database.
@@ -66,6 +68,7 @@ var Columns = []string{
 	FieldWidth,
 	FieldHeight,
 	FieldSha256,
+	FieldImageGroup,
 	FieldVisibilityStatus,
 	FieldReviewReason,
 	FieldPublishedAt,
@@ -108,6 +111,10 @@ var (
 	DefaultHeight int
 	// Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
 	Sha256Validator func(string) error
+	// DefaultImageGroup holds the default value on creation for the "image_group" field.
+	DefaultImageGroup string
+	// ImageGroupValidator is a validator for the "image_group" field. It is called by the builders before save.
+	ImageGroupValidator func(string) error
 	// DefaultVisibilityStatus holds the default value on creation for the "visibility_status" field.
 	DefaultVisibilityStatus string
 	// VisibilityStatusValidator is a validator for the "visibility_status" field. It is called by the builders before save.
@@ -189,6 +196,11 @@ func ByHeight(opts ...sql.OrderTermOption) OrderOption {
 // BySha256 orders the results by the sha256 field.
 func BySha256(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSha256, opts...).ToFunc()
+}
+
+// ByImageGroup orders the results by the image_group field.
+func ByImageGroup(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImageGroup, opts...).ToFunc()
 }
 
 // ByVisibilityStatus orders the results by the visibility_status field.

@@ -60,7 +60,7 @@ export function LandingPage() {
           <p className="lead">Pic Gallery 是为您量身定制的 AI 图片生成工作台。集成全球顶尖模型，为您提供极简、艺术、高效的创作体验。</p>
           <div className="hero-cta">
             <button type="button" className="btn btn-primary" onClick={() => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })}>立即免费开始</button>
-            <button type="button" className="btn btn-ghost" onClick={() => app.navigate(app.isAuthenticated ? 'gallery' : 'login', { returnTo: 'gallery' })}>浏览画廊</button>
+            <button type="button" className="btn btn-ghost" onClick={() => app.navigate(app.isAuthenticated ? 'public-gallery' : 'login', { returnTo: 'public-gallery' })}>浏览画廊</button>
           </div>
         </div>
       </section>

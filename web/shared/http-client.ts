@@ -24,6 +24,157 @@ export type ApiClientOptions = {
   onError?: (error: ApiError) => void
 }
 
+type ErrorLocale = 'zh' | 'en'
+
+const errorMessages: Record<string, Record<ErrorLocale, string>> = {
+  INTERNAL_ERROR: {
+    zh: '服务暂时开小差了，请稍后再试。',
+    en: 'The service is temporarily unavailable. Please try again later.',
+  },
+  BAD_REQUEST: {
+    zh: '请求参数有误，请检查后再试。',
+    en: 'Some request parameters are invalid. Please check and try again.',
+  },
+  METHOD_NOT_ALLOWED: {
+    zh: '当前操作方式不受支持，请刷新页面后重试。',
+    en: 'This operation is not supported. Please refresh and try again.',
+  },
+  UNAUTHORIZED: {
+    zh: '登录状态无效，请重新登录。',
+    en: 'Your session is invalid. Please sign in again.',
+  },
+  FORBIDDEN: {
+    zh: '你没有权限执行该操作。',
+    en: 'You do not have permission to perform this action.',
+  },
+  NOT_FOUND: {
+    zh: '请求的资源不存在或已不可用。',
+    en: 'The requested resource does not exist or is no longer available.',
+  },
+  CONFLICT: {
+    zh: '当前数据状态已变化，请刷新后再试。',
+    en: 'The data has changed. Please refresh and try again.',
+  },
+  RATE_LIMITED: {
+    zh: '操作太频繁了，请稍后再试。',
+    en: 'Too many requests. Please wait a moment and try again.',
+  },
+  VALIDATION_FAILED: {
+    zh: '提交内容未通过校验，请检查后再试。',
+    en: 'The submitted content did not pass validation. Please check and try again.',
+  },
+  AUTH_ACCESS_EXPIRED: {
+    zh: '登录已过期，请重新登录。',
+    en: 'Your session has expired. Please sign in again.',
+  },
+  AUTH_REFRESH_EXPIRED: {
+    zh: '登录已过期，请重新登录。',
+    en: 'Your session has expired. Please sign in again.',
+  },
+  AUTH_REFRESH_REPLAY_BLOCKED: {
+    zh: '登录状态存在风险，请重新登录。',
+    en: 'Your session needs to be verified again. Please sign in again.',
+  },
+  USER_DISABLED: {
+    zh: '账号已被禁用，如有疑问请联系管理员。',
+    en: 'This account has been disabled. Please contact an administrator.',
+  },
+  API_KEY_DISABLED: {
+    zh: 'API 密钥已停用，请更换或重新启用密钥。',
+    en: 'This API key is disabled. Please use another key or re-enable it.',
+  },
+  BILLING_INSUFFICIENT_POINTS: {
+    zh: '积分余额不足，请充值或降低生成规格后重试。',
+    en: 'Insufficient points. Please add points or lower the generation settings.',
+  },
+  IMAGE_CAPABILITY_MISMATCH: {
+    zh: '当前模型不支持所选参数，请调整模型、清晰度或图片数量。',
+    en: 'The selected model does not support these settings. Please adjust the model, quality, or image count.',
+  },
+  IMAGE_REFERENCE_REQUIRED: {
+    zh: '请先上传参考图后再发起生成。',
+    en: 'Please upload a reference image before starting generation.',
+  },
+  IMAGE_REFERENCE_COUNT_EXCEEDED: {
+    zh: '参考图数量超过当前模型上限，请减少后重试。',
+    en: 'Too many reference images for the selected model. Please remove some and try again.',
+  },
+  IMAGE_AUTO_RESOLUTION_UNSUPPORTED: {
+    zh: '当前模型不支持所选尺寸或自动清晰度，请调整后重试。',
+    en: 'The selected model does not support this size or automatic quality. Please adjust and try again.',
+  },
+  IMAGE_TASK_FAILED: {
+    zh: '图片生成失败，请调整提示词或稍后重试。',
+    en: 'Image generation failed. Please adjust the prompt or try again later.',
+  },
+  IMAGE_STORAGE_FAILED: {
+    zh: '图片保存失败，请稍后重试。',
+    en: 'Failed to save the image. Please try again later.',
+  },
+  UPSTREAM_UNAVAILABLE: {
+    zh: '上游模型服务暂不可用，请稍后重试。',
+    en: 'The upstream model service is temporarily unavailable. Please try again later.',
+  },
+  UPSTREAM_BAD_REQUEST: {
+    zh: '上游模型拒绝了本次请求，请调整参数或提示词后重试。',
+    en: 'The upstream model rejected this request. Please adjust the settings or prompt and try again.',
+  },
+  UPSTREAM_CONTENT_BLOCKED: {
+    zh: '内容未通过安全检查，请调整提示词或参考图后重试。',
+    en: 'The content did not pass safety checks. Please adjust the prompt or reference image.',
+  },
+  insufficient_balance: {
+    zh: '积分余额不足，请充值或降低生成规格后重试。',
+    en: 'Insufficient points. Please add points or lower the generation settings.',
+  },
+  invalid_signature: {
+    zh: 'API 签名校验失败，请检查密钥、时间戳和签名算法。',
+    en: 'API signature verification failed. Please check the key, timestamp, and signature.',
+  },
+  provider_unavailable: {
+    zh: '模型服务暂不可用，请稍后重试。',
+    en: 'The model service is temporarily unavailable. Please try again later.',
+  },
+  rate_limit_exceeded: {
+    zh: '请求频率过高，请稍后再试。',
+    en: 'Rate limit exceeded. Please try again later.',
+  },
+}
+
+const statusMessages: Record<number, Record<ErrorLocale, string>> = {
+  400: errorMessages.BAD_REQUEST,
+  401: errorMessages.UNAUTHORIZED,
+  403: errorMessages.FORBIDDEN,
+  404: errorMessages.NOT_FOUND,
+  409: errorMessages.CONFLICT,
+  413: {
+    zh: '上传内容过大，请压缩或减少文件后重试。',
+    en: 'The upload is too large. Please reduce the file size and try again.',
+  },
+  429: errorMessages.RATE_LIMITED,
+  500: errorMessages.INTERNAL_ERROR,
+  502: errorMessages.UPSTREAM_UNAVAILABLE,
+  503: errorMessages.UPSTREAM_UNAVAILABLE,
+  504: errorMessages.UPSTREAM_UNAVAILABLE,
+}
+
+function currentErrorLocale(): ErrorLocale {
+  const language = globalThis.navigator?.language?.toLowerCase() ?? ''
+  return language.startsWith('zh') ? 'zh' : 'en'
+}
+
+function networkErrorMessage(locale: ErrorLocale) {
+  return locale === 'zh'
+    ? '网络连接异常，请检查网络后重试。'
+    : 'Network connection failed. Please check your connection and try again.'
+}
+
+function fallbackErrorMessage(locale: ErrorLocale) {
+  return locale === 'zh'
+    ? '请求失败，请稍后重试。'
+    : 'Request failed. Please try again later.'
+}
+
 export type RequestOptions = {
   method?: string
   pathParams?: Record<string, string | number>
@@ -184,7 +335,7 @@ export class ApiClient {
     }
 
     const error = errorFromPayload(payload, response.status)
-    if (!(response.status === 401 && this.onUnauthorized)) this.onError?.(error)
+    this.onError?.(error)
     throw error
   }
 }
@@ -220,6 +371,14 @@ export function createMemoryTokenStore(initialToken: string | null = null) {
 }
 
 export function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message
-  return String(error)
+  const locale = currentErrorLocale()
+  if (error instanceof ApiError) {
+    const byCode = errorMessages[error.code]
+    if (byCode) return byCode[locale]
+    const byStatus = statusMessages[error.status]
+    if (byStatus) return byStatus[locale]
+    return fallbackErrorMessage(locale)
+  }
+  if (error instanceof TypeError) return networkErrorMessage(locale)
+  return fallbackErrorMessage(locale)
 }

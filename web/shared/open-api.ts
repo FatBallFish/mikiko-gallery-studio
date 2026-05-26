@@ -1,6 +1,6 @@
 import type { Balance, Capability, CreateTaskRequest, EndpointDoc, EstimateRequest, EstimateResult, ImageResult, ImageTask, OpenAIImageEditRequest, OpenAIImageGenerationRequest, OpenAIImageResponse, OpenAIModelList, OpenReferenceAssetUploadSessionRequest, OpenReferenceAssetUploadSessionResponse, PageResult, ReferenceAsset } from './api-types'
 import { API_PATHS } from './api-types'
-import { normalizePage, sharedApiClient } from './http-client'
+import { fillPath, normalizePage, sharedApiClient } from './http-client'
 import { toImageResult, toReferenceAsset, toTask } from './user-api'
 
 function endpointGroup(path: string): EndpointDoc['group'] {
@@ -41,17 +41,27 @@ export const openApi = {
   getBalance: (headers: OpenApiHeaders) => sharedApiClient.request<Balance>(API_PATHS.open.balance, { headers, auth: false }),
   getCapabilities: (headers: OpenApiHeaders) => sharedApiClient.request<Capability>(API_PATHS.open.capabilities, { headers, auth: false }),
   estimate: (input: EstimateRequest, headers: OpenApiHeaders) => sharedApiClient.request<EstimateResult>(API_PATHS.open.estimate, { query: toEstimateQuery(input), headers, auth: false }),
-  listPublicGallery: async (page = 1, page_size = 20): Promise<PageResult<ImageResult>> => {
-    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.open.galleryImages, { query: { page, page_size }, auth: false }))
-    return { ...result, items: result.items.map(toImageResult) }
+  listPublicGallery: async (page = 1, page_size = 20, options?: { sort?: 'latest' | 'hot'; liked?: boolean; favorited?: boolean; accessToken?: string | null }): Promise<PageResult<ImageResult>> => {
+    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.open.galleryImages, {
+      query: { page, page_size, sort: options?.sort, liked: options?.liked, favorited: options?.favorited },
+      auth: false,
+      headers: options?.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : undefined,
+    }))
+    return { ...result, items: result.items.map(toPublicGalleryImage) }
   },
-  getPublicGalleryImage: async (image_id: string) => toImageResult(await sharedApiClient.request(API_PATHS.open.galleryImageDetail, { pathParams: { image_id }, auth: false })),
+  getPublicGalleryImage: async (image_id: string) => toPublicGalleryImage(await sharedApiClient.request(API_PATHS.open.galleryImageDetail, { pathParams: { image_id }, auth: false })),
   createOpenAIImageGeneration: (input: OpenAIImageGenerationRequest, bearerToken?: string) =>
     sharedApiClient.request<OpenAIImageResponse>(API_PATHS.compat.generations, { method: 'POST', body: input, headers: bearerHeaders(bearerToken), auth: !bearerToken }),
   createOpenAIImageEdit: (input: OpenAIImageEditRequest, bearerToken?: string) =>
     sharedApiClient.request<OpenAIImageResponse>(API_PATHS.compat.edits, { method: 'POST', formData: toOpenAIEditForm(input), headers: bearerHeaders(bearerToken), auth: !bearerToken }),
   listOpenAIModels: (bearerToken?: string) =>
     sharedApiClient.request<OpenAIModelList>(API_PATHS.compat.models, { headers: bearerHeaders(bearerToken), auth: !bearerToken }),
+}
+
+function toPublicGalleryImage(raw: any) {
+  const image = toImageResult(raw)
+  const publicURL = fillPath(API_PATHS.open.galleryImageDownload, { image_id: image.id })
+  return { ...image, url: publicURL, download_url: publicURL }
 }
 
 export type OpenApiHeaders = {

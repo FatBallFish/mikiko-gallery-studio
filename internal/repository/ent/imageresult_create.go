@@ -163,6 +163,20 @@ func (_c *ImageResultCreate) SetSha256(v string) *ImageResultCreate {
 	return _c
 }
 
+// SetImageGroup sets the "image_group" field.
+func (_c *ImageResultCreate) SetImageGroup(v string) *ImageResultCreate {
+	_c.mutation.SetImageGroup(v)
+	return _c
+}
+
+// SetNillableImageGroup sets the "image_group" field if the given value is not nil.
+func (_c *ImageResultCreate) SetNillableImageGroup(v *string) *ImageResultCreate {
+	if v != nil {
+		_c.SetImageGroup(*v)
+	}
+	return _c
+}
+
 // SetVisibilityStatus sets the "visibility_status" field.
 func (_c *ImageResultCreate) SetVisibilityStatus(v string) *ImageResultCreate {
 	_c.mutation.SetVisibilityStatus(v)
@@ -282,6 +296,10 @@ func (_c *ImageResultCreate) defaults() {
 		v := imageresult.DefaultHeight
 		_c.mutation.SetHeight(v)
 	}
+	if _, ok := _c.mutation.ImageGroup(); !ok {
+		v := imageresult.DefaultImageGroup
+		_c.mutation.SetImageGroup(v)
+	}
 	if _, ok := _c.mutation.VisibilityStatus(); !ok {
 		v := imageresult.DefaultVisibilityStatus
 		_c.mutation.SetVisibilityStatus(v)
@@ -353,6 +371,14 @@ func (_c *ImageResultCreate) check() error {
 	if v, ok := _c.mutation.Sha256(); ok {
 		if err := imageresult.Sha256Validator(v); err != nil {
 			return &ValidationError{Name: "sha256", err: fmt.Errorf(`ent: validator failed for field "ImageResult.sha256": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ImageGroup(); !ok {
+		return &ValidationError{Name: "image_group", err: errors.New(`ent: missing required field "ImageResult.image_group"`)}
+	}
+	if v, ok := _c.mutation.ImageGroup(); ok {
+		if err := imageresult.ImageGroupValidator(v); err != nil {
+			return &ValidationError{Name: "image_group", err: fmt.Errorf(`ent: validator failed for field "ImageResult.image_group": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.VisibilityStatus(); !ok {
@@ -454,6 +480,10 @@ func (_c *ImageResultCreate) createSpec() (*ImageResult, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Sha256(); ok {
 		_spec.SetField(imageresult.FieldSha256, field.TypeString, value)
 		_node.Sha256 = value
+	}
+	if value, ok := _c.mutation.ImageGroup(); ok {
+		_spec.SetField(imageresult.FieldImageGroup, field.TypeString, value)
+		_node.ImageGroup = value
 	}
 	if value, ok := _c.mutation.VisibilityStatus(); ok {
 		_spec.SetField(imageresult.FieldVisibilityStatus, field.TypeString, value)

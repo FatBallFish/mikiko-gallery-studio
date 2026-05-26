@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ID, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
 
 type RouteDialog = { row?: RouteModel; code: string; name: string; description: string; visibility: RouteModelVisibility; enabled: boolean; sortOrder: string; groupIds: string[] }
 type CandidateDialog = { route: RouteModel; row?: RouteModelCandidate; accountModelId: string; priority: string; weight: string; fallbackOrder: string; enabled: boolean }
@@ -148,7 +148,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
             <Field label="描述"><input value={routeDialog.description} onChange={(event) => setRouteDialog({ ...routeDialog, description: event.target.value })} /></Field>
             <Field label="可见性"><select value={routeDialog.visibility} onChange={(event) => setRouteDialog({ ...routeDialog, visibility: event.target.value, groupIds: event.target.value === 'groups' ? routeDialog.groupIds : [] })}><option value="public">public</option><option value="groups">groups</option><option value="hidden">hidden</option></select></Field>
             {routeDialog.visibility === 'groups' ? (
-              <Field label="可见分组"><MultiGroupSelect selected={routeDialog.groupIds} groups={groups} onChange={(groupIds) => setRouteDialog({ ...routeDialog, groupIds })} /></Field>
+              <Field label="可见分组"><GroupOptionGrid selected={routeDialog.groupIds} groups={groups} onChange={(groupIds) => setRouteDialog({ ...routeDialog, groupIds })} /></Field>
             ) : null}
             <Field label="排序"><input type="number" value={routeDialog.sortOrder} onChange={(event) => setRouteDialog({ ...routeDialog, sortOrder: event.target.value })} /></Field>
             <Field label="状态"><select value={routeDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setRouteDialog({ ...routeDialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
@@ -190,15 +190,4 @@ function groupNames(ids: ID[] | undefined, groups: UserGroup[]) {
   if (!ids?.length) return '-'
   const names = ids.map((id) => groups.find((group) => String(group.id ?? group.code) === String(id))?.name ?? String(id))
   return names.join(', ')
-}
-
-function MultiGroupSelect({ selected, groups, onChange }: { selected: string[]; groups: UserGroup[]; onChange: (ids: string[]) => void }) {
-  return (
-    <div className="check-grid-scroll">
-      {groups.map((group) => {
-        const id = String(group.id ?? group.code)
-        return <label key={id} className="check-option"><input type="checkbox" checked={selected.includes(id)} onChange={(event) => onChange(event.target.checked ? [...selected, id] : selected.filter((item) => item !== id))} /><span>{group.name}</span><em>{group.multiplier}x</em></label>
-      })}
-    </div>
-  )
 }
