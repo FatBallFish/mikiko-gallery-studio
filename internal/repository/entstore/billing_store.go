@@ -2589,12 +2589,15 @@ func int64FromAny(value any) int64 {
 
 func (s *BillingStore) mapPaymentWebhookEvent(ctx context.Context, event *repoent.PaymentWebhookEvent) domainbilling.PaymentWebhookEvent {
 	item := domainbilling.PaymentWebhookEvent{
-		ID:           int64(event.ID),
-		ProviderType: event.Provider,
-		Status:       event.Status,
-		EventType:    event.EventType,
-		ReceivedAt:   event.CreatedAt,
-		ProcessedAt:  event.ProcessedAt,
+		ID:              int64(event.ID),
+		ProviderType:    event.Provider,
+		Status:          event.Status,
+		EventType:       event.EventType,
+		SignatureStatus: webhookSignatureStatus(event),
+		ResultSummary:   webhookResultSummary(event),
+		PayloadPreview:  webhookPayloadPreview(event.Payload),
+		ReceivedAt:      event.CreatedAt,
+		ProcessedAt:     event.ProcessedAt,
 	}
 	if event.PaymentOrderID != nil {
 		item.OrderID = *event.PaymentOrderID
@@ -2614,6 +2617,56 @@ func (s *BillingStore) mapPaymentWebhookEvent(ctx context.Context, event *repoen
 		}
 	}
 	return item
+}
+
+func webhookSignatureStatus(event *repoent.PaymentWebhookEvent) string {
+	if event.Status == "failed" {
+		return "failed"
+	}
+	if event.Status == "verified" || event.Status == "processed" {
+		return "verified"
+	}
+	if event.Signature != nil && strings.TrimSpace(*event.Signature) != "" {
+		return "recorded"
+	}
+	return "not_recorded"
+}
+
+func webhookResultSummary(event *repoent.PaymentWebhookEvent) string {
+	if event.Status == "processed" {
+		if event.ProcessedAt != nil {
+			return "已完成本地处理"
+		}
+		return "已处理"
+	}
+	if event.Status == "failed" {
+		return "处理失败，等待人工或自动重试"
+	}
+	if event.Status == "verified" {
+		return "已验签，等待本地落账"
+	}
+	if event.Status == "received" {
+		return "已接收，等待验签"
+	}
+	return event.Status
+}
+
+func webhookPayloadPreview(payload string) string {
+	payload = strings.TrimSpace(payload)
+	if payload == "" {
+		return ""
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(payload), &decoded); err == nil {
+		if normalized, marshalErr := json.Marshal(decoded); marshalErr == nil {
+			payload = string(normalized)
+		}
+	}
+	const maxLen = 600
+	if len(payload) <= maxLen {
+		return payload
+	}
+	return payload[:maxLen] + "..."
 }
 
 func grantPriority(grantType string) int {

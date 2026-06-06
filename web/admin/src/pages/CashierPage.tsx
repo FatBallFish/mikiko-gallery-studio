@@ -7,8 +7,11 @@ import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashie
 import { cashierAdminDateTime, cashierManualCompletionProviderOptions, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel, cashierProviderConfigStatusLabel, cashierProviderSupportedMethodsLabel, cashierWebhookEventTypeLabel, cashierWebhookProviderLabel } from './cashierPaymentDisplay'
 import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
 import { cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierToggleSupportedMethod } from './cashierProviderOptions'
+import { cashierOrderRiskRows, cashierWebhookRiskRow } from './cashierRiskRows'
+import type { CashierRiskRow } from './cashierRiskRows'
 import type { CashierStatusBadge } from './cashierStatusRows'
 import { cashierVisibleMethodRow } from './cashierVisibleMethodRows'
+import { cashierWebhookRow } from './cashierWebhookRows'
 import {
   cashierBooleanVisibilityLabel,
   cashierEnabledBadge,
@@ -598,15 +601,28 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
           <CashierSection title="回调事件">
             <div className="admin-data-grid cashier-event-grid">
               <div className="table-head"><span>事件</span><span>订单</span><span>渠道</span><span>状态</span><span>操作</span></div>
-              {data.events.items.map((event) => (
-                <div key={event.id} className="table-row">
-                  <div><strong>{cashierWebhookEventTypeLabel(event)}</strong><p>{event.failure_reason ?? '-'}</p></div>
-                  <code>{event.order_no ?? event.order_id ?? '-'}</code>
-                  <code>{cashierWebhookProviderLabel(event)}</code>
-                  <StatusBadge badge={cashierWebhookStatusBadge(event.status)} />
-                  <WebhookEventAction event={event} retrying={retryingEventID === event.id} onRetry={retryWebhookEvent} />
-                </div>
-              ))}
+              {data.events.items.map((event) => {
+                const row = cashierWebhookRow(event)
+                return (
+                  <div key={event.id} className="table-row">
+                    <div>
+                      <strong>{row.title}</strong>
+                      <p>{cashierWebhookRiskRow(event).detail}</p>
+                    </div>
+                    <code>{row.orderLabel}</code>
+                    <code>{row.providerLabel}</code>
+                    <StatusBadge badge={row.statusBadge} />
+                    <WebhookEventAction event={event} retrying={retryingEventID === event.id} onRetry={retryWebhookEvent} />
+                    <div className="cashier-webhook-inspector">
+                      <span>验签：{row.signatureLabel}</span>
+                      <span>处理：{row.resultSummary}</span>
+                      <span>接收：{row.receivedAtLabel}</span>
+                      <span>处理时间：{row.processedAtLabel}</span>
+                      <pre>{row.payloadPreview}</pre>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </CashierSection>
         </section>
@@ -728,6 +744,7 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
           onClose={() => setOrderDetail(null)}
           footer={<button className="btn" type="button" onClick={() => setOrderDetail(null)}>关闭</button>}
         >
+          <CashierRiskPanel rows={cashierOrderRiskRows(orderDetail)} />
           <div className="cashier-detail-grid">
             <DetailItem label="订单状态" value={<StatusBadge badge={cashierOrderStatusBadge(orderDetail.status)} />} />
             <DetailItem label="用户 ID" value={orderDetail.user_id ?? '-'} />
@@ -856,6 +873,20 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
 
 function StatusBadge({ badge }: { badge: CashierStatusBadge }) {
   return <Badge tone={badge.tone}>{badge.label}</Badge>
+}
+
+function CashierRiskPanel({ rows }: { rows: CashierRiskRow[] }) {
+  return (
+    <div className="cashier-risk-grid">
+      {rows.map((row) => (
+        <div key={row.key} className={`cashier-risk-item ${row.tone}`}>
+          <span>{row.label}</span>
+          <strong>{row.value}</strong>
+          <p>{row.detail}</p>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function WebhookEventAction({ event, retrying, onRetry }: { event: PaymentWebhookEvent; retrying: boolean; onRetry: (event: PaymentWebhookEvent) => void }) {

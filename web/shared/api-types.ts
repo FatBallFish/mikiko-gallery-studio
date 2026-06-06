@@ -847,6 +847,9 @@ export type PaymentWebhookEvent = {
   status: 'received' | 'verified' | 'processed' | 'failed' | string
   event_type?: string
   failure_reason?: string | null
+  signature_status?: 'verified' | 'recorded' | 'not_recorded' | 'failed' | string
+  result_summary?: string | null
+  payload_preview?: string | null
   received_at: string
   processed_at?: string | null
 }

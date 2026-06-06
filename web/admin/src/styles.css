@@ -1031,6 +1031,81 @@ code {
   gap: 10px;
 }
 
+.cashier-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cashier-risk-item {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--pg-radius-sm);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.cashier-risk-item span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.cashier-risk-item strong {
+  color: var(--text);
+  font-size: 0.94rem;
+  overflow-wrap: anywhere;
+}
+
+.cashier-risk-item p {
+  margin: 0;
+  color: var(--soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.cashier-risk-item.success { border-color: rgba(90, 149, 114, 0.24); background: rgba(90, 149, 114, 0.08); }
+.cashier-risk-item.warning { border-color: rgba(184, 135, 64, 0.28); background: rgba(184, 135, 64, 0.08); }
+.cashier-risk-item.danger { border-color: rgba(184, 95, 84, 0.28); background: rgba(184, 95, 84, 0.08); }
+
+.cashier-webhook-inspector {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--pg-radius-sm);
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.cashier-webhook-inspector span {
+  min-width: 0;
+  color: var(--soft);
+  font-size: 0.76rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.cashier-webhook-inspector pre {
+  grid-column: 1 / -1;
+  max-height: 96px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: var(--pg-radius-sm);
+  background: rgba(24, 32, 48, 0.06);
+  color: var(--text);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .cashier-detail-item {
   min-width: 0;
   display: grid;
@@ -1786,6 +1861,11 @@ code {
   .ops-status-strip.compact-strip,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cashier-risk-grid,
+  .cashier-detail-grid,
+  .cashier-webhook-inspector {
+    grid-template-columns: 1fr;
   }
   .status-cell:nth-child(2n) { border-right: 0; }
   .page-stack { overflow: visible; }

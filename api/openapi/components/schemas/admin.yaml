@@ -1376,6 +1376,16 @@ components:
         failure_reason:
           type: string
           nullable: true
+        signature_status:
+          type: string
+          enum: [verified, recorded, not_recorded, failed]
+          description: Signature verification or capture status derived for admin troubleshooting.
+        result_summary:
+          type: string
+          description: Human-readable processing result summary for admin operators.
+        payload_preview:
+          type: string
+          description: Truncated webhook payload preview for troubleshooting; secrets are not expanded.
         received_at:
           type: string
           format: date-time

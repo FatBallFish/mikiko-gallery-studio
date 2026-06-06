@@ -199,6 +199,9 @@ type PaymentWebhookEvent struct {
 	Status             string     `json:"status"`
 	EventType          string     `json:"event_type,omitempty"`
 	FailureReason      string     `json:"failure_reason,omitempty"`
+	SignatureStatus    string     `json:"signature_status,omitempty"`
+	ResultSummary      string     `json:"result_summary,omitempty"`
+	PayloadPreview     string     `json:"payload_preview,omitempty"`
 	ReceivedAt         time.Time  `json:"received_at"`
 	ProcessedAt        *time.Time `json:"processed_at,omitempty"`
 }

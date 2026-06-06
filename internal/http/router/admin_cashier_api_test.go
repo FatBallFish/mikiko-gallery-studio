@@ -838,11 +838,14 @@ func TestAdminCashierOrderRefundRecordsCompensationWhenLocalFinalizeFailsAfterPr
 	var eventsResp struct {
 		Data struct {
 			Items []struct {
-				ID            int64  `json:"id"`
-				OrderID       int64  `json:"order_id"`
-				Status        string `json:"status"`
-				EventType     string `json:"event_type"`
-				FailureReason string `json:"failure_reason"`
+				ID              int64  `json:"id"`
+				OrderID         int64  `json:"order_id"`
+				Status          string `json:"status"`
+				EventType       string `json:"event_type"`
+				FailureReason   string `json:"failure_reason"`
+				SignatureStatus string `json:"signature_status"`
+				ResultSummary   string `json:"result_summary"`
+				PayloadPreview  string `json:"payload_preview"`
 			} `json:"items"`
 		} `json:"data"`
 	}
@@ -851,6 +854,9 @@ func TestAdminCashierOrderRefundRecordsCompensationWhenLocalFinalizeFailsAfterPr
 	}
 	if len(eventsResp.Data.Items) == 0 || eventsResp.Data.Items[0].OrderID != orderID || eventsResp.Data.Items[0].Status != "failed" || eventsResp.Data.Items[0].EventType != "refund.local_finalize_failed" || !strings.Contains(eventsResp.Data.Items[0].FailureReason, "payment order recharge balance is insufficient for refund") {
 		t.Fatalf("expected failed refund compensation event first, got %#v", eventsResp.Data.Items)
+	}
+	if eventsResp.Data.Items[0].SignatureStatus != "failed" || !strings.Contains(eventsResp.Data.Items[0].ResultSummary, "处理失败") || !strings.Contains(eventsResp.Data.Items[0].PayloadPreview, "refund_trade_no") {
+		t.Fatalf("expected webhook troubleshooting fields, got %#v", eventsResp.Data.Items[0])
 	}
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/webhook-events/"+jsonInt64(eventsResp.Data.Items[0].ID)+"/retry", nil)

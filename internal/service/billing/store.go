@@ -450,14 +450,23 @@ func (s *MemoryStore) RecordRefundFinalizeFailure(_ context.Context, req RefundF
 	}
 	now := time.Now().UTC()
 	event := domainbilling.PaymentWebhookEvent{
-		ID:            s.nextWebhookID,
-		OrderID:       order.ID,
-		OrderNo:       order.OrderNo,
-		ProviderType:  order.Provider,
-		Status:        "failed",
-		EventType:     "refund.local_finalize_failed",
-		FailureReason: strings.TrimSpace(req.FailureReason),
-		ReceivedAt:    now,
+		ID:              s.nextWebhookID,
+		OrderID:         order.ID,
+		OrderNo:         order.OrderNo,
+		ProviderType:    order.Provider,
+		Status:          "failed",
+		EventType:       "refund.local_finalize_failed",
+		FailureReason:   strings.TrimSpace(req.FailureReason),
+		SignatureStatus: "failed",
+		ResultSummary:   "处理失败，等待人工或自动重试",
+		PayloadPreview: fmt.Sprintf(
+			`{"order_id":%d,"order_no":"%s","refund_trade_no":"%s","failure_reason":"%s"}`,
+			req.OrderID,
+			order.OrderNo,
+			strings.TrimSpace(req.RefundTradeNo),
+			strings.TrimSpace(req.FailureReason),
+		),
+		ReceivedAt: now,
 	}
 	if event.ProviderType == "" {
 		event.ProviderType = "mock"
@@ -972,14 +981,17 @@ func isCashierRechargeOrder(order domainbilling.PaymentOrder) bool {
 
 func (s *MemoryStore) appendWebhookEvent(order domainbilling.PaymentOrder, now time.Time) {
 	event := domainbilling.PaymentWebhookEvent{
-		ID:           s.nextWebhookID,
-		OrderID:      order.ID,
-		OrderNo:      order.OrderNo,
-		ProviderType: order.Provider,
-		Status:       "processed",
-		EventType:    "payment.succeeded",
-		ReceivedAt:   now,
-		ProcessedAt:  &now,
+		ID:              s.nextWebhookID,
+		OrderID:         order.ID,
+		OrderNo:         order.OrderNo,
+		ProviderType:    order.Provider,
+		Status:          "processed",
+		EventType:       "payment.succeeded",
+		SignatureStatus: "verified",
+		ResultSummary:   "已完成本地处理",
+		PayloadPreview:  fmt.Sprintf(`{"order_no":"%s"}`, order.OrderNo),
+		ReceivedAt:      now,
+		ProcessedAt:     &now,
 	}
 	s.nextWebhookID++
 	s.webhooks = append([]domainbilling.PaymentWebhookEvent{event}, s.webhooks...)
