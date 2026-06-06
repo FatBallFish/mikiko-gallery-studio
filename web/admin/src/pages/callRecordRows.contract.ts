@@ -1,5 +1,5 @@
 import type { CallRecord } from '../../../shared/api-types'
-import { callRecordFilterCopy, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
+import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
 
 const rows = callRecordRows([
   {
@@ -56,6 +56,24 @@ const rows = callRecordRows([
   },
 ] satisfies CallRecord[])
 
+const insufficientPointsRow = callRecordRows([{
+  ...rows[0]!,
+  id: 4,
+  task_id: 'task_insufficient_points',
+  api_key_id: null,
+  source_channel: 'web',
+  error_code: 'BILLING_INSUFFICIENT_POINTS',
+  error_message: null,
+} as unknown as CallRecord])[0]
+
+const noCandidateRow = callRecordRows([{
+  ...rows[0]!,
+  id: 5,
+  task_id: 'task_no_candidate',
+  error_code: 'MODEL_ROUTE_NO_CANDIDATE',
+  error_message: null,
+} as unknown as CallRecord])[0]
+
 if (rows[0]?.statusTone !== 'danger' || rows[0]?.failureLabel !== 'ROUTE_MODEL_PRICE_MISSING') {
   throw new Error(`failed call records should expose danger error code, got ${JSON.stringify(rows[0])}`)
 }
@@ -70,6 +88,18 @@ if (!rows[0]?.taskDetail.startsWith('文生图 ·')) {
 
 if (!rows[0]?.failureDetail.includes('价格配置')) {
   throw new Error(`route price preflight failure should guide operators to pricing config, got ${rows[0]?.failureDetail}`)
+}
+
+if (!insufficientPointsRow?.failureDetail.includes('余额不足') || insufficientPointsRow.failureDetail.includes('INSUFFICIENT_BALANCE')) {
+  throw new Error(`insufficient points preflight failure should use backend error code and guide recharge, got ${JSON.stringify(insufficientPointsRow)}`)
+}
+
+if (!noCandidateRow?.failureDetail.includes('候选账号')) {
+  throw new Error(`route no-candidate preflight failure should guide operators to candidate account config, got ${JSON.stringify(noCandidateRow)}`)
+}
+
+if (!callRecordCommonErrorCodes.includes('BILLING_INSUFFICIENT_POINTS') || callRecordCommonErrorCodes.includes('INSUFFICIENT_BALANCE' as never)) {
+  throw new Error(`call record common error code suggestions should use backend billing code and drop legacy balance code, got ${JSON.stringify(callRecordCommonErrorCodes)}`)
 }
 
 if (rows[0]?.routeDetail !== '2k · Open API') {

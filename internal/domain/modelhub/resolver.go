@@ -344,6 +344,9 @@ type ModelRoutingSource interface {
 
 type ResolvedRequest struct {
 	ResolvedQualityBucket  string
+	RouteModelID           int64
+	RouteModelCode         string
+	RouteSnapshotVersion   string
 	Providers              []ProviderCandidate
 	MaxOutputImageCount    int
 	MaxReferenceImageCount int
@@ -623,19 +626,26 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 	if _, ok := effectiveMultiplier(routeModel, matchedGroups); !ok {
 		return ResolvedRequest{}, errs.New(403, errs.CodeModelRouteNotVisible, "route model is not visible")
 	}
+	partial := ResolvedRequest{
+		RouteModelID:          routeModel.ID,
+		RouteModelCode:        routeModel.Code,
+		RouteSnapshotVersion:  routing.Version,
+		RuntimeRoutingApplied: true,
+	}
 	quality := strings.ToLower(strings.TrimSpace(req.RequestedQuality))
 	quality, err = ResolveRouteQuality(routeModel, req.TaskType, req.RequestedQuality, req.RequestedSize, r.cfg.Billing.AutoQualityDefaultByGroup, routing.Prices)
 	if err != nil {
-		return ResolvedRequest{}, err
+		return partial, err
 	}
+	partial.ResolvedQualityBucket = quality
 	if req.RequestedOutputImageCount <= 0 {
 		req.RequestedOutputImageCount = 1
 	}
 	if req.RequestedOutputImageCount > r.cfg.GenerationLimits.MaxImageCount {
-		return ResolvedRequest{}, errs.New(400, errs.CodeImageCapabilityMismatch, "requested output image count exceeds platform limit")
+		return partial, errs.New(400, errs.CodeImageCapabilityMismatch, "requested output image count exceeds platform limit")
 	}
 	if req.ReferenceImageCount > r.cfg.GenerationLimits.ReferenceImageMaxCount {
-		return ResolvedRequest{}, errs.New(400, errs.CodeImageReferenceExceeded, "reference image count exceeds platform limit")
+		return partial, errs.New(400, errs.CodeImageReferenceExceeded, "reference image count exceeds platform limit")
 	}
 	accountModels := make(map[int64]ProviderCandidate, len(routing.ProviderModels))
 	for _, candidate := range routing.ProviderModels {
@@ -665,7 +675,7 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
-		return ResolvedRequest{}, errs.New(409, errs.CodeModelRouteNoCandidate, "route model has no available candidate")
+		return partial, errs.New(409, errs.CodeModelRouteNoCandidate, "route model has no available candidate")
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].Priority != candidates[j].Priority {
@@ -678,6 +688,9 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 	})
 	return ResolvedRequest{
 		ResolvedQualityBucket:  quality,
+		RouteModelID:           routeModel.ID,
+		RouteModelCode:         routeModel.Code,
+		RouteSnapshotVersion:   routing.Version,
 		Providers:              candidates,
 		MaxOutputImageCount:    r.cfg.GenerationLimits.MaxImageCount,
 		MaxReferenceImageCount: r.cfg.GenerationLimits.ReferenceImageMaxCount,

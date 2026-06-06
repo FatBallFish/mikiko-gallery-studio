@@ -3,19 +3,9 @@ import type { FormEvent } from 'react'
 import type { CallRecord } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
-import { callRecordFilterCopy, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
+import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
 
 const pageSize = 20
-
-const commonErrorCodes = [
-  '',
-  'MODEL_ROUTE_NOT_FOUND',
-  'MODEL_ROUTE_NO_CANDIDATE',
-  'ROUTE_MODEL_PRICE_MISSING',
-  'MODEL_ROUTE_NOT_VISIBLE',
-  'INSUFFICIENT_BALANCE',
-  'PROVIDER_UNAVAILABLE',
-]
 
 type CallRecordFilters = {
   status: string
@@ -111,7 +101,7 @@ export function CallRecordsPage() {
               placeholder={callRecordFilterCopy.errorCode.placeholder}
             />
             <datalist id="call-record-error-codes">
-              {commonErrorCodes.filter(Boolean).map((code) => <option key={code} value={code} />)}
+              {callRecordCommonErrorCodes.filter(Boolean).map((code) => <option key={code} value={code} />)}
             </datalist>
             <select value={filters.sourceChannel} onChange={(event) => setFilters((value) => ({ ...value, sourceChannel: event.target.value }))} aria-label={callRecordFilterCopy.sourceChannel.label}>
               {callRecordSourceChannelOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}

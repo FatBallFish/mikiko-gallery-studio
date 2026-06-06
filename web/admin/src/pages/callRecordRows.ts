@@ -62,6 +62,16 @@ export const callRecordSourceChannelOptions = [
   { value: 'openai_compatible', label: 'OpenAI 兼容' },
 ] as const
 
+export const callRecordCommonErrorCodes = [
+  '',
+  'MODEL_ROUTE_NOT_FOUND',
+  'MODEL_ROUTE_NO_CANDIDATE',
+  'ROUTE_MODEL_PRICE_MISSING',
+  'MODEL_ROUTE_NOT_VISIBLE',
+  'BILLING_INSUFFICIENT_POINTS',
+  'PROVIDER_UNAVAILABLE',
+] as const
+
 export function callRecordRows(records: CallRecord[]): CallRecordRowModel[] {
   return records.map((record) => ({
     id: String(record.id ?? record.task_id),
@@ -140,7 +150,7 @@ function errorCodeHint(code: string) {
   if (code === 'MODEL_ROUTE_NO_CANDIDATE') return '路由模型没有可用候选账号。'
   if (code === 'ROUTE_MODEL_PRICE_MISSING') return '缺少该模型/任务类型/质量的价格配置。'
   if (code === 'MODEL_ROUTE_NOT_VISIBLE') return '当前用户分组不可见或模型已隐藏。'
-  if (code === 'INSUFFICIENT_BALANCE') return '用户余额不足，需充值或后台调整额度。'
+  if (code === 'BILLING_INSUFFICIENT_POINTS') return '用户余额不足，需充值或后台调整额度。'
   if (code === 'PROVIDER_UNAVAILABLE') return '底层 Provider 不可用或返回失败。'
   return '查看任务详情、路由配置或 Provider 日志继续定位。'
 }

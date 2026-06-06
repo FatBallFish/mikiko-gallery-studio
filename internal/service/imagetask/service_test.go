@@ -859,6 +859,111 @@ func TestCreateTaskPersistsFailedCallRecordWhenReserveRejectsInsufficientBalance
 	}
 }
 
+func TestCreateTaskPersistsFailedCallRecordWhenRoutePriceMissing(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "route-snapshot-price-missing",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		TaskID:              "88888888-8888-4888-8888-888888888888",
+		UserID:              191,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		RouteModelCode:      "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Record missing route price",
+		RequestedSize:       "1024x1024",
+		RequestedQuality:    "1k",
+		OutputImageCount:    1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTask to reject missing route price")
+	}
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.Code != errs.CodeRouteModelPriceMissing {
+		t.Fatalf("expected route model price missing error, got %#v", err)
+	}
+
+	tasks, err := svc.ListByUser(context.Background(), 191)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one failed call record task, got %#v", tasks)
+	}
+	record := tasks[0]
+	if record.Status != domainimagetask.StatusFailed {
+		t.Fatalf("expected failed record, got %#v", record)
+	}
+	if record.ErrorCode != errs.CodeRouteModelPriceMissing || record.ErrorMessage == "" {
+		t.Fatalf("expected route price missing error on record, got code=%q message=%q", record.ErrorCode, record.ErrorMessage)
+	}
+	if record.RouteModelCode != "plus" || record.RouteModelID != 1 || record.RouteSnapshotVersion != "route-snapshot-price-missing" || record.EstimatedPoints != "0.00000" || record.ActualPoints != "0.00000" {
+		t.Fatalf("expected route metadata and zero point snapshot on failed record, got %#v", record)
+	}
+}
+
+func TestCreateTaskPersistsFailedCallRecordWhenRouteHasNoCandidate(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "route-snapshot-no-candidate",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", Quality: "1k", BasePoints: "8.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: false}},
+	}})
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		TaskID:              "77777777-7777-4777-8777-777777777777",
+		UserID:              192,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		RouteModelCode:      "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Record missing route candidate",
+		RequestedSize:       "1024x1024",
+		RequestedQuality:    "1k",
+		OutputImageCount:    1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTask to reject route without candidate")
+	}
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.Code != errs.CodeModelRouteNoCandidate {
+		t.Fatalf("expected route model no candidate error, got %#v", err)
+	}
+
+	tasks, err := svc.ListByUser(context.Background(), 192)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one failed call record task, got %#v", tasks)
+	}
+	record := tasks[0]
+	if record.Status != domainimagetask.StatusFailed {
+		t.Fatalf("expected failed record, got %#v", record)
+	}
+	if record.ErrorCode != errs.CodeModelRouteNoCandidate || record.ErrorMessage == "" {
+		t.Fatalf("expected no candidate error on record, got code=%q message=%q", record.ErrorCode, record.ErrorMessage)
+	}
+	if record.RouteModelCode != "plus" || record.RouteModelID != 1 || record.RouteSnapshotVersion != "route-snapshot-no-candidate" || record.ResolvedQualityBucket != "1k" || record.EstimatedPoints != "0.00000" || record.ActualPoints != "0.00000" {
+		t.Fatalf("expected route metadata, quality, and zero point snapshot on failed record, got %#v", record)
+	}
+}
+
 func TestExecuteLeasedTaskSettlesPartialSuccessAgainstReservedEstimate(t *testing.T) {
 	cfg := taskTestConfig()
 	billingSvc := billingservice.NewService(cfg.Billing)

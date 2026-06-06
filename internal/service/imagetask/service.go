@@ -166,7 +166,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 
 	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
 	if err != nil {
-		_ = s.persistPreflightFailedRequest(ctx, req, modelhub.ResolvedRequest{}, err)
+		_ = s.persistPreflightFailedRequest(ctx, req, resolved, err)
 		return domainimagetask.Task{}, err
 	}
 	if strings.TrimSpace(req.TaskID) == "" {
@@ -1281,7 +1281,9 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		ID:                    taskID,
 		Status:                status,
 		AbstractModel:         defaultString(req.AbstractModel, req.RouteModelCode),
-		RouteModelCode:        req.RouteModelCode,
+		RouteModelCode:        defaultString(resolved.RouteModelCode, req.RouteModelCode),
+		RouteModelID:          resolved.RouteModelID,
+		RouteSnapshotVersion:  resolved.RouteSnapshotVersion,
 		TaskType:              req.TaskType,
 		Prompt:                req.Prompt,
 		NegativePrompt:        req.NegativePrompt,
