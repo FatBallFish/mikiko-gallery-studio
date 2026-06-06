@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"errors"
-	"io"
 	"strings"
 	"testing"
 )
@@ -77,33 +75,3 @@ func TestNormalizeCashierQueryStatusMapsProviderTerminalStates(t *testing.T) {
 		})
 	}
 }
-
-func TestRandomCashierProviderInstanceWithReader(t *testing.T) {
-	if got := randomCashierProviderInstanceWithReader(strings.NewReader("\x00"), nil); got.ID != 0 {
-		t.Fatalf("expected empty candidates to return zero value, got %#v", got)
-	}
-
-	only := []cashierProviderInstance{{ID: 11, Name: "only"}}
-	if got := randomCashierProviderInstanceWithReader(strings.NewReader("\x00"), only); got.ID != 11 {
-		t.Fatalf("expected single candidate, got %#v", got)
-	}
-
-	candidates := []cashierProviderInstance{{ID: 101}, {ID: 102}, {ID: 103}}
-	if got := randomCashierProviderInstanceWithReader(strings.NewReader("\x00\x00\x00\x00\x00\x00\x00\x02"), candidates); got.ID != 103 {
-		t.Fatalf("expected deterministic reader byte to select third candidate, got %#v", got)
-	}
-
-	if got := randomCashierProviderInstanceWithReader(failingReader{}, candidates); got.ID != 101 {
-		t.Fatalf("expected failed random source to fall back to first candidate, got %#v", got)
-	}
-}
-
-type failingReader struct{}
-
-func (failingReader) Read(p []byte) (int, error) {
-	return 0, errRandomReaderFailed
-}
-
-var errRandomReaderFailed = errors.New("random reader failed")
-
-var _ io.Reader = failingReader{}

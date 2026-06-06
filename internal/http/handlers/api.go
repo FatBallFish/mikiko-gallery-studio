@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -57,6 +58,7 @@ import (
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	capserv "github.com/fatballfish/pic-gallery/internal/service/capabilities"
+	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
@@ -8014,76 +8016,67 @@ func (a *API) scheduleCashierProviderInstance(ctx context.Context, method cashie
 	if method.Method == "" || method.SourceProviderType == "" {
 		return cashierProviderInstance{}, errs.New(http.StatusBadRequest, errs.CodePaymentMethodUnavailable, "payment method is unavailable")
 	}
-	_, amount, amountErr := positiveDecimalString(amountCNY, "amount_cny")
-	if amountErr != nil {
+	if _, _, amountErr := positiveDecimalString(amountCNY, "amount_cny"); amountErr != nil {
 		return cashierProviderInstance{}, amountErr
 	}
-	candidates := make([]cashierProviderInstance, 0)
-	for _, instance := range a.cashierProviderInstances(ctx) {
-		if !instance.Enabled {
-			continue
+	instances := a.cashierProviderInstances(ctx)
+	if isProductionAppEnv(a.cfg.App.Env) {
+		filtered := make([]cashierProviderInstance, 0, len(instances))
+		for _, instance := range instances {
+			if isProductionAppEnv(a.cfg.App.Env) && instance.ProviderType == "mock" {
+				continue
+			}
+			filtered = append(filtered, instance)
 		}
-		if isProductionAppEnv(a.cfg.App.Env) && instance.ProviderType == "mock" {
-			continue
-		}
-		if instance.ProviderType != method.SourceProviderType {
-			continue
-		}
-		if !stringListContains(instance.SupportedMethods, method.Method) {
-			continue
-		}
-		if !cashierProviderInstanceAmountAllowed(instance, amount) {
-			continue
-		}
-		if instance.ProviderType != "mock" && instance.ConfigStatus != "configured" {
-			continue
-		}
-		candidates = append(candidates, instance)
+		instances = filtered
 	}
-	if len(candidates) == 0 {
+	schedulerState := a.cashierSchedulerState(ctx)
+	svc := cashierservice.NewServiceWithSchedulerState(cashierSchedulerStateIDs(schedulerState))
+	selected, err := svc.ScheduleProviderInstance(ctx, method, instances, amountCNY)
+	if err != nil {
+		if errors.Is(err, cashierservice.ErrPaymentMethodUnavailable) {
+			return cashierProviderInstance{}, errs.New(http.StatusBadRequest, errs.CodePaymentMethodUnavailable, "payment method is unavailable")
+		}
 		return cashierProviderInstance{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
-	if method.SchedulerStrategy == "random" && len(candidates) > 1 {
-		return randomCashierProviderInstance(candidates), nil
-	}
-	if method.SchedulerStrategy == "round_robin" && len(candidates) > 1 {
-		selected := a.nextRoundRobinCashierProviderInstance(ctx, method, candidates)
-		return selected, nil
-	}
-	return candidates[0], nil
-}
-
-func randomCashierProviderInstance(candidates []cashierProviderInstance) cashierProviderInstance {
-	return randomCashierProviderInstanceWithReader(rand.Reader, candidates)
-}
-
-func randomCashierProviderInstanceWithReader(reader io.Reader, candidates []cashierProviderInstance) cashierProviderInstance {
-	return domaincashier.RandomProviderInstanceWithReader(reader, candidates)
-}
-
-func (a *API) nextRoundRobinCashierProviderInstance(ctx context.Context, method cashierVisibleMethod, candidates []cashierProviderInstance) cashierProviderInstance {
-	state := a.cashierSchedulerState(ctx)
-	key := cashierSchedulerStateKey(method)
-	lastID := int64FromAny(state[key]["last_instance_id"])
-	nextIndex := 0
-	if lastID > 0 {
-		for index, candidate := range candidates {
-			if candidate.ID == lastID {
-				nextIndex = (index + 1) % len(candidates)
-				break
-			}
+	if strings.EqualFold(method.SchedulerStrategy, "round_robin") {
+		merged := mergeCashierSchedulerStateIDs(schedulerState, svc.SchedulerState())
+		if err := a.saveCashierSchedulerState(ctx, merged); err != nil {
+			return selected, nil
 		}
 	}
-	selected := candidates[nextIndex]
-	state[key] = map[string]any{"last_instance_id": selected.ID}
-	if err := a.saveCashierSchedulerState(ctx, state); err != nil {
-		return candidates[0]
-	}
-	return selected
+	return selected, nil
 }
 
-func cashierSchedulerStateKey(method cashierVisibleMethod) string {
-	return strings.ToLower(strings.TrimSpace(method.Method)) + ":" + strings.ToLower(strings.TrimSpace(method.SourceProviderType))
+func cashierSchedulerStateIDs(state map[string]map[string]any) map[string]int64 {
+	ids := make(map[string]int64, len(state))
+	for key, item := range state {
+		trimmedKey := strings.TrimSpace(key)
+		if trimmedKey == "" {
+			continue
+		}
+		ids[trimmedKey] = int64FromAny(item["last_instance_id"])
+	}
+	return ids
+}
+
+func mergeCashierSchedulerStateIDs(existing map[string]map[string]any, ids map[string]int64) map[string]map[string]any {
+	merged := make(map[string]map[string]any, len(existing)+len(ids))
+	for key, item := range existing {
+		trimmedKey := strings.TrimSpace(key)
+		if trimmedKey == "" {
+			continue
+		}
+		merged[trimmedKey] = normalizeMap(item)
+	}
+	for key, id := range ids {
+		trimmedKey := strings.TrimSpace(key)
+		if trimmedKey == "" || id <= 0 {
+			continue
+		}
+		merged[trimmedKey] = map[string]any{"last_instance_id": id}
+	}
+	return merged
 }
 
 func (a *API) cashierSchedulerState(ctx context.Context) map[string]map[string]any {

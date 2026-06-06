@@ -1,6 +1,7 @@
 package cashier
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -42,6 +43,10 @@ type ProviderInstance struct {
 	LastError        string         `json:"last_error,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
+}
+
+func RandomProviderInstance(candidates []ProviderInstance) ProviderInstance {
+	return RandomProviderInstanceWithReader(rand.Reader, candidates)
 }
 
 func RandomProviderInstanceWithReader(reader io.Reader, candidates []ProviderInstance) ProviderInstance {
