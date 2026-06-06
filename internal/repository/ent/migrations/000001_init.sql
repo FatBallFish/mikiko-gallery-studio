@@ -32,7 +32,7 @@ create table if not exists admin_users (
   id bigserial primary key,
   email varchar(255) not null unique,
   password_hash varchar(255) not null,
-  role varchar(32) not null default 'ops_admin',
+  role varchar(32) not null default 'admin',
   status varchar(32) not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -203,7 +203,7 @@ create table if not exists image_tasks (
   status varchar(32) not null default 'queued',
   prompt text not null,
   negative_prompt text,
-  abstract_model varchar(32) not null,
+  abstract_model varchar(64) not null,
   requested_quality varchar(16) not null default 'auto',
   resolved_quality_bucket varchar(16) not null default '1k',
   requested_size varchar(32),

@@ -1,38 +1,16 @@
-import type { Balance, Capability, CreateTaskRequest, EndpointDoc, EstimateRequest, EstimateResult, ImageResult, ImageTask, OpenAIImageEditRequest, OpenAIImageGenerationRequest, OpenAIImageResponse, OpenAIModelList, OpenReferenceAssetUploadSessionRequest, OpenReferenceAssetUploadSessionResponse, PageResult, ReferenceAsset } from './api-types'
+import type { Balance, Capability, CreateTaskRequest, EstimateRequest, EstimateResult, ImageResult, ImageTask, OpenAIImageEditRequest, OpenAIImageGenerationRequest, OpenAIImageResponse, OpenAIModelList, OpenReferenceAssetUploadSessionRequest, OpenReferenceAssetUploadSessionResponse, PageResult, ReferenceAsset } from './api-types'
 import { API_PATHS } from './api-types'
 import { fillPath, normalizePage, sharedApiClient } from './http-client'
+import { docsFromOpenApi, normalizeErrors, normalizeExamples } from './open-api-docs'
 import { toImageResult, toReferenceAsset, toTask } from './user-api'
 
-function endpointGroup(path: string): EndpointDoc['group'] {
-  if (path.startsWith('/api/agent')) return 'Agent API'
-  if (path.startsWith('/api/open')) return 'Open API'
-  if (path.startsWith('/api/ops')) return 'Ops API'
-  if (path.startsWith('/v1')) return 'OpenAI Compat'
-  return 'Open API'
-}
-
-function docsFromOpenApi(spec: any): EndpointDoc[] {
-  const paths = spec.paths ?? {}
-  return Object.entries(paths).flatMap(([path, methods]) => (
-    Object.entries(methods as Record<string, any>)
-      .filter(([method]) => ['get', 'post', 'put', 'delete', 'patch'].includes(method))
-      .map(([method, operation]) => ({
-        group: endpointGroup(path),
-        method: method.toUpperCase() as EndpointDoc['method'],
-        path,
-        title: operation.summary ?? operation.operationId ?? path,
-        auth: (operation.security?.length ?? 0) > 0 ? 'Authorization required' : 'Public',
-        requestExample: `curl ${path}`,
-        responseExample: JSON.stringify(operation.responses ?? {}, null, 2).slice(0, 1200),
-      }))
-  ))
-}
+export type { DocsErrorCode, DocsExample } from './open-api-docs'
 
 export const openApi = {
   getOpenApiSpec: () => sharedApiClient.request<any>(API_PATHS.docs.openapiJson, { auth: false }),
   listEndpointDocs: async () => docsFromOpenApi(await openApi.getOpenApiSpec()),
-  getExamples: () => sharedApiClient.request<any>(API_PATHS.docs.examples, { auth: false }),
-  getErrors: () => sharedApiClient.request<any>(API_PATHS.docs.errors, { auth: false }),
+  getExamples: async () => normalizeExamples(await sharedApiClient.request<unknown>(API_PATHS.docs.examples, { auth: false })),
+  getErrors: async () => normalizeErrors(await sharedApiClient.request<unknown>(API_PATHS.docs.errors, { auth: false })),
   createReferenceAssetUploadSession: (input: OpenReferenceAssetUploadSessionRequest, headers: OpenApiHeaders) =>
     sharedApiClient.request<OpenReferenceAssetUploadSessionResponse>(API_PATHS.open.uploadSessions, { method: 'POST', body: input, headers, auth: false }),
   getReferenceAsset: async (asset_id: string, headers: OpenApiHeaders) => toReferenceAsset(await sharedApiClient.request(API_PATHS.open.referenceAssetDetail, { pathParams: { asset_id }, headers, auth: false })),
@@ -49,7 +27,11 @@ export const openApi = {
     }))
     return { ...result, items: result.items.map(toPublicGalleryImage) }
   },
-  getPublicGalleryImage: async (image_id: string) => toPublicGalleryImage(await sharedApiClient.request(API_PATHS.open.galleryImageDetail, { pathParams: { image_id }, auth: false })),
+  getPublicGalleryImage: async (image_id: string, options?: { accessToken?: string | null }) => toPublicGalleryImage(await sharedApiClient.request(API_PATHS.open.galleryImageDetail, {
+    pathParams: { image_id },
+    auth: false,
+    headers: options?.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : undefined,
+  })),
   createOpenAIImageGeneration: (input: OpenAIImageGenerationRequest, bearerToken?: string) =>
     sharedApiClient.request<OpenAIImageResponse>(API_PATHS.compat.generations, { method: 'POST', body: input, headers: bearerHeaders(bearerToken), auth: !bearerToken }),
   createOpenAIImageEdit: (input: OpenAIImageEditRequest, bearerToken?: string) =>

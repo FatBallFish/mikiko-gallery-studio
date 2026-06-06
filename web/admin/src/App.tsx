@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
 import { adminApi } from '../../shared/admin-api'
-import { AdminLayout, normalizeRoute, protectedRoutes, routeHref, ToastRail, useHashRoute, useToasts } from './components'
-import { AuditPage, CallRecordsPage, ConfigPage, HealthPage, LoginPage, OverviewPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, UsersPage } from './pages/index'
-import type { AdminRouteId } from './types'
+import { AdminLayout, EmptyBlock, normalizeRoute, protectedRoutes, routeHref, ToastRail, useHashRoute, useToasts } from './components'
+import { AuditPage, CallRecordsPage, CashierPage, ConfigPage, HealthPage, LoginPage, OverviewPage, PricingPage, ProviderModelsPage, ReadinessPage, RedeemPage, ReviewPage, RoutingPage, UserGroupsPage, UsersPage } from './pages/index'
+import { canAccessAdminRoute, firstAccessibleAdminRoute } from './types'
+import type { AdminRouteId, ProtectedAdminRouteId } from './types'
 
 const sessionKey = 'pic_gallery_admin_session'
 const returnKey = 'pic_gallery_admin_return'
@@ -69,6 +70,15 @@ export default function App() {
   }, [isAuthed, route, setRoute])
 
   useEffect(() => {
+    if (!session || route === 'login' || canAccessAdminRoute(session, route)) return
+    const fallbackRoute = firstAccessibleAdminRoute(session)
+    if (fallbackRoute !== route && canAccessAdminRoute(session, fallbackRoute)) {
+      setRoute(fallbackRoute)
+      pushToast({ tone: 'warning', title: '暂无该页面权限', detail: '已为你切换到可访问的后台页面。' })
+    }
+  }, [session, route, setRoute, pushToast])
+
+  useEffect(() => {
     void refreshShell().catch(() => {
       setShellProviders([])
       setShellMetrics([])
@@ -99,9 +109,14 @@ export default function App() {
   }
 
   const page = useMemo(() => {
+    if (session && route !== 'login' && !canAccessAdminRoute(session, route)) {
+      return <EmptyBlock title="暂无后台权限" detail="当前管理员角色没有可访问的后台页面，请联系超级管理员调整权限。" />
+    }
     switch (route) {
       case 'config':
-        return <ConfigPage onFeedback={feedback} />
+        return session ? <ConfigPage session={session} onFeedback={feedback} /> : null
+      case 'readiness':
+        return <ReadinessPage />
       case 'routing':
         return <RoutingPage onFeedback={feedback} />
       case 'pricing':
@@ -110,8 +125,12 @@ export default function App() {
         return <ReviewPage accessToken={session?.token} onFeedback={feedback} />
       case 'users':
         return <UsersPage onFeedback={feedback} />
+      case 'user-groups':
+        return <UserGroupsPage onFeedback={feedback} />
       case 'redeem':
         return <RedeemPage onFeedback={feedback} />
+      case 'cashier':
+        return <CashierPage onFeedback={feedback} />
       case 'call-records':
         return <CallRecordsPage />
       case 'provider-models':
@@ -124,7 +143,7 @@ export default function App() {
       default:
         return <OverviewPage />
     }
-  }, [route, session?.token])
+  }, [route, session])
 
   if (route === 'login' || !session) {
     return (
@@ -135,7 +154,7 @@ export default function App() {
     )
   }
 
-  const protectedRoute = protectedRoutes.includes(route as Exclude<AdminRouteId, 'login'>) ? route as Exclude<AdminRouteId, 'login'> : 'overview'
+  const protectedRoute = protectedRoutes.includes(route as ProtectedAdminRouteId) ? route as ProtectedAdminRouteId : 'overview'
 
   return (
     <>

@@ -110,6 +110,31 @@ func FrozenAfter(v string) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldEQ(FieldFrozenAfter, v))
 }
 
+// BalanceBucket applies equality check predicate on the "balance_bucket" field. It's identical to BalanceBucketEQ.
+func BalanceBucket(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldBalanceBucket, v))
+}
+
+// SourceType applies equality check predicate on the "source_type" field. It's identical to SourceTypeEQ.
+func SourceType(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldSourceType, v))
+}
+
+// SourceID applies equality check predicate on the "source_id" field. It's identical to SourceIDEQ.
+func SourceID(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldSourceID, v))
+}
+
+// BucketBalanceAfter applies equality check predicate on the "bucket_balance_after" field. It's identical to BucketBalanceAfterEQ.
+func BucketBalanceAfter(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldBucketBalanceAfter, v))
+}
+
+// ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
+func ExpiresAt(v time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldExpiresAt, v))
+}
+
 // Reason applies equality check predicate on the "reason" field. It's identical to ReasonEQ.
 func Reason(v string) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldEQ(FieldReason, v))
@@ -703,6 +728,301 @@ func FrozenAfterEqualFold(v string) predicate.PointLedger {
 // FrozenAfterContainsFold applies the ContainsFold predicate on the "frozen_after" field.
 func FrozenAfterContainsFold(v string) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldContainsFold(FieldFrozenAfter, v))
+}
+
+// BalanceBucketEQ applies the EQ predicate on the "balance_bucket" field.
+func BalanceBucketEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldBalanceBucket, v))
+}
+
+// BalanceBucketNEQ applies the NEQ predicate on the "balance_bucket" field.
+func BalanceBucketNEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNEQ(FieldBalanceBucket, v))
+}
+
+// BalanceBucketIn applies the In predicate on the "balance_bucket" field.
+func BalanceBucketIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIn(FieldBalanceBucket, vs...))
+}
+
+// BalanceBucketNotIn applies the NotIn predicate on the "balance_bucket" field.
+func BalanceBucketNotIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotIn(FieldBalanceBucket, vs...))
+}
+
+// BalanceBucketGT applies the GT predicate on the "balance_bucket" field.
+func BalanceBucketGT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGT(FieldBalanceBucket, v))
+}
+
+// BalanceBucketGTE applies the GTE predicate on the "balance_bucket" field.
+func BalanceBucketGTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGTE(FieldBalanceBucket, v))
+}
+
+// BalanceBucketLT applies the LT predicate on the "balance_bucket" field.
+func BalanceBucketLT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLT(FieldBalanceBucket, v))
+}
+
+// BalanceBucketLTE applies the LTE predicate on the "balance_bucket" field.
+func BalanceBucketLTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLTE(FieldBalanceBucket, v))
+}
+
+// BalanceBucketContains applies the Contains predicate on the "balance_bucket" field.
+func BalanceBucketContains(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContains(FieldBalanceBucket, v))
+}
+
+// BalanceBucketHasPrefix applies the HasPrefix predicate on the "balance_bucket" field.
+func BalanceBucketHasPrefix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasPrefix(FieldBalanceBucket, v))
+}
+
+// BalanceBucketHasSuffix applies the HasSuffix predicate on the "balance_bucket" field.
+func BalanceBucketHasSuffix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasSuffix(FieldBalanceBucket, v))
+}
+
+// BalanceBucketEqualFold applies the EqualFold predicate on the "balance_bucket" field.
+func BalanceBucketEqualFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEqualFold(FieldBalanceBucket, v))
+}
+
+// BalanceBucketContainsFold applies the ContainsFold predicate on the "balance_bucket" field.
+func BalanceBucketContainsFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContainsFold(FieldBalanceBucket, v))
+}
+
+// SourceTypeEQ applies the EQ predicate on the "source_type" field.
+func SourceTypeEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldSourceType, v))
+}
+
+// SourceTypeNEQ applies the NEQ predicate on the "source_type" field.
+func SourceTypeNEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNEQ(FieldSourceType, v))
+}
+
+// SourceTypeIn applies the In predicate on the "source_type" field.
+func SourceTypeIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIn(FieldSourceType, vs...))
+}
+
+// SourceTypeNotIn applies the NotIn predicate on the "source_type" field.
+func SourceTypeNotIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotIn(FieldSourceType, vs...))
+}
+
+// SourceTypeGT applies the GT predicate on the "source_type" field.
+func SourceTypeGT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGT(FieldSourceType, v))
+}
+
+// SourceTypeGTE applies the GTE predicate on the "source_type" field.
+func SourceTypeGTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGTE(FieldSourceType, v))
+}
+
+// SourceTypeLT applies the LT predicate on the "source_type" field.
+func SourceTypeLT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLT(FieldSourceType, v))
+}
+
+// SourceTypeLTE applies the LTE predicate on the "source_type" field.
+func SourceTypeLTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLTE(FieldSourceType, v))
+}
+
+// SourceTypeContains applies the Contains predicate on the "source_type" field.
+func SourceTypeContains(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContains(FieldSourceType, v))
+}
+
+// SourceTypeHasPrefix applies the HasPrefix predicate on the "source_type" field.
+func SourceTypeHasPrefix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasPrefix(FieldSourceType, v))
+}
+
+// SourceTypeHasSuffix applies the HasSuffix predicate on the "source_type" field.
+func SourceTypeHasSuffix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasSuffix(FieldSourceType, v))
+}
+
+// SourceTypeEqualFold applies the EqualFold predicate on the "source_type" field.
+func SourceTypeEqualFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEqualFold(FieldSourceType, v))
+}
+
+// SourceTypeContainsFold applies the ContainsFold predicate on the "source_type" field.
+func SourceTypeContainsFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContainsFold(FieldSourceType, v))
+}
+
+// SourceIDEQ applies the EQ predicate on the "source_id" field.
+func SourceIDEQ(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldSourceID, v))
+}
+
+// SourceIDNEQ applies the NEQ predicate on the "source_id" field.
+func SourceIDNEQ(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNEQ(FieldSourceID, v))
+}
+
+// SourceIDIn applies the In predicate on the "source_id" field.
+func SourceIDIn(vs ...int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIn(FieldSourceID, vs...))
+}
+
+// SourceIDNotIn applies the NotIn predicate on the "source_id" field.
+func SourceIDNotIn(vs ...int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotIn(FieldSourceID, vs...))
+}
+
+// SourceIDGT applies the GT predicate on the "source_id" field.
+func SourceIDGT(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGT(FieldSourceID, v))
+}
+
+// SourceIDGTE applies the GTE predicate on the "source_id" field.
+func SourceIDGTE(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGTE(FieldSourceID, v))
+}
+
+// SourceIDLT applies the LT predicate on the "source_id" field.
+func SourceIDLT(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLT(FieldSourceID, v))
+}
+
+// SourceIDLTE applies the LTE predicate on the "source_id" field.
+func SourceIDLTE(v int64) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLTE(FieldSourceID, v))
+}
+
+// SourceIDIsNil applies the IsNil predicate on the "source_id" field.
+func SourceIDIsNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIsNull(FieldSourceID))
+}
+
+// SourceIDNotNil applies the NotNil predicate on the "source_id" field.
+func SourceIDNotNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotNull(FieldSourceID))
+}
+
+// BucketBalanceAfterEQ applies the EQ predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterNEQ applies the NEQ predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterNEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNEQ(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterIn applies the In predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIn(FieldBucketBalanceAfter, vs...))
+}
+
+// BucketBalanceAfterNotIn applies the NotIn predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterNotIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotIn(FieldBucketBalanceAfter, vs...))
+}
+
+// BucketBalanceAfterGT applies the GT predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterGT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGT(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterGTE applies the GTE predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterGTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGTE(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterLT applies the LT predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterLT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLT(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterLTE applies the LTE predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterLTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLTE(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterContains applies the Contains predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterContains(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContains(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterHasPrefix applies the HasPrefix predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterHasPrefix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasPrefix(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterHasSuffix applies the HasSuffix predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterHasSuffix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasSuffix(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterEqualFold applies the EqualFold predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterEqualFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEqualFold(FieldBucketBalanceAfter, v))
+}
+
+// BucketBalanceAfterContainsFold applies the ContainsFold predicate on the "bucket_balance_after" field.
+func BucketBalanceAfterContainsFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContainsFold(FieldBucketBalanceAfter, v))
+}
+
+// ExpiresAtEQ applies the EQ predicate on the "expires_at" field.
+func ExpiresAtEQ(v time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldExpiresAt, v))
+}
+
+// ExpiresAtNEQ applies the NEQ predicate on the "expires_at" field.
+func ExpiresAtNEQ(v time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNEQ(FieldExpiresAt, v))
+}
+
+// ExpiresAtIn applies the In predicate on the "expires_at" field.
+func ExpiresAtIn(vs ...time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIn(FieldExpiresAt, vs...))
+}
+
+// ExpiresAtNotIn applies the NotIn predicate on the "expires_at" field.
+func ExpiresAtNotIn(vs ...time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotIn(FieldExpiresAt, vs...))
+}
+
+// ExpiresAtGT applies the GT predicate on the "expires_at" field.
+func ExpiresAtGT(v time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGT(FieldExpiresAt, v))
+}
+
+// ExpiresAtGTE applies the GTE predicate on the "expires_at" field.
+func ExpiresAtGTE(v time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGTE(FieldExpiresAt, v))
+}
+
+// ExpiresAtLT applies the LT predicate on the "expires_at" field.
+func ExpiresAtLT(v time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLT(FieldExpiresAt, v))
+}
+
+// ExpiresAtLTE applies the LTE predicate on the "expires_at" field.
+func ExpiresAtLTE(v time.Time) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLTE(FieldExpiresAt, v))
+}
+
+// ExpiresAtIsNil applies the IsNil predicate on the "expires_at" field.
+func ExpiresAtIsNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIsNull(FieldExpiresAt))
+}
+
+// ExpiresAtNotNil applies the NotNil predicate on the "expires_at" field.
+func ExpiresAtNotNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotNull(FieldExpiresAt))
 }
 
 // ReasonEQ applies the EQ predicate on the "reason" field.

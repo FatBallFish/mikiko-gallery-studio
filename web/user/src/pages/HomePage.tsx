@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import type { ImageResult } from '../../../shared/api-types'
+import type { Balance, Capability, ImageResult } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
 import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
-import { Modal, PublicImageDetail, copyText, formatDate, taskTypeLabel, useApp } from '../components'
+import { Modal, PublicImageDetail, copyText, useApp } from '../components'
+import { publicEngagementScore } from '../publicEngagementModel'
 import { useApiResource } from '../useApiResource'
+import { homeAccountReadinessView, homeGalleryCardView, homeModelReadinessView, homePublicGalleryAccess } from './homeGalleryModel'
 
 type FilterMode = 'latest' | 'hot'
 
@@ -26,6 +28,62 @@ const styles = {
     maxWidth: 1200,
     marginInline: 'auto',
     padding: 40,
+  },
+  readiness: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: 14,
+    alignItems: 'stretch',
+    padding: 18,
+    marginBottom: 22,
+    borderRadius: 16,
+    border: '1px solid var(--vault-line)',
+    background: 'linear-gradient(135deg, rgba(191, 161, 106, .14), rgba(255,255,255,.04))',
+  },
+  readinessIntro: {
+    display: 'grid',
+    alignContent: 'center',
+    gap: 6,
+    gridColumn: 'span 2',
+    minWidth: 0,
+  },
+  readinessTitle: {
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 900,
+  },
+  readinessDetail: {
+    margin: 0,
+    color: 'var(--vault-muted)',
+    fontSize: 13,
+  },
+  readinessMetric: {
+    minWidth: 0,
+    padding: 14,
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,.08)',
+    background: 'rgba(8, 10, 16, .38)',
+  },
+  readinessLabel: {
+    display: 'block',
+    marginBottom: 8,
+    color: 'var(--vault-muted)',
+    fontSize: 12,
+    fontWeight: 800,
+  },
+  readinessValue: {
+    display: 'block',
+    color: 'var(--vault-fg)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 16,
+    fontWeight: 900,
+    overflowWrap: 'anywhere',
+  },
+  readinessCta: {
+    display: 'grid',
+    alignContent: 'center',
+    gap: 8,
+    minWidth: 132,
   },
   carousel: {
     position: 'relative',
@@ -162,22 +220,46 @@ export function HomePage() {
   const app = useApp()
   const [filter, setFilter] = useState<FilterMode>('hot')
   const [selected, setSelected] = useState<ImageResult | null>(null)
-  const gallery = useApiResource(() => openApi.listPublicGallery(1, 30, { sort: filter, accessToken: app.session?.token }), [filter, app.session?.token])
+  const capability = useApiResource(() => userApi.getCapabilities(), [app.session?.token])
+  const gallery = useApiResource(() => openApi.listPublicGallery(1, 8, { sort: filter, accessToken: app.session?.token }), [filter, app.session?.token])
 
   const cards = useMemo(() => {
-    return (gallery.data?.items ?? []).map((image) => ({
-      id: image.id,
-      title: image.prompt || image.id,
-      meta: `${taskTypeLabel(image.task_type ?? 'text_to_image')} · ${image.route_model_code || image.abstract_model || '-'} · ${image.quality || '-'} · ${formatDate(image.created_at ?? '')}`,
-      imageUrl: image.url ? userApi.imageAssetUrl(image.url, app.session?.token) : undefined,
-      createdAt: image.created_at ?? '',
-      hotScore: (image.like_count ?? 0) * 2 + (image.favorite_count ?? 0) * 3 + (image.comment_count ?? 0),
-      image,
-      onClick: () => setSelected(image),
-    }))
+    return (gallery.data?.items ?? []).map((image) => {
+      const card = homeGalleryCardView(image)
+      return {
+        id: image.id,
+        title: card.title,
+        meta: card.meta,
+        imageUrl: image.url ? userApi.imageAssetUrl(image.url, app.session?.token) : undefined,
+        createdAt: image.created_at ?? '',
+        hotScore: publicEngagementScore(image),
+        image,
+        onClick: () => void openFeaturedDetail(image),
+      }
+    })
   }, [app.session?.token, gallery.data])
 
+  async function openFeaturedDetail(image: ImageResult) {
+    const access = homePublicGalleryAccess(app.session?.token, image.id)
+    if (access.action === 'login') {
+      app.notify('info', '请先登录后再查看完整作品')
+      app.navigate('login', { returnTo: access.returnTo })
+      return
+    }
+    try {
+      const detail = await openApi.getPublicGalleryImage(access.imageId, { accessToken: app.session?.token })
+      setSelected(detail)
+    } catch {
+      app.notify('error', '作品详情读取失败，请稍后重试')
+    }
+  }
+
   async function toggleReaction(image: ImageResult, kind: 'like' | 'favorite') {
+    if (!app.session?.token) {
+      app.notify('info', kind === 'like' ? '请先登录后再点赞' : '请先登录后再收藏')
+      app.navigate('login', { returnTo: 'home' })
+      return
+    }
     const active = kind === 'like' ? !image.liked_by_viewer : !image.favorited_by_viewer
     try {
       const updated = kind === 'like'
@@ -221,6 +303,15 @@ export function HomePage() {
 
   return (
     <div className="content" style={styles.content}>
+      <AccountReadinessStrip
+        balance={app.balance}
+        capability={capability.data}
+        loadingCapability={capability.loading}
+        onGenerate={() => app.navigate('genpic')}
+        onRecharge={() => app.navigate('checkout')}
+        onOpenGallery={() => app.navigate('public-gallery')}
+      />
+
       <section
         className="carousel"
         style={styles.carousel}
@@ -238,7 +329,7 @@ export function HomePage() {
           <h2 style={styles.heroTitle}>Cinematic Luxury Watch</h2>
           <p style={styles.heroText}>探索如何通过精确的提示词与全能 PRO 模型，生成令人惊叹的高奢产品视觉资产。</p>
           <div style={styles.actionRow}>
-            <HomeButton isActive onClick={(event) => navigateFromButton(event, () => app.navigate('genpic'))}>从参考图开始</HomeButton>
+            <HomeButton isActive disabled={!hasAvailableModels(capability.data)} onClick={(event) => navigateFromButton(event, () => app.navigate('genpic'))}>开始生成</HomeButton>
             <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('public-gallery'))}>查看公开图库</HomeButton>
             <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('api-keys'))}>API 开放平台</HomeButton>
             <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('profile'))}>{app.profile?.avatar_initials ?? '账户'}</HomeButton>
@@ -251,7 +342,7 @@ export function HomePage() {
           <div>
             <h3 id="inspiration-title" style={styles.sectionTitle}>灵感瀑布流</h3>
             <span style={styles.sectionDetail}>
-              {gallery.loading ? '正在刷新公开图库...' : `已同步 ${gallery.data?.items.length ?? 0} 张公开图片`}
+              {gallery.loading ? '正在刷新公开图库...' : `精选 ${gallery.data?.items.length ?? 0} 张公开图片，可直接寻找提示词灵感`}
             </span>
           </div>
           <div style={styles.filterGroup} aria-label="灵感筛选">
@@ -289,14 +380,67 @@ export function HomePage() {
   )
 }
 
+function AccountReadinessStrip({ balance, capability, loadingCapability, onGenerate, onRecharge, onOpenGallery }: {
+  balance: Balance | null
+  capability: Capability | null
+  loadingCapability: boolean
+  onGenerate: () => void
+  onRecharge: () => void
+  onOpenGallery: () => void
+}) {
+  const account = homeAccountReadinessView(balance)
+  const model = homeModelReadinessView(capability, loadingCapability)
+  return (
+    <section style={styles.readiness} aria-label="账户与生图状态">
+      <div style={styles.readinessIntro}>
+        <h2 style={styles.readinessTitle}>开始第一张图</h2>
+        <p style={styles.readinessDetail}>
+          {model.ready ? '账户额度和生图能力已就绪，可以直接进入工作台。' : '当前没有可用生图模型，先浏览公开广场获取提示词灵感。'}
+        </p>
+      </div>
+      <ReadinessMetric label="可用积分" value={account.availableValue} />
+      <ReadinessMetric
+        label="体验额度"
+        value={account.trialValue}
+        detail={account.trialDetail}
+        warning={account.trialWarning}
+      />
+      <ReadinessMetric label="模型状态" value={model.value} detail={model.detail} warning={model.warning} />
+      <div style={styles.readinessCta}>
+        <HomeButton isActive disabled={!model.ready} onClick={onGenerate}>开始生成</HomeButton>
+        <HomeButton onClick={account.secondaryAction === 'gallery' ? onOpenGallery : onRecharge}>
+          {account.secondaryAction === 'gallery' ? '查看广场' : '充值积分'}
+        </HomeButton>
+      </div>
+    </section>
+  )
+}
+
+function ReadinessMetric({ label, value, detail, warning }: { label: string; value: string; detail?: string; warning?: boolean }) {
+  return (
+    <div style={{
+      ...styles.readinessMetric,
+      borderColor: warning ? 'rgba(191, 161, 106, .55)' : 'rgba(255,255,255,.08)',
+    }}>
+      <span style={styles.readinessLabel}>{label}</span>
+      <strong style={{ ...styles.readinessValue, color: warning ? 'var(--vault-gold)' : 'var(--vault-fg)' }}>{value}</strong>
+      {detail ? <p style={styles.smallNote}>{detail}</p> : null}
+    </div>
+  )
+}
+
+function hasAvailableModels(capability: Capability | null) {
+  return Boolean(capability?.model_groups?.length)
+}
+
 function navigateFromButton(event: React.MouseEvent<HTMLButtonElement>, navigate: () => void) {
   event.stopPropagation()
   navigate()
 }
 
-function HomeButton({ children, isActive = false, onClick }: { children: React.ReactNode; isActive?: boolean; onClick: React.MouseEventHandler<HTMLButtonElement> }) {
+function HomeButton({ children, isActive = false, disabled = false, onClick }: { children: React.ReactNode; isActive?: boolean; disabled?: boolean; onClick: React.MouseEventHandler<HTMLButtonElement> }) {
   return (
-    <button type="button" style={buttonStyle(isActive)} onClick={onClick}>
+    <button type="button" style={buttonStyle(isActive, disabled)} disabled={disabled} onClick={onClick}>
       {children}
     </button>
   )
@@ -310,7 +454,7 @@ function FilterButton({ children, active, onClick }: { children: React.ReactNode
   )
 }
 
-function buttonStyle(active: boolean): CSSProperties {
+function buttonStyle(active: boolean, disabled = false): CSSProperties {
   return {
     padding: '6px 16px',
     borderRadius: 20,
@@ -319,6 +463,8 @@ function buttonStyle(active: boolean): CSSProperties {
     color: active ? 'var(--vault-bg)' : 'var(--vault-fg)',
     fontSize: 13,
     fontWeight: active ? 800 : 600,
+    opacity: disabled ? 0.55 : 1,
+    cursor: disabled ? 'not-allowed' : 'pointer',
   }
 }
 

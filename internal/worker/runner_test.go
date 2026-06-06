@@ -334,6 +334,56 @@ func (f fakeTaskService) ExecuteLeasedTask(ctx context.Context, task domainimage
 	return f.executeFunc(ctx, task, owner, preferredProviders)
 }
 
+type fakeCompensationService struct {
+	calls int
+	fn    func(ctx context.Context, limit int) (int, error)
+}
+
+func (f *fakeCompensationService) ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error) {
+	f.calls++
+	return f.fn(ctx, limit)
+}
+
+func TestRunnerProcessOnceProcessesRefundCompensationBeforeTasks(t *testing.T) {
+	var acquireCalls int
+	tasks := fakeTaskService{
+		acquireFunc: func(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
+			acquireCalls++
+			return domainimagetask.Task{}, false, nil
+		},
+		heartbeatFunc: func(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+		executeFunc: func(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error) {
+			return domainimagetask.ExecuteResult{}, nil
+		},
+	}
+	compensation := &fakeCompensationService{
+		fn: func(ctx context.Context, limit int) (int, error) {
+			if limit != 3 {
+				t.Fatalf("expected compensation batch limit 3, got %d", limit)
+			}
+			return 1, nil
+		},
+	}
+	runner := NewRunner(tasks, Config{Owner: "worker-compensation", RefundCompensationBatchSize: 3})
+	runner.SetCompensationService(compensation)
+
+	processed, err := runner.ProcessOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOnce: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected compensation work to count as processed")
+	}
+	if compensation.calls != 1 {
+		t.Fatalf("expected one compensation call, got %d", compensation.calls)
+	}
+	if acquireCalls != 0 {
+		t.Fatalf("expected task acquisition to be skipped when compensation was processed, got %d", acquireCalls)
+	}
+}
+
 func TestProcessClaimedTaskTreatsTerminalHeartbeatRaceAsSuccess(t *testing.T) {
 	heartbeatStarted := make(chan struct{})
 	executeFinished := make(chan struct{})

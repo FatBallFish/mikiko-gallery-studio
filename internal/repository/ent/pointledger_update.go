@@ -213,6 +213,95 @@ func (_u *PointLedgerUpdate) SetNillableFrozenAfter(v *string) *PointLedgerUpdat
 	return _u
 }
 
+// SetBalanceBucket sets the "balance_bucket" field.
+func (_u *PointLedgerUpdate) SetBalanceBucket(v string) *PointLedgerUpdate {
+	_u.mutation.SetBalanceBucket(v)
+	return _u
+}
+
+// SetNillableBalanceBucket sets the "balance_bucket" field if the given value is not nil.
+func (_u *PointLedgerUpdate) SetNillableBalanceBucket(v *string) *PointLedgerUpdate {
+	if v != nil {
+		_u.SetBalanceBucket(*v)
+	}
+	return _u
+}
+
+// SetSourceType sets the "source_type" field.
+func (_u *PointLedgerUpdate) SetSourceType(v string) *PointLedgerUpdate {
+	_u.mutation.SetSourceType(v)
+	return _u
+}
+
+// SetNillableSourceType sets the "source_type" field if the given value is not nil.
+func (_u *PointLedgerUpdate) SetNillableSourceType(v *string) *PointLedgerUpdate {
+	if v != nil {
+		_u.SetSourceType(*v)
+	}
+	return _u
+}
+
+// SetSourceID sets the "source_id" field.
+func (_u *PointLedgerUpdate) SetSourceID(v int64) *PointLedgerUpdate {
+	_u.mutation.ResetSourceID()
+	_u.mutation.SetSourceID(v)
+	return _u
+}
+
+// SetNillableSourceID sets the "source_id" field if the given value is not nil.
+func (_u *PointLedgerUpdate) SetNillableSourceID(v *int64) *PointLedgerUpdate {
+	if v != nil {
+		_u.SetSourceID(*v)
+	}
+	return _u
+}
+
+// AddSourceID adds value to the "source_id" field.
+func (_u *PointLedgerUpdate) AddSourceID(v int64) *PointLedgerUpdate {
+	_u.mutation.AddSourceID(v)
+	return _u
+}
+
+// ClearSourceID clears the value of the "source_id" field.
+func (_u *PointLedgerUpdate) ClearSourceID() *PointLedgerUpdate {
+	_u.mutation.ClearSourceID()
+	return _u
+}
+
+// SetBucketBalanceAfter sets the "bucket_balance_after" field.
+func (_u *PointLedgerUpdate) SetBucketBalanceAfter(v string) *PointLedgerUpdate {
+	_u.mutation.SetBucketBalanceAfter(v)
+	return _u
+}
+
+// SetNillableBucketBalanceAfter sets the "bucket_balance_after" field if the given value is not nil.
+func (_u *PointLedgerUpdate) SetNillableBucketBalanceAfter(v *string) *PointLedgerUpdate {
+	if v != nil {
+		_u.SetBucketBalanceAfter(*v)
+	}
+	return _u
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (_u *PointLedgerUpdate) SetExpiresAt(v time.Time) *PointLedgerUpdate {
+	_u.mutation.SetExpiresAt(v)
+	return _u
+}
+
+// SetNillableExpiresAt sets the "expires_at" field if the given value is not nil.
+func (_u *PointLedgerUpdate) SetNillableExpiresAt(v *time.Time) *PointLedgerUpdate {
+	if v != nil {
+		_u.SetExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (_u *PointLedgerUpdate) ClearExpiresAt() *PointLedgerUpdate {
+	_u.mutation.ClearExpiresAt()
+	return _u
+}
+
 // SetReason sets the "reason" field.
 func (_u *PointLedgerUpdate) SetReason(v string) *PointLedgerUpdate {
 	_u.mutation.SetReason(v)
@@ -322,6 +411,16 @@ func (_u *PointLedgerUpdate) check() error {
 			return &ValidationError{Name: "ledger_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.ledger_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BalanceBucket(); ok {
+		if err := pointledger.BalanceBucketValidator(v); err != nil {
+			return &ValidationError{Name: "balance_bucket", err: fmt.Errorf(`ent: validator failed for field "PointLedger.balance_bucket": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceType(); ok {
+		if err := pointledger.SourceTypeValidator(v); err != nil {
+			return &ValidationError{Name: "source_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.source_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Reason(); ok {
 		if err := pointledger.ReasonValidator(v); err != nil {
 			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "PointLedger.reason": %w`, err)}
@@ -400,6 +499,30 @@ func (_u *PointLedgerUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	}
 	if value, ok := _u.mutation.FrozenAfter(); ok {
 		_spec.SetField(pointledger.FieldFrozenAfter, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BalanceBucket(); ok {
+		_spec.SetField(pointledger.FieldBalanceBucket, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceType(); ok {
+		_spec.SetField(pointledger.FieldSourceType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceID(); ok {
+		_spec.SetField(pointledger.FieldSourceID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSourceID(); ok {
+		_spec.AddField(pointledger.FieldSourceID, field.TypeInt64, value)
+	}
+	if _u.mutation.SourceIDCleared() {
+		_spec.ClearField(pointledger.FieldSourceID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.BucketBalanceAfter(); ok {
+		_spec.SetField(pointledger.FieldBucketBalanceAfter, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ExpiresAt(); ok {
+		_spec.SetField(pointledger.FieldExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.ExpiresAtCleared() {
+		_spec.ClearField(pointledger.FieldExpiresAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.Reason(); ok {
 		_spec.SetField(pointledger.FieldReason, field.TypeString, value)
@@ -623,6 +746,95 @@ func (_u *PointLedgerUpdateOne) SetNillableFrozenAfter(v *string) *PointLedgerUp
 	return _u
 }
 
+// SetBalanceBucket sets the "balance_bucket" field.
+func (_u *PointLedgerUpdateOne) SetBalanceBucket(v string) *PointLedgerUpdateOne {
+	_u.mutation.SetBalanceBucket(v)
+	return _u
+}
+
+// SetNillableBalanceBucket sets the "balance_bucket" field if the given value is not nil.
+func (_u *PointLedgerUpdateOne) SetNillableBalanceBucket(v *string) *PointLedgerUpdateOne {
+	if v != nil {
+		_u.SetBalanceBucket(*v)
+	}
+	return _u
+}
+
+// SetSourceType sets the "source_type" field.
+func (_u *PointLedgerUpdateOne) SetSourceType(v string) *PointLedgerUpdateOne {
+	_u.mutation.SetSourceType(v)
+	return _u
+}
+
+// SetNillableSourceType sets the "source_type" field if the given value is not nil.
+func (_u *PointLedgerUpdateOne) SetNillableSourceType(v *string) *PointLedgerUpdateOne {
+	if v != nil {
+		_u.SetSourceType(*v)
+	}
+	return _u
+}
+
+// SetSourceID sets the "source_id" field.
+func (_u *PointLedgerUpdateOne) SetSourceID(v int64) *PointLedgerUpdateOne {
+	_u.mutation.ResetSourceID()
+	_u.mutation.SetSourceID(v)
+	return _u
+}
+
+// SetNillableSourceID sets the "source_id" field if the given value is not nil.
+func (_u *PointLedgerUpdateOne) SetNillableSourceID(v *int64) *PointLedgerUpdateOne {
+	if v != nil {
+		_u.SetSourceID(*v)
+	}
+	return _u
+}
+
+// AddSourceID adds value to the "source_id" field.
+func (_u *PointLedgerUpdateOne) AddSourceID(v int64) *PointLedgerUpdateOne {
+	_u.mutation.AddSourceID(v)
+	return _u
+}
+
+// ClearSourceID clears the value of the "source_id" field.
+func (_u *PointLedgerUpdateOne) ClearSourceID() *PointLedgerUpdateOne {
+	_u.mutation.ClearSourceID()
+	return _u
+}
+
+// SetBucketBalanceAfter sets the "bucket_balance_after" field.
+func (_u *PointLedgerUpdateOne) SetBucketBalanceAfter(v string) *PointLedgerUpdateOne {
+	_u.mutation.SetBucketBalanceAfter(v)
+	return _u
+}
+
+// SetNillableBucketBalanceAfter sets the "bucket_balance_after" field if the given value is not nil.
+func (_u *PointLedgerUpdateOne) SetNillableBucketBalanceAfter(v *string) *PointLedgerUpdateOne {
+	if v != nil {
+		_u.SetBucketBalanceAfter(*v)
+	}
+	return _u
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (_u *PointLedgerUpdateOne) SetExpiresAt(v time.Time) *PointLedgerUpdateOne {
+	_u.mutation.SetExpiresAt(v)
+	return _u
+}
+
+// SetNillableExpiresAt sets the "expires_at" field if the given value is not nil.
+func (_u *PointLedgerUpdateOne) SetNillableExpiresAt(v *time.Time) *PointLedgerUpdateOne {
+	if v != nil {
+		_u.SetExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (_u *PointLedgerUpdateOne) ClearExpiresAt() *PointLedgerUpdateOne {
+	_u.mutation.ClearExpiresAt()
+	return _u
+}
+
 // SetReason sets the "reason" field.
 func (_u *PointLedgerUpdateOne) SetReason(v string) *PointLedgerUpdateOne {
 	_u.mutation.SetReason(v)
@@ -745,6 +957,16 @@ func (_u *PointLedgerUpdateOne) check() error {
 			return &ValidationError{Name: "ledger_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.ledger_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BalanceBucket(); ok {
+		if err := pointledger.BalanceBucketValidator(v); err != nil {
+			return &ValidationError{Name: "balance_bucket", err: fmt.Errorf(`ent: validator failed for field "PointLedger.balance_bucket": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceType(); ok {
+		if err := pointledger.SourceTypeValidator(v); err != nil {
+			return &ValidationError{Name: "source_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.source_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Reason(); ok {
 		if err := pointledger.ReasonValidator(v); err != nil {
 			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "PointLedger.reason": %w`, err)}
@@ -840,6 +1062,30 @@ func (_u *PointLedgerUpdateOne) sqlSave(ctx context.Context) (_node *PointLedger
 	}
 	if value, ok := _u.mutation.FrozenAfter(); ok {
 		_spec.SetField(pointledger.FieldFrozenAfter, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BalanceBucket(); ok {
+		_spec.SetField(pointledger.FieldBalanceBucket, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceType(); ok {
+		_spec.SetField(pointledger.FieldSourceType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceID(); ok {
+		_spec.SetField(pointledger.FieldSourceID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSourceID(); ok {
+		_spec.AddField(pointledger.FieldSourceID, field.TypeInt64, value)
+	}
+	if _u.mutation.SourceIDCleared() {
+		_spec.ClearField(pointledger.FieldSourceID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.BucketBalanceAfter(); ok {
+		_spec.SetField(pointledger.FieldBucketBalanceAfter, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ExpiresAt(); ok {
+		_spec.SetField(pointledger.FieldExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.ExpiresAtCleared() {
+		_spec.ClearField(pointledger.FieldExpiresAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.Reason(); ok {
 		_spec.SetField(pointledger.FieldReason, field.TypeString, value)

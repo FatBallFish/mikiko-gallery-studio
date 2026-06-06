@@ -2,11 +2,15 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Capability, CapabilityModelGroup, EstimateResult, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset } from '../../../shared/api-types'
 import { toTask, userApi } from '../../../shared/user-api'
-import { EmptyState, ImageLightbox, LoadingState, PublicDetailIcon, StatusPill, copyText, formatDate, publicDetailButton, taskTypeLabel, useApp } from '../components'
+import { EmptyState, ImageLightbox, LoadingState, PublicDetailIcon, copyText, publicDetailButton, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
+import { galleryEditContextKey, parseGalleryEditContext } from './galleryEditContext'
+import { displayPoints, workspaceGenerateReadiness } from './workspaceGenerateReadiness'
+import { workspaceUnavailableImageActionNotice, type WorkspaceImageAction } from './workspaceImageActions'
+import { workspaceTaskCardView, workspaceTaskFailureView, workspaceTaskPendingView } from './workspaceTaskFailure'
 
 type WorkspaceMode = 'reference' | 'text'
-const editContextKey = 'pic-gallery-edit-context'
+type RestoreParameters = { routeModelCode?: string; quality?: string; aspectRatio?: string }
 
 function selectableModels(capability: Capability, taskType: ImageTaskType) {
   return capability.model_groups.filter((item) => item.task_types.includes(taskType))
@@ -71,6 +75,8 @@ export function WorkspacePage() {
   const streamRef = useRef<EventSource | null>(null)
   const completedNoticeRef = useRef<Set<string>>(new Set())
   const feedEndRef = useRef<HTMLDivElement | null>(null)
+  const skipNextModeResetRef = useRef(false)
+  const restoreParametersRef = useRef<RestoreParameters | null>(null)
   const taskType: ImageTaskType = mode === 'reference' ? 'reference_to_image' : editRefs.length ? 'image_edit' : 'text_to_image'
 
   // Load capability and refs on mount only (not on mode change)
@@ -126,20 +132,31 @@ export function WorkspacePage() {
   }, [records])
 
   useEffect(() => {
-    const raw = window.sessionStorage.getItem(editContextKey)
+    const raw = window.sessionStorage.getItem(galleryEditContextKey)
     if (!raw) return
-    window.sessionStorage.removeItem(editContextKey)
+    window.sessionStorage.removeItem(galleryEditContextKey)
     const storedRaw = raw
     let cancelled = false
     async function restoreEditContext() {
       try {
-        const context = JSON.parse(storedRaw) as { prompt?: string; sources?: ReferenceAsset[]; fallbackImageUrl?: string }
-        setMode('text')
-        setPrompt(context.prompt ?? '')
+        const context = parseGalleryEditContext(storedRaw)
+        if (!context) throw new Error('图片上下文读取失败，请从图库重新进入。')
+        skipNextModeResetRef.current = true
+        restoreParametersRef.current = {
+          routeModelCode: context.route_model_code,
+          quality: context.quality,
+          aspectRatio: context.aspect_ratio,
+        }
+        setMode(context.task_type === 'reference_to_image' ? 'reference' : 'text')
+        setPrompt(context.prompt)
         setNegative('')
         const sources = (context.sources ?? []).filter((item) => item.id || item.preview_url)
         if (sources.length) {
-          setEditRefs(sources)
+          if (context.task_type === 'reference_to_image') {
+            setRefs((items) => [...sources, ...items])
+          } else {
+            setEditRefs(sources)
+          }
           app.notify('success', '已恢复图片编辑上下文')
           return
         }
@@ -167,6 +184,10 @@ export function WorkspacePage() {
 
   // Reset form fields when mode tab switches, but keep generated records intact.
   useEffect(() => {
+    if (skipNextModeResetRef.current) {
+      skipNextModeResetRef.current = false
+      return
+    }
     setPrompt('')
     setNegative('')
   }, [mode])
@@ -174,6 +195,11 @@ export function WorkspacePage() {
   useEffect(() => {
     if (capability) {
       const nextModels = selectableModels(capability, taskType)
+      const preferredModel = restoreParametersRef.current?.routeModelCode
+      if (preferredModel && nextModels.some((item) => item.code === preferredModel)) {
+        if (model !== preferredModel) setModel(preferredModel)
+        return
+      }
       if (!nextModels.some((item) => item.code === model)) setModel(nextModels[0]?.code ?? '')
     }
   }, [taskType, capability, model])
@@ -185,10 +211,20 @@ export function WorkspacePage() {
   const counts = useMemo(() => countOptions(selectedModel, capability), [selectedModel, capability])
 
   useEffect(() => {
-    setQuality(qualities[0] ?? '')
-    setRatio(ratios[0] ?? '')
+    if (!capability || !selectedModel) return
+    const restoreParameters = restoreParametersRef.current
+    const waitingForPreferredModel = Boolean(
+      restoreParameters?.routeModelCode
+      && availableModels.some((item) => item.code === restoreParameters.routeModelCode)
+      && selectedModel?.code !== restoreParameters.routeModelCode,
+    )
+    if (waitingForPreferredModel) return
+
+    setQuality(restoreParameters?.quality && qualities.includes(restoreParameters.quality) ? restoreParameters.quality : qualities[0] ?? '')
+    setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
     setCount(counts[0] ?? 0)
-  }, [taskType, selectedModel?.code, qualities, ratios, counts])
+    restoreParametersRef.current = null
+  }, [taskType, capability, selectedModel, availableModels, qualities, ratios, counts])
 
   const parametersReady = Boolean(
     selectedModel
@@ -229,6 +265,14 @@ export function WorkspacePage() {
     }
   }, [app, capability, estimatePayload, model, parametersReady])
 
+  const generateReadiness = workspaceGenerateReadiness({
+    busy,
+    hasModel: Boolean(model && selectedModel),
+    parametersReady,
+    prompt,
+    estimate,
+  })
+
   async function uploadReference(event: ChangeEvent<HTMLInputElement>, target: 'edit' | 'reference') {
     const files = Array.from(event.target.files ?? [])
     if (!files.length) return
@@ -250,8 +294,8 @@ export function WorkspacePage() {
   }
 
   async function createTask() {
-    if (!model || !parametersReady) {
-      app.notify('error', '暂无可用参数，请先在管理后台启用路由模型及参数。')
+    if (generateReadiness.disabled) {
+      app.notify('error', generateReadiness.reason)
       return
     }
     const activeTaskType = taskType
@@ -414,7 +458,7 @@ export function WorkspacePage() {
                 <span className="num" style={{ fontSize: 12, color: model === m.code ? 'var(--accent)' : 'var(--muted)' }}>{m.display_points ? `${m.display_points} ◈` : m.effective_multiplier ? `${m.effective_multiplier}x` : ''}</span>
               </button>
             )) : null}
-            {!loading && !availableModels.length ? <EmptyState title="暂无可用模型" detail="请在管理后台启用路由模型，并确认当前用户分组可见。" /> : null}
+            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail="当前没有可用生图模型，请稍后再试。" /> : null}
           </div>
 
           {selectedModel ? (
@@ -486,12 +530,26 @@ export function WorkspacePage() {
             <span className="num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{estimate?.display_points ?? estimate?.points ?? '...'} ◈</span>
           </div>
           {estimate && !estimate.sufficient ? (
-            <div className="form-error" style={{ marginBottom: 12 }}>积分不足，请降低质量或充值。</div>
+            <div className="form-error" style={{ marginBottom: 12 }}>
+              <div>
+                积分不足，还差 {displayPoints(estimate.insufficient_points)} 积分。
+                当前可用 {displayPoints(estimate.balance?.available_points)} 积分。
+              </div>
+              <div className="action-row" style={{ marginTop: 10, gap: 8 }}>
+                <button className="btn btn-primary" type="button" onClick={() => app.navigate('checkout')}>去充值</button>
+                <button className="btn btn-ghost" type="button" onClick={() => app.navigate('profile')}>兑换积分</button>
+              </div>
+            </div>
+          ) : null}
+          {generateReadiness.reason && !generateReadiness.showRechargeAction ? (
+            <div className="workspace-generate-hint" style={{ marginBottom: 12 }}>
+              {generateReadiness.reason}
+            </div>
           ) : null}
           <button
             className="create-btn btn-primary"
             type="button"
-            disabled={!model || !parametersReady || !estimate?.sufficient || prompt.trim().length < 8 || busy}
+            disabled={generateReadiness.disabled}
             onClick={() => void createTask()}
           >
             {busy ? (
@@ -537,7 +595,10 @@ export function WorkspacePage() {
                 onOpenGallery={() => app.navigate('gallery')}
                 onPreviewImage={(url, alt) => setPreviewImage({ url, alt })}
                 accessToken={app.session?.token}
-                onUnavailable={() => app.notify('info', '该工具暂不可用')}
+                onUnavailable={(action) => {
+                  const notice = workspaceUnavailableImageActionNotice(action)
+                  app.notify('info', `${notice.title}：${notice.detail}`)
+                }}
               />
             ))}
             <div ref={feedEndRef} />
@@ -573,17 +634,19 @@ function GenerationRecord({ task, onCopyPrompt, onUseReference, onPublishImage, 
   onOpenGallery: () => void
   onPreviewImage: (url: string, alt: string) => void
   accessToken?: string
-  onUnavailable: () => void
+  onUnavailable: (action: WorkspaceImageAction) => void
 }) {
+  const card = workspaceTaskCardView(task)
+  const pending = workspaceTaskPendingView(task)
   return (
     <article className="generation-record">
       <header className="generation-record-head">
         <div className="record-avatar" aria-hidden="true">PG</div>
         <div>
           <div className="record-title">
-            <b>{taskTypeLabel(task.task_type)}</b>
-            <span>{formatDate(task.created_at)}</span>
-            <StatusPill status={task.status} />
+            <b>{card.taskTypeLabel}</b>
+            <span>{card.createdAtLabel}</span>
+            <span className={`status-pill ${card.statusTone}`}>{card.statusLabel}</span>
           </div>
           <p>{task.prompt}</p>
           <div className="record-params">
@@ -625,15 +688,12 @@ function GenerationRecord({ task, onCopyPrompt, onUseReference, onPublishImage, 
           </div>
         </>
       ) : isTerminalStatus(task.status) ? (
-        <div className="record-pending record-pending-failed">
-          <strong>{task.status === 'failed' || task.status === 'rejected' ? '生成失败' : '没有可用结果'}</strong>
-          <p>{task.failure_reason || '本次任务没有生成图片，请调整提示词、参考图或参数后重试。'}</p>
-        </div>
+        <TaskFailureBlock task={task} />
       ) : (
         <div className="record-pending">
           <span className="spinner" />
-          <strong>{task.status === 'queued' ? '排队中' : task.status === 'running' ? '生成中' : '等待结果'}</strong>
-          <p>任务状态会通过实时连接自动更新，完成后图片会出现在这里。</p>
+          <strong>{pending.title}</strong>
+          <p>{pending.detail}</p>
         </div>
       )}
 
@@ -642,6 +702,26 @@ function GenerationRecord({ task, onCopyPrompt, onUseReference, onPublishImage, 
         {publicDetailButton('查看图库', <PublicDetailIcon name="group" />, onOpenGallery)}
       </footer>
     </article>
+  )
+}
+
+function TaskFailureBlock({ task }: { task: ImageTask }) {
+  const view = workspaceTaskFailureView(task)
+  return (
+    <div className="record-pending record-pending-failed">
+      <strong>{view.title}</strong>
+      <p>{view.reason}</p>
+      {view.meta.length ? (
+        <dl className="record-failure-meta">
+          {view.meta.map((item) => (
+            <div key={item.label}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
   )
 }
 
@@ -662,7 +742,7 @@ function GeneratedImage({ image, alt, fallbackRatio, accessToken, onUseReference
   onUseReference: (url: string) => Promise<void>
   onPublish: (image: ImageResult) => Promise<void>
   onPreview: (url: string, alt: string) => void
-  onUnavailable: () => void
+  onUnavailable: (action: WorkspaceImageAction) => void
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
   const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)
@@ -677,8 +757,8 @@ function GeneratedImage({ image, alt, fallbackRatio, accessToken, onUseReference
         <button type="button" title="编辑" onClick={() => void onUseReference(imageUrl)}>编辑</button>
         <button type="button" title="下载" onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}>下载</button>
         <button type="button" title="发布" onClick={() => void onPublish(image)}>发布</button>
-        <button type="button" title="标记" onClick={onUnavailable}>标记</button>
-        <button type="button" title="更多" onClick={onUnavailable}>更多</button>
+        <button type="button" title="标记" onClick={() => onUnavailable('标记')}>标记</button>
+        <button type="button" title="更多" onClick={() => onUnavailable('更多')}>更多</button>
       </figcaption>
     </figure>
   )

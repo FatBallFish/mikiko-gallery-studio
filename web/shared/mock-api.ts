@@ -1,4 +1,4 @@
-import type { AdminMetric, AdminSession, AdminUser, ApiKey, AuditLog, Balance, Capability, ConfigItem, CreateTaskRequest, EndpointDoc, EstimateRequest, EstimateResult, ImageTask, LedgerEntry, ModelRoute, PriceRow, ProviderHealth, ReferenceAsset, ReviewItem, UserProfile } from './api-types'
+import type { AdminMetric, AdminSession, AdminUser, ApiKey, AuditLog, Balance, Capability, ConfigItem, CreateApiKeyRequest, CreateTaskRequest, EndpointDoc, EstimateRequest, EstimateResult, ImageTask, LedgerEntry, ModelRoute, PriceRow, ProviderHealth, ReferenceAsset, ReviewItem, UserProfile } from './api-types'
 import { adminMetrics, demoCapability, demoImages, demoProfile, endpointDocs, initialAudit, initialConfig, initialKeys, initialLedger, initialPrices, initialReviews, initialRoutes, initialTasks, initialUsers, providerHealth } from './mock-data'
 
 const wait = (ms = 320) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -228,10 +228,10 @@ class MockPicGalleryApi {
     return clone(this.keys)
   }
 
-  async createApiKey(input: { name: string; scopes: string[]; rpm_limit: number; expires_at: string | null }): Promise<ApiKey> {
+  async createApiKey(input: CreateApiKeyRequest & { rpm_limit: number; expires_at: string | null }): Promise<ApiKey> {
     await wait(380)
     if (input.name.trim().length < 3) throw new Error('密钥名称至少 3 个字符')
-    const key: ApiKey = { id: id('key'), name: input.name, access_key: `pk_live_${Math.random().toString(36).slice(2, 14)}`, secret_preview: `sk_once_${Math.random().toString(36).slice(2, 18)}`, status: 'active', scopes: input.scopes, rpm_limit: input.rpm_limit, expires_at: input.expires_at, created_at: now().slice(0, 10), last_used_at: null }
+    const key: ApiKey = { id: id('key'), name: input.name, access_key: `pk_live_${Math.random().toString(36).slice(2, 14)}`, secret_preview: `sk_once_${Math.random().toString(36).slice(2, 18)}`, status: 'active', scopes: input.scopes ?? ['images:write', 'images:read'], total_quota_points: input.total_quota_points ?? null, daily_quota_points: input.daily_quota_points ?? null, total_quota_used_points: '0.00000', daily_quota_used_points: '0.00000', rpm_limit: input.rpm_limit, expires_at: input.expires_at, created_at: now().slice(0, 10), last_used_at: null }
     this.keys.unshift(key)
     return clone(key)
   }

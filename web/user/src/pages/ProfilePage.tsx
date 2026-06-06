@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react'
-import type { Balance, GenerationPreferences, LedgerEntry, UserProfile } from '../../../shared/api-types'
+import type { Balance, BalanceBucket, GenerationPreferences, LedgerEntry, UserProfile } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, Field, LoadingState, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
+import { balanceBucketLabel, bucketExpiryText, normalizeBalanceBuckets, profileLedgerRows } from './profileBalanceModel'
 
 const layout = {
   content: { padding: 40, maxWidth: 960, marginInline: 'auto', width: '100%' } as const,
@@ -84,7 +85,7 @@ export function ProfilePage() {
               <div className="balance-label" style={{ fontSize: 14, color: 'var(--vault-muted)' }}>可用积分余额 (◈) / 冻结 {balance?.frozen_points ?? app.balance?.frozen_points ?? '0.00000'}</div>
             </div>
             <div className="stack" style={{ display: 'grid', gap: 12 }}>
-              <button className="btn btn-primary" type="button" onClick={() => app.navigate('api-keys')}>充值积分</button>
+              <button className="btn btn-primary" type="button" onClick={() => app.navigate('checkout')}>充值积分</button>
               <button className="btn" type="button" onClick={() => setShowRedeemInput((v) => !v)}>{showRedeemInput ? '取消' : '使用兑换码'}</button>
               {showRedeemInput ? (
                 <form onSubmit={redeemCode} style={{ display: 'grid', gap: 12 }}>
@@ -97,6 +98,7 @@ export function ProfilePage() {
               <div style={planRowStyle}><span style={{ color: 'var(--vault-muted)' }}>当前套餐</span><span style={{ fontWeight: 700 }}>{balance?.plan_name ?? profile?.tier ?? '免费计划'}</span></div>
               <div style={planRowStyle}><span style={{ color: 'var(--vault-muted)' }}>用户分组</span><span className="num">{profile?.group ?? 'DEFAULT (1.0x)'}</span></div>
             </div>
+            <BalanceBuckets balance={balance} />
           </div>
 
           {profile ? <ProfileEditor profile={profile} busy={busy} onSave={saveProfile} /> : null}
@@ -109,13 +111,19 @@ export function ProfilePage() {
           </div>
           {!ledger.length ? <EmptyState title="暂无流水" detail="生成或兑换后会在这里记录。" /> : null}
           <div className="list" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {ledger.map((entry) => (
+            {profileLedgerRows(ledger).map((entry) => (
               <div key={entry.id} className="list-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, paddingBlock: 12, borderBottom: '1px solid var(--vault-line)' }}>
-                <div className="list-item-main" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className="list-item-main" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div className="list-item-title" style={{ fontSize: 15, fontWeight: 700 }}>{entry.title}</div>
-                  <div className="list-item-meta" style={{ fontSize: 12, color: 'var(--vault-muted)', fontFamily: 'JetBrains Mono, monospace' }}>{entry.occurred_at} · {entry.detail}</div>
+                  <div className="ledger-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <span style={ledgerTagStyle('bucket')}>{entry.bucketLabel}</span>
+                    <span style={ledgerTagStyle('source')}>{entry.ledgerTypeLabel}</span>
+                    <span style={ledgerTagStyle('source')}>{entry.sourceLabel}</span>
+                    <span style={ledgerTagStyle('source')}>{entry.expiryText}</span>
+                  </div>
+                  <div className="list-item-meta" style={{ fontSize: 12, color: 'var(--vault-muted)', fontFamily: 'JetBrains Mono, monospace' }}>{entry.occurredAt} · {entry.detail}</div>
                 </div>
-                <div className={`list-item-value ${entry.type === 'credit' ? 'plus' : ''}`} style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: entry.type === 'credit' ? 'var(--vault-gold)' : 'var(--vault-fg)' }}>{entry.amount}</div>
+                <div className={`list-item-value ${entry.amountTone === 'credit' ? 'plus' : ''}`} style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: entry.amountTone === 'credit' ? 'var(--vault-gold)' : 'var(--vault-fg)' }}>{entry.amount}</div>
               </div>
             ))}
           </div>
@@ -130,6 +138,48 @@ export function ProfilePage() {
 
 const cardTitleStyle = { fontSize: 14, fontWeight: 800, color: 'var(--vault-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8 }
 const planRowStyle = { display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 12, gap: 12 }
+
+function BalanceBuckets({ balance }: { balance: Balance | null }) {
+  const buckets = normalizeBalanceBuckets(balance)
+  if (!buckets.length) return null
+  return (
+    <div style={{ marginTop: 24, display: 'grid', gap: 10 }}>
+      {buckets.map((bucket) => (
+        <div key={`${bucket.bucket}-${bucket.expires_at ?? 'never'}`} style={bucketCardStyle(bucket)}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+            <span style={{ fontWeight: 800 }}>{bucket.label ?? balanceBucketLabel(bucket.bucket)}</span>
+            <span className="num" style={{ fontWeight: 800 }}>{bucket.available_points}</span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: bucket.expire_warning ? 'var(--vault-gold)' : 'var(--vault-muted)' }}>
+            {bucketExpiryText(bucket)}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ledgerTagStyle(tone: 'bucket' | 'source') {
+  return {
+    border: '1px solid var(--vault-line)',
+    borderRadius: 6,
+    padding: '3px 7px',
+    color: tone === 'bucket' ? 'var(--vault-gold)' : 'var(--vault-muted)',
+    background: tone === 'bucket' ? 'rgba(191, 161, 106, .08)' : 'rgba(255,255,255,.035)',
+    fontSize: 11,
+    fontWeight: 800,
+    fontFamily: 'JetBrains Mono, monospace',
+  } as const
+}
+
+function bucketCardStyle(bucket: BalanceBucket) {
+  return {
+    border: `1px solid ${bucket.expire_warning ? 'rgba(191, 161, 106, .55)' : 'var(--vault-line)'}`,
+    borderRadius: 8,
+    padding: 14,
+    background: bucket.bucket === 'trial' ? 'rgba(191, 161, 106, .08)' : 'rgba(255,255,255,.03)',
+  } as const
+}
 
 function ProfileEditor({ profile, busy, onSave }: { profile: UserProfile; busy: boolean; onSave: (patch: Partial<UserProfile>) => Promise<void> }) {
   const [name, setName] = useState(profile.display_name)

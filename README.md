@@ -87,6 +87,15 @@ make user-web-dev
 make admin-web-dev
 ```
 
+两个 Vite 应用默认把 `/api` 和 `/docs` 代理到 `http://127.0.0.1:8080`。如需改后端地址，可在启动前设置：
+
+```bash
+VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make user-web-dev
+VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
+```
+
+也可以设置 `VITE_API_BASE_URL` 让前端直接请求完整后端地址；当同时存在时，开发服务器代理优先使用 `VITE_API_PROXY_TARGET`。
+
 ## 当前统一脚本入口
 
 - `make dev`：启动 Go API 服务

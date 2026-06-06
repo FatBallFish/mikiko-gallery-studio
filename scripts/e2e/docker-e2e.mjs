@@ -135,6 +135,20 @@ function bearer(token) {
   return { Authorization: `Bearer ${token}` }
 }
 
+function findLedgerItem(items, ledgerType, balanceBucket, sourceType) {
+  return (items || []).find(item =>
+    item?.ledger_type === ledgerType &&
+    item?.balance_bucket === balanceBucket &&
+    item?.bucket_type === balanceBucket &&
+    item?.source_type === sourceType
+  )
+}
+
+function decimalNumber(value) {
+  const parsed = Number.parseFloat(String(value ?? '0'))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function base64Url(buffer) {
   return Buffer.from(buffer).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
@@ -236,6 +250,12 @@ async function bootstrapUser() {
   const session = data(login)
   state.user.email = email
   state.user.token = session.access_token
+  const signupGrant = session.signup_grant
+  if (!signupGrant?.granted) fail('New user login did not include granted signup trial credits', { body: login.text })
+  if (signupGrant.balance?.trial_points !== '20.00000') fail('Signup trial grant did not return the expected trial bucket balance', { signupGrant })
+  if (!signupGrant.balance?.buckets?.some(bucket => bucket.bucket === 'trial' && bucket.expires_at)) {
+    fail('Signup trial grant did not expose an expiring trial balance bucket', { signupGrant })
+  }
 
   const profile = await expectStatus('GET', `${BASE_URL}/api/agent/user/v1/profile`, 200, {
     headers: bearer(state.user.token),
@@ -267,22 +287,49 @@ async function seedPoints() {
 async function happyPathAgentBilling() {
   await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/plans`, 200, { headers: bearer(state.user.token) })
   await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/subscription`, 200, { headers: bearer(state.user.token) })
-  await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/balance`, 200, { headers: bearer(state.user.token) })
-  await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/ledger`, 200, { headers: bearer(state.user.token) })
+  const initialBalance = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/balance`, 200, { headers: bearer(state.user.token) })
+  if (data(initialBalance).trial_points !== '20.00000') fail('Balance summary did not keep signup trial points after admin seed', { body: initialBalance.text })
+  if (!data(initialBalance).buckets?.some(bucket => bucket.bucket === 'trial' && bucket.expires_at)) {
+    fail('Balance summary did not include the trial bucket after admin seed', { body: initialBalance.text })
+  }
+  const initialRechargePoints = decimalNumber(data(initialBalance).recharge_points)
+  const signupLedger = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/ledger`, 200, { headers: bearer(state.user.token) })
+  if (!findLedgerItem(data(signupLedger).items, 'trial_grant', 'trial', 'signup')) {
+    fail('Ledger did not include signup trial grant bucket metadata', { body: signupLedger.text })
+  }
   const estimate = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0`, 200, {
     headers: bearer(state.user.token),
   })
   if (!data(estimate).estimated_points) fail('Estimate response did not include estimated_points')
 
-  const order = await expectStatus('POST', `${BASE_URL}/api/agent/billing/v1/orders`, 201, {
+  const options = await expectStatus('GET', `${BASE_URL}/api/agent/cashier/v1/options`, 200, { headers: bearer(state.user.token) })
+  if (!data(options).visible_methods?.some(method => method.method === 'mock')) fail('Cashier options did not expose mock payment in local E2E', { body: options.text })
+  if (!data(options).plans?.some(plan => plan.plan_code === 'basic-monthly')) fail('Cashier options did not expose the basic points package', { body: options.text })
+
+  const order = await expectStatus('POST', `${BASE_URL}/api/agent/cashier/v1/orders`, 201, {
     headers: bearer(state.user.token),
-    body: { plan_code: 'basic-monthly', provider: 'alipay' },
+    body: { purchase_type: 'plan', plan_code: 'basic-monthly', visible_method: 'mock' },
   })
   state.ids.orderId = String(data(order).id)
+  if (data(order).provider !== 'mock' || data(order).visible_method !== 'mock' || data(order).status !== 'pending') {
+    fail('Cashier order did not use the mock provider pending flow', { body: order.text })
+  }
+  if (data(order).payment_display?.type !== 'mock' || data(order).payment_url || data(order).payment_display?.payment_url) {
+    fail('Cashier order did not use in-page mock payment without legacy payment_url', { body: order.text })
+  }
   await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/orders`, 200, { headers: bearer(state.user.token) })
-  await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/orders/${state.ids.orderId}`, 200, { headers: bearer(state.user.token) })
-  await expectStatus('POST', `${BASE_URL}/api/agent/billing/v1/orders/${state.ids.orderId}/cancel`, [200, 409], { headers: bearer(state.user.token) })
-  return { orderId: state.ids.orderId }
+  await expectStatus('GET', `${BASE_URL}/api/agent/cashier/v1/orders/${state.ids.orderId}`, 200, { headers: bearer(state.user.token) })
+  const paid = await expectStatus('POST', `${BASE_URL}/api/agent/cashier/v1/orders/${state.ids.orderId}/mock-pay`, 200, { headers: bearer(state.user.token) })
+  if (data(paid).status !== 'completed' || !data(paid).ledger_id) fail('Mock cashier payment did not complete and attach a ledger id', { body: paid.text })
+
+  const rechargedBalance = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/balance`, 200, { headers: bearer(state.user.token) })
+  const rechargeDelta = decimalNumber(data(rechargedBalance).recharge_points) - initialRechargePoints
+  if (Math.abs(rechargeDelta - 100) > 0.00001) fail('Mock cashier payment did not credit 100 recharge points', { before: data(initialBalance), after: data(rechargedBalance) })
+  const rechargeLedger = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/ledger`, 200, { headers: bearer(state.user.token) })
+  if (!findLedgerItem(data(rechargeLedger).items, 'recharge', 'recharge', 'payment_order')) {
+    fail('Ledger did not include recharge bucket metadata after mock cashier payment', { body: rechargeLedger.text })
+  }
+  return { orderId: state.ids.orderId, rechargeDelta: rechargeDelta.toFixed(5) }
 }
 
 async function happyPathApiKeys() {
@@ -525,9 +572,34 @@ async function happyPathAdmin() {
     body: { group_code: groupCode, task_type: 'text_to_image', provider_code: providerCode, priority: 2, weight_percent: 100, fallback_order: 1, enabled: false },
   })
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/call-records`, 200, { headers: bearer(state.admin.token) })
+  const missingRouteCode = `missing-route-${RUN_ID}`.toLowerCase()
+  const failedTask = await request('POST', `${BASE_URL}/api/agent/image/v1/tasks`, {
+    headers: {
+      ...bearer(state.user.token),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `e2e-missing-route-${RUN_ID}`,
+    },
+    body: {
+      task_type: 'text_to_image',
+      prompt: 'docker e2e route preflight failure',
+      route_model_code: missingRouteCode,
+      requested_quality: 'auto',
+      requested_size: '1024x1024',
+      requested_output_image_count: 1,
+      response_mode: 'async',
+    },
+  })
+  if (failedTask.status !== 404 || failedTask.json?.error?.code !== 'MODEL_ROUTE_NOT_FOUND') {
+    fail('Missing route task did not return the expected preflight error', { status: failedTask.status, body: failedTask.text })
+  }
+  const failedCallRecords = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/call-records?page=1&page_size=20&status=failed&error_code=MODEL_ROUTE_NOT_FOUND&user_id=${state.ids.userId}&source_channel=web`, 200, { headers: bearer(state.admin.token) })
+  const failedRecord = (data(failedCallRecords).items || []).find(item => item.abstract_model === missingRouteCode && item.error_code === 'MODEL_ROUTE_NOT_FOUND')
+  if (!failedRecord) {
+    fail('Admin call records did not expose the missing route preflight failure through status/error_code filters', { body: failedCallRecords.text })
+  }
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/image-reviews`, 200, { headers: bearer(state.admin.token) })
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/audit-logs`, 200, { headers: bearer(state.admin.token) })
-  return { groupCode, codeId: state.ids.codeId, providerCode, routeId: state.ids.routeId, manualUserId: state.ids.manualUserId }
+  return { groupCode, codeId: state.ids.codeId, providerCode, routeId: state.ids.routeId, manualUserId: state.ids.manualUserId, failedCallRecordTaskId: failedRecord.task_id }
 }
 
 async function corsSweep(openapi) {
@@ -680,7 +752,8 @@ function defaultBody(method, template) {
     '/api/agent/auth/v1/password/change': { old_password: 'wrong-password', new_password: 'new-password-123' },
     '/api/agent/auth/v1/password/reset/request': { email: state.user.email },
     '/api/agent/auth/v1/password/reset/confirm': { email: state.user.email, code: '123456', new_password: 'reset-password-123' },
-    '/api/agent/billing/v1/orders': { plan_code: 'basic-monthly', provider: 'alipay' },
+    '/api/agent/billing/v1/orders': { plan_code: 'basic-monthly', provider: 'mock' },
+    '/api/agent/cashier/v1/orders': { purchase_type: 'plan', plan_code: 'basic-monthly', visible_method: 'mock' },
     '/api/agent/image/v1/reference-assets': { filename: `sweep-${RUN_ID}.png`, mime_type: 'image/png', content_base64: TINY_PNG_BASE64 },
     '/api/agent/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep prompt', abstract_model: 'basic', requested_quality: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
     '/api/agent/user/v1/profile': { display_name: `E2E ${RUN_ID}` },
@@ -760,8 +833,8 @@ async function main() {
     })
     const openapi = await loadOpenAPI()
     await step('user and admin web routes return app shell', async () => {
-      await checkHtmlApp('user web', USER_WEB_URL, ['landing', 'login', 'home', 'genpic', 'gallery', 'api-keys', 'profile', 'docs'])
-      await checkHtmlApp('admin web', ADMIN_WEB_URL, ['login', 'overview', 'config', 'routing', 'pricing', 'reviews', 'users', 'redeem', 'call-records', 'provider-models', 'audit', 'health'])
+      await checkHtmlApp('user web', USER_WEB_URL, ['landing', 'login', 'home', 'genpic', 'gallery', 'public-gallery', 'checkout', 'api-keys', 'profile', 'docs'])
+      await checkHtmlApp('admin web', ADMIN_WEB_URL, ['login', 'overview', 'readiness', 'config', 'routing', 'pricing', 'reviews', 'users', 'user-groups', 'redeem', 'cashier', 'call-records', 'provider-models', 'audit', 'health'])
     })
     await step('frontend shared API client unwraps auth tokens', frontendApiClientSmoke)
     await step('CORS preflight sweep for browser origins', async () => corsSweep(openapi))

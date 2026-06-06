@@ -43,11 +43,24 @@ func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
 	_, err := store.CreateAdmin(ctx, domainadminauth.AdminUser{
 		Email:        email,
 		PasswordHash: adminauthservice.HashPassword(password),
-		Role:         "super_admin",
+		Role:         defaultAdminSeedRole(),
 		Status:       "active",
 	})
 	if err != nil {
 		slog.Warn("failed to seed default admin", "err", err)
+	}
+}
+
+func defaultAdminSeedRole() string {
+	role := strings.ToLower(strings.TrimSpace(os.Getenv("PIC_GALLERY_ADMIN_ROLE")))
+	switch role {
+	case "":
+		return domainadminauth.RoleAdmin
+	case domainadminauth.RoleAdmin, domainadminauth.RoleSuperAdmin:
+		return role
+	default:
+		slog.Warn("invalid PIC_GALLERY_ADMIN_ROLE, falling back to admin", "role", role)
+		return domainadminauth.RoleAdmin
 	}
 }
 

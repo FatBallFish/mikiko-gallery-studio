@@ -69,6 +69,7 @@ func RunWorker() error {
 		HeartbeatInterval: 10 * time.Second,
 		PollInterval:      500 * time.Millisecond,
 	})
+	runner.SetCompensationService(billingSvc)
 
 	slog.Info("starting pic-gallery worker")
 	err = runner.Run(context.Background())

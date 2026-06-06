@@ -136,6 +136,7 @@ type GalleryImage struct {
 	TaskID            string                  `json:"task_id"`
 	UserID            int64                   `json:"user_id,omitempty"`
 	Prompt            string                  `json:"prompt,omitempty"`
+	PromptExcerpt     string                  `json:"prompt_excerpt,omitempty"`
 	AbstractModel     string                  `json:"abstract_model,omitempty"`
 	RouteModelCode    string                  `json:"route_model_code,omitempty"`
 	TaskType          string                  `json:"task_type,omitempty"`
@@ -161,7 +162,6 @@ type GalleryImage struct {
 	AuthorName        string                  `json:"author_name,omitempty"`
 	LikeCount         int                     `json:"like_count"`
 	FavoriteCount     int                     `json:"favorite_count"`
-	CommentCount      int                     `json:"comment_count"`
 	LikedByViewer     bool                    `json:"liked_by_viewer,omitempty"`
 	FavoritedByViewer bool                    `json:"favorited_by_viewer,omitempty"`
 	CreatedAt         time.Time               `json:"created_at"`
@@ -174,14 +174,16 @@ type GalleryReferenceAsset struct {
 }
 
 type GalleryListRequest struct {
-	Page          int
-	PageSize      int
-	Status        string
-	ReviewOnly    bool
-	Sort          string
-	ViewerUserID  int64
-	LikedOnly     bool
-	FavoritedOnly bool
+	Page           int
+	PageSize       int
+	Status         string
+	ReviewOnly     bool
+	Sort           string
+	RouteModelCode string
+	TaskType       string
+	ViewerUserID   int64
+	LikedOnly      bool
+	FavoritedOnly  bool
 }
 
 type GalleryPage struct {

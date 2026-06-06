@@ -8,13 +8,24 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/google/uuid"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadmincallrecord "github.com/fatballfish/pic-gallery/internal/domain/admincallrecord"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+type adminCallRecordStaticRoutingSource struct {
+	snapshot modelhub.ModelRoutingSnapshot
+}
+
+func (s adminCallRecordStaticRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return s.snapshot, nil
+}
 
 func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	ctx := context.Background()
@@ -71,6 +82,25 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 			EstimatedPoints:       "2.00000",
 			ActualPoints:          "2.00000",
 		},
+		{
+			UserID:                42,
+			APIKeyID:              101,
+			SourceChannel:         "openapi",
+			ID:                    "dddddddd-dddd-dddd-dddd-dddddddddddd",
+			Status:                domainimagetask.StatusFailed,
+			Provider:              "openrouter",
+			AbstractModel:         "plus",
+			TaskType:              string(provider.TaskTypeTextToImage),
+			Prompt:                "failed with another code",
+			RequestedQuality:      "auto",
+			ResolvedQualityBucket: "2k",
+			OutputImageCount:      3,
+			ReferenceImageCount:   1,
+			EstimatedPoints:       "12.00000",
+			ActualPoints:          "0.00000",
+			ErrorCode:             "another_error",
+			ErrorMessage:          "another failure",
+		},
 	}
 	for _, task := range seedTasks {
 		if err := imageTasks.Save(ctx, task); err != nil {
@@ -93,6 +123,7 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 		Page:          1,
 		PageSize:      10,
 		Status:        domainimagetask.StatusFailed,
+		ErrorCode:     "provider_error",
 		Provider:      "openrouter",
 		SourceChannel: "openapi",
 		UserID:        42,
@@ -131,4 +162,132 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	if record.AttemptCount != 2 {
 		t.Fatalf("expected 2 attempts, got %d", record.AttemptCount)
 	}
+
+	errorFilteredPage, err := store.ListCallRecords(ctx, domainadmincallrecord.ListRequest{
+		Page:      1,
+		PageSize:  10,
+		Status:    domainimagetask.StatusFailed,
+		ErrorCode: "provider_error",
+		Provider:  "openrouter",
+	})
+	if err != nil {
+		t.Fatalf("ListCallRecords by error_code: %v", err)
+	}
+	if errorFilteredPage.Total != 1 || len(errorFilteredPage.Items) != 1 || errorFilteredPage.Items[0].TaskID != seedTasks[0].ID {
+		t.Fatalf("expected error_code filter to return only first task, got %#v", errorFilteredPage)
+	}
+}
+
+func TestAdminCallRecordStoreListsCreateTaskRoutePreflightFailures(t *testing.T) {
+	testCases := []struct {
+		name          string
+		taskID        string
+		routeCode     string
+		snapshot      modelhub.ModelRoutingSnapshot
+		expectedCode  string
+		expectedModel string
+	}{
+		{
+			name:          "missing route model",
+			taskID:        "11111111-1111-4111-8111-111111111111",
+			routeCode:     "missing-route-model-code-over-32-chars",
+			snapshot:      modelhub.ModelRoutingSnapshot{},
+			expectedCode:  "MODEL_ROUTE_NOT_FOUND",
+			expectedModel: "missing-route-model-code-over-32-chars",
+		},
+		{
+			name:      "route model has no candidate",
+			taskID:    "22222222-2222-4222-8222-222222222222",
+			routeCode: "plus",
+			snapshot: modelhub.ModelRoutingSnapshot{
+				RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+				Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: string(provider.TaskTypeTextToImage), Quality: "2k", BasePoints: "4.00000", Enabled: true}},
+				ProviderModels: []modelhub.ProviderCandidate{
+					{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{string(provider.TaskTypeTextToImage)}, SupportedQualities: []string{"1k"}},
+				},
+				Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+			},
+			expectedCode:  "MODEL_ROUTE_NO_CANDIDATE",
+			expectedModel: "plus",
+		},
+		{
+			name:      "route model price missing",
+			taskID:    "33333333-3333-4333-8333-333333333333",
+			routeCode: "plus",
+			snapshot: modelhub.ModelRoutingSnapshot{
+				RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+				ProviderModels: []modelhub.ProviderCandidate{
+					{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{string(provider.TaskTypeTextToImage)}, SupportedQualities: []string{"2k"}},
+				},
+				Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+			},
+			expectedCode:  "ROUTE_MODEL_PRICE_MISSING",
+			expectedModel: "plus",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client, err := repoent.Open(dialect.SQLite, "file:"+tc.taskID+"?mode=memory&cache=shared&_fk=1")
+			if err != nil {
+				t.Fatalf("open ent client: %v", err)
+			}
+			defer client.Close()
+			if err := client.Schema.Create(ctx); err != nil {
+				t.Fatalf("create schema: %v", err)
+			}
+
+			imageTasks := NewImageTaskStore(client)
+			taskService := imagetaskservice.NewServiceWithProvidersAndStore(routePreflightTaskConfig(), nil, imageTasks)
+			taskService.SetModelRoutingSource(adminCallRecordStaticRoutingSource{snapshot: tc.snapshot})
+
+			_, err = taskService.CreateTask(ctx, domainimagetask.CreateRequest{
+				TaskID:           tc.taskID,
+				UserID:           902,
+				SourceChannel:    "web",
+				RouteModelCode:   tc.routeCode,
+				TaskType:         string(provider.TaskTypeTextToImage),
+				Prompt:           "preflight failure should be visible to ops",
+				RequestedSize:    "auto",
+				RequestedQuality: "auto",
+				OutputImageCount: 1,
+			})
+			if err == nil {
+				t.Fatal("expected CreateTask to fail preflight")
+			}
+
+			callRecords := NewAdminCallRecordStore(client)
+			page, err := callRecords.ListCallRecords(ctx, domainadmincallrecord.ListRequest{
+				Page:      1,
+				PageSize:  10,
+				Status:    domainimagetask.StatusFailed,
+				ErrorCode: tc.expectedCode,
+			})
+			if err != nil {
+				t.Fatalf("ListCallRecords: %v", err)
+			}
+			if page.Total != 1 || len(page.Items) != 1 {
+				t.Fatalf("expected one failed call record for %s, got %#v", tc.expectedCode, page)
+			}
+			record := page.Items[0]
+			if record.TaskID != tc.taskID || record.UserID != 902 || record.Status != domainimagetask.StatusFailed {
+				t.Fatalf("unexpected record identity/status %#v", record)
+			}
+			if record.ErrorCode == nil || *record.ErrorCode != tc.expectedCode {
+				t.Fatalf("expected error code %s, got %#v", tc.expectedCode, record.ErrorCode)
+			}
+			if record.AbstractModel != tc.expectedModel || record.ActualPoints != "0.00000" {
+				t.Fatalf("unexpected model/points fields %#v", record)
+			}
+		})
+	}
+}
+
+func routePreflightTaskConfig() config.Config {
+	cfg := config.Config{}
+	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"plus": "2k"}
+	cfg.GenerationLimits.MaxImageCount = 5
+	cfg.GenerationLimits.ReferenceImageMaxCount = 4
+	return cfg
 }

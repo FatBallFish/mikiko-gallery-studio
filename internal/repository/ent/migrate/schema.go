@@ -97,7 +97,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "email", Type: field.TypeString, Size: 255},
 		{Name: "password_hash", Type: field.TypeString, Size: 255},
-		{Name: "role", Type: field.TypeString, Size: 32, Default: "ops_admin"},
+		{Name: "role", Type: field.TypeString, Size: 32, Default: "admin"},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
 	}
 	// AdminUsersTable holds the schema information for the "admin_users" table.
@@ -277,7 +277,7 @@ var (
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "queued"},
 		{Name: "prompt", Type: field.TypeString, Size: 2147483647},
 		{Name: "negative_prompt", Type: field.TypeString, Nullable: true, Size: 2147483647},
-		{Name: "abstract_model", Type: field.TypeString, Size: 32},
+		{Name: "abstract_model", Type: field.TypeString, Size: 64},
 		{Name: "requested_quality", Type: field.TypeString, Size: 16, Default: "auto"},
 		{Name: "resolved_quality_bucket", Type: field.TypeString, Size: 16, Default: "1k"},
 		{Name: "requested_size", Type: field.TypeString, Nullable: true, Size: 32},
@@ -552,6 +552,12 @@ var (
 		{Name: "plan_id", Type: field.TypeInt64},
 		{Name: "order_no", Type: field.TypeString, Unique: true, Size: 64},
 		{Name: "provider", Type: field.TypeString, Size: 32},
+		{Name: "purchase_type", Type: field.TypeString, Size: 32, Default: "plan"},
+		{Name: "visible_method", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "provider_type", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "provider_instance_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "provider_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "payment_display", Type: field.TypeJSON, Nullable: true},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
 		{Name: "amount_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
@@ -564,8 +570,11 @@ var (
 		{Name: "failure_reason", Type: field.TypeString, Nullable: true, Size: 255},
 		{Name: "expires_at", Type: field.TypeTime},
 		{Name: "paid_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "closed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "refunded_at", Type: field.TypeTime, Nullable: true},
+		{Name: "ledger_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "provider_payload", Type: field.TypeJSON, Nullable: true},
 	}
 	// PaymentOrdersTable holds the schema information for the "payment_orders" table.
@@ -590,19 +599,39 @@ var (
 				Columns: []*schema.Column{PaymentOrdersColumns[6]},
 			},
 			{
+				Name:    "paymentorder_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentOrdersColumns[3], PaymentOrdersColumns[29]},
+			},
+			{
+				Name:    "paymentorder_provider_type_trade_no",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[18]},
+			},
+			{
+				Name:    "paymentorder_provider_instance_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[10]},
+			},
+			{
 				Name:    "paymentorder_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[7]},
+				Columns: []*schema.Column{PaymentOrdersColumns[13]},
 			},
 			{
 				Name:    "paymentorder_trade_no",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[12]},
+				Columns: []*schema.Column{PaymentOrdersColumns[18]},
 			},
 			{
 				Name:    "paymentorder_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[17]},
+				Columns: []*schema.Column{PaymentOrdersColumns[23]},
+			},
+			{
+				Name:    "paymentorder_completed_at",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[25]},
 			},
 		},
 	}
@@ -663,6 +692,11 @@ var (
 		{Name: "change_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "balance_after", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "frozen_after", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "balance_bucket", Type: field.TypeString, Size: 32, Default: "recharge"},
+		{Name: "source_type", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "source_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "bucket_balance_after", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "reason", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "operator_admin_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, Size: 128},
@@ -704,6 +738,16 @@ var (
 				Columns: []*schema.Column{PointLedgersColumns[8]},
 			},
 			{
+				Name:    "pointledger_balance_bucket",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[12]},
+			},
+			{
+				Name:    "pointledger_source_type_source_id",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[13], PointLedgersColumns[14]},
+			},
+			{
 				Name:    "pointledger_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{PointLedgersColumns[1]},
@@ -711,7 +755,7 @@ var (
 			{
 				Name:    "pointledger_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{PointLedgersColumns[14]},
+				Columns: []*schema.Column{PointLedgersColumns[19]},
 			},
 		},
 	}

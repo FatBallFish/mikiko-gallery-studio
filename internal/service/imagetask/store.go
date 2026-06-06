@@ -363,6 +363,12 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 				continue
 			}
 			image := s.decoratePublicImage(galleryImageFromMemoryTask(task, result), req.ViewerUserID)
+			if req.RouteModelCode != "" && !publicGalleryRouteModelMatches(image, req.RouteModelCode) {
+				continue
+			}
+			if req.TaskType != "" && !strings.EqualFold(image.TaskType, req.TaskType) {
+				continue
+			}
 			if req.LikedOnly && !image.LikedByViewer {
 				continue
 			}
@@ -374,8 +380,8 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		if req.Sort == "hot" {
-			left := items[i].LikeCount*2 + items[i].FavoriteCount*3 + items[i].CommentCount
-			right := items[j].LikeCount*2 + items[j].FavoriteCount*3 + items[j].CommentCount
+			left := publicGalleryHotScore(items[i])
+			right := publicGalleryHotScore(items[j])
 			if left != right {
 				return left > right
 			}
@@ -383,6 +389,14 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 		return items[i].ID > items[j].ID
 	})
 	return sliceGalleryPage(items, page, pageSize), nil
+}
+
+func publicGalleryRouteModelMatches(image domainimagetask.GalleryImage, routeModelCode string) bool {
+	routeModelCode = strings.TrimSpace(routeModelCode)
+	if routeModelCode == "" {
+		return true
+	}
+	return strings.EqualFold(image.RouteModelCode, routeModelCode) || (image.RouteModelCode == "" && strings.EqualFold(image.AbstractModel, routeModelCode))
 }
 
 func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string) (domainimagetask.GalleryImage, error) {
@@ -459,7 +473,6 @@ func (s *MemoryStore) decoratePublicImage(image domainimagetask.GalleryImage, vi
 	if stats != nil {
 		image.LikeCount = stats.likes
 		image.FavoriteCount = stats.favorites
-		image.CommentCount = stats.comments
 	}
 	image.AuthorName = fmt.Sprintf("user-%d", image.UserID)
 	if viewerUserID > 0 {
@@ -469,6 +482,10 @@ func (s *MemoryStore) decoratePublicImage(image domainimagetask.GalleryImage, vi
 		}
 	}
 	return image
+}
+
+func publicGalleryHotScore(image domainimagetask.GalleryImage) int {
+	return image.LikeCount*2 + image.FavoriteCount*3
 }
 
 func (s *MemoryStore) DeleteByID(_ context.Context, userID int64, taskID string) error {

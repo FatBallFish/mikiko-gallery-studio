@@ -9,16 +9,18 @@ import (
 )
 
 type Config struct {
-	Owner              string
-	LeaseTTL           time.Duration
-	HeartbeatInterval  time.Duration
-	PollInterval       time.Duration
-	PreferredProviders []string
+	Owner                       string
+	LeaseTTL                    time.Duration
+	HeartbeatInterval           time.Duration
+	PollInterval                time.Duration
+	PreferredProviders          []string
+	RefundCompensationBatchSize int
 }
 
 type Runner struct {
-	tasks taskService
-	cfg   Config
+	tasks        taskService
+	compensation compensationService
+	cfg          Config
 }
 
 type executeOutcome struct {
@@ -30,6 +32,10 @@ type taskService interface {
 	AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error)
 	HeartbeatTask(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error)
 	ExecuteLeasedTask(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error)
+}
+
+type compensationService interface {
+	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
 }
 
 func NewRunner(tasks taskService, cfg Config) *Runner {
@@ -45,7 +51,14 @@ func NewRunner(tasks taskService, cfg Config) *Runner {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 500 * time.Millisecond
 	}
+	if cfg.RefundCompensationBatchSize <= 0 {
+		cfg.RefundCompensationBatchSize = 5
+	}
 	return &Runner{tasks: tasks, cfg: cfg}
+}
+
+func (r *Runner) SetCompensationService(service compensationService) {
+	r.compensation = service
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -76,6 +89,16 @@ func (r *Runner) Run(ctx context.Context) error {
 }
 
 func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
+	if r.compensation != nil {
+		processed, err := r.compensation.ProcessRefundFinalizeFailures(ctx, r.cfg.RefundCompensationBatchSize)
+		if err != nil {
+			return false, err
+		}
+		if processed > 0 {
+			return true, nil
+		}
+	}
+
 	task, ok, err := r.tasks.AcquireNextTask(ctx, r.cfg.Owner, r.cfg.LeaseTTL)
 	if err != nil {
 		return false, err

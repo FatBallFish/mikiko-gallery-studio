@@ -47,6 +47,12 @@ api_key:
 billing:
   cny_per_point: "0.31250"
   points_scale: 5
+  signup_trial:
+    enabled: true
+    points: "20.00000"
+    valid_days: 7
+    expiry_reminder_days: 2
+    grant_once_per_user: true
   auto_quality_default_by_group:
     basic: 1k
     plus: 2k
@@ -75,6 +81,13 @@ billing:
   reference_image_extra:
     first: "0.10000"
     additional: "0.05000"
+
+cashier:
+  enabled: true
+  mock_enabled: true
+  order_timeout_seconds: 1800
+  max_pending_orders_per_user: 3
+  site_base_url: http://localhost:8080
 
 generation_limits:
   max_image_count: 5

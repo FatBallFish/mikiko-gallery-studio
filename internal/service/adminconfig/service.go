@@ -212,6 +212,23 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			Items: []domainadminconfig.Item{
 				valueItem("payments", "enabled", false),
 				valueItem("payments", "providers", []string{"alipay", "wxpay"}),
+				valueItem("payments", "custom_amount_enabled", true),
+				valueItem("payments", "custom_amount_min_cny", "1.00000"),
+				valueItem("payments", "custom_amount_max_cny", "999.00000"),
+				valueItem("payments", "custom_amount_cny_per_point", cfg.Billing.CNYPerPoint),
+				valueItem("payments", "visible_methods", []map[string]any{
+					{
+						"method":               "mock",
+						"label":                "Mock 支付",
+						"enabled":              true,
+						"source_provider_type": "mock",
+						"scheduler_strategy":   "round_robin",
+						"display_order":        10,
+						"description":          "测试环境模拟支付链路",
+					},
+				}),
+				valueItem("payments", "provider_instances", []map[string]any{}),
+				valueItem("payments", "scheduler_state", map[string]any{}),
 			},
 		},
 		{

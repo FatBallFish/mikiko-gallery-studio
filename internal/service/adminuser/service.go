@@ -34,12 +34,41 @@ func NewServiceWithStore(store Store, billing Billing) *Service {
 func (s *Service) ListUsers(ctx context.Context, req domainadminuser.ListRequest) (domainadminuser.ListPage, error) {
 	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
 	req.Query = strings.TrimSpace(req.Query)
+	req.GroupCode = strings.ToLower(strings.TrimSpace(req.GroupCode))
+	rawSortBy := strings.TrimSpace(req.SortBy)
+	req.SortBy = normalizeUserSortBy(req.SortBy)
+	if rawSortBy != "" && req.SortBy == "" {
+		return domainadminuser.ListPage{}, errs.BadRequest("invalid sort_by")
+	}
+	req.SortDir = normalizeSortDir(req.SortDir)
 	rawStatus := strings.TrimSpace(req.Status)
 	req.Status = normalizeStatus(rawStatus)
 	if rawStatus != "" && req.Status == "" {
 		return domainadminuser.ListPage{}, errs.BadRequest("invalid status")
 	}
 	return s.store.ListUsers(ctx, req)
+}
+
+func normalizeUserSortBy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "created_at":
+		return "created_at"
+	case "points", "balance", "available_points":
+		return "points"
+	case "last_seen_at", "last_active", "updated_at":
+		return "last_seen_at"
+	default:
+		return ""
+	}
+}
+
+func normalizeSortDir(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "asc":
+		return "asc"
+	default:
+		return "desc"
+	}
 }
 
 func (s *Service) GetUserDetail(ctx context.Context, userID int64) (domainadminuser.Detail, error) {
@@ -157,6 +186,7 @@ func (s *Service) AssignUserGroups(ctx context.Context, req domainadminuser.Mult
 	if req.UserID <= 0 {
 		return domainadminuser.UserSummary{}, errs.BadRequest("invalid user_id")
 	}
+	req.GroupIDs = normalizeGroupIDs(req.GroupIDs)
 	if len(req.GroupIDs) == 0 {
 		return domainadminuser.UserSummary{}, errs.BadRequest("group_ids is required")
 	}
@@ -265,7 +295,29 @@ func normalizeUserGroupWrite(req domainadminuser.UserGroupWriteRequest, requireC
 	if req.Status == "" {
 		req.Status = "active"
 	}
+	if req.IsDefault && req.Status != "enabled" {
+		return domainadminuser.UserGroupWriteRequest{}, errs.BadRequest("default user group must be enabled")
+	}
 	return req, nil
+}
+
+func normalizeGroupIDs(groupIDs []int64) []int64 {
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(groupIDs))
+	items := make([]int64, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		items = append(items, groupID)
+	}
+	return items
 }
 
 func normalizeStoreError(err error, conflictMessage string) error {

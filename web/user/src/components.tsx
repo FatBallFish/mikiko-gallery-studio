@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../shared/api-types'
+import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
+import { publicEngagementStats } from './publicEngagementModel'
+import { topbarStatusChips } from './topbarStatus'
 import type { AppContextValue, RouteId, Toast } from './types'
 
 export const AppContext = createContext<AppContextValue | null>(null)
@@ -110,9 +113,9 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
         </div>
         {showPublicStats ? (
           <div className="public-detail-stats">
-            <span>点赞 <b>{image.like_count ?? 0}</b></span>
-            <span>收藏 <b>{image.favorite_count ?? 0}</b></span>
-            <span>评论 <b>{image.comment_count ?? 0}</b></span>
+            {publicEngagementStats(image).map((item) => (
+              <span key={item.key}>{item.label} <b>{item.value}</b></span>
+            ))}
           </div>
         ) : null}
         <div className="public-detail-actions">
@@ -130,7 +133,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   )
 }
 
-export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'public-gallery', 'api-keys', 'profile', 'docs']
+export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'checkout', 'api-keys', 'profile', 'docs']
 
 function HomeIcon() {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
@@ -154,17 +157,26 @@ function DotIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4" /></svg>
 }
 
+function avatarMenuIcon(icon: AvatarMenuIcon) {
+  if (icon === 'profile') return <UserIcon />
+  if (icon === 'key') return <KeyIcon />
+  return <DotIcon />
+}
+
 export const navItems: Array<{ route: RouteId; short: string; label: string; icon: React.ReactNode }> = [
   { route: 'home', short: 'HOME', label: '首页', icon: <HomeIcon /> },
   { route: 'genpic', short: 'GEN', label: '生图', icon: <SparklesIcon /> },
   { route: 'gallery', short: 'IMG', label: '图库', icon: <GridIcon /> },
   { route: 'public-gallery', short: 'PUB', label: '公开广场', icon: <GridIcon /> },
+  { route: 'checkout', short: 'PAY', label: '充值', icon: <DotIcon /> },
 ]
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const app = useApp()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const statusChips = topbarStatusChips(app.balance)
+  const accountMenuItems = avatarMenuItems()
 
   useEffect(() => {
     if (!menuOpen) return undefined
@@ -174,8 +186,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     window.addEventListener('mousedown', close)
     return () => window.removeEventListener('mousedown', close)
   }, [menuOpen])
-
-  const unavailable = () => app.notify('info', '该功能暂不可用')
 
   return (
     <div className="vault-shell">
@@ -224,9 +234,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <button type="button" onClick={() => app.navigate('docs')}>开发文档</button>
           </div>
           <div className="topbar-tools">
-            <span className="top-chip">消息 <b>3</b></span>
-            <span className="top-chip">活动 <b>2</b></span>
-            <button className="balance-chip" type="button" onClick={() => app.navigate('profile')}>
+            {statusChips.map((chip) => (
+              <span key={chip.label} className="top-chip" title={chip.detail}>
+                {chip.label} <b>{chip.value}</b>
+              </span>
+            ))}
+            <button className="balance-chip" type="button" onClick={() => app.navigate('checkout')}>
               <span>◈</span>
               <b>{app.balance?.available_points ?? '...'}</b>
             </button>
@@ -243,10 +256,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </button>
               {menuOpen ? (
                 <div className="avatar-menu glass-panel" role="menu">
-                  <button type="button" role="menuitem" onClick={unavailable}><UserIcon />个人主页</button>
-                  <button type="button" role="menuitem" onClick={unavailable}><DotIcon />积分套餐</button>
-                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); app.navigate('api-keys') }}><KeyIcon />API密钥</button>
-                  <button type="button" role="menuitem" onClick={unavailable}><DotIcon />帮助中心</button>
+                  {accountMenuItems.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      role="menuitem"
+                      data-permission={item.permission}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        app.navigate(item.route)
+                      }}
+                    >
+                      {avatarMenuIcon(item.icon)}
+                      {item.label}
+                    </button>
+                  ))}
                   <hr />
                   <button type="button" role="menuitem" className="danger" onClick={() => { setMenuOpen(false); void app.logout() }}><LogoutIcon />退出登录</button>
                 </div>
@@ -392,7 +416,15 @@ export function taskTypeLabel(type: ImageTaskType | string) {
 }
 
 export function formatDate(date: string) {
-  return date.slice(0, 16)
+  if (!date) return '-'
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return date
+  const year = parsed.getUTCFullYear()
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getUTCDate()).padStart(2, '0')
+  const hour = String(parsed.getUTCHours()).padStart(2, '0')
+  const minute = String(parsed.getUTCMinutes()).padStart(2, '0')
+  return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
 export async function copyText(text: string) {

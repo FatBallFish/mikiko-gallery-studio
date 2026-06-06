@@ -5,9 +5,34 @@ import (
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 )
+
+func TestDefaultAdminSeedRoleDefaultsToAdmin(t *testing.T) {
+	t.Setenv("PIC_GALLERY_ADMIN_ROLE", "")
+
+	if got := defaultAdminSeedRole(); got != domainadminauth.RoleAdmin {
+		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleAdmin)
+	}
+}
+
+func TestDefaultAdminSeedRoleAllowsExplicitSuperAdmin(t *testing.T) {
+	t.Setenv("PIC_GALLERY_ADMIN_ROLE", " super_admin ")
+
+	if got := defaultAdminSeedRole(); got != domainadminauth.RoleSuperAdmin {
+		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleSuperAdmin)
+	}
+}
+
+func TestDefaultAdminSeedRoleRejectsUnknownRole(t *testing.T) {
+	t.Setenv("PIC_GALLERY_ADMIN_ROLE", "ops_admin")
+
+	if got := defaultAdminSeedRole(); got != domainadminauth.RoleAdmin {
+		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleAdmin)
+	}
+}
 
 func TestRunWiresAPIKeySigningSecretEncryptionKey(t *testing.T) {
 	cfg := config.Config{

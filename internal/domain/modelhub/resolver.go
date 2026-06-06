@@ -411,7 +411,7 @@ func ResolveRouteQuality(routeModel RouteModelConfig, taskType, requestedQuality
 			return "", err
 		}
 		if !hasRoutePrice(routeModel.ID, taskType, quality, prices) {
-			return "", errs.New(409, errs.CodeConflict, "model pricing not found")
+			return "", errs.New(409, errs.CodeRouteModelPriceMissing, "model pricing not found")
 		}
 		return quality, nil
 	}
@@ -423,7 +423,7 @@ func ResolveRouteQuality(routeModel RouteModelConfig, taskType, requestedQuality
 		source = "first_configured_price"
 	}
 	if quality == "" {
-		return "", errs.New(409, errs.CodeConflict, "model pricing not found")
+		return "", errs.New(409, errs.CodeRouteModelPriceMissing, "model pricing not found")
 	}
 	slog.Warn("route model auto quality fell back to default bucket",
 		"route_model_id", routeModel.ID,
@@ -605,14 +605,14 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		}
 	}
 	if routeModel.ID == 0 {
-		return ResolvedRequest{}, errs.New(404, errs.CodeNotFound, "route model not found")
+		return ResolvedRequest{}, errs.New(404, errs.CodeModelRouteNotFound, "route model not found")
 	}
 	if routeModel.Visibility == "hidden" {
-		return ResolvedRequest{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+		return ResolvedRequest{}, errs.New(403, errs.CodeModelRouteNotVisible, "route model is not visible")
 	}
 	matchedGroups := matchedActiveGroups(routing, req.UserGroupCodes, routeModel.ID)
 	if _, ok := effectiveMultiplier(routeModel, matchedGroups); !ok {
-		return ResolvedRequest{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+		return ResolvedRequest{}, errs.New(403, errs.CodeModelRouteNotVisible, "route model is not visible")
 	}
 	quality := strings.ToLower(strings.TrimSpace(req.RequestedQuality))
 	quality, err = ResolveRouteQuality(routeModel, req.TaskType, req.RequestedQuality, req.RequestedSize, r.cfg.Billing.AutoQualityDefaultByGroup, routing.Prices)
@@ -656,7 +656,7 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
-		return ResolvedRequest{}, errs.New(409, errs.CodeConflict, "route model has no available candidate")
+		return ResolvedRequest{}, errs.New(409, errs.CodeModelRouteNoCandidate, "route model has no available candidate")
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].Priority != candidates[j].Priority {

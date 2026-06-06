@@ -2,19 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReviewItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
-
-type ReviewDecision = 'approve' | 'reject' | 'unpublish'
+import { reviewDefaultReason, reviewRowView, reviewStatusLabel, reviewStatusTabs } from './reviewRows'
+import type { ReviewDecision } from './reviewRows'
 
 type DrawerState = { item: ReviewItem; decision: ReviewDecision } | null
-
-const statusLabel: Record<string, string> = {
-  private: '待申请',
-  pending: '待审核',
-  pending_review: '待审核',
-  approved: '已通过',
-  rejected: '已驳回',
-  unpublished: '已下架',
-}
 
 export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ReviewItem[]>([])
@@ -45,7 +36,7 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
 
   const openDrawer = (item: ReviewItem, decision: ReviewDecision) => {
     setDrawer({ item, decision })
-    setReason(decision === 'approve' ? '内容质量稳定，准许公开展示。' : decision === 'reject' ? '内容不符合公开展示规范。' : '运营复核后下架公开展示。')
+    setReason(reviewDefaultReason(decision))
   }
 
   const submitDecision = async () => {
@@ -54,7 +45,7 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
     try {
       const updated = await adminApi.decideReview(drawer.item.image_id ?? drawer.item.id, drawer.decision, reason)
       setRows((current) => current.map((item) => item.id === updated.id ? updated : item))
-      onFeedback('审核决策已提交', `${updated.title}: ${statusLabel[updated.status] ?? updated.status}`)
+      onFeedback('审核决策已提交', `${updated.title}: ${reviewStatusLabel(updated.status)}`)
       setDrawer(null)
     } finally {
       setBusy(false)
@@ -70,27 +61,31 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
       <section className="pg-admin-card ops-surface full-main review-workspace">
         <section className="main-lane table-lane no-divider">
           <div className="micro-tabs as-buttons">
-            {(['pending_review', 'approved', 'rejected', 'unpublished', 'all'] as const).map((tab) => <button key={tab} type="button" className={filter === tab ? 'active' : ''} onClick={() => setFilter(tab)}>{tab === 'all' ? '全部' : statusLabel[tab]}</button>)}
+            {reviewStatusTabs.map((tab) => <button key={tab} type="button" className={filter === tab ? 'active' : ''} onClick={() => setFilter(tab)}>{tab === 'all' ? '全部' : reviewStatusLabel(tab)}</button>)}
           </div>
 
           {!visibleRows.length ? <EmptyBlock title="没有匹配的审核项" detail="切换筛选或等待用户提交公开申请。" /> : (
-            <>
-              <div className="table-head review-grid"><span>图片</span><span>用户</span><span>类型</span><span>上下文</span><span>状态</span><span>动作</span></div>
-              {visibleRows.map((row) => (
-                <div key={row.id} className="table-row review-grid">
-                  <div className="review-image-cell"><img src={adminApi.imageReviewUrl(row.image_id ?? row.id, accessToken)} alt="" /><div><strong>{row.title}</strong><p>{row.created_at}</p></div></div>
+            <div className="admin-data-grid review-grid">
+              <div className="table-head"><span>图片</span><span>用户</span><span>类型</span><span>上下文</span><span>状态</span><span>动作</span></div>
+              {visibleRows.map((rawRow) => {
+                const row = reviewRowView(rawRow)
+                return (
+                <div key={row.raw.id} className="table-row">
+                  <div className="review-image-cell"><img src={adminApi.imageReviewUrl(row.imageID, accessToken)} alt="" /><div><strong>{row.title}</strong><p>{row.createdAtLabel}</p></div></div>
                   <span>{row.owner}</span>
-                  <span>{row.task_type}</span>
-                  <span>{row.reason}</span>
-                  <Badge tone={row.status === 'approved' ? 'success' : row.status === 'pending_review' ? 'warning' : 'danger'}>{statusLabel[row.status] ?? row.status}</Badge>
+                  <span>{row.taskTypeLabel}</span>
+                  <span>{row.context}</span>
+                  <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
                   <div className="row-actions buttons">
-                    <button type="button" className="btn small" onClick={() => openDrawer(row, 'approve')} disabled={row.status === 'approved'}>通过</button>
-                    <button type="button" className="ghost small" onClick={() => openDrawer(row, 'reject')} disabled={row.status === 'rejected'}>驳回</button>
-                    <button type="button" className="ghost small danger-text" onClick={() => openDrawer(row, 'unpublish')} disabled={row.status === 'unpublished'}>下架</button>
+                    {row.actions.map((action) => (
+                      <button key={action.decision} type="button" className={action.tone === 'primary' ? 'btn small' : 'ghost small danger-text'} onClick={() => openDrawer(row.raw, action.decision)}>{action.label}</button>
+                    ))}
+                    {!row.actions.length ? <span className="muted-action">{row.terminalActionLabel}</span> : null}
                   </div>
                 </div>
-              ))}
-            </>
+                )
+              })}
+            </div>
           )}
         </section>
         {drawer ? (

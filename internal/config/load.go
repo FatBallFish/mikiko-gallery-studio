@@ -167,6 +167,22 @@ func applyDefaults(cfg *Config) {
 		cfg.APIKey.SigningSecretEncryptionKey = "local-dev-api-key-signing-secret-encryption-key"
 	}
 	cfg.Billing.PointsScale = 5
+	if strings.TrimSpace(cfg.Billing.SignupTrial.Points) == "" {
+		cfg.Billing.SignupTrial.Points = "20.00000"
+	}
+	if cfg.Billing.SignupTrial.ValidDays == 0 {
+		cfg.Billing.SignupTrial.ValidDays = 7
+	}
+	if cfg.Billing.SignupTrial.ExpiryReminderDays == 0 {
+		cfg.Billing.SignupTrial.ExpiryReminderDays = 2
+	}
+	cfg.Billing.SignupTrial.GrantOncePerUser = true
+	if cfg.Cashier.OrderTimeoutSeconds == 0 {
+		cfg.Cashier.OrderTimeoutSeconds = 1800
+	}
+	if cfg.Cashier.MaxPendingOrdersPerUser == 0 {
+		cfg.Cashier.MaxPendingOrdersPerUser = 3
+	}
 	if len(cfg.Billing.AutoQualityDefaultByGroup) == 0 {
 		cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
 	}

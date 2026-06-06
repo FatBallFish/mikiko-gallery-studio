@@ -30,6 +30,7 @@ type ListRequest struct {
 	Page          int
 	PageSize      int
 	Status        string
+	ErrorCode     string
 	Provider      string
 	SourceChannel string
 	UserID        int64

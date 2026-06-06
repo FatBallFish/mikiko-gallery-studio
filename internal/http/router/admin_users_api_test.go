@@ -12,14 +12,18 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
+	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -56,9 +60,12 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
 	billingStore := entstore.NewBillingStore(client, 5)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
+	apiKeySvc := apikeyservice.NewServiceWithSigningSecretKey(entstore.NewAPIKeyStore(client), cfg.APIKey.SigningSecretEncryptionKey)
+	imageTaskStore := entstore.NewImageTaskStore(client)
+	taskSvc := imagetaskservice.NewServiceWithStore(cfg, imageTaskStore)
 	adminUsers := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
 	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
-	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, auditSvc, adminUsers)
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, taskSvc, nil, billingSvc, apiKeySvc, adminAuth, auditSvc, adminUsers)
 	handler := NewWithAPI(api)
 
 	adminToken := loginAdminForUserTest(t, handler)
@@ -194,6 +201,12 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 			} `json:"user"`
 			Balance struct {
 				AvailablePoints string `json:"available_points"`
+				GiftPoints      string `json:"gift_points"`
+				Buckets         []struct {
+					Bucket          string `json:"bucket"`
+					AvailablePoints string `json:"available_points"`
+					SourceType      string `json:"source_type"`
+				} `json:"buckets"`
 			} `json:"balance"`
 			RecentLedger []struct {
 				LedgerType   string `json:"ledger_type"`
@@ -206,6 +219,73 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	}
 	if detailResp.Data.User.ID != managedUser.ID || detailResp.Data.Balance.AvailablePoints != "12.00000" || len(detailResp.Data.RecentLedger) != 1 {
 		t.Fatalf("unexpected detail response %#v", detailResp)
+	}
+	if detailResp.Data.Balance.GiftPoints != "12.00000" || len(detailResp.Data.Balance.Buckets) != 1 || detailResp.Data.Balance.Buckets[0].Bucket != "gift" || detailResp.Data.Balance.Buckets[0].AvailablePoints != "12.00000" || detailResp.Data.Balance.Buckets[0].SourceType != "admin_adjust" {
+		t.Fatalf("expected admin detail balance buckets, got %#v", detailResp.Data.Balance)
+	}
+
+	if _, err := billingSvc.CreateOrder(t.Context(), domainbilling.CreateOrderRequest{UserID: managedUser.ID, PlanCode: "basic-monthly", Provider: "mock", PurchaseType: "plan", VisibleMethod: "mock", ProviderType: "mock", ProviderInstanceID: 1}); err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if _, err := apiKeySvc.CreateKey(t.Context(), apikeyservice.CreateRequest{UserID: managedUser.ID, Name: "ops-key", GroupCode: "basic"}); err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	const detailTaskID = "11111111-1111-4111-8111-111111111111"
+	if err := imageTaskStore.Save(t.Context(), domainimagetask.Task{
+		UserID:                managedUser.ID,
+		ID:                    detailTaskID,
+		Status:                domainimagetask.StatusQueued,
+		AbstractModel:         "basic",
+		RouteModelCode:        "basic",
+		TaskType:              "text_to_image",
+		Prompt:                "ops detail prompt",
+		RequestedQuality:      "1k",
+		ResolvedQualityBucket: "1k",
+		AspectRatio:           "1:1",
+		OutputImageCount:      1,
+		EstimatedPoints:       "1.00000",
+		ActualPoints:          "0.00000",
+		ResponseMode:          "async",
+		SavePolicy:            "private",
+	}); err != nil {
+		t.Fatalf("Save task: %v", err)
+	}
+
+	enrichedDetailReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/users/1", nil)
+	enrichedDetailReq.Header.Set("Authorization", "Bearer "+adminToken)
+	enrichedDetailRec := httptest.NewRecorder()
+	handler.ServeHTTP(enrichedDetailRec, enrichedDetailReq)
+	if enrichedDetailRec.Code != http.StatusOK {
+		t.Fatalf("expected enriched user detail 200, got %d body=%s", enrichedDetailRec.Code, enrichedDetailRec.Body.String())
+	}
+	var enrichedDetailResp struct {
+		Data struct {
+			RecentOrders []struct {
+				OrderNo string `json:"order_no"`
+				Status  string `json:"status"`
+			} `json:"recent_orders"`
+			RecentTasks []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"recent_tasks"`
+			APIKeys []struct {
+				Name      string `json:"name"`
+				AccessKey string `json:"access_key"`
+				Status    string `json:"status"`
+			} `json:"api_keys"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(enrichedDetailRec.Body).Decode(&enrichedDetailResp); err != nil {
+		t.Fatalf("decode enriched detail response: %v", err)
+	}
+	if len(enrichedDetailResp.Data.RecentOrders) != 1 || enrichedDetailResp.Data.RecentOrders[0].OrderNo == "" {
+		t.Fatalf("expected recent order in detail, got %#v", enrichedDetailResp.Data.RecentOrders)
+	}
+	if len(enrichedDetailResp.Data.RecentTasks) != 1 || enrichedDetailResp.Data.RecentTasks[0].ID != detailTaskID {
+		t.Fatalf("expected recent task in detail, got %#v", enrichedDetailResp.Data.RecentTasks)
+	}
+	if len(enrichedDetailResp.Data.APIKeys) != 1 || enrichedDetailResp.Data.APIKeys[0].Name != "ops-key" || enrichedDetailResp.Data.APIKeys[0].AccessKey == "" {
+		t.Fatalf("expected api key summary in detail, got %#v", enrichedDetailResp.Data.APIKeys)
 	}
 
 	missingKeyReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users/1/points-adjustments", bytes.NewBufferString(`{"change_points":"1.00000","reason":"missing key"}`))
@@ -243,6 +323,14 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	if createGroupRec.Code != http.StatusCreated {
 		t.Fatalf("expected create group 201, got %d body=%s", createGroupRec.Code, createGroupRec.Body.String())
 	}
+	createDefaultGroupReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/user-groups", bytes.NewBufferString(`{"group_code":"promo","group_name":"Promo","multiplier":"0.80000","status":"enabled","is_default":true}`))
+	createDefaultGroupReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createDefaultGroupReq.Header.Set("Content-Type", "application/json")
+	createDefaultGroupRec := httptest.NewRecorder()
+	handler.ServeHTTP(createDefaultGroupRec, createDefaultGroupReq)
+	if createDefaultGroupRec.Code != http.StatusCreated {
+		t.Fatalf("expected create default group 201, got %d body=%s", createDefaultGroupRec.Code, createDefaultGroupRec.Body.String())
+	}
 
 	assignGroupReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users/1/group", bytes.NewBufferString(`{"user_group_code":"vip"}`))
 	assignGroupReq.Header.Set("Authorization", "Bearer "+adminToken)
@@ -251,6 +339,29 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	handler.ServeHTTP(assignGroupRec, assignGroupReq)
 	if assignGroupRec.Code != http.StatusOK {
 		t.Fatalf("expected assign group 200, got %d body=%s", assignGroupRec.Code, assignGroupRec.Body.String())
+	}
+	assignGroupsReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/users/1/groups", bytes.NewBufferString(`{"group_ids":[999]}`))
+	assignGroupsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	assignGroupsReq.Header.Set("Content-Type", "application/json")
+	assignGroupsRec := httptest.NewRecorder()
+	handler.ServeHTTP(assignGroupsRec, assignGroupsReq)
+	if assignGroupsRec.Code != http.StatusNotFound {
+		t.Fatalf("expected assign missing group ids 404, got %d body=%s", assignGroupsRec.Code, assignGroupsRec.Body.String())
+	}
+	assignValidGroupsReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/users/1/groups", bytes.NewBufferString(`{"group_ids":[2]}`))
+	assignValidGroupsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	assignValidGroupsReq.Header.Set("Content-Type", "application/json")
+	assignValidGroupsRec := httptest.NewRecorder()
+	handler.ServeHTTP(assignValidGroupsRec, assignValidGroupsReq)
+	if assignValidGroupsRec.Code != http.StatusOK {
+		t.Fatalf("expected assign valid groups 200, got %d body=%s", assignValidGroupsRec.Code, assignValidGroupsRec.Body.String())
+	}
+	deleteMembershipGroupReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/user-groups/vip", nil)
+	deleteMembershipGroupReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteMembershipGroupRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteMembershipGroupRec, deleteMembershipGroupReq)
+	if deleteMembershipGroupRec.Code != http.StatusConflict {
+		t.Fatalf("expected delete membership-referenced group 409, got %d body=%s", deleteMembershipGroupRec.Code, deleteMembershipGroupRec.Body.String())
 	}
 
 	limitsReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/users/1/limits", bytes.NewBufferString(`{"rpm_limit":120,"concurrency_limit":3}`))

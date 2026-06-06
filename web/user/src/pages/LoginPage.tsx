@@ -3,37 +3,9 @@ import { userApi } from '../../../shared/user-api'
 import { useApp } from '../components'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
+import { loginCopy, loginLocale, socialLoginUnavailableMessage } from './loginCopy'
 
 const lastLoginEmailKey = 'pic-gallery-last-login-email'
-
-const loginCopy = {
-  zh: {
-    emailPlaceholder: '输入邮箱地址',
-    passwordPlaceholder: '输入密码',
-    codePlaceholder: '6 位验证码',
-    resetPasswordPlaceholder: '输入新密码',
-    sendCodeFailed: '验证码发送失败',
-    passwordLoginFailed: '账号密码登录失败',
-    codeLoginFailed: '验证码登录失败',
-    resetPasswordFailed: '密码重置失败',
-    socialUnavailable: '该登录方式暂不可用',
-  },
-  en: {
-    emailPlaceholder: 'Enter email address',
-    passwordPlaceholder: 'Enter password',
-    codePlaceholder: '6-digit code',
-    resetPasswordPlaceholder: 'Enter new password',
-    sendCodeFailed: 'Failed to send verification code',
-    passwordLoginFailed: 'Password sign-in failed',
-    codeLoginFailed: 'Verification code sign-in failed',
-    resetPasswordFailed: 'Password reset failed',
-    socialUnavailable: 'This sign-in method is not available yet',
-  },
-} as const
-
-function loginLocale() {
-  return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
-}
 
 function readLastLoginEmail() {
   try {
@@ -100,6 +72,10 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
       const profile = await userApi.getProfileWithToken(result.access_token)
       rememberLoginEmail(email)
       await app.login({ token: result.access_token, profile }, returnTo)
+      if (result.signup_grant?.granted) {
+        app.notify('success', `已领取 ${result.signup_grant.balance.trial_points ?? result.signup_grant.balance.available_points} 体验积分`)
+        await app.refreshAccount()
+      }
     } catch (err) {
       const title = resetMode ? copy.resetPasswordFailed : mode === 'password' ? copy.passwordLoginFailed : copy.codeLoginFailed
       app.notify('error', `${title}: ${errorMessage(err)}`)
@@ -237,9 +213,9 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
 
         {/* Social Login */}
         <div className="auth-social">
-          <SocialButton icon={<WeChatIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>WeChat</SocialButton>
-          <SocialButton icon={<DingTalkIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>钉钉</SocialButton>
-          <SocialButton icon={<GoogleIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>Google</SocialButton>
+          <SocialButton icon={<WeChatIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('微信'))}>微信</SocialButton>
+          <SocialButton icon={<DingTalkIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('钉钉'))}>钉钉</SocialButton>
+          <SocialButton icon={<GoogleIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('Google'))}>Google</SocialButton>
         </div>
 
         {/* Footer */}

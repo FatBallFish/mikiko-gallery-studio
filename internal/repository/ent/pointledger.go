@@ -40,6 +40,16 @@ type PointLedger struct {
 	BalanceAfter string `json:"balance_after,omitempty"`
 	// FrozenAfter holds the value of the "frozen_after" field.
 	FrozenAfter string `json:"frozen_after,omitempty"`
+	// BalanceBucket holds the value of the "balance_bucket" field.
+	BalanceBucket string `json:"balance_bucket,omitempty"`
+	// SourceType holds the value of the "source_type" field.
+	SourceType string `json:"source_type,omitempty"`
+	// SourceID holds the value of the "source_id" field.
+	SourceID *int64 `json:"source_id,omitempty"`
+	// BucketBalanceAfter holds the value of the "bucket_balance_after" field.
+	BucketBalanceAfter string `json:"bucket_balance_after,omitempty"`
+	// ExpiresAt holds the value of the "expires_at" field.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// Reason holds the value of the "reason" field.
 	Reason string `json:"reason,omitempty"`
 	// OperatorAdminID holds the value of the "operator_admin_id" field.
@@ -56,11 +66,11 @@ func (*PointLedger) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case pointledger.FieldTaskID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case pointledger.FieldID, pointledger.FieldUserID, pointledger.FieldAPIKeyID, pointledger.FieldOrderID, pointledger.FieldRedeemCodeID, pointledger.FieldOperatorAdminID:
+		case pointledger.FieldID, pointledger.FieldUserID, pointledger.FieldAPIKeyID, pointledger.FieldOrderID, pointledger.FieldRedeemCodeID, pointledger.FieldSourceID, pointledger.FieldOperatorAdminID:
 			values[i] = new(sql.NullInt64)
-		case pointledger.FieldLedgerType, pointledger.FieldChangePoints, pointledger.FieldBalanceAfter, pointledger.FieldFrozenAfter, pointledger.FieldReason, pointledger.FieldIdempotencyKey:
+		case pointledger.FieldLedgerType, pointledger.FieldChangePoints, pointledger.FieldBalanceAfter, pointledger.FieldFrozenAfter, pointledger.FieldBalanceBucket, pointledger.FieldSourceType, pointledger.FieldBucketBalanceAfter, pointledger.FieldReason, pointledger.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
-		case pointledger.FieldCreatedAt, pointledger.FieldUpdatedAt:
+		case pointledger.FieldCreatedAt, pointledger.FieldUpdatedAt, pointledger.FieldExpiresAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -152,6 +162,38 @@ func (_m *PointLedger) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field frozen_after", values[i])
 			} else if value.Valid {
 				_m.FrozenAfter = value.String
+			}
+		case pointledger.FieldBalanceBucket:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_bucket", values[i])
+			} else if value.Valid {
+				_m.BalanceBucket = value.String
+			}
+		case pointledger.FieldSourceType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_type", values[i])
+			} else if value.Valid {
+				_m.SourceType = value.String
+			}
+		case pointledger.FieldSourceID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field source_id", values[i])
+			} else if value.Valid {
+				_m.SourceID = new(int64)
+				*_m.SourceID = value.Int64
+			}
+		case pointledger.FieldBucketBalanceAfter:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field bucket_balance_after", values[i])
+			} else if value.Valid {
+				_m.BucketBalanceAfter = value.String
+			}
+		case pointledger.FieldExpiresAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field expires_at", values[i])
+			} else if value.Valid {
+				_m.ExpiresAt = new(time.Time)
+				*_m.ExpiresAt = value.Time
 			}
 		case pointledger.FieldReason:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -249,6 +291,25 @@ func (_m *PointLedger) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("frozen_after=")
 	builder.WriteString(_m.FrozenAfter)
+	builder.WriteString(", ")
+	builder.WriteString("balance_bucket=")
+	builder.WriteString(_m.BalanceBucket)
+	builder.WriteString(", ")
+	builder.WriteString("source_type=")
+	builder.WriteString(_m.SourceType)
+	builder.WriteString(", ")
+	if v := _m.SourceID; v != nil {
+		builder.WriteString("source_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("bucket_balance_after=")
+	builder.WriteString(_m.BucketBalanceAfter)
+	builder.WriteString(", ")
+	if v := _m.ExpiresAt; v != nil {
+		builder.WriteString("expires_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("reason=")
 	builder.WriteString(_m.Reason)

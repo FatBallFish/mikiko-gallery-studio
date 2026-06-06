@@ -1,27 +1,33 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { AdminMetric, AdminSession, ProviderHealth, UserGroup } from '../../shared/api-types'
-import type { AdminRouteId, ToastMessage, ToastTone } from './types'
+import { providerHealthValue, providerHealthWarn, taskQueuePressure } from './healthRows'
+import { filterAdminNavGroups } from './types'
+import type { AdminNavGroup, AdminRouteId, ProtectedAdminRouteId, ToastMessage, ToastTone } from './types'
 
-export const protectedRoutes: Exclude<AdminRouteId, 'login'>[] = [
+export const protectedRoutes: ProtectedAdminRouteId[] = [
   'overview',
+  'readiness',
   'config',
   'routing',
   'pricing',
   'reviews',
   'users',
+  'user-groups',
   'redeem',
+  'cashier',
   'call-records',
   'provider-models',
   'audit',
   'health',
 ]
 
-export const navGroups: Array<{ label: string; items: Array<{ id: Exclude<AdminRouteId, 'login'>; label: string; hint: string }> }> = [
+export const navGroups: AdminNavGroup[] = [
   {
     label: '概览',
     items: [
       { id: 'overview', label: '控制面板', hint: 'Overview' },
+      { id: 'readiness', label: '上线检查', hint: 'Ready' },
       { id: 'health', label: '系统状态', hint: 'Health' },
     ],
   },
@@ -29,9 +35,16 @@ export const navGroups: Array<{ label: string; items: Array<{ id: Exclude<AdminR
     label: '业务管理',
     items: [
       { id: 'users', label: '用户管理', hint: 'Users' },
+      { id: 'user-groups', label: '分组管理', hint: 'Groups' },
       { id: 'redeem', label: '兑换码', hint: 'Redeem' },
       { id: 'reviews', label: '审核队列', hint: 'Review' },
       { id: 'call-records', label: '调用记录', hint: 'Calls' },
+    ],
+  },
+  {
+    label: '商业化',
+    items: [
+      { id: 'cashier', label: '收银台', hint: 'Cashier' },
     ],
   },
   {
@@ -58,7 +71,7 @@ const fallbackProviders: ProviderHealth[] = [
 ]
 
 export function normalizeRoute(hash: string): AdminRouteId {
-  const path = hash.replace(/^#\/?/, '').split('?')[0]
+  const path = hash.replace(/^#\/?/, '').split('?')[0].replace(/^\/+|\/+$/g, '')
   if (path === 'login') return 'login'
   return protectedRoutes.includes(path as Exclude<AdminRouteId, 'login'>) ? (path as AdminRouteId) : 'overview'
 }
@@ -114,7 +127,7 @@ export function AdminLayout({
   onNavigate,
   onLogout,
 }: {
-  route: Exclude<AdminRouteId, 'login'>
+  route: ProtectedAdminRouteId
   session: AdminSession
   metrics: AdminMetric[]
   providers: ProviderHealth[]
@@ -126,6 +139,7 @@ export function AdminLayout({
 }) {
   const generationMetric = metrics.find((item) => item.label.includes('生成'))
   const statusProviders = providers.length ? providers : fallbackProviders
+  const visibleNavGroups = filterAdminNavGroups(navGroups, session)
 
   return (
     <main className="admin-shell">
@@ -136,7 +150,7 @@ export function AdminLayout({
         </a>
 
         <nav className="admin-nav" aria-label="后台主导航">
-          {navGroups.map((group) => (
+          {visibleNavGroups.map((group) => (
             <section key={group.label} className="nav-group">
               <p className="nav-label">{group.label}</p>
               {group.items.map((item) => (
@@ -168,8 +182,8 @@ export function AdminLayout({
               <StatusItem
                 key={provider.provider}
                 label={provider.provider}
-                value={provider.status === 'healthy' ? '健康' : provider.note}
-                warn={provider.status !== 'healthy'}
+                value={providerHealthValue(provider)}
+                warn={providerHealthWarn(provider)}
               />
             ))}
           </div>
@@ -193,7 +207,7 @@ export function AdminLayout({
         <section className="ops-status-strip" aria-label="运营状态条">
           <StatusCell label="环境" value="Production" />
           <StatusCell label="主 Provider" value={providers[0]?.provider ?? 'OpenAI'} />
-          <StatusCell label="任务队列" value={providers.find((item) => item.provider === 'Task Worker')?.note ?? 'worker healthy'} />
+          <StatusCell label="任务队列" value={taskQueuePressure(providers)} />
           <StatusCell label="策略状态" value={configDrafts ? `${configDrafts} 项待发布` : '全量已生效'} />
           <StatusCell label="待审核" value={`${String(reviewCount).padStart(2, '0')} 项`} />
         </section>

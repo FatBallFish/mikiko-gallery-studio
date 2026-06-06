@@ -21,6 +21,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type fakeAssetLoader struct {
@@ -814,6 +815,47 @@ func TestCreateTaskRetryAfterSaveFailureStillReservesPoints(t *testing.T) {
 	}
 	if summary.AvailablePoints != "12.00000" || summary.FrozenPoints != "8.00000" {
 		t.Fatalf("expected retry to reserve points once, got %#v", summary)
+	}
+}
+
+func TestCreateTaskPersistsFailedCallRecordWhenReserveRejectsInsufficientBalance(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	store := imagetask.NewMemoryStore()
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc))
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		TaskID:              "99999999-9999-4999-8999-999999999999",
+		UserID:              190,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Record rejected task",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTask to reject insufficient balance")
+	}
+
+	tasks, err := svc.ListByUser(context.Background(), 190)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one failed call record task, got %#v", tasks)
+	}
+	record := tasks[0]
+	if record.Status != domainimagetask.StatusFailed {
+		t.Fatalf("expected failed record, got %#v", record)
+	}
+	if record.ErrorCode != errs.CodeInsufficientPoints || record.ErrorMessage == "" {
+		t.Fatalf("expected insufficient points error on record, got code=%q message=%q", record.ErrorCode, record.ErrorMessage)
+	}
+	if record.EstimatedPoints != "8.00000" || record.ActualPoints != "0.00000" {
+		t.Fatalf("expected estimate snapshot on failed record, got estimated=%q actual=%q", record.EstimatedPoints, record.ActualPoints)
 	}
 }
 

@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ID, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
+import type { ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
+import {
+  routeCandidateLabel,
+  routeCandidateSummary,
+  routeEnabledBadge,
+  routeEnabledOptions,
+  routingFieldHints,
+  routingFieldLabels,
+  routeGroupNames,
+  routeVisibilityBadge,
+  routeVisibilityOptions,
+} from './routingRows'
 
 type RouteDialog = { row?: RouteModel; code: string; name: string; description: string; visibility: RouteModelVisibility; enabled: boolean; sortOrder: string; groupIds: string[] }
 type CandidateDialog = { route: RouteModel; row?: RouteModelCandidate; accountModelId: string; priority: string; weight: string; fallbackOrder: string; enabled: boolean }
@@ -13,7 +24,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
   const [candidates, setCandidates] = useState<Record<string, RouteModelCandidate[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState('路由模型可设置 public / groups / hidden，并绑定多个真实模型候选。')
+  const [notice, setNotice] = useState('路由模型可设置全员可见、按分组可见或隐藏，并绑定多个真实模型候选。')
   const [routeDialog, setRouteDialog] = useState<RouteDialog | null>(null)
   const [candidateDialog, setCandidateDialog] = useState<CandidateDialog | null>(null)
   const [saving, setSaving] = useState(false)
@@ -109,49 +120,57 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         <section className="main-lane table-lane no-divider">
           <InlineFeedback tone="neutral" message={notice} />
           {!routes.length ? <EmptyBlock title="暂无路由模型" detail="创建 Basic / Plus / Pro 后配置候选真实模型。" /> : null}
-          <div className="table-head route-model-grid"><span>路由模型</span><span>可见性</span><span>分组</span><span>候选</span><span>状态</span><span>操作</span></div>
-          {routes.map((row) => {
-            const routeCandidates = candidates[String(row.id)] ?? row.candidates ?? []
-            return (
-              <div key={String(row.id)} className="table-row route-model-grid">
-                <div><strong>{row.name}</strong><p>{row.code} · {row.description || '无描述'}</p></div>
-                <Badge tone={row.visibility === 'public' ? 'success' : row.visibility === 'groups' ? 'primary' : 'warning'}>{row.visibility}</Badge>
-                <span>{groupNames(row.group_ids, groups)}</span>
-                <span>{routeCandidates.length} 个 · {routeCandidates.filter((item) => item.enabled).length} 启用</span>
-                <Badge tone={row.enabled ? 'success' : 'warning'}>{row.enabled ? '启用' : '停用'}</Badge>
-                <div className="row-actions buttons">
-                  <button className="ghost small" type="button" onClick={() => setRouteDialog(editRouteDialog(row))}>编辑</button>
-                  <button className="ghost small" type="button" onClick={() => setCandidateDialog(newCandidateDialog(row, accountModels))}>加候选</button>
-                </div>
-              </div>
-            )
-          })}
-          <div className="lane-divider" />
-          <div className="table-head candidate-grid"><span>路由</span><span>真实模型</span><span>Priority</span><span>Weight</span><span>Fallback</span><span>操作</span></div>
-          {routes.flatMap((route) => (candidates[String(route.id)] ?? []).map((candidate) => (
-            <div key={`${route.id}-${candidate.id}`} className="table-row candidate-grid">
-              <strong>{route.code}</strong>
-              <span>{candidate.account_name ? `${candidate.account_name} / ` : ''}{candidate.model_code ?? candidate.account_model_id}</span>
-              <code>{candidate.priority}</code>
-              <code>{candidate.weight}</code>
-              <div className="row-actions buttons"><code>{candidate.fallback_order}</code><Badge tone={candidate.enabled ? 'success' : 'warning'}>{candidate.enabled ? '启用' : '停用'}</Badge></div>
-              <button className="ghost small" type="button" onClick={() => setCandidateDialog(editCandidateDialog(route, candidate))}>编辑</button>
+          {routes.length ? (
+            <div className="admin-data-grid route-model-grid">
+              <div className="table-head"><span>路由模型</span><span>可见性</span><span>分组</span><span>候选</span><span>状态</span><span>操作</span></div>
+              {routes.map((row) => {
+                const routeCandidates = candidates[String(row.id)] ?? row.candidates ?? []
+                return (
+                  <div key={String(row.id)} className="table-row">
+                    <div><strong>{row.name}</strong><p>{row.code} · {row.description || '无描述'}</p></div>
+                    <RouteBadge badge={routeVisibilityBadge(row.visibility)} />
+                    <span>{routeGroupNames(row.group_ids, groups)}</span>
+                    <span>{routeCandidateSummary(routeCandidates)}</span>
+                    <RouteBadge badge={routeEnabledBadge(row.enabled)} />
+                    <div className="row-actions buttons">
+                      <button className="ghost small" type="button" onClick={() => setRouteDialog(editRouteDialog(row))}>编辑</button>
+                      <button className="ghost small" type="button" onClick={() => setCandidateDialog(newCandidateDialog(row, accountModels))}>加候选</button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-          )))}
+          ) : null}
+          {routes.length ? <div className="lane-divider" /> : null}
+          {routes.length ? (
+            <div className="admin-data-grid candidate-grid">
+              <div className="table-head"><span>路由</span><span>真实模型</span><span>{routingFieldLabels.priority}</span><span>{routingFieldLabels.weight}</span><span>{routingFieldLabels.fallbackOrder}</span><span>操作</span></div>
+              {routes.flatMap((route) => (candidates[String(route.id)] ?? []).map((candidate) => (
+                <div key={`${route.id}-${candidate.id}`} className="table-row">
+                  <strong>{route.code}</strong>
+                  <span>{routeCandidateLabel(candidate)}</span>
+                  <code>{candidate.priority}</code>
+                  <code>{candidate.weight}</code>
+                  <div className="row-actions buttons"><code>{candidate.fallback_order}</code><RouteBadge badge={routeEnabledBadge(candidate.enabled)} /></div>
+                  <button className="ghost small" type="button" onClick={() => setCandidateDialog(editCandidateDialog(route, candidate))}>编辑</button>
+                </div>
+              )))}
+            </div>
+          ) : null}
         </section>
       </section>
       {routeDialog ? (
-        <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="hidden 不会出现在用户工作台；groups 需要至少绑定一个分组。" onClose={() => setRouteDialog(null)} footer={<><button className="ghost" type="button" disabled={saving} onClick={() => setRouteDialog(null)}>取消</button><button className="btn primary" type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存'}</button></>}>
+        <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="隐藏不会出现在用户工作台；按分组可见需要至少绑定一个分组。" onClose={() => setRouteDialog(null)} footer={<><button className="ghost" type="button" disabled={saving} onClick={() => setRouteDialog(null)}>取消</button><button className="btn primary" type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存'}</button></>}>
           <div className="form-grid">
-            <Field label="Code"><input value={routeDialog.code} onChange={(event) => setRouteDialog({ ...routeDialog, code: event.target.value })} placeholder="basic" /></Field>
+            <Field label={routingFieldLabels.code}><input value={routeDialog.code} onChange={(event) => setRouteDialog({ ...routeDialog, code: event.target.value })} placeholder="basic" /></Field>
             <Field label="名称"><input value={routeDialog.name} onChange={(event) => setRouteDialog({ ...routeDialog, name: event.target.value })} /></Field>
             <Field label="描述"><input value={routeDialog.description} onChange={(event) => setRouteDialog({ ...routeDialog, description: event.target.value })} /></Field>
-            <Field label="可见性"><select value={routeDialog.visibility} onChange={(event) => setRouteDialog({ ...routeDialog, visibility: event.target.value, groupIds: event.target.value === 'groups' ? routeDialog.groupIds : [] })}><option value="public">public</option><option value="groups">groups</option><option value="hidden">hidden</option></select></Field>
+            <Field label="可见性"><select value={routeDialog.visibility} onChange={(event) => setRouteDialog({ ...routeDialog, visibility: event.target.value, groupIds: event.target.value === 'groups' ? routeDialog.groupIds : [] })}>{routeVisibilityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
             {routeDialog.visibility === 'groups' ? (
               <Field label="可见分组"><GroupOptionGrid selected={routeDialog.groupIds} groups={groups} onChange={(groupIds) => setRouteDialog({ ...routeDialog, groupIds })} /></Field>
             ) : null}
             <Field label="排序"><input type="number" value={routeDialog.sortOrder} onChange={(event) => setRouteDialog({ ...routeDialog, sortOrder: event.target.value })} /></Field>
-            <Field label="状态"><select value={routeDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setRouteDialog({ ...routeDialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
+            <Field label="状态"><select value={routeDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setRouteDialog({ ...routeDialog, enabled: event.target.value === 'enabled' })}>{routeEnabledOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
           </div>
         </Modal>
       ) : null}
@@ -159,10 +178,10 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         <Modal title={candidateDialog.row ? '编辑候选真实模型' : '新增候选真实模型'} detail={candidateDialog.route.name} onClose={() => setCandidateDialog(null)} footer={<><button className="ghost" type="button" disabled={saving} onClick={() => setCandidateDialog(null)}>取消</button><button className="btn primary" type="button" disabled={saving || !candidateDialog.accountModelId} onClick={() => void saveCandidate()}>{saving ? '保存中...' : '保存'}</button></>}>
           <div className="form-grid">
             <Field label="真实模型"><select value={candidateDialog.accountModelId} onChange={(event) => setCandidateDialog({ ...candidateDialog, accountModelId: event.target.value })}>{accountModels.map((model) => <option key={String(model.id)} value={String(model.id)}>{model.account_name ? `${model.account_name} / ` : ''}{model.model_code}</option>)}</select></Field>
-            <Field label="优先级" hint="数值越小越先尝试；同优先级时再参考 fallback 顺序。"><input type="number" min="1" value={candidateDialog.priority} onChange={(event) => setCandidateDialog({ ...candidateDialog, priority: event.target.value })} /></Field>
-            <Field label="权重" hint="同一优先级内的流量占比，100 表示默认满权重。"><input type="number" min="0" value={candidateDialog.weight} onChange={(event) => setCandidateDialog({ ...candidateDialog, weight: event.target.value })} /></Field>
-            <Field label="Fallback 顺序" hint="候选失败后的兜底顺序，数值越小越早兜底。"><input type="number" min="1" value={candidateDialog.fallbackOrder} onChange={(event) => setCandidateDialog({ ...candidateDialog, fallbackOrder: event.target.value })} /></Field>
-            <Field label="状态"><select value={candidateDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setCandidateDialog({ ...candidateDialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
+            <Field label={routingFieldLabels.priority} hint={routingFieldHints.priority}><input type="number" min="1" value={candidateDialog.priority} onChange={(event) => setCandidateDialog({ ...candidateDialog, priority: event.target.value })} /></Field>
+            <Field label={routingFieldLabels.weight} hint={routingFieldHints.weight}><input type="number" min="0" value={candidateDialog.weight} onChange={(event) => setCandidateDialog({ ...candidateDialog, weight: event.target.value })} /></Field>
+            <Field label={routingFieldLabels.fallbackOrder} hint={routingFieldHints.fallbackOrder}><input type="number" min="1" value={candidateDialog.fallbackOrder} onChange={(event) => setCandidateDialog({ ...candidateDialog, fallbackOrder: event.target.value })} /></Field>
+            <Field label="状态"><select value={candidateDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setCandidateDialog({ ...candidateDialog, enabled: event.target.value === 'enabled' })}>{routeEnabledOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
           </div>
         </Modal>
       ) : null}
@@ -186,8 +205,6 @@ function editCandidateDialog(route: RouteModel, row: RouteModelCandidate): Candi
   return { route, row, accountModelId: String(row.account_model_id), priority: String(row.priority), weight: String(row.weight), fallbackOrder: String(row.fallback_order), enabled: row.enabled }
 }
 
-function groupNames(ids: ID[] | undefined, groups: UserGroup[]) {
-  if (!ids?.length) return '-'
-  const names = ids.map((id) => groups.find((group) => String(group.id ?? group.code) === String(id))?.name ?? String(id))
-  return names.join(', ')
+function RouteBadge({ badge }: { badge: { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' | 'primary' } }) {
+  return <Badge tone={badge.tone}>{badge.label}</Badge>
 }

@@ -48,6 +48,9 @@ func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicat
 	if status := strings.TrimSpace(req.Status); status != "" {
 		predicates = append(predicates, imagetask.StatusEQ(status))
 	}
+	if errorCode := strings.TrimSpace(req.ErrorCode); errorCode != "" {
+		predicates = append(predicates, imagetask.ErrorCodeEQ(errorCode))
+	}
 	if provider := strings.TrimSpace(req.Provider); provider != "" {
 		predicates = append(predicates, predicate.ImageTask(func(s *sql.Selector) {
 			s.Where(sqljson.ValueEQ(s.C(imagetask.FieldProviderTrace), provider, sqljson.Path("provider")))

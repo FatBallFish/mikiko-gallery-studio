@@ -9,12 +9,13 @@ import { HomePage } from './pages/HomePage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { GalleryPage } from './pages/GalleryPage'
 import { PublicGalleryPage } from './pages/PublicGalleryPage'
+import { CheckoutPage } from './pages/CheckoutPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { DocsPage } from './pages/DocsPage'
 
 const sessionKey = 'pic-gallery-user-session'
-const routeSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'gallery', 'public-gallery', 'api-keys', 'profile', 'docs'])
+const routeSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'gallery', 'public-gallery', 'checkout', 'api-keys', 'profile', 'docs'])
 
 function parseHash() {
   const raw = window.location.hash.replace(/^#\/?/, '')
@@ -74,7 +75,9 @@ export default function App() {
       notify('error', '登录已过期，需要重新登录')
     }
     const currentRoute = routeRef.current
-    writeHash('login', protectedRoutes.includes(currentRoute) ? currentRoute : undefined)
+    if (protectedRoutes.includes(currentRoute)) {
+      writeHash('login', currentRoute)
+    }
   }, [notify])
 
   useLayoutEffect(() => {
@@ -119,11 +122,19 @@ export default function App() {
 
   const refreshAccount = useCallback(async () => {
     if (!sessionRef.current?.token) return
-    const [nextProfile, nextBalance] = await Promise.all([userApi.getProfile(), userApi.getBalance()])
-    setProfile(nextProfile)
-    setBalance(nextBalance)
-    installSession({ token: sessionRef.current.token, profile: nextProfile })
-  }, [installSession])
+    try {
+      const [nextProfile, nextBalance] = await Promise.all([userApi.getProfile(), userApi.getBalance()])
+      setProfile(nextProfile)
+      setBalance(nextBalance)
+      installSession({ token: sessionRef.current.token, profile: nextProfile })
+    } catch (caught) {
+      if (caught && typeof caught === 'object' && 'status' in caught && caught.status === 401) {
+        expireSession()
+        return
+      }
+      throw caught
+    }
+  }, [expireSession, installSession])
 
   useEffect(() => {
     const updateRoute = () => {
@@ -142,6 +153,7 @@ export default function App() {
 
   useEffect(() => {
     if (sessionRef.current) return
+    if (!window.localStorage.getItem(sessionKey)) return
     let cancelled = false
     async function bootstrap() {
       try {
@@ -226,6 +238,8 @@ export default function App() {
         return <Shell><GalleryPage /></Shell>
       case 'public-gallery':
         return <Shell><PublicGalleryPage /></Shell>
+      case 'checkout':
+        return <Shell><CheckoutPage /></Shell>
       case 'api-keys':
         return <Shell><ApiKeysPage /></Shell>
       case 'profile':

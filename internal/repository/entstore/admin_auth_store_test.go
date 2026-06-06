@@ -41,6 +41,32 @@ func TestAdminAuthStoreCreatesAndLoadsAdminByEmail(t *testing.T) {
 	}
 }
 
+func TestAdminAuthStoreDefaultsAdminRoleToBuiltInAdmin(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:adminauthstore-default-role?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewAdminAuthStore(client)
+	created, err := store.CreateAdmin(ctx, domainadminauth.AdminUser{
+		Email:        "default-role@example.com",
+		PasswordHash: "hash",
+		Status:       "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+
+	if created.Role != domainadminauth.RoleAdmin {
+		t.Fatalf("default admin role = %q, want %q", created.Role, domainadminauth.RoleAdmin)
+	}
+}
+
 func TestAdminAuthStoreUpdatesPasswordHashWithCompareAndSwap(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:adminauthstore-rehash?mode=memory&cache=shared&_fk=1")

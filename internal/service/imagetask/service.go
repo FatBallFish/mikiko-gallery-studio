@@ -166,6 +166,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 
 	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
 	if err != nil {
+		_ = s.persistPreflightFailedRequest(ctx, req, modelhub.ResolvedRequest{}, err)
 		return domainimagetask.Task{}, err
 	}
 	if strings.TrimSpace(req.TaskID) == "" {
@@ -174,6 +175,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 
 	task := buildTask(req, resolved, domainimagetask.StatusQueued)
 	if err := s.applyTaskEstimate(ctx, &task, req); err != nil {
+		_ = s.persistPreflightFailedTask(ctx, task, err)
 		return domainimagetask.Task{}, err
 	}
 	if err := s.store.Save(ctx, task); err != nil {
@@ -183,6 +185,28 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 		return domainimagetask.Task{}, err
 	}
 	return cloneTask(task), nil
+}
+
+func (s *Service) persistPreflightFailedRequest(ctx context.Context, req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequest, failure error) error {
+	if strings.TrimSpace(req.TaskID) == "" {
+		req.TaskID = uuid.NewString()
+	}
+	task := buildTask(req, resolved, domainimagetask.StatusFailed)
+	return s.persistPreflightFailedTask(ctx, task, failure)
+}
+
+func (s *Service) persistPreflightFailedTask(ctx context.Context, task domainimagetask.Task, failure error) error {
+	task.Status = domainimagetask.StatusFailed
+	task.ErrorCode = errorCode(failure)
+	task.ErrorMessage = errorMessage(failure)
+	task.ActualPoints = s.zeroPoints()
+	if strings.TrimSpace(task.EstimatedPoints) == "" {
+		task.EstimatedPoints = s.zeroPoints()
+	}
+	if strings.TrimSpace(task.ChargedPoints) == "" {
+		task.ChargedPoints = s.zeroPoints()
+	}
+	return s.store.Save(ctx, task)
 }
 
 func (s *Service) AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {

@@ -41,6 +41,9 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	if cfg.Billing.PointsScale != 5 {
 		t.Fatalf("expected billing scale 5, got %d", cfg.Billing.PointsScale)
 	}
+	if cfg.Cashier.MaxPendingOrdersPerUser != 3 || cfg.Cashier.OrderTimeoutSeconds != 1800 {
+		t.Fatalf("expected cashier defaults from config, got %#v", cfg.Cashier)
+	}
 	if cfg.APIKey.SigningSecretEncryptionKey != "api-key-secret-test-key" {
 		t.Fatalf("expected API key signing secret env override, got %q", cfg.APIKey.SigningSecretEncryptionKey)
 	}

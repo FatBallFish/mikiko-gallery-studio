@@ -25,6 +25,18 @@ const (
 	FieldOrderNo = "order_no"
 	// FieldProvider holds the string denoting the provider field in the database.
 	FieldProvider = "provider"
+	// FieldPurchaseType holds the string denoting the purchase_type field in the database.
+	FieldPurchaseType = "purchase_type"
+	// FieldVisibleMethod holds the string denoting the visible_method field in the database.
+	FieldVisibleMethod = "visible_method"
+	// FieldProviderType holds the string denoting the provider_type field in the database.
+	FieldProviderType = "provider_type"
+	// FieldProviderInstanceID holds the string denoting the provider_instance_id field in the database.
+	FieldProviderInstanceID = "provider_instance_id"
+	// FieldProviderSnapshot holds the string denoting the provider_snapshot field in the database.
+	FieldProviderSnapshot = "provider_snapshot"
+	// FieldPaymentDisplay holds the string denoting the payment_display field in the database.
+	FieldPaymentDisplay = "payment_display"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldCurrency holds the string denoting the currency field in the database.
@@ -49,10 +61,16 @@ const (
 	FieldExpiresAt = "expires_at"
 	// FieldPaidAt holds the string denoting the paid_at field in the database.
 	FieldPaidAt = "paid_at"
+	// FieldCompletedAt holds the string denoting the completed_at field in the database.
+	FieldCompletedAt = "completed_at"
 	// FieldClosedAt holds the string denoting the closed_at field in the database.
 	FieldClosedAt = "closed_at"
 	// FieldRefundedAt holds the string denoting the refunded_at field in the database.
 	FieldRefundedAt = "refunded_at"
+	// FieldLedgerID holds the string denoting the ledger_id field in the database.
+	FieldLedgerID = "ledger_id"
+	// FieldIdempotencyKey holds the string denoting the idempotency_key field in the database.
+	FieldIdempotencyKey = "idempotency_key"
 	// FieldProviderPayload holds the string denoting the provider_payload field in the database.
 	FieldProviderPayload = "provider_payload"
 	// Table holds the table name of the paymentorder in the database.
@@ -68,6 +86,12 @@ var Columns = []string{
 	FieldPlanID,
 	FieldOrderNo,
 	FieldProvider,
+	FieldPurchaseType,
+	FieldVisibleMethod,
+	FieldProviderType,
+	FieldProviderInstanceID,
+	FieldProviderSnapshot,
+	FieldPaymentDisplay,
 	FieldStatus,
 	FieldCurrency,
 	FieldAmountCny,
@@ -80,8 +104,11 @@ var Columns = []string{
 	FieldFailureReason,
 	FieldExpiresAt,
 	FieldPaidAt,
+	FieldCompletedAt,
 	FieldClosedAt,
 	FieldRefundedAt,
+	FieldLedgerID,
+	FieldIdempotencyKey,
 	FieldProviderPayload,
 }
 
@@ -106,6 +133,18 @@ var (
 	OrderNoValidator func(string) error
 	// ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
 	ProviderValidator func(string) error
+	// DefaultPurchaseType holds the default value on creation for the "purchase_type" field.
+	DefaultPurchaseType string
+	// PurchaseTypeValidator is a validator for the "purchase_type" field. It is called by the builders before save.
+	PurchaseTypeValidator func(string) error
+	// DefaultVisibleMethod holds the default value on creation for the "visible_method" field.
+	DefaultVisibleMethod string
+	// VisibleMethodValidator is a validator for the "visible_method" field. It is called by the builders before save.
+	VisibleMethodValidator func(string) error
+	// DefaultProviderType holds the default value on creation for the "provider_type" field.
+	DefaultProviderType string
+	// ProviderTypeValidator is a validator for the "provider_type" field. It is called by the builders before save.
+	ProviderTypeValidator func(string) error
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
@@ -130,6 +169,8 @@ var (
 	ClientTokenValidator func(string) error
 	// FailureReasonValidator is a validator for the "failure_reason" field. It is called by the builders before save.
 	FailureReasonValidator func(string) error
+	// IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	IdempotencyKeyValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the PaymentOrder queries.
@@ -168,6 +209,26 @@ func ByOrderNo(opts ...sql.OrderTermOption) OrderOption {
 // ByProvider orders the results by the provider field.
 func ByProvider(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProvider, opts...).ToFunc()
+}
+
+// ByPurchaseType orders the results by the purchase_type field.
+func ByPurchaseType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPurchaseType, opts...).ToFunc()
+}
+
+// ByVisibleMethod orders the results by the visible_method field.
+func ByVisibleMethod(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVisibleMethod, opts...).ToFunc()
+}
+
+// ByProviderType orders the results by the provider_type field.
+func ByProviderType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderType, opts...).ToFunc()
+}
+
+// ByProviderInstanceID orders the results by the provider_instance_id field.
+func ByProviderInstanceID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderInstanceID, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.
@@ -230,6 +291,11 @@ func ByPaidAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPaidAt, opts...).ToFunc()
 }
 
+// ByCompletedAt orders the results by the completed_at field.
+func ByCompletedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCompletedAt, opts...).ToFunc()
+}
+
 // ByClosedAt orders the results by the closed_at field.
 func ByClosedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldClosedAt, opts...).ToFunc()
@@ -238,4 +304,14 @@ func ByClosedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByRefundedAt orders the results by the refunded_at field.
 func ByRefundedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRefundedAt, opts...).ToFunc()
+}
+
+// ByLedgerID orders the results by the ledger_id field.
+func ByLedgerID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLedgerID, opts...).ToFunc()
+}
+
+// ByIdempotencyKey orders the results by the idempotency_key field.
+func ByIdempotencyKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIdempotencyKey, opts...).ToFunc()
 }

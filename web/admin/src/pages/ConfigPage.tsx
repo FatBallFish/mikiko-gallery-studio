@@ -1,35 +1,33 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ConfigItem } from '../../../shared/api-types'
+import { type AdminSession, type ConfigItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader, useFilteredTabs } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, PageHeader } from '../components'
+import { canAdmin } from '../types'
+import {
+  configFieldMeta,
+  configLockedDetail,
+  configPermission,
+  configTabMeta,
+  configValidateValue,
+  extractConfigValue,
+  inferConfigFieldType,
+  isRecord,
+  isSameConfigValue,
+  normalizeDraftValue,
+  type ConfigFieldMeta,
+  type ConfigValue,
+} from './configRows'
 
-type DraftMap = Record<string, string>
+type DraftMap = Record<string, ConfigValue>
 
-function safeJson(value: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : { value: parsed }
-  } catch {
-    return { value }
-  }
-}
-
-function detectConfigConflict(row: ConfigItem, nextValue: string) {
-  if (!nextValue.trim()) return '值不能为空'
-  if (row.key.includes('max') && Number(nextValue) > 8) return '超过当前集群安全上限 8，需先扩容 Worker。'
-  if (row.key.includes('ttl') && Number(nextValue) < 300) return 'Token TTL 低于 300 秒会触发频繁刷新。'
-  if (row.key.includes('exchange') && Number(nextValue) <= 0) return '兑换比例必须大于 0。'
-  return null
-}
-
-export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
+export function ConfigPage({ session, onFeedback }: { session: AdminSession; onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ConfigItem[]>([])
   const [drafts, setDrafts] = useState<DraftMap>({})
+  const [activeTab, setActiveTab] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [savingKey, setSavingKey] = useState<string | null>(null)
-  const [publishing, setPublishing] = useState(false)
-  const [notice, setNotice] = useState<string>('配置主表已连接真实 API。')
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('配置中心已连接真实 API。')
 
   const load = async () => {
     setLoading(true)
@@ -37,7 +35,8 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
     try {
       const nextRows = await adminApi.listConfig()
       setRows(nextRows)
-      setDrafts(Object.fromEntries(nextRows.map((row) => [row.key, row.draft_value])))
+      setDrafts(Object.fromEntries(nextRows.map((row) => [draftId(row), extractConfigValue(row)])))
+      setActiveTab((current) => current || nextRows[0]?.config_category || nextRows[0]?.tab || '')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '配置载入失败')
     } finally {
@@ -49,134 +48,203 @@ export function ConfigPage({ onFeedback }: { onFeedback: (title: string, detail?
     void load()
   }, [])
 
-  const { tabs, activeTab, setActiveTab, visibleRows } = useFilteredTabs(rows)
-  const dirtyCount = rows.filter((row) => row.state !== 'active' || drafts[row.key] !== row.value).length
-  const conflicts = useMemo(() => rows.flatMap((row) => {
-    const conflict = detectConfigConflict(row, drafts[row.key] ?? row.draft_value)
-    return conflict ? [{ key: row.key, conflict }] : []
-  }), [drafts, rows])
+  const tabs = useMemo(() => {
+    const keys = Array.from(new Set(rows.map((row) => row.config_category || row.tab).filter(Boolean)))
+    return keys.map((key) => ({ key, label: configTabMeta(key).label }))
+  }, [rows])
+  const activeRows = rows.filter((row) => (row.config_category || row.tab) === activeTab)
+  const dirtyKeys = rows.filter((row) => !isSameConfigValue(drafts[draftId(row)], extractConfigValue(row))).map(draftId)
+  const activeDirty = activeRows.some((row) => dirtyKeys.includes(draftId(row)))
+  const conflicts = activeRows.flatMap((row) => {
+    const key = draftId(row)
+    const message = configValidateValue(row.config_key ?? row.key, drafts[key])
+    return message ? [{ key: row.key, message }] : []
+  })
+  const activeMeta = configTabMeta(activeTab || activeRows[0]?.tab || '')
+  const requiredPermission = configPermission(activeTab)
+  const canEditActiveTab = canAdmin(session, requiredPermission)
+  const lockedDetail = configLockedDetail(requiredPermission)
 
-  const saveRow = async (row: ConfigItem) => {
-    const draftValue = drafts[row.key] ?? row.draft_value
-    const conflict = detectConfigConflict(row, draftValue)
-    if (conflict) {
-      setNotice(`${row.key}: ${conflict}`)
-      return
-    }
-    setSavingKey(row.key)
+  const saveActiveTab = async () => {
+    if (!activeRows.length || conflicts.length || !canEditActiveTab) return
+    setSaving(true)
     try {
-      setRows((current) => current.map((item) => item.key === row.key ? { ...item, draft_value: draftValue, state: 'draft' } : item))
-      setNotice(`${row.key} 已保存为草稿。`)
-      onFeedback('配置草稿已保存', row.key)
-    } catch (caught) {
-      setNotice(caught instanceof Error ? caught.message : '保存失败')
-    } finally {
-      setSavingKey(null)
-    }
-  }
-
-  const publish = async () => {
-    if (conflicts.length) {
-      setNotice(`仍有 ${conflicts.length} 项冲突，发布已阻止。`)
-      return
-    }
-    setPublishing(true)
-    try {
-      const byTab = new Map<string, ConfigItem[]>()
-      rows.forEach((row) => byTab.set(row.tab, [...(byTab.get(row.tab) ?? []), row]))
-      for (const [tab, tabRows] of byTab) {
-        const version = Math.max(...tabRows.map((row) => row.version || 1))
-        await adminApi.updateConfigTab(tab, {
-          version,
-          items: tabRows.map((row) => ({
-            config_category: row.config_category ?? row.tab,
-            config_key: row.config_key ?? row.key,
-            config_value: safeJson(drafts[row.key] ?? row.draft_value),
-            scope: row.scope ?? 'global',
-          })),
-        })
-      }
+      const version = Math.max(...activeRows.map((row) => row.version || 1))
+      await adminApi.updateConfigTab(activeTab, {
+        version,
+        items: activeRows.map((row) => ({
+          config_category: row.config_category ?? activeTab,
+          config_key: row.config_key ?? row.key,
+          config_value: { value: normalizeDraftValue(drafts[draftId(row)]) },
+          scope: row.scope ?? 'global',
+        })),
+      })
       const nextRows = await adminApi.listConfig()
       setRows(nextRows)
-      setDrafts(Object.fromEntries(nextRows.map((row) => [row.key, row.draft_value])))
-      setNotice('配置已发布，全量 API 节点将在 1 分钟内生效。')
-      onFeedback('配置发布成功', '审计日志已记录 PUBLISH_CONFIG')
+      setDrafts(Object.fromEntries(nextRows.map((row) => [draftId(row), extractConfigValue(row)])))
+      setNotice(`${activeMeta.label}已保存，API 节点将在 1 分钟内读取新配置。`)
+      onFeedback('系统设置已保存', activeMeta.label)
     } finally {
-      setPublishing(false)
+      setSaving(false)
     }
   }
 
-  const revert = async () => {
-    setPublishing(true)
-    try {
-      const nextRows = await adminApi.listConfig()
-      setRows(nextRows)
-      setDrafts(Object.fromEntries(nextRows.map((row) => [row.key, row.value])))
-      setNotice('所有配置草稿已回滚到当前生效值。')
-      onFeedback('配置已回滚', '草稿和冲突状态已清空')
-    } finally {
-      setPublishing(false)
-    }
+  const revertActiveTab = () => {
+    setDrafts((current) => ({
+      ...current,
+      ...Object.fromEntries(activeRows.map((row) => [draftId(row), extractConfigValue(row)])),
+    }))
+    setNotice(`${activeMeta.label}已恢复为当前生效值。`)
   }
 
-  if (loading) return <LoadingBlock label="载入配置中心" />
+  if (loading) return <LoadingBlock label="载入系统设置" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
   if (!rows.length) return <EmptyBlock title="暂无配置项" detail="配置中心尚未返回可编辑条目。" />
 
   return (
     <section className="page-stack">
       <PageHeader
-        eyebrow="Config"
-        title="配置中心"
-        detail="内联编辑、冲突检测、发布与回滚都贴近配置主表，避免操作反馈丢失。"
+        eyebrow="Settings"
+        title="系统设置"
+        detail="按类目维护配置表单，保存时统一提交当前类目。"
         actions={
           <>
-            <button type="button" className="ghost" onClick={revert} disabled={publishing || !dirtyCount}>回滚草稿</button>
-            <button type="button" className="btn primary" onClick={publish} disabled={publishing || !dirtyCount || Boolean(conflicts.length)}>{publishing ? '发布中...' : `发布 ${dirtyCount}`}</button>
+            <button type="button" className="ghost" onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
+            <button type="button" className="btn primary" onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
           </>
         }
       />
 
       <section className="ops-status-strip compact-strip">
-        <div className="status-cell"><label>草稿</label><strong>{dirtyCount} 项待处理</strong></div>
-        <div className="status-cell"><label>冲突</label><strong>{conflicts.length ? `${conflicts.length} 项阻塞` : '无冲突'}</strong></div>
-        <div className="status-cell"><label>发布轨迹</label><strong>v2026.05.21 可回滚</strong></div>
-        <div className="status-cell"><label>生效范围</label><strong>全量 API 节点</strong></div>
+        <div className="status-cell"><label>当前类目</label><strong>{activeMeta.label}</strong></div>
+        <div className="status-cell"><label>字段</label><strong>{activeRows.length} 项</strong></div>
+        <div className="status-cell"><label>未保存</label><strong>{dirtyKeys.length} 项</strong></div>
+        <div className="status-cell"><label>校验</label><strong>{conflicts.length ? `${conflicts.length} 项需处理` : '通过'}</strong></div>
       </section>
 
-      <section className="pg-admin-card config-motherboard">
-        <section className="config-sheet-lane">
-          <div className="config-toolbar-band">
-            <div className="config-mode-tabs">
-              {tabs.map((tab) => <button key={tab} className={activeTab === tab ? 'active' : ''} type="button" onClick={() => setActiveTab(tab)}>{tab}</button>)}
-            </div>
-            <div className="config-toolbar-meta"><span>Draft {dirtyCount}</span><span>{conflicts.length ? 'Conflict' : 'Clean'}</span><span>Real API</span></div>
-          </div>
+      <section className="pg-admin-card config-formboard">
+        <aside className="config-category-rail">
+          {tabs.map((tab) => <button key={tab.key} className={activeTab === tab.key ? 'active' : ''} type="button" onClick={() => setActiveTab(tab.key)}>{tab.label}</button>)}
+        </aside>
 
-          <div className="config-sheet-head config-board-grid"><span>分类</span><span>配置项</span><span>草稿值</span><span>状态</span><span>操作</span></div>
-          {visibleRows.map((row) => {
-            const draftValue = drafts[row.key] ?? row.draft_value
-            const conflict = detectConfigConflict(row, draftValue)
-            const dirty = draftValue !== row.draft_value || row.state !== 'active'
-            return (
-              <div key={row.key} className={`config-sheet-row config-board-grid ${conflict ? 'has-conflict' : ''}`}>
-                <strong>{row.tab}</strong>
-                <div><code>{row.key}</code><p>{row.description} · 当前 {row.value} · v{row.version}</p></div>
-                <input value={draftValue} onChange={(event) => setDrafts((current) => ({ ...current, [row.key]: event.target.value }))} aria-label={`${row.key} 草稿值`} />
-                <Badge tone={conflict ? 'warning' : row.state === 'active' && !dirty ? 'success' : 'warning'}>{conflict ? '冲突' : row.state === 'active' && !dirty ? '已生效' : '待发布'}</Badge>
-                <button type="button" className="btn small" onClick={() => saveRow(row)} disabled={savingKey === row.key || Boolean(conflict) || !dirty}>{savingKey === row.key ? '保存中' : '保存'}</button>
-                {conflict ? <InlineFeedback tone="warning" message={conflict} /> : null}
-              </div>
-            )
-          })}
+        <section className="config-form-lane">
+          <div className="section-head compact">
+            <div>
+              <strong>{activeMeta.label}</strong>
+              <p>{activeMeta.detail}</p>
+            </div>
+            <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? '需修正' : '可保存'}</Badge>
+          </div>
+          {!canEditActiveTab ? <div className="permission-note">{lockedDetail}</div> : null}
+
+          <div className="config-form-grid">
+            {activeRows.map((row) => {
+              const key = row.config_key ?? row.key
+              const meta = configFieldMeta(key, row.description)
+              const rowDraftId = draftId(row)
+              const conflict = configValidateValue(key, drafts[rowDraftId])
+              return (
+                <div key={rowDraftId} className="config-form-item">
+                  {renderConfigField(row, meta, drafts[rowDraftId], (value) => setDrafts((current) => ({ ...current, [rowDraftId]: value })), conflict, !canEditActiveTab)}
+                </div>
+              )
+            })}
+          </div>
         </section>
 
         <aside className="config-side-rail">
-          <section className="side-strip"><label>发布反馈</label><strong>{notice}</strong></section>
-          <section className="side-strip"><label>冲突检测</label>{conflicts.length ? conflicts.map((item) => <p key={item.key}>{item.key}: {item.conflict}</p>) : <p>所有草稿均可进入发布流程。</p>}</section>
-          <section className="side-strip"><label>发布策略</label><p>预发布写入草稿，点击发布后真实 API 按 tab 更新版本并写审计。</p></section>
+          <section className="side-strip"><label>保存反馈</label><strong>{notice}</strong></section>
+          <section className="side-strip"><label>提示</label><p>鼠标悬停字段名旁的提示符可查看用途说明；复杂列表以结构化文本编辑，保存后仍按原始接口契约提交。</p></section>
         </aside>
       </section>
     </section>
   )
+}
+
+function renderConfigField(row: ConfigItem, meta: ConfigFieldMeta, value: ConfigValue, onChange: (value: ConfigValue) => void, error: string | null, disabled: boolean) {
+  const key = row.config_key ?? row.key
+  const type = meta.type ?? inferConfigFieldType(value)
+  if (type === 'boolean') {
+    return (
+      <Field label={meta.label} hint={meta.hint} error={error}>
+        <select value={String(Boolean(value))} onChange={(event) => onChange(event.target.value === 'true')} disabled={disabled}>
+          <option value="true">开启</option>
+          <option value="false">关闭</option>
+        </select>
+      </Field>
+    )
+  }
+  if (type === 'number') {
+    return <Field label={meta.label} hint={meta.hint} error={error}><input type="number" value={String(value ?? '')} onChange={(event) => onChange(Number(event.target.value))} disabled={disabled} /></Field>
+  }
+  if (type === 'map' && isRecord(value)) {
+    return <MapField label={meta.label} hint={meta.hint} value={value} onChange={onChange} error={error} disabled={disabled} />
+  }
+  if (type === 'list' || Array.isArray(value)) {
+    if (Array.isArray(value) && value.some((item) => isRecord(item))) {
+      return <StructuredListField label={meta.label} hint={meta.hint} value={value} onChange={onChange} error={error} disabled={disabled} />
+    }
+    return <Field label={meta.label} hint={meta.hint} error={error}><input value={(Array.isArray(value) ? value : []).join(', ')} onChange={(event) => onChange(event.target.value.split(',').map((item) => item.trim()).filter(Boolean))} disabled={disabled} /></Field>
+  }
+  return <Field label={meta.label || key} hint={meta.hint} error={error}><input value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></Field>
+}
+
+function StructuredListField({ label, hint, value, onChange, error, disabled }: { label: string; hint: string; value: ConfigValue[]; onChange: (value: ConfigValue) => void; error: string | null; disabled: boolean }) {
+  const [text, setText] = useState(() => JSON.stringify(value, null, 2))
+  const [parseError, setParseError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setText(JSON.stringify(value, null, 2))
+    setParseError(null)
+  }, [value])
+
+  const update = (nextText: string) => {
+    setText(nextText)
+    try {
+      const parsed = JSON.parse(nextText)
+      if (!Array.isArray(parsed)) {
+        setParseError('请输入数组结构。')
+        return
+      }
+      setParseError(null)
+      onChange(parsed as ConfigValue)
+    } catch {
+      setParseError('结构化文本格式不正确，请修正后再保存。')
+    }
+  }
+
+  return (
+    <Field label={label} hint={hint} error={parseError || error}>
+      <textarea rows={8} value={text} onChange={(event) => update(event.target.value)} disabled={disabled} />
+    </Field>
+  )
+}
+
+function MapField({ label, hint, value, onChange, error, disabled }: { label: string; hint: string; value: Record<string, unknown>; onChange: (value: ConfigValue) => void; error: string | null; disabled: boolean }) {
+  const entries = Object.entries(value)
+  const updateKey = (oldKey: string, nextKey: string) => {
+    const next: Record<string, unknown> = {}
+    entries.forEach(([key, entryValue]) => {
+      next[key === oldKey ? nextKey : key] = entryValue
+    })
+    onChange(next)
+  }
+  const updateValue = (key: string, nextValue: string) => onChange({ ...value, [key]: nextValue })
+  return (
+    <Field label={label} hint={hint} error={error}>
+      <div className="config-kv-list">
+        {entries.map(([entryKey, entryValue]) => (
+          <div key={entryKey} className="config-kv-row">
+            <input value={entryKey} onChange={(event) => updateKey(entryKey, event.target.value)} aria-label={`${label} 键`} disabled={disabled} />
+            <input value={String(entryValue ?? '')} onChange={(event) => updateValue(entryKey, event.target.value)} aria-label={`${label} 值`} disabled={disabled} />
+          </div>
+        ))}
+        <button type="button" className="ghost small" onClick={() => onChange({ ...value, [`key_${entries.length + 1}`]: '' })} disabled={disabled}>新增键值</button>
+      </div>
+    </Field>
+  )
+}
+
+function draftId(row: ConfigItem) {
+  return `${row.config_category ?? row.tab}:${row.config_key ?? row.key}:${row.scope ?? 'global'}`
 }
