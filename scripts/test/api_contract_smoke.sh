@@ -764,6 +764,33 @@ print(order_id)
 PY
 }
 
+assert_cashier_sync_risk_state() {
+  local json="$1"
+  local order_id="$2"
+  JSON="$json" python3 - "$order_id" <<'PY'
+import json
+import os
+import sys
+
+data = json.loads(os.environ["JSON"])
+order_id = int(sys.argv[1])
+payload = data.get("data", {})
+order = payload.get("order") or {}
+sync = payload.get("sync") or {}
+if order.get("id") != order_id:
+    raise SystemExit(f"risk sync returned wrong order: want {order_id}, got {payload!r}")
+if order.get("status") != "pending":
+    raise SystemExit(f"risk sync should keep order pending for operator handling: {payload!r}")
+if sync.get("query_status") != "failed":
+    raise SystemExit(f"risk sync query_status should be failed: {payload!r}")
+if sync.get("risk_category") != "risk_control":
+    raise SystemExit(f"risk sync should classify risk_control: {payload!r}")
+if "更换支付渠道" not in str(sync.get("action_hint", "")):
+    raise SystemExit(f"risk sync should guide channel switching: {payload!r}")
+print(order_id)
+PY
+}
+
 assert_cashier_refund_state() {
   local json="$1"
   local status="$2"
@@ -797,13 +824,17 @@ assert_cashier_chargeback_state() {
   local order_id="$2"
   local expected_available="$3"
   local expected_recharge="$4"
-  JSON="$json" python3 - "$order_id" "$expected_available" "$expected_recharge" <<'PY'
+  local expected_points="${5:-}"
+  local expected_reason="${6:-}"
+  local expected_key="${7:-}"
+  JSON="$json" python3 - "$order_id" "$expected_available" "$expected_recharge" "$expected_points" "$expected_reason" "$expected_key" <<'PY'
 import json
 import os
 import sys
 
 data = json.loads(os.environ["JSON"])
 order_id, expected_available, expected_recharge = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+expected_points, expected_reason, expected_key = sys.argv[4], sys.argv[5], sys.argv[6]
 payload = data.get("data", {})
 order = payload.get("order") or {}
 balance = payload.get("balance") or {}
@@ -813,6 +844,14 @@ if balance.get("available_points") != expected_available:
     raise SystemExit(f"unexpected chargeback available balance: want {expected_available}, got {balance!r}")
 if balance.get("recharge_points") != expected_recharge:
     raise SystemExit(f"unexpected chargeback recharge balance: want {expected_recharge}, got {balance!r}")
+if expected_points and order.get("chargeback_points") != expected_points:
+    raise SystemExit(f"unexpected chargeback points: want {expected_points}, got {order!r}")
+if expected_reason and order.get("chargeback_reason") != expected_reason:
+    raise SystemExit(f"unexpected chargeback reason: want {expected_reason}, got {order!r}")
+if expected_key and order.get("chargeback_idempotency_key") != expected_key:
+    raise SystemExit(f"unexpected chargeback idempotency key: want {expected_key}, got {order!r}")
+if expected_points and not order.get("chargeback_at"):
+    raise SystemExit(f"expected chargeback_at on order: {order!r}")
 print(order_id)
 PY
 }
@@ -1416,6 +1455,32 @@ sync_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/$
   --data "{\"refund_trade_no\":\"${sync_refund_trade_no}\",\"reason\":\"api smoke rollback sync complete\"}")"
 assert_cashier_refund_state "$sync_refund_body" "refunded" "$sync_refund_trade_no" "10.00000" "20.00000" >/dev/null
 
+sync_provider_disabled_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/provider-instances/${SYNC_PROVIDER_INSTANCE_ID}" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(SYNC_TRADE_NO="$sync_trade_no" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "provider_type": "mock",
+    "name": "Smoke Mock Sync Paid Disabled",
+    "enabled": False,
+    "supported_methods": ["mock"],
+    "sort_order": 0,
+    "scheduler_weight": 100,
+    "limits": {"min_amount_cny": "1.00000", "max_amount_cny": "500.00000"},
+    "config": {
+        "mock": True,
+        "query_status": "paid",
+        "query_trade_no": os.environ["SYNC_TRADE_NO"],
+        "query_amount_cny": "10.00000",
+    },
+}))
+PY
+)")"
+[[ "$(assert_json_field "$sync_provider_disabled_body" "data.enabled")" == "False" || "$(assert_json_field "$sync_provider_disabled_body" "data.enabled")" == "false" ]]
+
 round_robin_provider_a_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/provider-instances" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
@@ -1469,6 +1534,92 @@ assert_cashier_order_state "$round_robin_cancel_a_body" "canceled" "10.00000" "2
 round_robin_cancel_b_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${ROUND_ROBIN_ORDER_B_ID}/cancel" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_cashier_order_state "$round_robin_cancel_b_body" "canceled" "10.00000" "20.00000" "no" >/dev/null
+
+round_robin_provider_a_disabled_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/provider-instances/${ROUND_ROBIN_PROVIDER_A_ID}" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "provider_type":"mock",
+    "name":"Smoke Mock Round Robin A Disabled",
+    "enabled":false,
+    "supported_methods":["mock"],
+    "sort_order":1,
+    "scheduler_weight":100,
+    "limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},
+    "config":{"mock":true}
+  }')"
+[[ "$(assert_json_field "$round_robin_provider_a_disabled_body" "data.enabled")" == "False" || "$(assert_json_field "$round_robin_provider_a_disabled_body" "data.enabled")" == "false" ]]
+
+round_robin_provider_b_disabled_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/provider-instances/${ROUND_ROBIN_PROVIDER_B_ID}" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "provider_type":"mock",
+    "name":"Smoke Mock Round Robin B Disabled",
+    "enabled":false,
+    "supported_methods":["mock"],
+    "sort_order":2,
+    "scheduler_weight":100,
+    "limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},
+    "config":{"mock":true}
+  }')"
+[[ "$(assert_json_field "$round_robin_provider_b_disabled_body" "data.enabled")" == "False" || "$(assert_json_field "$round_robin_provider_b_disabled_body" "data.enabled")" == "false" ]]
+
+sync_risk_provider_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/provider-instances" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "provider_type":"mock",
+    "name":"Smoke Mock Sync Risk",
+    "enabled":true,
+    "supported_methods":["mock"],
+    "sort_order":0,
+    "scheduler_weight":100,
+    "limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},
+    "config":{
+      "mock":true,
+      "query_status":"risk_control",
+      "query_trade_no":"SYNC-RISK-SMOKE",
+      "query_amount_cny":"10.00000"
+    }
+  }')"
+SYNC_RISK_PROVIDER_INSTANCE_ID="$(assert_json_field "$sync_risk_provider_body" "data.id")"
+
+sync_risk_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"mock"}')"
+SYNC_RISK_ORDER_ID="$(assert_json_field "$sync_risk_order_body" "data.id")"
+assert_cashier_order_state "$sync_risk_order_body" "pending" "10.00000" "20.00000" "no" >/dev/null
+[[ "$(assert_json_field "$sync_risk_order_body" "data.provider_instance_id")" == "$SYNC_RISK_PROVIDER_INSTANCE_ID" ]]
+
+sync_risk_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${SYNC_RISK_ORDER_ID}/sync" \
+  -H "Authorization: Bearer $ADMIN_TOKEN")"
+assert_cashier_sync_risk_state "$sync_risk_body" "$SYNC_RISK_ORDER_ID" >/dev/null
+
+sync_risk_cancel_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${SYNC_RISK_ORDER_ID}/cancel" \
+  -H "Authorization: Bearer $ACCESS_TOKEN")"
+assert_cashier_order_state "$sync_risk_cancel_body" "canceled" "10.00000" "20.00000" "no" >/dev/null
+
+sync_risk_provider_disabled_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/provider-instances/${SYNC_RISK_PROVIDER_INSTANCE_ID}" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "provider_type":"mock",
+    "name":"Smoke Mock Sync Risk Disabled",
+    "enabled":false,
+    "supported_methods":["mock"],
+    "sort_order":0,
+    "scheduler_weight":100,
+    "limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},
+    "config":{
+      "mock":true,
+      "query_status":"risk_control",
+      "query_trade_no":"SYNC-RISK-SMOKE",
+      "query_amount_cny":"10.00000"
+    }
+  }')"
+[[ "$(assert_json_field "$sync_risk_provider_disabled_body" "data.enabled")" == "False" || "$(assert_json_field "$sync_risk_provider_disabled_body" "data.enabled")" == "false" ]]
 
 custom_amount_config_for_provider_limits_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/custom-amount-config" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -1613,7 +1764,13 @@ chargeback_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${chargeback_key}" \
   --data '{"charge_points":"5.00000","reason":"api smoke provider chargeback"}')"
-assert_cashier_chargeback_state "$chargeback_body" "$ORDER_ID" "120.00000" "95.00000" >/dev/null
+assert_cashier_chargeback_state "$chargeback_body" "$ORDER_ID" "120.00000" "95.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
+
+chargeback_order_detail_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$chargeback_order_detail_body" "data.chargeback_points")" == "5.00000" ]]
+[[ "$(assert_json_field "$chargeback_order_detail_body" "data.chargeback_reason")" == "api smoke provider chargeback" ]]
+[[ "$(assert_json_field "$chargeback_order_detail_body" "data.chargeback_idempotency_key")" == "$chargeback_key" ]]
+assert_json_path_exists "$chargeback_order_detail_body" "data.chargeback_at" >/dev/null
 
 chargeback_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$chargeback_balance_body" "data.available_points")" == "120.00000" ]]
@@ -1626,7 +1783,7 @@ chargeback_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/or
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${chargeback_key}" \
   --data '{"charge_points":"5.00000","reason":"api smoke provider chargeback"}')"
-assert_cashier_chargeback_state "$chargeback_replay_body" "$ORDER_ID" "120.00000" "95.00000" >/dev/null
+assert_cashier_chargeback_state "$chargeback_replay_body" "$ORDER_ID" "120.00000" "95.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
 
 chargeback_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.available_points")" == "120.00000" ]]

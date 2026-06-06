@@ -169,6 +169,10 @@ type PaymentOrder struct {
 	RefundTradeNo      string         `json:"refund_trade_no,omitempty"`
 	RefundedAmountCNY  string         `json:"refunded_amount_cny,omitempty"`
 	RefundedPoints     string         `json:"refunded_points,omitempty"`
+	ChargebackPoints   string         `json:"chargeback_points,omitempty"`
+	ChargebackReason   string         `json:"chargeback_reason,omitempty"`
+	ChargebackAt       *time.Time     `json:"chargeback_at,omitempty"`
+	ChargebackKey      string         `json:"chargeback_idempotency_key,omitempty"`
 	PaymentURL         string         `json:"payment_url,omitempty"`
 	QRCode             string         `json:"qr_code,omitempty"`
 	ClientToken        string         `json:"client_token,omitempty"`

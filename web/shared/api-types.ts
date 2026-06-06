@@ -309,6 +309,10 @@ export type PaymentOrder = {
   refund_trade_no?: string
   refunded_amount_cny?: string
   refunded_points?: string
+  chargeback_points?: string
+  chargeback_reason?: string
+  chargeback_at?: string | null
+  chargeback_idempotency_key?: string
   payment_url?: string
   qr_code?: string
   client_token?: string
@@ -347,6 +351,8 @@ export type PaymentOrderSyncResult = {
   provider_type: PaymentProviderType
   provider_instance_id?: ID
   query_status: PaymentOrderSyncStatus
+  risk_category?: 'pending' | 'paid' | 'closed' | 'refunded' | 'channel_error' | 'risk_control' | string
+  action_hint?: string
   paid: boolean
   completed: boolean
   trade_no?: string

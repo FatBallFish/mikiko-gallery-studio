@@ -368,6 +368,27 @@ func (s *Service) GetOrderForAdmin(ctx context.Context, orderID int64) (domainbi
 	return item, nil
 }
 
+func (s *Service) RecordChargebackSummary(ctx context.Context, req ChargebackSummaryStoreRequest) (domainbilling.PaymentOrder, error) {
+	if req.OrderID <= 0 {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("order_id is required")
+	}
+	points, err := decimal.NewFromString(strings.TrimSpace(req.ChargePoints))
+	if err != nil || !points.IsPositive() {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("charge_points must be positive")
+	}
+	req.ChargePoints = points.Round(5).StringFixed(5)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("reason is required")
+	}
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	item, err := s.store.RecordChargebackSummary(ctx, req)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return item, nil
+}
+
 func (s *Service) RetryWebhookEvent(ctx context.Context, eventID int64) (domainbilling.PaymentWebhookEvent, error) {
 	if eventID <= 0 {
 		return domainbilling.PaymentWebhookEvent{}, errs.BadRequest("event_id is required")

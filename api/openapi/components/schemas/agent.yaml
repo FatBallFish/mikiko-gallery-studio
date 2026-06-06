@@ -413,6 +413,17 @@ components:
           type: string
         refunded_points:
           type: string
+        chargeback_points:
+          type: string
+          description: Last confirmed channel dispute or chargeback deduction points.
+        chargeback_reason:
+          type: string
+          description: Operator reason for the last confirmed channel dispute or chargeback deduction.
+        chargeback_at:
+          type: string
+          format: date-time
+        chargeback_idempotency_key:
+          type: string
         payment_url:
           type: string
         qr_code:

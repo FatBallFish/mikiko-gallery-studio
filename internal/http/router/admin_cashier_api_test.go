@@ -497,8 +497,12 @@ func TestAdminCashierOrderChargebackDeductsBalanceAndIsIdempotent(t *testing.T) 
 	var chargebackResp struct {
 		Data struct {
 			Order struct {
-				ID      int64  `json:"id"`
-				OrderNo string `json:"order_no"`
+				ID                       int64  `json:"id"`
+				OrderNo                  string `json:"order_no"`
+				ChargebackPoints         string `json:"chargeback_points"`
+				ChargebackReason         string `json:"chargeback_reason"`
+				ChargebackIdempotencyKey string `json:"chargeback_idempotency_key"`
+				ChargebackAt             string `json:"chargeback_at"`
 			} `json:"order"`
 			Balance struct {
 				AvailablePoints string `json:"available_points"`
@@ -511,6 +515,29 @@ func TestAdminCashierOrderChargebackDeductsBalanceAndIsIdempotent(t *testing.T) 
 	}
 	if chargebackResp.Data.Order.ID != orderID || chargebackResp.Data.Order.OrderNo == "" || chargebackResp.Data.Balance.AvailablePoints != "35.00000" || chargebackResp.Data.Balance.RechargePoints != "35.00000" {
 		t.Fatalf("unexpected chargeback response %#v", chargebackResp.Data)
+	}
+	if chargebackResp.Data.Order.ChargebackPoints != "5.00000" || chargebackResp.Data.Order.ChargebackReason != "provider chargeback confirmed" || chargebackResp.Data.Order.ChargebackIdempotencyKey != "cashier-chargeback-once" || chargebackResp.Data.Order.ChargebackAt == "" {
+		t.Fatalf("expected chargeback response to include dispute summary, got %#v", chargebackResp.Data.Order)
+	}
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID), nil)
+	detailReq.Header.Set("Authorization", "Bearer "+adminToken)
+	detailRec := httptest.NewRecorder()
+	handler.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("expected cashier order detail 200 after chargeback, got %d body=%s", detailRec.Code, detailRec.Body.String())
+	}
+	var detailResp struct {
+		Data struct {
+			ChargebackPoints string `json:"chargeback_points"`
+			ChargebackReason string `json:"chargeback_reason"`
+			ChargebackAt     string `json:"chargeback_at"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(detailRec.Body).Decode(&detailResp); err != nil {
+		t.Fatalf("decode order detail response: %v body=%s", err, detailRec.Body.String())
+	}
+	if detailResp.Data.ChargebackPoints != "5.00000" || detailResp.Data.ChargebackReason != "provider chargeback confirmed" || detailResp.Data.ChargebackAt == "" {
+		t.Fatalf("expected order detail to persist chargeback summary, got %#v", detailResp.Data)
 	}
 	balanceAfterChargeback, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
 	if err != nil {
@@ -1305,6 +1332,72 @@ func TestAdminCashierOrderSyncRejectsPaidAmountMismatch(t *testing.T) {
 	}
 	if balance.RechargePoints != "0.00000" || balance.AvailablePoints != "0.00000" {
 		t.Fatalf("expected mismatch sync not to credit balance, got %#v", balance)
+	}
+}
+
+func TestAdminCashierOrderSyncClassifiesRiskControlStatus(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	if err := authSvc.SendEmailCode("cashier-sync-risk-user@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	_, session, err := authSvc.LoginWithEmailCode("cashier-sync-risk-user@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email:        "cashier-admin@example.com",
+		PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role:         domainadminauth.RoleAdmin,
+		Status:       "active",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	billingSvc := billingservice.NewService(cfg.Billing)
+	handlerAPI := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, nil, nil, nil, nil, nil)
+	handler := NewWithAPI(handlerAPI)
+	adminToken := loginAdminForCashierTest(t, handler)
+
+	providerBody := `{"provider_type":"mock","name":"Mock 风控查单","enabled":true,"supported_methods":["mock"],"sort_order":1,"scheduler_weight":100,"config":{"mock":true,"query_status":"risk_control","query_trade_no":"SYNC-RISK-001","query_amount_cny":"19.90000"}}`
+	providerReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/provider-instances", bytes.NewBufferString(providerBody))
+	providerReq.Header.Set("Authorization", "Bearer "+adminToken)
+	providerReq.Header.Set("Content-Type", "application/json")
+	providerRec := httptest.NewRecorder()
+	handler.ServeHTTP(providerRec, providerReq)
+	if providerRec.Code != http.StatusCreated {
+		t.Fatalf("expected provider create 201, got %d body=%s", providerRec.Code, providerRec.Body.String())
+	}
+
+	orderID, _ := createCustomCashierOrderForTest(t, handler, session.AccessToken, "mock", "19.90000")
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+	syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+	syncRec := httptest.NewRecorder()
+	handler.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("expected sync 200, got %d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+	var syncResp struct {
+		Data struct {
+			Sync struct {
+				QueryStatus  string `json:"query_status"`
+				RiskCategory string `json:"risk_category"`
+				ActionHint   string `json:"action_hint"`
+			} `json:"sync"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(syncRec.Body).Decode(&syncResp); err != nil {
+		t.Fatalf("decode sync response: %v body=%s", err, syncRec.Body.String())
+	}
+	if syncResp.Data.Sync.QueryStatus != "failed" || syncResp.Data.Sync.RiskCategory != "risk_control" || !strings.Contains(syncResp.Data.Sync.ActionHint, "更换支付渠道") {
+		t.Fatalf("expected risk-control sync classification, got %#v", syncResp.Data.Sync)
 	}
 }
 

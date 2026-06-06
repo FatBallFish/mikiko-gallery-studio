@@ -153,6 +153,8 @@ type adminCashierOrderSyncResult struct {
 	ProviderType       string         `json:"provider_type"`
 	ProviderInstanceID int64          `json:"provider_instance_id,omitempty"`
 	QueryStatus        string         `json:"query_status"`
+	RiskCategory       string         `json:"risk_category,omitempty"`
+	ActionHint         string         `json:"action_hint,omitempty"`
 	Paid               bool           `json:"paid"`
 	Completed          bool           `json:"completed"`
 	TradeNo            string         `json:"trade_no,omitempty"`
@@ -165,6 +167,22 @@ type adminCashierOrderSyncResult struct {
 type adminCashierOrderSyncResponse struct {
 	Order domainbilling.PaymentOrder  `json:"order"`
 	Sync  adminCashierOrderSyncResult `json:"sync"`
+}
+
+func buildAdminCashierOrderSyncResult(instance cashierProviderInstance, order domainbilling.PaymentOrder, queryStatus cashierQueryStatus, tradeNo, amountCNY string, raw map[string]any) adminCashierOrderSyncResult {
+	return adminCashierOrderSyncResult{
+		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
+		ProviderInstanceID: instance.ID,
+		QueryStatus:        queryStatus.Status,
+		RiskCategory:       queryStatus.RiskCategory,
+		ActionHint:         queryStatus.ActionHint,
+		Paid:               queryStatus.Paid,
+		TradeNo:            strings.TrimSpace(tradeNo),
+		AmountCNY:          strings.TrimSpace(amountCNY),
+		Message:            queryStatus.Message,
+		Raw:                raw,
+		SyncedAt:           time.Now().UTC(),
+	}
 }
 
 type cashierProviderRefundResult struct {
@@ -3685,11 +3703,21 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.order.chargeback", "payment_order", fmt.Sprintf("%d", order.ID), map[string]any{"order_no": order.OrderNo, "charge_points": chargePoints.Round(5).StringFixed(5), "change_points": changePoints, "reason": reason, "idempotency_key": idempotencyKey}); auditErr != nil {
+		updatedOrder, err := a.billing.RecordChargebackSummary(r.Context(), billingservice.ChargebackSummaryStoreRequest{
+			OrderID:        order.ID,
+			ChargePoints:   chargePoints.Round(5).StringFixed(5),
+			Reason:         reason,
+			IdempotencyKey: idempotencyKey,
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.order.chargeback", "payment_order", fmt.Sprintf("%d", updatedOrder.ID), map[string]any{"order_no": updatedOrder.OrderNo, "charge_points": chargePoints.Round(5).StringFixed(5), "change_points": changePoints, "reason": reason, "idempotency_key": idempotencyKey}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"order": order, "balance": balance})
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"order": updatedOrder, "balance": balance})
 	case r.Method == http.MethodPost && action == "sync":
 		result, syncErr := a.syncAdminCashierOrder(r.Context(), orderID)
 		if syncErr != nil {
@@ -3896,17 +3924,9 @@ func (a *API) queryCashierOrderStatusFromConfig(order domainbilling.PaymentOrder
 		raw["amount_cny"] = amountCNY
 	}
 	queryStatus := normalizeCashierQueryStatus(status)
-	return adminCashierOrderSyncResult{
-		ProviderType:       providerType,
-		ProviderInstanceID: instance.ID,
-		QueryStatus:        queryStatus.Status,
-		Paid:               queryStatus.Paid,
-		TradeNo:            tradeNo,
-		AmountCNY:          amountCNY,
-		Message:            queryStatus.Message,
-		Raw:                raw,
-		SyncedAt:           now,
-	}, nil
+	result := buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw)
+	result.SyncedAt = now
+	return result, nil
 }
 
 func (a *API) queryAlipayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
@@ -3957,17 +3977,7 @@ func (a *API) queryAlipayCashierOrderStatus(ctx context.Context, order domainbil
 	raw["source"] = "alipay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return adminCashierOrderSyncResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		QueryStatus:        queryStatus.Status,
-		Paid:               queryStatus.Paid,
-		TradeNo:            tradeNo,
-		AmountCNY:          amountCNY,
-		Message:            queryStatus.Message,
-		Raw:                raw,
-		SyncedAt:           time.Now().UTC(),
-	}, nil
+	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
 }
 
 func (a *API) queryWxPayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
@@ -4017,17 +4027,7 @@ func (a *API) queryWxPayCashierOrderStatus(ctx context.Context, order domainbill
 	raw["source"] = "wxpay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return adminCashierOrderSyncResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		QueryStatus:        queryStatus.Status,
-		Paid:               queryStatus.Paid,
-		TradeNo:            tradeNo,
-		AmountCNY:          amountCNY,
-		Message:            queryStatus.Message,
-		Raw:                raw,
-		SyncedAt:           time.Now().UTC(),
-	}, nil
+	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
 }
 
 func (a *API) queryEasyPayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
@@ -4084,17 +4084,7 @@ func (a *API) queryEasyPayCashierOrderStatus(ctx context.Context, order domainbi
 	raw["source"] = "easypay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return adminCashierOrderSyncResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		QueryStatus:        queryStatus.Status,
-		Paid:               queryStatus.Paid,
-		TradeNo:            tradeNo,
-		AmountCNY:          amountCNY,
-		Message:            queryStatus.Message,
-		Raw:                raw,
-		SyncedAt:           time.Now().UTC(),
-	}, nil
+	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
 }
 
 func (a *API) queryJeePayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
@@ -4157,17 +4147,7 @@ func (a *API) queryJeePayCashierOrderStatus(ctx context.Context, order domainbil
 	raw["source"] = "jeepay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return adminCashierOrderSyncResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		QueryStatus:        queryStatus.Status,
-		Paid:               queryStatus.Paid,
-		TradeNo:            tradeNo,
-		AmountCNY:          amountCNY,
-		Message:            queryStatus.Message,
-		Raw:                raw,
-		SyncedAt:           time.Now().UTC(),
-	}, nil
+	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
 }
 
 func (a *API) refundAlipayCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance, refundTradeNo string, refundAmountCNY string, reason string) (cashierProviderRefundResult, *errs.Error) {
@@ -4593,25 +4573,29 @@ func cashierRawString(raw any) string {
 }
 
 type cashierQueryStatus struct {
-	Status  string
-	Paid    bool
-	Message string
+	Status       string
+	RiskCategory string
+	ActionHint   string
+	Paid         bool
+	Message      string
 }
 
 func normalizeCashierQueryStatus(status string) cashierQueryStatus {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "paid", "success", "succeeded", "completed", "complete", "trade_success", "trade_finished", "1", "2":
-		return cashierQueryStatus{Status: "paid", Paid: true, Message: "渠道订单已支付"}
+		return cashierQueryStatus{Status: "paid", RiskCategory: "paid", ActionHint: "渠道已确认支付，可核对本地到账状态。", Paid: true, Message: "渠道订单已支付"}
 	case "pending", "processing", "process", "wait", "waiting", "created", "new", "0", "wait_buyer_pay", "userpaying", "notpay":
-		return cashierQueryStatus{Status: "pending", Message: "渠道订单未支付或仍在处理中"}
+		return cashierQueryStatus{Status: "pending", RiskCategory: "pending", ActionHint: "渠道仍未确认支付，稍后可再次查单。", Message: "渠道订单未支付或仍在处理中"}
 	case "closed", "close", "canceled", "cancelled", "cancel", "expired", "timeout", "trade_closed", "revoked", "3":
-		return cashierQueryStatus{Status: "closed", Message: "渠道订单已关闭"}
+		return cashierQueryStatus{Status: "closed", RiskCategory: "closed", ActionHint: "渠道订单已关闭，建议取消当前订单并让用户重新创建订单。", Message: "渠道订单已关闭"}
 	case "failed", "failure", "fail", "error", "payerror", "pay_error", "trade_failed", "4":
-		return cashierQueryStatus{Status: "failed", Message: "渠道订单支付失败"}
+		return cashierQueryStatus{Status: "failed", RiskCategory: "channel_error", ActionHint: "渠道返回异常状态，请结合原始响应、商户后台和回调事件继续排查。", Message: "渠道订单支付失败"}
+	case "risk", "risk_control", "fraud", "intercepted", "security", "blocked", "limited":
+		return cashierQueryStatus{Status: "failed", RiskCategory: "risk_control", ActionHint: "渠道侧风控或安全策略拦截，建议让用户更换支付渠道或重新创建订单后再支付。", Message: "渠道订单被风控拦截"}
 	case "refunded", "refund", "partially_refunded", "partial_refund", "trade_refund":
-		return cashierQueryStatus{Status: "refunded", Message: "渠道订单已退款"}
+		return cashierQueryStatus{Status: "refunded", RiskCategory: "refunded", ActionHint: "渠道显示已退款，请核对本地退款流水和用户充值余额是否一致。", Message: "渠道订单已退款"}
 	default:
-		return cashierQueryStatus{Status: "pending", Message: "渠道订单未支付或仍在处理中"}
+		return cashierQueryStatus{Status: "pending", RiskCategory: "pending", ActionHint: "渠道仍未确认支付，稍后可再次查单。", Message: "渠道订单未支付或仍在处理中"}
 	}
 }
 

@@ -1324,6 +1324,13 @@ components:
           type: string
           enum: [pending, paid, closed, failed, refunded]
           description: Platform-normalized channel order status observed during sync. Provider raw status remains in raw.
+        risk_category:
+          type: string
+          enum: [pending, paid, closed, refunded, channel_error, risk_control]
+          description: Operator-facing category for channel status, fraud/risk control, and abnormal outcomes.
+        action_hint:
+          type: string
+          description: Operator-facing next action suggestion for the observed channel status.
         paid:
           type: boolean
         completed:

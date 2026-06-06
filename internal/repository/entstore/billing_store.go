@@ -246,6 +246,35 @@ func (s *BillingStore) GetOrderForAdmin(ctx context.Context, orderID int64) (dom
 	return s.mapPaymentOrder(ctx, order), nil
 }
 
+func (s *BillingStore) RecordChargebackSummary(ctx context.Context, req billingservice.ChargebackSummaryStoreRequest) (domainbilling.PaymentOrder, error) {
+	order, err := s.client.PaymentOrder.Query().
+		Where(paymentorder.IDEQ(int(req.OrderID))).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+		}
+		return domainbilling.PaymentOrder{}, err
+	}
+	payload := cloneMap(order.ProviderPayload)
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	now := time.Now().UTC()
+	payload["chargeback_points"] = strings.TrimSpace(req.ChargePoints)
+	payload["chargeback_reason"] = strings.TrimSpace(req.Reason)
+	payload["chargeback_idempotency_key"] = strings.TrimSpace(req.IdempotencyKey)
+	payload["chargeback_at"] = now.Format(time.RFC3339Nano)
+	updated, err := s.client.PaymentOrder.UpdateOneID(order.ID).
+		SetProviderPayload(payload).
+		SetUpdatedAt(now).
+		Save(ctx)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.mapPaymentOrder(ctx, updated), nil
+}
+
 func (s *BillingStore) RetryWebhookEvent(ctx context.Context, eventID int64) (domainbilling.PaymentWebhookEvent, error) {
 	event, err := s.client.PaymentWebhookEvent.Query().
 		Where(paymentwebhookevent.IDEQ(int(eventID))).
@@ -2552,6 +2581,20 @@ func applyPaymentOrderProviderPayload(order *domainbilling.PaymentOrder, payload
 	}
 	if refundedPoints := strings.TrimSpace(fmt.Sprint(payload["refunded_points"])); refundedPoints != "" && refundedPoints != "<nil>" {
 		order.RefundedPoints = refundedPoints
+	}
+	if chargebackPoints := strings.TrimSpace(fmt.Sprint(payload["chargeback_points"])); chargebackPoints != "" && chargebackPoints != "<nil>" {
+		order.ChargebackPoints = chargebackPoints
+	}
+	if chargebackReason := strings.TrimSpace(fmt.Sprint(payload["chargeback_reason"])); chargebackReason != "" && chargebackReason != "<nil>" {
+		order.ChargebackReason = chargebackReason
+	}
+	if chargebackKey := strings.TrimSpace(fmt.Sprint(payload["chargeback_idempotency_key"])); chargebackKey != "" && chargebackKey != "<nil>" {
+		order.ChargebackKey = chargebackKey
+	}
+	if chargebackAt := strings.TrimSpace(fmt.Sprint(payload["chargeback_at"])); chargebackAt != "" && chargebackAt != "<nil>" {
+		if parsed, err := time.Parse(time.RFC3339Nano, chargebackAt); err == nil {
+			order.ChargebackAt = &parsed
+		}
 	}
 	order.ProviderInstanceID = int64FromAny(payload["provider_instance_id"])
 	if display, ok := payload["payment_display"].(map[string]any); ok && len(display) > 0 {

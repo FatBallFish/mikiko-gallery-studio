@@ -961,6 +961,63 @@ func TestBillingStoreCompleteRechargeOrderCompletesAndIsIdempotent(t *testing.T)
 	}
 }
 
+func TestBillingStoreRecordChargebackSummaryPersistsOnOrder(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-chargeback-summary?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID:         188,
+		AmountCNY:      "10.00000",
+		CNYPerPoint:    "0.50000",
+		Provider:       "mock",
+		PurchaseType:   "custom_amount",
+		VisibleMethod:  "mock",
+		ProviderType:   "mock",
+		PaymentDisplay: map[string]any{"type": "mock"},
+		IdempotencyKey: "chargeback-summary-order",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+	if _, err := store.CompleteRechargeOrder(ctx, domainbilling.CompleteRechargeOrderRequest{
+		UserID:   188,
+		OrderID:  order.ID,
+		Provider: "mock",
+		TradeNo:  "CHARGEBACK-SUMMARY-TRADE",
+	}); err != nil {
+		t.Fatalf("CompleteRechargeOrder: %v", err)
+	}
+
+	updated, err := store.RecordChargebackSummary(ctx, billingservice.ChargebackSummaryStoreRequest{
+		OrderID:        order.ID,
+		ChargePoints:   "5.00000",
+		Reason:         "provider dispute accepted",
+		IdempotencyKey: "chargeback-summary-once",
+	})
+	if err != nil {
+		t.Fatalf("RecordChargebackSummary: %v", err)
+	}
+	if updated.ChargebackPoints != "5.00000" || updated.ChargebackReason != "provider dispute accepted" || updated.ChargebackKey != "chargeback-summary-once" || updated.ChargebackAt == nil {
+		t.Fatalf("unexpected chargeback summary on updated order %#v", updated)
+	}
+
+	reloaded, err := store.GetOrderForAdmin(ctx, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrderForAdmin: %v", err)
+	}
+	if reloaded.ChargebackPoints != "5.00000" || reloaded.ChargebackReason != "provider dispute accepted" || reloaded.ChargebackKey != "chargeback-summary-once" || reloaded.ChargebackAt == nil {
+		t.Fatalf("expected chargeback summary to persist on order detail, got %#v", reloaded)
+	}
+}
+
 func TestBillingStoreRefundPaymentOrderDeductsRechargeGrantAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-refund-payment-order?mode=memory&cache=shared&_fk=1")

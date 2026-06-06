@@ -18,6 +18,17 @@ export function cashierOrderRiskRows(order: PaymentOrder): CashierRiskRow[] {
   const refundedPoints = parseAmount(order.refunded_points)
   const remainingAmount = amount === null || refundedAmount === null ? null : Math.max(amount - refundedAmount, 0)
   const remainingPoints = points === null || refundedPoints === null ? null : Math.max(points - refundedPoints, 0)
+  const chargebackPoints = parseAmount(order.chargeback_points)
+
+  if (chargebackPoints !== null && chargebackPoints > 0) {
+    rows.push({
+      key: 'chargeback-dispute',
+      label: '争议追扣',
+      value: `已追扣 ${formatPoints(chargebackPoints)} 积分`,
+      detail: order.chargeback_reason || '渠道侧拒付或争议已确认，系统已按运营处理记录扣减用户余额。',
+      tone: 'danger',
+    })
+  }
 
   if (order.status === 'failed') {
     rows.push({

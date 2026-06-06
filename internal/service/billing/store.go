@@ -76,6 +76,13 @@ type RefundFinalizeFailureRequest struct {
 	FailureReason string
 }
 
+type ChargebackSummaryStoreRequest struct {
+	OrderID        int64
+	ChargePoints   string
+	Reason         string
+	IdempotencyKey string
+}
+
 type Store interface {
 	GetBalance(ctx context.Context, userID int64) (BalanceState, error)
 	ListLedger(ctx context.Context, userID int64, page, pageSize int) (domainbilling.LedgerPage, error)
@@ -88,6 +95,7 @@ type Store interface {
 	GetOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
 	GetOrderByIdempotencyKey(ctx context.Context, userID int64, idempotencyKey string) (domainbilling.PaymentOrder, error)
 	GetOrderForAdmin(ctx context.Context, orderID int64) (domainbilling.PaymentOrder, error)
+	RecordChargebackSummary(ctx context.Context, req ChargebackSummaryStoreRequest) (domainbilling.PaymentOrder, error)
 	RetryWebhookEvent(ctx context.Context, eventID int64) (domainbilling.PaymentWebhookEvent, error)
 	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
 	CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error)
@@ -374,6 +382,23 @@ func (s *MemoryStore) GetOrderForAdmin(_ context.Context, orderID int64) (domain
 	if !ok {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
 	}
+	return order, nil
+}
+
+func (s *MemoryStore) RecordChargebackSummary(_ context.Context, req ChargebackSummaryStoreRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[req.OrderID]
+	if !ok {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	now := time.Now().UTC()
+	order.ChargebackPoints = strings.TrimSpace(req.ChargePoints)
+	order.ChargebackReason = strings.TrimSpace(req.Reason)
+	order.ChargebackKey = strings.TrimSpace(req.IdempotencyKey)
+	order.ChargebackAt = &now
+	order.UpdatedAt = now
+	s.orders[order.ID] = order
 	return order, nil
 }
 

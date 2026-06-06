@@ -51,6 +51,18 @@ if (!failed || failed.tone !== 'danger' || failed.detail !== 'amount mismatch') 
   throw new Error(`failed orders should expose actionable failure reason, got ${JSON.stringify(failedRows)}`)
 }
 
+const chargebackRows = cashierOrderRiskRows({
+  ...completedOrder,
+  chargeback_points: '5.00000',
+  chargeback_reason: '渠道拒付已确认',
+  chargeback_idempotency_key: 'cashier-order-1-chargeback-once',
+  chargeback_at: '2026-06-05T10:30:00Z',
+})
+const chargeback = chargebackRows.find((row) => row.key === 'chargeback-dispute')
+if (!chargeback || chargeback.label !== '争议追扣' || chargeback.value !== '已追扣 5.00 积分' || chargeback.tone !== 'danger' || !chargeback.detail.includes('渠道拒付已确认')) {
+  throw new Error(`chargeback orders should classify channel dispute deduction, got ${JSON.stringify(chargebackRows)}`)
+}
+
 const finalizeFailed = cashierWebhookRiskRow({
   id: 1,
   order_id: 1,
@@ -83,10 +95,11 @@ if (retryablePayment.label !== '支付回调' || retryablePayment.value !== '待
 
 const visibleCopy = [
   ...partialRows.map((row) => `${row.label}${row.value}${row.detail}`),
+  ...chargebackRows.map((row) => `${row.label}${row.value}${row.detail}`),
   `${finalizeFailed.label}${finalizeFailed.value}${finalizeFailed.detail}`,
   `${retryablePayment.label}${retryablePayment.value}${retryablePayment.detail}`,
 ].join(' ')
 
-if (/partially_refunded|refund\.local_finalize_failed|payment\.retryable_failed|TODO|后续|暂不/.test(visibleCopy)) {
+if (/partially_refunded|refund\.local_finalize_failed|payment\.retryable_failed|chargeback_|TODO|后续|暂不/.test(visibleCopy)) {
   throw new Error(`cashier risk copy should not expose raw enums or roadmap wording, got ${visibleCopy}`)
 }

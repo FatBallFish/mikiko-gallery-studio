@@ -9,6 +9,7 @@ import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSavePayload
 import { cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierToggleSupportedMethod } from './cashierProviderOptions'
 import { cashierOrderRiskRows, cashierWebhookRiskRow } from './cashierRiskRows'
 import type { CashierRiskRow } from './cashierRiskRows'
+import { cashierSyncRow } from './cashierSyncRows'
 import type { CashierStatusBadge } from './cashierStatusRows'
 import { cashierVisibleMethodRow } from './cashierVisibleMethodRows'
 import { cashierWebhookRow } from './cashierWebhookRows'
@@ -19,7 +20,6 @@ import {
   cashierPlanStatusBadge,
   cashierPlanStatusOptions,
   cashierPlanTypeLabel,
-  cashierSyncStatusLabel,
   cashierVisibleFlagLabel,
   cashierWebhookStatusBadge,
 } from './cashierStatusRows'
@@ -382,7 +382,8 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
         }
       })
       setOrderDetail((current) => current?.id === result.order.id ? result.order : current)
-      onFeedback?.(result.sync.completed ? '查单已确认到账' : '查单完成', result.sync.message ?? cashierSyncStatusLabel(result.sync.query_status))
+      const syncRow = cashierSyncRow(result.sync)
+      onFeedback?.(result.sync.completed ? '查单已确认到账' : syncRow.categoryLabel, syncRow.actionHint)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '订单查单失败')
     } finally {
