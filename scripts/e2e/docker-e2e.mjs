@@ -2,6 +2,7 @@
 
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
+import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -13,6 +14,7 @@ const NGINX_URL = envUrl('NGINX_URL', 'http://127.0.0.1:18081')
 const REPORT_DIR = path.join(ROOT_DIR, 'tmp/e2e')
 const RUN_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
 const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII='
+const FAKE_PROVIDER_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNkaGAAAAHAAZcAzSrgAAAAAElFTkSuQmCC'
 
 const state = {
   steps: [],
@@ -34,6 +36,9 @@ const state = {
     groupCode: `e2e-group-${RUN_ID}`.toLowerCase(),
   },
 }
+
+let fakeProviderServer = null
+let fakeProviderPort = 0
 
 function envUrl(name, fallback) {
   return (process.env[name] || fallback).replace(/\/+$/, '')
@@ -142,6 +147,197 @@ function findLedgerItem(items, ledgerType, balanceBucket, sourceType) {
     item?.bucket_type === balanceBucket &&
     item?.source_type === sourceType
   )
+}
+
+function firstField(item, ...keys) {
+  for (const key of keys) {
+    if (item && item[key] !== undefined && item[key] !== null) return item[key]
+  }
+  return undefined
+}
+
+async function startFakeProvider() {
+  if (fakeProviderServer) {
+    return {
+      hostURL: `http://127.0.0.1:${fakeProviderPort}`,
+      containerURL: `http://host.docker.internal:${fakeProviderPort}`,
+    }
+  }
+  const png = Buffer.from(FAKE_PROVIDER_IMAGE_BASE64, 'base64')
+  fakeProviderServer = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/images/smoke.png') {
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': String(png.length) })
+      res.end(png)
+      return
+    }
+    if (req.method === 'POST' && req.url === '/chat/completions') {
+      req.resume()
+      const payload = JSON.stringify({
+        choices: [
+          {
+            message: {
+              images: [
+                { image_url: { url: `http://host.docker.internal:${fakeProviderPort}/images/smoke.png` } },
+              ],
+            },
+          },
+        ],
+      })
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)), 'x-request-id': 'docker-e2e-fake-provider' })
+      res.end(payload)
+      return
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: { message: 'not found' } }))
+  })
+  await new Promise((resolve, reject) => {
+    fakeProviderServer.once('error', reject)
+    fakeProviderServer.listen(0, '0.0.0.0', () => {
+      fakeProviderPort = fakeProviderServer.address().port
+      resolve()
+    })
+  })
+  await waitFor(`http://127.0.0.1:${fakeProviderPort}/images/smoke.png`, { timeoutMs: 10000 })
+  return {
+    hostURL: `http://127.0.0.1:${fakeProviderPort}`,
+    containerURL: `http://host.docker.internal:${fakeProviderPort}`,
+  }
+}
+
+async function ensureBasicRouteModel() {
+  const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-models?page=1&page_size=100&keyword=basic`, 200, { headers: bearer(state.admin.token) })
+  const existing = (data(list).items || []).find(item => item.code === 'basic')
+  const body = {
+    code: 'basic',
+    name: 'Basic',
+    description: 'Docker E2E basic route model',
+    visibility: 'public',
+    enabled: true,
+    sort_order: 1,
+  }
+  if (existing?.id) {
+    const updated = await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/route-models/${existing.id}`, 200, {
+      headers: bearer(state.admin.token),
+      body,
+    })
+    return data(updated)
+  }
+  const created = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/route-models`, 201, {
+    headers: bearer(state.admin.token),
+    body,
+  })
+  return data(created)
+}
+
+async function ensureBasicRoutePrice(routeModelId) {
+  const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-model-prices?page=1&page_size=100&route_model_id=${routeModelId}&task_type=text_to_image`, 200, { headers: bearer(state.admin.token) })
+  const existing = (data(list).items || []).find(item => item.quality === '1k')
+  const body = {
+    route_model_id: Number(routeModelId),
+    task_type: 'text_to_image',
+    quality: '1k',
+    base_points: '1.00000',
+    reference_multiplier: '1.00000',
+    enabled: true,
+  }
+  if (existing?.id) {
+    const updated = await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/route-model-prices/${existing.id}`, 200, {
+      headers: bearer(state.admin.token),
+      body,
+    })
+    return data(updated)
+  }
+  const created = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/route-model-prices`, 201, {
+    headers: bearer(state.admin.token),
+    body,
+  })
+  return data(created)
+}
+
+async function seedGenerationRoute() {
+  const fakeProvider = await startFakeProvider()
+  const account = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/model-accounts`, 201, {
+    headers: bearer(state.admin.token),
+    body: {
+      name: `Docker E2E OpenRouter ${RUN_ID}`,
+      adapter_type: 'openrouter',
+      auth_type: 'api_key',
+      base_url: fakeProvider.containerURL,
+      credentials: { api_key: `fake-openrouter-e2e-${RUN_ID}` },
+      status: 'enabled',
+      priority: 1,
+      weight: 100,
+      concurrency_limit: 2,
+      timeout_ms: 30000,
+    },
+  })
+  state.ids.modelAccountId = String(data(account).id)
+  const accountModel = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/model-accounts/${state.ids.modelAccountId}/models`, 201, {
+    headers: bearer(state.admin.token),
+    body: {
+      model_code: 'openrouter/imagen',
+      display_name: 'Docker E2E Image Model',
+      task_types: ['text_to_image'],
+      qualities: ['1k'],
+      cost_per_image: '0.00000',
+      currency: 'USD',
+      enabled: true,
+    },
+  })
+  state.ids.accountModelId = String(data(accountModel).id)
+  const routeModel = await ensureBasicRouteModel()
+  state.ids.basicRouteModelId = String(routeModel.id)
+  const candidate = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/route-models/${state.ids.basicRouteModelId}/candidates`, 201, {
+    headers: bearer(state.admin.token),
+    body: {
+      account_model_id: Number(state.ids.accountModelId),
+      priority: 1,
+      weight: 100,
+      fallback_order: 1,
+      enabled: true,
+    },
+  })
+  state.ids.routeCandidateId = String(data(candidate).id)
+  const price = await ensureBasicRoutePrice(state.ids.basicRouteModelId)
+  state.ids.basicRoutePriceId = String(price.id)
+
+  const capabilities = await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/capabilities`, 200, { headers: bearer(state.user.token) })
+  const route = (data(capabilities).model_groups || []).find(item => firstField(item, 'abstract_model', 'code', 'Code') === 'basic')
+  if (!route) {
+    fail('Seeded basic route model was not visible in user capabilities', { body: capabilities.text })
+  }
+  return {
+    routeModelId: state.ids.basicRouteModelId,
+    accountModelId: state.ids.accountModelId,
+    routeCandidateId: state.ids.routeCandidateId,
+    routePriceId: state.ids.basicRoutePriceId,
+    fakeProviderURL: fakeProvider.hostURL,
+  }
+}
+
+function mockVisibleMethod() {
+  return {
+    method: 'mock',
+    label: 'Mock 支付',
+    enabled: true,
+    source_provider_type: 'mock',
+    scheduler_strategy: 'round_robin',
+    display_order: 10,
+    description: 'Docker E2E mock payment method',
+  }
+}
+
+async function ensureMockCashierVisible() {
+  await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/cashier/visible-methods`, 200, {
+    headers: bearer(state.admin.token),
+    body: { items: [mockVisibleMethod()] },
+  })
+  const options = await expectStatus('GET', `${BASE_URL}/api/agent/cashier/v1/options`, 200, { headers: bearer(state.user.token) })
+  const mockMethod = (data(options).visible_methods || []).find(item => item.method === 'mock' && item.enabled)
+  if (!mockMethod) {
+    fail('Cashier options did not expose mock payment after explicit E2E setup', { body: options.text })
+  }
+  return { visibleMethods: ['mock'] }
 }
 
 function decimalNumber(value) {
@@ -763,6 +959,8 @@ function defaultBody(method, template) {
     '/api/open/image/v1/reference-assets/uploads': { filename: `open-sweep-${RUN_ID}.png`, mime_type: 'image/png', content_base64: TINY_PNG_BASE64 },
     '/api/open/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep open prompt', abstract_model: 'basic', requested_quality: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
     '/api/ops/admin/v1/auth/login': { email: 'admin@example.com', password: 'admin123456' },
+    '/api/ops/admin/v1/cashier/custom-amount-config': { enabled: true, min_amount_cny: '1.00000', max_amount_cny: '500.00000', cny_per_point: '1.00000' },
+    '/api/ops/admin/v1/cashier/visible-methods': { items: [mockVisibleMethod()] },
     '/api/ops/admin/v1/config-tabs/{tab_key}': { settings: {} },
     '/api/ops/admin/v1/users': { email: `sweep-user-${RUN_ID}@example.com`, nickname: `Sweep User ${RUN_ID}`, status: 'active', user_group_code: 'basic' },
     '/api/ops/admin/v1/model-providers': { provider_code: `sweep-provider-${RUN_ID}`.toLowerCase(), provider_type: 'openai', auth_config_encrypted: 'cipher', health_status: 'healthy', enabled: true },
@@ -841,8 +1039,10 @@ async function main() {
     await step('bootstrap user session', bootstrapUser)
     await step('bootstrap admin session', bootstrapAdmin)
     await step('seed user points through admin API', seedPoints)
+    await step('ensure mock cashier payment method is visible', ensureMockCashierVisible)
     await step('agent billing happy path', happyPathAgentBilling)
     await step('agent API key happy path', happyPathApiKeys)
+    await step('seed generation route for image task happy paths', seedGenerationRoute)
     await step('agent assets and image task happy path', happyPathAssetsAndTasks)
     await step('native Open API and OpenAI-compatible API happy path', happyPathOpenAPI)
     await step('admin management happy path', happyPathAdmin)

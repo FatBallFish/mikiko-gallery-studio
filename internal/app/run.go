@@ -126,6 +126,7 @@ func Run() error {
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
+	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,

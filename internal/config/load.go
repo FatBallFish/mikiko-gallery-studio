@@ -112,6 +112,12 @@ func applyEnvOverrides(cfg *Config) {
 	if value := os.Getenv("PIC_GALLERY_API_KEY_SIGNING_SECRET_ENCRYPTION_KEY"); value != "" {
 		cfg.APIKey.SigningSecretEncryptionKey = value
 	}
+	if value := os.Getenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY"); value != "" {
+		cfg.Cashier.ProviderConfigEncryptionKey = value
+	}
+	if value := os.Getenv("PIC_GALLERY_CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY"); value != "" {
+		cfg.Cashier.ProviderConfigEncryptionKey = value
+	}
 	if value := os.Getenv("SMTP_HOST"); value != "" {
 		cfg.Auth.SMTP.Host = value
 	}
@@ -182,6 +188,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Cashier.MaxPendingOrdersPerUser == 0 {
 		cfg.Cashier.MaxPendingOrdersPerUser = 3
+	}
+	if strings.TrimSpace(cfg.Cashier.ProviderConfigEncryptionKey) == "" {
+		cfg.Cashier.ProviderConfigEncryptionKey = "local-dev-cashier-provider-config-encryption-key"
 	}
 	if len(cfg.Billing.AutoQualityDefaultByGroup) == 0 {
 		cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}

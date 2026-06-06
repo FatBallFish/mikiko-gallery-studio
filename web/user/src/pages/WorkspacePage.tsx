@@ -5,7 +5,7 @@ import { toTask, userApi } from '../../../shared/user-api'
 import { EmptyState, ImageLightbox, LoadingState, PublicDetailIcon, copyText, publicDetailButton, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 import { galleryEditContextKey, parseGalleryEditContext } from './galleryEditContext'
-import { displayPoints, workspaceGenerateReadiness } from './workspaceGenerateReadiness'
+import { displayPoints, publicUnavailableReason, workspaceGenerateReadiness } from './workspaceGenerateReadiness'
 import { workspaceUnavailableImageActionNotice, type WorkspaceImageAction } from './workspaceImageActions'
 import { workspaceTaskCardView, workspaceTaskFailureView, workspaceTaskPendingView } from './workspaceTaskFailure'
 
@@ -268,6 +268,7 @@ export function WorkspacePage() {
   const generateReadiness = workspaceGenerateReadiness({
     busy,
     hasModel: Boolean(model && selectedModel),
+    unavailableReason: capability?.unavailable_reason,
     parametersReady,
     prompt,
     estimate,
@@ -458,7 +459,7 @@ export function WorkspacePage() {
                 <span className="num" style={{ fontSize: 12, color: model === m.code ? 'var(--accent)' : 'var(--muted)' }}>{m.display_points ? `${m.display_points} ◈` : m.effective_multiplier ? `${m.effective_multiplier}x` : ''}</span>
               </button>
             )) : null}
-            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail="当前没有可用生图模型，请稍后再试。" /> : null}
+            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
           </div>
 
           {selectedModel ? (

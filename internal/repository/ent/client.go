@@ -27,6 +27,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
@@ -78,6 +79,8 @@ type Client struct {
 	ModelRoute *ModelRouteClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
 	PaymentOrder *PaymentOrderClient
+	// PaymentProviderInstance is the client for interacting with the PaymentProviderInstance builders.
+	PaymentProviderInstance *PaymentProviderInstanceClient
 	// PaymentWebhookEvent is the client for interacting with the PaymentWebhookEvent builders.
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
@@ -141,6 +144,7 @@ func (c *Client) init() {
 	c.ModelProvider = NewModelProviderClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
+	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
 	c.PaymentWebhookEvent = NewPaymentWebhookEventClient(c.config)
 	c.PointLedger = NewPointLedgerClient(c.config)
 	c.ProviderErrorPolicy = NewProviderErrorPolicyClient(c.config)
@@ -265,6 +269,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
@@ -316,6 +321,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
@@ -367,8 +373,8 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentWebhookEvent,
-		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
+		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
 		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User, c.UserGroup,
@@ -385,8 +391,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentWebhookEvent,
-		c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
+		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
 		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SubscriptionPlan, c.User, c.UserGroup,
@@ -424,6 +430,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelRoute.mutate(ctx, m)
 	case *PaymentOrderMutation:
 		return c.PaymentOrder.mutate(ctx, m)
+	case *PaymentProviderInstanceMutation:
+		return c.PaymentProviderInstance.mutate(ctx, m)
 	case *PaymentWebhookEventMutation:
 		return c.PaymentWebhookEvent.mutate(ctx, m)
 	case *PointLedgerMutation:
@@ -2062,6 +2070,139 @@ func (c *PaymentOrderClient) mutate(ctx context.Context, m *PaymentOrderMutation
 		return (&PaymentOrderDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown PaymentOrder mutation op: %q", m.Op())
+	}
+}
+
+// PaymentProviderInstanceClient is a client for the PaymentProviderInstance schema.
+type PaymentProviderInstanceClient struct {
+	config
+}
+
+// NewPaymentProviderInstanceClient returns a client for the PaymentProviderInstance from the given config.
+func NewPaymentProviderInstanceClient(c config) *PaymentProviderInstanceClient {
+	return &PaymentProviderInstanceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `paymentproviderinstance.Hooks(f(g(h())))`.
+func (c *PaymentProviderInstanceClient) Use(hooks ...Hook) {
+	c.hooks.PaymentProviderInstance = append(c.hooks.PaymentProviderInstance, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `paymentproviderinstance.Intercept(f(g(h())))`.
+func (c *PaymentProviderInstanceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PaymentProviderInstance = append(c.inters.PaymentProviderInstance, interceptors...)
+}
+
+// Create returns a builder for creating a PaymentProviderInstance entity.
+func (c *PaymentProviderInstanceClient) Create() *PaymentProviderInstanceCreate {
+	mutation := newPaymentProviderInstanceMutation(c.config, OpCreate)
+	return &PaymentProviderInstanceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PaymentProviderInstance entities.
+func (c *PaymentProviderInstanceClient) CreateBulk(builders ...*PaymentProviderInstanceCreate) *PaymentProviderInstanceCreateBulk {
+	return &PaymentProviderInstanceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PaymentProviderInstanceClient) MapCreateBulk(slice any, setFunc func(*PaymentProviderInstanceCreate, int)) *PaymentProviderInstanceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PaymentProviderInstanceCreateBulk{err: fmt.Errorf("calling to PaymentProviderInstanceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PaymentProviderInstanceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PaymentProviderInstanceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PaymentProviderInstance.
+func (c *PaymentProviderInstanceClient) Update() *PaymentProviderInstanceUpdate {
+	mutation := newPaymentProviderInstanceMutation(c.config, OpUpdate)
+	return &PaymentProviderInstanceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PaymentProviderInstanceClient) UpdateOne(_m *PaymentProviderInstance) *PaymentProviderInstanceUpdateOne {
+	mutation := newPaymentProviderInstanceMutation(c.config, OpUpdateOne, withPaymentProviderInstance(_m))
+	return &PaymentProviderInstanceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PaymentProviderInstanceClient) UpdateOneID(id int) *PaymentProviderInstanceUpdateOne {
+	mutation := newPaymentProviderInstanceMutation(c.config, OpUpdateOne, withPaymentProviderInstanceID(id))
+	return &PaymentProviderInstanceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PaymentProviderInstance.
+func (c *PaymentProviderInstanceClient) Delete() *PaymentProviderInstanceDelete {
+	mutation := newPaymentProviderInstanceMutation(c.config, OpDelete)
+	return &PaymentProviderInstanceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PaymentProviderInstanceClient) DeleteOne(_m *PaymentProviderInstance) *PaymentProviderInstanceDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PaymentProviderInstanceClient) DeleteOneID(id int) *PaymentProviderInstanceDeleteOne {
+	builder := c.Delete().Where(paymentproviderinstance.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PaymentProviderInstanceDeleteOne{builder}
+}
+
+// Query returns a query builder for PaymentProviderInstance.
+func (c *PaymentProviderInstanceClient) Query() *PaymentProviderInstanceQuery {
+	return &PaymentProviderInstanceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePaymentProviderInstance},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PaymentProviderInstance entity by its id.
+func (c *PaymentProviderInstanceClient) Get(ctx context.Context, id int) (*PaymentProviderInstance, error) {
+	return c.Query().Where(paymentproviderinstance.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PaymentProviderInstanceClient) GetX(ctx context.Context, id int) *PaymentProviderInstance {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PaymentProviderInstanceClient) Hooks() []Hook {
+	return c.hooks.PaymentProviderInstance
+}
+
+// Interceptors returns the client interceptors.
+func (c *PaymentProviderInstanceClient) Interceptors() []Interceptor {
+	return c.inters.PaymentProviderInstance
+}
+
+func (c *PaymentProviderInstanceClient) mutate(ctx context.Context, m *PaymentProviderInstanceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PaymentProviderInstanceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PaymentProviderInstanceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PaymentProviderInstanceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PaymentProviderInstanceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PaymentProviderInstance mutation op: %q", m.Op())
 	}
 }
 
@@ -4730,9 +4871,9 @@ type (
 	hooks struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
-		PaymentOrder, PaymentWebhookEvent, PointLedger, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SubscriptionPlan, User, UserGroup,
 		UserGroupMember, UserSubscription, WalletGrant,
 		WalletReservationAllocation []ent.Hook
@@ -4740,9 +4881,9 @@ type (
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
-		PaymentOrder, PaymentWebhookEvent, PointLedger, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SubscriptionPlan, User, UserGroup,
 		UserGroupMember, UserSubscription, WalletGrant,
 		WalletReservationAllocation []ent.Interceptor

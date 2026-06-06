@@ -7,6 +7,7 @@ import (
 	"time"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
+	"github.com/shopspring/decimal"
 )
 
 func TestServiceScheduleProviderInstanceFiltersEnabledConfiguredAndAmount(t *testing.T) {
@@ -26,6 +27,26 @@ func TestServiceScheduleProviderInstanceFiltersEnabledConfiguredAndAmount(t *tes
 	}
 	if selected.ID != 5 {
 		t.Fatalf("expected configured amount-allowed provider instance, got %#v", selected)
+	}
+}
+
+func TestServiceScheduleProviderInstanceHonorsDailyAmountLimit(t *testing.T) {
+	svc := NewService()
+	method := domaincashier.VisibleMethod{Method: "alipay", Enabled: true, SourceProviderType: "alipay_direct"}
+	instances := []domaincashier.ProviderInstance{
+		{ID: 10, ProviderType: "alipay_direct", Enabled: true, SupportedMethods: []string{"alipay"}, ConfigStatus: "configured", Limits: map[string]any{"daily_amount_limit_cny": "15.00000"}},
+		{ID: 20, ProviderType: "alipay_direct", Enabled: true, SupportedMethods: []string{"alipay"}, ConfigStatus: "configured", Limits: map[string]any{"daily_amount_limit_cny": "30.00000"}},
+	}
+
+	selected, err := svc.ScheduleProviderInstanceWithDailyUsage(context.Background(), method, instances, "10.00000", map[int64]decimal.Decimal{
+		10: decimal.RequireFromString("10.00000"),
+		20: decimal.RequireFromString("10.00000"),
+	})
+	if err != nil {
+		t.Fatalf("ScheduleProviderInstanceWithDailyUsage returned error: %v", err)
+	}
+	if selected.ID != 20 {
+		t.Fatalf("expected provider with remaining daily quota, got %#v", selected)
 	}
 }
 

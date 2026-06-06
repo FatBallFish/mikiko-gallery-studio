@@ -47,6 +47,12 @@ import secrets
 print(secrets.token_urlsafe(32))
 PY
 )"
+CASHIER_PROVIDER_CONFIG_KEY="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_urlsafe(32))
+PY
+)"
 
 cleanup() {
   if [[ -n "$WORKER_PID" ]] && kill -0 "$WORKER_PID" >/dev/null 2>&1; then
@@ -162,6 +168,24 @@ for part in expr.split("."):
         else:
             raise SystemExit(f"missing JSON path: {expr}")
 print(expr)
+PY
+}
+
+config_tab_version() {
+  local json="$1"
+  local tab_key="$2"
+  JSON="$json" python3 - "$tab_key" <<'PY'
+import json
+import os
+import sys
+
+data = json.loads(os.environ["JSON"])
+tab_key = sys.argv[1]
+for item in data.get("data", {}).get("items", []):
+    if item.get("tab_key") == tab_key:
+        print(item.get("version"))
+        raise SystemExit(0)
+raise SystemExit(f"missing config tab {tab_key!r}")
 PY
 }
 
@@ -1064,6 +1088,7 @@ start_worker() {
   PIC_GALLERY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   AUTH_ACCESS_TOKEN_SECRET="$ACCESS_TOKEN_SECRET" \
   API_KEY_SIGNING_SECRET_ENCRYPTION_KEY="$API_KEY_ENCRYPTION_KEY" \
+  CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY="$CASHIER_PROVIDER_CONFIG_KEY" \
   REDIS_KEY_PREFIX="pic-gallery-smoke-${SMOKE_ID}" \
   STORAGE_LOCAL_ROOT="$STORAGE_ROOT" \
   STORAGE_PUBLIC_BASE_URL="$BASE_URL/files" \
@@ -1108,6 +1133,7 @@ PIC_GALLERY_ADMIN_EMAIL="$SMOKE_ADMIN_EMAIL" \
 PIC_GALLERY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 AUTH_ACCESS_TOKEN_SECRET="$ACCESS_TOKEN_SECRET" \
 API_KEY_SIGNING_SECRET_ENCRYPTION_KEY="$API_KEY_ENCRYPTION_KEY" \
+CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY="$CASHIER_PROVIDER_CONFIG_KEY" \
 REDIS_KEY_PREFIX="pic-gallery-smoke-${SMOKE_ID}" \
 STORAGE_LOCAL_ROOT="$STORAGE_ROOT" \
 STORAGE_PUBLIC_BASE_URL="$BASE_URL/files" \
@@ -1340,12 +1366,13 @@ assert_json_array_not_contains "$admin_login_body" "data.permissions" "manage:ad
 assert_json_array_not_contains "$admin_login_body" "data.permissions" "manage:dangerous_config" >/dev/null
 tabs_body="$(request "$BASE_URL/api/ops/admin/v1/config-tabs" -H "Authorization: Bearer $ADMIN_TOKEN")"
 assert_json_field "$tabs_body" "data.items.0.tab_key" >/dev/null
+payments_tab_version="$(config_tab_version "$tabs_body" "payments")"
 
 admin_dangerous_config_status="$(curl --silent --output "$TMP_DIR/admin-dangerous-config.json" --write-out "%{http_code}" \
   -X PUT "$BASE_URL/api/ops/admin/v1/config-tabs/payments" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"version":1,"items":[{"config_category":"payments","config_key":"enabled","config_value":{"value":true},"scope":"global"}]}')"
+  --data "{\"version\":${payments_tab_version},\"items\":[{\"config_category\":\"payments\",\"config_key\":\"enabled\",\"config_value\":{\"value\":true},\"scope\":\"global\"}]}")"
 [[ "$admin_dangerous_config_status" == "403" ]]
 [[ "$(assert_json_field "$(cat "$TMP_DIR/admin-dangerous-config.json")" "error.code")" == "FORBIDDEN" ]]
 
@@ -1369,7 +1396,7 @@ assert_json_array_contains "$super_admin_login_body" "data.permissions" "manage:
 super_admin_dangerous_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/config-tabs/payments" \
   -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"version":1,"items":[{"config_category":"payments","config_key":"enabled","config_value":{"value":true},"scope":"global"}]}')"
+  --data "{\"version\":${payments_tab_version},\"items\":[{\"config_category\":\"payments\",\"config_key\":\"enabled\",\"config_value\":{\"value\":true},\"scope\":\"global\"}]}")"
 [[ "$(assert_json_field "$super_admin_dangerous_config_body" "data.tab_key")" == "payments" ]]
 
 start_fake_provider
@@ -2189,7 +2216,7 @@ assert_public_gallery_guest_list "$public_gallery_list_body" "$PUBLIC_GALLERY_IM
 guest_public_detail_status="$(curl --silent --output "$TMP_DIR/public-gallery-guest-detail.json" --write-out "%{http_code}" \
   "$BASE_URL/api/open/image/v1/gallery/images/${PUBLIC_GALLERY_IMAGE_ID}")"
 [[ "$guest_public_detail_status" == "401" ]]
-[[ "$(assert_json_field "$(cat "$TMP_DIR/public-gallery-guest-detail.json")" "error.code")" == "UNAUTHORIZED" ]]
+[[ "$(assert_json_field "$(cat "$TMP_DIR/public-gallery-guest-detail.json")" "error.code")" == "LOGIN_REQUIRED_FOR_GALLERY_DETAIL" ]]
 
 viewer_public_detail_body="$(request "$BASE_URL/api/open/image/v1/gallery/images/${PUBLIC_GALLERY_IMAGE_ID}" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_public_gallery_viewer_detail "$viewer_public_detail_body" "$PUBLIC_GALLERY_IMAGE_ID" "$PUBLIC_GALLERY_PROMPT" >/dev/null

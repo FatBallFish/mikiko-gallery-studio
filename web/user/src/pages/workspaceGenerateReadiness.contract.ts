@@ -1,20 +1,26 @@
 import type { EstimateResult } from '../../../shared/api-types'
-import { workspaceGenerateReadiness } from './workspaceGenerateReadiness'
+import { publicUnavailableReason, workspaceGenerateReadiness } from './workspaceGenerateReadiness'
 
 const noModel = workspaceGenerateReadiness({
   busy: false,
   hasModel: false,
+  unavailableReason: { code: 'NO_ROUTE_MODEL', message: '平台模型配置中，暂不可生成。' },
   parametersReady: false,
   prompt: '一张未来城市里的雨夜街景',
   estimate: null,
 })
 
-if (!noModel.disabled || !noModel.reason.includes('平台生图能力正在配置中')) {
+if (!noModel.disabled || !noModel.reason.includes('平台模型配置中')) {
   throw new Error(`workspace should explain unavailable model state, got ${noModel.reason}`)
 }
 
 if (/后台|账号|route|provider|model account/i.test(noModel.reason)) {
   throw new Error(`workspace unavailable reason should avoid internal terms, got ${noModel.reason}`)
+}
+
+const unsafeUnavailableReason = publicUnavailableReason({ code: 'NO_ROUTE_MODEL', message: '后台 route provider model account 未配置' })
+if (/后台|route|provider|model account/i.test(unsafeUnavailableReason)) {
+  throw new Error(`workspace should sanitize internal unavailable reasons, got ${unsafeUnavailableReason}`)
 }
 
 const insufficient = workspaceGenerateReadiness({

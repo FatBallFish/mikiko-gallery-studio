@@ -13,6 +13,7 @@ import type {
   CashierOverview,
   CashierPlan,
   ChargebackPaymentOrderRequest,
+  ClosePaymentOrderRequest,
   CompletePaymentOrderRequest,
   ConfigItem,
   ConfigTab,
@@ -134,6 +135,7 @@ export const adminApi = {
   listCashierPlans: async (query: Record<string, string | number | boolean | undefined> = {}) => normalizePage<CashierPlan>(await sharedApiClient.request(API_PATHS.ops.cashierPlans, { query })),
   createCashierPlan: (input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlans, { method: 'POST', body: input }),
   updateCashierPlan: (plan_id: string | number, input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'PUT', pathParams: { plan_id }, body: input }),
+  deleteCashierPlan: (plan_id: string | number) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'DELETE', pathParams: { plan_id } }),
   getCashierCustomAmountConfig: () => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig),
   updateCashierCustomAmountConfig: (input: CashierCustomAmountConfig) => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig, { method: 'PUT', body: input }),
   listPaymentVisibleMethods: async () => (await sharedApiClient.request<{ items: PaymentVisibleMethod[] }>(API_PATHS.ops.paymentVisibleMethods)).items ?? [],
@@ -142,10 +144,14 @@ export const adminApi = {
   createPaymentProviderInstance: (input: PaymentProviderInstanceWriteRequest) => sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstances, { method: 'POST', body: input }),
   updatePaymentProviderInstance: (instance_id: string | number, input: Partial<PaymentProviderInstanceWriteRequest>) =>
     sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstanceDetail, { method: 'PUT', pathParams: { instance_id }, body: input }),
+  deletePaymentProviderInstance: (instance_id: string | number) =>
+    sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstanceDetail, { method: 'DELETE', pathParams: { instance_id } }),
   listPaymentOrders: async (query: Record<string, string | number | undefined> = {}) => normalizePage<PaymentOrder>(await sharedApiClient.request(API_PATHS.ops.paymentOrders, { query })),
   getPaymentOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderDetail, { pathParams: { order_id } }),
   completePaymentOrder: (order_id: string | number, input: CompletePaymentOrderRequest) =>
     sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderComplete, { method: 'POST', pathParams: { order_id }, body: input }),
+  closePaymentOrder: (order_id: string | number, input: ClosePaymentOrderRequest = {}) =>
+    sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderClose, { method: 'POST', pathParams: { order_id }, body: input }),
   refundPaymentOrder: (order_id: string | number, input: RefundPaymentOrderRequest) =>
     sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderRefund, { method: 'POST', pathParams: { order_id }, body: input }),
   chargebackPaymentOrder: (order_id: string | number, input: ChargebackPaymentOrderRequest, idempotencyKey: string) =>

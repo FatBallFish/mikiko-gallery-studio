@@ -3,6 +3,8 @@ package handlers
 import (
 	"strings"
 	"testing"
+
+	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 )
 
 func TestReadBoundedBodyRejectsOversizedUnsignedBody(t *testing.T) {
@@ -68,9 +70,9 @@ func TestNormalizeCashierQueryStatusMapsProviderTerminalStates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := normalizeCashierQueryStatus(tt.status)
+			got := cashierservice.NormalizeQueryStatus(tt.status)
 			if got.Status != tt.wantStatus || got.Paid != tt.wantPaid || got.Message != tt.wantMessage || got.RiskCategory != tt.wantRiskCategory || !strings.Contains(got.ActionHint, tt.wantActionHint) {
-				t.Fatalf("normalizeCashierQueryStatus(%q)=%#v, want status=%q paid=%v message=%q risk_category=%q action_hint containing %q", tt.status, got, tt.wantStatus, tt.wantPaid, tt.wantMessage, tt.wantRiskCategory, tt.wantActionHint)
+				t.Fatalf("NormalizeQueryStatus(%q)=%#v, want status=%q paid=%v message=%q risk_category=%q action_hint containing %q", tt.status, got, tt.wantStatus, tt.wantPaid, tt.wantMessage, tt.wantRiskCategory, tt.wantActionHint)
 			}
 		})
 	}

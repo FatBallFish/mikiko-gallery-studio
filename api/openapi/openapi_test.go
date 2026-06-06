@@ -119,7 +119,7 @@ func TestOpenAPISpecDocumentsPublicGalleryPromptBoundaryContract(t *testing.T) {
 	for _, param := range listOperation.Parameters {
 		listParams[param.In+":"+param.Name] = true
 	}
-	for _, key := range []string{"query:page", "query:page_size", "query:sort", "query:route_model_code", "query:task_type", "query:liked", "query:favorited"} {
+	for _, key := range []string{"query:page", "query:page_size", "query:sort", "query:query", "query:route_model_code", "query:task_type", "query:liked", "query:favorited"} {
 		if !listParams[key] {
 			t.Fatalf("expected public gallery list parameter %q", key)
 		}
@@ -877,6 +877,7 @@ func TestOpenAPISpecDocumentsCashierAndReadinessContracts(t *testing.T) {
 		"/api/ops/admin/v1/cashier/provider-instances":           "post",
 		"/api/ops/admin/v1/cashier/orders":                       "get",
 		"/api/ops/admin/v1/cashier/orders/{order_id}/complete":   "post",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/close":      "post",
 		"/api/ops/admin/v1/cashier/orders/{order_id}/refund":     "post",
 		"/api/ops/admin/v1/cashier/orders/{order_id}/chargeback": "post",
 		"/api/ops/admin/v1/cashier/orders/{order_id}/sync":       "post",

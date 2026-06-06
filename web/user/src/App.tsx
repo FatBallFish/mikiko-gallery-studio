@@ -13,22 +13,16 @@ import { CheckoutPage } from './pages/CheckoutPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { DocsPage } from './pages/DocsPage'
+import { parseUserHashState, userHashForRoute } from './routeState'
 
 const sessionKey = 'pic-gallery-user-session'
-const routeSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'gallery', 'public-gallery', 'checkout', 'api-keys', 'profile', 'docs'])
 
 function parseHash() {
-  const raw = window.location.hash.replace(/^#\/?/, '')
-  const [path = 'landing', query = ''] = raw.split('?')
-  const route = routeSet.has(path as RouteId) ? path as RouteId : 'landing'
-  const params = new URLSearchParams(query)
-  const returnTo = params.get('returnTo')
-  return { route, returnTo: returnTo && routeSet.has(returnTo as RouteId) ? returnTo as RouteId : undefined }
+  return parseUserHashState(window.location.hash)
 }
 
-function writeHash(route: RouteId, returnTo?: RouteId) {
-  const suffix = returnTo ? `?returnTo=${returnTo}` : ''
-  window.location.hash = `/${route}${suffix}`
+function writeHash(route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null }) {
+  window.location.hash = userHashForRoute(route, options)
 }
 
 function readStoredSession(): SessionState | null {
@@ -44,6 +38,7 @@ export default function App() {
   const initial = parseHash()
   const [route, setRoute] = useState<RouteId>(initial.route)
   const [returnTo, setReturnTo] = useState<RouteId | undefined>(initial.returnTo)
+  const [routeImageId, setRouteImageId] = useState<string | undefined>(initial.imageId)
   const [session, setSession] = useState<SessionState | null>(() => readStoredSession())
   const sessionRef = useRef<SessionState | null>(session)
   const routeRef = useRef<RouteId>(initial.route)
@@ -76,9 +71,9 @@ export default function App() {
     }
     const currentRoute = routeRef.current
     if (protectedRoutes.includes(currentRoute)) {
-      writeHash('login', currentRoute)
+      writeHash('login', { returnTo: currentRoute, imageId: currentRoute === 'public-gallery' ? routeImageId : undefined })
     }
-  }, [notify])
+  }, [notify, routeImageId])
 
   useLayoutEffect(() => {
     userApi.configureAuth({
@@ -141,6 +136,7 @@ export default function App() {
       const parsed = parseHash()
       setRoute(parsed.route)
       setReturnTo(parsed.returnTo)
+      setRouteImageId(parsed.imageId)
     }
     window.addEventListener('hashchange', updateRoute)
     if (!window.location.hash) writeHash(session ? 'home' : 'landing')
@@ -182,23 +178,24 @@ export default function App() {
 
   useEffect(() => {
     if (!session && protectedRoutes.includes(route)) {
-      writeHash('login', route)
+      writeHash('login', { returnTo: route, imageId: route === 'public-gallery' ? routeImageId : undefined })
     }
     if (session && route === 'login') {
-      writeHash(returnTo ?? 'home')
+      writeHash(returnTo ?? 'home', { imageId: returnTo === 'public-gallery' ? routeImageId : undefined })
     }
-  }, [route, returnTo, session])
+  }, [route, returnTo, routeImageId, session])
 
-  const navigate = useCallback((next: RouteId, options?: { returnTo?: RouteId }) => {
-    writeHash(next, options?.returnTo)
+  const navigate = useCallback((next: RouteId, options?: { returnTo?: RouteId; imageId?: string | null }) => {
+    writeHash(next, options)
   }, [])
 
-  const login = useCallback(async (nextSession: SessionState, target?: RouteId) => {
+  const login = useCallback(async (nextSession: SessionState, target?: RouteId, options?: { imageId?: string | null }) => {
     expiredNoticeRef.current = false
     installSession(nextSession)
     notify('success', '登录成功，欢迎回到 Vault')
-    writeHash(target ?? returnTo ?? 'home')
-  }, [installSession, notify, returnTo])
+    const destination = target ?? returnTo ?? 'home'
+    writeHash(destination, { imageId: destination === 'public-gallery' ? options?.imageId ?? routeImageId : undefined })
+  }, [installSession, notify, returnTo, routeImageId])
 
   const logout = useCallback(async () => {
     await userApi.logout().catch(() => undefined)
@@ -225,11 +222,11 @@ export default function App() {
 
   const page = useMemo(() => {
     if (!session && protectedRoutes.includes(route)) {
-      return <LoginPage returnTo={route} />
+      return <LoginPage returnTo={route} imageId={route === 'public-gallery' ? routeImageId : undefined} />
     }
     switch (route) {
       case 'login':
-        return <LoginPage returnTo={returnTo} />
+        return <LoginPage returnTo={returnTo} imageId={returnTo === 'public-gallery' ? routeImageId : undefined} />
       case 'home':
         return <Shell><HomePage /></Shell>
       case 'genpic':
@@ -237,7 +234,7 @@ export default function App() {
       case 'gallery':
         return <Shell><GalleryPage /></Shell>
       case 'public-gallery':
-        return <Shell><PublicGalleryPage /></Shell>
+        return <Shell><PublicGalleryPage imageId={routeImageId} /></Shell>
       case 'checkout':
         return <Shell><CheckoutPage /></Shell>
       case 'api-keys':
@@ -250,7 +247,7 @@ export default function App() {
       default:
         return <LandingPage />
     }
-  }, [route, returnTo, session])
+  }, [route, returnTo, routeImageId, session])
 
   return (
     <AppContext.Provider value={appValue}>

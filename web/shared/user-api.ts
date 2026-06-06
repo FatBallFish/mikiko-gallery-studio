@@ -255,7 +255,8 @@ export const userApi = {
   getOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orderDetail, { pathParams: { order_id } }),
   cancelOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orderCancel, { method: 'POST', pathParams: { order_id } }),
   getCashierOptions: () => sharedApiClient.request<CashierOptions>(API_PATHS.agent.cashierOptions),
-  createCashierOrder: (input: CreateCashierOrderRequest, idempotencyKey = crypto.randomUUID()) =>
+  listCashierOrders: async (page = 1, page_size = 20) => normalizePage<CashierOrder>(await sharedApiClient.request(API_PATHS.agent.cashierOrders, { query: { page, page_size } })),
+  createCashierOrder: (input: CreateCashierOrderRequest, idempotencyKey: string = crypto.randomUUID()) =>
     sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrders, {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
@@ -304,6 +305,7 @@ export const userApi = {
     })
     return {
       raw,
+      unavailable_reason: raw.unavailable_reason ?? null,
       model_groups: normalizedModels,
       qualities: pick(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K'],
       aspect_ratios: pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? ['1:1', '16:9', '9:16', '4:3'],

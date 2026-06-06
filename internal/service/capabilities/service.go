@@ -17,8 +17,14 @@ type Item struct {
 }
 
 type Response struct {
-	Items       []Item                       `json:"items,omitempty"`
-	ModelGroups []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
+	Items             []Item                       `json:"items,omitempty"`
+	ModelGroups       []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
+	UnavailableReason *UnavailableReason           `json:"unavailable_reason,omitempty"`
+}
+
+type UnavailableReason struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type Service struct {
@@ -54,5 +60,12 @@ func (s *Service) ListForGroups(ctx context.Context, groupCodes []string, taskMu
 	if err != nil {
 		return Response{}, err
 	}
-	return Response{ModelGroups: items}, nil
+	resp := Response{ModelGroups: items}
+	if len(items) == 0 {
+		resp.UnavailableReason = &UnavailableReason{
+			Code:    "NO_ROUTE_MODEL",
+			Message: "平台模型配置中，暂不可生成。",
+		}
+	}
+	return resp, nil
 }

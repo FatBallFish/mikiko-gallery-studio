@@ -660,7 +660,7 @@ func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID strin
 }
 
 func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string) (provider.ImageResult, []byte, error) {
-	image, err := s.store.GetPublicImage(ctx, imageID)
+	image, err := s.store.GetPublicImage(ctx, imageID, 0)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
@@ -806,8 +806,8 @@ func (s *Service) ListPublicGallery(ctx context.Context, req domainimagetask.Gal
 	return page, nil
 }
 
-func (s *Service) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	image, err := s.store.GetPublicImage(ctx, imageID)
+func (s *Service) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	image, err := s.store.GetPublicImage(ctx, imageID, viewerUserID)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "gallery image not found")

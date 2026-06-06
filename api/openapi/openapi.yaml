@@ -387,6 +387,25 @@ paths:
         - name: page_size
           in: query
           schema: {type: integer, minimum: 1, default: 20}
+        - name: order_no
+          in: query
+          description: Fuzzy match payment order number.
+          schema: {type: string}
+        - name: user_id
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: status
+          in: query
+          schema: {type: string}
+        - name: visible_method
+          in: query
+          schema: {type: string, enum: [mock, alipay, wxpay]}
+        - name: provider_type
+          in: query
+          schema: {type: string}
+        - name: purchase_type
+          in: query
+          schema: {type: string, enum: [plan, custom_amount]}
       responses:
         '200':
           description: Payment orders
@@ -891,6 +910,10 @@ paths:
           schema:
             type: string
             enum: [latest, hot]
+        - name: query
+          in: query
+          description: Keyword search over public image ID, prompt excerpt, model, task type, and author. Full prompts remain hidden from list responses.
+          schema: {type: string}
         - name: route_model_code
           in: query
           schema: {type: string}
@@ -2259,6 +2282,24 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanResponse
+    delete:
+      tags: [Admin Cashier]
+      summary: Archive a cashier plan and hide it from purchase
+      operationId: deleteAdminCashierPlan
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Cashier plan archived
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanResponse
   /api/ops/admin/v1/cashier/custom-amount-config:
     get:
       tags: [Admin Cashier]
@@ -2408,6 +2449,24 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceResponse
+    delete:
+      tags: [Admin Cashier]
+      summary: Delete a payment provider instance
+      operationId: deleteAdminCashierProviderInstance
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Payment provider instance deleted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceResponse
   /api/ops/admin/v1/cashier/orders:
     get:
       tags: [Admin Cashier]
@@ -2469,6 +2528,31 @@ paths:
       responses:
         '200':
           description: Cashier order completed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderResponse
+  /api/ops/admin/v1/cashier/orders/{order_id}/close:
+    post:
+      tags: [Admin Cashier]
+      summary: Close a pending cashier order that should no longer be paid
+      operationId: postAdminCashierOrderClose
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierCloseRequest
+      responses:
+        '200':
+          description: Cashier order closed
           content:
             application/json:
               schema:

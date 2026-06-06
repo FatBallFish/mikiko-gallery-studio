@@ -67,6 +67,10 @@ func RandomProviderInstanceWithReader(reader io.Reader, candidates []ProviderIns
 }
 
 func ProviderInstanceAmountAllowed(instance ProviderInstance, amount decimal.Decimal) bool {
+	return ProviderInstanceAmountAllowedWithDailyUsage(instance, amount, decimal.Zero)
+}
+
+func ProviderInstanceAmountAllowedWithDailyUsage(instance ProviderInstance, amount, dailyUsed decimal.Decimal) bool {
 	minRaw := strings.TrimSpace(rawString(instance.Limits["min_amount_cny"]))
 	if minRaw != "" {
 		min, err := decimal.NewFromString(minRaw)
@@ -78,6 +82,19 @@ func ProviderInstanceAmountAllowed(instance ProviderInstance, amount decimal.Dec
 	if maxRaw != "" {
 		max, err := decimal.NewFromString(maxRaw)
 		if err != nil || amount.GreaterThan(max) {
+			return false
+		}
+	}
+	dailyLimitRaw := strings.TrimSpace(rawString(instance.Limits["daily_amount_limit_cny"]))
+	if dailyLimitRaw != "" {
+		dailyLimit, err := decimal.NewFromString(dailyLimitRaw)
+		if err != nil || dailyLimit.LessThanOrEqual(decimal.Zero) {
+			return false
+		}
+		if dailyUsed.LessThan(decimal.Zero) {
+			dailyUsed = decimal.Zero
+		}
+		if dailyUsed.Add(amount).GreaterThan(dailyLimit) {
 			return false
 		}
 	}

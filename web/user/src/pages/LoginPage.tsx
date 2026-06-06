@@ -23,7 +23,7 @@ function rememberLoginEmail(email: string) {
   }
 }
 
-export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
+export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?: string }) {
   const app = useApp()
   const env = import.meta.env as Record<string, string | undefined>
   const copy = loginCopy[loginLocale()]
@@ -71,7 +71,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
         : await userApi.loginWithEmailCode(email, code)
       const profile = await userApi.getProfileWithToken(result.access_token)
       rememberLoginEmail(email)
-      await app.login({ token: result.access_token, profile }, returnTo)
+      await app.login({ token: result.access_token, profile }, returnTo, { imageId })
       if (result.signup_grant?.granted) {
         app.notify('success', `已领取 ${result.signup_grant.balance.trial_points ?? result.signup_grant.balance.available_points} 体验积分`)
         await app.refreshAccount()

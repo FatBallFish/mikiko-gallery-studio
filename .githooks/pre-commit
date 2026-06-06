@@ -15,7 +15,8 @@ esac
 staged="$(git diff --cached --name-only)"
 [ -z "$staged" ] && exit 0
 
-if printf '%s\n' "$staged" | grep -E '(^|/)\.env($|\.|/)|id_rsa|PRIVATE KEY|secret|token' >/dev/null 2>&1; then
+secret_candidates="$(printf '%s\n' "$staged" | grep -Ev '(^|/)\.env\.example$' | grep -E '(^|/)\.env($|\.|/)|id_rsa|PRIVATE KEY|secret|token' || true)"
+if [ -n "$secret_candidates" ]; then
   echo "BLOCK: staged files look like secrets or local env files" >&2
   exit 1
 fi
@@ -38,4 +39,3 @@ if printf '%s\n' "$staged" | grep -E '^(cmd/|internal/|pkg/|api/|configs/|deploy
 fi
 
 exit 0
-

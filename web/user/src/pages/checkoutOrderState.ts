@@ -1,4 +1,4 @@
-import type { CashierOrder, PaymentOrder, PaymentVisibleMethod } from '../../../shared/api-types'
+import type { CashierOrder, CashierPurchaseType, PaymentProviderType, PaymentVisibleMethod } from '../../../shared/api-types'
 
 export function checkoutMoney(value?: string) {
   return value ? `¥${Number(value).toFixed(2)}` : '¥0.00'
@@ -69,7 +69,26 @@ export function checkoutOrderStatusLabel(status?: string) {
   return CHECKOUT_ORDER_STATUS_LABELS[normalized] ?? status ?? '-'
 }
 
-export function checkoutPaymentMethodLabel(order: Pick<PaymentOrder, 'visible_method' | 'provider' | 'provider_type'>) {
+type CheckoutRecentOrder = {
+  id: number
+  order_no: string
+  status: string
+  amount_cny: string
+  points: string
+  created_at: string
+  visible_method?: string
+  provider?: string
+  provider_type?: PaymentProviderType
+  plan_name?: string
+  plan_code?: string
+  purchase_type?: CashierPurchaseType
+  currency?: string
+  bonus_points?: string
+  expires_at?: string
+  updated_at?: string
+}
+
+export function checkoutPaymentMethodLabel(order: { visible_method?: string; provider?: string; provider_type?: PaymentProviderType }) {
   const candidates = [order.visible_method, order.provider_type, order.provider]
     .map((value) => (value ?? '').trim())
     .filter(Boolean)
@@ -103,7 +122,7 @@ export function checkoutPaymentMethodOptionModel(method: PaymentVisibleMethod): 
   }
 }
 
-export function checkoutRecentOrderRows(orders: PaymentOrder[], limit = 10): CheckoutRecentOrderRow[] {
+export function checkoutRecentOrderRows(orders: CheckoutRecentOrder[], limit = 10): CheckoutRecentOrderRow[] {
   return [...orders]
     .sort((left, right) => Date.parse(right.created_at || '') - Date.parse(left.created_at || ''))
     .slice(0, limit)
@@ -121,9 +140,13 @@ export function checkoutRecentOrderRows(orders: PaymentOrder[], limit = 10): Che
     }))
 }
 
-function toCashierOrder(order: PaymentOrder): CashierOrder {
+function toCashierOrder(order: CheckoutRecentOrder): CashierOrder {
   return {
     ...order,
+    currency: order.currency ?? 'CNY',
+    bonus_points: order.bonus_points ?? '0.00000',
+    expires_at: order.expires_at ?? '',
+    updated_at: order.updated_at ?? order.created_at,
     purchase_type: order.purchase_type ?? 'plan',
     visible_method: order.visible_method ?? order.provider ?? '',
   }

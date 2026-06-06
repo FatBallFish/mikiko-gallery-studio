@@ -301,6 +301,33 @@ func TestBillingStoreEnsureSignupTrialGrantIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestBillingStoreSignupTrialExpiryWarningUsesGrantReminderDays(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-signup-trial-reminder?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	result, err := store.EnsureSignupTrialGrant(ctx, billingservice.SignupTrialGrantStoreRequest{
+		UserID:             80,
+		Points:             "15.00000",
+		ValidDays:          5,
+		ExpiryReminderDays: 6,
+		IdempotencyKey:     "signup_trial:80",
+	})
+	if err != nil {
+		t.Fatalf("EnsureSignupTrialGrant: %v", err)
+	}
+	if len(result.Balance.Buckets) != 1 || !result.Balance.Buckets[0].ExpireWarning {
+		t.Fatalf("expected configured 6-day reminder to mark 5-day trial as expiring, got %#v", result.Balance.Buckets)
+	}
+}
+
 func TestBillingStoreSignupTrialLedgerPersistsBucketMetadata(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-signup-trial-ledger-metadata?mode=memory&cache=shared&_fk=1")

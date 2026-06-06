@@ -34,5 +34,6 @@ func (WalletGrant) Indexes() []ent.Index {
 		index.Fields("status"),
 		index.Fields("source_type", "source_id"),
 		index.Fields("expires_at"),
+		index.Fields("user_id", "status", "grant_type", "expires_at"),
 	}
 }

@@ -258,6 +258,29 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 		t.Fatalf("guest prompt excerpt should be short and not full prompt, got %q", publicListPayload.Data.Items[0].PromptExcerpt)
 	}
 
+	queryListReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&query=downloadable", nil)
+	queryListRec := httptest.NewRecorder()
+	handler.ServeHTTP(queryListRec, queryListReq)
+	if queryListRec.Code != http.StatusOK {
+		t.Fatalf("public list filtered by query: %d body=%s", queryListRec.Code, queryListRec.Body.String())
+	}
+	if !bytes.Contains(queryListRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("expected matching public gallery query to include image body=%s", queryListRec.Body.String())
+	}
+	if bytes.Contains(queryListRec.Body.Bytes(), []byte(`Generate a downloadable banner`)) {
+		t.Fatalf("public gallery query list should still redact full prompt body=%s", queryListRec.Body.String())
+	}
+
+	queryMissReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&query=not-a-gallery-keyword", nil)
+	queryMissRec := httptest.NewRecorder()
+	handler.ServeHTTP(queryMissRec, queryMissReq)
+	if queryMissRec.Code != http.StatusOK {
+		t.Fatalf("public list filtered by missing query: %d body=%s", queryMissRec.Code, queryMissRec.Body.String())
+	}
+	if bytes.Contains(queryMissRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("expected non-matching public gallery query to exclude image body=%s", queryMissRec.Body.String())
+	}
+
 	filteredByModelReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&route_model_code=plus&task_type=text_to_image", nil)
 	filteredByModelRec := httptest.NewRecorder()
 	handler.ServeHTTP(filteredByModelRec, filteredByModelReq)
@@ -397,6 +420,9 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	}
 	if !bytes.Contains(publicDetailRec.Body.Bytes(), []byte(`"visibility_status":"approved"`)) {
 		t.Fatalf("expected approved detail body=%s", publicDetailRec.Body.String())
+	}
+	if !bytes.Contains(publicDetailRec.Body.Bytes(), []byte(`"liked_by_viewer":true`)) || !bytes.Contains(publicDetailRec.Body.Bytes(), []byte(`"favorited_by_viewer":true`)) {
+		t.Fatalf("expected public detail to include viewer interaction state body=%s", publicDetailRec.Body.String())
 	}
 
 	publicImageReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images/"+imageID+"/image", nil)

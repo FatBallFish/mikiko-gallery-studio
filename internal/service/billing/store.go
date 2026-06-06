@@ -89,6 +89,7 @@ type Store interface {
 	ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error)
 	CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
+	DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error)
 	GetActiveSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error)
 	ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error)
 	ListWebhookEvents(ctx context.Context, page, pageSize int) (domainbilling.PaymentWebhookEventPage, error)
@@ -285,6 +286,22 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 	return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
 }
 
+func (s *MemoryStore) DeletePlan(_ context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, item := range s.plans {
+		if item.ID != planID {
+			continue
+		}
+		item.Status = "archived"
+		item.PurchaseEnabled = false
+		item.UpdatedAt = time.Now().UTC()
+		s.plans[index] = item
+		return item, nil
+	}
+	return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+}
+
 func (s *MemoryStore) GetActiveSubscription(_ context.Context, _ int64) (*domainbilling.UserSubscriptionSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -312,6 +329,18 @@ func (s *MemoryStore) ListOrders(_ context.Context, req domainbilling.ListOrders
 			continue
 		}
 		if strings.TrimSpace(req.Status) != "" && order.Status != strings.TrimSpace(req.Status) {
+			continue
+		}
+		if strings.TrimSpace(req.OrderNo) != "" && !strings.Contains(strings.ToLower(order.OrderNo), strings.ToLower(strings.TrimSpace(req.OrderNo))) {
+			continue
+		}
+		if strings.TrimSpace(req.VisibleMethod) != "" && strings.ToLower(order.VisibleMethod) != strings.ToLower(strings.TrimSpace(req.VisibleMethod)) {
+			continue
+		}
+		if strings.TrimSpace(req.ProviderType) != "" && strings.ToLower(order.ProviderType) != strings.ToLower(strings.TrimSpace(req.ProviderType)) {
+			continue
+		}
+		if strings.TrimSpace(req.PurchaseType) != "" && strings.ToLower(order.PurchaseType) != strings.ToLower(strings.TrimSpace(req.PurchaseType)) {
 			continue
 		}
 		items = append(items, order)

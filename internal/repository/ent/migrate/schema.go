@@ -635,6 +635,54 @@ var (
 			},
 		},
 	}
+	// PaymentProviderInstancesColumns holds the columns for the "payment_provider_instances" table.
+	PaymentProviderInstancesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider_type", Type: field.TypeString, Size: 32},
+		{Name: "name", Type: field.TypeString, Size: 100, Default: ""},
+		{Name: "config_encrypted", Type: field.TypeJSON, Nullable: true},
+		{Name: "credentials_fingerprint", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "supported_methods", Type: field.TypeJSON, Nullable: true},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "scheduler_weight", Type: field.TypeInt, Default: 100},
+		{Name: "limits", Type: field.TypeJSON, Nullable: true},
+		{Name: "refund_enabled", Type: field.TypeBool, Default: false},
+		{Name: "health_status", Type: field.TypeString, Size: 32, Default: "unknown"},
+		{Name: "last_error", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// PaymentProviderInstancesTable holds the schema information for the "payment_provider_instances" table.
+	PaymentProviderInstancesTable = &schema.Table{
+		Name:       "payment_provider_instances",
+		Columns:    PaymentProviderInstancesColumns,
+		PrimaryKey: []*schema.Column{PaymentProviderInstancesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "paymentproviderinstance_provider_type",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[3]},
+			},
+			{
+				Name:    "paymentproviderinstance_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[8]},
+			},
+			{
+				Name:    "paymentproviderinstance_provider_type_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[3], PaymentProviderInstancesColumns[8]},
+			},
+			{
+				Name:    "paymentproviderinstance_sort_order",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[9]},
+			},
+		},
+	}
 	// PaymentWebhookEventsColumns holds the columns for the "payment_webhook_events" table.
 	PaymentWebhookEventsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1158,6 +1206,8 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "plan_code", Type: field.TypeString, Unique: true, Size: 64},
 		{Name: "plan_name", Type: field.TypeString, Size: 128},
+		{Name: "plan_type", Type: field.TypeString, Size: 32, Default: "points_package"},
+		{Name: "purchase_enabled", Type: field.TypeBool, Default: true},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
 		{Name: "price_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
@@ -1177,12 +1227,12 @@ var (
 			{
 				Name:    "subscriptionplan_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionPlansColumns[5]},
+				Columns: []*schema.Column{SubscriptionPlansColumns[7]},
 			},
 			{
 				Name:    "subscriptionplan_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionPlansColumns[12]},
+				Columns: []*schema.Column{SubscriptionPlansColumns[14]},
 			},
 		},
 	}
@@ -1389,6 +1439,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{WalletGrantsColumns[12]},
 			},
+			{
+				Name:    "walletgrant_user_id_status_grant_type_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{WalletGrantsColumns[3], WalletGrantsColumns[7], WalletGrantsColumns[4], WalletGrantsColumns[12]},
+			},
 		},
 	}
 	// WalletReservationAllocationsColumns holds the columns for the "wallet_reservation_allocations" table.
@@ -1436,6 +1491,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{WalletReservationAllocationsColumns[7]},
 			},
+			{
+				Name:    "walletreservationallocation_wallet_grant_id_task_id_reservation_cycle",
+				Unique:  true,
+				Columns: []*schema.Column{WalletReservationAllocationsColumns[4], WalletReservationAllocationsColumns[5], WalletReservationAllocationsColumns[6]},
+			},
 		},
 	}
 	// Tables holds all the tables in the schema.
@@ -1452,6 +1512,7 @@ var (
 		ModelProvidersTable,
 		ModelRoutesTable,
 		PaymentOrdersTable,
+		PaymentProviderInstancesTable,
 		PaymentWebhookEventsTable,
 		PointLedgersTable,
 		ProviderErrorPoliciesTable,

@@ -23,8 +23,8 @@ export type AppContextValue = {
   profile: UserProfile | null
   balance: Balance | null
   refreshAccount: () => Promise<void>
-  navigate: (route: RouteId, options?: { returnTo?: RouteId }) => void
-  login: (session: SessionState, returnTo?: RouteId) => Promise<void>
+  navigate: (route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null }) => void
+  login: (session: SessionState, returnTo?: RouteId, options?: { imageId?: string | null }) => Promise<void>
   logout: () => Promise<void>
   notify: (tone: ToastTone, message: string) => void
 }

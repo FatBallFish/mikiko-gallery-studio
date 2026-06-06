@@ -48,7 +48,11 @@ func (s *Service) SchedulerState() map[string]int64 {
 	return cloned
 }
 
-func (s *Service) ScheduleProviderInstance(_ context.Context, method domaincashier.VisibleMethod, instances []domaincashier.ProviderInstance, amountCNY string) (domaincashier.ProviderInstance, error) {
+func (s *Service) ScheduleProviderInstance(ctx context.Context, method domaincashier.VisibleMethod, instances []domaincashier.ProviderInstance, amountCNY string) (domaincashier.ProviderInstance, error) {
+	return s.ScheduleProviderInstanceWithDailyUsage(ctx, method, instances, amountCNY, nil)
+}
+
+func (s *Service) ScheduleProviderInstanceWithDailyUsage(_ context.Context, method domaincashier.VisibleMethod, instances []domaincashier.ProviderInstance, amountCNY string, dailyUsage map[int64]decimal.Decimal) (domaincashier.ProviderInstance, error) {
 	if strings.TrimSpace(method.Method) == "" || !method.Enabled {
 		return domaincashier.ProviderInstance{}, ErrPaymentMethodUnavailable
 	}
@@ -68,7 +72,7 @@ func (s *Service) ScheduleProviderInstance(_ context.Context, method domaincashi
 		if !stringListContains(instance.SupportedMethods, method.Method) {
 			continue
 		}
-		if !domaincashier.ProviderInstanceAmountAllowed(instance, amount) {
+		if !domaincashier.ProviderInstanceAmountAllowedWithDailyUsage(instance, amount, dailyUsage[instance.ID]) {
 			continue
 		}
 		if instance.ProviderType != "mock" && instance.ConfigStatus != "configured" {

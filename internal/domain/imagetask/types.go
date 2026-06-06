@@ -179,6 +179,7 @@ type GalleryListRequest struct {
 	Status         string
 	ReviewOnly     bool
 	Sort           string
+	Query          string
 	RouteModelCode string
 	TaskType       string
 	ViewerUserID   int64

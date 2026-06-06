@@ -96,11 +96,12 @@ type SignupTrialConfig struct {
 }
 
 type CashierConfig struct {
-	Enabled                 bool   `yaml:"enabled"`
-	MockEnabled             bool   `yaml:"mock_enabled"`
-	OrderTimeoutSeconds     int    `yaml:"order_timeout_seconds"`
-	MaxPendingOrdersPerUser int    `yaml:"max_pending_orders_per_user"`
-	SiteBaseURL             string `yaml:"site_base_url"`
+	Enabled                     bool   `yaml:"enabled"`
+	MockEnabled                 bool   `yaml:"mock_enabled"`
+	OrderTimeoutSeconds         int    `yaml:"order_timeout_seconds"`
+	MaxPendingOrdersPerUser     int    `yaml:"max_pending_orders_per_user"`
+	SiteBaseURL                 string `yaml:"site_base_url"`
+	ProviderConfigEncryptionKey string `yaml:"provider_config_encryption_key"`
 }
 
 type ReferenceExtra struct {

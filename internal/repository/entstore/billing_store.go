@@ -82,13 +82,12 @@ func (s *BillingStore) ListPlans(ctx context.Context) ([]domainbilling.Subscript
 }
 
 func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
-	metadata := map[string]any{
-		"plan_type":        req.PlanType,
-		"purchase_enabled": req.PurchaseEnabled,
-	}
+	metadata := subscriptionPlanMetadata(req.PlanType, req.PurchaseEnabled)
 	plan, err := s.client.SubscriptionPlan.Create().
 		SetPlanCode(strings.TrimSpace(req.PlanCode)).
 		SetPlanName(strings.TrimSpace(req.PlanName)).
+		SetPlanType(strings.TrimSpace(req.PlanType)).
+		SetPurchaseEnabled(req.PurchaseEnabled).
 		SetStatus(strings.TrimSpace(req.Status)).
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
@@ -109,12 +108,11 @@ func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateS
 }
 
 func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
-	metadata := map[string]any{
-		"plan_type":        req.PlanType,
-		"purchase_enabled": req.PurchaseEnabled,
-	}
+	metadata := subscriptionPlanMetadata(req.PlanType, req.PurchaseEnabled)
 	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
 		SetPlanName(strings.TrimSpace(req.PlanName)).
+		SetPlanType(strings.TrimSpace(req.PlanType)).
+		SetPurchaseEnabled(req.PurchaseEnabled).
 		SetStatus(strings.TrimSpace(req.Status)).
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
@@ -124,6 +122,29 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 		SetDescription(strings.TrimSpace(req.Description)).
 		SetSortOrder(req.SortOrder).
 		SetMetadata(metadata).
+		Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+		}
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	return mapSubscriptionPlan(plan), nil
+}
+
+func (s *BillingStore) DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
+	current, err := s.client.SubscriptionPlan.Get(ctx, int(planID))
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+		}
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	planType := subscriptionPlanType(current.PlanType, current.Metadata)
+	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(planID)).
+		SetStatus("archived").
+		SetPurchaseEnabled(false).
+		SetMetadata(subscriptionPlanMetadata(planType, false)).
 		Save(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -164,6 +185,18 @@ func (s *BillingStore) ListOrders(ctx context.Context, req domainbilling.ListOrd
 	}
 	if strings.TrimSpace(req.Status) != "" {
 		query = query.Where(paymentorder.StatusEQ(strings.TrimSpace(req.Status)))
+	}
+	if strings.TrimSpace(req.OrderNo) != "" {
+		query = query.Where(paymentorder.OrderNoContainsFold(strings.TrimSpace(req.OrderNo)))
+	}
+	if strings.TrimSpace(req.VisibleMethod) != "" {
+		query = query.Where(paymentorder.VisibleMethodEQ(strings.ToLower(strings.TrimSpace(req.VisibleMethod))))
+	}
+	if strings.TrimSpace(req.ProviderType) != "" {
+		query = query.Where(paymentorder.ProviderTypeEQ(strings.ToLower(strings.TrimSpace(req.ProviderType))))
+	}
+	if strings.TrimSpace(req.PurchaseType) != "" {
+		query = query.Where(paymentorder.PurchaseTypeEQ(strings.ToLower(strings.TrimSpace(req.PurchaseType))))
 	}
 	total, err := query.Count(ctx)
 	if err != nil {
@@ -1385,7 +1418,7 @@ func (s *BillingStore) currentStateWithDetails(ctx context.Context, client *repo
 		default:
 			giftAvailable = giftAvailable.Add(available)
 		}
-		accumulateBalanceBucket(bucketsByType, grant.GrantType, grant.SourceType, available, frozen, grant.ExpiresAt)
+		accumulateBalanceBucket(bucketsByType, grant.GrantType, grant.SourceType, available, frozen, grant.ExpiresAt, intFromAny(grant.Metadata["expiry_reminder_days"]))
 		if grant.ExpiresAt != nil && available.GreaterThan(decimal.Zero) {
 			if nextGrant == nil || grant.ExpiresAt.Before(*nextGrant.ExpiresAt) {
 				expiresAt := *grant.ExpiresAt
@@ -1476,14 +1509,15 @@ func (s *BillingStore) expireExpiredGrants(ctx context.Context, tx *repoent.Tx, 
 }
 
 type balanceBucketAccumulator struct {
-	Bucket    string
-	Source    string
-	Available decimal.Decimal
-	Frozen    decimal.Decimal
-	ExpiresAt *time.Time
+	Bucket       string
+	Source       string
+	Available    decimal.Decimal
+	Frozen       decimal.Decimal
+	ExpiresAt    *time.Time
+	ReminderDays int
 }
 
-func accumulateBalanceBucket(buckets map[string]*balanceBucketAccumulator, bucket, source string, available, frozen decimal.Decimal, expiresAt *time.Time) {
+func accumulateBalanceBucket(buckets map[string]*balanceBucketAccumulator, bucket, source string, available, frozen decimal.Decimal, expiresAt *time.Time, reminderDays int) {
 	key := strings.TrimSpace(bucket)
 	if key == "" {
 		key = "gift"
@@ -1502,6 +1536,7 @@ func accumulateBalanceBucket(buckets map[string]*balanceBucketAccumulator, bucke
 		expires := *expiresAt
 		if current.ExpiresAt == nil || expires.Before(*current.ExpiresAt) {
 			current.ExpiresAt = &expires
+			current.ReminderDays = reminderDays
 		}
 	}
 }
@@ -1518,7 +1553,7 @@ func formatBalanceBuckets(buckets map[string]*balanceBucketAccumulator, scale in
 			AvailablePoints: bucket.Available.Round(scale).StringFixed(scale),
 			FrozenPoints:    bucket.Frozen.Round(scale).StringFixed(scale),
 			ExpiresAt:       bucket.ExpiresAt,
-			ExpireWarning:   balanceBucketExpireWarning(now, bucket.ExpiresAt),
+			ExpireWarning:   balanceBucketExpireWarning(now, bucket.ExpiresAt, bucket.ReminderDays),
 			SourceType:      bucket.Source,
 			SortOrder:       grantPriority(bucket.Bucket),
 		}
@@ -1542,11 +1577,14 @@ func formatBalanceBuckets(buckets map[string]*balanceBucketAccumulator, scale in
 	return items
 }
 
-func balanceBucketExpireWarning(now time.Time, expiresAt *time.Time) bool {
+func balanceBucketExpireWarning(now time.Time, expiresAt *time.Time, reminderDays int) bool {
 	if expiresAt == nil || now.After(*expiresAt) {
 		return false
 	}
-	return expiresAt.Sub(now) <= 48*time.Hour
+	if reminderDays <= 0 {
+		reminderDays = 2
+	}
+	return expiresAt.Sub(now) <= time.Duration(reminderDays)*24*time.Hour
 }
 
 func balanceBucketLabel(bucket string) string {
@@ -1808,6 +1846,8 @@ func (s *BillingStore) ensureDefaultPlans(ctx context.Context) error {
 		if _, err := s.client.SubscriptionPlan.Create().
 			SetPlanCode(item.PlanCode).
 			SetPlanName(item.PlanName).
+			SetPlanType(item.PlanType).
+			SetPurchaseEnabled(item.PurchaseEnabled).
 			SetStatus(item.Status).
 			SetPriceCny(item.PriceCNY).
 			SetPoints(item.Points).
@@ -1815,7 +1855,7 @@ func (s *BillingStore) ensureDefaultPlans(ctx context.Context) error {
 			SetDurationDays(item.DurationDays).
 			SetCurrency(item.Currency).
 			SetSortOrder(sortOrder).
-			SetMetadata(map[string]any{"plan_type": item.PlanType, "purchase_enabled": item.PurchaseEnabled}).
+			SetMetadata(subscriptionPlanMetadata(item.PlanType, item.PurchaseEnabled)).
 			Save(ctx); err != nil && !repoent.IsConstraintError(err) {
 			return err
 		}
@@ -2234,8 +2274,8 @@ func mapSubscriptionPlan(plan *repoent.SubscriptionPlan) domainbilling.Subscript
 		ID:              int64(plan.ID),
 		PlanCode:        plan.PlanCode,
 		PlanName:        plan.PlanName,
-		PlanType:        subscriptionPlanType(plan.Metadata),
-		PurchaseEnabled: subscriptionPlanPurchaseEnabled(plan.Metadata),
+		PlanType:        subscriptionPlanType(plan.PlanType, plan.Metadata),
+		PurchaseEnabled: subscriptionPlanPurchaseEnabled(plan.PurchaseEnabled, plan.Metadata),
 		Status:          plan.Status,
 		PriceCNY:        plan.PriceCny,
 		Points:          plan.Points,
@@ -2249,31 +2289,42 @@ func mapSubscriptionPlan(plan *repoent.SubscriptionPlan) domainbilling.Subscript
 	}
 }
 
-func subscriptionPlanType(metadata map[string]any) string {
+func subscriptionPlanType(value string, metadata map[string]any) string {
 	if metadata != nil {
-		if value, ok := metadata["plan_type"].(string); ok && strings.TrimSpace(value) != "" {
-			if strings.EqualFold(value, "subscription") {
+		if metadataValue, ok := metadata["plan_type"].(string); ok && strings.TrimSpace(metadataValue) != "" {
+			if strings.EqualFold(metadataValue, "subscription") {
 				return "subscription"
 			}
+			return "points_package"
 		}
+	}
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "subscription" {
+		return "subscription"
 	}
 	return "points_package"
 }
 
-func subscriptionPlanPurchaseEnabled(metadata map[string]any) bool {
-	if metadata == nil {
-		return true
-	}
-	switch value := metadata["purchase_enabled"].(type) {
-	case bool:
-		return value
-	case string:
-		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
-		if err == nil {
-			return parsed
+func subscriptionPlanPurchaseEnabled(value bool, metadata map[string]any) bool {
+	if metadata != nil {
+		switch metadataValue := metadata["purchase_enabled"].(type) {
+		case bool:
+			return metadataValue
+		case string:
+			parsed, err := strconv.ParseBool(strings.TrimSpace(metadataValue))
+			if err == nil {
+				return parsed
+			}
 		}
 	}
-	return true
+	return value
+}
+
+func subscriptionPlanMetadata(planType string, purchaseEnabled bool) map[string]any {
+	return map[string]any{
+		"plan_type":        strings.ToLower(strings.TrimSpace(planType)),
+		"purchase_enabled": purchaseEnabled,
+	}
 }
 
 func (s *BillingStore) paymentOrderRefundTotal(order *repoent.PaymentOrder) (decimal.Decimal, error) {
@@ -2624,6 +2675,25 @@ func int64FromAny(value any) int64 {
 		return parsed
 	case string:
 		parsed, _ := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func intFromAny(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		parsed, _ := typed.Int64()
+		return int(parsed)
+	case string:
+		parsed, _ := strconv.Atoi(strings.TrimSpace(typed))
 		return parsed
 	default:
 		return 0

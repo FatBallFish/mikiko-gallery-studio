@@ -493,8 +493,8 @@ func (s *failingSaveStore) ListPublicGallery(ctx context.Context, req domainimag
 	return s.base.ListPublicGallery(ctx, req)
 }
 
-func (s *failingSaveStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	return s.base.GetPublicImage(ctx, imageID)
+func (s *failingSaveStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID, viewerUserID)
 }
 
 func (s *failingSaveStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
@@ -592,8 +592,8 @@ func (s *raceyTerminalStore) ListPublicGallery(ctx context.Context, req domainim
 	return s.base.ListPublicGallery(ctx, req)
 }
 
-func (s *raceyTerminalStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	return s.base.GetPublicImage(ctx, imageID)
+func (s *raceyTerminalStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID, viewerUserID)
 }
 
 func (s *raceyTerminalStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {

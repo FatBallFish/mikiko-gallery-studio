@@ -39,21 +39,37 @@ export function docsFromOpenApi(spec: unknown): EndpointDoc[] {
   if (!isRecord(spec) || typeof spec.openapi !== 'string' || !isRecord(spec.paths)) throw new Error(docsUnavailableMessage)
 
   return Object.entries(spec.paths).flatMap(([path, methods]) => {
-    if (!isRecord(methods)) return []
+    const resolvedMethods = resolveLocalRef(spec, methods)
+    if (!isRecord(resolvedMethods)) return []
 
-    return Object.entries(methods).flatMap(([method, operation]) => {
-      if (!httpMethods.includes(method as typeof httpMethods[number]) || !isRecord(operation)) return []
+    return Object.entries(resolvedMethods).flatMap(([method, operation]) => {
+      const resolvedOperation = resolveLocalRef(spec, operation)
+      if (!httpMethods.includes(method as typeof httpMethods[number]) || !isRecord(resolvedOperation)) return []
       return [{
         group: endpointGroup(path),
         method: method.toUpperCase() as EndpointDoc['method'],
         path,
-        title: String(operation.summary ?? operation.operationId ?? path),
-        auth: Array.isArray(operation.security) && operation.security.length > 0 ? 'Authorization required' : 'Public',
-        requestExample: docsRequestExample(path, method.toUpperCase(), operation),
-        responseExample: JSON.stringify(isRecord(operation.responses) ? operation.responses : {}, null, 2).slice(0, 1200),
+        title: String(resolvedOperation.summary ?? resolvedOperation.operationId ?? path),
+        auth: Array.isArray(resolvedOperation.security) && resolvedOperation.security.length > 0 ? 'Authorization required' : 'Public',
+        requestExample: docsRequestExample(path, method.toUpperCase(), resolvedOperation),
+        responseExample: JSON.stringify(isRecord(resolvedOperation.responses) ? resolvedOperation.responses : {}, null, 2).slice(0, 1200),
       }]
     })
   })
+}
+
+function resolveLocalRef(root: unknown, value: unknown): unknown {
+  if (!isRecord(value) || typeof value.$ref !== 'string') return value
+  const ref = value.$ref
+  if (!ref.startsWith('#/')) return value
+  return ref.slice(2).split('/').reduce<unknown>((current, segment) => {
+    if (!isRecord(current)) return undefined
+    return current[decodeRefSegment(segment)]
+  }, root)
+}
+
+function decodeRefSegment(segment: string) {
+  return segment.replace(/~1/g, '/').replace(/~0/g, '~')
 }
 
 export function normalizeExamples(payload: unknown): DocsExample[] {

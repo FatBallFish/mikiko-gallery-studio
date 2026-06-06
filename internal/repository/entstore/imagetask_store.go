@@ -522,13 +522,17 @@ func (s *ImageTaskStore) ListPublicGallery(ctx context.Context, req domainimaget
 }
 
 func filterPublicGalleryItems(items []domainimagetask.GalleryImage, req domainimagetask.GalleryListRequest) []domainimagetask.GalleryImage {
+	query := strings.TrimSpace(req.Query)
 	routeModelCode := strings.TrimSpace(req.RouteModelCode)
 	taskType := strings.TrimSpace(req.TaskType)
-	if routeModelCode == "" && taskType == "" {
+	if query == "" && routeModelCode == "" && taskType == "" {
 		return items
 	}
 	filtered := make([]domainimagetask.GalleryImage, 0, len(items))
 	for _, item := range items {
+		if query != "" && !publicGalleryQueryMatches(item, query) {
+			continue
+		}
 		if routeModelCode != "" && !galleryRouteModelMatches(item, routeModelCode) {
 			continue
 		}
@@ -544,7 +548,51 @@ func galleryRouteModelMatches(item domainimagetask.GalleryImage, routeModelCode 
 	return strings.EqualFold(item.RouteModelCode, routeModelCode) || (item.RouteModelCode == "" && strings.EqualFold(item.AbstractModel, routeModelCode))
 }
 
-func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+func publicGalleryQueryMatches(item domainimagetask.GalleryImage, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	fields := []string{
+		item.ID,
+		item.PromptExcerpt,
+		publicGallerySearchExcerpt(item.Prompt, 24),
+		item.RouteModelCode,
+		item.AbstractModel,
+		item.TaskType,
+		item.AuthorName,
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(field)), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicGallerySearchExcerpt(prompt string, limit int) string {
+	prompt = strings.Join(strings.Fields(prompt), " ")
+	if limit <= 0 || prompt == "" {
+		return ""
+	}
+	runes := []rune(prompt)
+	if len(runes) <= limit {
+		visible := len(runes) / 2
+		if visible < 1 {
+			return "…"
+		}
+		if visible > limit-1 {
+			visible = limit - 1
+		}
+		return string(runes[:visible]) + "…"
+	}
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
+func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
@@ -557,7 +605,7 @@ func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string) (do
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	image := mapGalleryImageEntity(entity, taskEntity)
-	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, 0)
+	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, viewerUserID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}

@@ -13,6 +13,7 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("REDIS_KEY_PREFIX", "test-prefix")
 	t.Setenv("OPENAI_API_KEY", "openai-test-key")
 	t.Setenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "api-key-secret-test-key")
+	t.Setenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "cashier-provider-config-test-key")
 	t.Setenv("SMTP_HOST", "smtp.example.com")
 	t.Setenv("SMTP_PORT", "587")
 	t.Setenv("SMTP_USERNAME", "mailer")
@@ -46,6 +47,9 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	}
 	if cfg.APIKey.SigningSecretEncryptionKey != "api-key-secret-test-key" {
 		t.Fatalf("expected API key signing secret env override, got %q", cfg.APIKey.SigningSecretEncryptionKey)
+	}
+	if cfg.Cashier.ProviderConfigEncryptionKey != "cashier-provider-config-test-key" {
+		t.Fatalf("expected cashier provider config env override, got %q", cfg.Cashier.ProviderConfigEncryptionKey)
 	}
 	if cfg.Auth.SMTP.Host != "smtp.example.com" || cfg.Auth.SMTP.Port != 587 || cfg.Auth.SMTP.Username != "mailer" || cfg.Auth.SMTP.Password != "secret" || cfg.Auth.SMTP.From != "Pic Gallery <noreply@example.com>" {
 		t.Fatalf("expected SMTP env overrides, got %#v", cfg.Auth.SMTP)

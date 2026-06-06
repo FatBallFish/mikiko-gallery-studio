@@ -132,6 +132,7 @@ export const API_PATHS = {
     paymentOrders: '/api/ops/admin/v1/cashier/orders',
     paymentOrderDetail: '/api/ops/admin/v1/cashier/orders/{order_id}',
     paymentOrderComplete: '/api/ops/admin/v1/cashier/orders/{order_id}/complete',
+    paymentOrderClose: '/api/ops/admin/v1/cashier/orders/{order_id}/close',
     paymentOrderRefund: '/api/ops/admin/v1/cashier/orders/{order_id}/refund',
     paymentOrderChargeback: '/api/ops/admin/v1/cashier/orders/{order_id}/chargeback',
     paymentOrderSync: '/api/ops/admin/v1/cashier/orders/{order_id}/sync',
@@ -232,7 +233,14 @@ export type Balance = {
   plan_name: string
   first_purchase_bonus: boolean
 }
-export type SignupGrantResult = { granted: boolean; balance: Balance }
+export type SignupGrantResult = {
+  granted: boolean
+  grant_id?: number
+  grant_type?: 'trial' | string
+  points?: string
+  expires_at?: string | null
+  balance: Balance
+}
 export type LoginResponse = { access_token: string; expires_in_seconds: number; expires_in?: number; user_id: ID; profile?: UserProfile; signup_grant?: SignupGrantResult }
 export type SubscriptionPlan = {
   id: number
@@ -331,6 +339,9 @@ export type CreatePaymentOrderRequest = { plan_code: string; provider: string }
 export type CompletePaymentOrderRequest = {
   provider?: string
   trade_no: string
+  reason?: string
+}
+export type ClosePaymentOrderRequest = {
   reason?: string
 }
 export type RefundPaymentOrderRequest = {
@@ -442,6 +453,7 @@ export type CapabilityModelGroup = {
 export type Capability = {
   items?: CapabilityItem[]
   raw?: unknown
+  unavailable_reason?: { code: string; message: string } | null
   model_groups: CapabilityModelGroup[]
   qualities: string[]
   aspect_ratios: string[]

@@ -154,6 +154,17 @@ components:
       properties:
         granted:
           type: boolean
+        grant_id:
+          type: integer
+        grant_type:
+          type: string
+          enum: [trial]
+        points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        expires_at:
+          type: string
+          format: date-time
         balance:
           $ref: '#/components/schemas/BalanceSummary'
     BalanceBucket:
@@ -624,6 +635,19 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/CapabilityItem'
+            model_groups:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            unavailable_reason:
+              type: object
+              properties:
+                code:
+                  type: string
+                  example: NO_ROUTE_MODEL
+                message:
+                  type: string
     ReferenceAssetUploadRequest:
       type: object
       required: [file]

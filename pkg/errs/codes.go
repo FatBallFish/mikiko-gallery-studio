@@ -32,7 +32,10 @@ const (
 	CodePaymentMethodUnavailable      = "PAYMENT_METHOD_UNAVAILABLE"
 	CodePaymentProviderUnavailable    = "PAYMENT_PROVIDER_UNAVAILABLE"
 	CodePaymentProviderNotImplemented = "PAYMENT_PROVIDER_NOT_IMPLEMENTED"
+	CodePaymentAmountOutOfRange       = "PAYMENT_AMOUNT_OUT_OF_RANGE"
 	CodePaymentTooManyPending         = "PAYMENT_TOO_MANY_PENDING_ORDERS"
 	CodePaymentSignatureInvalid       = "PAYMENT_SIGNATURE_INVALID"
 	CodePaymentAmountMismatch         = "PAYMENT_AMOUNT_MISMATCH"
+	CodeLoginRequiredGalleryDetail    = "LOGIN_REQUIRED_FOR_GALLERY_DETAIL"
+	CodeSignupTrialConfigInvalid      = "SIGNUP_TRIAL_CONFIG_INVALID"
 )

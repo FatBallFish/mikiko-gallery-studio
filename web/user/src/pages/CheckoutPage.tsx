@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import type { CashierOptions, CashierOrder, CashierPlan, PaymentOrder, PaymentVisibleMethod } from '../../../shared/api-types'
+import type { CashierOptions, CashierOrder, CashierPlan, PaymentVisibleMethod } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, Field, LoadingState, PageIntro, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
@@ -18,12 +18,13 @@ export function CheckoutPage() {
   const [customAmount, setCustomAmount] = useState('25.00')
   const [purchaseType, setPurchaseType] = useState<'plan' | 'custom_amount'>('plan')
   const [order, setOrder] = useState<CashierOrder | null>(null)
-  const [recentOrders, setRecentOrders] = useState<PaymentOrder[]>([])
+  const [recentOrders, setRecentOrders] = useState<CashierOrder[]>([])
   const [recentLoading, setRecentLoading] = useState(true)
   const [recentError, setRecentError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [orderIdempotencyKey, setOrderIdempotencyKey] = useState(() => newCheckoutOrderIdempotencyKey())
 
   async function load() {
     setLoading(true)
@@ -44,7 +45,7 @@ export function CheckoutPage() {
     setRecentLoading(true)
     setRecentError(null)
     try {
-      const result = await userApi.listOrders(1, 10)
+      const result = await userApi.listCashierOrders(1, 10)
       setRecentOrders(result.items)
     } catch (caught) {
       setRecentError(errorMessage(caught))
@@ -112,10 +113,11 @@ export function CheckoutPage() {
         amount_cny: purchaseType === 'custom_amount' ? customAmount : undefined,
         visible_method: selectedMethod,
         client_return_url: `${window.location.origin}${window.location.pathname}#/checkout`,
-      })
+      }, orderIdempotencyKey)
       setOrder(nextOrder)
       void loadRecentOrders()
       balanceRefreshedOrderID.current = null
+      setOrderIdempotencyKey(newCheckoutOrderIdempotencyKey())
       app.notify('success', '订单已创建，请继续完成支付')
     } catch (caught) {
       app.notify('error', errorMessage(caught))
@@ -329,6 +331,11 @@ function PaymentDisplayPanel({ order }: { order: CashierOrder }) {
       {display.kind === 'form' ? <Button tone="ghost" onClick={openForm}>打开支付表单</Button> : null}
     </section>
   )
+}
+
+function newCheckoutOrderIdempotencyKey() {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `checkout-order-${random}`
 }
 
 function CheckoutEmptyActions({ empty, onRefresh, onBalance }: { empty: CheckoutUnavailableEmptyState; onRefresh: () => void | Promise<void>; onBalance: () => void }) {

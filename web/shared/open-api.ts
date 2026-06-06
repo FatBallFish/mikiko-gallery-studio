@@ -19,9 +19,9 @@ export const openApi = {
   getBalance: (headers: OpenApiHeaders) => sharedApiClient.request<Balance>(API_PATHS.open.balance, { headers, auth: false }),
   getCapabilities: (headers: OpenApiHeaders) => sharedApiClient.request<Capability>(API_PATHS.open.capabilities, { headers, auth: false }),
   estimate: (input: EstimateRequest, headers: OpenApiHeaders) => sharedApiClient.request<EstimateResult>(API_PATHS.open.estimate, { query: toEstimateQuery(input), headers, auth: false }),
-  listPublicGallery: async (page = 1, page_size = 20, options?: { sort?: 'latest' | 'hot'; liked?: boolean; favorited?: boolean; accessToken?: string | null }): Promise<PageResult<ImageResult>> => {
+  listPublicGallery: async (page = 1, page_size = 20, options?: { sort?: 'latest' | 'hot'; query?: string; liked?: boolean; favorited?: boolean; accessToken?: string | null }): Promise<PageResult<ImageResult>> => {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.open.galleryImages, {
-      query: { page, page_size, sort: options?.sort, liked: options?.liked, favorited: options?.favorited },
+      query: { page, page_size, sort: options?.sort, query: options?.query, liked: options?.liked, favorited: options?.favorited },
       auth: false,
       headers: options?.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : undefined,
     }))

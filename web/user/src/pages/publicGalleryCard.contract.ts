@@ -1,5 +1,5 @@
 import type { ImageResult } from '../../../shared/api-types'
-import { publicGalleryCardView, publicGallerySearchText } from './publicGalleryModel'
+import { publicGalleryCardView, publicGallerySearchText, shouldFetchPublicGalleryDetailByID } from './publicGalleryModel'
 
 const guestImage: ImageResult = {
   id: 'img_1',
@@ -45,4 +45,16 @@ if (invalidDateView.date !== 'not-a-date') {
 const searchText = publicGallerySearchText(guestImage)
 if (searchText.includes('full prompt') || !searchText.includes('cinematic poster')) {
   throw new Error(`public gallery list search must use prompt excerpt, got ${searchText}`)
+}
+
+if (!shouldFetchPublicGalleryDetailByID({ imageId: 'img_missing', rows: [{ id: 'img_1' }], selectedId: null, busyId: null })) {
+  throw new Error('public gallery deep link should fetch detail directly when target image is not in the loaded list')
+}
+
+if (shouldFetchPublicGalleryDetailByID({ imageId: 'img_1', rows: [{ id: 'img_1' }], selectedId: null, busyId: null })) {
+  throw new Error('public gallery deep link should not bypass the loaded row when target image is already in list')
+}
+
+if (shouldFetchPublicGalleryDetailByID({ imageId: 'img_2', rows: [], selectedId: 'img_2', busyId: null })) {
+  throw new Error('public gallery deep link should not refetch the currently selected image')
 }

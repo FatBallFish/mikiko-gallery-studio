@@ -24,6 +24,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
@@ -116,6 +117,7 @@ func checkColumn(t, c string) error {
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
 			paymentorder.Table:                paymentorder.ValidColumn,
+			paymentproviderinstance.Table:     paymentproviderinstance.ValidColumn,
 			paymentwebhookevent.Table:         paymentwebhookevent.ValidColumn,
 			pointledger.Table:                 pointledger.ValidColumn,
 			providererrorpolicy.Table:         providererrorpolicy.ValidColumn,

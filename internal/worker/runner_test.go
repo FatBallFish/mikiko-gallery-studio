@@ -142,8 +142,8 @@ func (s *countingStore) ListPublicGallery(ctx context.Context, req domainimageta
 	return s.base.ListPublicGallery(ctx, req)
 }
 
-func (s *countingStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	return s.base.GetPublicImage(ctx, imageID)
+func (s *countingStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID, viewerUserID)
 }
 
 func (s *countingStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {

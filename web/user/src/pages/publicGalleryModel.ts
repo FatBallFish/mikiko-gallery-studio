@@ -42,3 +42,16 @@ export function publicGallerySearchText(image: ImageResult) {
   const model = image.route_model_code || image.abstract_model || ''
   return `${image.id} ${image.prompt_excerpt ?? ''} ${model} ${image.author_name ?? ''}`.toLowerCase()
 }
+
+export function shouldFetchPublicGalleryDetailByID(input: {
+  imageId?: string | null
+  rows: Array<Pick<ImageResult, 'id'>>
+  selectedId?: string | null
+  busyId?: string | null
+}) {
+  const imageId = input.imageId?.trim()
+  if (!imageId) return false
+  if (input.selectedId === imageId) return false
+  if (input.busyId === `detail:${imageId}`) return false
+  return !input.rows.some((image) => image.id === imageId)
+}

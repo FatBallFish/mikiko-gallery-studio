@@ -85,6 +85,32 @@ func TestAdminCashierReadEndpoints(t *testing.T) {
 		t.Fatalf("unexpected overview %#v", overviewResp.Data)
 	}
 
+	createOverviewProvider := func(name string, enabled bool, sortOrder int) {
+		body := fmt.Sprintf(`{"provider_type":"alipay_direct","name":%q,"enabled":%t,"supported_methods":["alipay"],"sort_order":%d,"scheduler_weight":100,"config":{"app_id":%q,"payment_url":"https://pay.example.com/session"}}`, name, enabled, sortOrder, name)
+		createProviderInstanceForCashierTest(t, handler, adminToken, body)
+	}
+	createOverviewProvider("overview-alipay-a", true, 10)
+	createOverviewProvider("overview-alipay-b", true, 20)
+	createOverviewProvider("overview-alipay-disabled", false, 30)
+	providerOverviewReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/overview", nil)
+	providerOverviewReq.Header.Set("Authorization", "Bearer "+adminToken)
+	providerOverviewRec := httptest.NewRecorder()
+	handler.ServeHTTP(providerOverviewRec, providerOverviewReq)
+	if providerOverviewRec.Code != http.StatusOK {
+		t.Fatalf("expected provider overview 200, got %d body=%s", providerOverviewRec.Code, providerOverviewRec.Body.String())
+	}
+	var providerOverviewResp struct {
+		Data struct {
+			EnabledProviderInstances int `json:"enabled_provider_instances"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(providerOverviewRec.Body).Decode(&providerOverviewResp); err != nil {
+		t.Fatalf("decode provider overview: %v", err)
+	}
+	if providerOverviewResp.Data.EnabledProviderInstances != 3 {
+		t.Fatalf("expected overview to count enabled provider instances, got %#v", providerOverviewResp.Data)
+	}
+
 	userSession := loginExistingAuthUser(t, authSvc, "cashier-user@example.com")
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}`))
 	createReq.Header.Set("Authorization", "Bearer "+userSession.AccessToken)
@@ -238,6 +264,100 @@ func TestAdminCashierReadEndpoints(t *testing.T) {
 	}
 }
 
+func TestAdminCashierOrdersSupportsOperationalFilters(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email:        "cashier-admin@example.com",
+		PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role:         domainadminauth.RoleAdmin,
+		Status:       "active",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	handler := NewWithAPI(handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingservice.NewService(cfg.Billing), nil, adminAuth, nil))
+	adminToken := loginAdminForCashierTest(t, handler)
+	if err := authSvc.SendEmailCode("cashier-filter-a@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode userA: %v", err)
+	}
+	userA, userASession, err := authSvc.LoginWithEmailCode("cashier-filter-a@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode userA: %v", err)
+	}
+	if err := authSvc.SendEmailCode("cashier-filter-b@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode userB: %v", err)
+	}
+	_, userBSession, err := authSvc.LoginWithEmailCode("cashier-filter-b@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode userB: %v", err)
+	}
+
+	createOrder := func(token string, body string) domainbilling.PaymentOrder {
+		req := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected cashier order create 201, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Data domainbilling.PaymentOrder `json:"data"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode created order: %v", err)
+		}
+		return resp.Data
+	}
+
+	completed := createOrder(userASession.AccessToken, `{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}`)
+	mockPayReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders/"+jsonInt64(completed.ID)+"/mock-pay", nil)
+	mockPayReq.Header.Set("Authorization", "Bearer "+userASession.AccessToken)
+	mockPayRec := httptest.NewRecorder()
+	handler.ServeHTTP(mockPayRec, mockPayReq)
+	if mockPayRec.Code != http.StatusOK {
+		t.Fatalf("expected mock pay 200, got %d body=%s", mockPayRec.Code, mockPayRec.Body.String())
+	}
+	pending := createOrder(userBSession.AccessToken, `{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"mock"}`)
+
+	assertFilter := func(query string, wantOrderNo string) {
+		req := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/orders?page=1&page_size=10&"+query, nil)
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected admin cashier orders filter 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Data struct {
+				Items      []domainbilling.PaymentOrder `json:"items"`
+				Pagination struct {
+					Total int `json:"total"`
+				} `json:"pagination"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode filtered orders: %v", err)
+		}
+		if resp.Data.Pagination.Total != 1 || len(resp.Data.Items) != 1 || resp.Data.Items[0].OrderNo != wantOrderNo {
+			t.Fatalf("expected only order %s for query %s, got %#v", wantOrderNo, query, resp.Data)
+		}
+	}
+
+	assertFilter("status=completed", completed.OrderNo)
+	assertFilter("order_no="+url.QueryEscape(pending.OrderNo[:len(pending.OrderNo)-2]), pending.OrderNo)
+	assertFilter("purchase_type=custom_amount&visible_method=mock", pending.OrderNo)
+	assertFilter("user_id="+jsonInt64(userA.ID), completed.OrderNo)
+}
+
 func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{
@@ -338,6 +458,76 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	}
 	if balanceAfterReplay.RechargePoints != "100.00000" || balanceAfterReplay.AvailablePoints != "100.00000" {
 		t.Fatalf("expected replay not to double credit, got %#v", balanceAfterReplay)
+	}
+}
+
+func TestAdminCashierOrderCloseCancelsPendingOrderAndBlocksCompletion(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	if err := authSvc.SendEmailCode("cashier-close-user@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, session, err := authSvc.LoginWithEmailCode("cashier-close-user@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email:        "cashier-admin@example.com",
+		PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role:         domainadminauth.RoleAdmin,
+		Status:       "active",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	billingSvc := billingservice.NewService(cfg.Billing)
+	handler := NewWithAPI(handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, nil))
+	adminToken := loginAdminForCashierTest(t, handler)
+
+	orderID, _ := createCustomCashierOrderForTest(t, handler, session.AccessToken, "mock", "12.50000")
+	closeReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/close", bytes.NewBufferString(`{"reason":"duplicate pending order"}`))
+	closeReq.Header.Set("Authorization", "Bearer "+adminToken)
+	closeReq.Header.Set("Content-Type", "application/json")
+	closeRec := httptest.NewRecorder()
+	handler.ServeHTTP(closeRec, closeReq)
+	if closeRec.Code != http.StatusOK {
+		t.Fatalf("expected admin close 200, got %d body=%s", closeRec.Code, closeRec.Body.String())
+	}
+	var closeResp struct {
+		Data struct {
+			ID       int64  `json:"id"`
+			Status   string `json:"status"`
+			ClosedAt string `json:"closed_at"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(closeRec.Body).Decode(&closeResp); err != nil {
+		t.Fatalf("decode close response: %v", err)
+	}
+	if closeResp.Data.ID != orderID || closeResp.Data.Status != "canceled" || closeResp.Data.ClosedAt == "" {
+		t.Fatalf("unexpected closed order response %#v", closeResp.Data)
+	}
+
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/complete", bytes.NewBufferString(`{"trade_no":"MANUAL-TRADE-CLOSED-001","reason":"should not complete closed order"}`))
+	completeReq.Header.Set("Authorization", "Bearer "+adminToken)
+	completeReq.Header.Set("Content-Type", "application/json")
+	completeRec := httptest.NewRecorder()
+	handler.ServeHTTP(completeRec, completeReq)
+	if completeRec.Code != http.StatusConflict {
+		t.Fatalf("expected closed order completion 409, got %d body=%s", completeRec.Code, completeRec.Body.String())
+	}
+	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balance.AvailablePoints != "0.00000" || balance.RechargePoints != "0.00000" {
+		t.Fatalf("expected closing pending order not to credit balance, got %#v", balance)
 	}
 }
 
@@ -2112,6 +2302,28 @@ func TestAdminCashierPlanCreateAndUpdate(t *testing.T) {
 	if hiddenOrderRec.Code == http.StatusCreated {
 		t.Fatalf("expected hidden subscription placeholder order create to fail, body=%s", hiddenOrderRec.Body.String())
 	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/cashier/plans/"+jsonInt64(createResp.Data.ID), nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected cashier plan delete 200, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+	var deleteResp struct {
+		Data struct {
+			PlanCode        string `json:"plan_code"`
+			PlanType        string `json:"plan_type"`
+			Status          string `json:"status"`
+			PurchaseEnabled bool   `json:"purchase_enabled"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(deleteRec.Body).Decode(&deleteResp); err != nil {
+		t.Fatalf("decode delete response: %v", err)
+	}
+	if deleteResp.Data.PlanCode != "points-250" || deleteResp.Data.PlanType != "subscription" || deleteResp.Data.Status != "archived" || deleteResp.Data.PurchaseEnabled {
+		t.Fatalf("expected deleted plan to be archived and not purchasable, got %#v", deleteResp.Data)
+	}
 }
 
 func TestAdminCashierProviderInstanceCreateAndUpdate(t *testing.T) {
@@ -2263,6 +2475,34 @@ func TestAdminCashierProviderInstanceCreateAndUpdate(t *testing.T) {
 	}
 	if hasSecret, _ := wxpayResp.Data.CredentialsStatus["has_secret"].(bool); !hasSecret {
 		t.Fatalf("expected wxpay credentials_status.has_secret=true, got %#v", wxpayResp.Data.CredentialsStatus)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/cashier/provider-instances/"+jsonInt64(createResp.Data.ID), nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected provider instance delete 200, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+	var deleteResp struct {
+		Data struct {
+			ID           int64  `json:"id"`
+			ProviderType string `json:"provider_type"`
+			Name         string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(deleteRec.Body).Decode(&deleteResp); err != nil {
+		t.Fatalf("decode delete provider response: %v", err)
+	}
+	if deleteResp.Data.ID != createResp.Data.ID || deleteResp.Data.ProviderType != "alipay_direct" || deleteResp.Data.Name != "支付宝沙箱备用账号" {
+		t.Fatalf("unexpected deleted provider instance %#v", deleteResp.Data)
+	}
+	deletedDetailReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/provider-instances/"+jsonInt64(createResp.Data.ID), nil)
+	deletedDetailReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deletedDetailRec := httptest.NewRecorder()
+	handler.ServeHTTP(deletedDetailRec, deletedDetailReq)
+	if deletedDetailRec.Code != http.StatusNotFound {
+		t.Fatalf("expected deleted provider instance detail 404, got %d body=%s", deletedDetailRec.Code, deletedDetailRec.Body.String())
 	}
 }
 

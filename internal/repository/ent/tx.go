@@ -36,6 +36,8 @@ type Tx struct {
 	ModelRoute *ModelRouteClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
 	PaymentOrder *PaymentOrderClient
+	// PaymentProviderInstance is the client for interacting with the PaymentProviderInstance builders.
+	PaymentProviderInstance *PaymentProviderInstanceClient
 	// PaymentWebhookEvent is the client for interacting with the PaymentWebhookEvent builders.
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
@@ -219,6 +221,7 @@ func (tx *Tx) init() {
 	tx.ModelProvider = NewModelProviderClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
+	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)
 	tx.PaymentWebhookEvent = NewPaymentWebhookEventClient(tx.config)
 	tx.PointLedger = NewPointLedgerClient(tx.config)
 	tx.ProviderErrorPolicy = NewProviderErrorPolicyClient(tx.config)

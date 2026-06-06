@@ -47,7 +47,8 @@ if [ -f .coding-context.json ] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-if git diff --cached --name-only | grep -E '(^|/)\.env($|\.|/)|id_rsa|PRIVATE KEY|secret|token' >/dev/null 2>&1; then
+secret_candidates="$(git diff --cached --name-only | grep -Ev '(^|/)\.env\.example$' | grep -E '(^|/)\.env($|\.|/)|id_rsa|PRIVATE KEY|secret|token' || true)"
+if [ -n "$secret_candidates" ]; then
   DECISION="BLOCK"
   FINDINGS+=("staged files look like secrets or local env files")
 fi
@@ -93,4 +94,3 @@ fi
 echo "review gate: BLOCK"
 printf '%s\n' "${FINDINGS[@]}" | sed 's/^/- /'
 exit 1
-

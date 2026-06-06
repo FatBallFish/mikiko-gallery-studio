@@ -24,11 +24,16 @@ type Service struct {
 type SignupTrialGrantRequest struct {
 	UserID         int64
 	IdempotencyKey string
+	SignupTrial    *config.SignupTrialConfig
 }
 
 type SignupTrialGrantResult struct {
-	Granted bool                         `json:"granted"`
-	Balance domainbilling.BalanceSummary `json:"balance"`
+	Granted   bool                         `json:"granted"`
+	GrantID   int64                        `json:"grant_id,omitempty"`
+	GrantType string                       `json:"grant_type,omitempty"`
+	Points    string                       `json:"points,omitempty"`
+	ExpiresAt *time.Time                   `json:"expires_at,omitempty"`
+	Balance   domainbilling.BalanceSummary `json:"balance"`
 }
 
 func NewService(cfg config.BillingConfig) *Service {
@@ -46,16 +51,21 @@ func NewServiceWithStore(cfg config.BillingConfig, store Store) *Service {
 
 func normalizeBillingConfig(cfg config.BillingConfig) config.BillingConfig {
 	cfg.PointsScale = 5
-	if strings.TrimSpace(cfg.SignupTrial.Points) == "" {
-		cfg.SignupTrial.Points = "20.00000"
+	cfg.SignupTrial = normalizeSignupTrialConfig(cfg.SignupTrial)
+	return cfg
+}
+
+func normalizeSignupTrialConfig(cfg config.SignupTrialConfig) config.SignupTrialConfig {
+	if strings.TrimSpace(cfg.Points) == "" {
+		cfg.Points = "20.00000"
 	}
-	if cfg.SignupTrial.ValidDays == 0 {
-		cfg.SignupTrial.ValidDays = 7
+	if cfg.ValidDays == 0 {
+		cfg.ValidDays = 7
 	}
-	if cfg.SignupTrial.ExpiryReminderDays == 0 {
-		cfg.SignupTrial.ExpiryReminderDays = 2
+	if cfg.ExpiryReminderDays == 0 {
+		cfg.ExpiryReminderDays = 2
 	}
-	cfg.SignupTrial.GrantOncePerUser = true
+	cfg.GrantOncePerUser = true
 	return cfg
 }
 
@@ -237,6 +247,17 @@ func (s *Service) UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscr
 		SortOrder:       normalizedCreate.SortOrder,
 		Description:     normalizedCreate.Description,
 	})
+	if err != nil {
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	return item, nil
+}
+
+func (s *Service) DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
+	if planID <= 0 {
+		return domainbilling.SubscriptionPlan{}, errs.BadRequest("plan_id is required")
+	}
+	item, err := s.store.DeletePlan(ctx, planID)
 	if err != nil {
 		return domainbilling.SubscriptionPlan{}, err
 	}
@@ -521,14 +542,18 @@ func (s *Service) EnsureSignupTrialGrant(ctx context.Context, req SignupTrialGra
 	if req.UserID <= 0 {
 		return SignupTrialGrantResult{}, errs.BadRequest("user id is required")
 	}
-	if !s.cfg.SignupTrial.Enabled {
+	trial := s.cfg.SignupTrial
+	if req.SignupTrial != nil {
+		trial = normalizeSignupTrialConfig(*req.SignupTrial)
+	}
+	if !trial.Enabled {
 		balance, err := s.GetBalance(ctx, req.UserID, "")
 		if err != nil {
 			return SignupTrialGrantResult{}, err
 		}
 		return SignupTrialGrantResult{Balance: balance}, nil
 	}
-	points, err := decimal.NewFromString(strings.TrimSpace(s.cfg.SignupTrial.Points))
+	points, err := decimal.NewFromString(strings.TrimSpace(trial.Points))
 	if err != nil {
 		return SignupTrialGrantResult{}, errs.Internal("invalid signup trial points config")
 	}
@@ -540,14 +565,14 @@ func (s *Service) EnsureSignupTrialGrant(ctx context.Context, req SignupTrialGra
 		return SignupTrialGrantResult{Balance: balance}, nil
 	}
 	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
-	if idempotencyKey == "" || s.cfg.SignupTrial.GrantOncePerUser {
+	if idempotencyKey == "" || trial.GrantOncePerUser {
 		idempotencyKey = signupTrialLedgerKey(req.UserID)
 	}
 	result, err := s.store.EnsureSignupTrialGrant(ctx, SignupTrialGrantStoreRequest{
 		UserID:             req.UserID,
 		Points:             points.Round(int32(s.cfg.PointsScale)).StringFixed(int32(s.cfg.PointsScale)),
-		ValidDays:          s.cfg.SignupTrial.ValidDays,
-		ExpiryReminderDays: s.cfg.SignupTrial.ExpiryReminderDays,
+		ValidDays:          trial.ValidDays,
+		ExpiryReminderDays: trial.ExpiryReminderDays,
 		IdempotencyKey:     idempotencyKey,
 	})
 	if err != nil {
@@ -557,7 +582,23 @@ func (s *Service) EnsureSignupTrialGrant(ctx context.Context, req SignupTrialGra
 	if err != nil {
 		return SignupTrialGrantResult{}, err
 	}
-	return SignupTrialGrantResult{Granted: result.Granted, Balance: balance}, nil
+	signupGrant := SignupTrialGrantResult{Granted: result.Granted, Balance: balance}
+	if result.Granted {
+		signupGrant.GrantType = "trial"
+		signupGrant.Points = points.Round(int32(s.cfg.PointsScale)).StringFixed(int32(s.cfg.PointsScale))
+		if balance.NextExpiringGrant != nil && balance.NextExpiringGrant.GrantType == "trial" {
+			signupGrant.GrantID = balance.NextExpiringGrant.GrantID
+			signupGrant.ExpiresAt = balance.NextExpiringGrant.ExpiresAt
+		} else {
+			for _, bucket := range balance.Buckets {
+				if bucket.Bucket == "trial" {
+					signupGrant.ExpiresAt = bucket.ExpiresAt
+					break
+				}
+			}
+		}
+	}
+	return signupGrant, nil
 }
 
 func (s *Service) RedeemCode(ctx context.Context, req RedeemCodeRequest) (domainbilling.BalanceSummary, error) {

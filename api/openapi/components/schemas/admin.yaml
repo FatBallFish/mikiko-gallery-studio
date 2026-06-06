@@ -1278,6 +1278,12 @@ components:
           type: string
         reason:
           type: string
+    AdminCashierCloseRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Optional operator-facing reason for closing a pending cashier order.
     AdminCashierRefundRequest:
       type: object
       required: [refund_trade_no]

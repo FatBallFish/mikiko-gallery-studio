@@ -78,12 +78,14 @@ type API struct {
 	compat     *compatservice.Service
 	tasks      *imagetaskservice.Service
 	admin      *adminconfigservice.Service
+	cashierCfg *cashierservice.ConfigFacade
 	adminUser  *adminuserservice.Service
 	callRecord *admincallrecordservice.Service
 	modelAdmin *modeladminservice.Service
 	redeem     *redeemservice.Service
 	audit      *auditservice.Service
 	adminPerms domainadminauth.PermissionResolver
+	docsReady  DocsReadinessChecker
 	cfg        config.Config
 }
 
@@ -122,52 +124,21 @@ type adminDashboardOperations struct {
 	GeneratedAt                    time.Time      `json:"generated_at"`
 }
 
-type adminCashierOrderSyncResult struct {
-	ProviderType       string         `json:"provider_type"`
-	ProviderInstanceID int64          `json:"provider_instance_id,omitempty"`
-	QueryStatus        string         `json:"query_status"`
-	RiskCategory       string         `json:"risk_category,omitempty"`
-	ActionHint         string         `json:"action_hint,omitempty"`
-	Paid               bool           `json:"paid"`
-	Completed          bool           `json:"completed"`
-	TradeNo            string         `json:"trade_no,omitempty"`
-	AmountCNY          string         `json:"amount_cny,omitempty"`
-	Message            string         `json:"message,omitempty"`
-	Raw                map[string]any `json:"raw,omitempty"`
-	SyncedAt           time.Time      `json:"synced_at"`
-}
+type adminCashierOrderSyncResult = cashierservice.QueryOrderStatusResult
 
 type adminCashierOrderSyncResponse struct {
 	Order domainbilling.PaymentOrder  `json:"order"`
 	Sync  adminCashierOrderSyncResult `json:"sync"`
 }
 
-func buildAdminCashierOrderSyncResult(instance cashierProviderInstance, order domainbilling.PaymentOrder, queryStatus cashierQueryStatus, tradeNo, amountCNY string, raw map[string]any) adminCashierOrderSyncResult {
-	return adminCashierOrderSyncResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		QueryStatus:        queryStatus.Status,
-		RiskCategory:       queryStatus.RiskCategory,
-		ActionHint:         queryStatus.ActionHint,
-		Paid:               queryStatus.Paid,
-		TradeNo:            strings.TrimSpace(tradeNo),
-		AmountCNY:          strings.TrimSpace(amountCNY),
-		Message:            queryStatus.Message,
-		Raw:                raw,
-		SyncedAt:           time.Now().UTC(),
-	}
+type cashierProviderRefundResult = cashierservice.RefundPaymentResult
+
+type DocsReadinessResult struct {
+	Status string
+	Detail string
 }
 
-type cashierProviderRefundResult struct {
-	ProviderType       string         `json:"provider_type"`
-	ProviderInstanceID int64          `json:"provider_instance_id,omitempty"`
-	RefundStatus       string         `json:"refund_status"`
-	RefundTradeNo      string         `json:"refund_trade_no"`
-	ChannelRefundNo    string         `json:"channel_refund_no,omitempty"`
-	Message            string         `json:"message,omitempty"`
-	Raw                map[string]any `json:"raw,omitempty"`
-	RefundedAt         time.Time      `json:"refunded_at"`
-}
+type DocsReadinessChecker func(ctx context.Context) DocsReadinessResult
 
 func NewAPI(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service) *API {
 	return NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, nil, nil, nil)
@@ -230,11 +201,13 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 		compat:     compatservice.NewServiceWithTaskService(cfg, taskSvc),
 		tasks:      taskSvc,
 		admin:      adminSvc,
+		cashierCfg: cashierservice.NewConfigFacade(cashierservice.NewAdminConfigStoreWithDefaultCNYPerPoint(adminSvc, isProductionAppEnv(cfg.App.Env), cfg.Billing.CNYPerPoint)),
 		adminUser:  adminUserSvc,
 		callRecord: callRecordSvc,
 		redeem:     redeemservice.NewServiceWithStore(nil),
 		audit:      auditSvc,
 		adminPerms: domainadminauth.RolePermissionResolver{},
+		docsReady:  defaultDocsReadinessChecker,
 		cfg:        cfg,
 	}
 }
@@ -245,6 +218,25 @@ func (a *API) SetAdminPermissionResolver(resolver domainadminauth.PermissionReso
 		return
 	}
 	a.adminPerms = resolver
+}
+
+func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
+	if checker == nil {
+		a.docsReady = defaultDocsReadinessChecker
+		return
+	}
+	a.docsReady = checker
+}
+
+func (a *API) SetCashierProviderInstanceStore(store cashierservice.ProviderInstanceStore) {
+	a.cashierConfigFacade().WithProviderInstanceStore(store)
+}
+
+func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {
+	if a.cashierCfg == nil {
+		a.cashierCfg = cashierservice.NewConfigFacade(cashierservice.NewAdminConfigStoreWithDefaultCNYPerPoint(a.admin, isProductionAppEnv(a.cfg.App.Env), a.cfg.Billing.CNYPerPoint))
+	}
+	return a.cashierCfg
 }
 
 func NewAPIWithAdminServices(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service, taskSvc *imagetaskservice.Service, adminSvc *adminconfigservice.Service, billingSvc *billingservice.Service, apiKeySvc *apikeyservice.Service, adminAuthSvc *adminauthservice.Service, auditSvc *auditservice.Service, adminUserSvc *adminuserservice.Service, redeemSvc *redeemservice.Service) *API {
@@ -353,7 +345,8 @@ func (a *API) signupTrialGrantResult(ctx context.Context, userID int64, newlyCre
 		return nil, nil
 	}
 	if newlyCreated {
-		result, err := a.billing.EnsureSignupTrialGrant(ctx, billingservice.SignupTrialGrantRequest{UserID: userID})
+		trial := a.signupTrialConfig(ctx)
+		result, err := a.billing.EnsureSignupTrialGrant(ctx, billingservice.SignupTrialGrantRequest{UserID: userID, SignupTrial: &trial})
 		if err != nil {
 			return nil, err
 		}
@@ -940,26 +933,47 @@ func (a *API) HandleCashierOrders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	if r.Method == http.MethodGet {
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		result, err := a.billing.ListOrders(r.Context(), domainbilling.ListOrdersRequest{UserID: user.ID, Page: page, PageSize: pageSize})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(result.Items, result.Page, result.PageSize, result.Total))
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, r)
 		return
 	}
 	var req struct {
-		PurchaseType  string `json:"purchase_type"`
-		PlanCode      string `json:"plan_code"`
-		AmountCNY     string `json:"amount_cny"`
-		VisibleMethod string `json:"visible_method"`
+		PurchaseType    string `json:"purchase_type"`
+		PlanCode        string `json:"plan_code"`
+		AmountCNY       string `json:"amount_cny"`
+		VisibleMethod   string `json:"visible_method"`
+		ClientReturnURL string `json:"client_return_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return
 	}
 	result, createErr := a.createCashierOrder(r.Context(), user.ID, cashierOrderCreateInput{
-		PurchaseType:   req.PurchaseType,
-		PlanCode:       req.PlanCode,
-		AmountCNY:      req.AmountCNY,
-		VisibleMethod:  req.VisibleMethod,
-		IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		PurchaseType:    req.PurchaseType,
+		PlanCode:        req.PlanCode,
+		AmountCNY:       req.AmountCNY,
+		VisibleMethod:   req.VisibleMethod,
+		ClientReturnURL: req.ClientReturnURL,
+		IdempotencyKey:  strings.TrimSpace(r.Header.Get("Idempotency-Key")),
 	})
 	if createErr != nil {
 		httpx.WriteError(w, r, createErr)
@@ -969,11 +983,12 @@ func (a *API) HandleCashierOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 type cashierOrderCreateInput struct {
-	PurchaseType   string
-	PlanCode       string
-	AmountCNY      string
-	VisibleMethod  string
-	IdempotencyKey string
+	PurchaseType    string
+	PlanCode        string
+	AmountCNY       string
+	VisibleMethod   string
+	ClientReturnURL string
+	IdempotencyKey  string
 }
 
 func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierOrderCreateInput) (domainbilling.PaymentOrder, *errs.Error) {
@@ -1017,9 +1032,10 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		}
 		orderNo := newCashierOrderNo()
 		payment, paymentErr := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
-			OrderNo:   orderNo,
-			AmountCNY: strings.TrimSpace(req.AmountCNY),
-			Subject:   "自定义充值",
+			OrderNo:         orderNo,
+			AmountCNY:       strings.TrimSpace(req.AmountCNY),
+			Subject:         "自定义充值",
+			ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
 		})
 		if paymentErr != nil {
 			return domainbilling.PaymentOrder{}, paymentErr
@@ -1058,9 +1074,10 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 	}
 	orderNo := newCashierOrderNo()
 	payment, paymentErr := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
-		OrderNo:   orderNo,
-		AmountCNY: plan.PriceCNY,
-		Subject:   plan.PlanName,
+		OrderNo:         orderNo,
+		AmountCNY:       plan.PriceCNY,
+		Subject:         plan.PlanName,
+		ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
 	})
 	if paymentErr != nil {
 		return domainbilling.PaymentOrder{}, paymentErr
@@ -1150,6 +1167,15 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && action == "mock-pay":
 		if isProductionAppEnv(a.cfg.App.Env) {
 			httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "mock payment is disabled in production"))
+			return
+		}
+		order, err := a.billing.GetOrder(r.Context(), user.ID, orderID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if cashierOrderProviderType(order, cashierProviderInstance{}) != "mock" {
+			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "mock payment is only available for mock provider orders"))
 			return
 		}
 		result, err := a.billing.CompleteRechargeOrder(r.Context(), domainbilling.CompleteRechargeOrderRequest{
@@ -1538,40 +1564,44 @@ func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.BadRequest("provider is required"))
 		return
 	}
+	if strings.EqualFold(providerCode, "mock") && isProductionAppEnv(a.cfg.App.Env) {
+		httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "mock payment is disabled in production"))
+		return
+	}
 	if strings.EqualFold(providerCode, "easypay") {
-		result, appErr := a.handleEasyPayWebhook(r)
+		_, appErr := a.handleEasyPayWebhook(r)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		writePaymentWebhookSuccess(w, providerCode)
 		return
 	}
 	if strings.EqualFold(providerCode, "alipay_direct") || strings.EqualFold(providerCode, "alipay") {
-		result, appErr := a.handleAlipayWebhook(r)
+		_, appErr := a.handleAlipayWebhook(r)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		writePaymentWebhookSuccess(w, providerCode)
 		return
 	}
 	if strings.EqualFold(providerCode, "wxpay_direct") || strings.EqualFold(providerCode, "wxpay") || strings.EqualFold(providerCode, "wechatpay") {
-		result, appErr := a.handleWxPayWebhook(r)
+		_, appErr := a.handleWxPayWebhook(r)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		writePaymentWebhookSuccess(w, providerCode)
 		return
 	}
 	if strings.EqualFold(providerCode, "jeepay") || strings.HasPrefix(strings.ToLower(providerCode), "jeepay_") {
-		result, appErr := a.handleJeePayWebhook(r, providerCode)
+		_, appErr := a.handleJeePayWebhook(r, providerCode)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		writePaymentWebhookSuccess(w, providerCode)
 		return
 	}
 	var req struct {
@@ -1592,6 +1622,19 @@ func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
+func writePaymentWebhookSuccess(w http.ResponseWriter, providerCode string) {
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	if providerCode == "wxpay_direct" || providerCode == "wxpay" || providerCode == "wechatpay" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":"SUCCESS","message":"成功"}`))
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("success"))
 }
 
 func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
@@ -2550,6 +2593,7 @@ func (a *API) HandleOpenGalleryImages(w http.ResponseWriter, r *http.Request) {
 		Page:           page,
 		PageSize:       pageSize,
 		Sort:           r.URL.Query().Get("sort"),
+		Query:          r.URL.Query().Get("query"),
 		RouteModelCode: r.URL.Query().Get("route_model_code"),
 		TaskType:       r.URL.Query().Get("task_type"),
 		ViewerUserID:   viewerID,
@@ -2728,15 +2772,15 @@ func (a *API) HandleOpenGalleryImageDetail(w http.ResponseWriter, r *http.Reques
 	}
 	if !hasUserCredential(r) {
 		observability.DefaultMetrics().IncPublicGalleryDetailLoginBlock()
-		httpx.WriteError(w, r, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "login required to view public image detail"))
+		httpx.WriteError(w, r, errs.New(http.StatusUnauthorized, errs.CodeLoginRequiredGalleryDetail, "login required to view public image detail"))
 		return
 	}
-	_, appErr := a.requireUserWithQueryToken(r)
+	user, appErr := a.requireUserWithQueryToken(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	image, err := a.tasks.GetPublicImage(r.Context(), imageID)
+	image, err := a.tasks.GetPublicImage(r.Context(), imageID, user.ID)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -3133,6 +3177,12 @@ func (a *API) HandleAdminCashierOverview(w http.ResponseWriter, r *http.Request)
 			break
 		}
 	}
+	enabledProviderInstances := 0
+	for _, instance := range a.cashierProviderInstances(r.Context()) {
+		if instance.Enabled {
+			enabledProviderInstances++
+		}
+	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
 		"today_order_count":          todayOrderCount,
 		"today_completed_count":      todayCompletedCount,
@@ -3141,7 +3191,7 @@ func (a *API) HandleAdminCashierOverview(w http.ResponseWriter, r *http.Request)
 		"pending_count":              pendingCount,
 		"failed_webhook_count":       failedWebhookCount,
 		"enabled_methods":            enabledMethods,
-		"enabled_provider_instances": len(enabledMethods),
+		"enabled_provider_instances": enabledProviderInstances,
 		"mock_enabled":               mockEnabled,
 	})
 }
@@ -3202,13 +3252,26 @@ func (a *API) HandleAdminCashierPlanDetail(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	if r.Method != http.MethodPut {
-		writeMethodNotAllowed(w, r)
-		return
-	}
 	planID, parseErr := parseAdminCashierPlanID(r.URL.Path)
 	if parseErr != nil {
 		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	if r.Method == http.MethodDelete {
+		plan, err := a.billing.DeletePlan(r.Context(), planID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan.delete", "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
+		return
+	}
+	if r.Method != http.MethodPut {
+		writeMethodNotAllowed(w, r)
 		return
 	}
 	var req domainbilling.UpdateSubscriptionPlanRequest
@@ -3244,36 +3307,16 @@ func (a *API) HandleAdminCashierCustomAmountConfig(w http.ResponseWriter, r *htt
 			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 			return
 		}
-		normalized, configErr := normalizeCashierCustomAmountConfig(req)
-		if configErr != nil {
-			httpx.WriteError(w, r, configErr)
-			return
-		}
-		current, err := a.admin.GetTab(r.Context(), "payments")
+		updated, err := a.cashierConfigFacade().UpdateCustomAmountConfig(r.Context(), req, admin.AdminID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		_, err = a.admin.UpdateTab(r.Context(), domainadminconfig.UpdateTabRequest{
-			TabKey:  "payments",
-			Version: current.Version,
-			Items: []domainadminconfig.Item{
-				configValueItem("payments", "custom_amount_enabled", normalized.Enabled),
-				configValueItem("payments", "custom_amount_min_cny", normalized.MinAmountCNY),
-				configValueItem("payments", "custom_amount_max_cny", normalized.MaxAmountCNY),
-				configValueItem("payments", "custom_amount_cny_per_point", normalized.CNYPerPoint),
-			},
-			UpdatedBy: admin.AdminID,
-		})
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.custom_amount_config.update", "cashier", "custom_amount_config", map[string]any{"enabled": normalized.Enabled}); auditErr != nil {
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.custom_amount_config.update", "cashier", "custom_amount_config", map[string]any{"enabled": updated.Enabled}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, a.cashierCustomAmountConfig(r.Context()))
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	default:
 		writeMethodNotAllowed(w, r)
 	}
@@ -3296,22 +3339,7 @@ func (a *API) HandleAdminCashierVisibleMethods(w http.ResponseWriter, r *http.Re
 			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 			return
 		}
-		normalized, configErr := normalizeCashierVisibleMethods(req.Items)
-		if configErr != nil {
-			httpx.WriteError(w, r, configErr)
-			return
-		}
-		current, err := a.admin.GetTab(r.Context(), "payments")
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		_, err = a.admin.UpdateTab(r.Context(), domainadminconfig.UpdateTabRequest{
-			TabKey:    "payments",
-			Version:   current.Version,
-			Items:     []domainadminconfig.Item{configValueItem("payments", "visible_methods", cashierVisibleMethodsConfigValue(normalized))},
-			UpdatedBy: admin.AdminID,
-		})
+		normalized, err := a.cashierConfigFacade().UpdateVisibleMethods(r.Context(), req.Items, admin.AdminID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
@@ -3344,25 +3372,20 @@ func (a *API) HandleAdminCashierProviderInstances(w http.ResponseWriter, r *http
 			httpx.WriteError(w, r, queryErr)
 			return
 		}
-		items := cashierProviderInstancePayloads(a.cashierProviderInstances(r.Context()))
+		instances, err := a.cashierConfigFacade().ProviderInstances(r.Context())
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		items := cashierProviderInstancePayloads(instances)
 		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(paginateAny(items, page, pageSize), page, pageSize, len(items)))
 	case http.MethodPost:
 		req, ok := decodeCashierProviderInstanceRequest(w, r)
 		if !ok {
 			return
 		}
-		normalized, normalizeErr := normalizeCashierProviderInstance(req, 0)
-		if normalizeErr != nil {
-			httpx.WriteError(w, r, normalizeErr)
-			return
-		}
-		current := a.cashierProviderInstances(r.Context())
-		normalized.ID = nextCashierProviderInstanceID(current)
-		now := time.Now().UTC()
-		normalized.CreatedAt = now
-		normalized.UpdatedAt = now
-		current = append(current, normalized)
-		if err := a.saveCashierProviderInstances(r.Context(), current, admin.AdminID); err != nil {
+		normalized, err := a.cashierConfigFacade().CreateProviderInstance(r.Context(), req, admin.AdminID)
+		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
@@ -3387,7 +3410,11 @@ func (a *API) HandleAdminCashierProviderInstanceDetail(w http.ResponseWriter, r 
 		httpx.WriteError(w, r, parseErr)
 		return
 	}
-	instances := a.cashierProviderInstances(r.Context())
+	instances, err := a.cashierConfigFacade().ProviderInstances(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
 	index := -1
 	for itemIndex, item := range instances {
 		if item.ID == instanceID {
@@ -3407,18 +3434,8 @@ func (a *API) HandleAdminCashierProviderInstanceDetail(w http.ResponseWriter, r 
 		if !ok {
 			return
 		}
-		normalized, normalizeErr := normalizeCashierProviderInstance(req, instanceID)
-		if normalizeErr != nil {
-			httpx.WriteError(w, r, normalizeErr)
-			return
-		}
-		normalized.CreatedAt = instances[index].CreatedAt
-		if normalized.CreatedAt.IsZero() {
-			normalized.CreatedAt = time.Now().UTC()
-		}
-		normalized.UpdatedAt = time.Now().UTC()
-		instances[index] = normalized
-		if err := a.saveCashierProviderInstances(r.Context(), instances, admin.AdminID); err != nil {
+		normalized, err := a.cashierConfigFacade().UpdateProviderInstance(r.Context(), instanceID, req, admin.AdminID)
+		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
@@ -3427,6 +3444,17 @@ func (a *API) HandleAdminCashierProviderInstanceDetail(w http.ResponseWriter, r 
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, cashierProviderInstancePayload(normalized))
+	case http.MethodDelete:
+		deleted, err := a.cashierConfigFacade().DeleteProviderInstance(r.Context(), instanceID, admin.AdminID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.provider.delete", "payment_provider_instance", fmt.Sprintf("%d", deleted.ID), map[string]any{"provider_type": deleted.ProviderType, "name": deleted.Name}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, cashierProviderInstancePayload(deleted))
 	default:
 		writeMethodNotAllowed(w, r)
 	}
@@ -3451,7 +3479,21 @@ func (a *API) HandleAdminCashierOrders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.billing.ListOrders(r.Context(), domainbilling.ListOrdersRequest{Page: page, PageSize: pageSize})
+	userID, queryErr := parseOptionalInt64Query(r, "user_id")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	result, err := a.billing.ListOrders(r.Context(), domainbilling.ListOrdersRequest{
+		UserID:        userID,
+		Status:        strings.TrimSpace(r.URL.Query().Get("status")),
+		OrderNo:       strings.TrimSpace(r.URL.Query().Get("order_no")),
+		VisibleMethod: strings.TrimSpace(r.URL.Query().Get("visible_method")),
+		ProviderType:  strings.TrimSpace(r.URL.Query().Get("provider_type")),
+		PurchaseType:  strings.TrimSpace(r.URL.Query().Get("purchase_type")),
+		Page:          page,
+		PageSize:      pageSize,
+	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -3522,6 +3564,29 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.order.manual_complete", "payment_order", fmt.Sprintf("%d", result.ID), map[string]any{"order_no": result.OrderNo, "provider": provider, "trade_no": tradeNo, "reason": strings.TrimSpace(req.Reason)}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, result)
+	case r.Method == http.MethodPost && action == "close":
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		order, err := a.billing.GetOrderForAdmin(r.Context(), orderID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		result, err := a.billing.CancelOrder(r.Context(), order.UserID, orderID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.order.close", "payment_order", fmt.Sprintf("%d", result.ID), map[string]any{"order_no": result.OrderNo, "reason": strings.TrimSpace(req.Reason)}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
@@ -3777,34 +3842,28 @@ func (a *API) syncAdminCashierOrder(ctx context.Context, orderID int64) (adminCa
 }
 
 func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbilling.PaymentOrder, refundTradeNo string, refundAmountCNY string, reason string) (*cashierProviderRefundResult, *errs.Error) {
-	if order.Status == "refunded" || (order.Status != "completed" && order.Status != "partially_refunded") {
-		return nil, nil
-	}
-	providerType := cashierOrderProviderType(order, cashierProviderInstance{})
-	if providerType == "" || providerType == "mock" || strings.HasPrefix(providerType, "manual") {
+	if !cashierservice.RefundRequiresProvider(cashierOrderSnapshot(order), cashierProviderInstance{ProviderType: cashierOrderProviderType(order, cashierProviderInstance{})}) {
 		return nil, nil
 	}
 	instance, ok := a.cashierProviderInstanceForOrder(ctx, order)
 	if !ok {
 		return nil, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
-	providerType = cashierOrderProviderType(order, instance)
-	switch providerType {
-	case "alipay_direct":
-		result, refundErr := a.refundAlipayCashierOrder(ctx, order, instance, refundTradeNo, refundAmountCNY, reason)
-		return &result, refundErr
-	case "wxpay_direct":
-		result, refundErr := a.refundWxPayCashierOrder(ctx, order, instance, refundTradeNo, refundAmountCNY, reason)
-		return &result, refundErr
-	case "easypay_alipay", "easypay_wxpay":
-		result, refundErr := a.refundEasyPayCashierOrder(ctx, order, instance, refundTradeNo, refundAmountCNY, reason)
-		return &result, refundErr
-	case "jeepay_alipay", "jeepay_wxpay":
-		result, refundErr := a.refundJeePayCashierOrder(ctx, order, instance, refundTradeNo, refundAmountCNY, reason)
-		return &result, refundErr
-	default:
+	registry := cashierservice.NewRefundAdapterRegistryWithBuilders(cashierservice.StandardRefundProviderBuilders())
+	result, shouldCall, err := registry.RefundPayment(ctx, cashierservice.RefundPaymentRequest{
+		Order:           cashierOrderSnapshot(order),
+		Instance:        instance,
+		RefundTradeNo:   refundTradeNo,
+		RefundAmountCNY: refundAmountCNY,
+		Reason:          reason,
+	})
+	if err != nil {
+		return nil, normalizeAppError(err)
+	}
+	if !shouldCall {
 		return nil, nil
 	}
+	return &result, nil
 }
 
 func (a *API) cashierProviderInstanceForOrder(ctx context.Context, order domainbilling.PaymentOrder) (cashierProviderInstance, bool) {
@@ -3822,7 +3881,7 @@ func (a *API) cashierProviderInstanceForOrder(ctx context.Context, order domainb
 		}
 	}
 	if providerType == "mock" && !isProductionAppEnv(a.cfg.App.Env) {
-		return defaultMockCashierProviderInstance(), true
+		return cashierservice.DefaultMockProviderInstance(time.Now().UTC()), true
 	}
 	return cashierProviderInstance{}, false
 }
@@ -3841,749 +3900,32 @@ func cashierOrderProviderType(order domainbilling.PaymentOrder, instance cashier
 	return providerType
 }
 
-func (a *API) queryCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
-	providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	if providerType == "" {
-		providerType = strings.ToLower(strings.TrimSpace(order.ProviderType))
-	}
-	if strings.TrimSpace(mapStringValue(instance.Config, "query_status", "sync_status", "payment_status", "trade_status")) != "" || providerType == "mock" {
-		return a.queryCashierOrderStatusFromConfig(order, instance)
-	}
-	switch providerType {
-	case "alipay_direct":
-		return a.queryAlipayCashierOrderStatus(ctx, order, instance)
-	case "wxpay_direct":
-		return a.queryWxPayCashierOrderStatus(ctx, order, instance)
-	case "easypay_alipay", "easypay_wxpay":
-		return a.queryEasyPayCashierOrderStatus(ctx, order, instance)
-	case "jeepay_alipay", "jeepay_wxpay":
-		return a.queryJeePayCashierOrderStatus(ctx, order, instance)
-	default:
-		return a.queryCashierOrderStatusFromConfig(order, instance)
+func cashierOrderSnapshot(order domainbilling.PaymentOrder) cashierservice.OrderSnapshot {
+	return cashierservice.OrderSnapshot{
+		OrderNo:   order.OrderNo,
+		AmountCNY: order.AmountCNY,
+		TradeNo:   order.TradeNo,
+		Status:    order.Status,
 	}
 }
 
-func (a *API) queryCashierOrderStatusFromConfig(order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
-	providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	if providerType == "" {
-		providerType = strings.ToLower(strings.TrimSpace(order.ProviderType))
+func (a *API) queryCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
+	registry := cashierservice.NewQueryAdapterRegistryWithBuilders(cashierservice.StandardQueryProviderBuilders())
+	result, err := registry.QueryOrderStatus(ctx, cashierservice.QueryOrderStatusRequest{
+		Order:    cashierOrderSnapshot(order),
+		Instance: instance,
+	})
+	if err != nil {
+		return adminCashierOrderSyncResult{}, normalizeAppError(err)
 	}
-	now := time.Now().UTC()
-	status := strings.ToLower(strings.TrimSpace(mapStringValue(instance.Config, "query_status", "sync_status", "payment_status", "trade_status")))
-	if status == "" && order.Status == "completed" {
-		status = "paid"
-	}
-	if status == "" {
-		status = "pending"
-	}
-	tradeNo := strings.TrimSpace(mapStringValue(instance.Config, "query_trade_no", "sync_trade_no", "trade_no", "pay_order_id", "transaction_id"))
-	if tradeNo == "" {
-		tradeNo = order.TradeNo
-	}
-	amountCNY := strings.TrimSpace(mapStringValue(instance.Config, "query_amount_cny", "sync_amount_cny", "amount_cny", "money", "total_amount"))
-	if amountCNY == "" {
-		amountCNY = order.AmountCNY
-	}
-	raw := map[string]any{
-		"source":        "provider_instance_config",
-		"provider_type": providerType,
-		"order_no":      order.OrderNo,
-		"status":        status,
-	}
-	if tradeNo != "" {
-		raw["trade_no"] = tradeNo
-	}
-	if amountCNY != "" {
-		raw["amount_cny"] = amountCNY
-	}
-	queryStatus := normalizeCashierQueryStatus(status)
-	result := buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw)
-	result.SyncedAt = now
 	return result, nil
 }
 
-func (a *API) queryAlipayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "gatewayUrl"))
-	if gatewayURL == "" {
-		gatewayURL = "https://openapi.alipaydev.com/gateway.do"
-	}
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	if appID == "" {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	bizContent, _ := json.Marshal(map[string]string{
-		"out_trade_no": strings.TrimSpace(order.OrderNo),
-	})
-	values := url.Values{}
-	values.Set("app_id", appID)
-	values.Set("method", "alipay.trade.query")
-	values.Set("charset", "utf-8")
-	values.Set("sign_type", "RSA2")
-	values.Set("timestamp", time.Now().UTC().Format("2006-01-02 15:04:05"))
-	values.Set("version", "1.0")
-	values.Set("biz_content", string(bizContent))
-	sign, signErr := alipayRSA2Sign(values, mapStringValue(instance.Config, "app_private_key", "private_key", "privateKey"))
-	if signErr != nil {
-		return adminCashierOrderSyncResult{}, signErr
-	}
-	values.Set("sign", sign)
-	endpoint := appendQuery(gatewayURL, values)
-	body, appErr := getJSONForCashierQuery(ctx, endpoint, nil)
-	if appErr != nil {
-		return adminCashierOrderSyncResult{}, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	data := raw
-	if nested, ok := raw["alipay_trade_query_response"].(map[string]any); ok {
-		data = nested
-	}
-	status := strings.ToLower(strings.TrimSpace(firstCashierRawString(data, "trade_status", "status")))
-	if status == "" {
-		status = "pending"
-	}
-	tradeNo := strings.TrimSpace(firstCashierRawString(data, "trade_no"))
-	amountCNY := strings.TrimSpace(firstCashierRawString(data, "total_amount", "receipt_amount", "buyer_pay_amount"))
-	queryStatus := normalizeCashierQueryStatus(status)
-	raw["source"] = "alipay_query_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
-}
-
-func (a *API) queryWxPayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	mchID := strings.TrimSpace(mapStringValue(instance.Config, "mch_id", "mchId", "merchant_id", "merchantId"))
-	serial := strings.TrimSpace(mapStringValue(instance.Config, "merchant_certificate_serial", "merchantCertificateSerial", "merchant_serial_no", "serial_no"))
-	privateKeyRaw := strings.TrimSpace(mapStringValue(instance.Config, "merchant_private_key", "private_key", "privateKey"))
-	if appID == "" || mchID == "" || serial == "" || privateKeyRaw == "" {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if gatewayURL == "" {
-		gatewayURL = "https://api.mch.weixin.qq.com"
-	}
-	path := "/v3/pay/transactions/out-trade-no/" + url.PathEscape(strings.TrimSpace(order.OrderNo))
-	values := url.Values{}
-	values.Set("mchid", mchID)
-	requestURI := path + "?" + values.Encode()
-	endpoint := strings.TrimRight(gatewayURL, "/") + requestURI
-	auth, signErr := wxPayBuildAuthorization(http.MethodGet, requestURI, "", mchID, serial, privateKeyRaw, time.Now().Unix(), uuid.NewString())
-	if signErr != nil {
-		return adminCashierOrderSyncResult{}, signErr
-	}
-	body, appErr := getJSONForCashierQuery(ctx, endpoint, map[string]string{"Authorization": auth})
-	if appErr != nil {
-		return adminCashierOrderSyncResult{}, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	status := strings.ToLower(strings.TrimSpace(firstCashierRawString(raw, "trade_state", "status")))
-	if status == "" {
-		status = "pending"
-	}
-	tradeNo := strings.TrimSpace(firstCashierRawString(raw, "transaction_id", "trade_no"))
-	amountCNY := ""
-	if amountRaw, ok := raw["amount"].(map[string]any); ok {
-		totalFen := firstCashierRawString(amountRaw, "total", "payer_total")
-		if totalFen != "" {
-			if amountFen, err := strconv.ParseInt(strings.TrimSpace(totalFen), 10, 64); err == nil {
-				amountCNY = wxPayAmountCNYFromFen(amountFen)
-			}
-		}
-	}
-	queryStatus := normalizeCashierQueryStatus(status)
-	raw["source"] = "wxpay_query_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
-}
-
-func (a *API) queryEasyPayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
-	baseURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if baseURL == "" {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	baseURL = trimEasyPayEndpointBase(baseURL)
-	pid := strings.TrimSpace(mapStringValue(instance.Config, "pid", "merchant_id", "merchantId"))
-	key := strings.TrimSpace(mapStringValue(instance.Config, "key", "pkey", "merchant_key", "merchantKey"))
-	if pid == "" || key == "" {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	endpoint := strings.TrimSpace(mapStringValue(instance.Config, "query_url", "queryUrl"))
-	if endpoint == "" {
-		queryPath := strings.TrimSpace(mapStringValue(instance.Config, "query_path", "queryPath"))
-		if queryPath == "" {
-			queryPath = "/api.php"
-		}
-		if !strings.HasPrefix(queryPath, "/") {
-			queryPath = "/" + queryPath
-		}
-		endpoint = strings.TrimRight(baseURL, "/") + queryPath
-	}
-	values := url.Values{}
-	values.Set("act", "order")
-	values.Set("pid", pid)
-	values.Set("key", key)
-	values.Set("out_trade_no", strings.TrimSpace(order.OrderNo))
-	body, appErr := postFormForCashierQuery(ctx, endpoint, values)
-	if appErr != nil {
-		return adminCashierOrderSyncResult{}, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	status := strings.ToLower(strings.TrimSpace(cashierRawString(raw["status"])))
-	if status == "" {
-		status = strings.ToLower(strings.TrimSpace(cashierRawString(raw["trade_status"])))
-	}
-	if status == "" {
-		status = "pending"
-	}
-	tradeNo := strings.TrimSpace(cashierRawString(raw["trade_no"]))
-	if tradeNo == "" {
-		tradeNo = strings.TrimSpace(cashierRawString(raw["api_trade_no"]))
-	}
-	amountCNY := strings.TrimSpace(cashierRawString(raw["money"]))
-	if amountCNY == "" {
-		amountCNY = strings.TrimSpace(cashierRawString(raw["amount_cny"]))
-	}
-	queryStatus := normalizeCashierQueryStatus(status)
-	raw["source"] = "easypay_query_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
-}
-
-func (a *API) queryJeePayCashierOrderStatus(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
-	baseURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if baseURL == "" {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	baseURL = trimJeePayEndpointBase(baseURL)
-	mchNo := strings.TrimSpace(mapStringValue(instance.Config, "mch_no", "mchNo", "merchant_id", "merchantId"))
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	key := strings.TrimSpace(mapStringValue(instance.Config, "key", "api_key", "apiKey", "merchant_key", "merchantKey"))
-	if mchNo == "" || appID == "" || key == "" {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	endpoint := strings.TrimSpace(mapStringValue(instance.Config, "query_url", "queryUrl"))
-	if endpoint == "" {
-		queryPath := strings.TrimSpace(mapStringValue(instance.Config, "query_path", "queryPath"))
-		if queryPath == "" {
-			queryPath = "/api/pay/query"
-		}
-		if !strings.HasPrefix(queryPath, "/") {
-			queryPath = "/" + queryPath
-		}
-		endpoint = strings.TrimRight(baseURL, "/") + queryPath
-	}
-	params := map[string]string{
-		"mchNo":      mchNo,
-		"appId":      appID,
-		"mchOrderNo": strings.TrimSpace(order.OrderNo),
-		"signType":   "MD5",
-	}
-	sign := jeepaySign(params, key)
-	params["sign"] = sign
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
-	}
-	body, appErr := postFormForCashierQuery(ctx, endpoint, values)
-	if appErr != nil {
-		return adminCashierOrderSyncResult{}, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return adminCashierOrderSyncResult{}, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	data := raw
-	if nested, ok := raw["data"].(map[string]any); ok {
-		data = nested
-	}
-	status := strings.ToLower(strings.TrimSpace(firstCashierRawString(data, "state", "status", "trade_state", "tradeStatus")))
-	if status == "" {
-		status = "pending"
-	}
-	tradeNo := strings.TrimSpace(firstCashierRawString(data, "payOrderId", "channelOrderNo", "trade_no", "tradeNo"))
-	amountCNY := strings.TrimSpace(firstCashierRawString(data, "amount_cny", "amountCNY", "money", "total_amount", "totalAmount"))
-	if amountCNY == "" {
-		amountCNY = jeepayAmountCNYFromFen(firstCashierRawString(data, "amount"))
-	}
-	queryStatus := normalizeCashierQueryStatus(status)
-	raw["source"] = "jeepay_query_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	return buildAdminCashierOrderSyncResult(instance, order, queryStatus, tradeNo, amountCNY, raw), nil
-}
-
-func (a *API) refundAlipayCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance, refundTradeNo string, refundAmountCNY string, reason string) (cashierProviderRefundResult, *errs.Error) {
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "gatewayUrl"))
-	if gatewayURL == "" {
-		gatewayURL = "https://openapi.alipaydev.com/gateway.do"
-	}
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	if appID == "" {
-		return cashierProviderRefundResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	bizContent, _ := json.Marshal(map[string]string{
-		"out_trade_no":   strings.TrimSpace(order.OrderNo),
-		"refund_amount":  defaultString(strings.TrimSpace(refundAmountCNY), strings.TrimSpace(order.AmountCNY)),
-		"refund_reason":  defaultString(strings.TrimSpace(reason), "cashier order refund"),
-		"out_request_no": strings.TrimSpace(refundTradeNo),
-	})
-	values := url.Values{}
-	values.Set("app_id", appID)
-	values.Set("method", "alipay.trade.refund")
-	values.Set("charset", "utf-8")
-	values.Set("sign_type", "RSA2")
-	values.Set("timestamp", time.Now().UTC().Format("2006-01-02 15:04:05"))
-	values.Set("version", "1.0")
-	values.Set("biz_content", string(bizContent))
-	sign, signErr := alipayRSA2Sign(values, mapStringValue(instance.Config, "app_private_key", "private_key", "privateKey"))
-	if signErr != nil {
-		return cashierProviderRefundResult{}, signErr
-	}
-	values.Set("sign", sign)
-	body, appErr := getJSONForCashierQuery(ctx, appendQuery(gatewayURL, values), nil)
-	if appErr != nil {
-		return cashierProviderRefundResult{}, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	data := raw
-	if nested, ok := raw["alipay_trade_refund_response"].(map[string]any); ok {
-		data = nested
-	}
-	code := strings.TrimSpace(firstCashierRawString(data, "code"))
-	if code != "" && code != "10000" {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	if subCode := strings.TrimSpace(firstCashierRawString(data, "sub_code")); subCode != "" {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	status := strings.ToLower(strings.TrimSpace(firstCashierRawString(data, "fund_change", "status")))
-	if status == "" {
-		status = "accepted"
-	}
-	channelRefundNo := strings.TrimSpace(firstCashierRawString(data, "trade_no", "out_trade_no"))
-	raw["source"] = "alipay_refund_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	return cashierProviderRefundResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		RefundStatus:       status,
-		RefundTradeNo:      strings.TrimSpace(refundTradeNo),
-		ChannelRefundNo:    channelRefundNo,
-		Message:            strings.TrimSpace(firstCashierRawString(data, "msg", "sub_msg")),
-		Raw:                raw,
-		RefundedAt:         time.Now().UTC(),
-	}, nil
-}
-
-func (a *API) refundWxPayCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance, refundTradeNo string, refundAmountCNY string, reason string) (cashierProviderRefundResult, *errs.Error) {
-	mchID := strings.TrimSpace(mapStringValue(instance.Config, "mch_id", "mchId", "merchant_id", "merchantId"))
-	serial := strings.TrimSpace(mapStringValue(instance.Config, "merchant_certificate_serial", "merchantCertificateSerial", "merchant_serial_no", "serial_no"))
-	privateKeyRaw := strings.TrimSpace(mapStringValue(instance.Config, "merchant_private_key", "private_key", "privateKey"))
-	if mchID == "" || serial == "" || privateKeyRaw == "" {
-		return cashierProviderRefundResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	totalFen, amountErr := wxPayAmountFenFromCNY(order.AmountCNY)
-	if amountErr != nil {
-		return cashierProviderRefundResult{}, amountErr
-	}
-	refundFen, refundAmountErr := wxPayAmountFenFromCNY(defaultString(strings.TrimSpace(refundAmountCNY), strings.TrimSpace(order.AmountCNY)))
-	if refundAmountErr != nil {
-		return cashierProviderRefundResult{}, refundAmountErr
-	}
-	payload := map[string]any{
-		"out_trade_no":  strings.TrimSpace(order.OrderNo),
-		"out_refund_no": strings.TrimSpace(refundTradeNo),
-		"reason":        defaultString(strings.TrimSpace(reason), "cashier order refund"),
-		"amount": map[string]any{
-			"refund":   refundFen,
-			"total":    totalFen,
-			"currency": "CNY",
-		},
-	}
-	body, marshalErr := json.Marshal(payload)
-	if marshalErr != nil {
-		return cashierProviderRefundResult{}, errs.Internal("failed to build wxpay refund request")
-	}
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if gatewayURL == "" {
-		gatewayURL = "https://api.mch.weixin.qq.com"
-	}
-	requestURI := "/v3/refund/domestic/refunds"
-	auth, signErr := wxPayBuildAuthorization(http.MethodPost, requestURI, string(body), mchID, serial, privateKeyRaw, time.Now().Unix(), uuid.NewString())
-	if signErr != nil {
-		return cashierProviderRefundResult{}, signErr
-	}
-	respBody, appErr := postJSONForCashierProvider(ctx, strings.TrimRight(gatewayURL, "/")+requestURI, body, map[string]string{"Authorization": auth})
-	if appErr != nil {
-		return cashierProviderRefundResult{}, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(respBody, &raw); err != nil {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	status := strings.ToLower(strings.TrimSpace(firstCashierRawString(raw, "status", "refund_status")))
-	if status == "abnormal" || status == "closed" {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	if status == "" {
-		status = "accepted"
-	}
-	raw["source"] = "wxpay_refund_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	return cashierProviderRefundResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		RefundStatus:       status,
-		RefundTradeNo:      strings.TrimSpace(refundTradeNo),
-		ChannelRefundNo:    strings.TrimSpace(firstCashierRawString(raw, "refund_id", "channel_refund_no")),
-		Message:            strings.TrimSpace(firstCashierRawString(raw, "message")),
-		Raw:                raw,
-		RefundedAt:         time.Now().UTC(),
-	}, nil
-}
-
-func (a *API) refundEasyPayCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance, refundTradeNo string, refundAmountCNY string, reason string) (cashierProviderRefundResult, *errs.Error) {
-	baseURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if baseURL == "" {
-		return cashierProviderRefundResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	baseURL = trimEasyPayEndpointBase(baseURL)
-	pid := strings.TrimSpace(mapStringValue(instance.Config, "pid", "merchant_id", "merchantId"))
-	key := strings.TrimSpace(mapStringValue(instance.Config, "key", "pkey", "merchant_key", "merchantKey"))
-	if pid == "" || key == "" {
-		return cashierProviderRefundResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	endpoint := strings.TrimSpace(mapStringValue(instance.Config, "refund_url", "refundUrl"))
-	if endpoint == "" {
-		endpoint = strings.TrimRight(baseURL, "/") + "/api.php"
-	}
-	values := url.Values{}
-	values.Set("act", "refund")
-	values.Set("pid", pid)
-	values.Set("key", key)
-	values.Set("money", defaultString(strings.TrimSpace(refundAmountCNY), strings.TrimSpace(order.AmountCNY)))
-	values.Set("out_trade_no", strings.TrimSpace(order.OrderNo))
-	raw, appErr := postEasyPayRefundForm(ctx, endpoint, values)
-	if appErr != nil && strings.TrimSpace(order.TradeNo) != "" && easypayRefundShouldRetryByTradeNo(raw) {
-		values.Del("out_trade_no")
-		values.Set("trade_no", strings.TrimSpace(order.TradeNo))
-		raw, appErr = postEasyPayRefundForm(ctx, endpoint, values)
-	}
-	if appErr != nil {
-		return cashierProviderRefundResult{}, appErr
-	}
-	status := strings.ToLower(strings.TrimSpace(firstCashierRawString(raw, "status", "trade_status")))
-	if status == "" {
-		status = "accepted"
-	}
-	raw["source"] = "easypay_refund_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	raw["refund_trade_no"] = strings.TrimSpace(refundTradeNo)
-	return cashierProviderRefundResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		RefundStatus:       status,
-		RefundTradeNo:      strings.TrimSpace(refundTradeNo),
-		ChannelRefundNo:    strings.TrimSpace(firstCashierRawString(raw, "refund_no", "trade_no", "api_trade_no")),
-		Message:            strings.TrimSpace(firstCashierRawString(raw, "msg", "message")),
-		Raw:                raw,
-		RefundedAt:         time.Now().UTC(),
-	}, nil
-}
-
-func (a *API) refundJeePayCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance, refundTradeNo string, refundAmountCNY string, reason string) (cashierProviderRefundResult, *errs.Error) {
-	baseURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if baseURL == "" {
-		return cashierProviderRefundResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	baseURL = trimJeePayEndpointBase(baseURL)
-	mchNo := strings.TrimSpace(mapStringValue(instance.Config, "mch_no", "mchNo", "merchant_id", "merchantId"))
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	key := strings.TrimSpace(mapStringValue(instance.Config, "key", "api_key", "apiKey", "merchant_key", "merchantKey"))
-	if mchNo == "" || appID == "" || key == "" {
-		return cashierProviderRefundResult{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	endpoint := strings.TrimSpace(mapStringValue(instance.Config, "refund_url", "refundUrl"))
-	if endpoint == "" {
-		refundPath := strings.TrimSpace(mapStringValue(instance.Config, "refund_path", "refundPath"))
-		if refundPath == "" {
-			refundPath = "/api/refund/refundOrder"
-		}
-		if !strings.HasPrefix(refundPath, "/") {
-			refundPath = "/" + refundPath
-		}
-		endpoint = strings.TrimRight(baseURL, "/") + refundPath
-	}
-	params := map[string]string{
-		"mchNo":        mchNo,
-		"appId":        appID,
-		"mchOrderNo":   strings.TrimSpace(order.OrderNo),
-		"mchRefundNo":  strings.TrimSpace(refundTradeNo),
-		"refundAmount": jeepayAmountFenFromCNY(defaultString(strings.TrimSpace(refundAmountCNY), strings.TrimSpace(order.AmountCNY))),
-		"currency":     "cny",
-		"refundReason": defaultString(strings.TrimSpace(reason), "cashier order refund"),
-		"reqTime":      time.Now().UTC().Format("20060102150405"),
-		"version":      "1.0",
-		"signType":     "MD5",
-	}
-	if tradeNo := strings.TrimSpace(order.TradeNo); tradeNo != "" {
-		params["payOrderId"] = tradeNo
-	}
-	if clientIP := strings.TrimSpace(mapStringValue(instance.Config, "client_ip", "clientIp", "payer_client_ip", "payerClientIP")); clientIP != "" {
-		params["clientIp"] = clientIP
-	}
-	if notifyURL := strings.TrimSpace(mapStringValue(instance.Config, "refund_notify_url", "refundNotifyUrl")); notifyURL != "" {
-		params["notifyUrl"] = notifyURL
-	}
-	sign := jeepaySign(params, key)
-	params["sign"] = sign
-	values := url.Values{}
-	for name, value := range params {
-		values.Set(name, value)
-	}
-	body, appErr := postFormForCashierQuery(ctx, endpoint, values)
-	if appErr != nil {
-		return cashierProviderRefundResult{}, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	code := strings.TrimSpace(firstCashierRawString(raw, "code"))
-	if code != "" && code != "0" {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	data := raw
-	if nested, ok := raw["data"].(map[string]any); ok {
-		data = nested
-	}
-	status := strings.ToLower(strings.TrimSpace(firstCashierRawString(data, "state", "status", "refundState", "refund_status")))
-	if status == "3" || status == "failed" || status == "fail" || status == "closed" {
-		return cashierProviderRefundResult{}, cashierRefundProviderUnavailable()
-	}
-	if status == "" {
-		status = "accepted"
-	}
-	raw["source"] = "jeepay_refund_api"
-	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	raw["order_no"] = order.OrderNo
-	return cashierProviderRefundResult{
-		ProviderType:       strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		ProviderInstanceID: instance.ID,
-		RefundStatus:       status,
-		RefundTradeNo:      strings.TrimSpace(refundTradeNo),
-		ChannelRefundNo:    strings.TrimSpace(firstCashierRawString(data, "refundOrderId", "channelOrderNo", "refund_no", "refundNo")),
-		Message:            strings.TrimSpace(firstCashierRawString(raw, "msg", "message")),
-		Raw:                raw,
-		RefundedAt:         time.Now().UTC(),
-	}, nil
-}
-
-func postEasyPayRefundForm(ctx context.Context, endpoint string, values url.Values) (map[string]any, *errs.Error) {
-	body, appErr := postFormForCashierQuery(ctx, endpoint, values)
-	if appErr != nil {
-		return nil, appErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, cashierRefundProviderUnavailable()
-	}
-	code := strings.TrimSpace(firstCashierRawString(raw, "code"))
-	if code != "1" {
-		return raw, cashierRefundProviderUnavailable()
-	}
-	return raw, nil
-}
-
-func easypayRefundShouldRetryByTradeNo(raw map[string]any) bool {
-	if len(raw) == 0 {
-		return false
-	}
-	message := strings.ToLower(strings.TrimSpace(firstCashierRawString(raw, "msg", "message", "error")))
-	return strings.Contains(message, "not found") ||
-		strings.Contains(message, "no order") ||
-		strings.Contains(message, "不存在") ||
-		strings.Contains(message, "未找到")
-}
-
-func postFormForCashierQuery(ctx context.Context, endpoint string, values url.Values) ([]byte, *errs.Error) {
-	httpReq, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()))
-	if reqErr != nil {
-		return nil, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
-	if doErr != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	defer resp.Body.Close()
-	body, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	return body, nil
-}
-
-func postJSONForCashierProvider(ctx context.Context, endpoint string, body []byte, headers map[string]string) ([]byte, *errs.Error) {
-	httpReq, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if reqErr != nil {
-		return nil, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	for key, value := range headers {
-		if strings.TrimSpace(key) != "" && strings.TrimSpace(value) != "" {
-			httpReq.Header.Set(key, value)
-		}
-	}
-	resp, doErr := http.DefaultClient.Do(httpReq)
-	if doErr != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	return respBody, nil
-}
-
-func getJSONForCashierQuery(ctx context.Context, endpoint string, headers map[string]string) ([]byte, *errs.Error) {
-	httpReq, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if reqErr != nil {
-		return nil, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	httpReq.Header.Set("Accept", "application/json")
-	for key, value := range headers {
-		if strings.TrimSpace(key) != "" && strings.TrimSpace(value) != "" {
-			httpReq.Header.Set(key, value)
-		}
-	}
-	resp, doErr := http.DefaultClient.Do(httpReq)
-	if doErr != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	defer resp.Body.Close()
-	body, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	return body, nil
-}
-
-func cashierRefundProviderUnavailable() *errs.Error {
-	return errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-}
-
-func firstCashierRawString(raw map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(cashierRawString(raw[key])); value != "" && value != "<nil>" {
-			return value
-		}
-	}
-	return ""
-}
-
-func cashierRawString(raw any) string {
-	switch value := raw.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(value)
-	case json.Number:
-		return strings.TrimSpace(value.String())
-	case float64:
-		return decimal.NewFromFloat(value).String()
-	case float32:
-		return decimal.NewFromFloat32(value).String()
-	case int:
-		return strconv.Itoa(value)
-	case int64:
-		return strconv.FormatInt(value, 10)
-	case int32:
-		return strconv.FormatInt(int64(value), 10)
-	case uint:
-		return strconv.FormatUint(uint64(value), 10)
-	case uint64:
-		return strconv.FormatUint(value, 10)
-	case uint32:
-		return strconv.FormatUint(uint64(value), 10)
-	case bool:
-		if value {
-			return "true"
-		}
-		return "false"
-	default:
-		return strings.TrimSpace(fmt.Sprint(value))
-	}
-}
-
-type cashierQueryStatus struct {
-	Status       string
-	RiskCategory string
-	ActionHint   string
-	Paid         bool
-	Message      string
-}
-
-func normalizeCashierQueryStatus(status string) cashierQueryStatus {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "paid", "success", "succeeded", "completed", "complete", "trade_success", "trade_finished", "1", "2":
-		return cashierQueryStatus{Status: "paid", RiskCategory: "paid", ActionHint: "渠道已确认支付，可核对本地到账状态。", Paid: true, Message: "渠道订单已支付"}
-	case "pending", "processing", "process", "wait", "waiting", "created", "new", "0", "wait_buyer_pay", "userpaying", "notpay":
-		return cashierQueryStatus{Status: "pending", RiskCategory: "pending", ActionHint: "渠道仍未确认支付，稍后可再次查单。", Message: "渠道订单未支付或仍在处理中"}
-	case "closed", "close", "canceled", "cancelled", "cancel", "expired", "trade_closed", "revoked", "3":
-		return cashierQueryStatus{Status: "closed", RiskCategory: "closed", ActionHint: "渠道订单已关闭，建议取消当前订单并让用户重新创建订单。", Message: "渠道订单已关闭"}
-	case "limited", "limit", "quota_limited", "amount_limited", "frequency_limited", "rate_limited", "exceed_limit", "over_limit":
-		return cashierQueryStatus{Status: "failed", RiskCategory: "channel_limited", ActionHint: "渠道订单触发限额限制，建议切换备用渠道、降低单笔金额或调整渠道实例限额后再重试。", Message: "渠道订单触发限额限制"}
-	case "sign_error", "signature_error", "invalid_sign", "verify_failed", "signature_invalid", "bad_signature", "sign_invalid":
-		return cashierQueryStatus{Status: "failed", RiskCategory: "signature_error", ActionHint: "渠道验签或签名配置异常，请检查商户密钥、证书、公钥、回调地址和签名算法配置。", Message: "渠道验签或签名配置异常"}
-	case "amount_mismatch", "money_mismatch", "total_amount_mismatch", "fee_mismatch", "price_mismatch":
-		return cashierQueryStatus{Status: "failed", RiskCategory: "amount_mismatch", ActionHint: "渠道订单金额与本地订单不一致，请暂停到账并核对订单金额、汇率、渠道费率和回调原文。", Message: "渠道订单金额与本地订单不一致"}
-	case "merchant_disabled", "mch_disabled", "account_disabled", "merchant_abnormal", "account_abnormal", "merchant_closed", "account_closed":
-		return cashierQueryStatus{Status: "failed", RiskCategory: "account_abnormal", ActionHint: "渠道商户账号状态异常，建议切换备用账号并登录渠道后台确认商户状态和产品权限。", Message: "渠道商户账号状态异常"}
-	case "timeout", "timed_out", "query_timeout", "network_timeout", "gateway_timeout", "request_timeout":
-		return cashierQueryStatus{Status: "failed", RiskCategory: "channel_timeout", ActionHint: "渠道查单超时或网络异常，建议稍后重试；连续失败时检查网关地址、网络出口和渠道可用性。", Message: "渠道查单超时或网络异常"}
-	case "failed", "failure", "fail", "error", "payerror", "pay_error", "trade_failed", "4":
-		return cashierQueryStatus{Status: "failed", RiskCategory: "channel_error", ActionHint: "渠道返回异常状态，请结合原始响应、商户后台和回调事件继续排查。", Message: "渠道订单支付失败"}
-	case "risk", "risk_control", "fraud", "intercepted", "security", "blocked":
-		return cashierQueryStatus{Status: "failed", RiskCategory: "risk_control", ActionHint: "渠道侧风控或安全策略拦截，建议让用户更换支付渠道或重新创建订单后再支付。", Message: "渠道订单被风控拦截"}
-	case "refunded", "refund", "partially_refunded", "partial_refund", "trade_refund":
-		return cashierQueryStatus{Status: "refunded", RiskCategory: "refunded", ActionHint: "渠道显示已退款，请核对本地退款流水和用户充值余额是否一致。", Message: "渠道订单已退款"}
-	default:
-		return cashierQueryStatus{Status: "pending", RiskCategory: "pending", ActionHint: "渠道仍未确认支付，稍后可再次查单。", Message: "渠道订单未支付或仍在处理中"}
-	}
-}
-
-func cashierQueryStatusIsPaid(status string) bool {
-	return normalizeCashierQueryStatus(status).Paid
+func (a *API) queryCashierOrderStatusFromConfig(order domainbilling.PaymentOrder, instance cashierProviderInstance) (adminCashierOrderSyncResult, *errs.Error) {
+	return cashierservice.ConfigDrivenQueryOrderStatus(cashierservice.QueryOrderStatusRequest{
+		Order:    cashierOrderSnapshot(order),
+		Instance: instance,
+	}), nil
 }
 
 func cashierSyncAmountMatches(orderAmountCNY, syncAmountCNY string) bool {
@@ -6163,12 +5505,8 @@ func (a *API) HandleDocsOpenAPIJSON(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, normalizeYAMLForJSON(document))
 }
 
-func (a *API) HandleDocsExamples(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
-		return
-	}
-	items := []map[string]any{
+func docsExampleItems() []map[string]any {
+	return []map[string]any{
 		{
 			"id":       "openapi-estimate-curl",
 			"title":    "Open API 预估生图积分",
@@ -6222,17 +5560,20 @@ curl -X POST "https://api.example.com/v1/images/generations" \
   }'`),
 		},
 	}
-	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
-		"items": items,
-	})
 }
 
-func (a *API) HandleDocsErrors(w http.ResponseWriter, r *http.Request) {
+func (a *API) HandleDocsExamples(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	items := []map[string]any{
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": docsExampleItems(),
+	})
+}
+
+func docsErrorItems() []map[string]any {
+	return []map[string]any{
 		{"code": errs.CodeBadRequest, "http_status": http.StatusBadRequest, "message": "Request parameters are invalid.", "retryable": false},
 		{"code": errs.CodeUnauthorized, "http_status": http.StatusUnauthorized, "message": "Authentication is missing or invalid.", "retryable": false},
 		{"code": errs.CodeForbidden, "http_status": http.StatusForbidden, "message": "The authenticated caller cannot access this resource.", "retryable": false},
@@ -6244,13 +5585,24 @@ func (a *API) HandleDocsErrors(w http.ResponseWriter, r *http.Request) {
 		{"code": errs.CodeModelRouteNoCandidate, "http_status": http.StatusConflict, "message": "The route model has no available provider candidate.", "retryable": true},
 		{"code": errs.CodeRouteModelPriceMissing, "http_status": http.StatusConflict, "message": "The route model has no active price configuration.", "retryable": false},
 		{"code": errs.CodePaymentMethodUnavailable, "http_status": http.StatusBadRequest, "message": "The selected payment method is unavailable.", "retryable": false},
+		{"code": errs.CodePaymentAmountOutOfRange, "http_status": http.StatusBadRequest, "message": "Recharge amount is outside the configured allowed range.", "retryable": false},
 		{"code": errs.CodePaymentProviderUnavailable, "http_status": http.StatusConflict, "message": "No enabled payment provider instance can process this order.", "retryable": true},
 		{"code": errs.CodePaymentProviderNotImplemented, "http_status": http.StatusNotImplemented, "message": "The selected payment provider adapter is not implemented.", "retryable": false},
 		{"code": errs.CodePaymentTooManyPending, "http_status": http.StatusConflict, "message": "The user has too many pending payment orders.", "retryable": false},
 		{"code": errs.CodePaymentSignatureInvalid, "http_status": http.StatusForbidden, "message": "Payment webhook signature verification failed.", "retryable": false},
 		{"code": errs.CodePaymentAmountMismatch, "http_status": http.StatusConflict, "message": "Payment webhook amount does not match the order amount.", "retryable": false},
+		{"code": errs.CodeLoginRequiredGalleryDetail, "http_status": http.StatusUnauthorized, "message": "Login is required to view the full public gallery prompt.", "retryable": false},
+		{"code": errs.CodeSignupTrialConfigInvalid, "http_status": http.StatusInternalServerError, "message": "Signup trial credit configuration is invalid.", "retryable": true},
 		{"code": errs.CodeUpstreamUnavailable, "http_status": http.StatusServiceUnavailable, "message": "Upstream model provider is temporarily unavailable.", "retryable": true},
 	}
+}
+
+func (a *API) HandleDocsErrors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	items := docsErrorItems()
 	codes := make([]string, 0, len(items))
 	for _, item := range items {
 		codes = append(codes, fmt.Sprint(item["code"]))
@@ -6259,6 +5611,40 @@ func (a *API) HandleDocsErrors(w http.ResponseWriter, r *http.Request) {
 		"items": items,
 		"codes": codes,
 	})
+}
+
+func defaultDocsReadinessChecker(_ context.Context) DocsReadinessResult {
+	content, err := os.ReadFile(openAPIDocumentPath())
+	if err != nil {
+		return DocsReadinessResult{Status: "fail", Detail: "OpenAPI JSON 不可读取"}
+	}
+	var document any
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return DocsReadinessResult{Status: "fail", Detail: "OpenAPI JSON 解析失败"}
+	}
+	normalized, ok := normalizeYAMLForJSON(document).(map[string]any)
+	if !ok {
+		return DocsReadinessResult{Status: "fail", Detail: "OpenAPI JSON 结构异常"}
+	}
+	if strings.TrimSpace(fmt.Sprint(normalized["openapi"])) == "" {
+		return DocsReadinessResult{Status: "fail", Detail: "OpenAPI JSON 缺少 openapi 版本"}
+	}
+	paths, ok := normalized["paths"].(map[string]any)
+	if !ok || len(paths) == 0 {
+		return DocsReadinessResult{Status: "fail", Detail: "OpenAPI JSON 缺少接口路径"}
+	}
+	examples := docsExampleItems()
+	if len(examples) == 0 {
+		return DocsReadinessResult{Status: "fail", Detail: "接口示例为空"}
+	}
+	errors := docsErrorItems()
+	if len(errors) == 0 {
+		return DocsReadinessResult{Status: "fail", Detail: "错误码示例为空"}
+	}
+	return DocsReadinessResult{
+		Status: "pass",
+		Detail: fmt.Sprintf("OpenAPI %d 个路径，示例 %d 条，错误码 %d 条", len(paths), len(examples), len(errors)),
+	}
 }
 
 func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request) {
@@ -7121,9 +6507,9 @@ func (a *API) adminReadinessChecks(ctx context.Context) ([]adminReadinessCheck, 
 		return nil, appErr
 	}
 	checks = append(checks, refundCompensationCheck)
-	checks = append(checks, a.signupTrialReadinessCheck(checkedAt))
+	checks = append(checks, a.signupTrialReadinessCheck(ctx, checkedAt))
 	checks = append(checks, a.publicGalleryReadinessCheck(ctx, checkedAt))
-	checks = append(checks, a.docsReadinessCheck(checkedAt))
+	checks = append(checks, a.docsReadinessCheck(ctx, checkedAt))
 	return checks, nil
 }
 
@@ -7246,8 +6632,8 @@ func (a *API) refundCompensationReadinessCheck(ctx context.Context, checkedAt ti
 	return readinessCheck("refund_compensation", "退款补偿", "fail", detail, "cashier", "去处理", checkedAt), nil
 }
 
-func (a *API) signupTrialReadinessCheck(checkedAt time.Time) adminReadinessCheck {
-	trial := a.cfg.Billing.SignupTrial
+func (a *API) signupTrialReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
+	trial := a.signupTrialConfig(ctx)
 	if !trial.Enabled {
 		return readinessCheck("signup_trial", "注册送体验额度", "warn", "注册送体验额度未启用", "config", "去配置", checkedAt)
 	}
@@ -7280,11 +6666,24 @@ func (a *API) publicGalleryReadinessCheck(ctx context.Context, checkedAt time.Ti
 	return readinessCheck("public_gallery", "公开广场", status, fmt.Sprintf("%d 个公开作品，%d 个待审核", public.Total, pending.Total), "reviews", "去审核", checkedAt)
 }
 
-func (a *API) docsReadinessCheck(checkedAt time.Time) adminReadinessCheck {
+func (a *API) docsReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
 	if strings.TrimSpace(a.cfg.Docs.Title) == "" || strings.TrimSpace(a.cfg.Docs.BasePath) == "" {
 		return readinessCheck("docs", "开发文档", "warn", "开发文档标题或 base path 未配置", "config", "去配置", checkedAt)
 	}
-	return readinessCheck("docs", "开发文档", "pass", "OpenAPI 与示例文档路由已注册", "config", "去配置", checkedAt)
+	checker := a.docsReady
+	if checker == nil {
+		checker = defaultDocsReadinessChecker
+	}
+	result := checker(ctx)
+	status := strings.TrimSpace(result.Status)
+	if status == "" {
+		status = "pass"
+	}
+	detail := strings.TrimSpace(result.Detail)
+	if detail == "" {
+		detail = "OpenAPI、示例和错误码文档可解析"
+	}
+	return readinessCheck("docs", "开发文档", status, detail, "config", "去配置", checkedAt)
 }
 
 func (a *API) moderatePublishRequest(ctx context.Context, prompt string) (bool, string, error) {
@@ -7828,69 +7227,16 @@ func paginateAny[T any](items []T, page, pageSize int) []T {
 }
 
 func (a *API) cashierCustomAmountConfig(ctx context.Context) cashierCustomAmountConfig {
-	cfg := cashierCustomAmountConfig{
-		Enabled:      true,
-		MinAmountCNY: "1.00000",
-		MaxAmountCNY: "999.00000",
-		CNYPerPoint:  handlerBillingString(a.cfg.Billing.CNYPerPoint, "0.31250"),
-	}
-	tab, err := a.admin.GetTab(ctx, "payments")
+	normalized, err := a.cashierConfigFacade().CustomAmountConfig(ctx)
 	if err != nil {
-		return cfg
-	}
-	for _, item := range tab.Items {
-		value, ok := item.ConfigValue["value"]
-		if !ok {
-			continue
+		return cashierCustomAmountConfig{
+			Enabled:      true,
+			MinAmountCNY: "1.00000",
+			MaxAmountCNY: "999.00000",
+			CNYPerPoint:  handlerBillingString(a.cfg.Billing.CNYPerPoint, "0.31250"),
 		}
-		switch item.ConfigKey {
-		case "custom_amount_enabled":
-			if parsed, ok := configBoolValue(value); ok {
-				cfg.Enabled = parsed
-			}
-		case "custom_amount_min_cny":
-			if parsed, ok := configStringValue(value); ok {
-				cfg.MinAmountCNY = parsed
-			}
-		case "custom_amount_max_cny":
-			if parsed, ok := configStringValue(value); ok {
-				cfg.MaxAmountCNY = parsed
-			}
-		case "custom_amount_cny_per_point":
-			if parsed, ok := configStringValue(value); ok {
-				cfg.CNYPerPoint = parsed
-			}
-		}
-	}
-	normalized, err := normalizeCashierCustomAmountConfig(cfg)
-	if err != nil {
-		return cfg
 	}
 	return normalized
-}
-
-func normalizeCashierCustomAmountConfig(cfg cashierCustomAmountConfig) (cashierCustomAmountConfig, *errs.Error) {
-	minAmount, minAmountValue, err := positiveDecimalString(cfg.MinAmountCNY, "min_amount_cny")
-	if err != nil {
-		return cashierCustomAmountConfig{}, err
-	}
-	maxAmount, maxAmountValue, err := positiveDecimalString(cfg.MaxAmountCNY, "max_amount_cny")
-	if err != nil {
-		return cashierCustomAmountConfig{}, err
-	}
-	cnyPerPoint, _, err := positiveDecimalString(cfg.CNYPerPoint, "cny_per_point")
-	if err != nil {
-		return cashierCustomAmountConfig{}, err
-	}
-	if minAmountValue.GreaterThan(maxAmountValue) {
-		return cashierCustomAmountConfig{}, errs.BadRequest("min_amount_cny must be less than or equal to max_amount_cny")
-	}
-	return cashierCustomAmountConfig{
-		Enabled:      cfg.Enabled,
-		MinAmountCNY: minAmount,
-		MaxAmountCNY: maxAmount,
-		CNYPerPoint:  cnyPerPoint,
-	}, nil
 }
 
 func positiveDecimalString(raw, field string) (string, decimal.Decimal, *errs.Error) {
@@ -7902,23 +7248,8 @@ func positiveDecimalString(raw, field string) (string, decimal.Decimal, *errs.Er
 }
 
 func validateCashierCustomAmount(raw string, cfg cashierCustomAmountConfig) *errs.Error {
-	_, amount, err := positiveDecimalString(raw, "amount_cny")
-	if err != nil {
-		return err
-	}
-	_, minAmount, err := positiveDecimalString(cfg.MinAmountCNY, "min_amount_cny")
-	if err != nil {
-		return err
-	}
-	_, maxAmount, err := positiveDecimalString(cfg.MaxAmountCNY, "max_amount_cny")
-	if err != nil {
-		return err
-	}
-	if amount.LessThan(minAmount) {
-		return errs.BadRequest("amount_cny must be greater than or equal to min_amount_cny")
-	}
-	if amount.GreaterThan(maxAmount) {
-		return errs.BadRequest("amount_cny must be less than or equal to max_amount_cny")
+	if err := cashierservice.ValidateCustomAmount(raw, cfg); err != nil {
+		return normalizeAppError(err)
 	}
 	return nil
 }
@@ -7957,30 +7288,91 @@ func configStringValue(value any) (string, bool) {
 	}
 }
 
+func (a *API) signupTrialConfig(ctx context.Context) config.SignupTrialConfig {
+	trial := normalizeHandlerSignupTrialConfig(a.cfg.Billing.SignupTrial)
+	if a.admin == nil {
+		return trial
+	}
+	tab, err := a.admin.GetTab(ctx, "trial_credits")
+	if err != nil {
+		return trial
+	}
+	for _, item := range tab.Items {
+		if item.ConfigKey != "signup_trial" {
+			continue
+		}
+		raw, ok := item.ConfigValue["value"]
+		if !ok {
+			return trial
+		}
+		return mergeSignupTrialConfig(trial, raw)
+	}
+	return trial
+}
+
+func mergeSignupTrialConfig(base config.SignupTrialConfig, raw any) config.SignupTrialConfig {
+	cfg := base
+	values, ok := raw.(map[string]any)
+	if !ok {
+		return normalizeHandlerSignupTrialConfig(cfg)
+	}
+	if enabled, ok := configBoolValue(values["enabled"]); ok {
+		cfg.Enabled = enabled
+	}
+	if points, ok := configStringValue(values["points"]); ok {
+		cfg.Points = points
+	}
+	if days, ok := configIntValue(values["valid_days"]); ok {
+		cfg.ValidDays = days
+	}
+	if days, ok := configIntValue(values["expiry_reminder_days"]); ok {
+		cfg.ExpiryReminderDays = days
+	}
+	if once, ok := configBoolValue(values["grant_once_per_user"]); ok {
+		cfg.GrantOncePerUser = once
+	}
+	return normalizeHandlerSignupTrialConfig(cfg)
+}
+
+func configIntValue(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		return int(parsed), err == nil
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func normalizeHandlerSignupTrialConfig(cfg config.SignupTrialConfig) config.SignupTrialConfig {
+	if strings.TrimSpace(cfg.Points) == "" {
+		cfg.Points = "20.00000"
+	}
+	if cfg.ValidDays == 0 {
+		cfg.ValidDays = 7
+	}
+	if cfg.ExpiryReminderDays == 0 {
+		cfg.ExpiryReminderDays = 2
+	}
+	cfg.GrantOncePerUser = true
+	return cfg
+}
+
 func (a *API) cashierVisibleMethods(ctx context.Context, includeDisabled bool) []cashierVisibleMethod {
-	methods := defaultCashierVisibleMethods()
-	if tab, err := a.admin.GetTab(ctx, "payments"); err == nil {
-		for _, item := range tab.Items {
-			if item.ConfigKey != "visible_methods" {
-				continue
-			}
-			if parsed, parseErr := parseCashierVisibleMethodsConfig(item.ConfigValue["value"]); parseErr == nil {
-				methods = parsed
-			}
-			break
-		}
+	methods, err := a.cashierConfigFacade().VisibleMethods(ctx, includeDisabled)
+	if err != nil {
+		return cashierservice.DefaultVisibleMethods()
 	}
-	filtered := make([]cashierVisibleMethod, 0, len(methods))
-	for _, method := range methods {
-		if !includeDisabled && !method.Enabled {
-			continue
-		}
-		if !includeDisabled && isProductionAppEnv(a.cfg.App.Env) && method.SourceProviderType == "mock" {
-			continue
-		}
-		filtered = append(filtered, method)
-	}
-	return filtered
+	return methods
 }
 
 func (a *API) cashierVisibleMethod(ctx context.Context, methodName string) (cashierVisibleMethod, bool) {
@@ -8031,8 +7423,8 @@ func (a *API) scheduleCashierProviderInstance(ctx context.Context, method cashie
 		instances = filtered
 	}
 	schedulerState := a.cashierSchedulerState(ctx)
-	svc := cashierservice.NewServiceWithSchedulerState(cashierSchedulerStateIDs(schedulerState))
-	selected, err := svc.ScheduleProviderInstance(ctx, method, instances, amountCNY)
+	svc := cashierservice.NewServiceWithSchedulerState(cashierservice.SchedulerStateIDs(schedulerState))
+	selected, err := svc.ScheduleProviderInstanceWithDailyUsage(ctx, method, instances, amountCNY, a.cashierProviderDailyUsage(ctx))
 	if err != nil {
 		if errors.Is(err, cashierservice.ErrPaymentMethodUnavailable) {
 			return cashierProviderInstance{}, errs.New(http.StatusBadRequest, errs.CodePaymentMethodUnavailable, "payment method is unavailable")
@@ -8040,7 +7432,7 @@ func (a *API) scheduleCashierProviderInstance(ctx context.Context, method cashie
 		return cashierProviderInstance{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	if strings.EqualFold(method.SchedulerStrategy, "round_robin") {
-		merged := mergeCashierSchedulerStateIDs(schedulerState, svc.SchedulerState())
+		merged := cashierservice.MergeSchedulerStateIDs(schedulerState, svc.SchedulerState())
 		if err := a.saveCashierSchedulerState(ctx, merged); err != nil {
 			return selected, nil
 		}
@@ -8048,121 +7440,56 @@ func (a *API) scheduleCashierProviderInstance(ctx context.Context, method cashie
 	return selected, nil
 }
 
-func cashierSchedulerStateIDs(state map[string]map[string]any) map[string]int64 {
-	ids := make(map[string]int64, len(state))
-	for key, item := range state {
-		trimmedKey := strings.TrimSpace(key)
-		if trimmedKey == "" {
-			continue
-		}
-		ids[trimmedKey] = int64FromAny(item["last_instance_id"])
+func (a *API) cashierProviderDailyUsage(ctx context.Context) map[int64]decimal.Decimal {
+	usage := map[int64]decimal.Decimal{}
+	if a == nil || a.billing == nil {
+		return usage
 	}
-	return ids
-}
-
-func mergeCashierSchedulerStateIDs(existing map[string]map[string]any, ids map[string]int64) map[string]map[string]any {
-	merged := make(map[string]map[string]any, len(existing)+len(ids))
-	for key, item := range existing {
-		trimmedKey := strings.TrimSpace(key)
-		if trimmedKey == "" {
-			continue
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	page := 1
+	const pageSize = 200
+	for {
+		orders, err := a.billing.ListOrders(ctx, domainbilling.ListOrdersRequest{Page: page, PageSize: pageSize})
+		if err != nil {
+			return usage
 		}
-		merged[trimmedKey] = normalizeMap(item)
-	}
-	for key, id := range ids {
-		trimmedKey := strings.TrimSpace(key)
-		if trimmedKey == "" || id <= 0 {
-			continue
+		for _, order := range orders.Items {
+			if order.ProviderInstanceID <= 0 || order.CreatedAt.Before(today) {
+				continue
+			}
+			switch strings.ToLower(strings.TrimSpace(order.Status)) {
+			case "pending", "paid", "completed", "partially_refunded":
+			default:
+				continue
+			}
+			amount, err := decimal.NewFromString(strings.TrimSpace(order.AmountCNY))
+			if err != nil || !amount.IsPositive() {
+				continue
+			}
+			usage[order.ProviderInstanceID] = usage[order.ProviderInstanceID].Add(amount)
 		}
-		merged[trimmedKey] = map[string]any{"last_instance_id": id}
+		if page*orders.PageSize >= orders.Total || len(orders.Items) == 0 {
+			break
+		}
+		page++
 	}
-	return merged
+	return usage
 }
 
 func (a *API) cashierSchedulerState(ctx context.Context) map[string]map[string]any {
-	state := map[string]map[string]any{}
-	if tab, err := a.admin.GetTab(ctx, "payments"); err == nil {
-		for _, item := range tab.Items {
-			if item.ConfigKey != "scheduler_state" {
-				continue
-			}
-			if parsed := parseCashierSchedulerState(item.ConfigValue["value"]); len(parsed) > 0 {
-				state = parsed
-			}
-			break
-		}
-	}
-	return state
-}
-
-func parseCashierSchedulerState(raw any) map[string]map[string]any {
-	state := map[string]map[string]any{}
-	if raw == nil {
-		return state
-	}
-	encoded, err := json.Marshal(raw)
+	state, err := a.cashierConfigFacade().SchedulerState(ctx)
 	if err != nil {
-		return state
-	}
-	if err := json.Unmarshal(encoded, &state); err == nil {
-		return state
-	}
-	var loose map[string]any
-	if err := json.Unmarshal(encoded, &loose); err != nil {
-		return state
-	}
-	for key, value := range loose {
-		nested, ok := value.(map[string]any)
-		if !ok {
-			continue
-		}
-		trimmedKey := strings.TrimSpace(key)
-		if trimmedKey == "" {
-			continue
-		}
-		state[trimmedKey] = nested
+		return map[string]map[string]any{}
 	}
 	return state
 }
 
 func (a *API) saveCashierSchedulerState(ctx context.Context, state map[string]map[string]any) error {
-	current, err := a.admin.GetTab(ctx, "payments")
-	if err != nil {
-		return err
-	}
-	value := make(map[string]any, len(state))
-	for key, item := range state {
-		trimmedKey := strings.TrimSpace(key)
-		if trimmedKey == "" {
-			continue
-		}
-		value[trimmedKey] = normalizeMap(item)
-	}
-	_, err = a.admin.UpdateTab(ctx, domainadminconfig.UpdateTabRequest{
-		TabKey:    "payments",
-		Version:   current.Version,
-		Items:     []domainadminconfig.Item{configValueItem("payments", "scheduler_state", value)},
-		UpdatedBy: 0,
-	})
-	return err
+	return a.cashierConfigFacade().SaveSchedulerState(ctx, state, 0)
 }
 
-func cashierProviderInstanceAmountAllowed(instance cashierProviderInstance, amount decimal.Decimal) bool {
-	return domaincashier.ProviderInstanceAmountAllowed(instance, amount)
-}
-
-type cashierPaymentDisplayRequest struct {
-	OrderNo   string
-	AmountCNY string
-	Subject   string
-}
-
-type cashierPaymentBuildResult struct {
-	Display     map[string]any
-	PaymentURL  string
-	QRCode      string
-	ClientToken string
-}
+type cashierPaymentDisplayRequest = cashierservice.PaymentDisplayRequest
+type cashierPaymentBuildResult = cashierservice.PaymentDisplayResult
 
 func newCashierOrderNo() string {
 	now := time.Now().UTC()
@@ -8170,594 +7497,34 @@ func newCashierOrderNo() string {
 }
 
 func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMethod, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (cashierPaymentBuildResult, *errs.Error) {
-	providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	display := map[string]any{
-		"type":                 "redirect",
-		"visible_method":       strings.ToLower(strings.TrimSpace(method.Method)),
-		"provider_type":        providerType,
-		"provider_instance_id": instance.ID,
-		"order_no":             strings.TrimSpace(req.OrderNo),
-		"amount_cny":           strings.TrimSpace(req.AmountCNY),
-	}
-	result := cashierPaymentBuildResult{Display: display}
-	switch providerType {
-	case "mock":
-		display["type"] = "mock"
-	case "easypay_alipay", "easypay_wxpay":
-		paymentType := "alipay"
-		if providerType == "easypay_wxpay" {
-			paymentType = "wxpay"
-		}
-		prepayMode := strings.ToLower(strings.TrimSpace(mapStringValue(instance.Config, "payment_mode", "prepay_mode", "trade_type")))
-		if prepayMode == "api" || prepayMode == "qrcode" || prepayMode == "qr_code" {
-			paymentURL, qrCode, sign, buildErr := a.buildEasyPayAPIPayment(ctx, instance, req, paymentType)
-			if buildErr != nil {
-				return cashierPaymentBuildResult{}, buildErr
-			}
-			result.PaymentURL = paymentURL
-			result.QRCode = qrCode
-			display["type"] = "redirect"
-			if qrCode != "" {
-				display["type"] = "qr_code"
-				display["qr_code"] = qrCode
-			}
-			if paymentURL != "" {
-				display["payment_url"] = paymentURL
-			}
-			display["prepay_mode"] = "api"
-			display["sign"] = sign
-			display["sign_type"] = "MD5"
-			break
-		}
-		paymentURL, sign, buildErr := a.buildEasyPayPaymentURL(instance, req, paymentType)
-		if buildErr != nil {
-			return cashierPaymentBuildResult{}, buildErr
-		}
-		result.PaymentURL = paymentURL
-		display["type"] = "redirect"
-		display["payment_url"] = paymentURL
-		display["sign"] = sign
-		display["sign_type"] = "MD5"
-	case "alipay_direct":
-		paymentURL, signed, buildErr := a.buildAlipayPaymentURL(instance, req)
-		if buildErr != nil {
-			return cashierPaymentBuildResult{}, buildErr
-		}
-		result.PaymentURL = paymentURL
-		display["type"] = "redirect"
-		display["payment_url"] = paymentURL
-		display["signed"] = signed
-		display["sign_type"] = "RSA2"
-	case "jeepay_alipay", "jeepay_wxpay":
-		prepayMode := strings.ToLower(strings.TrimSpace(mapStringValue(instance.Config, "payment_mode", "prepay_mode", "trade_type")))
-		if prepayMode == "api" || prepayMode == "qrcode" || prepayMode == "qr_code" {
-			paymentURL, qrCode, sign, wayCode, channelTradeNo, buildErr := a.buildJeePayAPIPayment(ctx, instance, req)
-			if buildErr != nil {
-				return cashierPaymentBuildResult{}, buildErr
-			}
-			result.PaymentURL = paymentURL
-			result.QRCode = qrCode
-			display["type"] = "redirect"
-			if qrCode != "" {
-				display["type"] = "qr_code"
-				display["qr_code"] = qrCode
-			}
-			if paymentURL != "" {
-				display["payment_url"] = paymentURL
-			}
-			display["prepay_mode"] = "api"
-			display["sign"] = sign
-			display["sign_type"] = "MD5"
-			display["way_code"] = wayCode
-			if channelTradeNo != "" {
-				display["channel_trade_no"] = channelTradeNo
-			}
-			break
-		}
-		paymentURL, sign, wayCode, buildErr := a.buildJeePayPaymentURL(instance, req)
-		if buildErr != nil {
-			return cashierPaymentBuildResult{}, buildErr
-		}
-		result.PaymentURL = paymentURL
-		display["type"] = "redirect"
-		display["payment_url"] = paymentURL
-		display["sign"] = sign
-		display["sign_type"] = "MD5"
-		display["way_code"] = wayCode
-	case "wxpay_direct":
-		result.QRCode = strings.TrimSpace(mapStringValue(instance.Config, "qr_code", "qrcode", "code_url"))
-		result.PaymentURL = strings.TrimSpace(mapStringValue(instance.Config, "payment_url", "pay_url", "h5_url"))
-		result.ClientToken = strings.TrimSpace(mapStringValue(instance.Config, "client_token"))
-		prepayMode := strings.ToLower(strings.TrimSpace(mapStringValue(instance.Config, "payment_mode", "prepay_mode", "trade_type")))
-		if result.ClientToken == "" && prepayMode == "jsapi" {
-			clientToken, buildErr := a.buildWxPayJSAPIClientToken(ctx, instance, req)
-			if buildErr != nil {
-				return cashierPaymentBuildResult{}, buildErr
-			}
-			result.ClientToken = clientToken
-			display["type"] = "jsapi"
-			display["prepay_mode"] = "jsapi"
-		}
-		if result.PaymentURL == "" && prepayMode == "h5" {
-			paymentURL, buildErr := a.buildWxPayH5PaymentURL(ctx, instance, req)
-			if buildErr != nil {
-				return cashierPaymentBuildResult{}, buildErr
-			}
-			result.PaymentURL = paymentURL
-			display["prepay_mode"] = "h5"
-		}
-		if result.QRCode == "" && result.PaymentURL == "" && result.ClientToken == "" {
-			codeURL, buildErr := a.buildWxPayNativeCodeURL(ctx, instance, req)
-			if buildErr != nil {
-				return cashierPaymentBuildResult{}, buildErr
-			}
-			result.QRCode = codeURL
-			display["prepay_mode"] = "native"
-		}
-		if result.QRCode == "" && result.PaymentURL == "" && result.ClientToken == "" {
+	req.Method = method
+	req.Instance = instance
+	registry := cashierservice.NewPaymentAdapterRegistryWithBuilders(cashierservice.PaymentProviderBuilders{
+		AlipayDirect: cashierservice.NewAlipayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
+		WxPayDirect:  cashierservice.NewWxPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
+		EasyPay:      cashierservice.NewEasyPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
+		JeePay:       cashierservice.NewJeePayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
+	})
+
+	result, err := registry.BuildPaymentDisplay(ctx, req)
+	if err != nil {
+		if errors.Is(err, cashierservice.ErrPaymentProviderNotImplemented) {
 			return cashierPaymentBuildResult{}, errs.New(http.StatusNotImplemented, errs.CodePaymentProviderNotImplemented, "payment provider is not implemented")
 		}
-		if result.QRCode != "" {
-			display["type"] = "qr_code"
-			display["qr_code"] = result.QRCode
-		}
-		if result.PaymentURL != "" {
-			display["payment_url"] = result.PaymentURL
-		}
-		if result.ClientToken != "" {
-			display["client_token"] = result.ClientToken
-		}
-	default:
-		return cashierPaymentBuildResult{}, errs.New(http.StatusNotImplemented, errs.CodePaymentProviderNotImplemented, "payment provider is not implemented")
+		return cashierPaymentBuildResult{}, normalizeAppError(err)
 	}
 	return result, nil
 }
 
-func (a *API) buildWxPayJSAPIClientToken(ctx context.Context, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (string, *errs.Error) {
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	mchID := strings.TrimSpace(mapStringValue(instance.Config, "mch_id", "mchId", "merchant_id", "merchantId"))
-	serial := strings.TrimSpace(mapStringValue(instance.Config, "merchant_certificate_serial", "merchantCertificateSerial", "merchant_serial_no", "serial_no"))
-	privateKeyRaw := strings.TrimSpace(mapStringValue(instance.Config, "merchant_private_key", "private_key", "privateKey"))
-	openID := strings.TrimSpace(mapStringValue(instance.Config, "openid", "open_id", "payer_openid", "payerOpenID"))
-	if appID == "" || mchID == "" || serial == "" || privateKeyRaw == "" {
-		return "", errs.BadRequest("wxpay app_id, mch_id, merchant_certificate_serial, and merchant_private_key are required")
-	}
-	if openID == "" {
-		return "", errs.BadRequest("wxpay jsapi openid is required")
-	}
-	totalFen, amountErr := wxPayAmountFenFromCNY(req.AmountCNY)
-	if amountErr != nil {
-		return "", amountErr
-	}
-	notifyURL, _ := a.cashierCallbackURLs(instance, "wxpay_direct")
-	payload := map[string]any{
-		"appid":        appID,
-		"mchid":        mchID,
-		"description":  defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"out_trade_no": strings.TrimSpace(req.OrderNo),
-		"notify_url":   notifyURL,
-		"amount": map[string]any{
-			"total":    totalFen,
-			"currency": "CNY",
-		},
-		"payer": map[string]any{
-			"openid": openID,
-		},
-	}
-	body, marshalErr := json.Marshal(payload)
-	if marshalErr != nil {
-		return "", errs.Internal("failed to build wxpay jsapi request")
-	}
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if gatewayURL == "" {
-		gatewayURL = "https://api.mch.weixin.qq.com"
-	}
-	endpoint := strings.TrimRight(gatewayURL, "/") + "/v3/pay/transactions/jsapi"
-	httpReq, buildErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if buildErr != nil {
-		return "", errs.BadRequest("invalid wxpay gateway_url")
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	auth, signErr := wxPayBuildAuthorization(http.MethodPost, httpReq.URL.RequestURI(), string(body), mchID, serial, privateKeyRaw, time.Now().Unix(), uuid.NewString())
-	if signErr != nil {
-		return "", signErr
-	}
-	httpReq.Header.Set("Authorization", auth)
-	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
-	if doErr != nil {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	var parsed struct {
-		PrepayID string `json:"prepay_id"`
-	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil || strings.TrimSpace(parsed.PrepayID) == "" {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	token, tokenErr := wxPayBuildJSAPIClientToken(appID, strings.TrimSpace(parsed.PrepayID), privateKeyRaw)
-	if tokenErr != nil {
-		return "", tokenErr
-	}
-	return token, nil
-}
-
-func (a *API) buildWxPayH5PaymentURL(ctx context.Context, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (string, *errs.Error) {
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	mchID := strings.TrimSpace(mapStringValue(instance.Config, "mch_id", "mchId", "merchant_id", "merchantId"))
-	serial := strings.TrimSpace(mapStringValue(instance.Config, "merchant_certificate_serial", "merchantCertificateSerial", "merchant_serial_no", "serial_no"))
-	privateKeyRaw := strings.TrimSpace(mapStringValue(instance.Config, "merchant_private_key", "private_key", "privateKey"))
-	if appID == "" || mchID == "" || serial == "" || privateKeyRaw == "" {
-		return "", errs.BadRequest("wxpay app_id, mch_id, merchant_certificate_serial, and merchant_private_key are required")
-	}
-	totalFen, amountErr := wxPayAmountFenFromCNY(req.AmountCNY)
-	if amountErr != nil {
-		return "", amountErr
-	}
-	notifyURL, _ := a.cashierCallbackURLs(instance, "wxpay_direct")
-	payload := map[string]any{
-		"appid":        appID,
-		"mchid":        mchID,
-		"description":  defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"out_trade_no": strings.TrimSpace(req.OrderNo),
-		"notify_url":   notifyURL,
-		"amount": map[string]any{
-			"total":    totalFen,
-			"currency": "CNY",
-		},
-		"scene_info": map[string]any{
-			"payer_client_ip": defaultString(strings.TrimSpace(mapStringValue(instance.Config, "client_ip", "payer_client_ip", "payerClientIP")), "127.0.0.1"),
-			"h5_info": map[string]any{
-				"type": defaultString(strings.TrimSpace(mapStringValue(instance.Config, "h5_type", "h5InfoType")), "Wap"),
-			},
-		},
-	}
-	body, marshalErr := json.Marshal(payload)
-	if marshalErr != nil {
-		return "", errs.Internal("failed to build wxpay h5 request")
-	}
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if gatewayURL == "" {
-		gatewayURL = "https://api.mch.weixin.qq.com"
-	}
-	endpoint := strings.TrimRight(gatewayURL, "/") + "/v3/pay/transactions/h5"
-	httpReq, buildErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if buildErr != nil {
-		return "", errs.BadRequest("invalid wxpay gateway_url")
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	auth, signErr := wxPayBuildAuthorization(http.MethodPost, httpReq.URL.RequestURI(), string(body), mchID, serial, privateKeyRaw, time.Now().Unix(), uuid.NewString())
-	if signErr != nil {
-		return "", signErr
-	}
-	httpReq.Header.Set("Authorization", auth)
-	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
-	if doErr != nil {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	var parsed struct {
-		H5URL string `json:"h5_url"`
-	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil || strings.TrimSpace(parsed.H5URL) == "" {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	return strings.TrimSpace(parsed.H5URL), nil
-}
-
-func (a *API) buildAlipayPaymentURL(instance cashierProviderInstance, req cashierPaymentDisplayRequest) (string, bool, *errs.Error) {
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "gatewayUrl"))
-	if gatewayURL == "" {
-		gatewayURL = "https://openapi.alipaydev.com/gateway.do"
-	}
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	if appID == "" {
-		return "", false, errs.BadRequest("alipay app_id is required")
-	}
-	notifyURL, returnURL := a.cashierCallbackURLs(instance, "alipay_direct")
-	bizContent, _ := json.Marshal(map[string]string{
-		"out_trade_no": strings.TrimSpace(req.OrderNo),
-		"total_amount": strings.TrimSpace(req.AmountCNY),
-		"subject":      defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"product_code": "FAST_INSTANT_TRADE_PAY",
-	})
-	values := url.Values{}
-	values.Set("app_id", appID)
-	values.Set("method", "alipay.trade.page.pay")
-	values.Set("charset", "utf-8")
-	values.Set("sign_type", "RSA2")
-	values.Set("timestamp", time.Now().UTC().Format("2006-01-02 15:04:05"))
-	values.Set("version", "1.0")
-	values.Set("notify_url", notifyURL)
-	values.Set("return_url", returnURL)
-	values.Set("biz_content", string(bizContent))
-	values.Set("out_trade_no", strings.TrimSpace(req.OrderNo))
-	values.Set("total_amount", strings.TrimSpace(req.AmountCNY))
-	sign, signErr := alipayRSA2Sign(values, mapStringValue(instance.Config, "app_private_key", "private_key", "privateKey"))
-	if signErr != nil {
-		return "", false, signErr
-	}
-	values.Set("sign", sign)
-	return appendQuery(gatewayURL, values), true, nil
-}
-
-func (a *API) buildEasyPayPaymentURL(instance cashierProviderInstance, req cashierPaymentDisplayRequest, paymentType string) (string, string, *errs.Error) {
-	baseURL, params, sign, _, buildErr := a.buildEasyPayPaymentParams(instance, req, paymentType)
-	if buildErr != nil {
-		return "", "", buildErr
-	}
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
-	}
-	return strings.TrimRight(baseURL, "/") + "/submit.php?" + values.Encode(), sign, nil
-}
-
-func (a *API) buildJeePayPaymentURL(instance cashierProviderInstance, req cashierPaymentDisplayRequest) (string, string, string, *errs.Error) {
-	baseURL, params, sign, wayCode, buildErr := a.buildJeePayPaymentParams(instance, req)
-	if buildErr != nil {
-		return "", "", "", buildErr
-	}
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
-	}
-	return strings.TrimRight(baseURL, "/") + "/api/pay/unifiedOrder?" + values.Encode(), sign, wayCode, nil
-}
-
-func (a *API) buildJeePayAPIPayment(ctx context.Context, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (string, string, string, string, string, *errs.Error) {
-	baseURL, params, sign, wayCode, buildErr := a.buildJeePayPaymentParams(instance, req)
-	if buildErr != nil {
-		return "", "", "", "", "", buildErr
-	}
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
-	}
-	endpoint := strings.TrimRight(baseURL, "/") + "/api/pay/unifiedOrder"
-	body, postErr := postFormForCashierQuery(ctx, endpoint, values)
-	if postErr != nil {
-		return "", "", "", "", "", postErr
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	code := strings.TrimSpace(firstCashierRawString(raw, "code"))
-	if code != "0" && code != "1" && !strings.EqualFold(code, "success") {
-		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	data := raw
-	if nested, ok := raw["data"].(map[string]any); ok {
-		data = nested
-	}
-	paymentURL := strings.TrimSpace(firstCashierRawString(data, "payUrl", "pay_url", "payurl", "payURL", "cashierUrl", "cashier_url"))
-	qrCode := strings.TrimSpace(firstCashierRawString(data, "codeUrl", "code_url", "qrCode", "qr_code", "qrcode", "payData", "pay_data"))
-	channelTradeNo := strings.TrimSpace(firstCashierRawString(data, "payOrderId", "pay_order_id", "trade_no", "tradeNo", "channelOrderNo"))
-	if paymentURL == "" && qrCode == "" {
-		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	return paymentURL, qrCode, sign, wayCode, channelTradeNo, nil
-}
-
-func (a *API) buildJeePayPaymentParams(instance cashierProviderInstance, req cashierPaymentDisplayRequest) (string, map[string]string, string, string, *errs.Error) {
-	baseURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if baseURL == "" {
-		return "", nil, "", "", errs.BadRequest("jeepay gateway_url is required")
-	}
-	baseURL = trimJeePayEndpointBase(baseURL)
-	mchNo := strings.TrimSpace(mapStringValue(instance.Config, "mch_no", "mchNo", "merchant_id", "merchantId"))
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	key := strings.TrimSpace(mapStringValue(instance.Config, "key", "api_key", "apiKey", "merchant_key", "merchantKey"))
-	if mchNo == "" || appID == "" || key == "" {
-		return "", nil, "", "", errs.BadRequest("jeepay mch_no, app_id, and key are required")
-	}
-	providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
-	wayCode := strings.TrimSpace(mapStringValue(instance.Config, "way_code", "wayCode"))
-	if wayCode == "" {
-		if providerType == "jeepay_wxpay" {
-			wayCode = "WX_NATIVE"
-		} else {
-			wayCode = "ALI_PC"
-		}
-	}
-	notifyURL, returnURL := a.cashierCallbackURLs(instance, providerType)
-	params := map[string]string{
-		"mchNo":      mchNo,
-		"appId":      appID,
-		"wayCode":    wayCode,
-		"mchOrderNo": strings.TrimSpace(req.OrderNo),
-		"amount":     jeepayAmountFenFromCNY(req.AmountCNY),
-		"currency":   "cny",
-		"subject":    defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"body":       defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"notifyUrl":  notifyURL,
-		"returnUrl":  returnURL,
-		"clientIp":   defaultString(strings.TrimSpace(mapStringValue(instance.Config, "client_ip", "clientIp", "payer_client_ip", "payerClientIP")), "127.0.0.1"),
-		"signType":   "MD5",
-	}
-	channelExtra, channelExtraErr := mapJSONOrStringValue(instance.Config, "channel_extra", "channelExtra", "channel_extra_json", "channelExtraJSON")
-	if channelExtraErr != nil {
-		return "", nil, "", "", channelExtraErr
-	}
-	if channelExtra != "" {
-		params["channelExtra"] = channelExtra
-	}
-	sign := jeepaySign(params, key)
-	params["sign"] = sign
-	return baseURL, params, sign, wayCode, nil
-}
-
-func (a *API) buildEasyPayAPIPayment(ctx context.Context, instance cashierProviderInstance, req cashierPaymentDisplayRequest, paymentType string) (string, string, string, *errs.Error) {
-	baseURL, params, sign, key, buildErr := a.buildEasyPayPaymentParams(instance, req, paymentType)
-	if buildErr != nil {
-		return "", "", "", buildErr
-	}
-	params["clientip"] = defaultString(strings.TrimSpace(mapStringValue(instance.Config, "client_ip", "clientip", "payer_client_ip", "payerClientIP")), "127.0.0.1")
-	if device := strings.TrimSpace(mapStringValue(instance.Config, "device")); device != "" {
-		params["device"] = device
-	}
-	sign = easyPaySign(params, key)
-	params["sign"] = sign
-	params["sign_type"] = "MD5"
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
-	}
-	endpoint := strings.TrimRight(baseURL, "/") + "/mapi.php"
-	httpReq, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()))
-	if reqErr != nil {
-		return "", "", "", errs.BadRequest("invalid easypay gateway_url")
-	}
-	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
-	if doErr != nil {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	var parsed struct {
-		Code    int    `json:"code"`
-		Msg     string `json:"msg"`
-		TradeNo string `json:"trade_no"`
-		PayURL  string `json:"payurl"`
-		PayURL2 string `json:"payurl2"`
-		QRCode  string `json:"qrcode"`
-	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil || parsed.Code != 1 {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	paymentURL := strings.TrimSpace(parsed.PayURL)
-	if paymentURL == "" {
-		paymentURL = strings.TrimSpace(parsed.PayURL2)
-	}
-	qrCode := strings.TrimSpace(parsed.QRCode)
-	if paymentURL == "" && qrCode == "" {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	return paymentURL, qrCode, sign, nil
-}
-
-func (a *API) buildEasyPayPaymentParams(instance cashierProviderInstance, req cashierPaymentDisplayRequest, paymentType string) (string, map[string]string, string, string, *errs.Error) {
-	baseURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if baseURL == "" {
-		return "", nil, "", "", errs.BadRequest("easypay gateway_url is required")
-	}
-	baseURL = trimEasyPayEndpointBase(baseURL)
-	pid := strings.TrimSpace(mapStringValue(instance.Config, "pid", "merchant_id", "merchantId"))
-	key := strings.TrimSpace(mapStringValue(instance.Config, "key", "pkey", "merchant_key", "merchantKey"))
-	if pid == "" || key == "" {
-		return "", nil, "", "", errs.BadRequest("easypay pid and key are required")
-	}
-	notifyURL, returnURL := a.cashierCallbackURLs(instance, strings.ToLower(strings.TrimSpace(instance.ProviderType)))
-	params := map[string]string{
-		"pid":          pid,
-		"type":         paymentType,
-		"out_trade_no": strings.TrimSpace(req.OrderNo),
-		"notify_url":   notifyURL,
-		"return_url":   returnURL,
-		"name":         defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"money":        strings.TrimSpace(req.AmountCNY),
-	}
-	if cid := strings.TrimSpace(mapStringValue(instance.Config, "cid")); cid != "" {
-		params["cid"] = cid
-	}
-	sign := easyPaySign(params, key)
-	params["sign"] = sign
-	params["sign_type"] = "MD5"
-	return baseURL, params, sign, key, nil
-}
-
-func (a *API) buildWxPayNativeCodeURL(ctx context.Context, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (string, *errs.Error) {
-	appID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-	mchID := strings.TrimSpace(mapStringValue(instance.Config, "mch_id", "mchId", "merchant_id", "merchantId"))
-	serial := strings.TrimSpace(mapStringValue(instance.Config, "merchant_certificate_serial", "merchantCertificateSerial", "merchant_serial_no", "serial_no"))
-	privateKeyRaw := strings.TrimSpace(mapStringValue(instance.Config, "merchant_private_key", "private_key", "privateKey"))
-	if appID == "" || mchID == "" || serial == "" || privateKeyRaw == "" {
-		return "", errs.BadRequest("wxpay app_id, mch_id, merchant_certificate_serial, and merchant_private_key are required")
-	}
-	totalFen, amountErr := wxPayAmountFenFromCNY(req.AmountCNY)
-	if amountErr != nil {
-		return "", amountErr
-	}
-	notifyURL, _ := a.cashierCallbackURLs(instance, "wxpay_direct")
-	payload := map[string]any{
-		"appid":        appID,
-		"mchid":        mchID,
-		"description":  defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"out_trade_no": strings.TrimSpace(req.OrderNo),
-		"notify_url":   notifyURL,
-		"amount": map[string]any{
-			"total":    totalFen,
-			"currency": "CNY",
-		},
-	}
-	body, marshalErr := json.Marshal(payload)
-	if marshalErr != nil {
-		return "", errs.Internal("failed to build wxpay native request")
-	}
-	gatewayURL := strings.TrimSpace(mapStringValue(instance.Config, "gateway_url", "api_base", "apiBase"))
-	if gatewayURL == "" {
-		gatewayURL = "https://api.mch.weixin.qq.com"
-	}
-	endpoint := strings.TrimRight(gatewayURL, "/") + "/v3/pay/transactions/native"
-	httpReq, buildErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if buildErr != nil {
-		return "", errs.BadRequest("invalid wxpay gateway_url")
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	auth, signErr := wxPayBuildAuthorization(http.MethodPost, httpReq.URL.RequestURI(), string(body), mchID, serial, privateKeyRaw, time.Now().Unix(), uuid.NewString())
-	if signErr != nil {
-		return "", signErr
-	}
-	httpReq.Header.Set("Authorization", auth)
-	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
-	if doErr != nil {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	var parsed struct {
-		CodeURL string `json:"code_url"`
-	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil || strings.TrimSpace(parsed.CodeURL) == "" {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
-	}
-	return strings.TrimSpace(parsed.CodeURL), nil
-}
-
-func (a *API) cashierCallbackURLs(instance cashierProviderInstance, providerType string) (string, string) {
+func (a *API) cashierCallbackURLs(instance cashierProviderInstance, providerType string, clientReturnURL ...string) (string, string) {
 	notifyURL := strings.TrimSpace(mapStringValue(instance.Config, "notify_url", "notifyUrl"))
 	returnURL := strings.TrimSpace(mapStringValue(instance.Config, "return_url", "returnUrl"))
+	for _, value := range clientReturnURL {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			returnURL = trimmed
+			break
+		}
+	}
 	baseURL := strings.TrimRight(strings.TrimSpace(a.cfg.Cashier.SiteBaseURL), "/")
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
@@ -9194,108 +7961,6 @@ func stringListContains(values []string, target string) bool {
 	return false
 }
 
-func defaultCashierVisibleMethods() []cashierVisibleMethod {
-	return []cashierVisibleMethod{
-		{
-			Method:             "mock",
-			Label:              "Mock 支付",
-			Enabled:            true,
-			SourceProviderType: "mock",
-			SchedulerStrategy:  "round_robin",
-			DisplayOrder:       10,
-			Description:        "测试环境模拟支付链路",
-		},
-	}
-}
-
-func parseCashierVisibleMethodsConfig(raw any) ([]cashierVisibleMethod, *errs.Error) {
-	if raw == nil {
-		return defaultCashierVisibleMethods(), nil
-	}
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return nil, errs.BadRequest("visible_methods must be an array")
-	}
-	var items []cashierVisibleMethod
-	if err := json.Unmarshal(encoded, &items); err != nil {
-		return nil, errs.BadRequest("visible_methods must be an array")
-	}
-	return normalizeCashierVisibleMethods(items)
-}
-
-func normalizeCashierVisibleMethods(items []cashierVisibleMethod) ([]cashierVisibleMethod, *errs.Error) {
-	normalized := make([]cashierVisibleMethod, 0, len(items))
-	seen := map[string]struct{}{}
-	for index, item := range items {
-		item.Method = strings.ToLower(strings.TrimSpace(item.Method))
-		if item.Method == "" {
-			return nil, errs.BadRequest("visible method is required")
-		}
-		if _, ok := seen[item.Method]; ok {
-			return nil, errs.BadRequest("visible method is duplicated")
-		}
-		seen[item.Method] = struct{}{}
-		item.Label = strings.TrimSpace(item.Label)
-		if item.Label == "" {
-			item.Label = item.Method
-		}
-		item.SourceProviderType = strings.ToLower(strings.TrimSpace(item.SourceProviderType))
-		if item.SourceProviderType == "" {
-			item.SourceProviderType = item.Method
-		}
-		item.SchedulerStrategy = strings.ToLower(strings.TrimSpace(item.SchedulerStrategy))
-		if item.SchedulerStrategy == "" {
-			item.SchedulerStrategy = "round_robin"
-		}
-		if item.SchedulerStrategy != "round_robin" && item.SchedulerStrategy != "random" {
-			return nil, errs.BadRequest("scheduler_strategy must be round_robin or random")
-		}
-		if item.DisplayOrder <= 0 {
-			item.DisplayOrder = (index + 1) * 10
-		}
-		if !cashierVisibleMethodProviderAllowed(item.Method, item.SourceProviderType) {
-			return nil, errs.BadRequest("source_provider_type is not allowed for method " + item.Method)
-		}
-		normalized = append(normalized, item)
-	}
-	sort.SliceStable(normalized, func(i, j int) bool {
-		if normalized[i].DisplayOrder != normalized[j].DisplayOrder {
-			return normalized[i].DisplayOrder < normalized[j].DisplayOrder
-		}
-		return normalized[i].Method < normalized[j].Method
-	})
-	return normalized, nil
-}
-
-func cashierVisibleMethodProviderAllowed(method, provider string) bool {
-	switch method {
-	case "mock":
-		return provider == "mock"
-	case "alipay":
-		return provider == "alipay_direct" || provider == "easypay_alipay" || provider == "mock" || provider == "jeepay_alipay"
-	case "wxpay":
-		return provider == "wxpay_direct" || provider == "easypay_wxpay" || provider == "mock" || provider == "jeepay_wxpay"
-	default:
-		return false
-	}
-}
-
-func cashierVisibleMethodsConfigValue(items []cashierVisibleMethod) []map[string]any {
-	values := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		values = append(values, map[string]any{
-			"method":               item.Method,
-			"label":                item.Label,
-			"enabled":              item.Enabled,
-			"source_provider_type": item.SourceProviderType,
-			"scheduler_strategy":   item.SchedulerStrategy,
-			"display_order":        item.DisplayOrder,
-			"description":          item.Description,
-		})
-	}
-	return values
-}
-
 func decodeCashierProviderInstanceRequest(w http.ResponseWriter, r *http.Request) (cashierProviderInstance, bool) {
 	var req cashierProviderInstance
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -9303,14 +7968,6 @@ func decodeCashierProviderInstanceRequest(w http.ResponseWriter, r *http.Request
 		return cashierProviderInstance{}, false
 	}
 	return req, true
-}
-
-func normalizeCashierProviderInstance(req cashierProviderInstance, instanceID int64) (cashierProviderInstance, *errs.Error) {
-	normalized, err := cashierservice.NormalizeProviderInstance(req, instanceID, time.Now().UTC())
-	if err != nil {
-		return cashierProviderInstance{}, errs.BadRequest(err.Error())
-	}
-	return normalized, nil
 }
 
 func normalizeStringList(values []string) []string {
@@ -9347,136 +8004,11 @@ func normalizeMap(value map[string]any) map[string]any {
 }
 
 func (a *API) cashierProviderInstances(ctx context.Context) []cashierProviderInstance {
-	instances := []cashierProviderInstance{}
-	if tab, err := a.admin.GetTab(ctx, "payments"); err == nil {
-		for _, item := range tab.Items {
-			if item.ConfigKey != "provider_instances" {
-				continue
-			}
-			if parsed, parseErr := parseCashierProviderInstancesConfig(item.ConfigValue["value"]); parseErr == nil {
-				instances = parsed
-			}
-			break
-		}
+	instances, err := a.cashierConfigFacade().ProviderInstances(ctx)
+	if err != nil {
+		return []cashierProviderInstance{}
 	}
-	if len(instances) == 0 && !isProductionAppEnv(a.cfg.App.Env) {
-		instances = append(instances, defaultMockCashierProviderInstance())
-	}
-	sort.SliceStable(instances, func(i, j int) bool {
-		if instances[i].SortOrder != instances[j].SortOrder {
-			return instances[i].SortOrder < instances[j].SortOrder
-		}
-		return instances[i].ID < instances[j].ID
-	})
 	return instances
-}
-
-func parseCashierProviderInstancesConfig(raw any) ([]cashierProviderInstance, *errs.Error) {
-	if raw == nil {
-		return []cashierProviderInstance{}, nil
-	}
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return nil, errs.BadRequest("provider_instances must be an array")
-	}
-	var instances []cashierProviderInstance
-	if err := json.Unmarshal(encoded, &instances); err != nil {
-		return nil, errs.BadRequest("provider_instances must be an array")
-	}
-	normalized := make([]cashierProviderInstance, 0, len(instances))
-	seen := map[int64]struct{}{}
-	now := time.Now().UTC()
-	for _, item := range instances {
-		item.ID = int64FromAny(item.ID)
-		if item.ID <= 0 {
-			continue
-		}
-		if _, ok := seen[item.ID]; ok {
-			continue
-		}
-		seen[item.ID] = struct{}{}
-		parsed, normalizeErr := normalizeCashierProviderInstance(item, item.ID)
-		if normalizeErr != nil {
-			return nil, normalizeErr
-		}
-		parsed.CreatedAt = item.CreatedAt
-		if parsed.CreatedAt.IsZero() {
-			parsed.CreatedAt = now
-		}
-		parsed.UpdatedAt = item.UpdatedAt
-		if parsed.UpdatedAt.IsZero() {
-			parsed.UpdatedAt = parsed.CreatedAt
-		}
-		normalized = append(normalized, parsed)
-	}
-	return normalized, nil
-}
-
-func (a *API) saveCashierProviderInstances(ctx context.Context, instances []cashierProviderInstance, adminID int64) error {
-	current, err := a.admin.GetTab(ctx, "payments")
-	if err != nil {
-		return err
-	}
-	values := make([]map[string]any, 0, len(instances))
-	for _, item := range instances {
-		values = append(values, cashierProviderInstanceConfigValue(item))
-	}
-	_, err = a.admin.UpdateTab(ctx, domainadminconfig.UpdateTabRequest{
-		TabKey:    "payments",
-		Version:   current.Version,
-		Items:     []domainadminconfig.Item{configValueItem("payments", "provider_instances", values)},
-		UpdatedBy: adminID,
-	})
-	return err
-}
-
-func nextCashierProviderInstanceID(instances []cashierProviderInstance) int64 {
-	var maxID int64
-	for _, item := range instances {
-		if item.ID > maxID {
-			maxID = item.ID
-		}
-	}
-	return maxID + 1
-}
-
-func defaultMockCashierProviderInstance() cashierProviderInstance {
-	now := time.Now().UTC()
-	return cashierProviderInstance{
-		ID:               1,
-		ProviderType:     "mock",
-		Name:             "Mock Payment",
-		Enabled:          true,
-		SupportedMethods: []string{"mock"},
-		SortOrder:        10,
-		SchedulerWeight:  1,
-		Limits: map[string]any{
-			"min_amount_cny": "1.00000",
-			"max_amount_cny": "999.00000",
-		},
-		ConfigStatus: "configured",
-		Config:       map[string]any{"mock": true},
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-}
-
-func cashierProviderInstanceConfigValue(item cashierProviderInstance) map[string]any {
-	return map[string]any{
-		"id":                item.ID,
-		"provider_type":     item.ProviderType,
-		"name":              item.Name,
-		"enabled":           item.Enabled,
-		"supported_methods": item.SupportedMethods,
-		"sort_order":        item.SortOrder,
-		"scheduler_weight":  item.SchedulerWeight,
-		"limits":            normalizeMap(item.Limits),
-		"config":            normalizeMap(item.Config),
-		"config_status":     item.ConfigStatus,
-		"last_error":        item.LastError,
-		"created_at":        item.CreatedAt,
-		"updated_at":        item.UpdatedAt,
-	}
 }
 
 func cashierProviderInstancePayloads(instances []cashierProviderInstance) []map[string]any {

@@ -5,7 +5,7 @@ import { userApi } from '../../../shared/user-api'
 import { EmptyState, LoadingState, Modal, PublicDetailIcon, PublicImageDetail, copyText, publicDetailButton, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
-import { publicGalleryCardView, publicGallerySearchText } from './publicGalleryModel'
+import { publicGalleryCardView, shouldFetchPublicGalleryDetailByID } from './publicGalleryModel'
 
 const shell = {
   content: { padding: 40 } as const,
@@ -23,7 +23,7 @@ function downloadFilename(image: Pick<ImageResult, 'id' | 'url' | 'download_url'
   return `${image.id || 'image'}${ext}`
 }
 
-export function PublicGalleryPage() {
+export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   const app = useApp()
   const [rows, setRows] = useState<ImageResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -36,7 +36,12 @@ export function PublicGalleryPage() {
     let mounted = true
     setLoading(true)
     async function load() {
-      const page = await openApi.listPublicGallery(1, 40, { accessToken: app.session?.token, liked: filter === 'liked', favorited: filter === 'favorited' })
+      const page = await openApi.listPublicGallery(1, 40, {
+        accessToken: app.session?.token,
+        query: query.trim() || undefined,
+        liked: filter === 'liked',
+        favorited: filter === 'favorited',
+      })
       if (!mounted) return
       setRows(page.items)
     }
@@ -46,31 +51,25 @@ export function PublicGalleryPage() {
       })
       .finally(() => {
         if (mounted) setLoading(false)
-      })
-    return () => { mounted = false }
-  }, [app, app.session?.token, filter])
-
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase()
-    if (!keyword) return rows
-    return rows.filter((image) => {
-      return publicGallerySearchText(image).includes(keyword)
     })
-  }, [query, rows])
+    return () => { mounted = false }
+  }, [app, app.session?.token, filter, query])
+
+  const filtered = useMemo(() => rows, [rows])
 
   function assetUrl(url: string) {
     return userApi.imageAssetUrl(url, null)
   }
 
-  function requireLogin(action = '请先登录后再查看完整作品') {
+  function requireLogin(action = '请先登录后再查看完整作品', targetImageId?: string) {
     if (app.session?.token) return true
     app.notify('info', action)
-    app.navigate('login', { returnTo: 'public-gallery' })
+    app.navigate('login', { returnTo: 'public-gallery', imageId: targetImageId ?? imageId })
     return false
   }
 
   async function openDetail(image: ImageResult) {
-    if (!requireLogin()) return
+    if (!requireLogin('请先登录后再查看完整作品', image.id)) return
     setBusyId(`detail:${image.id}`)
     try {
       const detail = await openApi.getPublicGalleryImage(image.id, { accessToken: app.session?.token })
@@ -85,7 +84,7 @@ export function PublicGalleryPage() {
 
   async function toggleReaction(image: ImageResult, kind: 'like' | 'favorite') {
     if (!app.session?.token) {
-      requireLogin(kind === 'like' ? '请先登录后再点赞' : '请先登录后再收藏')
+      requireLogin(kind === 'like' ? '请先登录后再点赞' : '请先登录后再收藏', image.id)
       return
     }
     setBusyId(`${kind}:${image.id}`)
@@ -105,7 +104,7 @@ export function PublicGalleryPage() {
 
   async function copyPrompt(prompt: string) {
     if (!prompt || prompt === '-') {
-      requireLogin('请先登录后再查看完整提示词')
+      requireLogin('请先登录后再查看完整提示词', selected?.id)
       return
     }
     await copyText(prompt)
@@ -113,7 +112,7 @@ export function PublicGalleryPage() {
   }
 
   function generateSame(image: ImageResult) {
-    if (!requireLogin('请先登录后再同款生成')) return
+    if (!requireLogin('请先登录后再同款生成', image.id)) return
     if (!image.prompt) {
       app.notify('info', '请先打开详情获取完整提示词')
       return
@@ -126,6 +125,29 @@ export function PublicGalleryPage() {
     })))
     app.navigate('genpic')
   }
+
+  useEffect(() => {
+    if (!imageId || !rows.length || selected?.id === imageId || busyId === `detail:${imageId}`) return
+    const target = rows.find((image) => image.id === imageId)
+    if (target) void openDetail(target)
+  }, [imageId, rows, selected?.id, busyId])
+
+  useEffect(() => {
+    if (!shouldFetchPublicGalleryDetailByID({ imageId, rows, selectedId: selected?.id, busyId })) return
+    if (!requireLogin('请先登录后再查看完整作品', imageId)) return
+    const targetImageId = imageId?.trim()
+    if (!targetImageId) return
+    setBusyId(`detail:${targetImageId}`)
+    void openApi.getPublicGalleryImage(targetImageId, { accessToken: app.session?.token })
+      .then((detail) => {
+        setSelected(detail)
+        setRows((items) => items.some((item) => item.id === detail.id) ? items.map((item) => item.id === detail.id ? { ...item, ...detail } : item) : [detail, ...items])
+      })
+      .catch((err) => {
+        app.notify('error', errorMessage(err))
+      })
+      .finally(() => setBusyId(null))
+  }, [app, app.session?.token, imageId, rows, selected?.id, busyId])
 
   function downloadImage(image: ImageResult) {
     const url = image.download_url ?? image.url

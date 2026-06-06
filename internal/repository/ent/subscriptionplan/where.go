@@ -74,6 +74,16 @@ func PlanName(v string) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldEQ(FieldPlanName, v))
 }
 
+// PlanType applies equality check predicate on the "plan_type" field. It's identical to PlanTypeEQ.
+func PlanType(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldPlanType, v))
+}
+
+// PurchaseEnabled applies equality check predicate on the "purchase_enabled" field. It's identical to PurchaseEnabledEQ.
+func PurchaseEnabled(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldPurchaseEnabled, v))
+}
+
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v string) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldEQ(FieldStatus, v))
@@ -322,6 +332,81 @@ func PlanNameEqualFold(v string) predicate.SubscriptionPlan {
 // PlanNameContainsFold applies the ContainsFold predicate on the "plan_name" field.
 func PlanNameContainsFold(v string) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldContainsFold(FieldPlanName, v))
+}
+
+// PlanTypeEQ applies the EQ predicate on the "plan_type" field.
+func PlanTypeEQ(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldPlanType, v))
+}
+
+// PlanTypeNEQ applies the NEQ predicate on the "plan_type" field.
+func PlanTypeNEQ(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNEQ(FieldPlanType, v))
+}
+
+// PlanTypeIn applies the In predicate on the "plan_type" field.
+func PlanTypeIn(vs ...string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldIn(FieldPlanType, vs...))
+}
+
+// PlanTypeNotIn applies the NotIn predicate on the "plan_type" field.
+func PlanTypeNotIn(vs ...string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNotIn(FieldPlanType, vs...))
+}
+
+// PlanTypeGT applies the GT predicate on the "plan_type" field.
+func PlanTypeGT(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldGT(FieldPlanType, v))
+}
+
+// PlanTypeGTE applies the GTE predicate on the "plan_type" field.
+func PlanTypeGTE(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldGTE(FieldPlanType, v))
+}
+
+// PlanTypeLT applies the LT predicate on the "plan_type" field.
+func PlanTypeLT(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldLT(FieldPlanType, v))
+}
+
+// PlanTypeLTE applies the LTE predicate on the "plan_type" field.
+func PlanTypeLTE(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldLTE(FieldPlanType, v))
+}
+
+// PlanTypeContains applies the Contains predicate on the "plan_type" field.
+func PlanTypeContains(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldContains(FieldPlanType, v))
+}
+
+// PlanTypeHasPrefix applies the HasPrefix predicate on the "plan_type" field.
+func PlanTypeHasPrefix(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldHasPrefix(FieldPlanType, v))
+}
+
+// PlanTypeHasSuffix applies the HasSuffix predicate on the "plan_type" field.
+func PlanTypeHasSuffix(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldHasSuffix(FieldPlanType, v))
+}
+
+// PlanTypeEqualFold applies the EqualFold predicate on the "plan_type" field.
+func PlanTypeEqualFold(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEqualFold(FieldPlanType, v))
+}
+
+// PlanTypeContainsFold applies the ContainsFold predicate on the "plan_type" field.
+func PlanTypeContainsFold(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldContainsFold(FieldPlanType, v))
+}
+
+// PurchaseEnabledEQ applies the EQ predicate on the "purchase_enabled" field.
+func PurchaseEnabledEQ(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldPurchaseEnabled, v))
+}
+
+// PurchaseEnabledNEQ applies the NEQ predicate on the "purchase_enabled" field.
+func PurchaseEnabledNEQ(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNEQ(FieldPurchaseEnabled, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

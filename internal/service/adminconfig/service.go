@@ -112,7 +112,7 @@ func (s *Service) UpdateTab(ctx context.Context, req domainadminconfig.UpdateTab
 		if strings.TrimSpace(item.ConfigKey) == "" {
 			return domainadminconfig.Tab{}, errs.BadRequest("config_key is required")
 		}
-		if item.ConfigCategory != "" && !strings.EqualFold(item.ConfigCategory, req.TabKey) {
+		if item.ConfigCategory != "" && !strings.EqualFold(item.ConfigCategory, req.TabKey) && !definitionContainsCategory(current.Items, item.ConfigKey, defaultString(item.Scope, "global"), item.ConfigCategory) {
 			return domainadminconfig.Tab{}, errs.BadRequest("config_category does not match tab_key")
 		}
 		if !definitionContainsItem(current.Items, item.ConfigKey, defaultString(item.Scope, "global")) {
@@ -139,6 +139,15 @@ func (s *Service) findDefinition(tabKey string) (tabDefinition, bool) {
 func definitionContainsItem(items []domainadminconfig.Item, configKey, scope string) bool {
 	for _, item := range items {
 		if item.ConfigKey == configKey && defaultString(item.Scope, "global") == scope {
+			return true
+		}
+	}
+	return false
+}
+
+func definitionContainsCategory(items []domainadminconfig.Item, configKey, scope, category string) bool {
+	for _, item := range items {
+		if item.ConfigKey == configKey && defaultString(item.Scope, "global") == scope && strings.EqualFold(item.ConfigCategory, category) {
 			return true
 		}
 	}
@@ -180,6 +189,19 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 				valueItem("billing_pricing", "reference_image_extra", map[string]any{
 					"first":      cfg.Billing.ReferenceImageExtra.First,
 					"additional": cfg.Billing.ReferenceImageExtra.Additional,
+				}),
+			},
+		},
+		{
+			Key:  "trial_credits",
+			Name: "Trial Credits",
+			Items: []domainadminconfig.Item{
+				valueItem("billing_trial", "signup_trial", map[string]any{
+					"enabled":              cfg.Billing.SignupTrial.Enabled,
+					"points":               cfg.Billing.SignupTrial.Points,
+					"valid_days":           cfg.Billing.SignupTrial.ValidDays,
+					"expiry_reminder_days": cfg.Billing.SignupTrial.ExpiryReminderDays,
+					"grant_once_per_user":  cfg.Billing.SignupTrial.GrantOncePerUser,
 				}),
 			},
 		},

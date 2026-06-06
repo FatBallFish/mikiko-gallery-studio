@@ -23,6 +23,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
@@ -68,6 +69,7 @@ const (
 	TypeModelProvider               = "ModelProvider"
 	TypeModelRoute                  = "ModelRoute"
 	TypePaymentOrder                = "PaymentOrder"
+	TypePaymentProviderInstance     = "PaymentProviderInstance"
 	TypePaymentWebhookEvent         = "PaymentWebhookEvent"
 	TypePointLedger                 = "PointLedger"
 	TypeProviderErrorPolicy         = "ProviderErrorPolicy"
@@ -16170,6 +16172,1326 @@ func (m *PaymentOrderMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown PaymentOrder edge %s", name)
 }
 
+// PaymentProviderInstanceMutation represents an operation that mutates the PaymentProviderInstance nodes in the graph.
+type PaymentProviderInstanceMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int
+	created_at              *time.Time
+	updated_at              *time.Time
+	provider_type           *string
+	name                    *string
+	config_encrypted        *map[string]interface{}
+	credentials_fingerprint *string
+	supported_methods       *[]string
+	appendsupported_methods []string
+	enabled                 *bool
+	sort_order              *int
+	addsort_order           *int
+	scheduler_weight        *int
+	addscheduler_weight     *int
+	limits                  *map[string]interface{}
+	refund_enabled          *bool
+	health_status           *string
+	last_error              *string
+	last_used_at            *time.Time
+	metadata                *map[string]interface{}
+	clearedFields           map[string]struct{}
+	done                    bool
+	oldValue                func(context.Context) (*PaymentProviderInstance, error)
+	predicates              []predicate.PaymentProviderInstance
+}
+
+var _ ent.Mutation = (*PaymentProviderInstanceMutation)(nil)
+
+// paymentproviderinstanceOption allows management of the mutation configuration using functional options.
+type paymentproviderinstanceOption func(*PaymentProviderInstanceMutation)
+
+// newPaymentProviderInstanceMutation creates new mutation for the PaymentProviderInstance entity.
+func newPaymentProviderInstanceMutation(c config, op Op, opts ...paymentproviderinstanceOption) *PaymentProviderInstanceMutation {
+	m := &PaymentProviderInstanceMutation{
+		config:        c,
+		op:            op,
+		typ:           TypePaymentProviderInstance,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withPaymentProviderInstanceID sets the ID field of the mutation.
+func withPaymentProviderInstanceID(id int) paymentproviderinstanceOption {
+	return func(m *PaymentProviderInstanceMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *PaymentProviderInstance
+		)
+		m.oldValue = func(ctx context.Context) (*PaymentProviderInstance, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().PaymentProviderInstance.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withPaymentProviderInstance sets the old PaymentProviderInstance of the mutation.
+func withPaymentProviderInstance(node *PaymentProviderInstance) paymentproviderinstanceOption {
+	return func(m *PaymentProviderInstanceMutation) {
+		m.oldValue = func(context.Context) (*PaymentProviderInstance, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m PaymentProviderInstanceMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m PaymentProviderInstanceMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *PaymentProviderInstanceMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *PaymentProviderInstanceMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().PaymentProviderInstance.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *PaymentProviderInstanceMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *PaymentProviderInstanceMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *PaymentProviderInstanceMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *PaymentProviderInstanceMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *PaymentProviderInstanceMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *PaymentProviderInstanceMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetProviderType sets the "provider_type" field.
+func (m *PaymentProviderInstanceMutation) SetProviderType(s string) {
+	m.provider_type = &s
+}
+
+// ProviderType returns the value of the "provider_type" field in the mutation.
+func (m *PaymentProviderInstanceMutation) ProviderType() (r string, exists bool) {
+	v := m.provider_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderType returns the old "provider_type" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldProviderType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderType: %w", err)
+	}
+	return oldValue.ProviderType, nil
+}
+
+// ResetProviderType resets all changes to the "provider_type" field.
+func (m *PaymentProviderInstanceMutation) ResetProviderType() {
+	m.provider_type = nil
+}
+
+// SetName sets the "name" field.
+func (m *PaymentProviderInstanceMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *PaymentProviderInstanceMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *PaymentProviderInstanceMutation) ResetName() {
+	m.name = nil
+}
+
+// SetConfigEncrypted sets the "config_encrypted" field.
+func (m *PaymentProviderInstanceMutation) SetConfigEncrypted(value map[string]interface{}) {
+	m.config_encrypted = &value
+}
+
+// ConfigEncrypted returns the value of the "config_encrypted" field in the mutation.
+func (m *PaymentProviderInstanceMutation) ConfigEncrypted() (r map[string]interface{}, exists bool) {
+	v := m.config_encrypted
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfigEncrypted returns the old "config_encrypted" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldConfigEncrypted(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfigEncrypted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfigEncrypted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfigEncrypted: %w", err)
+	}
+	return oldValue.ConfigEncrypted, nil
+}
+
+// ClearConfigEncrypted clears the value of the "config_encrypted" field.
+func (m *PaymentProviderInstanceMutation) ClearConfigEncrypted() {
+	m.config_encrypted = nil
+	m.clearedFields[paymentproviderinstance.FieldConfigEncrypted] = struct{}{}
+}
+
+// ConfigEncryptedCleared returns if the "config_encrypted" field was cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) ConfigEncryptedCleared() bool {
+	_, ok := m.clearedFields[paymentproviderinstance.FieldConfigEncrypted]
+	return ok
+}
+
+// ResetConfigEncrypted resets all changes to the "config_encrypted" field.
+func (m *PaymentProviderInstanceMutation) ResetConfigEncrypted() {
+	m.config_encrypted = nil
+	delete(m.clearedFields, paymentproviderinstance.FieldConfigEncrypted)
+}
+
+// SetCredentialsFingerprint sets the "credentials_fingerprint" field.
+func (m *PaymentProviderInstanceMutation) SetCredentialsFingerprint(s string) {
+	m.credentials_fingerprint = &s
+}
+
+// CredentialsFingerprint returns the value of the "credentials_fingerprint" field in the mutation.
+func (m *PaymentProviderInstanceMutation) CredentialsFingerprint() (r string, exists bool) {
+	v := m.credentials_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCredentialsFingerprint returns the old "credentials_fingerprint" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldCredentialsFingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCredentialsFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCredentialsFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCredentialsFingerprint: %w", err)
+	}
+	return oldValue.CredentialsFingerprint, nil
+}
+
+// ResetCredentialsFingerprint resets all changes to the "credentials_fingerprint" field.
+func (m *PaymentProviderInstanceMutation) ResetCredentialsFingerprint() {
+	m.credentials_fingerprint = nil
+}
+
+// SetSupportedMethods sets the "supported_methods" field.
+func (m *PaymentProviderInstanceMutation) SetSupportedMethods(s []string) {
+	m.supported_methods = &s
+	m.appendsupported_methods = nil
+}
+
+// SupportedMethods returns the value of the "supported_methods" field in the mutation.
+func (m *PaymentProviderInstanceMutation) SupportedMethods() (r []string, exists bool) {
+	v := m.supported_methods
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportedMethods returns the old "supported_methods" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldSupportedMethods(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportedMethods is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportedMethods requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportedMethods: %w", err)
+	}
+	return oldValue.SupportedMethods, nil
+}
+
+// AppendSupportedMethods adds s to the "supported_methods" field.
+func (m *PaymentProviderInstanceMutation) AppendSupportedMethods(s []string) {
+	m.appendsupported_methods = append(m.appendsupported_methods, s...)
+}
+
+// AppendedSupportedMethods returns the list of values that were appended to the "supported_methods" field in this mutation.
+func (m *PaymentProviderInstanceMutation) AppendedSupportedMethods() ([]string, bool) {
+	if len(m.appendsupported_methods) == 0 {
+		return nil, false
+	}
+	return m.appendsupported_methods, true
+}
+
+// ClearSupportedMethods clears the value of the "supported_methods" field.
+func (m *PaymentProviderInstanceMutation) ClearSupportedMethods() {
+	m.supported_methods = nil
+	m.appendsupported_methods = nil
+	m.clearedFields[paymentproviderinstance.FieldSupportedMethods] = struct{}{}
+}
+
+// SupportedMethodsCleared returns if the "supported_methods" field was cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) SupportedMethodsCleared() bool {
+	_, ok := m.clearedFields[paymentproviderinstance.FieldSupportedMethods]
+	return ok
+}
+
+// ResetSupportedMethods resets all changes to the "supported_methods" field.
+func (m *PaymentProviderInstanceMutation) ResetSupportedMethods() {
+	m.supported_methods = nil
+	m.appendsupported_methods = nil
+	delete(m.clearedFields, paymentproviderinstance.FieldSupportedMethods)
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *PaymentProviderInstanceMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *PaymentProviderInstanceMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *PaymentProviderInstanceMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *PaymentProviderInstanceMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *PaymentProviderInstanceMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *PaymentProviderInstanceMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *PaymentProviderInstanceMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *PaymentProviderInstanceMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// SetSchedulerWeight sets the "scheduler_weight" field.
+func (m *PaymentProviderInstanceMutation) SetSchedulerWeight(i int) {
+	m.scheduler_weight = &i
+	m.addscheduler_weight = nil
+}
+
+// SchedulerWeight returns the value of the "scheduler_weight" field in the mutation.
+func (m *PaymentProviderInstanceMutation) SchedulerWeight() (r int, exists bool) {
+	v := m.scheduler_weight
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSchedulerWeight returns the old "scheduler_weight" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldSchedulerWeight(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSchedulerWeight is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSchedulerWeight requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSchedulerWeight: %w", err)
+	}
+	return oldValue.SchedulerWeight, nil
+}
+
+// AddSchedulerWeight adds i to the "scheduler_weight" field.
+func (m *PaymentProviderInstanceMutation) AddSchedulerWeight(i int) {
+	if m.addscheduler_weight != nil {
+		*m.addscheduler_weight += i
+	} else {
+		m.addscheduler_weight = &i
+	}
+}
+
+// AddedSchedulerWeight returns the value that was added to the "scheduler_weight" field in this mutation.
+func (m *PaymentProviderInstanceMutation) AddedSchedulerWeight() (r int, exists bool) {
+	v := m.addscheduler_weight
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSchedulerWeight resets all changes to the "scheduler_weight" field.
+func (m *PaymentProviderInstanceMutation) ResetSchedulerWeight() {
+	m.scheduler_weight = nil
+	m.addscheduler_weight = nil
+}
+
+// SetLimits sets the "limits" field.
+func (m *PaymentProviderInstanceMutation) SetLimits(value map[string]interface{}) {
+	m.limits = &value
+}
+
+// Limits returns the value of the "limits" field in the mutation.
+func (m *PaymentProviderInstanceMutation) Limits() (r map[string]interface{}, exists bool) {
+	v := m.limits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLimits returns the old "limits" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldLimits(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLimits is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLimits requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLimits: %w", err)
+	}
+	return oldValue.Limits, nil
+}
+
+// ClearLimits clears the value of the "limits" field.
+func (m *PaymentProviderInstanceMutation) ClearLimits() {
+	m.limits = nil
+	m.clearedFields[paymentproviderinstance.FieldLimits] = struct{}{}
+}
+
+// LimitsCleared returns if the "limits" field was cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) LimitsCleared() bool {
+	_, ok := m.clearedFields[paymentproviderinstance.FieldLimits]
+	return ok
+}
+
+// ResetLimits resets all changes to the "limits" field.
+func (m *PaymentProviderInstanceMutation) ResetLimits() {
+	m.limits = nil
+	delete(m.clearedFields, paymentproviderinstance.FieldLimits)
+}
+
+// SetRefundEnabled sets the "refund_enabled" field.
+func (m *PaymentProviderInstanceMutation) SetRefundEnabled(b bool) {
+	m.refund_enabled = &b
+}
+
+// RefundEnabled returns the value of the "refund_enabled" field in the mutation.
+func (m *PaymentProviderInstanceMutation) RefundEnabled() (r bool, exists bool) {
+	v := m.refund_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundEnabled returns the old "refund_enabled" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldRefundEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundEnabled: %w", err)
+	}
+	return oldValue.RefundEnabled, nil
+}
+
+// ResetRefundEnabled resets all changes to the "refund_enabled" field.
+func (m *PaymentProviderInstanceMutation) ResetRefundEnabled() {
+	m.refund_enabled = nil
+}
+
+// SetHealthStatus sets the "health_status" field.
+func (m *PaymentProviderInstanceMutation) SetHealthStatus(s string) {
+	m.health_status = &s
+}
+
+// HealthStatus returns the value of the "health_status" field in the mutation.
+func (m *PaymentProviderInstanceMutation) HealthStatus() (r string, exists bool) {
+	v := m.health_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHealthStatus returns the old "health_status" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldHealthStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHealthStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHealthStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHealthStatus: %w", err)
+	}
+	return oldValue.HealthStatus, nil
+}
+
+// ResetHealthStatus resets all changes to the "health_status" field.
+func (m *PaymentProviderInstanceMutation) ResetHealthStatus() {
+	m.health_status = nil
+}
+
+// SetLastError sets the "last_error" field.
+func (m *PaymentProviderInstanceMutation) SetLastError(s string) {
+	m.last_error = &s
+}
+
+// LastError returns the value of the "last_error" field in the mutation.
+func (m *PaymentProviderInstanceMutation) LastError() (r string, exists bool) {
+	v := m.last_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastError returns the old "last_error" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldLastError(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastError: %w", err)
+	}
+	return oldValue.LastError, nil
+}
+
+// ResetLastError resets all changes to the "last_error" field.
+func (m *PaymentProviderInstanceMutation) ResetLastError() {
+	m.last_error = nil
+}
+
+// SetLastUsedAt sets the "last_used_at" field.
+func (m *PaymentProviderInstanceMutation) SetLastUsedAt(t time.Time) {
+	m.last_used_at = &t
+}
+
+// LastUsedAt returns the value of the "last_used_at" field in the mutation.
+func (m *PaymentProviderInstanceMutation) LastUsedAt() (r time.Time, exists bool) {
+	v := m.last_used_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastUsedAt returns the old "last_used_at" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldLastUsedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastUsedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastUsedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastUsedAt: %w", err)
+	}
+	return oldValue.LastUsedAt, nil
+}
+
+// ClearLastUsedAt clears the value of the "last_used_at" field.
+func (m *PaymentProviderInstanceMutation) ClearLastUsedAt() {
+	m.last_used_at = nil
+	m.clearedFields[paymentproviderinstance.FieldLastUsedAt] = struct{}{}
+}
+
+// LastUsedAtCleared returns if the "last_used_at" field was cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) LastUsedAtCleared() bool {
+	_, ok := m.clearedFields[paymentproviderinstance.FieldLastUsedAt]
+	return ok
+}
+
+// ResetLastUsedAt resets all changes to the "last_used_at" field.
+func (m *PaymentProviderInstanceMutation) ResetLastUsedAt() {
+	m.last_used_at = nil
+	delete(m.clearedFields, paymentproviderinstance.FieldLastUsedAt)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *PaymentProviderInstanceMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *PaymentProviderInstanceMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the PaymentProviderInstance entity.
+// If the PaymentProviderInstance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentProviderInstanceMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (m *PaymentProviderInstanceMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[paymentproviderinstance.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[paymentproviderinstance.FieldMetadata]
+	return ok
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *PaymentProviderInstanceMutation) ResetMetadata() {
+	m.metadata = nil
+	delete(m.clearedFields, paymentproviderinstance.FieldMetadata)
+}
+
+// Where appends a list predicates to the PaymentProviderInstanceMutation builder.
+func (m *PaymentProviderInstanceMutation) Where(ps ...predicate.PaymentProviderInstance) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the PaymentProviderInstanceMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *PaymentProviderInstanceMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.PaymentProviderInstance, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *PaymentProviderInstanceMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *PaymentProviderInstanceMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (PaymentProviderInstance).
+func (m *PaymentProviderInstanceMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *PaymentProviderInstanceMutation) Fields() []string {
+	fields := make([]string, 0, 16)
+	if m.created_at != nil {
+		fields = append(fields, paymentproviderinstance.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, paymentproviderinstance.FieldUpdatedAt)
+	}
+	if m.provider_type != nil {
+		fields = append(fields, paymentproviderinstance.FieldProviderType)
+	}
+	if m.name != nil {
+		fields = append(fields, paymentproviderinstance.FieldName)
+	}
+	if m.config_encrypted != nil {
+		fields = append(fields, paymentproviderinstance.FieldConfigEncrypted)
+	}
+	if m.credentials_fingerprint != nil {
+		fields = append(fields, paymentproviderinstance.FieldCredentialsFingerprint)
+	}
+	if m.supported_methods != nil {
+		fields = append(fields, paymentproviderinstance.FieldSupportedMethods)
+	}
+	if m.enabled != nil {
+		fields = append(fields, paymentproviderinstance.FieldEnabled)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, paymentproviderinstance.FieldSortOrder)
+	}
+	if m.scheduler_weight != nil {
+		fields = append(fields, paymentproviderinstance.FieldSchedulerWeight)
+	}
+	if m.limits != nil {
+		fields = append(fields, paymentproviderinstance.FieldLimits)
+	}
+	if m.refund_enabled != nil {
+		fields = append(fields, paymentproviderinstance.FieldRefundEnabled)
+	}
+	if m.health_status != nil {
+		fields = append(fields, paymentproviderinstance.FieldHealthStatus)
+	}
+	if m.last_error != nil {
+		fields = append(fields, paymentproviderinstance.FieldLastError)
+	}
+	if m.last_used_at != nil {
+		fields = append(fields, paymentproviderinstance.FieldLastUsedAt)
+	}
+	if m.metadata != nil {
+		fields = append(fields, paymentproviderinstance.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *PaymentProviderInstanceMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case paymentproviderinstance.FieldCreatedAt:
+		return m.CreatedAt()
+	case paymentproviderinstance.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case paymentproviderinstance.FieldProviderType:
+		return m.ProviderType()
+	case paymentproviderinstance.FieldName:
+		return m.Name()
+	case paymentproviderinstance.FieldConfigEncrypted:
+		return m.ConfigEncrypted()
+	case paymentproviderinstance.FieldCredentialsFingerprint:
+		return m.CredentialsFingerprint()
+	case paymentproviderinstance.FieldSupportedMethods:
+		return m.SupportedMethods()
+	case paymentproviderinstance.FieldEnabled:
+		return m.Enabled()
+	case paymentproviderinstance.FieldSortOrder:
+		return m.SortOrder()
+	case paymentproviderinstance.FieldSchedulerWeight:
+		return m.SchedulerWeight()
+	case paymentproviderinstance.FieldLimits:
+		return m.Limits()
+	case paymentproviderinstance.FieldRefundEnabled:
+		return m.RefundEnabled()
+	case paymentproviderinstance.FieldHealthStatus:
+		return m.HealthStatus()
+	case paymentproviderinstance.FieldLastError:
+		return m.LastError()
+	case paymentproviderinstance.FieldLastUsedAt:
+		return m.LastUsedAt()
+	case paymentproviderinstance.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *PaymentProviderInstanceMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case paymentproviderinstance.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case paymentproviderinstance.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case paymentproviderinstance.FieldProviderType:
+		return m.OldProviderType(ctx)
+	case paymentproviderinstance.FieldName:
+		return m.OldName(ctx)
+	case paymentproviderinstance.FieldConfigEncrypted:
+		return m.OldConfigEncrypted(ctx)
+	case paymentproviderinstance.FieldCredentialsFingerprint:
+		return m.OldCredentialsFingerprint(ctx)
+	case paymentproviderinstance.FieldSupportedMethods:
+		return m.OldSupportedMethods(ctx)
+	case paymentproviderinstance.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case paymentproviderinstance.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	case paymentproviderinstance.FieldSchedulerWeight:
+		return m.OldSchedulerWeight(ctx)
+	case paymentproviderinstance.FieldLimits:
+		return m.OldLimits(ctx)
+	case paymentproviderinstance.FieldRefundEnabled:
+		return m.OldRefundEnabled(ctx)
+	case paymentproviderinstance.FieldHealthStatus:
+		return m.OldHealthStatus(ctx)
+	case paymentproviderinstance.FieldLastError:
+		return m.OldLastError(ctx)
+	case paymentproviderinstance.FieldLastUsedAt:
+		return m.OldLastUsedAt(ctx)
+	case paymentproviderinstance.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown PaymentProviderInstance field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PaymentProviderInstanceMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case paymentproviderinstance.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case paymentproviderinstance.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case paymentproviderinstance.FieldProviderType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderType(v)
+		return nil
+	case paymentproviderinstance.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case paymentproviderinstance.FieldConfigEncrypted:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfigEncrypted(v)
+		return nil
+	case paymentproviderinstance.FieldCredentialsFingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCredentialsFingerprint(v)
+		return nil
+	case paymentproviderinstance.FieldSupportedMethods:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportedMethods(v)
+		return nil
+	case paymentproviderinstance.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case paymentproviderinstance.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	case paymentproviderinstance.FieldSchedulerWeight:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSchedulerWeight(v)
+		return nil
+	case paymentproviderinstance.FieldLimits:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLimits(v)
+		return nil
+	case paymentproviderinstance.FieldRefundEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundEnabled(v)
+		return nil
+	case paymentproviderinstance.FieldHealthStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHealthStatus(v)
+		return nil
+	case paymentproviderinstance.FieldLastError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastError(v)
+		return nil
+	case paymentproviderinstance.FieldLastUsedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastUsedAt(v)
+		return nil
+	case paymentproviderinstance.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PaymentProviderInstance field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *PaymentProviderInstanceMutation) AddedFields() []string {
+	var fields []string
+	if m.addsort_order != nil {
+		fields = append(fields, paymentproviderinstance.FieldSortOrder)
+	}
+	if m.addscheduler_weight != nil {
+		fields = append(fields, paymentproviderinstance.FieldSchedulerWeight)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *PaymentProviderInstanceMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case paymentproviderinstance.FieldSortOrder:
+		return m.AddedSortOrder()
+	case paymentproviderinstance.FieldSchedulerWeight:
+		return m.AddedSchedulerWeight()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PaymentProviderInstanceMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case paymentproviderinstance.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	case paymentproviderinstance.FieldSchedulerWeight:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSchedulerWeight(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PaymentProviderInstance numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *PaymentProviderInstanceMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(paymentproviderinstance.FieldConfigEncrypted) {
+		fields = append(fields, paymentproviderinstance.FieldConfigEncrypted)
+	}
+	if m.FieldCleared(paymentproviderinstance.FieldSupportedMethods) {
+		fields = append(fields, paymentproviderinstance.FieldSupportedMethods)
+	}
+	if m.FieldCleared(paymentproviderinstance.FieldLimits) {
+		fields = append(fields, paymentproviderinstance.FieldLimits)
+	}
+	if m.FieldCleared(paymentproviderinstance.FieldLastUsedAt) {
+		fields = append(fields, paymentproviderinstance.FieldLastUsedAt)
+	}
+	if m.FieldCleared(paymentproviderinstance.FieldMetadata) {
+		fields = append(fields, paymentproviderinstance.FieldMetadata)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *PaymentProviderInstanceMutation) ClearField(name string) error {
+	switch name {
+	case paymentproviderinstance.FieldConfigEncrypted:
+		m.ClearConfigEncrypted()
+		return nil
+	case paymentproviderinstance.FieldSupportedMethods:
+		m.ClearSupportedMethods()
+		return nil
+	case paymentproviderinstance.FieldLimits:
+		m.ClearLimits()
+		return nil
+	case paymentproviderinstance.FieldLastUsedAt:
+		m.ClearLastUsedAt()
+		return nil
+	case paymentproviderinstance.FieldMetadata:
+		m.ClearMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown PaymentProviderInstance nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *PaymentProviderInstanceMutation) ResetField(name string) error {
+	switch name {
+	case paymentproviderinstance.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case paymentproviderinstance.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case paymentproviderinstance.FieldProviderType:
+		m.ResetProviderType()
+		return nil
+	case paymentproviderinstance.FieldName:
+		m.ResetName()
+		return nil
+	case paymentproviderinstance.FieldConfigEncrypted:
+		m.ResetConfigEncrypted()
+		return nil
+	case paymentproviderinstance.FieldCredentialsFingerprint:
+		m.ResetCredentialsFingerprint()
+		return nil
+	case paymentproviderinstance.FieldSupportedMethods:
+		m.ResetSupportedMethods()
+		return nil
+	case paymentproviderinstance.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case paymentproviderinstance.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	case paymentproviderinstance.FieldSchedulerWeight:
+		m.ResetSchedulerWeight()
+		return nil
+	case paymentproviderinstance.FieldLimits:
+		m.ResetLimits()
+		return nil
+	case paymentproviderinstance.FieldRefundEnabled:
+		m.ResetRefundEnabled()
+		return nil
+	case paymentproviderinstance.FieldHealthStatus:
+		m.ResetHealthStatus()
+		return nil
+	case paymentproviderinstance.FieldLastError:
+		m.ResetLastError()
+		return nil
+	case paymentproviderinstance.FieldLastUsedAt:
+		m.ResetLastUsedAt()
+		return nil
+	case paymentproviderinstance.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown PaymentProviderInstance field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *PaymentProviderInstanceMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *PaymentProviderInstanceMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *PaymentProviderInstanceMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *PaymentProviderInstanceMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *PaymentProviderInstanceMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *PaymentProviderInstanceMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown PaymentProviderInstance unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *PaymentProviderInstanceMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown PaymentProviderInstance edge %s", name)
+}
+
 // PaymentWebhookEventMutation represents an operation that mutates the PaymentWebhookEvent nodes in the graph.
 type PaymentWebhookEventMutation struct {
 	config
@@ -28515,6 +29837,8 @@ type SubscriptionPlanMutation struct {
 	updated_at       *time.Time
 	plan_code        *string
 	plan_name        *string
+	plan_type        *string
+	purchase_enabled *bool
 	status           *string
 	price_cny        *string
 	points           *string
@@ -28772,6 +30096,78 @@ func (m *SubscriptionPlanMutation) OldPlanName(ctx context.Context) (v string, e
 // ResetPlanName resets all changes to the "plan_name" field.
 func (m *SubscriptionPlanMutation) ResetPlanName() {
 	m.plan_name = nil
+}
+
+// SetPlanType sets the "plan_type" field.
+func (m *SubscriptionPlanMutation) SetPlanType(s string) {
+	m.plan_type = &s
+}
+
+// PlanType returns the value of the "plan_type" field in the mutation.
+func (m *SubscriptionPlanMutation) PlanType() (r string, exists bool) {
+	v := m.plan_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlanType returns the old "plan_type" field's value of the SubscriptionPlan entity.
+// If the SubscriptionPlan object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionPlanMutation) OldPlanType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlanType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlanType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlanType: %w", err)
+	}
+	return oldValue.PlanType, nil
+}
+
+// ResetPlanType resets all changes to the "plan_type" field.
+func (m *SubscriptionPlanMutation) ResetPlanType() {
+	m.plan_type = nil
+}
+
+// SetPurchaseEnabled sets the "purchase_enabled" field.
+func (m *SubscriptionPlanMutation) SetPurchaseEnabled(b bool) {
+	m.purchase_enabled = &b
+}
+
+// PurchaseEnabled returns the value of the "purchase_enabled" field in the mutation.
+func (m *SubscriptionPlanMutation) PurchaseEnabled() (r bool, exists bool) {
+	v := m.purchase_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPurchaseEnabled returns the old "purchase_enabled" field's value of the SubscriptionPlan entity.
+// If the SubscriptionPlan object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionPlanMutation) OldPurchaseEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPurchaseEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPurchaseEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPurchaseEnabled: %w", err)
+	}
+	return oldValue.PurchaseEnabled, nil
+}
+
+// ResetPurchaseEnabled resets all changes to the "purchase_enabled" field.
+func (m *SubscriptionPlanMutation) ResetPurchaseEnabled() {
+	m.purchase_enabled = nil
 }
 
 // SetStatus sets the "status" field.
@@ -29185,7 +30581,7 @@ func (m *SubscriptionPlanMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionPlanMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, subscriptionplan.FieldCreatedAt)
 	}
@@ -29197,6 +30593,12 @@ func (m *SubscriptionPlanMutation) Fields() []string {
 	}
 	if m.plan_name != nil {
 		fields = append(fields, subscriptionplan.FieldPlanName)
+	}
+	if m.plan_type != nil {
+		fields = append(fields, subscriptionplan.FieldPlanType)
+	}
+	if m.purchase_enabled != nil {
+		fields = append(fields, subscriptionplan.FieldPurchaseEnabled)
 	}
 	if m.status != nil {
 		fields = append(fields, subscriptionplan.FieldStatus)
@@ -29241,6 +30643,10 @@ func (m *SubscriptionPlanMutation) Field(name string) (ent.Value, bool) {
 		return m.PlanCode()
 	case subscriptionplan.FieldPlanName:
 		return m.PlanName()
+	case subscriptionplan.FieldPlanType:
+		return m.PlanType()
+	case subscriptionplan.FieldPurchaseEnabled:
+		return m.PurchaseEnabled()
 	case subscriptionplan.FieldStatus:
 		return m.Status()
 	case subscriptionplan.FieldPriceCny:
@@ -29276,6 +30682,10 @@ func (m *SubscriptionPlanMutation) OldField(ctx context.Context, name string) (e
 		return m.OldPlanCode(ctx)
 	case subscriptionplan.FieldPlanName:
 		return m.OldPlanName(ctx)
+	case subscriptionplan.FieldPlanType:
+		return m.OldPlanType(ctx)
+	case subscriptionplan.FieldPurchaseEnabled:
+		return m.OldPurchaseEnabled(ctx)
 	case subscriptionplan.FieldStatus:
 		return m.OldStatus(ctx)
 	case subscriptionplan.FieldPriceCny:
@@ -29330,6 +30740,20 @@ func (m *SubscriptionPlanMutation) SetField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlanName(v)
+		return nil
+	case subscriptionplan.FieldPlanType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlanType(v)
+		return nil
+	case subscriptionplan.FieldPurchaseEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPurchaseEnabled(v)
 		return nil
 	case subscriptionplan.FieldStatus:
 		v, ok := value.(string)
@@ -29490,6 +30914,12 @@ func (m *SubscriptionPlanMutation) ResetField(name string) error {
 		return nil
 	case subscriptionplan.FieldPlanName:
 		m.ResetPlanName()
+		return nil
+	case subscriptionplan.FieldPlanType:
+		m.ResetPlanType()
+		return nil
+	case subscriptionplan.FieldPurchaseEnabled:
+		m.ResetPurchaseEnabled()
 		return nil
 	case subscriptionplan.FieldStatus:
 		m.ResetStatus()

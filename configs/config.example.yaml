@@ -80,6 +80,8 @@ cashier:
   order_timeout_seconds: 1800
   max_pending_orders_per_user: 3
   site_base_url: http://localhost:8080
+  # Set CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY in production; used to encrypt stored payment provider merchant secrets.
+  provider_config_encryption_key: ""
 
 generation_limits:
   max_image_count: 5

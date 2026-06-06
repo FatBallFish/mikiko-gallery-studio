@@ -28,7 +28,7 @@ type Store interface {
 	ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
 	ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
 	ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
-	GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error)
+	GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error)
 	SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error)
 	DeleteByID(ctx context.Context, userID int64, taskID string) error
 	AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error)
@@ -363,6 +363,9 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 				continue
 			}
 			image := s.decoratePublicImage(galleryImageFromMemoryTask(task, result), req.ViewerUserID)
+			if req.Query != "" && !publicGalleryQueryMatches(image, req.Query) {
+				continue
+			}
 			if req.RouteModelCode != "" && !publicGalleryRouteModelMatches(image, req.RouteModelCode) {
 				continue
 			}
@@ -399,7 +402,51 @@ func publicGalleryRouteModelMatches(image domainimagetask.GalleryImage, routeMod
 	return strings.EqualFold(image.RouteModelCode, routeModelCode) || (image.RouteModelCode == "" && strings.EqualFold(image.AbstractModel, routeModelCode))
 }
 
-func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+func publicGalleryQueryMatches(image domainimagetask.GalleryImage, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	fields := []string{
+		image.ID,
+		image.PromptExcerpt,
+		publicGallerySearchExcerpt(image.Prompt, 24),
+		image.RouteModelCode,
+		image.AbstractModel,
+		image.TaskType,
+		image.AuthorName,
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(field)), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicGallerySearchExcerpt(prompt string, limit int) string {
+	prompt = strings.Join(strings.Fields(prompt), " ")
+	if limit <= 0 || prompt == "" {
+		return ""
+	}
+	runes := []rune(prompt)
+	if len(runes) <= limit {
+		visible := len(runes) / 2
+		if visible < 1 {
+			return "…"
+		}
+		if visible > limit-1 {
+			visible = limit - 1
+		}
+		return string(runes[:visible]) + "…"
+	}
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
+func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, task := range s.tasksByID {
@@ -408,7 +455,7 @@ func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string) (domaini
 		}
 		for _, result := range task.Results {
 			if result.ID == imageID && defaultVisibilityStatus(result.VisibilityStatus) == domainimagetask.VisibilityApproved {
-				return s.decoratePublicImage(galleryImageFromMemoryTask(task, result), 0), nil
+				return s.decoratePublicImage(galleryImageFromMemoryTask(task, result), viewerUserID), nil
 			}
 		}
 	}

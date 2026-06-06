@@ -10,6 +10,7 @@ import { cashierJeePayConfigFields, cashierJeePayStructuredConfig, cashierProvid
 import { cashierOrderRiskRows, cashierWebhookRiskRow } from './cashierRiskRows'
 import type { CashierRiskRow } from './cashierRiskRows'
 import { cashierSyncRow } from './cashierSyncRows'
+import { cashierTrialConfigDraft, cashierTrialConfigDraftDetail, cashierTrialConfigPayload, cashierTrialConfigSummary, type CashierTrialConfigDraft, type CashierTrialConfigSummary } from './cashierTrialConfig'
 import type { CashierStatusBadge } from './cashierStatusRows'
 import { cashierVisibleMethodRow } from './cashierVisibleMethodRows'
 import { cashierWebhookRow } from './cashierWebhookRows'
@@ -33,6 +34,7 @@ type CashierData = {
   instances: PageResult<PaymentProviderInstance>
   orders: PageResult<PaymentOrder>
   events: PageResult<PaymentWebhookEvent>
+  trial: CashierTrialConfigSummary
 }
 
 type PlanDraft = {
@@ -86,6 +88,28 @@ type ChargebackOrderDraft = {
   idempotency_key: string
 }
 
+type OrderFilters = {
+  order_no: string
+  user_id: string
+  status: string
+  visible_method: string
+  purchase_type: string
+}
+
+type CashierTabId = 'overview' | 'plans' | 'methods' | 'instances' | 'orders' | 'events'
+
+const cashierTabs: Array<{ id: CashierTabId; label: string; detail: string }> = [
+  { id: 'overview', label: '概览', detail: '指标与体验额度' },
+  { id: 'plans', label: '充值套餐', detail: '固定积分包与自定义金额' },
+  { id: 'methods', label: '支付方式', detail: '用户可见入口' },
+  { id: 'instances', label: '渠道实例', detail: '多账号与限额' },
+  { id: 'orders', label: '订单', detail: '补单查单退款' },
+  { id: 'events', label: '回调事件', detail: '验签与重试' },
+]
+
+const cashierAdminPageSize = 10
+const emptyOrderFilters: OrderFilters = { order_no: '', user_id: '', status: '', visible_method: '', purchase_type: '' }
+
 const schedulerOptions: Array<{ value: PaymentSchedulerStrategy; label: string }> = [
   { value: 'round_robin', label: '轮询调度' },
   { value: 'random', label: '随机调度' },
@@ -100,6 +124,7 @@ function methodsForProviderType(providerType: PaymentProviderType) {
 export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detail?: string) => void }) {
   const [data, setData] = useState<CashierData | null>(null)
   const [customDraft, setCustomDraft] = useState<CashierCustomAmountConfig | null>(null)
+  const [trialDraft, setTrialDraft] = useState<CashierTrialConfigDraft | null>(null)
   const [methodsDraft, setMethodsDraft] = useState<PaymentVisibleMethod[]>([])
   const [planDialog, setPlanDialog] = useState<PlanDraft | null>(null)
   const [instanceDialog, setInstanceDialog] = useState<InstanceDraft | null>(null)
@@ -108,8 +133,14 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
   const [refundDialog, setRefundDialog] = useState<RefundOrderDraft | null>(null)
   const [chargebackDialog, setChargebackDialog] = useState<ChargebackOrderDraft | null>(null)
   const [loadingOrderID, setLoadingOrderID] = useState<number | string | null>(null)
+  const [closingOrderID, setClosingOrderID] = useState<number | string | null>(null)
   const [retryingEventID, setRetryingEventID] = useState<number | string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<CashierTabId>('overview')
+  const [ordersPage, setOrdersPage] = useState(1)
+  const [orderFilters, setOrderFilters] = useState<OrderFilters>(emptyOrderFilters)
+  const [eventsPage, setEventsPage] = useState(1)
+  const [savingTrial, setSavingTrial] = useState(false)
   const [savingCustomAmount, setSavingCustomAmount] = useState(false)
   const [savingMethods, setSavingMethods] = useState(false)
   const [savingPlan, setSavingPlan] = useState(false)
@@ -123,17 +154,20 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
     setLoading(true)
     setError(null)
     try {
-      const [overview, plans, customAmount, methods, instances, orders, events] = await Promise.all([
+      const [overview, plans, customAmount, methods, instances, orders, events, configTabs] = await Promise.all([
         adminApi.getCashierOverview(),
         adminApi.listCashierPlans(),
         adminApi.getCashierCustomAmountConfig(),
         adminApi.listPaymentVisibleMethods(),
         adminApi.listPaymentProviderInstances(),
-        adminApi.listPaymentOrders({ page: 1, page_size: 10 }),
-        adminApi.listPaymentWebhookEvents({ page: 1, page_size: 10 }),
+        adminApi.listPaymentOrders(cashierOrderQuery(ordersPage, orderFilters)),
+        adminApi.listPaymentWebhookEvents({ page: eventsPage, page_size: cashierAdminPageSize }),
+        adminApi.listConfigTabs(),
       ])
-      setData({ overview, plans, customAmount, methods, instances, orders, events })
+      const trial = cashierTrialConfigSummary(configTabs)
+      setData({ overview, plans, customAmount, methods, instances, orders, events, trial })
       setCustomDraft(customAmount)
+      setTrialDraft(cashierTrialConfigDraft(trial))
       setMethodsDraft(methods)
       onFeedback?.('收银台数据已刷新')
     } catch (caught) {
@@ -157,6 +191,25 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       setError(caught instanceof Error ? caught.message : '自定义金额配置保存失败')
     } finally {
       setSavingCustomAmount(false)
+    }
+  }
+
+  async function saveTrialConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!data || !trialDraft) return
+    setSavingTrial(true)
+    setError(null)
+    try {
+      await adminApi.updateConfigTab(data.trial.tabKey, cashierTrialConfigPayload(data.trial, trialDraft))
+      const configTabs = await adminApi.listConfigTabs()
+      const trial = cashierTrialConfigSummary(configTabs)
+      setData((current) => current ? { ...current, trial } : current)
+      setTrialDraft(cashierTrialConfigDraft(trial))
+      onFeedback?.('注册送体验额度已保存', trial.detail)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '注册送体验额度保存失败')
+    } finally {
+      setSavingTrial(false)
     }
   }
 
@@ -191,6 +244,28 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
     setData((current) => current ? { ...current, instances } : current)
   }
 
+  async function reloadOrders(page = ordersPage, filters = orderFilters) {
+    const orders = await adminApi.listPaymentOrders(cashierOrderQuery(page, filters))
+    setOrdersPage(page)
+    setData((current) => current ? { ...current, orders } : current)
+  }
+
+  async function applyOrderFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await reloadOrders(1, orderFilters)
+  }
+
+  async function resetOrderFilters() {
+    setOrderFilters(emptyOrderFilters)
+    await reloadOrders(1, emptyOrderFilters)
+  }
+
+  async function reloadEvents(page = eventsPage) {
+    const events = await adminApi.listPaymentWebhookEvents({ page, page_size: cashierAdminPageSize })
+    setEventsPage(page)
+    setData((current) => current ? { ...current, events } : current)
+  }
+
   async function savePlan() {
     if (!planDialog) return
     setSavingPlan(true)
@@ -204,6 +279,21 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       onFeedback?.('充值套餐已保存', planDialog.plan_name)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '充值套餐保存失败')
+    } finally {
+      setSavingPlan(false)
+    }
+  }
+
+  async function deletePlan(plan: CashierPlan) {
+    if (!window.confirm(`确定删除/归档套餐「${plan.plan_name}」吗？历史订单会保留，用户端将不可购买。`)) return
+    setSavingPlan(true)
+    setError(null)
+    try {
+      const deleted = await adminApi.deleteCashierPlan(plan.id)
+      await reloadPlans()
+      onFeedback?.('充值套餐已归档', deleted.plan_name)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '充值套餐删除失败')
     } finally {
       setSavingPlan(false)
     }
@@ -236,6 +326,21 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       onFeedback?.('支付渠道实例已保存', instanceDialog.name)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '支付渠道实例保存失败')
+    } finally {
+      setSavingInstance(false)
+    }
+  }
+
+  async function deleteInstance(instance: PaymentProviderInstance) {
+    if (!window.confirm(`确定删除支付渠道实例「${instance.name}」吗？已创建订单的渠道快照会保留。`)) return
+    setSavingInstance(true)
+    setError(null)
+    try {
+      const deleted = await adminApi.deletePaymentProviderInstance(instance.id)
+      await reloadInstances()
+      onFeedback?.('支付渠道实例已删除', deleted.name)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '支付渠道实例删除失败')
     } finally {
       setSavingInstance(false)
     }
@@ -299,11 +404,38 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       })
       setOrderDetail((current) => current?.id === updated.id ? updated : current)
       setCompleteDialog(null)
+      await reloadOrders()
       onFeedback?.('订单已人工补单完成', updated.order_no)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '人工补单失败')
     } finally {
       setCompletingOrder(false)
+    }
+  }
+
+  async function closePaymentOrder(order: PaymentOrder) {
+    if (!window.confirm(`确认关闭待支付订单 ${order.order_no}？关闭后用户需要重新创建订单。`)) return
+    setClosingOrderID(order.id)
+    setError(null)
+    try {
+      const updated = await adminApi.closePaymentOrder(order.id, { reason: '运营关闭待支付订单' })
+      setData((current) => {
+        if (!current) return current
+        return {
+          ...current,
+          orders: {
+            ...current.orders,
+            items: current.orders.items.map((item) => item.id === updated.id ? updated : item),
+          },
+        }
+      })
+      setOrderDetail((current) => current?.id === updated.id ? updated : current)
+      await reloadOrders()
+      onFeedback?.('订单已关闭', updated.order_no)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '订单关闭失败')
+    } finally {
+      setClosingOrderID(null)
     }
   }
 
@@ -329,6 +461,7 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       })
       setOrderDetail((current) => current?.id === updated.id ? updated : current)
       setRefundDialog(null)
+      await reloadOrders()
       onFeedback?.('订单已退款', updated.order_no)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '订单退款失败')
@@ -358,6 +491,7 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       })
       setOrderDetail((current) => current?.id === result.order.id ? result.order : current)
       setChargebackDialog(null)
+      await reloadOrders()
       onFeedback?.('订单已人工追扣', `当前可用余额 ${Number(result.balance.available_points ?? '0').toFixed(2)}`)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '订单追扣失败')
@@ -383,6 +517,7 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       })
       setOrderDetail((current) => current?.id === result.order.id ? result.order : current)
       const syncRow = cashierSyncRow(result.sync)
+      await reloadOrders()
       onFeedback?.(result.sync.completed ? '查单已确认到账' : syncRow.categoryLabel, syncRow.actionHint)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '订单查单失败')
@@ -412,9 +547,106 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
         <div className="status-cell"><label>Mock 渠道</label><strong>{cashierBooleanVisibilityLabel(data.overview.mock_enabled)}</strong></div>
       </section>
 
+      <nav className="cashier-tabs" role="tablist" aria-label="收银台管理分区">
+        {cashierTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={activeTab === tab.id ? 'active' : ''}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            <span>{tab.label}</span>
+            <small>{tab.detail}</small>
+          </button>
+        ))}
+      </nav>
+
       <section className="pg-admin-card ops-surface full-main cashier-surface">
         <section className="main-lane table-lane no-divider">
-          <CashierSection title="自定义金额">
+          {activeTab === 'overview' ? <CashierSection title="收银台概览">
+            <div className="cashier-overview-grid">
+              <div className="cashier-overview-card">
+                <span>今日订单</span>
+                <strong>{data.overview.today_order_count}</strong>
+                <p>完成 {data.overview.today_completed_count} 单，成功率 {data.overview.success_rate}</p>
+              </div>
+              <div className="cashier-overview-card">
+                <span>到账金额</span>
+                <strong>¥{Number(data.overview.today_amount_cny).toFixed(2)}</strong>
+                <p>待支付 {data.overview.pending_count} 单</p>
+              </div>
+              <div className="cashier-overview-card">
+                <span>失败回调</span>
+                <strong>{data.overview.failed_webhook_count}</strong>
+                <p>Mock 渠道：{cashierBooleanVisibilityLabel(data.overview.mock_enabled)}</p>
+              </div>
+              <div className="cashier-overview-card">
+                <span>启用实例</span>
+                <strong>{data.overview.enabled_provider_instances}</strong>
+                <p>{data.overview.enabled_methods?.length ? `方式：${data.overview.enabled_methods.join(' / ')}` : '暂无启用支付方式'}</p>
+              </div>
+            </div>
+          </CashierSection> : null}
+
+          {activeTab === 'overview' ? <CashierSection title="注册送体验额度">
+            <form className="cashier-config-form" onSubmit={(event) => void saveTrialConfig(event)}>
+              <div className="cashier-method-toolbar">
+                <p>{trialDraft ? cashierTrialConfigDraftDetail(trialDraft) : data.trial.detail}</p>
+                <div className="row-actions buttons">
+                  <StatusBadge badge={cashierEnabledBadge(Boolean(trialDraft?.enabled))} />
+                  <button type="submit" className="btn" disabled={savingTrial || !trialDraft}>{savingTrial ? '保存中' : '保存体验额度'}</button>
+                </div>
+              </div>
+              <label className="check-option cashier-toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(trialDraft?.enabled)}
+                  onChange={(event) => setTrialDraft((current) => current ? { ...current, enabled: event.target.checked } : current)}
+                />
+                <span>启用注册送体验额度</span>
+              </label>
+              <div className="form-grid cashier-amount-grid">
+                <Field label="赠送积分">
+                  <input
+                    value={trialDraft?.points ?? ''}
+                    onChange={(event) => setTrialDraft((current) => current ? { ...current, points: event.target.value } : current)}
+                    inputMode="decimal"
+                    placeholder="20.00000"
+                  />
+                </Field>
+                <Field label="有效天数">
+                  <input
+                    value={trialDraft?.valid_days ?? ''}
+                    onChange={(event) => setTrialDraft((current) => current ? { ...current, valid_days: event.target.value } : current)}
+                    type="number"
+                    min="1"
+                    step="1"
+                  />
+                </Field>
+                <Field label="提醒阈值">
+                  <input
+                    value={trialDraft?.expiry_reminder_days ?? ''}
+                    onChange={(event) => setTrialDraft((current) => current ? { ...current, expiry_reminder_days: event.target.value } : current)}
+                    type="number"
+                    min="0"
+                    step="1"
+                  />
+                </Field>
+                <label className="check-option cashier-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(trialDraft?.grant_once_per_user)}
+                    onChange={(event) => setTrialDraft((current) => current ? { ...current, grant_once_per_user: event.target.checked } : current)}
+                  />
+                  <span>每个用户仅领取一次</span>
+                </label>
+              </div>
+            </form>
+          </CashierSection> : null}
+
+          {activeTab === 'plans' ? <CashierSection title="自定义金额">
             <form className="cashier-config-form" onSubmit={(event) => void saveCustomAmount(event)}>
               <label className="check-option cashier-toggle">
                 <input
@@ -455,9 +687,9 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                 </div>
               </div>
             </form>
-          </CashierSection>
+          </CashierSection> : null}
 
-          <CashierSection title="固定积分包">
+          {activeTab === 'plans' ? <CashierSection title="固定积分包">
             <div className="cashier-method-toolbar">
               <p>{cashierPlanSectionCopy.toolbarDetail}</p>
               <button type="button" className="btn" onClick={() => setPlanDialog(newPlanDraft())}>新增套餐</button>
@@ -475,15 +707,18 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                     <code>{plan.sort_order ?? 0}</code>
                     <StatusBadge badge={cashierPlanStatusBadge(plan.status)} />
                     <Badge tone={purchaseBadge.tone}>{purchaseBadge.label}</Badge>
-                    <button type="button" className="ghost small" onClick={() => setPlanDialog(editPlanDraft(plan))}>编辑</button>
+                    <div className="row-actions">
+                      <button type="button" className="ghost small" onClick={() => setPlanDialog(editPlanDraft(plan))}>编辑</button>
+                      <button type="button" className="ghost small danger" disabled={savingPlan} onClick={() => void deletePlan(plan)}>删除</button>
+                    </div>
                   </div>
                 )
               })}
             </div>
             {!data.plans.items.length ? <EmptyBlock title={cashierPlanEmptyState.title} detail={cashierPlanEmptyState.detail} /> : null}
-          </CashierSection>
+          </CashierSection> : null}
 
-          <CashierSection title="可见支付方式">
+          {activeTab === 'methods' ? <CashierSection title="可见支付方式">
             <form className="cashier-config-form" onSubmit={(event) => void saveVisibleMethods(event)}>
               <div className="cashier-method-toolbar">
                 <p>控制用户收银台可选择的支付入口；生产环境 Mock 仍由后端隐藏。</p>
@@ -543,9 +778,9 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                 })}
               </div>
             </form>
-          </CashierSection>
+          </CashierSection> : null}
 
-          <CashierSection title="支付渠道实例">
+          {activeTab === 'instances' ? <CashierSection title="支付渠道实例">
             <div className="cashier-method-toolbar">
               <p>配置真实支付账号或测试 Mock 账号；密钥保存后仅显示配置状态和指纹。</p>
               <button type="button" className="btn" onClick={() => setInstanceDialog(newInstanceDraft())}>新增实例</button>
@@ -559,13 +794,50 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                   <span>{cashierProviderSupportedMethodsLabel(instance.supported_methods)}</span>
                   <code>{instance.scheduler_weight}</code>
                   <StatusBadge badge={cashierEnabledBadge(instance.enabled)} />
-                  <button type="button" className="ghost small" onClick={() => setInstanceDialog(editInstanceDraft(instance))}>编辑</button>
+                  <div className="row-actions">
+                    <button type="button" className="ghost small" onClick={() => setInstanceDialog(editInstanceDraft(instance))}>编辑</button>
+                    <button type="button" className="ghost small danger" disabled={savingInstance} onClick={() => void deleteInstance(instance)}>删除</button>
+                  </div>
                 </div>
               ))}
             </div>
-          </CashierSection>
+          </CashierSection> : null}
 
-          <CashierSection title="最近订单">
+          {activeTab === 'orders' ? <CashierSection title="订单">
+            <form className="cashier-order-filter" onSubmit={(event) => void applyOrderFilters(event)}>
+              <input value={orderFilters.order_no} onChange={(event) => setOrderFilters({ ...orderFilters, order_no: event.target.value })} placeholder="订单号" />
+              <input value={orderFilters.user_id} onChange={(event) => setOrderFilters({ ...orderFilters, user_id: event.target.value })} inputMode="numeric" placeholder="用户 ID" />
+              <select value={orderFilters.status} onChange={(event) => setOrderFilters({ ...orderFilters, status: event.target.value })} aria-label="订单状态">
+                <option value="">全部状态</option>
+                <option value="pending">待支付</option>
+                <option value="completed">已到账</option>
+                <option value="canceled">已关闭</option>
+                <option value="failed">支付失败</option>
+                <option value="partially_refunded">部分退款</option>
+                <option value="refunded">已退款</option>
+              </select>
+              <select value={orderFilters.visible_method} onChange={(event) => setOrderFilters({ ...orderFilters, visible_method: event.target.value })} aria-label="支付方式">
+                <option value="">全部方式</option>
+                <option value="mock">Mock</option>
+                <option value="alipay">支付宝</option>
+                <option value="wxpay">微信支付</option>
+              </select>
+              <select value={orderFilters.purchase_type} onChange={(event) => setOrderFilters({ ...orderFilters, purchase_type: event.target.value })} aria-label="购买类型">
+                <option value="">全部类型</option>
+                <option value="plan">固定积分包</option>
+                <option value="custom_amount">自定义金额</option>
+              </select>
+              <button type="submit" className="btn small">查询</button>
+              <button type="button" className="ghost small" onClick={() => void resetOrderFilters()}>重置</button>
+            </form>
+            <CashierPager
+              page={ordersPage}
+              pageSize={cashierAdminPageSize}
+              total={data.orders.total}
+              onPrev={() => void reloadOrders(Math.max(1, ordersPage - 1))}
+              onNext={() => void reloadOrders(ordersPage + 1)}
+              onRefresh={() => void reloadOrders()}
+            />
             <div className="admin-data-grid cashier-order-grid">
               <div className="table-head"><span>订单</span><span>金额</span><span>积分</span><span>方式</span><span>状态</span><span>操作</span></div>
               {data.orders.items.map((order) => (
@@ -585,6 +857,9 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                           {loadingOrderID === order.id ? '查单中' : '查单'}
                         </button>
                         <button type="button" className="ghost small" onClick={() => setCompleteDialog(newCompleteOrderDraft(order))}>补单</button>
+                        <button type="button" className="ghost small danger-text" disabled={closingOrderID === order.id} onClick={() => void closePaymentOrder(order)}>
+                          {closingOrderID === order.id ? '关闭中' : '关闭'}
+                        </button>
                       </>
                     ) : null}
                     {order.status === 'completed' || order.status === 'partially_refunded' ? (
@@ -597,9 +872,17 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                 </div>
               ))}
             </div>
-          </CashierSection>
+          </CashierSection> : null}
 
-          <CashierSection title="回调事件">
+          {activeTab === 'events' ? <CashierSection title="回调事件">
+            <CashierPager
+              page={eventsPage}
+              pageSize={cashierAdminPageSize}
+              total={data.events.total}
+              onPrev={() => void reloadEvents(Math.max(1, eventsPage - 1))}
+              onNext={() => void reloadEvents(eventsPage + 1)}
+              onRefresh={() => void reloadEvents()}
+            />
             <div className="admin-data-grid cashier-event-grid">
               <div className="table-head"><span>事件</span><span>订单</span><span>渠道</span><span>状态</span><span>操作</span></div>
               {data.events.items.map((event) => {
@@ -625,7 +908,7 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                 )
               })}
             </div>
-          </CashierSection>
+          </CashierSection> : null}
         </section>
       </section>
       {planDialog ? (
@@ -926,6 +1209,31 @@ function CashierSection({ title, children }: { title: string; children: ReactNod
   )
 }
 
+function CashierPager({ page, pageSize, total, onPrev, onNext, onRefresh }: {
+  page: number
+  pageSize: number
+  total?: number
+  onPrev: () => void
+  onNext: () => void
+  onRefresh: () => void
+}) {
+  const safeTotal = Math.max(0, Number(total ?? 0))
+  const start = safeTotal === 0 ? 0 : (page - 1) * pageSize + 1
+  const end = safeTotal === 0 ? 0 : Math.min(safeTotal, page * pageSize)
+  const canPrev = page > 1
+  const canNext = safeTotal === 0 ? false : page * pageSize < safeTotal
+  return (
+    <div className="cashier-pager">
+      <span>第 {page} 页 · {start}-{end} / {safeTotal}</span>
+      <div className="row-actions">
+        <button type="button" className="ghost small" onClick={onRefresh}>刷新</button>
+        <button type="button" className="ghost small" disabled={!canPrev} onClick={onPrev}>上一页</button>
+        <button type="button" className="ghost small" disabled={!canNext} onClick={onNext}>下一页</button>
+      </div>
+    </div>
+  )
+}
+
 function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="cashier-detail-item">
@@ -1091,6 +1399,18 @@ function newChargebackOrderDraft(order: PaymentOrder): ChargebackOrderDraft {
 
 function canChargebackOrder(order: PaymentOrder) {
   return order.status === 'completed' || order.status === 'partially_refunded' || order.status === 'refunded'
+}
+
+function cashierOrderQuery(page: number, filters: OrderFilters) {
+  return {
+    page,
+    page_size: cashierAdminPageSize,
+    order_no: filters.order_no.trim() || undefined,
+    user_id: filters.user_id.trim() || undefined,
+    status: filters.status || undefined,
+    visible_method: filters.visible_method || undefined,
+    purchase_type: filters.purchase_type || undefined,
+  }
 }
 
 function newCashierOrderChargebackKey(orderID: string | number) {

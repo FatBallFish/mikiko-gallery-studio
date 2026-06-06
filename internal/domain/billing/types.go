@@ -485,10 +485,14 @@ type CreateCustomAmountOrderRequest struct {
 }
 
 type ListOrdersRequest struct {
-	UserID   int64
-	Status   string
-	Page     int
-	PageSize int
+	UserID        int64
+	Status        string
+	OrderNo       string
+	VisibleMethod string
+	ProviderType  string
+	PurchaseType  string
+	Page          int
+	PageSize      int
 }
 
 type MarkOrderPaidRequest struct {
