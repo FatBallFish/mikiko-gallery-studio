@@ -89,7 +89,7 @@ func TestRandomCashierProviderInstanceWithReader(t *testing.T) {
 	}
 
 	candidates := []cashierProviderInstance{{ID: 101}, {ID: 102}, {ID: 103}}
-	if got := randomCashierProviderInstanceWithReader(strings.NewReader("\x02"), candidates); got.ID != 103 {
+	if got := randomCashierProviderInstanceWithReader(strings.NewReader("\x00\x00\x00\x00\x00\x00\x00\x02"), candidates); got.ID != 103 {
 		t.Fatalf("expected deterministic reader byte to select third candidate, got %#v", got)
 	}
 

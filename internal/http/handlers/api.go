@@ -18,7 +18,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"math/big"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -43,6 +42,7 @@ import (
 	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	domainredeem "github.com/fatballfish/pic-gallery/internal/domain/redeem"
@@ -85,38 +85,9 @@ type API struct {
 	cfg        config.Config
 }
 
-type cashierCustomAmountConfig struct {
-	Enabled      bool   `json:"enabled"`
-	MinAmountCNY string `json:"min_amount_cny"`
-	MaxAmountCNY string `json:"max_amount_cny"`
-	CNYPerPoint  string `json:"cny_per_point"`
-}
-
-type cashierVisibleMethod struct {
-	Method             string `json:"method"`
-	Label              string `json:"label"`
-	Enabled            bool   `json:"enabled"`
-	SourceProviderType string `json:"source_provider_type,omitempty"`
-	SchedulerStrategy  string `json:"scheduler_strategy,omitempty"`
-	DisplayOrder       int    `json:"display_order"`
-	Description        string `json:"description,omitempty"`
-}
-
-type cashierProviderInstance struct {
-	ID               int64          `json:"id"`
-	ProviderType     string         `json:"provider_type"`
-	Name             string         `json:"name"`
-	Enabled          bool           `json:"enabled"`
-	SupportedMethods []string       `json:"supported_methods"`
-	SortOrder        int            `json:"sort_order"`
-	SchedulerWeight  int            `json:"scheduler_weight"`
-	Limits           map[string]any `json:"limits,omitempty"`
-	Config           map[string]any `json:"config,omitempty"`
-	ConfigStatus     string         `json:"config_status,omitempty"`
-	LastError        string         `json:"last_error,omitempty"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
-}
+type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
+type cashierVisibleMethod = domaincashier.VisibleMethod
+type cashierProviderInstance = domaincashier.ProviderInstance
 
 type adminReadinessCheck struct {
 	Key         string    `json:"key"`
@@ -8087,14 +8058,7 @@ func randomCashierProviderInstance(candidates []cashierProviderInstance) cashier
 }
 
 func randomCashierProviderInstanceWithReader(reader io.Reader, candidates []cashierProviderInstance) cashierProviderInstance {
-	if len(candidates) == 0 {
-		return cashierProviderInstance{}
-	}
-	index, err := rand.Int(reader, big.NewInt(int64(len(candidates))))
-	if err != nil {
-		return candidates[0]
-	}
-	return candidates[int(index.Int64())]
+	return domaincashier.RandomProviderInstanceWithReader(reader, candidates)
 }
 
 func (a *API) nextRoundRobinCashierProviderInstance(ctx context.Context, method cashierVisibleMethod, candidates []cashierProviderInstance) cashierProviderInstance {
@@ -8191,19 +8155,7 @@ func (a *API) saveCashierSchedulerState(ctx context.Context, state map[string]ma
 }
 
 func cashierProviderInstanceAmountAllowed(instance cashierProviderInstance, amount decimal.Decimal) bool {
-	if raw, ok := instance.Limits["min_amount_cny"]; ok && raw != nil && strings.TrimSpace(fmt.Sprint(raw)) != "" {
-		_, minAmount, err := positiveDecimalString(fmt.Sprint(raw), "min_amount_cny")
-		if err != nil || amount.LessThan(minAmount) {
-			return false
-		}
-	}
-	if raw, ok := instance.Limits["max_amount_cny"]; ok && raw != nil && strings.TrimSpace(fmt.Sprint(raw)) != "" {
-		_, maxAmount, err := positiveDecimalString(fmt.Sprint(raw), "max_amount_cny")
-		if err != nil || amount.GreaterThan(maxAmount) {
-			return false
-		}
-	}
-	return true
+	return domaincashier.ProviderInstanceAmountAllowed(instance, amount)
 }
 
 type cashierPaymentDisplayRequest struct {

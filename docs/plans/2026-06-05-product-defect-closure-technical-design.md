@@ -2831,6 +2831,7 @@ BASE_URL=http://localhost:8080 ./scripts/workflow/api-smoke.sh
   - 调用记录“无模型/无候选”验收补齐到服务层：新增 `TestCreateTaskPersistsFailedCallRecordWhenRouteHasNoCandidate`，构造 route model 与价格存在但候选账号禁用的场景，要求创建任务返回 `MODEL_ROUTE_NO_CANDIDATE` 并持久化 `failed` 调用记录，保留 `route_model_code/resolved_quality_bucket` 与零点数快照；`callRecordRows.contract.ts` 同步锁定 `MODEL_ROUTE_NO_CANDIDATE` 的后台排障文案指向候选账号配置。
   - 后台调用记录错误码筛选建议项已抽到 `callRecordCommonErrorCodes` 纯模型并同步修正：筛选 datalist 不再提供旧 `INSUFFICIENT_BALANCE`，改为真实后端枚举 `BILLING_INSUFFICIENT_POINTS`；contract 锁定筛选建议项、行展示和排障提示使用同一错误码口径。
   - 前置失败调用记录的路由上下文继续补强：`modelhub.ResolvedRequest` 新增 `route_model_id/route_model_code/route_snapshot_version` 元数据，route resolver 在价格缺失、输出数量超限、参考图超限、无候选等失败分支返回 partial resolved；`CreateTask` 持久化失败记录时使用该 partial resolved，后台可看到对应路由 ID、路由快照和已解析质量，避免运营只能靠错误码猜测失败发生在哪个模型配置版本。
+  - Phase 2 收银台后端开始补齐独立领域边界：新增 `internal/domain/cashier`，先承载 `CustomAmountConfig`、`VisibleMethod`、`ProviderInstance` 和 provider 实例随机调度/金额限额纯函数；`internal/http/handlers/api.go` 暂以 type alias 接入，保持现有 HTTP 契约不变，为后续继续迁移 `service/cashier`、store 与 adapter 留出稳定落点。
 - 浏览器手动验收补证：
   - 已用临时 SQLite 验收环境启动后端 `http://127.0.0.1:8080`、用户端 `http://127.0.0.1:5173`、后台端 `http://127.0.0.1:5175`。
   - 游客访问 `/#/public-gallery` 可正常打开空广场态，控制台无 warning/error，截图：`.codex/acceptance-public-gallery-guest.png`。
