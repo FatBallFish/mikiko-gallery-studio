@@ -50,6 +50,26 @@ export type CashierProviderConfigGuide = {
   secretHint: string
 }
 
+export type CashierJeePayConfigField = {
+  key: keyof CashierJeePayStructuredConfig
+  label: string
+  hint: string
+  placeholder: string
+  multiline?: boolean
+}
+
+export type CashierJeePayStructuredConfig = {
+  gateway_url: string
+  mch_no: string
+  app_id: string
+  key: string
+  payment_mode: string
+  way_code: string
+  client_ip: string
+  channel_extra_text: string
+  raw_config_text: string
+}
+
 const defaultSecretHint = '密钥、私钥和证书类字段保存后不会回显明文，请在轮换时重新填写。'
 
 const providerConfigGuides: Record<string, CashierProviderConfigGuide> = {
@@ -136,6 +156,68 @@ export function cashierToggleSupportedMethod(selectedMethods: string, method: st
   return Array.from(new Set(next)).join(', ')
 }
 
+const jeepayStructuredFields: CashierJeePayConfigField[] = [
+  { key: 'gateway_url', label: '网关地址', hint: 'JeePay 服务网关，例如沙箱或正式环境支付网关。', placeholder: 'https://pay.example.com' },
+  { key: 'mch_no', label: '商户号', hint: 'JeePay 商户号，用于下单、查单、退款和回调匹配。', placeholder: 'M1234567890' },
+  { key: 'app_id', label: '应用 ID', hint: 'JeePay 应用 ID；微信小程序或 JSAPI 场景仍在渠道参数中补充用户标识。', placeholder: 'A1234567890' },
+  { key: 'key', label: '商户密钥', hint: '保存后不会明文回显；轮换密钥时重新填写。', placeholder: '支付密钥' },
+  { key: 'payment_mode', label: '支付模式', hint: 'API 预下单填 api；跳转收银台填 popup 或保持渠道要求。', placeholder: 'api' },
+  { key: 'way_code', label: 'wayCode', hint: 'JeePay 通道编码，例如支付宝 PC、微信扫码、微信 H5 或 JSAPI。', placeholder: 'WX_NATIVE' },
+  { key: 'client_ip', label: '客户端 IP', hint: '部分通道风控要求固定终端 IP；为空时由后端按请求环境兜底。', placeholder: '127.0.0.1' },
+  { key: 'channel_extra_text', label: '渠道参数', hint: '填写 openid、buyerUserId、服务商子商户、分账接收方等通道专属 JSON。', placeholder: '{\n  \"openid\": \"user-openid\"\n}', multiline: true },
+]
+
+export function cashierJeePayConfigFields(providerType: PaymentProviderType | string): CashierJeePayConfigField[] {
+  if (providerType !== 'jeepay_alipay' && providerType !== 'jeepay_wxpay') return []
+  return jeepayStructuredFields
+}
+
+export function cashierJeePayStructuredConfig(rawConfig: string): CashierJeePayStructuredConfig {
+  const config = parseConfigText(rawConfig)
+  return {
+    gateway_url: stringFromConfig(config.gateway_url),
+    mch_no: stringFromConfig(config.mch_no),
+    app_id: stringFromConfig(config.app_id),
+    key: stringFromConfig(config.key),
+    payment_mode: stringFromConfig(config.payment_mode),
+    way_code: stringFromConfig(config.way_code),
+    client_ip: stringFromConfig(config.client_ip),
+    channel_extra_text: stringifyNestedConfig(config.channel_extra),
+    raw_config_text: JSON.stringify(config, null, 2),
+  }
+}
+
+export function updateCashierJeePayStructuredConfig(rawConfig: string, patch: Partial<Omit<CashierJeePayStructuredConfig, 'raw_config_text'>>): string {
+  const config = parseConfigText(rawConfig)
+  for (const key of ['gateway_url', 'mch_no', 'app_id', 'key', 'payment_mode', 'way_code', 'client_ip'] as const) {
+    if (!(key in patch)) continue
+    const value = (patch[key] ?? '').trim()
+    if (value) {
+      config[key] = value
+    } else {
+      delete config[key]
+    }
+  }
+  if ('channel_extra_text' in patch) {
+    const rawChannelExtra = (patch.channel_extra_text ?? '').trim()
+    if (rawChannelExtra) {
+      let parsedChannelExtra: unknown
+      try {
+        parsedChannelExtra = JSON.parse(rawChannelExtra)
+      } catch {
+        throw new Error('渠道参数必须是 JSON 对象')
+      }
+      if (!isPlainRecord(parsedChannelExtra)) {
+        throw new Error('渠道参数必须是 JSON 对象')
+      }
+      config.channel_extra = parsedChannelExtra
+    } else {
+      delete config.channel_extra
+    }
+  }
+  return JSON.stringify(config, null, 2)
+}
+
 function methodsForProviderType(providerType: PaymentProviderType | string) {
   if (providerType === 'wxpay_direct' || providerType === 'easypay_wxpay' || providerType === 'jeepay_wxpay') return ['wxpay']
   if (providerType === 'mock') return ['mock']
@@ -144,4 +226,29 @@ function methodsForProviderType(providerType: PaymentProviderType | string) {
 
 function parseSupportedMethods(methods: string) {
   return methods.split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+function parseConfigText(rawConfig: string): Record<string, unknown> {
+  const trimmed = rawConfig.trim()
+  if (!trimmed) return {}
+  const parsed = JSON.parse(trimmed)
+  if (!isPlainRecord(parsed)) {
+    throw new Error('渠道配置必须是 JSON 对象')
+  }
+  return parsed
+}
+
+function stringifyNestedConfig(value: unknown) {
+  if (value === undefined || value === null || value === '') return ''
+  if (isPlainRecord(value) || Array.isArray(value)) return JSON.stringify(value, null, 2)
+  return String(value)
+}
+
+function stringFromConfig(value: unknown) {
+  if (value === undefined || value === null) return ''
+  return String(value)
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

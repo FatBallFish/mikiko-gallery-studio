@@ -4586,11 +4586,21 @@ func normalizeCashierQueryStatus(status string) cashierQueryStatus {
 		return cashierQueryStatus{Status: "paid", RiskCategory: "paid", ActionHint: "渠道已确认支付，可核对本地到账状态。", Paid: true, Message: "渠道订单已支付"}
 	case "pending", "processing", "process", "wait", "waiting", "created", "new", "0", "wait_buyer_pay", "userpaying", "notpay":
 		return cashierQueryStatus{Status: "pending", RiskCategory: "pending", ActionHint: "渠道仍未确认支付，稍后可再次查单。", Message: "渠道订单未支付或仍在处理中"}
-	case "closed", "close", "canceled", "cancelled", "cancel", "expired", "timeout", "trade_closed", "revoked", "3":
+	case "closed", "close", "canceled", "cancelled", "cancel", "expired", "trade_closed", "revoked", "3":
 		return cashierQueryStatus{Status: "closed", RiskCategory: "closed", ActionHint: "渠道订单已关闭，建议取消当前订单并让用户重新创建订单。", Message: "渠道订单已关闭"}
+	case "limited", "limit", "quota_limited", "amount_limited", "frequency_limited", "rate_limited", "exceed_limit", "over_limit":
+		return cashierQueryStatus{Status: "failed", RiskCategory: "channel_limited", ActionHint: "渠道订单触发限额限制，建议切换备用渠道、降低单笔金额或调整渠道实例限额后再重试。", Message: "渠道订单触发限额限制"}
+	case "sign_error", "signature_error", "invalid_sign", "verify_failed", "signature_invalid", "bad_signature", "sign_invalid":
+		return cashierQueryStatus{Status: "failed", RiskCategory: "signature_error", ActionHint: "渠道验签或签名配置异常，请检查商户密钥、证书、公钥、回调地址和签名算法配置。", Message: "渠道验签或签名配置异常"}
+	case "amount_mismatch", "money_mismatch", "total_amount_mismatch", "fee_mismatch", "price_mismatch":
+		return cashierQueryStatus{Status: "failed", RiskCategory: "amount_mismatch", ActionHint: "渠道订单金额与本地订单不一致，请暂停到账并核对订单金额、汇率、渠道费率和回调原文。", Message: "渠道订单金额与本地订单不一致"}
+	case "merchant_disabled", "mch_disabled", "account_disabled", "merchant_abnormal", "account_abnormal", "merchant_closed", "account_closed":
+		return cashierQueryStatus{Status: "failed", RiskCategory: "account_abnormal", ActionHint: "渠道商户账号状态异常，建议切换备用账号并登录渠道后台确认商户状态和产品权限。", Message: "渠道商户账号状态异常"}
+	case "timeout", "timed_out", "query_timeout", "network_timeout", "gateway_timeout", "request_timeout":
+		return cashierQueryStatus{Status: "failed", RiskCategory: "channel_timeout", ActionHint: "渠道查单超时或网络异常，建议稍后重试；连续失败时检查网关地址、网络出口和渠道可用性。", Message: "渠道查单超时或网络异常"}
 	case "failed", "failure", "fail", "error", "payerror", "pay_error", "trade_failed", "4":
 		return cashierQueryStatus{Status: "failed", RiskCategory: "channel_error", ActionHint: "渠道返回异常状态，请结合原始响应、商户后台和回调事件继续排查。", Message: "渠道订单支付失败"}
-	case "risk", "risk_control", "fraud", "intercepted", "security", "blocked", "limited":
+	case "risk", "risk_control", "fraud", "intercepted", "security", "blocked":
 		return cashierQueryStatus{Status: "failed", RiskCategory: "risk_control", ActionHint: "渠道侧风控或安全策略拦截，建议让用户更换支付渠道或重新创建订单后再支付。", Message: "渠道订单被风控拦截"}
 	case "refunded", "refund", "partially_refunded", "partial_refund", "trade_refund":
 		return cashierQueryStatus{Status: "refunded", RiskCategory: "refunded", ActionHint: "渠道显示已退款，请核对本地退款流水和用户充值余额是否一致。", Message: "渠道订单已退款"}

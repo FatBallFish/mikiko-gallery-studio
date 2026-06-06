@@ -1,4 +1,4 @@
-import { cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderLabels, cashierProviderSupportedMethodOptions, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod } from './cashierProviderOptions'
+import { cashierJeePayConfigFields, cashierJeePayStructuredConfig, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderLabels, cashierProviderSupportedMethodOptions, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod, updateCashierJeePayStructuredConfig } from './cashierProviderOptions'
 
 type ContainsPlaceholder<T extends string> = T extends `${string}占位${string}` | `${string}placeholder${string}` | `${string}Placeholder${string}` ? true : false
 type AssertNoPlaceholder<T extends false> = T
@@ -141,4 +141,78 @@ const guideVisibleCopy = guideExpectations.map((expectation) => {
 
 if (/占位|placeholder|后续|暂未|即将|版本/i.test(guideVisibleCopy)) {
   throw new Error(`provider config guides should be actionable and avoid roadmap/placeholder wording, got ${guideVisibleCopy}`)
+}
+
+const jeepayFields = cashierJeePayConfigFields('jeepay_wxpay')
+for (const expected of ['网关地址', '商户号', '应用 ID', '支付模式', 'wayCode', '客户端 IP', '渠道参数']) {
+  if (!jeepayFields.some((field) => field.label === expected)) {
+    throw new Error(`JeePay structured fields should include ${expected}, got ${JSON.stringify(jeepayFields)}`)
+  }
+}
+if (cashierJeePayConfigFields('mock').length !== 0) {
+  throw new Error('non-JeePay providers should not show JeePay structured fields')
+}
+
+const structured = cashierJeePayStructuredConfig(JSON.stringify({
+  gateway_url: 'https://pay.example.com',
+  mch_no: 'M123',
+  app_id: 'A456',
+  key: 'secret',
+  payment_mode: 'api',
+  way_code: 'WX_NATIVE',
+  client_ip: '127.0.0.1',
+  channel_extra: { profitSharing: true },
+  notify_url: 'https://pic.example.com/notify',
+}, null, 2))
+
+if (
+  structured.gateway_url !== 'https://pay.example.com'
+  || structured.mch_no !== 'M123'
+  || structured.app_id !== 'A456'
+  || structured.payment_mode !== 'api'
+  || structured.way_code !== 'WX_NATIVE'
+  || structured.client_ip !== '127.0.0.1'
+  || structured.channel_extra_text !== '{\n  "profitSharing": true\n}'
+) {
+  throw new Error(`JeePay structured config should parse known fields, got ${JSON.stringify(structured)}`)
+}
+if (!structured.raw_config_text.includes('"notify_url"')) {
+  throw new Error(`JeePay structured config should preserve raw config text for troubleshooting, got ${structured.raw_config_text}`)
+}
+
+const updatedConfig = updateCashierJeePayStructuredConfig(JSON.stringify({
+  gateway_url: 'https://pay.example.com',
+  mch_no: 'M123',
+  app_id: 'A456',
+  key: 'secret',
+  way_code: 'WX_NATIVE',
+  channel_extra: { profitSharing: true },
+  notify_url: 'https://pic.example.com/notify',
+}, null, 2), {
+  gateway_url: 'https://new-pay.example.com',
+  way_code: 'WX_JSAPI',
+  client_ip: '',
+  channel_extra_text: '{\n  "openid": "user-openid"\n}',
+})
+const updated = JSON.parse(updatedConfig)
+if (updated.gateway_url !== 'https://new-pay.example.com' || updated.way_code !== 'WX_JSAPI' || updated.client_ip !== undefined || updated.notify_url !== 'https://pic.example.com/notify') {
+  throw new Error(`JeePay structured config should update known fields and preserve unknown fields, got ${updatedConfig}`)
+}
+if (updated.channel_extra?.openid !== 'user-openid') {
+  throw new Error(`JeePay channel_extra should be parsed from structured textarea, got ${updatedConfig}`)
+}
+
+let invalidChannelExtraFailed = false
+try {
+  updateCashierJeePayStructuredConfig('{}', { channel_extra_text: 'not-json' })
+} catch (caught) {
+  invalidChannelExtraFailed = caught instanceof Error && caught.message.includes('渠道参数')
+}
+if (!invalidChannelExtraFailed) {
+  throw new Error('invalid JeePay channel_extra text should fail with operator-facing message')
+}
+
+const structuredVisibleCopy = jeepayFields.map((field) => `${field.label} ${field.hint} ${field.placeholder}`).join(' ')
+if (/gateway_url|mch_no|app_id|client_ip|channel_extra|后续|暂未|即将|版本/.test(structuredVisibleCopy)) {
+  throw new Error(`JeePay structured field copy should be operator-facing, got ${structuredVisibleCopy}`)
 }

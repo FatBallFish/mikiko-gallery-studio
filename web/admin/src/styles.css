@@ -1209,6 +1209,32 @@ code {
   gap: 8px;
 }
 
+.cashier-structured-config {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: rgba(244, 248, 252, 0.72);
+  border-radius: 8px;
+}
+
+.cashier-structured-config strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.cashier-structured-config p {
+  margin: 4px 0 0;
+  color: var(--soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.cashier-structured-config .form-grid {
+  width: 100%;
+}
+
 .user-filter-form {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) 126px 140px 130px 104px auto auto;

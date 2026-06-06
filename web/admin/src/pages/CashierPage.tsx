@@ -6,7 +6,7 @@ import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader }
 import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashierJeePayWayCodeTemplates'
 import { cashierAdminDateTime, cashierManualCompletionProviderOptions, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel, cashierProviderConfigStatusLabel, cashierProviderSupportedMethodsLabel, cashierWebhookEventTypeLabel, cashierWebhookProviderLabel } from './cashierPaymentDisplay'
 import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
-import { cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierToggleSupportedMethod } from './cashierProviderOptions'
+import { cashierJeePayConfigFields, cashierJeePayStructuredConfig, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierToggleSupportedMethod, updateCashierJeePayStructuredConfig } from './cashierProviderOptions'
 import { cashierOrderRiskRows, cashierWebhookRiskRow } from './cashierRiskRows'
 import type { CashierRiskRow } from './cashierRiskRows'
 import { cashierSyncRow } from './cashierSyncRows'
@@ -732,6 +732,12 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                 </div>
               </div>
             ) : null}
+            <JeePayStructuredConfigFields
+              providerType={instanceDialog.provider_type}
+              configText={instanceDialog.config_text}
+              onChange={(configText) => setInstanceDialog({ ...instanceDialog, config_text: configText })}
+              onError={setError}
+            />
             <Field label="渠道配置 JSON" hint={cashierProviderInstanceFieldHints.configJSON}>
               <textarea className="cashier-config-textarea" value={instanceDialog.config_text} onChange={(event) => setInstanceDialog({ ...instanceDialog, config_text: event.target.value })} rows={8} spellCheck={false} />
             </Field>
@@ -849,6 +855,61 @@ function ProviderConfigGuide({ providerType }: { providerType: PaymentProviderTy
         {guide.optionalFields.length ? <span>可选：{guide.optionalFields.join(' / ')}</span> : null}
       </div>
     </div>
+  )
+}
+
+function JeePayStructuredConfigFields({ providerType, configText, onChange, onError }: { providerType: PaymentProviderType; configText: string; onChange: (configText: string) => void; onError: (message: string) => void }) {
+  const fields = cashierJeePayConfigFields(providerType)
+  if (!fields.length) return null
+  let structured
+  try {
+    structured = cashierJeePayStructuredConfig(configText)
+  } catch {
+    return (
+      <section className="cashier-structured-config span-2">
+        <div>
+          <strong>JeePay 常用字段</strong>
+          <p>当前渠道配置不是有效 JSON，修正下方配置后即可使用字段级表单。</p>
+        </div>
+      </section>
+    )
+  }
+  const updateField = (key: keyof typeof structured, value: string) => {
+    try {
+      onChange(updateCashierJeePayStructuredConfig(configText, { [key]: value }))
+    } catch (caught) {
+      onError(caught instanceof Error ? caught.message : 'JeePay 常用字段更新失败')
+    }
+  }
+  return (
+    <section className="cashier-structured-config span-2">
+      <div>
+        <strong>JeePay 常用字段</strong>
+        <p>下方字段会同步写入渠道配置 JSON，未知配置仍保留在原始 JSON 中。</p>
+      </div>
+      <div className="form-grid">
+        {fields.map((field) => (
+          <Field key={field.key} label={field.label} hint={field.hint}>
+            {field.multiline ? (
+              <textarea
+                className="cashier-config-textarea"
+                value={structured[field.key]}
+                onChange={(event) => updateField(field.key, event.target.value)}
+                rows={4}
+                placeholder={field.placeholder}
+                spellCheck={false}
+              />
+            ) : (
+              <input
+                value={structured[field.key]}
+                onChange={(event) => updateField(field.key, event.target.value)}
+                placeholder={field.placeholder}
+              />
+            )}
+          </Field>
+        ))}
+      </div>
+    </section>
   )
 }
 

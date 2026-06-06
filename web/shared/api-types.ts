@@ -351,7 +351,7 @@ export type PaymentOrderSyncResult = {
   provider_type: PaymentProviderType
   provider_instance_id?: ID
   query_status: PaymentOrderSyncStatus
-  risk_category?: 'pending' | 'paid' | 'closed' | 'refunded' | 'channel_error' | 'risk_control' | string
+  risk_category?: 'pending' | 'paid' | 'closed' | 'refunded' | 'channel_error' | 'risk_control' | 'channel_limited' | 'signature_error' | 'amount_mismatch' | 'account_abnormal' | 'channel_timeout' | string
   action_hint?: string
   paid: boolean
   completed: boolean
