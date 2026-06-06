@@ -1209,6 +1209,31 @@ code {
   gap: 8px;
 }
 
+.jeepay-template-button {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-width: 136px;
+  max-width: 190px;
+  height: auto;
+  padding: 8px 10px;
+  text-align: left;
+  line-height: 1.25;
+}
+
+.jeepay-template-button span,
+.jeepay-template-button em {
+  color: var(--soft);
+  font-size: 0.7rem;
+  font-style: normal;
+}
+
+.jeepay-template-button strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
 .cashier-structured-config {
   display: grid;
   gap: 12px;

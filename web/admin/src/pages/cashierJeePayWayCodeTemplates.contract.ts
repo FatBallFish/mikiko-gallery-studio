@@ -38,8 +38,12 @@ const requiredTemplates = [
   ['WX_LITE', 'jeepay_wxpay'],
   ['WX_NATIVE_SUB_MCH', 'jeepay_wxpay'],
   ['WX_NATIVE_PROFIT_SHARING', 'jeepay_wxpay'],
+  ['WX_H5_CATERING', 'jeepay_wxpay'],
+  ['WX_NATIVE_PARKING', 'jeepay_wxpay'],
   ['ALI_JSAPI', 'jeepay_alipay'],
   ['ALI_PC_SUB_MCH', 'jeepay_alipay'],
+  ['ALI_PC_HOTEL_PREAUTH', 'jeepay_alipay'],
+  ['ALI_JSAPI_CAMPUS', 'jeepay_alipay'],
 ] as const
 
 for (const [wayCode, providerType] of requiredTemplates) {
@@ -50,8 +54,11 @@ for (const [wayCode, providerType] of requiredTemplates) {
 }
 
 for (const template of jeepayWayCodeTemplates) {
-  const visibleCopy = `${template.label}${template.description}`
-  if (/占位|placeholder/i.test(visibleCopy)) {
+  if (!template.category || !/[\u4e00-\u9fa5]/.test(template.category)) {
+    throw new Error(`JeePay template ${template.way_code} should expose an operator-facing category, got ${JSON.stringify(template)}`)
+  }
+  const visibleCopy = `${template.category}${template.label}${template.description}`
+  if (/占位|placeholder|后续|暂未|即将|版本/i.test(visibleCopy)) {
     throw new Error(`JeePay template visible copy should describe usable examples, got ${template.way_code}: ${visibleCopy}`)
   }
 }
@@ -78,4 +85,39 @@ if (!Array.isArray(wxProfitSharing.channel_extra?.profitSharingReceivers) || wxP
 const aliJSAPI = JSON.parse(applyJeePayWayCodeTemplate('{}', 'ALI_JSAPI'))
 if (aliJSAPI.channel_extra?.buyerUserId !== '<alipay-user-id>') {
   throw new Error(`JeePay ALI_JSAPI template should include buyerUserId placeholder, got ${JSON.stringify(aliJSAPI)}`)
+}
+
+const wxCatering = JSON.parse(applyJeePayWayCodeTemplate(`{
+  "channel_extra": {
+    "sceneInfo": {
+      "wap_name": "Existing Shop"
+    }
+  }
+}`, 'WX_H5_CATERING'))
+if (wxCatering.way_code !== 'WX_H5' || wxCatering.channel_extra?.sceneInfo?.wap_name !== 'Existing Shop' || wxCatering.channel_extra?.storeInfo?.id !== '<store-id>' || wxCatering.channel_extra?.terminalInfo?.terminalId !== '<terminal-id>') {
+  throw new Error(`JeePay catering template should merge scene/store/terminal industry parameters, got ${JSON.stringify(wxCatering)}`)
+}
+
+const wxParking = JSON.parse(applyJeePayWayCodeTemplate('{}', 'WX_NATIVE_PARKING'))
+if (wxParking.way_code !== 'WX_NATIVE' || wxParking.channel_extra?.parkingInfo?.plateNumber !== '<plate-number>' || wxParking.channel_extra?.parkingInfo?.parkingId !== '<parking-id>') {
+  throw new Error(`JeePay parking template should include parking industry parameters, got ${JSON.stringify(wxParking)}`)
+}
+
+const aliHotel = JSON.parse(applyJeePayWayCodeTemplate('{}', 'ALI_PC_HOTEL_PREAUTH'))
+if (aliHotel.way_code !== 'ALI_PC' || aliHotel.channel_extra?.industryScenario !== 'HOTEL_PREAUTH' || aliHotel.channel_extra?.hotelOrderNo !== '<hotel-order-no>') {
+  throw new Error(`JeePay hotel preauth template should include hotel industry parameters, got ${JSON.stringify(aliHotel)}`)
+}
+
+const aliCampus = JSON.parse(applyJeePayWayCodeTemplate(`{
+  "channel_extra": {
+    "buyerUserId": "existing-buyer"
+  }
+}`, 'ALI_JSAPI_CAMPUS'))
+if (aliCampus.way_code !== 'ALI_JSAPI' || aliCampus.channel_extra?.buyerUserId !== 'existing-buyer' || aliCampus.channel_extra?.schoolInfo?.studentId !== '<student-id>') {
+  throw new Error(`JeePay campus template should preserve buyerUserId and add school parameters, got ${JSON.stringify(aliCampus)}`)
+}
+
+const industryTemplates = jeepayWayCodeTemplates.filter((template) => template.category === '行业参数')
+if (industryTemplates.length < 4 || !industryTemplates.some((template) => template.provider_types.includes('jeepay_alipay')) || !industryTemplates.some((template) => template.provider_types.includes('jeepay_wxpay'))) {
+  throw new Error(`JeePay industry parameter templates should cover Alipay and WeChat scenarios, got ${JSON.stringify(industryTemplates)}`)
 }

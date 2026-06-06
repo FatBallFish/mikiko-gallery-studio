@@ -2824,6 +2824,8 @@ BASE_URL=http://localhost:8080 ./scripts/workflow/api-smoke.sh
   - 后台收银台 JeePay 渠道实例已补齐字段级配置表单：`cashierJeePayConfigFields` 固定输出“网关地址 / 商户号 / 应用 ID / 商户密钥 / 支付模式 / wayCode / 客户端 IP / 渠道参数”，`cashierJeePayStructuredConfig` 可从原始 JSON 提取常用字段并保留未知字段，`updateCashierJeePayStructuredConfig` 将表单改动回写到原 `config_text`，保存接口仍提交既有 `config` JSON 契约。
   - `CashierPage.tsx` 的支付渠道实例弹窗在 JeePay provider 下新增“JeePay 常用字段”区域，运营可直接填写 wayCode、服务商/JSAPI/分账等 `channel_extra` JSON；原始 JSON 文本框仍保留用于高级排障和未知字段。`cashierProviderOptions.contract.ts` 已锁定字段中文文案、未知配置保留、非法渠道参数错误提示和非 JeePay provider 不展示结构化表单；`npm exec tsx src/pages/cashierProviderOptions.contract.ts`、`npm --prefix web/admin run typecheck`、`npm --prefix web/admin run build` 已通过。
   - 后台主动查单同步已继续补齐更细渠道错误码分类规则：`normalizeCashierQueryStatus` 将限额、签名/验签、金额不一致、商户账号异常、查单/网关超时分别归入独立 `risk_category`，OpenAPI `AdminCashierOrderSyncResult.risk_category` 和 `web/shared/api-types.ts` 同步枚举；`cashierSyncRows.contract.ts` 锁定五类新风险的中文标签与处理建议。
+  - 后台 JeePay 模板已从纯 wayCode 按钮升级为“场景模板”：模板模型新增中文 `category`，后台弹窗按基础支付、网页支付、移动支付、小程序、服务商、分账和行业参数展示中文名称、分类与 wayCode；保存仍回写既有 `config` JSON。
+  - JeePay 行业参数模板首批补齐餐饮外卖 H5、停车缴费扫码、酒店预授权、校园缴费四类非常规场景，分别沉淀 `storeInfo/terminalInfo`、`parkingInfo`、`industryScenario/hotelOrderNo`、`schoolInfo` 等 `channel_extra` 示例；`cashierJeePayWayCodeTemplates.contract.ts` 锁定模板分类、合并已有配置、支付宝/微信双侧行业覆盖和可见文案不得回退到占位/路线图话术。
 - 浏览器手动验收补证：
   - 已用临时 SQLite 验收环境启动后端 `http://127.0.0.1:8080`、用户端 `http://127.0.0.1:5173`、后台端 `http://127.0.0.1:5175`。
   - 游客访问 `/#/public-gallery` 可正常打开空广场态，控制台无 warning/error，截图：`.codex/acceptance-public-gallery-guest.png`。
@@ -2840,4 +2842,4 @@ BASE_URL=http://localhost:8080 ./scripts/workflow/api-smoke.sh
   - 后台人工补单/人工确认到账已完成最小闭环。
   - 后台主动查单同步已完成配置驱动骨架闭环，且支付宝/微信官方、易支付、JeePay HTTP 查单均已接入；渠道差异状态已归一化为 `pending/paid/closed/failed/refunded` 并保留 raw 原始响应，常见风控、限额、签名、金额不一致、商户账号异常、超时和普通渠道异常已归入独立运营分类并返回处理建议。
   - 后台未消费充值余额全额退款和部分退款已完成最小闭环；支付宝官方、微信官方、易支付、JeePay 真实渠道退款最小 adapter 已接入并按本次退款金额请求渠道；渠道退款前本地可退款预检与 recharge grant 冻结已完成，可避免余额已消费/冻结/不足时仍先打渠道退款，也可避免真实渠道退款调用期间被生图任务并发消费；真实渠道已退款但本地最终落账失败时已写入 `refund.local_finalize_failed` 失败事件，并复用后台 webhook event 重试入口和独立 worker 自动扫描做补偿；后台 dashboard 已新增 `refund_compensation_failed_count` / `refund_compensation_oldest_failed_at` 和 `refund_compensation_failures` 危险指标卡，上线检查新增 `refund_compensation` 阻塞检查，失败补偿不会只藏在回调列表里；订单级人工追扣已通过 `/api/ops/admin/v1/cashier/orders/{order_id}/chargeback`、审计 `cashier.order.chargeback` 和后台“追扣”弹窗完成最小闭环。
-  - JeePay 下单/回调/主动查单/真实退款最小闭环已完成；JeePay `payment_mode=api/qrcode/qr_code` 预下单 POST 模式已完成；`wayCode` 差异化参数已通过结构化 `channelExtra` 配置打通，后台收银台已新增支付宝 PC/JSAPI/服务商、微信扫码/JSAPI/H5/小程序/服务商/分账模板辅助配置，并补齐常用字段级配置表单。后续如需更强产品化体验，可继续把更多非常规行业参数沉淀为模板或分类规则。
+  - JeePay 下单/回调/主动查单/真实退款最小闭环已完成；JeePay `payment_mode=api/qrcode/qr_code` 预下单 POST 模式已完成；`wayCode` 差异化参数已通过结构化 `channelExtra` 配置打通，后台收银台已新增支付宝 PC/JSAPI/服务商、微信扫码/JSAPI/H5/小程序/服务商/分账模板辅助配置，并补齐常用字段级配置表单；非常规行业参数已先沉淀餐饮外卖、停车缴费、酒店预授权、校园缴费模板。后续只需按真实商户行业继续追加模板数据，不再需要改收银台配置契约。

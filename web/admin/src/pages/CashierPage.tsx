@@ -708,16 +708,16 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
             {jeepayTemplatesForProvider(instanceDialog.provider_type).length ? (
               <div className="cashier-jeepay-template span-2">
                 <div>
-                  <strong>JeePay wayCode 模板</strong>
-                  <p>套用模板会保留已有商户号、密钥和网关地址，只补齐支付模式、wayCode 和 channelExtra 示例。</p>
+                  <strong>JeePay 场景模板</strong>
+                  <p>按基础支付、网页支付、服务商、分账和行业参数套用模板；会保留已有商户号、密钥和网关地址，只补齐支付模式、wayCode 和 channelExtra 示例。</p>
                 </div>
                 <div className="template-button-row">
                   {jeepayTemplatesForProvider(instanceDialog.provider_type).map((template) => (
                     <button
                       key={template.way_code}
                       type="button"
-                      className="ghost small"
-                      title={template.description}
+                      className="ghost small jeepay-template-button"
+                      title={`${template.category} · ${template.description}`}
                       onClick={() => {
                         try {
                           setInstanceDialog({ ...instanceDialog, config_text: applyJeePayWayCodeTemplate(instanceDialog.config_text, template.way_code) })
@@ -726,7 +726,9 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                         }
                       }}
                     >
-                      {template.way_code}
+                      <span>{template.category}</span>
+                      <strong>{template.label}</strong>
+                      <em>{template.way_code}</em>
                     </button>
                   ))}
                 </div>
