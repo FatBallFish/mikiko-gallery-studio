@@ -9306,75 +9306,11 @@ func decodeCashierProviderInstanceRequest(w http.ResponseWriter, r *http.Request
 }
 
 func normalizeCashierProviderInstance(req cashierProviderInstance, instanceID int64) (cashierProviderInstance, *errs.Error) {
-	req.ID = instanceID
-	req.ProviderType = strings.ToLower(strings.TrimSpace(req.ProviderType))
-	if !cashierProviderTypeAllowed(req.ProviderType) {
-		return cashierProviderInstance{}, errs.BadRequest("provider_type is not supported")
+	normalized, err := cashierservice.NormalizeProviderInstance(req, instanceID, time.Now().UTC())
+	if err != nil {
+		return cashierProviderInstance{}, errs.BadRequest(err.Error())
 	}
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		return cashierProviderInstance{}, errs.BadRequest("name is required")
-	}
-	req.SupportedMethods = normalizeStringList(req.SupportedMethods)
-	if len(req.SupportedMethods) == 0 {
-		req.SupportedMethods = defaultMethodsForCashierProviderType(req.ProviderType)
-	}
-	for _, method := range req.SupportedMethods {
-		if !cashierProviderSupportsMethod(req.ProviderType, method) {
-			return cashierProviderInstance{}, errs.BadRequest("supported_methods is not allowed for provider_type")
-		}
-	}
-	if req.SchedulerWeight <= 0 {
-		req.SchedulerWeight = 100
-	}
-	if req.SortOrder < 0 {
-		req.SortOrder = 0
-	}
-	req.Limits = normalizeMap(req.Limits)
-	if limitErr := validateCashierProviderLimits(req.Limits); limitErr != nil {
-		return cashierProviderInstance{}, limitErr
-	}
-	req.Config = normalizeMap(req.Config)
-	req.ConfigStatus = "missing"
-	if len(req.Config) > 0 || req.ProviderType == "mock" {
-		req.ConfigStatus = "configured"
-	}
-	req.LastError = strings.TrimSpace(req.LastError)
-	return req, nil
-}
-
-func cashierProviderTypeAllowed(providerType string) bool {
-	switch providerType {
-	case "mock", "alipay_direct", "wxpay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay":
-		return true
-	default:
-		return false
-	}
-}
-
-func cashierProviderSupportsMethod(providerType, method string) bool {
-	method = strings.ToLower(strings.TrimSpace(method))
-	switch providerType {
-	case "mock":
-		return method == "mock" || method == "alipay" || method == "wxpay"
-	case "alipay_direct", "easypay_alipay", "jeepay_alipay":
-		return method == "alipay"
-	case "wxpay_direct", "easypay_wxpay", "jeepay_wxpay":
-		return method == "wxpay"
-	default:
-		return false
-	}
-}
-
-func defaultMethodsForCashierProviderType(providerType string) []string {
-	switch providerType {
-	case "wxpay_direct", "easypay_wxpay", "jeepay_wxpay":
-		return []string{"wxpay"}
-	case "mock":
-		return []string{"mock"}
-	default:
-		return []string{"alipay"}
-	}
+	return normalized, nil
 }
 
 func normalizeStringList(values []string) []string {
@@ -9408,36 +9344,6 @@ func normalizeMap(value map[string]any) map[string]any {
 		normalized[key] = raw
 	}
 	return normalized
-}
-
-func validateCashierProviderLimits(limits map[string]any) *errs.Error {
-	for _, key := range []string{"min_amount_cny", "max_amount_cny", "daily_amount_limit_cny"} {
-		raw, ok := limits[key]
-		if !ok || raw == nil || strings.TrimSpace(fmt.Sprint(raw)) == "" {
-			continue
-		}
-		formatted, _, err := positiveDecimalString(fmt.Sprint(raw), key)
-		if err != nil {
-			return err
-		}
-		limits[key] = formatted
-	}
-	if minRaw, minOK := limits["min_amount_cny"]; minOK {
-		if maxRaw, maxOK := limits["max_amount_cny"]; maxOK {
-			_, minValue, minErr := positiveDecimalString(fmt.Sprint(minRaw), "min_amount_cny")
-			_, maxValue, maxErr := positiveDecimalString(fmt.Sprint(maxRaw), "max_amount_cny")
-			if minErr != nil {
-				return minErr
-			}
-			if maxErr != nil {
-				return maxErr
-			}
-			if minValue.GreaterThan(maxValue) {
-				return errs.BadRequest("min_amount_cny must be less than or equal to max_amount_cny")
-			}
-		}
-	}
-	return nil
 }
 
 func (a *API) cashierProviderInstances(ctx context.Context) []cashierProviderInstance {
@@ -9582,70 +9488,7 @@ func cashierProviderInstancePayloads(instances []cashierProviderInstance) []map[
 }
 
 func cashierProviderInstancePayload(item cashierProviderInstance) map[string]any {
-	return map[string]any{
-		"id":                 item.ID,
-		"provider_type":      item.ProviderType,
-		"name":               item.Name,
-		"enabled":            item.Enabled,
-		"supported_methods":  item.SupportedMethods,
-		"sort_order":         item.SortOrder,
-		"scheduler_weight":   item.SchedulerWeight,
-		"limits":             normalizeMap(item.Limits),
-		"config":             redactCashierProviderConfig(item.Config),
-		"config_status":      item.ConfigStatus,
-		"credentials_status": cashierCredentialsStatus(item.Config, item.UpdatedAt),
-		"last_error":         item.LastError,
-		"created_at":         item.CreatedAt,
-		"updated_at":         item.UpdatedAt,
-	}
-}
-
-func redactCashierProviderConfig(config map[string]any) map[string]any {
-	redacted := map[string]any{}
-	for key, value := range normalizeMap(config) {
-		if cashierConfigKeyIsSecret(key) {
-			continue
-		}
-		redacted[key] = value
-	}
-	return redacted
-}
-
-func cashierCredentialsStatus(config map[string]any, updatedAt time.Time) map[string]any {
-	secretMaterial := cashierSecretMaterial(config)
-	if strings.TrimSpace(secretMaterial) == "" {
-		return map[string]any{"has_secret": false}
-	}
-	sum := sha256.Sum256([]byte(secretMaterial))
-	status := map[string]any{
-		"has_secret":  true,
-		"fingerprint": fmt.Sprintf("sha256:%x", sum[:8]),
-	}
-	if !updatedAt.IsZero() {
-		status["updated_at"] = updatedAt
-	}
-	return status
-}
-
-func cashierSecretMaterial(config map[string]any) string {
-	parts := make([]string, 0)
-	for key, value := range normalizeMap(config) {
-		if cashierConfigKeyIsSecret(key) {
-			parts = append(parts, fmt.Sprintf("%s=%v", key, value))
-		}
-	}
-	sort.Strings(parts)
-	return strings.Join(parts, "\n")
-}
-
-func cashierConfigKeyIsSecret(key string) bool {
-	key = strings.ToLower(strings.TrimSpace(key))
-	switch key {
-	case "key", "pkey", "api_v3_key", "apiv3_key", "mch_key", "merchant_key":
-		return true
-	default:
-		return strings.Contains(key, "secret") || strings.Contains(key, "private_key") || strings.Contains(key, "token") || strings.Contains(key, "mch_key") || strings.Contains(key, "api_key")
-	}
+	return cashierservice.ProviderInstancePayload(item)
 }
 
 func int64FromAny(value any) int64 {

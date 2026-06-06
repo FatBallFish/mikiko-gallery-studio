@@ -2833,6 +2833,7 @@ BASE_URL=http://localhost:8080 ./scripts/workflow/api-smoke.sh
   - 前置失败调用记录的路由上下文继续补强：`modelhub.ResolvedRequest` 新增 `route_model_id/route_model_code/route_snapshot_version` 元数据，route resolver 在价格缺失、输出数量超限、参考图超限、无候选等失败分支返回 partial resolved；`CreateTask` 持久化失败记录时使用该 partial resolved，后台可看到对应路由 ID、路由快照和已解析质量，避免运营只能靠错误码猜测失败发生在哪个模型配置版本。
   - Phase 2 收银台后端开始补齐独立领域边界：新增 `internal/domain/cashier`，先承载 `CustomAmountConfig`、`VisibleMethod`、`ProviderInstance` 和 provider 实例随机调度/金额限额纯函数；`internal/http/handlers/api.go` 暂以 type alias 接入，保持现有 HTTP 契约不变，为后续继续迁移 `service/cashier`、store 与 adapter 留出稳定落点。
   - Phase 2 收银台调度服务骨架继续落地：新增 `internal/service/cashier`，先承载 provider 实例候选过滤、金额限额、random/round-robin 调度和调度游标模型；`scheduleCashierProviderInstance` 已委托该 service，同时继续由 handler 持久化原 `payments.scheduler_state` 配置，避免一次性重做 store/adapter 造成支付链路大范围风险。
+  - Phase 2 收银台 provider 配置模型继续从 handler 下沉：`internal/service/cashier/provider.go` 已承载 provider instance 归一化、默认支持方式、金额限额格式化、密钥字段识别、配置脱敏和 `credentials_status` 指纹生成；后台 provider instance 创建/更新和响应 payload 继续保持原 HTTP 契约，但不再在 handler 内维护第二套密钥遮蔽规则。
 - 浏览器手动验收补证：
   - 已用临时 SQLite 验收环境启动后端 `http://127.0.0.1:8080`、用户端 `http://127.0.0.1:5173`、后台端 `http://127.0.0.1:5175`。
   - 游客访问 `/#/public-gallery` 可正常打开空广场态，控制台无 warning/error，截图：`.codex/acceptance-public-gallery-guest.png`。

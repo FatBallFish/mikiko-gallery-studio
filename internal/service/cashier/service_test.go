@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 )
@@ -62,4 +63,66 @@ func TestServiceScheduleProviderInstanceRejectsUnavailableMethod(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "payment method is unavailable") {
 		t.Fatalf("expected unavailable method error, got %v", err)
 	}
+}
+
+func TestNormalizeProviderInstanceDefaultsMethodsAndLimits(t *testing.T) {
+	now := fixedCashierTime()
+	item, err := NormalizeProviderInstance(domaincashier.ProviderInstance{
+		ID:           7,
+		ProviderType: " wxpay_direct ",
+		Name:         "  微信商户 A ",
+		Enabled:      true,
+		Limits: map[string]any{
+			"min_amount_cny": "5",
+			"max_amount_cny": "500",
+		},
+		Config: map[string]any{"api_v3_key": "secret", "mch_id": "mch-1"},
+	}, 7, now)
+	if err != nil {
+		t.Fatalf("NormalizeProviderInstance returned error: %v", err)
+	}
+
+	if item.ProviderType != "wxpay_direct" || item.Name != "微信商户 A" {
+		t.Fatalf("expected normalized provider type/name, got %#v", item)
+	}
+	if len(item.SupportedMethods) != 1 || item.SupportedMethods[0] != "wxpay" {
+		t.Fatalf("expected wxpay default supported method, got %#v", item.SupportedMethods)
+	}
+	if item.Limits["min_amount_cny"] != "5.00000" || item.Limits["max_amount_cny"] != "500.00000" {
+		t.Fatalf("expected formatted limits, got %#v", item.Limits)
+	}
+	if item.ConfigStatus != "configured" || item.CreatedAt != now || item.UpdatedAt != now {
+		t.Fatalf("expected configured timestamps, got %#v", item)
+	}
+}
+
+func TestProviderInstancePayloadRedactsSecretConfig(t *testing.T) {
+	payload := ProviderInstancePayload(domaincashier.ProviderInstance{
+		ID:           9,
+		ProviderType: "alipay_direct",
+		Name:         "支付宝",
+		Enabled:      true,
+		Config: map[string]any{
+			"app_id":          "app-1",
+			"app_private_key": "private-key",
+			"gateway_url":     "https://example.test",
+		},
+		UpdatedAt: fixedCashierTime(),
+	})
+
+	config := payload["config"].(map[string]any)
+	if config["app_private_key"] != nil {
+		t.Fatalf("secret config should be redacted, got %#v", config)
+	}
+	if config["app_id"] != "app-1" || config["gateway_url"] != "https://example.test" {
+		t.Fatalf("non-secret config should remain visible, got %#v", config)
+	}
+	credentials := payload["credentials_status"].(map[string]any)
+	if credentials["has_secret"] != true || credentials["fingerprint"] == "" {
+		t.Fatalf("expected secret fingerprint status, got %#v", credentials)
+	}
+}
+
+func fixedCashierTime() time.Time {
+	return time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
 }
