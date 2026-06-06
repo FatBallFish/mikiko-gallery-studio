@@ -2826,6 +2826,7 @@ BASE_URL=http://localhost:8080 ./scripts/workflow/api-smoke.sh
   - 后台主动查单同步已继续补齐更细渠道错误码分类规则：`normalizeCashierQueryStatus` 将限额、签名/验签、金额不一致、商户账号异常、查单/网关超时分别归入独立 `risk_category`，OpenAPI `AdminCashierOrderSyncResult.risk_category` 和 `web/shared/api-types.ts` 同步枚举；`cashierSyncRows.contract.ts` 锁定五类新风险的中文标签与处理建议。
   - 后台 JeePay 模板已从纯 wayCode 按钮升级为“场景模板”：模板模型新增中文 `category`，后台弹窗按基础支付、网页支付、移动支付、小程序、服务商、分账和行业参数展示中文名称、分类与 wayCode；保存仍回写既有 `config` JSON。
   - JeePay 行业参数模板首批补齐餐饮外卖 H5、停车缴费扫码、酒店预授权、校园缴费四类非常规场景，分别沉淀 `storeInfo/terminalInfo`、`parkingInfo`、`industryScenario/hotelOrderNo`、`schoolInfo` 等 `channel_extra` 示例；`cashierJeePayWayCodeTemplates.contract.ts` 锁定模板分类、合并已有配置、支付宝/微信双侧行业覆盖和可见文案不得回退到占位/路线图话术。
+  - `scripts/test/api_contract_smoke.sh` 已从“Open API 任务只验证 queued”升级为真实 worker 端到端链路：smoke 启动临时 OpenRouter 兼容 fake provider，通过后台模型账号 API 创建 `openrouter/api_key/base_url` 账号和启用账号模型，用户用 Open API 创建文生图任务后启动 `cmd/worker` 处理队列，必须轮询到任务 `succeeded`、结果图进入私有图库、账本出现 `consume/usage/task` 扣费流水、后台用户详情展示该任务为 `succeeded`。同时修复 `modelhub.Resolver` 将后台模型账号状态 `enabled` 误判为不可用的问题，新增 `TestResolveAllowsEnabledModelAccountCandidates`，证明后台启用账号可驱动默认抽象模型生成。
 - 浏览器手动验收补证：
   - 已用临时 SQLite 验收环境启动后端 `http://127.0.0.1:8080`、用户端 `http://127.0.0.1:5173`、后台端 `http://127.0.0.1:5175`。
   - 游客访问 `/#/public-gallery` 可正常打开空广场态，控制台无 warning/error，截图：`.codex/acceptance-public-gallery-guest.png`。

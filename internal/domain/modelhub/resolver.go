@@ -509,7 +509,7 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 			if !r.providerEnabledWithRouting(candidate.Provider, routing) {
 				continue
 			}
-			if candidate.HealthStatus != "" && !strings.EqualFold(candidate.HealthStatus, "healthy") && !strings.EqualFold(candidate.HealthStatus, "unknown") {
+			if !candidateHealthUsable(candidate.HealthStatus) {
 				continue
 			}
 			if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, req.TaskType) {
@@ -589,6 +589,15 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 		MaxReferenceImageCount: r.cfg.GenerationLimits.ReferenceImageMaxCount,
 		RuntimeRoutingApplied:  len(routing.Providers) > 0 || len(routing.Routes) > 0,
 	}, nil
+}
+
+func candidateHealthUsable(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "healthy", "unknown", "enabled":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) (ResolvedRequest, error) {

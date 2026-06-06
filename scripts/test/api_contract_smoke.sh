@@ -19,11 +19,16 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke.XXXXXX")"
 SMOKE_ID="$(basename "$TMP_DIR" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 DB_PATH="$TMP_DIR/smoke.db"
 SERVER_LOG="$TMP_DIR/api.log"
+WORKER_LOG="$TMP_DIR/worker.log"
+FAKE_PROVIDER_LOG="$TMP_DIR/fake-provider.log"
+STORAGE_ROOT="$TMP_DIR/storage"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 SMOKE_USER_EMAIL="smoke-user-${SMOKE_ID}@example.com"
 SMOKE_ADMIN_EMAIL="admin-smoke-${SMOKE_ID}@example.com"
 SMOKE_SUPER_ADMIN_EMAIL="super-admin-smoke-${SMOKE_ID}@example.com"
 SERVER_PID=""
+WORKER_PID=""
+FAKE_PROVIDER_PID=""
 ADMIN_PASSWORD="$(python3 - <<'PY'
 import secrets
 
@@ -44,6 +49,14 @@ PY
 )"
 
 cleanup() {
+  if [[ -n "$WORKER_PID" ]] && kill -0 "$WORKER_PID" >/dev/null 2>&1; then
+    kill "$WORKER_PID" >/dev/null 2>&1 || true
+    wait "$WORKER_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$FAKE_PROVIDER_PID" ]] && kill -0 "$FAKE_PROVIDER_PID" >/dev/null 2>&1; then
+    kill "$FAKE_PROVIDER_PID" >/dev/null 2>&1 || true
+    wait "$FAKE_PROVIDER_PID" >/dev/null 2>&1 || true
+  fi
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
@@ -53,7 +66,7 @@ cleanup() {
 trap cleanup EXIT
 
 request() {
-  curl --silent --show-error --fail "$@"
+  curl --silent --show-error --fail-with-body "$@"
 }
 
 assert_json_field() {
@@ -425,6 +438,60 @@ for item in items:
         print(item["task_id"])
         raise SystemExit(0)
 raise SystemExit(f"missing call record: user={user_id} error={error_code} source={source_channel}; got {items!r}")
+PY
+}
+
+assert_task_detail_status() {
+  local json="$1"
+  local task_id="$2"
+  local status="$3"
+  JSON="$json" python3 - "$task_id" "$status" <<'PY'
+import json
+import os
+import sys
+
+data = json.loads(os.environ["JSON"])
+task_id, status = sys.argv[1:]
+item = data.get("data", {})
+if item.get("id") != task_id:
+    raise SystemExit(f"task detail returned wrong task: want {task_id}, got {item!r}")
+if item.get("status") != status:
+    raise SystemExit(f"task detail status mismatch: want {status}, got {item!r}")
+if status == "succeeded":
+    results = item.get("results") or []
+    if len(results) != 1 or not results[0].get("url"):
+        raise SystemExit(f"succeeded task should expose one result URL: {item!r}")
+    if item.get("actual_points") != "2.00000":
+        raise SystemExit(f"succeeded task should settle actual points: {item!r}")
+    if not item.get("provider"):
+        raise SystemExit(f"succeeded task should record provider: {item!r}")
+print(task_id)
+PY
+}
+
+assert_private_gallery_task() {
+  local json="$1"
+  local task_id="$2"
+  JSON="$json" python3 - "$task_id" <<'PY'
+import json
+import os
+import sys
+
+data = json.loads(os.environ["JSON"])
+task_id = sys.argv[1]
+items = data.get("data", {}).get("items", [])
+for item in items:
+    if item.get("task_id") != task_id:
+        continue
+    if item.get("task_status") != "succeeded":
+        raise SystemExit(f"private gallery image should point to succeeded task: {item!r}")
+    if not item.get("download_url"):
+        raise SystemExit(f"private gallery image should expose download_url: {item!r}")
+    if item.get("visibility_status") != "private":
+        raise SystemExit(f"private gallery image should stay private by default: {item!r}")
+    print(item.get("id", "matched"))
+    raise SystemExit(0)
+raise SystemExit(f"missing private gallery image for task {task_id}: {items!r}")
 PY
 }
 
@@ -906,6 +973,132 @@ signed_request() {
   fi
 }
 
+start_fake_provider() {
+  local port
+  port="$(python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
+  FAKE_PROVIDER_URL="http://127.0.0.1:${port}"
+  FAKE_PROVIDER_PORT="$port" python3 - <<'PY' >"$FAKE_PROVIDER_LOG" 2>&1 &
+import base64
+import json
+import os
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNkaGAAAAHAAZcAzSrgAAAAAElFTkSuQmCC"
+)
+PORT = int(os.environ["FAKE_PROVIDER_PORT"])
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        return
+
+    def do_GET(self):
+        if self.path == "/images/smoke.png":
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(PNG)))
+            self.end_headers()
+            self.wfile.write(PNG)
+            return
+        self.send_error(404)
+
+    def do_POST(self):
+        if self.path != "/chat/completions":
+            self.send_error(404)
+            return
+        length = int(self.headers.get("Content-Length") or "0")
+        if length:
+            self.rfile.read(length)
+        body = {
+            "choices": [
+                {
+                    "message": {
+                        "images": [
+                            {"image_url": {"url": f"http://127.0.0.1:{PORT}/images/smoke.png"}}
+                        ]
+                    }
+                }
+            ]
+        }
+        payload = json.dumps(body).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("x-request-id", "fake-provider-smoke")
+        self.end_headers()
+        self.wfile.write(payload)
+
+
+ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+PY
+  FAKE_PROVIDER_PID="$!"
+  for _ in {1..40}; do
+    if request --max-time 2 "$FAKE_PROVIDER_URL/images/smoke.png" >/dev/null 2>&1; then
+      return
+    fi
+    if ! kill -0 "$FAKE_PROVIDER_PID" >/dev/null 2>&1; then
+      echo "Fake provider exited during startup. Log follows:" >&2
+      cat "$FAKE_PROVIDER_LOG" >&2
+      exit 1
+    fi
+    sleep 0.25
+  done
+  echo "Fake provider did not become ready. Log follows:" >&2
+  cat "$FAKE_PROVIDER_LOG" >&2
+  exit 1
+}
+
+start_worker() {
+  APP_ADDR="$API_ADDR" \
+  DATABASE_URL="file:$DB_PATH?cache=shared&_fk=1" \
+  PIC_GALLERY_AUTH_DEV_EMAIL_CODES=true \
+  PIC_GALLERY_ADMIN_EMAIL="$SMOKE_ADMIN_EMAIL" \
+  PIC_GALLERY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  AUTH_ACCESS_TOKEN_SECRET="$ACCESS_TOKEN_SECRET" \
+  API_KEY_SIGNING_SECRET_ENCRYPTION_KEY="$API_KEY_ENCRYPTION_KEY" \
+  REDIS_KEY_PREFIX="pic-gallery-smoke-${SMOKE_ID}" \
+  STORAGE_LOCAL_ROOT="$STORAGE_ROOT" \
+  STORAGE_PUBLIC_BASE_URL="$BASE_URL/files" \
+  OPENAI_API_KEY="" \
+  OPENROUTER_API_KEY="" \
+  go run ./cmd/worker >"$WORKER_LOG" 2>&1 &
+  WORKER_PID="$!"
+}
+
+wait_for_task_status() {
+  local task_id="$1"
+  local status="$2"
+  local body=""
+  for _ in {1..80}; do
+    body="$(request "$BASE_URL/api/agent/image/v1/tasks/${task_id}" -H "Authorization: Bearer $ACCESS_TOKEN")"
+    if [[ "$(assert_json_field "$body" "data.status")" == "$status" ]]; then
+      printf '%s' "$body"
+      return
+    fi
+    if ! kill -0 "$WORKER_PID" >/dev/null 2>&1; then
+      echo "Worker exited before task reached $status. Worker log follows:" >&2
+      cat "$WORKER_LOG" >&2
+      exit 1
+    fi
+    sleep 0.5
+  done
+  echo "Task ${task_id} did not reach ${status}. Last response:" >&2
+  printf '%s\n' "$body" >&2
+  echo "Worker log follows:" >&2
+  cat "$WORKER_LOG" >&2
+  echo "Fake provider log follows:" >&2
+  cat "$FAKE_PROVIDER_LOG" >&2
+  exit 1
+}
+
 cd "$ROOT_DIR"
 
 APP_ADDR="$API_ADDR" \
@@ -916,6 +1109,8 @@ PIC_GALLERY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 AUTH_ACCESS_TOKEN_SECRET="$ACCESS_TOKEN_SECRET" \
 API_KEY_SIGNING_SECRET_ENCRYPTION_KEY="$API_KEY_ENCRYPTION_KEY" \
 REDIS_KEY_PREFIX="pic-gallery-smoke-${SMOKE_ID}" \
+STORAGE_LOCAL_ROOT="$STORAGE_ROOT" \
+STORAGE_PUBLIC_BASE_URL="$BASE_URL/files" \
 OPENAI_API_KEY="" \
 OPENROUTER_API_KEY="" \
 go run ./cmd/api >"$SERVER_LOG" 2>&1 &
@@ -1119,11 +1314,6 @@ open_estimate_path="/api/open/image/v1/estimate?task_type=text_to_image&abstract
 open_estimate_body="$(signed_request GET "$open_estimate_path")"
 [[ "$(assert_json_field "$open_estimate_body" "data.estimated_points")" == "2.00000" ]]
 
-open_task_body='{"task_type":"text_to_image","prompt":"smoke prompt","abstract_model":"basic","requested_quality":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}'
-open_task_resp="$(signed_request POST "/api/open/image/v1/tasks" "$open_task_body")"
-[[ "$(assert_json_field "$open_task_resp" "data.status")" == "queued" ]]
-OPEN_TASK_ID="$(assert_json_field "$open_task_resp" "data.id")"
-
 models_body="$(request "$BASE_URL/v1/models" -H "Authorization: Bearer $API_SECRET")"
 assert_json_field "$models_body" "data.0.id" >/dev/null
 
@@ -1181,6 +1371,75 @@ super_admin_dangerous_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/
   -H "Content-Type: application/json" \
   --data '{"version":1,"items":[{"config_category":"payments","config_key":"enabled","config_value":{"value":true},"scope":"global"}]}')"
 [[ "$(assert_json_field "$super_admin_dangerous_config_body" "data.tab_key")" == "payments" ]]
+
+start_fake_provider
+model_account_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-accounts" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(FAKE_PROVIDER_URL="$FAKE_PROVIDER_URL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "name": "Smoke OpenRouter Account",
+    "adapter_type": "openrouter",
+    "auth_type": "api_key",
+    "base_url": os.environ["FAKE_PROVIDER_URL"],
+    "credentials": {"api_key": "fake-openrouter-smoke-key"},
+    "status": "enabled",
+    "priority": 1,
+    "weight": 100,
+    "concurrency_limit": 1,
+    "timeout_ms": 30000,
+}))
+PY
+)")"
+MODEL_ACCOUNT_ID="$(assert_json_field "$model_account_body" "data.id")"
+
+model_account_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-accounts/${MODEL_ACCOUNT_ID}/models" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "model_code":"openai/gpt-image-1",
+    "display_name":"Smoke GPT Image",
+    "task_types":["text_to_image"],
+    "qualities":["1k"],
+    "cost_per_image":"0.00000",
+    "currency":"USD",
+    "enabled":true
+  }')"
+assert_json_field "$model_account_model_body" "data.id" >/dev/null
+
+open_task_body='{"task_type":"text_to_image","prompt":"smoke prompt","abstract_model":"basic","requested_quality":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}'
+open_task_path="/api/open/image/v1/tasks"
+open_task_body_hash="$(body_sha256 "$open_task_body")"
+open_task_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+open_task_signature="$(hmac_signature "$API_SECRET" POST "$open_task_path" "$open_task_timestamp" "$open_task_body_hash")"
+open_task_status="$(curl --silent --show-error --output "$TMP_DIR/open-task.json" --write-out "%{http_code}" \
+  -X POST "$BASE_URL$open_task_path" \
+  -H "Content-Type: application/json" \
+  -H "X-Access-Key: $ACCESS_KEY" \
+  -H "X-Timestamp: $open_task_timestamp" \
+  -H "X-Body-SHA256: $open_task_body_hash" \
+  -H "X-Signature: $open_task_signature" \
+  --data "$open_task_body")"
+if [[ "$open_task_status" != "202" ]]; then
+  cat "$TMP_DIR/open-task.json" >&2
+  exit 1
+fi
+open_task_resp="$(cat "$TMP_DIR/open-task.json")"
+[[ "$(assert_json_field "$open_task_resp" "data.status")" == "queued" ]]
+OPEN_TASK_ID="$(assert_json_field "$open_task_resp" "data.id")"
+
+start_worker
+open_task_detail_body="$(wait_for_task_status "$OPEN_TASK_ID" "succeeded")"
+assert_task_detail_status "$open_task_detail_body" "$OPEN_TASK_ID" "succeeded" >/dev/null
+
+private_gallery_body="$(request "$BASE_URL/api/agent/gallery/v1/images?page=1&page_size=10" -H "Authorization: Bearer $ACCESS_TOKEN")"
+assert_private_gallery_task "$private_gallery_body" "$OPEN_TASK_ID" >/dev/null
+
+generated_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
+assert_ledger_entry "$generated_ledger_body" "consume" "usage" "task" >/dev/null
 
 alipay_secret="smoke-alipay-private-key-${SMOKE_ID}"
 provider_create_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/provider-instances" \
@@ -1251,7 +1510,7 @@ assert_admin_user_detail_core "$admin_user_detail_body" "$USER_ID" "$SMOKE_USER_
 assert_admin_user_detail_ledger "$admin_user_detail_body" "trial_grant" "trial" "signup" >/dev/null
 assert_admin_user_detail_ledger "$admin_user_detail_body" "recharge" "recharge" "payment_order" >/dev/null
 assert_admin_user_detail_order "$admin_user_detail_body" "$ORDER_ID" "completed" >/dev/null
-assert_admin_user_detail_task "$admin_user_detail_body" "$OPEN_TASK_ID" "queued" >/dev/null
+assert_admin_user_detail_task "$admin_user_detail_body" "$OPEN_TASK_ID" "succeeded" >/dev/null
 assert_admin_user_detail_api_key "$admin_user_detail_body" "smoke-key" "$ACCESS_KEY" >/dev/null
 
 admin_adjust_body='{"change_points":"7.00000","reason":"api smoke admin adjustment"}'
@@ -1322,7 +1581,7 @@ assert_cashier_refund_state "$partial_refund_body" "partially_refunded" "$partia
 partial_refunded_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$partial_refunded_balance_body" "data.recharge_points")" == "130.00000" ]]
 [[ "$(assert_json_field "$partial_refunded_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$partial_refunded_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$partial_refunded_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 partial_refund_finish_trade_no="REFUND-PARTIAL-FINISH-SMOKE-${SMOKE_ID}"
 partial_refund_finish_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${PARTIAL_REFUND_ORDER_ID}/refund" \
@@ -1369,7 +1628,7 @@ assert_cashier_manual_complete_state "$manual_complete_body" "$MANUAL_COMPLETE_O
 manual_completed_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$manual_completed_balance_body" "data.recharge_points")" == "140.00000" ]]
 [[ "$(assert_json_field "$manual_completed_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$manual_completed_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$manual_completed_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 manual_complete_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_ledger_entry_for_order "$manual_complete_ledger_body" "recharge" "recharge" "payment_order" "$MANUAL_COMPLETE_ORDER_ID" >/dev/null
@@ -1383,7 +1642,7 @@ assert_cashier_manual_complete_state "$manual_complete_replay_body" "$MANUAL_COM
 manual_complete_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.recharge_points")" == "140.00000" ]]
 [[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 manual_refund_trade_no="REFUND-MANUAL-SMOKE-${SMOKE_ID}"
 manual_complete_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${MANUAL_COMPLETE_ORDER_ID}/refund" \
@@ -1434,7 +1693,7 @@ assert_cashier_sync_state "$sync_body" "$SYNC_ORDER_ID" "$sync_trade_no" "10.000
 sync_completed_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$sync_completed_balance_body" "data.recharge_points")" == "140.00000" ]]
 [[ "$(assert_json_field "$sync_completed_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$sync_completed_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$sync_completed_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 sync_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_ledger_entry_for_order "$sync_ledger_body" "recharge" "recharge" "payment_order" "$SYNC_ORDER_ID" >/dev/null
@@ -1446,7 +1705,7 @@ assert_cashier_sync_state "$sync_replay_body" "$SYNC_ORDER_ID" "$sync_trade_no" 
 sync_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$sync_replay_balance_body" "data.recharge_points")" == "140.00000" ]]
 [[ "$(assert_json_field "$sync_replay_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$sync_replay_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$sync_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 sync_refund_trade_no="REFUND-SYNC-SMOKE-${SMOKE_ID}"
 sync_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${SYNC_ORDER_ID}/refund" \
@@ -1730,7 +1989,7 @@ pending_limit_status="$(curl --silent --output "$TMP_DIR/pending-limit.json" --w
 custom_recharged_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$custom_recharged_balance_body" "data.recharge_points")" == "120.00000" ]]
 [[ "$(assert_json_field "$custom_recharged_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$custom_recharged_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$custom_recharged_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 refund_trade_no="REFUND-SMOKE-${SMOKE_ID}"
 custom_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${CUSTOM_ORDER_ID}/refund" \
@@ -1742,7 +2001,7 @@ assert_cashier_refund_state "$custom_refund_body" "refunded" "$refund_trade_no" 
 refunded_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$refunded_balance_body" "data.recharge_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$refunded_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$refunded_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$refunded_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 refund_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${CUSTOM_ORDER_ID}/refund" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -1753,7 +2012,7 @@ assert_cashier_refund_state "$refund_replay_body" "refunded" "$refund_trade_no" 
 refund_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$refund_replay_balance_body" "data.recharge_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$refund_replay_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$refund_replay_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$refund_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 refund_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_ledger_entry "$refund_ledger_body" "payment_refund" "recharge" "payment_order" >/dev/null
@@ -1776,7 +2035,7 @@ chargeback_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "
 [[ "$(assert_json_field "$chargeback_balance_body" "data.available_points")" == "120.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.recharge_points")" == "95.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$chargeback_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$chargeback_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 chargeback_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${ORDER_ID}/chargeback" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -1789,7 +2048,7 @@ chargeback_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balanc
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.available_points")" == "120.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.recharge_points")" == "95.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.trial_points")" == "18.00000" ]]
-[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.frozen_points")" == "2.00000" ]]
+[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 chargeback_conflict_status="$(curl --silent --output "$TMP_DIR/chargeback-conflict.json" --write-out "%{http_code}" \
   -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${ORDER_ID}/chargeback" \
@@ -1985,7 +2244,8 @@ readiness_body="$(request "$BASE_URL/api/ops/admin/v1/readiness" -H "Authorizati
 [[ "$(assert_json_field "$readiness_body" "data.status")" == "fail" ]]
 assert_json_field "$readiness_body" "data.summary.fail" >/dev/null
 assert_json_field "$readiness_body" "data.checks.0.key" >/dev/null
-assert_readiness_check "$readiness_body" "model_accounts" "fail" >/dev/null
+assert_readiness_check "$readiness_body" "model_accounts" "pass" >/dev/null
+assert_readiness_check "$readiness_body" "provider_models" "fail" >/dev/null
 assert_readiness_check "$readiness_body" "route_prices" "fail" >/dev/null
 
 cashier_overview_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/overview" -H "Authorization: Bearer $ADMIN_TOKEN")"
