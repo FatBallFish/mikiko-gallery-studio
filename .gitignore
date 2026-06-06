@@ -12,3 +12,4 @@ tmp
 .coding-context.json
 .workflow/
 .review/
+.playwright-mcp/
