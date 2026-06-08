@@ -57,6 +57,7 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 		"task_multipliers",
 	})
 	assertTabKeys(t, tabs, "openai_compat", []string{"openai_compat_model_map"})
+	assertTabKeys(t, tabs, "runtime", []string{"worker_max_concurrent_tasks"})
 }
 
 func TestUpdateTabOverridesConfigAndBumpsVersion(t *testing.T) {

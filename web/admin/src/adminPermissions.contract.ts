@@ -1,0 +1,62 @@
+import type { AdminSession } from '../../shared/api-types'
+import {
+  canAdmin,
+  canAccessAdminRoute,
+  filterAdminNavGroups,
+  firstAccessibleAdminRoute,
+  resolveAdminPermissions,
+} from './types'
+import { navGroups } from './components'
+
+const opsAdmin: AdminSession = {
+  token: 'token',
+  admin_name: 'Ops Admin',
+  role: 'admin',
+}
+
+if (!canAccessAdminRoute(opsAdmin, 'cashier') || !canAccessAdminRoute(opsAdmin, 'users')) {
+  throw new Error('admin should retain operational access to users and cashier')
+}
+
+if (canAdmin(opsAdmin, 'manage:admins')) {
+  throw new Error('admin must not receive administrator account management permission')
+}
+
+const explicitlyDeniedOpsAdmin: AdminSession = {
+  ...opsAdmin,
+  permissions: [],
+}
+
+if (resolveAdminPermissions(explicitlyDeniedOpsAdmin).length !== 0 || canAccessAdminRoute(explicitlyDeniedOpsAdmin, 'users')) {
+  throw new Error('explicit session permissions must override built-in role fallback even when empty')
+}
+
+const unknownRole: AdminSession = {
+  token: 'token',
+  admin_name: 'Custom Role',
+  role: 'finance_admin',
+}
+
+if (resolveAdminPermissions(unknownRole).length !== 0 || canAccessAdminRoute(unknownRole, 'overview')) {
+  throw new Error('unknown roles without explicit permissions must default to no access')
+}
+
+const customCashierRole: AdminSession = {
+  ...unknownRole,
+  permissions: ['read:all', 'manage:cashier'],
+}
+
+if (!canAccessAdminRoute(customCashierRole, 'cashier') || canAccessAdminRoute(customCashierRole, 'users')) {
+  throw new Error('custom roles should be governed by explicit session permissions')
+}
+
+if (firstAccessibleAdminRoute(customCashierRole) !== 'overview') {
+  throw new Error('custom role with read permission should land on overview')
+}
+
+const filtered = filterAdminNavGroups(navGroups, customCashierRole)
+const visibleIds = filtered.flatMap((group) => group.items.map((item) => item.id)).join(',')
+
+if (visibleIds.includes('users') || !visibleIds.includes('cashier')) {
+  throw new Error(`admin navigation should hide unauthorized entries, got ${visibleIds}`)
+}

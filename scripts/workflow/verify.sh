@@ -14,6 +14,8 @@ run() {
 run "go test" go test ./...
 run "go vet" go vet ./...
 
+run "frontend/shared contracts" ./scripts/workflow/verify-contracts.sh
+
 if [ -f web/user/package.json ]; then
   run "web/user typecheck" npm --prefix web/user run typecheck
   run "web/user build" npm --prefix web/user run build
@@ -25,4 +27,3 @@ if [ -f web/admin/package.json ]; then
 fi
 
 printf '\nOK: verification passed\n'
-

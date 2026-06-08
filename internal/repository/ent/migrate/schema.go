@@ -97,7 +97,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "email", Type: field.TypeString, Size: 255},
 		{Name: "password_hash", Type: field.TypeString, Size: 255},
-		{Name: "role", Type: field.TypeString, Size: 32, Default: "ops_admin"},
+		{Name: "role", Type: field.TypeString, Size: 32, Default: "admin"},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
 	}
 	// AdminUsersTable holds the schema information for the "admin_users" table.
@@ -277,7 +277,7 @@ var (
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "queued"},
 		{Name: "prompt", Type: field.TypeString, Size: 2147483647},
 		{Name: "negative_prompt", Type: field.TypeString, Nullable: true, Size: 2147483647},
-		{Name: "abstract_model", Type: field.TypeString, Size: 32},
+		{Name: "abstract_model", Type: field.TypeString, Size: 64},
 		{Name: "requested_quality", Type: field.TypeString, Size: 16, Default: "auto"},
 		{Name: "resolved_quality_bucket", Type: field.TypeString, Size: 16, Default: "1k"},
 		{Name: "requested_size", Type: field.TypeString, Nullable: true, Size: 32},
@@ -552,6 +552,12 @@ var (
 		{Name: "plan_id", Type: field.TypeInt64},
 		{Name: "order_no", Type: field.TypeString, Unique: true, Size: 64},
 		{Name: "provider", Type: field.TypeString, Size: 32},
+		{Name: "purchase_type", Type: field.TypeString, Size: 32, Default: "plan"},
+		{Name: "visible_method", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "provider_type", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "provider_instance_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "provider_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "payment_display", Type: field.TypeJSON, Nullable: true},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
 		{Name: "amount_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
@@ -564,8 +570,11 @@ var (
 		{Name: "failure_reason", Type: field.TypeString, Nullable: true, Size: 255},
 		{Name: "expires_at", Type: field.TypeTime},
 		{Name: "paid_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "closed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "refunded_at", Type: field.TypeTime, Nullable: true},
+		{Name: "ledger_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "provider_payload", Type: field.TypeJSON, Nullable: true},
 	}
 	// PaymentOrdersTable holds the schema information for the "payment_orders" table.
@@ -590,19 +599,87 @@ var (
 				Columns: []*schema.Column{PaymentOrdersColumns[6]},
 			},
 			{
+				Name:    "paymentorder_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentOrdersColumns[3], PaymentOrdersColumns[29]},
+			},
+			{
+				Name:    "paymentorder_provider_type_trade_no",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[18]},
+			},
+			{
+				Name:    "paymentorder_provider_instance_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[10]},
+			},
+			{
 				Name:    "paymentorder_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[7]},
+				Columns: []*schema.Column{PaymentOrdersColumns[13]},
 			},
 			{
 				Name:    "paymentorder_trade_no",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[12]},
+				Columns: []*schema.Column{PaymentOrdersColumns[18]},
 			},
 			{
 				Name:    "paymentorder_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[17]},
+				Columns: []*schema.Column{PaymentOrdersColumns[23]},
+			},
+			{
+				Name:    "paymentorder_completed_at",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[25]},
+			},
+		},
+	}
+	// PaymentProviderInstancesColumns holds the columns for the "payment_provider_instances" table.
+	PaymentProviderInstancesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider_type", Type: field.TypeString, Size: 32},
+		{Name: "name", Type: field.TypeString, Size: 100, Default: ""},
+		{Name: "config_encrypted", Type: field.TypeJSON, Nullable: true},
+		{Name: "credentials_fingerprint", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "supported_methods", Type: field.TypeJSON, Nullable: true},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "scheduler_weight", Type: field.TypeInt, Default: 100},
+		{Name: "limits", Type: field.TypeJSON, Nullable: true},
+		{Name: "refund_enabled", Type: field.TypeBool, Default: false},
+		{Name: "health_status", Type: field.TypeString, Size: 32, Default: "unknown"},
+		{Name: "last_error", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// PaymentProviderInstancesTable holds the schema information for the "payment_provider_instances" table.
+	PaymentProviderInstancesTable = &schema.Table{
+		Name:       "payment_provider_instances",
+		Columns:    PaymentProviderInstancesColumns,
+		PrimaryKey: []*schema.Column{PaymentProviderInstancesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "paymentproviderinstance_provider_type",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[3]},
+			},
+			{
+				Name:    "paymentproviderinstance_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[8]},
+			},
+			{
+				Name:    "paymentproviderinstance_provider_type_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[3], PaymentProviderInstancesColumns[8]},
+			},
+			{
+				Name:    "paymentproviderinstance_sort_order",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderInstancesColumns[9]},
 			},
 		},
 	}
@@ -663,6 +740,11 @@ var (
 		{Name: "change_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "balance_after", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "frozen_after", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "balance_bucket", Type: field.TypeString, Size: 32, Default: "recharge"},
+		{Name: "source_type", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "source_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "bucket_balance_after", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "reason", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "operator_admin_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, Size: 128},
@@ -704,6 +786,16 @@ var (
 				Columns: []*schema.Column{PointLedgersColumns[8]},
 			},
 			{
+				Name:    "pointledger_balance_bucket",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[12]},
+			},
+			{
+				Name:    "pointledger_source_type_source_id",
+				Unique:  false,
+				Columns: []*schema.Column{PointLedgersColumns[13], PointLedgersColumns[14]},
+			},
+			{
 				Name:    "pointledger_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{PointLedgersColumns[1]},
@@ -711,7 +803,7 @@ var (
 			{
 				Name:    "pointledger_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{PointLedgersColumns[14]},
+				Columns: []*schema.Column{PointLedgersColumns[19]},
 			},
 		},
 	}
@@ -1107,6 +1199,33 @@ var (
 			},
 		},
 	}
+	// SecureConfigsColumns holds the columns for the "secure_configs" table.
+	SecureConfigsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "config_category", Type: field.TypeString, Size: 32},
+		{Name: "config_key", Type: field.TypeString, Size: 64},
+		{Name: "public_value", Type: field.TypeJSON, Nullable: true},
+		{Name: "secret_encrypted", Type: field.TypeJSON, Nullable: true},
+		{Name: "secret_fingerprint", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "secret_fields", Type: field.TypeJSON, Nullable: true},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+		{Name: "updated_by", Type: field.TypeInt64, Default: 0},
+	}
+	// SecureConfigsTable holds the schema information for the "secure_configs" table.
+	SecureConfigsTable = &schema.Table{
+		Name:       "secure_configs",
+		Columns:    SecureConfigsColumns,
+		PrimaryKey: []*schema.Column{SecureConfigsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "secureconfig_config_category_config_key",
+				Unique:  true,
+				Columns: []*schema.Column{SecureConfigsColumns[3], SecureConfigsColumns[4]},
+			},
+		},
+	}
 	// SubscriptionPlansColumns holds the columns for the "subscription_plans" table.
 	SubscriptionPlansColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1114,6 +1233,8 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "plan_code", Type: field.TypeString, Unique: true, Size: 64},
 		{Name: "plan_name", Type: field.TypeString, Size: 128},
+		{Name: "plan_type", Type: field.TypeString, Size: 32, Default: "points_package"},
+		{Name: "purchase_enabled", Type: field.TypeBool, Default: true},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
 		{Name: "price_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
@@ -1133,12 +1254,12 @@ var (
 			{
 				Name:    "subscriptionplan_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionPlansColumns[5]},
+				Columns: []*schema.Column{SubscriptionPlansColumns[7]},
 			},
 			{
 				Name:    "subscriptionplan_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionPlansColumns[12]},
+				Columns: []*schema.Column{SubscriptionPlansColumns[14]},
 			},
 		},
 	}
@@ -1345,6 +1466,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{WalletGrantsColumns[12]},
 			},
+			{
+				Name:    "walletgrant_user_id_status_grant_type_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{WalletGrantsColumns[3], WalletGrantsColumns[7], WalletGrantsColumns[4], WalletGrantsColumns[12]},
+			},
 		},
 	}
 	// WalletReservationAllocationsColumns holds the columns for the "wallet_reservation_allocations" table.
@@ -1392,6 +1518,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{WalletReservationAllocationsColumns[7]},
 			},
+			{
+				Name:    "walletreservationallocation_wallet_grant_id_task_id_reservation_cycle",
+				Unique:  true,
+				Columns: []*schema.Column{WalletReservationAllocationsColumns[4], WalletReservationAllocationsColumns[5], WalletReservationAllocationsColumns[6]},
+			},
 		},
 	}
 	// Tables holds all the tables in the schema.
@@ -1408,6 +1539,7 @@ var (
 		ModelProvidersTable,
 		ModelRoutesTable,
 		PaymentOrdersTable,
+		PaymentProviderInstancesTable,
 		PaymentWebhookEventsTable,
 		PointLedgersTable,
 		ProviderErrorPoliciesTable,
@@ -1421,6 +1553,7 @@ var (
 		RouteModelCandidatesTable,
 		RouteModelPricesTable,
 		RouteModelVisibilityGroupsTable,
+		SecureConfigsTable,
 		SubscriptionPlansTable,
 		UsersTable,
 		UserGroupsTable,

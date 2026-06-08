@@ -1006,6 +1006,8 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			HealthStatus:           account.Status,
 			InputCost:              model.CostPerImage,
 			Currency:               model.Currency,
+			AccountExtra:           cloneModelAdminExtra(account.Extra),
+			ModelExtra:             cloneModelAdminExtra(model.Extra),
 		})
 	}
 	for _, model := range routeModels {
@@ -1170,6 +1172,17 @@ func mapModelAccount(entity *repoent.ModelAccount) domainmodeladmin.ModelAccount
 		CreatedAt:              entity.CreatedAt,
 		UpdatedAt:              entity.UpdatedAt,
 	}
+}
+
+func cloneModelAdminExtra(input map[string]any) map[string]any {
+	if input == nil {
+		return map[string]any{}
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }
 
 func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repoent.ModelAccountModel) domainmodeladmin.ModelAccountModel {

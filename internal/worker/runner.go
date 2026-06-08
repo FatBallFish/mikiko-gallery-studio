@@ -2,23 +2,32 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type Config struct {
-	Owner              string
-	LeaseTTL           time.Duration
-	HeartbeatInterval  time.Duration
-	PollInterval       time.Duration
-	PreferredProviders []string
+	Owner                       string
+	LeaseTTL                    time.Duration
+	HeartbeatInterval           time.Duration
+	PollInterval                time.Duration
+	PreferredProviders          []string
+	RefundCompensationBatchSize int
+	MaxConcurrentTasks          int
+	MaxConcurrentTasksResolver  func(context.Context) (int, error)
+	ConfigRefreshInterval       time.Duration
 }
 
 type Runner struct {
-	tasks taskService
-	cfg   Config
+	tasks        taskService
+	compensation compensationService
+	cfg          Config
 }
 
 type executeOutcome struct {
@@ -30,6 +39,10 @@ type taskService interface {
 	AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error)
 	HeartbeatTask(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error)
 	ExecuteLeasedTask(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error)
+}
+
+type compensationService interface {
+	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
 }
 
 func NewRunner(tasks taskService, cfg Config) *Runner {
@@ -45,21 +58,136 @@ func NewRunner(tasks taskService, cfg Config) *Runner {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 500 * time.Millisecond
 	}
+	if cfg.RefundCompensationBatchSize <= 0 {
+		cfg.RefundCompensationBatchSize = 5
+	}
+	if cfg.MaxConcurrentTasks <= 0 {
+		cfg.MaxConcurrentTasks = 1
+	}
+	if cfg.MaxConcurrentTasks > 64 {
+		cfg.MaxConcurrentTasks = 64
+	}
+	if cfg.ConfigRefreshInterval <= 0 {
+		cfg.ConfigRefreshInterval = 5 * time.Second
+	}
 	return &Runner{tasks: tasks, cfg: cfg}
 }
 
+func (r *Runner) SetCompensationService(service compensationService) {
+	r.compensation = service
+}
+
 func (r *Runner) Run(ctx context.Context) error {
+	if r.cfg.MaxConcurrentTasksResolver == nil && r.cfg.MaxConcurrentTasks <= 1 {
+		return r.runLoop(ctx, true)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	slotCount := r.cfg.MaxConcurrentTasks
+	if r.cfg.MaxConcurrentTasksResolver != nil {
+		slotCount = 64
+	}
+	currentMax := &atomic.Int64{}
+	currentMax.Store(int64(r.cfg.MaxConcurrentTasks))
+
+	errCh := make(chan error, slotCount+1)
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	if r.cfg.MaxConcurrentTasksResolver != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.refreshMaxConcurrentTasks(ctx, currentMax, errCh, cancel)
+		}()
+	}
+	for slot := 0; slot < slotCount; slot++ {
+		slotIndex := slot
+		processCompensation := slot == 0
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := r.runSlotLoop(ctx, slotIndex, currentMax, processCompensation); err != nil && !errors.Is(err, context.Canceled) {
+				select {
+				case errCh <- err:
+					cancel()
+				default:
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case err := <-errCh:
+		cancel()
+		<-done
+		return err
+	case <-ctx.Done():
+		cancel()
+		<-done
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
+}
+
+func (r *Runner) refreshMaxConcurrentTasks(ctx context.Context, currentMax *atomic.Int64, errCh chan<- error, cancel context.CancelFunc) {
+	ticker := time.NewTicker(r.cfg.ConfigRefreshInterval)
+	defer ticker.Stop()
+	for {
+		if err := r.refreshMaxConcurrentTasksOnce(ctx, currentMax); err != nil {
+			select {
+			case errCh <- err:
+				cancel()
+			default:
+			}
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *Runner) refreshMaxConcurrentTasksOnce(ctx context.Context, currentMax *atomic.Int64) error {
+	value, err := r.cfg.MaxConcurrentTasksResolver(ctx)
+	if err != nil {
+		return err
+	}
+	currentMax.Store(int64(normalizeMaxConcurrentTasks(value)))
+	return nil
+}
+
+func (r *Runner) runSlotLoop(ctx context.Context, slotIndex int, currentMax *atomic.Int64, processCompensation bool) error {
 	ticker := time.NewTicker(r.cfg.PollInterval)
 	defer ticker.Stop()
 
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		if slotIndex >= int(currentMax.Load()) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+			continue
 		}
 
-		processed, err := r.ProcessOnce(ctx)
+		var (
+			processed bool
+			err       error
+		)
+		if processCompensation {
+			processed, err = r.ProcessOnce(ctx)
+		} else {
+			processed, err = r.processTaskOnce(ctx)
+		}
 		if err != nil {
 			return err
 		}
@@ -75,9 +203,72 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 }
 
+func (r *Runner) runLoop(ctx context.Context, processCompensation bool) error {
+	ticker := time.NewTicker(r.cfg.PollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		var (
+			processed bool
+			err       error
+		)
+		if processCompensation {
+			processed, err = r.ProcessOnce(ctx)
+		} else {
+			processed, err = r.processTaskOnce(ctx)
+		}
+		if err != nil {
+			return err
+		}
+		if processed {
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func normalizeMaxConcurrentTasks(value int) int {
+	switch {
+	case value <= 0:
+		return 1
+	case value > 64:
+		return 64
+	default:
+		return value
+	}
+}
+
 func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
+	if r.compensation != nil {
+		processed, err := r.compensation.ProcessRefundFinalizeFailures(ctx, r.cfg.RefundCompensationBatchSize)
+		if err != nil {
+			return false, err
+		}
+		if processed > 0 {
+			return true, nil
+		}
+	}
+
+	return r.processTaskOnce(ctx)
+}
+
+func (r *Runner) processTaskOnce(ctx context.Context) (bool, error) {
 	task, ok, err := r.tasks.AcquireNextTask(ctx, r.cfg.Owner, r.cfg.LeaseTTL)
 	if err != nil {
+		if repoerr.IsTransientContention(err) {
+			return false, nil
+		}
 		return false, err
 	}
 	if !ok {

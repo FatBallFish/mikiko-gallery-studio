@@ -228,6 +228,139 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	if !bytes.Contains(publicListRec.Body.Bytes(), []byte(imageID)) {
 		t.Fatalf("expected public list to contain image body=%s", publicListRec.Body.String())
 	}
+	if bytes.Contains(publicListRec.Body.Bytes(), []byte(`Generate a downloadable banner`)) {
+		t.Fatalf("guest public list should not expose full prompt body=%s", publicListRec.Body.String())
+	}
+	if bytes.Contains(publicListRec.Body.Bytes(), []byte(`comment_count`)) {
+		t.Fatalf("public list should not expose comment_count because comments are not a product capability body=%s", publicListRec.Body.String())
+	}
+	var publicListPayload struct {
+		Data struct {
+			Items []struct {
+				Prompt        string `json:"prompt"`
+				PromptExcerpt string `json:"prompt_excerpt"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(publicListRec.Body.Bytes())).Decode(&publicListPayload); err != nil {
+		t.Fatalf("decode public list: %v", err)
+	}
+	if len(publicListPayload.Data.Items) == 0 {
+		t.Fatalf("expected public list item body=%s", publicListRec.Body.String())
+	}
+	if publicListPayload.Data.Items[0].Prompt != "" {
+		t.Fatalf("guest public list should redact prompt, got %q body=%s", publicListPayload.Data.Items[0].Prompt, publicListRec.Body.String())
+	}
+	if publicListPayload.Data.Items[0].PromptExcerpt == "" {
+		t.Fatalf("guest public list should expose prompt excerpt body=%s", publicListRec.Body.String())
+	}
+	if publicListPayload.Data.Items[0].PromptExcerpt == "Generate a downloadable banner" || len([]rune(publicListPayload.Data.Items[0].PromptExcerpt)) > 40 {
+		t.Fatalf("guest prompt excerpt should be short and not full prompt, got %q", publicListPayload.Data.Items[0].PromptExcerpt)
+	}
+
+	queryListReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&query=downloadable", nil)
+	queryListRec := httptest.NewRecorder()
+	handler.ServeHTTP(queryListRec, queryListReq)
+	if queryListRec.Code != http.StatusOK {
+		t.Fatalf("public list filtered by query: %d body=%s", queryListRec.Code, queryListRec.Body.String())
+	}
+	if !bytes.Contains(queryListRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("expected matching public gallery query to include image body=%s", queryListRec.Body.String())
+	}
+	if bytes.Contains(queryListRec.Body.Bytes(), []byte(`Generate a downloadable banner`)) {
+		t.Fatalf("public gallery query list should still redact full prompt body=%s", queryListRec.Body.String())
+	}
+
+	queryMissReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&query=not-a-gallery-keyword", nil)
+	queryMissRec := httptest.NewRecorder()
+	handler.ServeHTTP(queryMissRec, queryMissReq)
+	if queryMissRec.Code != http.StatusOK {
+		t.Fatalf("public list filtered by missing query: %d body=%s", queryMissRec.Code, queryMissRec.Body.String())
+	}
+	if bytes.Contains(queryMissRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("expected non-matching public gallery query to exclude image body=%s", queryMissRec.Body.String())
+	}
+
+	filteredByModelReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&route_model_code=plus&task_type=text_to_image", nil)
+	filteredByModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(filteredByModelRec, filteredByModelReq)
+	if filteredByModelRec.Code != http.StatusOK {
+		t.Fatalf("public list filtered by model and task type: %d body=%s", filteredByModelRec.Code, filteredByModelRec.Body.String())
+	}
+	if !bytes.Contains(filteredByModelRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("expected matching route_model_code/task_type filter to include image body=%s", filteredByModelRec.Body.String())
+	}
+
+	filteredOutReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&route_model_code=missing&task_type=text_to_image", nil)
+	filteredOutRec := httptest.NewRecorder()
+	handler.ServeHTTP(filteredOutRec, filteredOutReq)
+	if filteredOutRec.Code != http.StatusOK {
+		t.Fatalf("public list filtered out by model: %d body=%s", filteredOutRec.Code, filteredOutRec.Body.String())
+	}
+	if bytes.Contains(filteredOutRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("expected non-matching route_model_code filter to exclude image body=%s", filteredOutRec.Body.String())
+	}
+
+	guestDetailReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images/"+imageID, nil)
+	guestDetailRec := httptest.NewRecorder()
+	handler.ServeHTTP(guestDetailRec, guestDetailReq)
+	if guestDetailRec.Code != http.StatusUnauthorized {
+		t.Fatalf("guest public detail should require login, got %d body=%s", guestDetailRec.Code, guestDetailRec.Body.String())
+	}
+	operationsDashboardReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/metrics/dashboard", nil)
+	operationsDashboardReq.Header.Set("Authorization", "Bearer "+adminToken)
+	operationsDashboardRec := httptest.NewRecorder()
+	handler.ServeHTTP(operationsDashboardRec, operationsDashboardReq)
+	if operationsDashboardRec.Code != http.StatusOK {
+		t.Fatalf("operations dashboard request: %d body=%s", operationsDashboardRec.Code, operationsDashboardRec.Body.String())
+	}
+	var operationsDashboard struct {
+		Data struct {
+			Operations struct {
+				PublicGalleryListViews         uint64         `json:"public_gallery_list_views"`
+				PublicGalleryDetailLoginBlocks uint64         `json:"public_gallery_detail_login_blocks"`
+				PaymentSuccessRate             string         `json:"payment_success_rate"`
+				PreflightFailuresByErrorCode   map[string]int `json:"preflight_failures_by_error_code"`
+			} `json:"operations"`
+			Metrics []struct {
+				Key string `json:"key"`
+			} `json:"metrics"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(operationsDashboardRec.Body.Bytes())).Decode(&operationsDashboard); err != nil {
+		t.Fatalf("decode operations dashboard: %v", err)
+	}
+	if operationsDashboard.Data.Operations.PublicGalleryListViews == 0 {
+		t.Fatalf("expected public gallery list views in dashboard body=%s", operationsDashboardRec.Body.String())
+	}
+	if operationsDashboard.Data.Operations.PublicGalleryDetailLoginBlocks == 0 {
+		t.Fatalf("expected public gallery login blocks in dashboard body=%s", operationsDashboardRec.Body.String())
+	}
+	if operationsDashboard.Data.Operations.PaymentSuccessRate == "" || operationsDashboard.Data.Operations.PreflightFailuresByErrorCode == nil {
+		t.Fatalf("expected operations payment/preflight fields body=%s", operationsDashboardRec.Body.String())
+	}
+	metricKeys := map[string]bool{}
+	for _, metric := range operationsDashboard.Data.Metrics {
+		metricKeys[metric.Key] = true
+	}
+	for _, key := range []string{"payment_success_rate", "failed_webhook_count", "signup_trial_users", "preflight_failures", "public_gallery_views", "mock_payment"} {
+		if !metricKeys[key] {
+			t.Fatalf("expected dashboard metric key %q body=%s", key, operationsDashboardRec.Body.String())
+		}
+	}
+
+	viewerDetailReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images/"+imageID+"?access_token="+session.AccessToken, nil)
+	viewerDetailRec := httptest.NewRecorder()
+	handler.ServeHTTP(viewerDetailRec, viewerDetailReq)
+	if viewerDetailRec.Code != http.StatusOK {
+		t.Fatalf("viewer public detail: %d body=%s", viewerDetailRec.Code, viewerDetailRec.Body.String())
+	}
+	if !bytes.Contains(viewerDetailRec.Body.Bytes(), []byte(`Generate a downloadable banner`)) {
+		t.Fatalf("viewer public detail should expose full prompt body=%s", viewerDetailRec.Body.String())
+	}
+	if bytes.Contains(viewerDetailRec.Body.Bytes(), []byte(`comment_count`)) {
+		t.Fatalf("viewer public detail should not expose comment_count because comments are not a product capability body=%s", viewerDetailRec.Body.String())
+	}
 
 	likeReq := httptest.NewRequest(http.MethodPost, "/api/agent/gallery/v1/images/"+imageID+"/like", bytes.NewBufferString(`{"active":true}`))
 	likeReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
@@ -240,6 +373,9 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	if !bytes.Contains(likeRec.Body.Bytes(), []byte(`"like_count":1`)) || !bytes.Contains(likeRec.Body.Bytes(), []byte(`"liked_by_viewer":true`)) {
 		t.Fatalf("expected liked response body=%s", likeRec.Body.String())
 	}
+	if bytes.Contains(likeRec.Body.Bytes(), []byte(`comment_count`)) {
+		t.Fatalf("like response should not expose comment_count because comments are not a product capability body=%s", likeRec.Body.String())
+	}
 
 	favoriteReq := httptest.NewRequest(http.MethodPost, "/api/agent/gallery/v1/images/"+imageID+"/favorite", bytes.NewBufferString(`{"active":true}`))
 	favoriteReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
@@ -251,6 +387,9 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	}
 	if !bytes.Contains(favoriteRec.Body.Bytes(), []byte(`"favorite_count":1`)) || !bytes.Contains(favoriteRec.Body.Bytes(), []byte(`"favorited_by_viewer":true`)) {
 		t.Fatalf("expected favorited response body=%s", favoriteRec.Body.String())
+	}
+	if bytes.Contains(favoriteRec.Body.Bytes(), []byte(`comment_count`)) {
+		t.Fatalf("favorite response should not expose comment_count because comments are not a product capability body=%s", favoriteRec.Body.String())
 	}
 
 	likedListReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10&sort=hot&liked=true&access_token="+session.AccessToken, nil)
@@ -273,7 +412,7 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 		t.Fatalf("expected favorited public list to contain viewer state body=%s", favoritedListRec.Body.String())
 	}
 
-	publicDetailReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images/"+imageID, nil)
+	publicDetailReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images/"+imageID+"?access_token="+session.AccessToken, nil)
 	publicDetailRec := httptest.NewRecorder()
 	handler.ServeHTTP(publicDetailRec, publicDetailReq)
 	if publicDetailRec.Code != http.StatusOK {
@@ -281,6 +420,9 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	}
 	if !bytes.Contains(publicDetailRec.Body.Bytes(), []byte(`"visibility_status":"approved"`)) {
 		t.Fatalf("expected approved detail body=%s", publicDetailRec.Body.String())
+	}
+	if !bytes.Contains(publicDetailRec.Body.Bytes(), []byte(`"liked_by_viewer":true`)) || !bytes.Contains(publicDetailRec.Body.Bytes(), []byte(`"favorited_by_viewer":true`)) {
+		t.Fatalf("expected public detail to include viewer interaction state body=%s", publicDetailRec.Body.String())
 	}
 
 	publicImageReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images/"+imageID+"/image", nil)

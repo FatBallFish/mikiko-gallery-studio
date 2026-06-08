@@ -60,6 +60,34 @@ func (_c *SubscriptionPlanCreate) SetPlanName(v string) *SubscriptionPlanCreate 
 	return _c
 }
 
+// SetPlanType sets the "plan_type" field.
+func (_c *SubscriptionPlanCreate) SetPlanType(v string) *SubscriptionPlanCreate {
+	_c.mutation.SetPlanType(v)
+	return _c
+}
+
+// SetNillablePlanType sets the "plan_type" field if the given value is not nil.
+func (_c *SubscriptionPlanCreate) SetNillablePlanType(v *string) *SubscriptionPlanCreate {
+	if v != nil {
+		_c.SetPlanType(*v)
+	}
+	return _c
+}
+
+// SetPurchaseEnabled sets the "purchase_enabled" field.
+func (_c *SubscriptionPlanCreate) SetPurchaseEnabled(v bool) *SubscriptionPlanCreate {
+	_c.mutation.SetPurchaseEnabled(v)
+	return _c
+}
+
+// SetNillablePurchaseEnabled sets the "purchase_enabled" field if the given value is not nil.
+func (_c *SubscriptionPlanCreate) SetNillablePurchaseEnabled(v *bool) *SubscriptionPlanCreate {
+	if v != nil {
+		_c.SetPurchaseEnabled(*v)
+	}
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *SubscriptionPlanCreate) SetStatus(v string) *SubscriptionPlanCreate {
 	_c.mutation.SetStatus(v)
@@ -221,6 +249,14 @@ func (_c *SubscriptionPlanCreate) defaults() {
 		v := subscriptionplan.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.PlanType(); !ok {
+		v := subscriptionplan.DefaultPlanType
+		_c.mutation.SetPlanType(v)
+	}
+	if _, ok := _c.mutation.PurchaseEnabled(); !ok {
+		v := subscriptionplan.DefaultPurchaseEnabled
+		_c.mutation.SetPurchaseEnabled(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := subscriptionplan.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -278,6 +314,17 @@ func (_c *SubscriptionPlanCreate) check() error {
 		if err := subscriptionplan.PlanNameValidator(v); err != nil {
 			return &ValidationError{Name: "plan_name", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_name": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.PlanType(); !ok {
+		return &ValidationError{Name: "plan_type", err: errors.New(`ent: missing required field "SubscriptionPlan.plan_type"`)}
+	}
+	if v, ok := _c.mutation.PlanType(); ok {
+		if err := subscriptionplan.PlanTypeValidator(v); err != nil {
+			return &ValidationError{Name: "plan_type", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_type": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.PurchaseEnabled(); !ok {
+		return &ValidationError{Name: "purchase_enabled", err: errors.New(`ent: missing required field "SubscriptionPlan.purchase_enabled"`)}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "SubscriptionPlan.status"`)}
@@ -359,6 +406,14 @@ func (_c *SubscriptionPlanCreate) createSpec() (*SubscriptionPlan, *sqlgraph.Cre
 	if value, ok := _c.mutation.PlanName(); ok {
 		_spec.SetField(subscriptionplan.FieldPlanName, field.TypeString, value)
 		_node.PlanName = value
+	}
+	if value, ok := _c.mutation.PlanType(); ok {
+		_spec.SetField(subscriptionplan.FieldPlanType, field.TypeString, value)
+		_node.PlanType = value
+	}
+	if value, ok := _c.mutation.PurchaseEnabled(); ok {
+		_spec.SetField(subscriptionplan.FieldPurchaseEnabled, field.TypeBool, value)
+		_node.PurchaseEnabled = value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(subscriptionplan.FieldStatus, field.TypeString, value)

@@ -21,6 +21,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type fakeAssetLoader struct {
@@ -132,6 +133,157 @@ func TestExecuteGenerateProducesSucceededTask(t *testing.T) {
 	}
 }
 
+func TestExecuteMapsGPTImage2CodexSourceToAutoQualityAndCalculatedSize(t *testing.T) {
+	cfg := taskTestConfig()
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{Created: 1770000030, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID:     301,
+			ModelAccountID:     201,
+			Provider:           "openai",
+			AdapterType:        "",
+			AuthType:           "api_key",
+			BaseURL:            "https://api.example.test/v1",
+			Credentials:        map[string]string{"api_key": "test-key"},
+			ModelCode:          "gpt-image-2",
+			SupportedTaskTypes: []string{"text_to_image"},
+			SupportedQualities: []string{"1k", "2k", "4k"},
+			HealthStatus:       "enabled",
+			AccountExtra:       map[string]any{"gpt_image_2_codex_source": true},
+		}},
+	}})
+
+	_, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             77,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate square 4k image",
+		RequestedSize:      "auto",
+		RequestedQuality:   "4K",
+		OutputImageCount:   1,
+		ResponseFormat:     string(provider.ResponseFormatB64JSON),
+		PreferredProviders: []string{"openai"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	req := <-captured
+	if req.Model != "gpt-image-2" {
+		t.Fatalf("expected gpt-image-2 request, got %q", req.Model)
+	}
+	if req.Quality != "auto" {
+		t.Fatalf("expected codex source quality auto, got %q", req.Quality)
+	}
+	if req.Size != "2880x2880" {
+		t.Fatalf("expected 4K 1:1 calculated size, got %q", req.Size)
+	}
+}
+
+func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
+	cfg := taskTestConfig()
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{Created: 1770000040, ProviderRequestID: "req-test-image", Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+
+	result, err := svc.TestModelAccount(context.Background(), domainimagetask.TestModelAccountRequest{
+		AccountID: 201,
+		ModelID:   301,
+		ModelCode: "gpt-image-2",
+		Prompt:    "test account",
+	}, modelhub.ProviderCandidate{
+		AccountModelID:     301,
+		ModelAccountID:     201,
+		Provider:           "openai",
+		ModelCode:          "gpt-image-2",
+		SupportedTaskTypes: []string{"text_to_image"},
+		SupportedQualities: []string{"1k", "2k", "4k"},
+		HealthStatus:       "enabled",
+		AccountExtra:       map[string]any{"source_mode": "codex_responses"},
+	})
+	if err != nil {
+		t.Fatalf("TestModelAccount: %v", err)
+	}
+	req := <-captured
+	if req.Model != "gpt-image-2" || req.Quality != "auto" || req.Size != "1024x1024" || req.OutputImageCount != 1 {
+		t.Fatalf("unexpected provider request %#v", req)
+	}
+	if result.Status != domainimagetask.StatusSucceeded || result.ProviderRequestID != "req-test-image" {
+		t.Fatalf("unexpected test result %#v", result)
+	}
+	if result.ActualParams["quality"] != "auto" || result.ActualParams["size"] != "1024x1024" {
+		t.Fatalf("unexpected actual params %#v", result.ActualParams)
+	}
+	if result.Image.ID == "" || result.Image.URL == "" || result.Width != 1 || result.Height != 1 {
+		t.Fatalf("expected persisted image metadata, got %#v", result)
+	}
+	loaded, err := store.GetByID(context.Background(), 0, result.Task.ID)
+	if err != nil {
+		t.Fatalf("GetByID test task: %v", err)
+	}
+	if loaded.ActualPoints != "0.00000" || loaded.EstimatedPoints != "0.00000" || loaded.ChargedPoints != "0.00000" {
+		t.Fatalf("expected model account test to avoid billing, got %#v", loaded)
+	}
+}
+
+func TestExecuteGeneratePersistsDataURLReturnedInURLField(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000020, Data: []provider.ImageResult{{
+				URL: "data:image/png;base64," + tinyPNGBase64,
+			}}}, nil
+		}},
+	}
+	svc := imagetask.NewServiceWithProviders(cfg, providers)
+	svc.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			t.Fatalf("data URL result should not be fetched over HTTP, got %s", req.URL.String())
+			return nil, nil
+		}),
+	})
+
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID:             8,
+		AbstractModel:      "plus",
+		TaskType:           string(provider.TaskTypeTextToImage),
+		Prompt:             "Generate an inline response",
+		RequestedSize:      "1024x1024",
+		RequestedQuality:   "auto",
+		OutputImageCount:   1,
+		ResponseFormat:     string(provider.ResponseFormatURL),
+		PreferredProviders: []string{"openrouter"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected succeeded, got %s", result.Task.Status)
+	}
+	if len(result.Task.Results) != 1 {
+		t.Fatalf("expected one persisted result, got %#v", result.Task.Results)
+	}
+	image := result.Task.Results[0]
+	if image.StorageDriver != "local" || image.ObjectKey == "" || image.URL == "" {
+		t.Fatalf("expected locally persisted image result, got %#v", image)
+	}
+	if image.URL == "data:image/png;base64,"+tinyPNGBase64 {
+		t.Fatal("expected stored download URL, got original data URL")
+	}
+}
+
 func TestExecuteFallsBackOnRetryableProviderError(t *testing.T) {
 	cfg := taskTestConfig()
 	providers := map[string]provider.ImageProvider{
@@ -179,6 +331,15 @@ func TestExecuteFallsBackOnRetryableProviderError(t *testing.T) {
 	}
 	if result.Task.Attempts[0].Provider != "openrouter" || result.Task.Attempts[1].Provider != "openai" {
 		t.Fatalf("unexpected attempts %#v", result.Task.Attempts)
+	}
+	if result.Task.Attempts[0].ErrorCode != "rate_limit_error" || result.Task.Attempts[0].ErrorMessage != "slow down" {
+		t.Fatalf("expected structured upstream error on first attempt, got %#v", result.Task.Attempts[0])
+	}
+	if result.Task.Attempts[0].ErrorDetail["http_status"] != 429 || result.Task.Attempts[0].ErrorDetail["family"] != string(provider.UpstreamErrorFamilyRateLimited) {
+		t.Fatalf("expected upstream error detail on first attempt, got %#v", result.Task.Attempts[0].ErrorDetail)
+	}
+	if result.Task.Attempts[0].StartedAt == nil || result.Task.Attempts[0].FinishedAt == nil {
+		t.Fatalf("expected attempt timestamps, got %#v", result.Task.Attempts[0])
 	}
 }
 
@@ -322,6 +483,64 @@ func TestCreateAndExecuteLeasedTaskRespectDisabledRuntimeProvider(t *testing.T) 
 	}
 }
 
+func TestExecuteLeasedTaskCalculatesGPTImage2CodexSizeFromQualityAndAspectRatio(t *testing.T) {
+	cfg := taskTestConfig()
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{Created: 1770000031, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID:     302,
+			ModelAccountID:     202,
+			Provider:           "openai",
+			AdapterType:        "",
+			AuthType:           "api_key",
+			BaseURL:            "https://api.example.test/v1",
+			Credentials:        map[string]string{"api_key": "test-key"},
+			ModelCode:          "gpt-image-2",
+			SupportedTaskTypes: []string{"text_to_image"},
+			SupportedQualities: []string{"1k", "2k", "4k"},
+			HealthStatus:       "enabled",
+			AccountExtra:       map[string]any{"source_mode": "codex_responses"},
+		}},
+	}})
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           78,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Generate a wide 4k image",
+		RequestedSize:    "auto",
+		RequestedQuality: "4K",
+		AspectRatio:      "16:9",
+		OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("AcquireNextTask ok=%v err=%v", ok, err)
+	}
+	result, err := svc.ExecuteLeasedTask(context.Background(), leased, "worker-1", []string{"openai"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.ID != created.ID || result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("unexpected execution result %#v", result.Task)
+	}
+	req := <-captured
+	if req.Model != "gpt-image-2" || req.Quality != "auto" || req.Size != "3840x2160" {
+		t.Fatalf("expected gpt-image-2 codex request quality auto and 4K 16:9 size, got %#v", req)
+	}
+}
+
 type staticModelRoutingSource struct {
 	snapshot modelhub.ModelRoutingSnapshot
 }
@@ -423,6 +642,7 @@ type failingSaveStore struct {
 	failSave             bool
 	failSaveIfOwned      bool
 	failSaveIfOwnedError error
+	failAcquireError     error
 }
 
 func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) error {
@@ -492,8 +712,8 @@ func (s *failingSaveStore) ListPublicGallery(ctx context.Context, req domainimag
 	return s.base.ListPublicGallery(ctx, req)
 }
 
-func (s *failingSaveStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	return s.base.GetPublicImage(ctx, imageID)
+func (s *failingSaveStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID, viewerUserID)
 }
 
 func (s *failingSaveStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
@@ -505,11 +725,32 @@ func (s *failingSaveStore) DeleteByID(ctx context.Context, userID int64, taskID 
 }
 
 func (s *failingSaveStore) AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
+	if s.failAcquireError != nil {
+		err := s.failAcquireError
+		s.failAcquireError = nil
+		return domainimagetask.Task{}, err
+	}
 	return s.base.AcquireNextQueuedTask(ctx, owner, now, leaseTTL)
 }
 
 func (s *failingSaveStore) RenewTaskLease(ctx context.Context, taskID, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error) {
 	return s.base.RenewTaskLease(ctx, taskID, owner, now, leaseTTL)
+}
+
+func TestAcquireNextTaskPreservesTransientStoreContention(t *testing.T) {
+	store := &failingSaveStore{
+		base:             imagetask.NewMemoryStore(),
+		failAcquireError: errors.New("database table is locked: image_tasks"),
+	}
+	svc := imagetask.NewServiceWithStore(taskTestConfig(), store)
+
+	_, ok, err := svc.AcquireNextTask(context.Background(), "worker-a", 30*time.Second)
+	if ok {
+		t.Fatal("expected no acquired task on transient store contention")
+	}
+	if !errors.Is(err, repoerr.ErrTransientContention) {
+		t.Fatalf("expected transient contention error, got %v", err)
+	}
 }
 
 type raceyTerminalStore struct {
@@ -591,8 +832,8 @@ func (s *raceyTerminalStore) ListPublicGallery(ctx context.Context, req domainim
 	return s.base.ListPublicGallery(ctx, req)
 }
 
-func (s *raceyTerminalStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	return s.base.GetPublicImage(ctx, imageID)
+func (s *raceyTerminalStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID, viewerUserID)
 }
 
 func (s *raceyTerminalStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
@@ -745,6 +986,66 @@ func TestCreateTaskQueuesResolvedTask(t *testing.T) {
 	}
 }
 
+func TestRetryTaskCreatesQueuedCopyFromFailedTask(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	seed := domainimagetask.Task{
+		UserID:              33,
+		ID:                  "11111111-1111-1111-1111-111111111111",
+		Status:              domainimagetask.StatusFailed,
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeImageEdit),
+		Prompt:              "Retry this prompt",
+		NegativePrompt:      "low quality",
+		RequestedSize:       "1536x864",
+		RequestedQuality:    "auto",
+		AspectRatio:         "16:9",
+		OutputImageCount:    2,
+		ReferenceImageCount: 2,
+		ReferenceAssetIDs:   []string{"asset-a", "asset-b"},
+		ReferenceStrength:   70,
+		ResponseMode:        "async",
+		SavePolicy:          "private",
+		ErrorCode:           errs.CodeImageStorageFailed,
+		ErrorMessage:        "failed to store image",
+	}
+	if err := store.Save(context.Background(), seed); err != nil {
+		t.Fatalf("Save seed task: %v", err)
+	}
+
+	retry, err := svc.RetryTask(context.Background(), 33, seed.ID, domainimagetask.RetryRequest{
+		UserGroupCode:       "basic",
+		UserGroupCodes:      []string{"basic"},
+		UserGroupMultiplier: "1.00000",
+	})
+	if err != nil {
+		t.Fatalf("RetryTask: %v", err)
+	}
+	if retry.ID == seed.ID {
+		t.Fatalf("expected retry to create a new task id")
+	}
+	if retry.Status != domainimagetask.StatusQueued {
+		t.Fatalf("expected retry queued, got %s", retry.Status)
+	}
+	if retry.Prompt != seed.Prompt || retry.NegativePrompt != seed.NegativePrompt || retry.RouteModelCode != seed.RouteModelCode || retry.TaskType != seed.TaskType {
+		t.Fatalf("retry did not copy core request fields: %#v", retry)
+	}
+	if retry.OutputImageCount != seed.OutputImageCount || retry.ReferenceImageCount != seed.ReferenceImageCount || retry.ReferenceStrength != seed.ReferenceStrength {
+		t.Fatalf("retry did not copy count/reference fields: %#v", retry)
+	}
+	if len(retry.ReferenceAssetIDs) != 2 || retry.ReferenceAssetIDs[0] != "asset-a" || retry.ReferenceAssetIDs[1] != "asset-b" {
+		t.Fatalf("retry did not copy reference assets: %#v", retry.ReferenceAssetIDs)
+	}
+	original, err := svc.GetByID(context.Background(), 33, seed.ID)
+	if err != nil {
+		t.Fatalf("Get original: %v", err)
+	}
+	if original.Status != domainimagetask.StatusFailed || original.ErrorCode != errs.CodeImageStorageFailed {
+		t.Fatalf("expected original failed task to remain unchanged, got %#v", original)
+	}
+}
+
 func TestCreateTaskReservesPointsAndRollsBackIfTaskSaveFails(t *testing.T) {
 	cfg := taskTestConfig()
 	billingSvc := billingservice.NewService(cfg.Billing)
@@ -814,6 +1115,152 @@ func TestCreateTaskRetryAfterSaveFailureStillReservesPoints(t *testing.T) {
 	}
 	if summary.AvailablePoints != "12.00000" || summary.FrozenPoints != "8.00000" {
 		t.Fatalf("expected retry to reserve points once, got %#v", summary)
+	}
+}
+
+func TestCreateTaskPersistsFailedCallRecordWhenReserveRejectsInsufficientBalance(t *testing.T) {
+	cfg := taskTestConfig()
+	billingSvc := billingservice.NewService(cfg.Billing)
+	store := imagetask.NewMemoryStore()
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, nil, store, nil, billingSvc))
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		TaskID:              "99999999-9999-4999-8999-999999999999",
+		UserID:              190,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Record rejected task",
+		RequestedSize:       "auto",
+		RequestedQuality:    "auto",
+		OutputImageCount:    1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTask to reject insufficient balance")
+	}
+
+	tasks, err := svc.ListByUser(context.Background(), 190)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one failed call record task, got %#v", tasks)
+	}
+	record := tasks[0]
+	if record.Status != domainimagetask.StatusFailed {
+		t.Fatalf("expected failed record, got %#v", record)
+	}
+	if record.ErrorCode != errs.CodeInsufficientPoints || record.ErrorMessage == "" {
+		t.Fatalf("expected insufficient points error on record, got code=%q message=%q", record.ErrorCode, record.ErrorMessage)
+	}
+	if record.EstimatedPoints != "8.00000" || record.ActualPoints != "0.00000" {
+		t.Fatalf("expected estimate snapshot on failed record, got estimated=%q actual=%q", record.EstimatedPoints, record.ActualPoints)
+	}
+}
+
+func TestCreateTaskPersistsFailedCallRecordWhenRoutePriceMissing(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "route-snapshot-price-missing",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		TaskID:              "88888888-8888-4888-8888-888888888888",
+		UserID:              191,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		RouteModelCode:      "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Record missing route price",
+		RequestedSize:       "1024x1024",
+		RequestedQuality:    "1k",
+		OutputImageCount:    1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTask to reject missing route price")
+	}
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.Code != errs.CodeRouteModelPriceMissing {
+		t.Fatalf("expected route model price missing error, got %#v", err)
+	}
+
+	tasks, err := svc.ListByUser(context.Background(), 191)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one failed call record task, got %#v", tasks)
+	}
+	record := tasks[0]
+	if record.Status != domainimagetask.StatusFailed {
+		t.Fatalf("expected failed record, got %#v", record)
+	}
+	if record.ErrorCode != errs.CodeRouteModelPriceMissing || record.ErrorMessage == "" {
+		t.Fatalf("expected route price missing error on record, got code=%q message=%q", record.ErrorCode, record.ErrorMessage)
+	}
+	if record.RouteModelCode != "plus" || record.RouteModelID != 1 || record.RouteSnapshotVersion != "route-snapshot-price-missing" || record.EstimatedPoints != "0.00000" || record.ActualPoints != "0.00000" {
+		t.Fatalf("expected route metadata and zero point snapshot on failed record, got %#v", record)
+	}
+}
+
+func TestCreateTaskPersistsFailedCallRecordWhenRouteHasNoCandidate(t *testing.T) {
+	cfg := taskTestConfig()
+	store := imagetask.NewMemoryStore()
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, nil, store))
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "route-snapshot-no-candidate",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", Quality: "1k", BasePoints: "8.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: false}},
+	}})
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		TaskID:              "77777777-7777-4777-8777-777777777777",
+		UserID:              192,
+		UserGroupCode:       "basic",
+		UserGroupMultiplier: "1.00000",
+		RouteModelCode:      "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "Record missing route candidate",
+		RequestedSize:       "1024x1024",
+		RequestedQuality:    "1k",
+		OutputImageCount:    1,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTask to reject route without candidate")
+	}
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.Code != errs.CodeModelRouteNoCandidate {
+		t.Fatalf("expected route model no candidate error, got %#v", err)
+	}
+
+	tasks, err := svc.ListByUser(context.Background(), 192)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one failed call record task, got %#v", tasks)
+	}
+	record := tasks[0]
+	if record.Status != domainimagetask.StatusFailed {
+		t.Fatalf("expected failed record, got %#v", record)
+	}
+	if record.ErrorCode != errs.CodeModelRouteNoCandidate || record.ErrorMessage == "" {
+		t.Fatalf("expected no candidate error on record, got code=%q message=%q", record.ErrorCode, record.ErrorMessage)
+	}
+	if record.RouteModelCode != "plus" || record.RouteModelID != 1 || record.RouteSnapshotVersion != "route-snapshot-no-candidate" || record.ResolvedQualityBucket != "1k" || record.EstimatedPoints != "0.00000" || record.ActualPoints != "0.00000" {
+		t.Fatalf("expected route metadata, quality, and zero point snapshot on failed record, got %#v", record)
 	}
 }
 

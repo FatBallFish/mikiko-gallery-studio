@@ -72,6 +72,74 @@ func (_c *PaymentOrderCreate) SetProvider(v string) *PaymentOrderCreate {
 	return _c
 }
 
+// SetPurchaseType sets the "purchase_type" field.
+func (_c *PaymentOrderCreate) SetPurchaseType(v string) *PaymentOrderCreate {
+	_c.mutation.SetPurchaseType(v)
+	return _c
+}
+
+// SetNillablePurchaseType sets the "purchase_type" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillablePurchaseType(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetPurchaseType(*v)
+	}
+	return _c
+}
+
+// SetVisibleMethod sets the "visible_method" field.
+func (_c *PaymentOrderCreate) SetVisibleMethod(v string) *PaymentOrderCreate {
+	_c.mutation.SetVisibleMethod(v)
+	return _c
+}
+
+// SetNillableVisibleMethod sets the "visible_method" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableVisibleMethod(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetVisibleMethod(*v)
+	}
+	return _c
+}
+
+// SetProviderType sets the "provider_type" field.
+func (_c *PaymentOrderCreate) SetProviderType(v string) *PaymentOrderCreate {
+	_c.mutation.SetProviderType(v)
+	return _c
+}
+
+// SetNillableProviderType sets the "provider_type" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableProviderType(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetProviderType(*v)
+	}
+	return _c
+}
+
+// SetProviderInstanceID sets the "provider_instance_id" field.
+func (_c *PaymentOrderCreate) SetProviderInstanceID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetProviderInstanceID(v)
+	return _c
+}
+
+// SetNillableProviderInstanceID sets the "provider_instance_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableProviderInstanceID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetProviderInstanceID(*v)
+	}
+	return _c
+}
+
+// SetProviderSnapshot sets the "provider_snapshot" field.
+func (_c *PaymentOrderCreate) SetProviderSnapshot(v map[string]interface{}) *PaymentOrderCreate {
+	_c.mutation.SetProviderSnapshot(v)
+	return _c
+}
+
+// SetPaymentDisplay sets the "payment_display" field.
+func (_c *PaymentOrderCreate) SetPaymentDisplay(v map[string]interface{}) *PaymentOrderCreate {
+	_c.mutation.SetPaymentDisplay(v)
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *PaymentOrderCreate) SetStatus(v string) *PaymentOrderCreate {
 	_c.mutation.SetStatus(v)
@@ -232,6 +300,20 @@ func (_c *PaymentOrderCreate) SetNillablePaidAt(v *time.Time) *PaymentOrderCreat
 	return _c
 }
 
+// SetCompletedAt sets the "completed_at" field.
+func (_c *PaymentOrderCreate) SetCompletedAt(v time.Time) *PaymentOrderCreate {
+	_c.mutation.SetCompletedAt(v)
+	return _c
+}
+
+// SetNillableCompletedAt sets the "completed_at" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCompletedAt(v *time.Time) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCompletedAt(*v)
+	}
+	return _c
+}
+
 // SetClosedAt sets the "closed_at" field.
 func (_c *PaymentOrderCreate) SetClosedAt(v time.Time) *PaymentOrderCreate {
 	_c.mutation.SetClosedAt(v)
@@ -256,6 +338,34 @@ func (_c *PaymentOrderCreate) SetRefundedAt(v time.Time) *PaymentOrderCreate {
 func (_c *PaymentOrderCreate) SetNillableRefundedAt(v *time.Time) *PaymentOrderCreate {
 	if v != nil {
 		_c.SetRefundedAt(*v)
+	}
+	return _c
+}
+
+// SetLedgerID sets the "ledger_id" field.
+func (_c *PaymentOrderCreate) SetLedgerID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetLedgerID(v)
+	return _c
+}
+
+// SetNillableLedgerID sets the "ledger_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableLedgerID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetLedgerID(*v)
+	}
+	return _c
+}
+
+// SetIdempotencyKey sets the "idempotency_key" field.
+func (_c *PaymentOrderCreate) SetIdempotencyKey(v string) *PaymentOrderCreate {
+	_c.mutation.SetIdempotencyKey(v)
+	return _c
+}
+
+// SetNillableIdempotencyKey sets the "idempotency_key" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableIdempotencyKey(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetIdempotencyKey(*v)
 	}
 	return _c
 }
@@ -309,6 +419,18 @@ func (_c *PaymentOrderCreate) defaults() {
 		v := paymentorder.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.PurchaseType(); !ok {
+		v := paymentorder.DefaultPurchaseType
+		_c.mutation.SetPurchaseType(v)
+	}
+	if _, ok := _c.mutation.VisibleMethod(); !ok {
+		v := paymentorder.DefaultVisibleMethod
+		_c.mutation.SetVisibleMethod(v)
+	}
+	if _, ok := _c.mutation.ProviderType(); !ok {
+		v := paymentorder.DefaultProviderType
+		_c.mutation.SetProviderType(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := paymentorder.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -359,6 +481,30 @@ func (_c *PaymentOrderCreate) check() error {
 	if v, ok := _c.mutation.Provider(); ok {
 		if err := paymentorder.ProviderValidator(v); err != nil {
 			return &ValidationError{Name: "provider", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.provider": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.PurchaseType(); !ok {
+		return &ValidationError{Name: "purchase_type", err: errors.New(`ent: missing required field "PaymentOrder.purchase_type"`)}
+	}
+	if v, ok := _c.mutation.PurchaseType(); ok {
+		if err := paymentorder.PurchaseTypeValidator(v); err != nil {
+			return &ValidationError{Name: "purchase_type", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.purchase_type": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.VisibleMethod(); !ok {
+		return &ValidationError{Name: "visible_method", err: errors.New(`ent: missing required field "PaymentOrder.visible_method"`)}
+	}
+	if v, ok := _c.mutation.VisibleMethod(); ok {
+		if err := paymentorder.VisibleMethodValidator(v); err != nil {
+			return &ValidationError{Name: "visible_method", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.visible_method": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ProviderType(); !ok {
+		return &ValidationError{Name: "provider_type", err: errors.New(`ent: missing required field "PaymentOrder.provider_type"`)}
+	}
+	if v, ok := _c.mutation.ProviderType(); ok {
+		if err := paymentorder.ProviderTypeValidator(v); err != nil {
+			return &ValidationError{Name: "provider_type", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.provider_type": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
@@ -414,6 +560,11 @@ func (_c *PaymentOrderCreate) check() error {
 	if _, ok := _c.mutation.ExpiresAt(); !ok {
 		return &ValidationError{Name: "expires_at", err: errors.New(`ent: missing required field "PaymentOrder.expires_at"`)}
 	}
+	if v, ok := _c.mutation.IdempotencyKey(); ok {
+		if err := paymentorder.IdempotencyKeyValidator(v); err != nil {
+			return &ValidationError{Name: "idempotency_key", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.idempotency_key": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -464,6 +615,30 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 		_spec.SetField(paymentorder.FieldProvider, field.TypeString, value)
 		_node.Provider = value
 	}
+	if value, ok := _c.mutation.PurchaseType(); ok {
+		_spec.SetField(paymentorder.FieldPurchaseType, field.TypeString, value)
+		_node.PurchaseType = value
+	}
+	if value, ok := _c.mutation.VisibleMethod(); ok {
+		_spec.SetField(paymentorder.FieldVisibleMethod, field.TypeString, value)
+		_node.VisibleMethod = value
+	}
+	if value, ok := _c.mutation.ProviderType(); ok {
+		_spec.SetField(paymentorder.FieldProviderType, field.TypeString, value)
+		_node.ProviderType = value
+	}
+	if value, ok := _c.mutation.ProviderInstanceID(); ok {
+		_spec.SetField(paymentorder.FieldProviderInstanceID, field.TypeInt64, value)
+		_node.ProviderInstanceID = &value
+	}
+	if value, ok := _c.mutation.ProviderSnapshot(); ok {
+		_spec.SetField(paymentorder.FieldProviderSnapshot, field.TypeJSON, value)
+		_node.ProviderSnapshot = value
+	}
+	if value, ok := _c.mutation.PaymentDisplay(); ok {
+		_spec.SetField(paymentorder.FieldPaymentDisplay, field.TypeJSON, value)
+		_node.PaymentDisplay = value
+	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(paymentorder.FieldStatus, field.TypeString, value)
 		_node.Status = value
@@ -512,6 +687,10 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 		_spec.SetField(paymentorder.FieldPaidAt, field.TypeTime, value)
 		_node.PaidAt = &value
 	}
+	if value, ok := _c.mutation.CompletedAt(); ok {
+		_spec.SetField(paymentorder.FieldCompletedAt, field.TypeTime, value)
+		_node.CompletedAt = &value
+	}
 	if value, ok := _c.mutation.ClosedAt(); ok {
 		_spec.SetField(paymentorder.FieldClosedAt, field.TypeTime, value)
 		_node.ClosedAt = &value
@@ -519,6 +698,14 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.RefundedAt(); ok {
 		_spec.SetField(paymentorder.FieldRefundedAt, field.TypeTime, value)
 		_node.RefundedAt = &value
+	}
+	if value, ok := _c.mutation.LedgerID(); ok {
+		_spec.SetField(paymentorder.FieldLedgerID, field.TypeInt64, value)
+		_node.LedgerID = &value
+	}
+	if value, ok := _c.mutation.IdempotencyKey(); ok {
+		_spec.SetField(paymentorder.FieldIdempotencyKey, field.TypeString, value)
+		_node.IdempotencyKey = &value
 	}
 	if value, ok := _c.mutation.ProviderPayload(); ok {
 		_spec.SetField(paymentorder.FieldProviderPayload, field.TypeJSON, value)

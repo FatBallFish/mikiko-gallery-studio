@@ -83,6 +83,47 @@ func TestReserveTaskRejectsInsufficientBalance(t *testing.T) {
 	}
 }
 
+func TestEnsureSignupTrialGrantIsIdempotent(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250",
+		SignupTrial: config.SignupTrialConfig{
+			Enabled:            true,
+			Points:             "15.00000",
+			ValidDays:          7,
+			ExpiryReminderDays: 2,
+			GrantOncePerUser:   true,
+		},
+	})
+
+	first, err := svc.EnsureSignupTrialGrant(context.Background(), SignupTrialGrantRequest{UserID: 203})
+	if err != nil {
+		t.Fatalf("EnsureSignupTrialGrant first: %v", err)
+	}
+	if !first.Granted || first.Balance.TrialPoints != "15.00000" || len(first.Balance.Buckets) != 1 || first.Balance.Buckets[0].Bucket != "trial" {
+		t.Fatalf("expected signup trial grant balance, got %#v", first)
+	}
+	if first.Balance.Buckets[0].ExpiresAt == nil || first.Balance.Buckets[0].ExpireWarning {
+		t.Fatalf("expected non-warning expiring trial bucket, got %#v", first.Balance.Buckets[0])
+	}
+
+	second, err := svc.EnsureSignupTrialGrant(context.Background(), SignupTrialGrantRequest{UserID: 203})
+	if err != nil {
+		t.Fatalf("EnsureSignupTrialGrant second: %v", err)
+	}
+	if second.Granted || second.Balance.TrialPoints != "15.00000" || second.Balance.AvailablePoints != "15.00000" {
+		t.Fatalf("expected idempotent no-op second grant, got %#v", second)
+	}
+
+	disabled := NewService(config.BillingConfig{SignupTrial: config.SignupTrialConfig{Enabled: false, Points: "15.00000", ValidDays: 7}})
+	result, err := disabled.EnsureSignupTrialGrant(context.Background(), SignupTrialGrantRequest{UserID: 204})
+	if err != nil {
+		t.Fatalf("EnsureSignupTrialGrant disabled: %v", err)
+	}
+	if result.Granted || result.Balance.AvailablePoints != "0.00000" {
+		t.Fatalf("expected disabled signup trial to be a no-op, got %#v", result)
+	}
+}
+
 func TestMemoryStoreAPIKeyQuotaConcurrentReserveIsAtomic(t *testing.T) {
 	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
 	if _, err := svc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{
@@ -386,7 +427,7 @@ func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedQuality(t *test
 		RequestedOutputImageCount: 1,
 	})
 	appErr, ok := err.(*errs.Error)
-	if !ok || appErr.StatusCode != 409 || appErr.Code != errs.CodeConflict {
+	if !ok || appErr.StatusCode != 409 || appErr.Code != errs.CodeModelRouteNoCandidate {
 		t.Fatalf("expected estimate to reject route model without matching candidate, got %#v", err)
 	}
 }

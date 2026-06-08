@@ -42,6 +42,9 @@ type ModelRoute func(*sql.Selector)
 // PaymentOrder is the predicate function for paymentorder builders.
 type PaymentOrder func(*sql.Selector)
 
+// PaymentProviderInstance is the predicate function for paymentproviderinstance builders.
+type PaymentProviderInstance func(*sql.Selector)
+
 // PaymentWebhookEvent is the predicate function for paymentwebhookevent builders.
 type PaymentWebhookEvent func(*sql.Selector)
 
@@ -80,6 +83,9 @@ type RouteModelPrice func(*sql.Selector)
 
 // RouteModelVisibilityGroup is the predicate function for routemodelvisibilitygroup builders.
 type RouteModelVisibilityGroup func(*sql.Selector)
+
+// SecureConfig is the predicate function for secureconfig builders.
+type SecureConfig func(*sql.Selector)
 
 // SubscriptionPlan is the predicate function for subscriptionplan builders.
 type SubscriptionPlan func(*sql.Selector)

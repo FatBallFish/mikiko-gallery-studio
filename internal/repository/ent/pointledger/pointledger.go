@@ -35,6 +35,16 @@ const (
 	FieldBalanceAfter = "balance_after"
 	// FieldFrozenAfter holds the string denoting the frozen_after field in the database.
 	FieldFrozenAfter = "frozen_after"
+	// FieldBalanceBucket holds the string denoting the balance_bucket field in the database.
+	FieldBalanceBucket = "balance_bucket"
+	// FieldSourceType holds the string denoting the source_type field in the database.
+	FieldSourceType = "source_type"
+	// FieldSourceID holds the string denoting the source_id field in the database.
+	FieldSourceID = "source_id"
+	// FieldBucketBalanceAfter holds the string denoting the bucket_balance_after field in the database.
+	FieldBucketBalanceAfter = "bucket_balance_after"
+	// FieldExpiresAt holds the string denoting the expires_at field in the database.
+	FieldExpiresAt = "expires_at"
 	// FieldReason holds the string denoting the reason field in the database.
 	FieldReason = "reason"
 	// FieldOperatorAdminID holds the string denoting the operator_admin_id field in the database.
@@ -59,6 +69,11 @@ var Columns = []string{
 	FieldChangePoints,
 	FieldBalanceAfter,
 	FieldFrozenAfter,
+	FieldBalanceBucket,
+	FieldSourceType,
+	FieldSourceID,
+	FieldBucketBalanceAfter,
+	FieldExpiresAt,
 	FieldReason,
 	FieldOperatorAdminID,
 	FieldIdempotencyKey,
@@ -89,6 +104,16 @@ var (
 	DefaultBalanceAfter string
 	// DefaultFrozenAfter holds the default value on creation for the "frozen_after" field.
 	DefaultFrozenAfter string
+	// DefaultBalanceBucket holds the default value on creation for the "balance_bucket" field.
+	DefaultBalanceBucket string
+	// BalanceBucketValidator is a validator for the "balance_bucket" field. It is called by the builders before save.
+	BalanceBucketValidator func(string) error
+	// DefaultSourceType holds the default value on creation for the "source_type" field.
+	DefaultSourceType string
+	// SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
+	SourceTypeValidator func(string) error
+	// DefaultBucketBalanceAfter holds the default value on creation for the "bucket_balance_after" field.
+	DefaultBucketBalanceAfter string
 	// DefaultReason holds the default value on creation for the "reason" field.
 	DefaultReason string
 	// ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
@@ -158,6 +183,31 @@ func ByBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
 // ByFrozenAfter orders the results by the frozen_after field.
 func ByFrozenAfter(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFrozenAfter, opts...).ToFunc()
+}
+
+// ByBalanceBucket orders the results by the balance_bucket field.
+func ByBalanceBucket(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBalanceBucket, opts...).ToFunc()
+}
+
+// BySourceType orders the results by the source_type field.
+func BySourceType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceType, opts...).ToFunc()
+}
+
+// BySourceID orders the results by the source_id field.
+func BySourceID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceID, opts...).ToFunc()
+}
+
+// ByBucketBalanceAfter orders the results by the bucket_balance_after field.
+func ByBucketBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBucketBalanceAfter, opts...).ToFunc()
+}
+
+// ByExpiresAt orders the results by the expires_at field.
+func ByExpiresAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExpiresAt, opts...).ToFunc()
 }
 
 // ByReason orders the results by the reason field.

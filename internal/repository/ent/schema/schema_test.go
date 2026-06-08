@@ -3,8 +3,11 @@ package schema
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"entgo.io/ent"
 )
 
 func TestCoreSchemaFilesExist(t *testing.T) {
@@ -54,4 +57,78 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 			t.Fatalf("expected initial migration to contain %q", snippet)
 		}
 	}
+}
+
+func TestSubscriptionPlanSchemaCarriesPurchaseTypeContract(t *testing.T) {
+	fields := SubscriptionPlan{}.Fields()
+	hasPlanType := false
+	hasPurchaseEnabled := false
+	for _, field := range fields {
+		descriptor := field.Descriptor()
+		switch descriptor.Name {
+		case "plan_type":
+			hasPlanType = true
+			if descriptor.Default == nil {
+				t.Fatalf("plan_type should default to points_package")
+			}
+		case "purchase_enabled":
+			hasPurchaseEnabled = true
+			if descriptor.Default == nil {
+				t.Fatalf("purchase_enabled should default to true")
+			}
+		}
+	}
+	if !hasPlanType || !hasPurchaseEnabled {
+		t.Fatalf("subscription_plans should expose plan_type and purchase_enabled fields, got plan_type=%v purchase_enabled=%v", hasPlanType, hasPurchaseEnabled)
+	}
+}
+
+func TestPaymentProviderInstanceSchemaCarriesCashierContract(t *testing.T) {
+	fields := PaymentProviderInstance{}.Fields()
+	required := map[string]bool{
+		"provider_type":           false,
+		"name":                    false,
+		"config_encrypted":        false,
+		"credentials_fingerprint": false,
+		"supported_methods":       false,
+		"enabled":                 false,
+		"sort_order":              false,
+		"scheduler_weight":        false,
+		"limits":                  false,
+		"refund_enabled":          false,
+		"health_status":           false,
+		"last_error":              false,
+		"last_used_at":            false,
+		"metadata":                false,
+	}
+	for _, field := range fields {
+		name := field.Descriptor().Name
+		if _, ok := required[name]; ok {
+			required[name] = true
+		}
+	}
+	for name, found := range required {
+		if !found {
+			t.Fatalf("payment_provider_instances should expose %s", name)
+		}
+	}
+}
+
+func TestWalletBucketSchemaCarriesReservationIndexes(t *testing.T) {
+	if !hasIndexFields(WalletGrant{}.Indexes(), []string{"user_id", "status", "grant_type", "expires_at"}, false) {
+		t.Fatal("wallet_grants should index user_id,status,grant_type,expires_at for bucket expiry scans")
+	}
+	if !hasIndexFields(WalletReservationAllocation{}.Indexes(), []string{"wallet_grant_id", "task_id", "reservation_cycle"}, true) {
+		t.Fatal("wallet_reservation_allocations should uniquely index wallet_grant_id,task_id,reservation_cycle")
+	}
+}
+
+func hasIndexFields(indexes []ent.Index, fields []string, unique bool) bool {
+	for _, idx := range indexes {
+		descriptor := idx.Descriptor()
+		if descriptor.Unique == unique && reflect.DeepEqual(descriptor.Fields, fields) {
+			return true
+		}
+	}
+	return false
 }

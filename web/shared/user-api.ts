@@ -2,7 +2,11 @@ import type {
   ApiKey,
   Balance,
   BillingPlan,
+  CashierOptions,
+  CashierOrder,
   Capability,
+  CreateApiKeyRequest,
+  CreateCashierOrderRequest,
   CreateTaskRequest,
   EstimateRequest,
   EstimateResult,
@@ -86,6 +90,7 @@ export function toReferenceAsset(raw: any): ReferenceAsset {
     id: String(raw.id ?? raw.asset_id ?? ''),
     name: raw.name ?? raw.filename ?? raw.id ?? 'reference',
     preview_url: raw.preview_url ?? raw.download_url ?? '',
+    download_url: raw.download_url ?? raw.preview_url ?? '',
     status: raw.status ?? 'ready',
     size_bytes: Number(raw.size_bytes ?? raw.file_size ?? 0),
     created_at: raw.created_at ?? '',
@@ -102,7 +107,6 @@ export function toImageResult(raw: any): ImageResult {
     publish_status: raw.publish_status ?? raw.visibility_status ?? 'private',
     like_count: Number(raw.like_count ?? 0),
     favorite_count: Number(raw.favorite_count ?? 0),
-    comment_count: Number(raw.comment_count ?? 0),
     liked_by_viewer: Boolean(raw.liked_by_viewer),
     favorited_by_viewer: Boolean(raw.favorited_by_viewer),
   }
@@ -132,6 +136,9 @@ export function toTask(raw: any): ImageTask {
     created_at: raw.created_at ?? '',
     updated_at: raw.updated_at ?? raw.created_at ?? '',
     failure_reason: raw.failure_reason ?? raw.error_message,
+    error_code: raw.error_code,
+    error_message: raw.error_message,
+    request_id: raw.request_id ?? raw.meta?.request_id,
     reference_assets: (raw.reference_assets ?? []).map(toReferenceAsset),
     results,
   }
@@ -171,7 +178,9 @@ function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
     display_points: raw.display_points ?? points,
     formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${req?.quality ?? raw.resolved_quality_bucket ?? ''}`,
     resolved_quality: raw.resolved_quality_bucket ?? raw.resolved_quality ?? req?.quality ?? 'auto',
-    sufficient: raw.sufficient ?? true,
+    sufficient: Boolean(raw.sufficient),
+    insufficient_points: raw.insufficient_points ?? '0.00000',
+    balance: raw.balance ? toBalance(raw.balance) : undefined,
   }
 }
 
@@ -193,7 +202,6 @@ function toGalleryImage(raw: any): GalleryImage {
     visibility_status: raw.visibility_status ?? raw.publish_status ?? 'private',
     like_count: Number(raw.like_count ?? 0),
     favorite_count: Number(raw.favorite_count ?? 0),
-    comment_count: Number(raw.comment_count ?? 0),
     liked_by_viewer: Boolean(raw.liked_by_viewer),
     favorited_by_viewer: Boolean(raw.favorited_by_viewer),
     created_at: raw.created_at ?? '',
@@ -247,6 +255,17 @@ export const userApi = {
   createOrder: (plan_code: string, provider = 'alipay') => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orders, { method: 'POST', body: { plan_code, provider } }),
   getOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orderDetail, { pathParams: { order_id } }),
   cancelOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orderCancel, { method: 'POST', pathParams: { order_id } }),
+  getCashierOptions: () => sharedApiClient.request<CashierOptions>(API_PATHS.agent.cashierOptions),
+  listCashierOrders: async (page = 1, page_size = 20) => normalizePage<CashierOrder>(await sharedApiClient.request(API_PATHS.agent.cashierOrders, { query: { page, page_size } })),
+  createCashierOrder: (input: CreateCashierOrderRequest, idempotencyKey: string = crypto.randomUUID()) =>
+    sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrders, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: input,
+    }),
+  getCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderDetail, { pathParams: { order_id } }),
+  cancelCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderCancel, { method: 'POST', pathParams: { order_id } }),
+  mockPayCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderMockPay, { method: 'POST', pathParams: { order_id } }),
   redeemCode: (code: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request(API_PATHS.agent.redeemCode, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { code } }),
   getCapabilities: async (): Promise<Capability> => {
     const raw: any = await sharedApiClient.request(API_PATHS.agent.capabilities)
@@ -287,10 +306,13 @@ export const userApi = {
     })
     return {
       raw,
+      unavailable_reason: raw.unavailable_reason ?? null,
       model_groups: normalizedModels,
       qualities: pick(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K'],
       aspect_ratios: pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? ['1:1', '16:9', '9:16', '4:3'],
       max_image_count: pick(raw, 'max_image_count', 'MaxImageCount') ?? 4,
+      reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,
+      reference_image_max_bytes: Number(pick(raw, 'reference_image_max_bytes', 'ReferenceImageMaxBytes') ?? 0) || undefined,
       task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? ['text_to_image', 'reference_to_image', 'image_edit']).map(normalizeTaskType),
     } satisfies Capability
   },
@@ -324,6 +346,7 @@ export const userApi = {
     return page.items.map(toTask)
   },
   listGalleryImages: async (page = 1, page_size = 100) => normalizePage<GalleryImage>(await sharedApiClient.request(API_PATHS.agent.galleryImages, { query: { page, page_size } })).items.map(toGalleryImage),
+  retryTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.historyTaskRetry, { method: 'POST', pathParams: { task_id } })),
   deleteTask: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
   deleteGalleryImage: (image_id: string) => sharedApiClient.request<void>(API_PATHS.agent.galleryImageDetail, { method: 'DELETE', pathParams: { image_id } }),
   updateGalleryImageGroup: async (image_id: string, image_group: string) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.galleryImageGroup, { method: 'PUT', pathParams: { image_id }, body: { image_group } })),
@@ -331,11 +354,22 @@ export const userApi = {
   likePublicImage: async (image_id: string, active: boolean) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.likePublicImage, { method: 'POST', pathParams: { image_id }, body: { active } })),
   favoritePublicImage: async (image_id: string, active: boolean) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.favoritePublicImage, { method: 'POST', pathParams: { image_id }, body: { active } })),
   listApiKeys: async () => ((await sharedApiClient.request<{ items: any[] }>(API_PATHS.agent.apiKeys)).items ?? []).map(toApiKey),
-  createApiKey: async (input: { name: string; scopes?: string[]; rpm_limit: number; expires_at: string | null }) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeys, {
+  createApiKey: async (input: CreateApiKeyRequest & { rpm_limit: number; expires_at: string | null }) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeys, {
     method: 'POST',
-    body: { name: input.name, rpm_limit: input.rpm_limit, expires_at: input.expires_at ? new Date(input.expires_at).toISOString() : null },
+    body: {
+      name: input.name,
+      scopes: input.scopes,
+      rpm_limit: input.rpm_limit,
+      total_quota_points: input.total_quota_points ?? null,
+      daily_quota_points: input.daily_quota_points ?? null,
+      expires_at: input.expires_at ? new Date(input.expires_at).toISOString() : null,
+    },
   })),
-  updateApiKey: async (key_id: string | number, patch: Partial<ApiKey>) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeyDetail, { method: 'PUT', pathParams: { key_id }, body: patch })),
+  updateApiKey: async (key_id: string | number, patch: Partial<ApiKey>) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeyDetail, {
+    method: 'PUT',
+    pathParams: { key_id },
+    body: { ...patch, expires_at: patch.expires_at ? new Date(patch.expires_at).toISOString() : patch.expires_at },
+  })),
   resetApiKeySecret: async (key_id: string | number) => toApiKey(await sharedApiClient.request(API_PATHS.agent.apiKeyResetSecret, { method: 'POST', pathParams: { key_id } })),
   deleteApiKey: (key_id: string | number) => sharedApiClient.request<void>(API_PATHS.agent.apiKeyDetail, { method: 'DELETE', pathParams: { key_id } }),
 }

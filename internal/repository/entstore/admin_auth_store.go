@@ -43,7 +43,7 @@ func (s *AdminAuthStore) GetAdminByID(ctx context.Context, id int64) (domainadmi
 func (s *AdminAuthStore) CreateAdmin(ctx context.Context, admin domainadminauth.AdminUser) (domainadminauth.AdminUser, error) {
 	role := admin.Role
 	if role == "" {
-		role = "ops_admin"
+		role = domainadminauth.RoleAdmin
 	}
 	status := admin.Status
 	if status == "" {

@@ -57,8 +57,18 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+type LoginResult struct {
+	User    domainauth.User
+	Session domainauth.Session
+	Created bool
+}
+
 type EmailSender interface {
 	SendVerificationCode(email, scene, code string) error
+}
+
+type SMTPConfigResolver interface {
+	ResolveSMTPConfig(ctx context.Context) (config.SMTPConfig, bool, error)
 }
 
 type SMTPEmailSender struct {
@@ -129,6 +139,7 @@ type Service struct {
 	redisRuntime    RedisRuntime
 	allowFallback   bool
 	emailSender     EmailSender
+	smtpResolver    SMTPConfigResolver
 	userMultipliers map[string]string
 	nextUserID      int64
 	usersByEmail    map[string]*domainauth.User
@@ -171,6 +182,12 @@ func NewServiceWithEmailSender(cfg config.AuthConfig, userMultipliers map[string
 	svc := NewServiceWithStoreAndRedis(cfg, userMultipliers, nil, nil, true)
 	svc.emailSender = sender
 	return svc
+}
+
+func (s *Service) SetSMTPConfigResolver(resolver SMTPConfigResolver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.smtpResolver = resolver
 }
 
 func ValidateProductionEmailCodeConfig(env string, cfg config.AuthConfig) error {
@@ -219,10 +236,14 @@ func (s *Service) SendEmailCode(email, scene string) error {
 			return errs.Internal("failed to generate verification code")
 		}
 		code = generated
-		if s.emailSender == nil {
+		sender, err := s.emailSenderLocked(context.Background())
+		if err != nil {
+			return err
+		}
+		if sender == nil {
 			return emailDeliveryConfigError()
 		}
-		if err := s.emailSender.SendVerificationCode(email, scene, code); err != nil {
+		if err := sender.SendVerificationCode(email, scene, code); err != nil {
 			if appErr, ok := err.(*errs.Error); ok {
 				return appErr
 			}
@@ -244,6 +265,19 @@ func (s *Service) SendEmailCode(email, scene string) error {
 	}
 	s.codesByEmail[email] = current
 	return nil
+}
+
+func (s *Service) emailSenderLocked(ctx context.Context) (EmailSender, error) {
+	if s.smtpResolver != nil {
+		cfg, ok, err := s.smtpResolver.ResolveSMTPConfig(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return NewSMTPEmailSender(cfg), nil
+		}
+	}
+	return s.emailSender, nil
 }
 
 func fixedEmailCode(cfg config.AuthConfig) string {
@@ -315,32 +349,42 @@ func envelopeAddress(value string) string {
 }
 
 func (s *Service) LoginWithEmailCode(email, code string) (domainauth.User, domainauth.Session, error) {
+	result, err := s.LoginWithEmailCodeResult(email, code)
+	if err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
+	return result.User, result.Session, nil
+}
+
+func (s *Service) LoginWithEmailCodeResult(email, code string) (LoginResult, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	code = strings.TrimSpace(code)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.consumeEmailCodeLocked(email, code, "login"); err != nil {
-		return domainauth.User{}, domainauth.Session{}, err
+		return LoginResult{}, err
 	}
 
 	user, err := s.getUserByEmailLocked(email)
 	if err != nil && err != repoerr.ErrNotFound {
-		return domainauth.User{}, domainauth.Session{}, err
+		return LoginResult{}, err
 	}
+	createdUser := false
 	if err == repoerr.ErrNotFound {
 		created, err := s.createUserLocked(email)
 		if err != nil {
-			return domainauth.User{}, domainauth.Session{}, err
+			return LoginResult{}, err
 		}
 		user = &created
+		createdUser = true
 	}
 	if user.Status == "disabled" {
-		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
+		return LoginResult{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
 	}
 	if user.Status == "closed" {
-		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
+		return LoginResult{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
 	}
-	return *user, s.issueSessionLocked(user), nil
+	return LoginResult{User: *user, Session: s.issueSessionLocked(user), Created: createdUser}, nil
 }
 
 func (s *Service) LoginWithPassword(email, password string) (domainauth.User, domainauth.Session, error) {

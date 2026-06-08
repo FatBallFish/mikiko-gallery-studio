@@ -15,6 +15,8 @@ func (SubscriptionPlan) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("plan_code").MaxLen(64).Unique().NotEmpty(),
 		field.String("plan_name").MaxLen(128).NotEmpty(),
+		field.String("plan_type").MaxLen(32).Default("points_package"),
+		field.Bool("purchase_enabled").Default(true),
 		field.String("status").MaxLen(32).Default("active"),
 		field.String("price_cny").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
 		field.String("points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),

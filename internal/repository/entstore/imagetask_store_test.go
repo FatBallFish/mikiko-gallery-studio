@@ -13,6 +13,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -222,6 +223,41 @@ func TestImageTaskStoreListsApprovedPublicImagesWithoutPublishedAt(t *testing.T)
 	if publicPage.Total != 1 || len(publicPage.Items) != 1 || publicPage.Items[0].ID != imageID {
 		t.Fatalf("expected approved image in public gallery, got %#v", publicPage)
 	}
+	filteredByModel, err := store.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{
+		Page:           1,
+		PageSize:       10,
+		RouteModelCode: "basic",
+		TaskType:       string(provider.TaskTypeTextToImage),
+	})
+	if err != nil {
+		t.Fatalf("ListPublicGallery filtered by model: %v", err)
+	}
+	if filteredByModel.Total != 1 || len(filteredByModel.Items) != 1 || filteredByModel.Items[0].ID != imageID {
+		t.Fatalf("expected route_model_code/task_type filter to include image, got %#v", filteredByModel)
+	}
+	filteredOut, err := store.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{
+		Page:           1,
+		PageSize:       10,
+		RouteModelCode: "missing",
+		TaskType:       string(provider.TaskTypeTextToImage),
+	})
+	if err != nil {
+		t.Fatalf("ListPublicGallery filtered out by model: %v", err)
+	}
+	if filteredOut.Total != 0 || len(filteredOut.Items) != 0 {
+		t.Fatalf("expected non-matching route_model_code filter to exclude image, got %#v", filteredOut)
+	}
+	filteredOutByTaskType, err := store.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{
+		Page:     1,
+		PageSize: 10,
+		TaskType: string(provider.TaskTypeImageEdit),
+	})
+	if err != nil {
+		t.Fatalf("ListPublicGallery filtered out by task type: %v", err)
+	}
+	if filteredOutByTaskType.Total != 0 || len(filteredOutByTaskType.Items) != 0 {
+		t.Fatalf("expected non-matching task_type filter to exclude image, got %#v", filteredOutByTaskType)
+	}
 
 	if _, err := store.SetPublicImageInteraction(ctx, 62, imageID, "like", true); err != nil {
 		t.Fatalf("SetPublicImageInteraction like: %v", err)
@@ -243,6 +279,91 @@ func TestImageTaskStoreListsApprovedPublicImagesWithoutPublishedAt(t *testing.T)
 	if len(favoritedPage.Items) != 1 || !favoritedPage.Items[0].FavoritedByViewer || favoritedPage.Items[0].FavoriteCount != 1 {
 		t.Fatalf("expected favorited viewer state, got %#v", favoritedPage)
 	}
+}
+
+func TestImageTaskStorePublicGalleryHotSortIgnoresLegacyCommentCount(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetaskpublichot?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewImageTaskStore(client)
+	likedTask := publicGalleryTask("71717171-7171-7171-7171-717171717171", "71717171-0000-0000-0000-717171717171")
+	legacyCommentTask := publicGalleryTask("72727272-7272-7272-7272-727272727272", "72727272-0000-0000-0000-727272727272")
+	if err := store.Save(ctx, likedTask); err != nil {
+		t.Fatalf("Save liked task: %v", err)
+	}
+	if err := store.Save(ctx, legacyCommentTask); err != nil {
+		t.Fatalf("Save legacy comment task: %v", err)
+	}
+	if _, err := store.RequestPublish(ctx, likedTask.UserID, likedTask.Results[0].ID); err != nil {
+		t.Fatalf("RequestPublish liked: %v", err)
+	}
+	if _, err := store.RequestPublish(ctx, legacyCommentTask.UserID, legacyCommentTask.Results[0].ID); err != nil {
+		t.Fatalf("RequestPublish legacy comment: %v", err)
+	}
+	if _, err := store.ReviewImage(ctx, likedTask.Results[0].ID, domainimagetask.VisibilityApproved, "", nil); err != nil {
+		t.Fatalf("ReviewImage liked: %v", err)
+	}
+	if _, err := store.ReviewImage(ctx, legacyCommentTask.Results[0].ID, domainimagetask.VisibilityApproved, "", nil); err != nil {
+		t.Fatalf("ReviewImage legacy comment: %v", err)
+	}
+	if _, err := store.SetPublicImageInteraction(ctx, 72, likedTask.Results[0].ID, "favorite", true); err != nil {
+		t.Fatalf("SetPublicImageInteraction favorite: %v", err)
+	}
+	if _, err := client.PublicImageStat.Create().
+		SetImageID(mustUUID(t, legacyCommentTask.Results[0].ID)).
+		SetLikeCount(0).
+		SetFavoriteCount(0).
+		SetCommentCount(99).
+		Save(ctx); err != nil {
+		t.Fatalf("seed legacy comment count: %v", err)
+	}
+
+	page, err := store.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, Sort: "hot"})
+	if err != nil {
+		t.Fatalf("ListPublicGallery hot: %v", err)
+	}
+	if len(page.Items) < 2 {
+		t.Fatalf("expected two public images, got %#v", page)
+	}
+	if page.Items[0].ID != likedTask.Results[0].ID {
+		t.Fatalf("hot sort should ignore legacy comment_count and rank favorite first, got %#v", page.Items)
+	}
+}
+
+func publicGalleryTask(taskID, imageID string) domainimagetask.Task {
+	return domainimagetask.Task{
+		UserID:                72,
+		ID:                    taskID,
+		Status:                domainimagetask.StatusSucceeded,
+		Provider:              "openai",
+		AbstractModel:         "basic",
+		TaskType:              string(provider.TaskTypeTextToImage),
+		Prompt:                "public gallery hot sort",
+		RequestedQuality:      "auto",
+		ResolvedQualityBucket: "1k",
+		OutputImageCount:      1,
+		Results: []provider.ImageResult{{
+			ID:               imageID,
+			URL:              "https://cdn.example.com/" + imageID + ".png",
+			VisibilityStatus: domainimagetask.VisibilityPrivate,
+		}},
+	}
+}
+
+func mustUUID(t *testing.T, value string) uuid.UUID {
+	t.Helper()
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		t.Fatalf("parse uuid %q: %v", value, err)
+	}
+	return parsed
 }
 
 func TestImageTaskStoreAcquireNextQueuedTaskAndReclaimExpiredLease(t *testing.T) {

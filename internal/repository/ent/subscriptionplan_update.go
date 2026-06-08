@@ -62,6 +62,34 @@ func (_u *SubscriptionPlanUpdate) SetNillablePlanName(v *string) *SubscriptionPl
 	return _u
 }
 
+// SetPlanType sets the "plan_type" field.
+func (_u *SubscriptionPlanUpdate) SetPlanType(v string) *SubscriptionPlanUpdate {
+	_u.mutation.SetPlanType(v)
+	return _u
+}
+
+// SetNillablePlanType sets the "plan_type" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillablePlanType(v *string) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetPlanType(*v)
+	}
+	return _u
+}
+
+// SetPurchaseEnabled sets the "purchase_enabled" field.
+func (_u *SubscriptionPlanUpdate) SetPurchaseEnabled(v bool) *SubscriptionPlanUpdate {
+	_u.mutation.SetPurchaseEnabled(v)
+	return _u
+}
+
+// SetNillablePurchaseEnabled sets the "purchase_enabled" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillablePurchaseEnabled(v *bool) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetPurchaseEnabled(*v)
+	}
+	return _u
+}
+
 // SetStatus sets the "status" field.
 func (_u *SubscriptionPlanUpdate) SetStatus(v string) *SubscriptionPlanUpdate {
 	_u.mutation.SetStatus(v)
@@ -253,6 +281,11 @@ func (_u *SubscriptionPlanUpdate) check() error {
 			return &ValidationError{Name: "plan_name", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PlanType(); ok {
+		if err := subscriptionplan.PlanTypeValidator(v); err != nil {
+			return &ValidationError{Name: "plan_type", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := subscriptionplan.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.status": %w`, err)}
@@ -291,6 +324,12 @@ func (_u *SubscriptionPlanUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.PlanName(); ok {
 		_spec.SetField(subscriptionplan.FieldPlanName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PlanType(); ok {
+		_spec.SetField(subscriptionplan.FieldPlanType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PurchaseEnabled(); ok {
+		_spec.SetField(subscriptionplan.FieldPurchaseEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(subscriptionplan.FieldStatus, field.TypeString, value)
@@ -378,6 +417,34 @@ func (_u *SubscriptionPlanUpdateOne) SetPlanName(v string) *SubscriptionPlanUpda
 func (_u *SubscriptionPlanUpdateOne) SetNillablePlanName(v *string) *SubscriptionPlanUpdateOne {
 	if v != nil {
 		_u.SetPlanName(*v)
+	}
+	return _u
+}
+
+// SetPlanType sets the "plan_type" field.
+func (_u *SubscriptionPlanUpdateOne) SetPlanType(v string) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetPlanType(v)
+	return _u
+}
+
+// SetNillablePlanType sets the "plan_type" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillablePlanType(v *string) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetPlanType(*v)
+	}
+	return _u
+}
+
+// SetPurchaseEnabled sets the "purchase_enabled" field.
+func (_u *SubscriptionPlanUpdateOne) SetPurchaseEnabled(v bool) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetPurchaseEnabled(v)
+	return _u
+}
+
+// SetNillablePurchaseEnabled sets the "purchase_enabled" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillablePurchaseEnabled(v *bool) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetPurchaseEnabled(*v)
 	}
 	return _u
 }
@@ -586,6 +653,11 @@ func (_u *SubscriptionPlanUpdateOne) check() error {
 			return &ValidationError{Name: "plan_name", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PlanType(); ok {
+		if err := subscriptionplan.PlanTypeValidator(v); err != nil {
+			return &ValidationError{Name: "plan_type", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := subscriptionplan.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.status": %w`, err)}
@@ -641,6 +713,12 @@ func (_u *SubscriptionPlanUpdateOne) sqlSave(ctx context.Context) (_node *Subscr
 	}
 	if value, ok := _u.mutation.PlanName(); ok {
 		_spec.SetField(subscriptionplan.FieldPlanName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PlanType(); ok {
+		_spec.SetField(subscriptionplan.FieldPlanType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PurchaseEnabled(); ok {
+		_spec.SetField(subscriptionplan.FieldPurchaseEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(subscriptionplan.FieldStatus, field.TypeString, value)

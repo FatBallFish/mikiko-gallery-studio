@@ -50,7 +50,7 @@ func (s *MemoryStore) CreateAdmin(_ context.Context, admin domainadminauth.Admin
 		s.nextID++
 	}
 	if admin.Role == "" {
-		admin.Role = "ops_admin"
+		admin.Role = domainadminauth.RoleAdmin
 	}
 	if admin.Status == "" {
 		admin.Status = "active"

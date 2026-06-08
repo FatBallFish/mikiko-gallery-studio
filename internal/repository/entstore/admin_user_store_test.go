@@ -71,6 +71,16 @@ func TestAdminUserStoreListDetailAndStatus(t *testing.T) {
 	if list.Total != 1 || len(list.Items) != 1 || list.Items[0].Email != "alice@example.com" {
 		t.Fatalf("unexpected filtered list %#v", list)
 	}
+	if list.Items[0].Balance != "15.00000" {
+		t.Fatalf("expected list item balance, got %#v", list.Items[0])
+	}
+	groupList, err := store.ListUsers(ctx, domainadminuser.ListRequest{Page: 1, PageSize: 10, GroupCode: "basic", SortBy: "points", SortDir: "desc"})
+	if err != nil {
+		t.Fatalf("ListUsers group/sort: %v", err)
+	}
+	if groupList.Total != 2 || groupList.Items[0].Email != "alice@example.com" {
+		t.Fatalf("unexpected group/sort list %#v", groupList)
+	}
 
 	detail, err := store.GetUserDetail(ctx, int64(alice.ID), 5)
 	if err != nil {
@@ -104,8 +114,17 @@ func TestAdminUserStoreListDetailAndStatus(t *testing.T) {
 		GroupName:  "VIP",
 		Multiplier: "1.50000",
 		Status:     "active",
+		SortOrder:  20,
+		IsDefault:  true,
 	}); err != nil {
 		t.Fatalf("CreateUserGroup: %v", err)
+	}
+	vipGroup, err := store.GetUserGroup(ctx, "vip")
+	if err != nil {
+		t.Fatalf("GetUserGroup vip: %v", err)
+	}
+	if vipGroup.SortOrder != 20 || !vipGroup.IsDefault {
+		t.Fatalf("expected group sort/default to round trip, got %#v", vipGroup)
 	}
 	reassigned, err := store.AssignUserGroup(ctx, domainadminuser.GroupAssignmentRequest{UserID: int64(alice.ID), UserGroupCode: "vip"})
 	if err != nil {
@@ -113,6 +132,38 @@ func TestAdminUserStoreListDetailAndStatus(t *testing.T) {
 	}
 	if reassigned.UserGroupCode != "vip" {
 		t.Fatalf("expected vip group, got %#v", reassigned)
+	}
+
+	promoGroup, err := store.CreateUserGroup(ctx, domainadminuser.UserGroupWriteRequest{
+		GroupCode:  "promo",
+		GroupName:  "Promo",
+		Multiplier: "0.80000",
+		Status:     "active",
+		SortOrder:  30,
+		IsDefault:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateUserGroup promo: %v", err)
+	}
+	vipGroup, err = store.GetUserGroup(ctx, "vip")
+	if err != nil {
+		t.Fatalf("GetUserGroup vip after promo: %v", err)
+	}
+	if vipGroup.IsDefault {
+		t.Fatalf("expected vip default flag to be cleared after promo default, got %#v", vipGroup)
+	}
+	if !promoGroup.IsDefault {
+		t.Fatalf("expected promo to be default, got %#v", promoGroup)
+	}
+
+	if _, err := store.AssignUserGroups(ctx, domainadminuser.MultiGroupAssignmentRequest{
+		UserID:   int64(alice.ID),
+		GroupIDs: []int64{promoGroup.ID},
+	}); err != nil {
+		t.Fatalf("AssignUserGroups promo: %v", err)
+	}
+	if err := store.DeleteUserGroup(ctx, "promo"); err == nil {
+		t.Fatal("expected deleting membership-referenced group to fail")
 	}
 }
 

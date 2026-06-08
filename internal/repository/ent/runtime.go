@@ -17,6 +17,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
@@ -30,6 +31,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/schema"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
@@ -1083,50 +1085,145 @@ func init() {
 			return nil
 		}
 	}()
+	// paymentorderDescPurchaseType is the schema descriptor for purchase_type field.
+	paymentorderDescPurchaseType := paymentorderFields[4].Descriptor()
+	// paymentorder.DefaultPurchaseType holds the default value on creation for the purchase_type field.
+	paymentorder.DefaultPurchaseType = paymentorderDescPurchaseType.Default.(string)
+	// paymentorder.PurchaseTypeValidator is a validator for the "purchase_type" field. It is called by the builders before save.
+	paymentorder.PurchaseTypeValidator = paymentorderDescPurchaseType.Validators[0].(func(string) error)
+	// paymentorderDescVisibleMethod is the schema descriptor for visible_method field.
+	paymentorderDescVisibleMethod := paymentorderFields[5].Descriptor()
+	// paymentorder.DefaultVisibleMethod holds the default value on creation for the visible_method field.
+	paymentorder.DefaultVisibleMethod = paymentorderDescVisibleMethod.Default.(string)
+	// paymentorder.VisibleMethodValidator is a validator for the "visible_method" field. It is called by the builders before save.
+	paymentorder.VisibleMethodValidator = paymentorderDescVisibleMethod.Validators[0].(func(string) error)
+	// paymentorderDescProviderType is the schema descriptor for provider_type field.
+	paymentorderDescProviderType := paymentorderFields[6].Descriptor()
+	// paymentorder.DefaultProviderType holds the default value on creation for the provider_type field.
+	paymentorder.DefaultProviderType = paymentorderDescProviderType.Default.(string)
+	// paymentorder.ProviderTypeValidator is a validator for the "provider_type" field. It is called by the builders before save.
+	paymentorder.ProviderTypeValidator = paymentorderDescProviderType.Validators[0].(func(string) error)
 	// paymentorderDescStatus is the schema descriptor for status field.
-	paymentorderDescStatus := paymentorderFields[4].Descriptor()
+	paymentorderDescStatus := paymentorderFields[10].Descriptor()
 	// paymentorder.DefaultStatus holds the default value on creation for the status field.
 	paymentorder.DefaultStatus = paymentorderDescStatus.Default.(string)
 	// paymentorder.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	paymentorder.StatusValidator = paymentorderDescStatus.Validators[0].(func(string) error)
 	// paymentorderDescCurrency is the schema descriptor for currency field.
-	paymentorderDescCurrency := paymentorderFields[5].Descriptor()
+	paymentorderDescCurrency := paymentorderFields[11].Descriptor()
 	// paymentorder.DefaultCurrency holds the default value on creation for the currency field.
 	paymentorder.DefaultCurrency = paymentorderDescCurrency.Default.(string)
 	// paymentorder.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	paymentorder.CurrencyValidator = paymentorderDescCurrency.Validators[0].(func(string) error)
 	// paymentorderDescAmountCny is the schema descriptor for amount_cny field.
-	paymentorderDescAmountCny := paymentorderFields[6].Descriptor()
+	paymentorderDescAmountCny := paymentorderFields[12].Descriptor()
 	// paymentorder.DefaultAmountCny holds the default value on creation for the amount_cny field.
 	paymentorder.DefaultAmountCny = paymentorderDescAmountCny.Default.(string)
 	// paymentorderDescPoints is the schema descriptor for points field.
-	paymentorderDescPoints := paymentorderFields[7].Descriptor()
+	paymentorderDescPoints := paymentorderFields[13].Descriptor()
 	// paymentorder.DefaultPoints holds the default value on creation for the points field.
 	paymentorder.DefaultPoints = paymentorderDescPoints.Default.(string)
 	// paymentorderDescBonusPoints is the schema descriptor for bonus_points field.
-	paymentorderDescBonusPoints := paymentorderFields[8].Descriptor()
+	paymentorderDescBonusPoints := paymentorderFields[14].Descriptor()
 	// paymentorder.DefaultBonusPoints holds the default value on creation for the bonus_points field.
 	paymentorder.DefaultBonusPoints = paymentorderDescBonusPoints.Default.(string)
 	// paymentorderDescTradeNo is the schema descriptor for trade_no field.
-	paymentorderDescTradeNo := paymentorderFields[9].Descriptor()
+	paymentorderDescTradeNo := paymentorderFields[15].Descriptor()
 	// paymentorder.TradeNoValidator is a validator for the "trade_no" field. It is called by the builders before save.
 	paymentorder.TradeNoValidator = paymentorderDescTradeNo.Validators[0].(func(string) error)
 	// paymentorderDescPaymentURL is the schema descriptor for payment_url field.
-	paymentorderDescPaymentURL := paymentorderFields[10].Descriptor()
+	paymentorderDescPaymentURL := paymentorderFields[16].Descriptor()
 	// paymentorder.PaymentURLValidator is a validator for the "payment_url" field. It is called by the builders before save.
 	paymentorder.PaymentURLValidator = paymentorderDescPaymentURL.Validators[0].(func(string) error)
 	// paymentorderDescQrCode is the schema descriptor for qr_code field.
-	paymentorderDescQrCode := paymentorderFields[11].Descriptor()
+	paymentorderDescQrCode := paymentorderFields[17].Descriptor()
 	// paymentorder.QrCodeValidator is a validator for the "qr_code" field. It is called by the builders before save.
 	paymentorder.QrCodeValidator = paymentorderDescQrCode.Validators[0].(func(string) error)
 	// paymentorderDescClientToken is the schema descriptor for client_token field.
-	paymentorderDescClientToken := paymentorderFields[12].Descriptor()
+	paymentorderDescClientToken := paymentorderFields[18].Descriptor()
 	// paymentorder.ClientTokenValidator is a validator for the "client_token" field. It is called by the builders before save.
 	paymentorder.ClientTokenValidator = paymentorderDescClientToken.Validators[0].(func(string) error)
 	// paymentorderDescFailureReason is the schema descriptor for failure_reason field.
-	paymentorderDescFailureReason := paymentorderFields[13].Descriptor()
+	paymentorderDescFailureReason := paymentorderFields[19].Descriptor()
 	// paymentorder.FailureReasonValidator is a validator for the "failure_reason" field. It is called by the builders before save.
 	paymentorder.FailureReasonValidator = paymentorderDescFailureReason.Validators[0].(func(string) error)
+	// paymentorderDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	paymentorderDescIdempotencyKey := paymentorderFields[26].Descriptor()
+	// paymentorder.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	paymentorder.IdempotencyKeyValidator = paymentorderDescIdempotencyKey.Validators[0].(func(string) error)
+	paymentproviderinstanceMixin := schema.PaymentProviderInstance{}.Mixin()
+	paymentproviderinstanceMixinFields0 := paymentproviderinstanceMixin[0].Fields()
+	_ = paymentproviderinstanceMixinFields0
+	paymentproviderinstanceFields := schema.PaymentProviderInstance{}.Fields()
+	_ = paymentproviderinstanceFields
+	// paymentproviderinstanceDescCreatedAt is the schema descriptor for created_at field.
+	paymentproviderinstanceDescCreatedAt := paymentproviderinstanceMixinFields0[0].Descriptor()
+	// paymentproviderinstance.DefaultCreatedAt holds the default value on creation for the created_at field.
+	paymentproviderinstance.DefaultCreatedAt = paymentproviderinstanceDescCreatedAt.Default.(func() time.Time)
+	// paymentproviderinstanceDescUpdatedAt is the schema descriptor for updated_at field.
+	paymentproviderinstanceDescUpdatedAt := paymentproviderinstanceMixinFields0[1].Descriptor()
+	// paymentproviderinstance.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	paymentproviderinstance.DefaultUpdatedAt = paymentproviderinstanceDescUpdatedAt.Default.(func() time.Time)
+	// paymentproviderinstance.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	paymentproviderinstance.UpdateDefaultUpdatedAt = paymentproviderinstanceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// paymentproviderinstanceDescProviderType is the schema descriptor for provider_type field.
+	paymentproviderinstanceDescProviderType := paymentproviderinstanceFields[0].Descriptor()
+	// paymentproviderinstance.ProviderTypeValidator is a validator for the "provider_type" field. It is called by the builders before save.
+	paymentproviderinstance.ProviderTypeValidator = func() func(string) error {
+		validators := paymentproviderinstanceDescProviderType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_type string) error {
+			for _, fn := range fns {
+				if err := fn(provider_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// paymentproviderinstanceDescName is the schema descriptor for name field.
+	paymentproviderinstanceDescName := paymentproviderinstanceFields[1].Descriptor()
+	// paymentproviderinstance.DefaultName holds the default value on creation for the name field.
+	paymentproviderinstance.DefaultName = paymentproviderinstanceDescName.Default.(string)
+	// paymentproviderinstance.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	paymentproviderinstance.NameValidator = paymentproviderinstanceDescName.Validators[0].(func(string) error)
+	// paymentproviderinstanceDescCredentialsFingerprint is the schema descriptor for credentials_fingerprint field.
+	paymentproviderinstanceDescCredentialsFingerprint := paymentproviderinstanceFields[3].Descriptor()
+	// paymentproviderinstance.DefaultCredentialsFingerprint holds the default value on creation for the credentials_fingerprint field.
+	paymentproviderinstance.DefaultCredentialsFingerprint = paymentproviderinstanceDescCredentialsFingerprint.Default.(string)
+	// paymentproviderinstance.CredentialsFingerprintValidator is a validator for the "credentials_fingerprint" field. It is called by the builders before save.
+	paymentproviderinstance.CredentialsFingerprintValidator = paymentproviderinstanceDescCredentialsFingerprint.Validators[0].(func(string) error)
+	// paymentproviderinstanceDescEnabled is the schema descriptor for enabled field.
+	paymentproviderinstanceDescEnabled := paymentproviderinstanceFields[5].Descriptor()
+	// paymentproviderinstance.DefaultEnabled holds the default value on creation for the enabled field.
+	paymentproviderinstance.DefaultEnabled = paymentproviderinstanceDescEnabled.Default.(bool)
+	// paymentproviderinstanceDescSortOrder is the schema descriptor for sort_order field.
+	paymentproviderinstanceDescSortOrder := paymentproviderinstanceFields[6].Descriptor()
+	// paymentproviderinstance.DefaultSortOrder holds the default value on creation for the sort_order field.
+	paymentproviderinstance.DefaultSortOrder = paymentproviderinstanceDescSortOrder.Default.(int)
+	// paymentproviderinstanceDescSchedulerWeight is the schema descriptor for scheduler_weight field.
+	paymentproviderinstanceDescSchedulerWeight := paymentproviderinstanceFields[7].Descriptor()
+	// paymentproviderinstance.DefaultSchedulerWeight holds the default value on creation for the scheduler_weight field.
+	paymentproviderinstance.DefaultSchedulerWeight = paymentproviderinstanceDescSchedulerWeight.Default.(int)
+	// paymentproviderinstanceDescRefundEnabled is the schema descriptor for refund_enabled field.
+	paymentproviderinstanceDescRefundEnabled := paymentproviderinstanceFields[9].Descriptor()
+	// paymentproviderinstance.DefaultRefundEnabled holds the default value on creation for the refund_enabled field.
+	paymentproviderinstance.DefaultRefundEnabled = paymentproviderinstanceDescRefundEnabled.Default.(bool)
+	// paymentproviderinstanceDescHealthStatus is the schema descriptor for health_status field.
+	paymentproviderinstanceDescHealthStatus := paymentproviderinstanceFields[10].Descriptor()
+	// paymentproviderinstance.DefaultHealthStatus holds the default value on creation for the health_status field.
+	paymentproviderinstance.DefaultHealthStatus = paymentproviderinstanceDescHealthStatus.Default.(string)
+	// paymentproviderinstance.HealthStatusValidator is a validator for the "health_status" field. It is called by the builders before save.
+	paymentproviderinstance.HealthStatusValidator = paymentproviderinstanceDescHealthStatus.Validators[0].(func(string) error)
+	// paymentproviderinstanceDescLastError is the schema descriptor for last_error field.
+	paymentproviderinstanceDescLastError := paymentproviderinstanceFields[11].Descriptor()
+	// paymentproviderinstance.DefaultLastError holds the default value on creation for the last_error field.
+	paymentproviderinstance.DefaultLastError = paymentproviderinstanceDescLastError.Default.(string)
+	// paymentproviderinstance.LastErrorValidator is a validator for the "last_error" field. It is called by the builders before save.
+	paymentproviderinstance.LastErrorValidator = paymentproviderinstanceDescLastError.Validators[0].(func(string) error)
 	paymentwebhookeventMixin := schema.PaymentWebhookEvent{}.Mixin()
 	paymentwebhookeventMixinFields0 := paymentwebhookeventMixin[0].Fields()
 	_ = paymentwebhookeventMixinFields0
@@ -1239,14 +1336,30 @@ func init() {
 	pointledgerDescFrozenAfter := pointledgerFields[8].Descriptor()
 	// pointledger.DefaultFrozenAfter holds the default value on creation for the frozen_after field.
 	pointledger.DefaultFrozenAfter = pointledgerDescFrozenAfter.Default.(string)
+	// pointledgerDescBalanceBucket is the schema descriptor for balance_bucket field.
+	pointledgerDescBalanceBucket := pointledgerFields[9].Descriptor()
+	// pointledger.DefaultBalanceBucket holds the default value on creation for the balance_bucket field.
+	pointledger.DefaultBalanceBucket = pointledgerDescBalanceBucket.Default.(string)
+	// pointledger.BalanceBucketValidator is a validator for the "balance_bucket" field. It is called by the builders before save.
+	pointledger.BalanceBucketValidator = pointledgerDescBalanceBucket.Validators[0].(func(string) error)
+	// pointledgerDescSourceType is the schema descriptor for source_type field.
+	pointledgerDescSourceType := pointledgerFields[10].Descriptor()
+	// pointledger.DefaultSourceType holds the default value on creation for the source_type field.
+	pointledger.DefaultSourceType = pointledgerDescSourceType.Default.(string)
+	// pointledger.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
+	pointledger.SourceTypeValidator = pointledgerDescSourceType.Validators[0].(func(string) error)
+	// pointledgerDescBucketBalanceAfter is the schema descriptor for bucket_balance_after field.
+	pointledgerDescBucketBalanceAfter := pointledgerFields[12].Descriptor()
+	// pointledger.DefaultBucketBalanceAfter holds the default value on creation for the bucket_balance_after field.
+	pointledger.DefaultBucketBalanceAfter = pointledgerDescBucketBalanceAfter.Default.(string)
 	// pointledgerDescReason is the schema descriptor for reason field.
-	pointledgerDescReason := pointledgerFields[9].Descriptor()
+	pointledgerDescReason := pointledgerFields[14].Descriptor()
 	// pointledger.DefaultReason holds the default value on creation for the reason field.
 	pointledger.DefaultReason = pointledgerDescReason.Default.(string)
 	// pointledger.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	pointledger.ReasonValidator = pointledgerDescReason.Validators[0].(func(string) error)
 	// pointledgerDescIdempotencyKey is the schema descriptor for idempotency_key field.
-	pointledgerDescIdempotencyKey := pointledgerFields[11].Descriptor()
+	pointledgerDescIdempotencyKey := pointledgerFields[16].Descriptor()
 	// pointledger.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
 	pointledger.IdempotencyKeyValidator = pointledgerDescIdempotencyKey.Validators[0].(func(string) error)
 	providererrorpolicyMixin := schema.ProviderErrorPolicy{}.Mixin()
@@ -1829,6 +1942,71 @@ func init() {
 	routemodelpriceDescEnabled := routemodelpriceFields[5].Descriptor()
 	// routemodelprice.DefaultEnabled holds the default value on creation for the enabled field.
 	routemodelprice.DefaultEnabled = routemodelpriceDescEnabled.Default.(bool)
+	secureconfigMixin := schema.SecureConfig{}.Mixin()
+	secureconfigMixinFields0 := secureconfigMixin[0].Fields()
+	_ = secureconfigMixinFields0
+	secureconfigFields := schema.SecureConfig{}.Fields()
+	_ = secureconfigFields
+	// secureconfigDescCreatedAt is the schema descriptor for created_at field.
+	secureconfigDescCreatedAt := secureconfigMixinFields0[0].Descriptor()
+	// secureconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
+	secureconfig.DefaultCreatedAt = secureconfigDescCreatedAt.Default.(func() time.Time)
+	// secureconfigDescUpdatedAt is the schema descriptor for updated_at field.
+	secureconfigDescUpdatedAt := secureconfigMixinFields0[1].Descriptor()
+	// secureconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	secureconfig.DefaultUpdatedAt = secureconfigDescUpdatedAt.Default.(func() time.Time)
+	// secureconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	secureconfig.UpdateDefaultUpdatedAt = secureconfigDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// secureconfigDescConfigCategory is the schema descriptor for config_category field.
+	secureconfigDescConfigCategory := secureconfigFields[0].Descriptor()
+	// secureconfig.ConfigCategoryValidator is a validator for the "config_category" field. It is called by the builders before save.
+	secureconfig.ConfigCategoryValidator = func() func(string) error {
+		validators := secureconfigDescConfigCategory.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(config_category string) error {
+			for _, fn := range fns {
+				if err := fn(config_category); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// secureconfigDescConfigKey is the schema descriptor for config_key field.
+	secureconfigDescConfigKey := secureconfigFields[1].Descriptor()
+	// secureconfig.ConfigKeyValidator is a validator for the "config_key" field. It is called by the builders before save.
+	secureconfig.ConfigKeyValidator = func() func(string) error {
+		validators := secureconfigDescConfigKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(config_key string) error {
+			for _, fn := range fns {
+				if err := fn(config_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// secureconfigDescSecretFingerprint is the schema descriptor for secret_fingerprint field.
+	secureconfigDescSecretFingerprint := secureconfigFields[4].Descriptor()
+	// secureconfig.DefaultSecretFingerprint holds the default value on creation for the secret_fingerprint field.
+	secureconfig.DefaultSecretFingerprint = secureconfigDescSecretFingerprint.Default.(string)
+	// secureconfig.SecretFingerprintValidator is a validator for the "secret_fingerprint" field. It is called by the builders before save.
+	secureconfig.SecretFingerprintValidator = secureconfigDescSecretFingerprint.Validators[0].(func(string) error)
+	// secureconfigDescVersion is the schema descriptor for version field.
+	secureconfigDescVersion := secureconfigFields[6].Descriptor()
+	// secureconfig.DefaultVersion holds the default value on creation for the version field.
+	secureconfig.DefaultVersion = secureconfigDescVersion.Default.(int64)
+	// secureconfigDescUpdatedBy is the schema descriptor for updated_by field.
+	secureconfigDescUpdatedBy := secureconfigFields[7].Descriptor()
+	// secureconfig.DefaultUpdatedBy holds the default value on creation for the updated_by field.
+	secureconfig.DefaultUpdatedBy = secureconfigDescUpdatedBy.Default.(int64)
 	subscriptionplanMixin := schema.SubscriptionPlan{}.Mixin()
 	subscriptionplanMixinFields0 := subscriptionplanMixin[0].Fields()
 	_ = subscriptionplanMixinFields0
@@ -1880,42 +2058,52 @@ func init() {
 			return nil
 		}
 	}()
+	// subscriptionplanDescPlanType is the schema descriptor for plan_type field.
+	subscriptionplanDescPlanType := subscriptionplanFields[2].Descriptor()
+	// subscriptionplan.DefaultPlanType holds the default value on creation for the plan_type field.
+	subscriptionplan.DefaultPlanType = subscriptionplanDescPlanType.Default.(string)
+	// subscriptionplan.PlanTypeValidator is a validator for the "plan_type" field. It is called by the builders before save.
+	subscriptionplan.PlanTypeValidator = subscriptionplanDescPlanType.Validators[0].(func(string) error)
+	// subscriptionplanDescPurchaseEnabled is the schema descriptor for purchase_enabled field.
+	subscriptionplanDescPurchaseEnabled := subscriptionplanFields[3].Descriptor()
+	// subscriptionplan.DefaultPurchaseEnabled holds the default value on creation for the purchase_enabled field.
+	subscriptionplan.DefaultPurchaseEnabled = subscriptionplanDescPurchaseEnabled.Default.(bool)
 	// subscriptionplanDescStatus is the schema descriptor for status field.
-	subscriptionplanDescStatus := subscriptionplanFields[2].Descriptor()
+	subscriptionplanDescStatus := subscriptionplanFields[4].Descriptor()
 	// subscriptionplan.DefaultStatus holds the default value on creation for the status field.
 	subscriptionplan.DefaultStatus = subscriptionplanDescStatus.Default.(string)
 	// subscriptionplan.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	subscriptionplan.StatusValidator = subscriptionplanDescStatus.Validators[0].(func(string) error)
 	// subscriptionplanDescPriceCny is the schema descriptor for price_cny field.
-	subscriptionplanDescPriceCny := subscriptionplanFields[3].Descriptor()
+	subscriptionplanDescPriceCny := subscriptionplanFields[5].Descriptor()
 	// subscriptionplan.DefaultPriceCny holds the default value on creation for the price_cny field.
 	subscriptionplan.DefaultPriceCny = subscriptionplanDescPriceCny.Default.(string)
 	// subscriptionplanDescPoints is the schema descriptor for points field.
-	subscriptionplanDescPoints := subscriptionplanFields[4].Descriptor()
+	subscriptionplanDescPoints := subscriptionplanFields[6].Descriptor()
 	// subscriptionplan.DefaultPoints holds the default value on creation for the points field.
 	subscriptionplan.DefaultPoints = subscriptionplanDescPoints.Default.(string)
 	// subscriptionplanDescBonusPoints is the schema descriptor for bonus_points field.
-	subscriptionplanDescBonusPoints := subscriptionplanFields[5].Descriptor()
+	subscriptionplanDescBonusPoints := subscriptionplanFields[7].Descriptor()
 	// subscriptionplan.DefaultBonusPoints holds the default value on creation for the bonus_points field.
 	subscriptionplan.DefaultBonusPoints = subscriptionplanDescBonusPoints.Default.(string)
 	// subscriptionplanDescDurationDays is the schema descriptor for duration_days field.
-	subscriptionplanDescDurationDays := subscriptionplanFields[6].Descriptor()
+	subscriptionplanDescDurationDays := subscriptionplanFields[8].Descriptor()
 	// subscriptionplan.DefaultDurationDays holds the default value on creation for the duration_days field.
 	subscriptionplan.DefaultDurationDays = subscriptionplanDescDurationDays.Default.(int)
 	// subscriptionplanDescCurrency is the schema descriptor for currency field.
-	subscriptionplanDescCurrency := subscriptionplanFields[7].Descriptor()
+	subscriptionplanDescCurrency := subscriptionplanFields[9].Descriptor()
 	// subscriptionplan.DefaultCurrency holds the default value on creation for the currency field.
 	subscriptionplan.DefaultCurrency = subscriptionplanDescCurrency.Default.(string)
 	// subscriptionplan.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	subscriptionplan.CurrencyValidator = subscriptionplanDescCurrency.Validators[0].(func(string) error)
 	// subscriptionplanDescDescription is the schema descriptor for description field.
-	subscriptionplanDescDescription := subscriptionplanFields[8].Descriptor()
+	subscriptionplanDescDescription := subscriptionplanFields[10].Descriptor()
 	// subscriptionplan.DefaultDescription holds the default value on creation for the description field.
 	subscriptionplan.DefaultDescription = subscriptionplanDescDescription.Default.(string)
 	// subscriptionplan.DescriptionValidator is a validator for the "description" field. It is called by the builders before save.
 	subscriptionplan.DescriptionValidator = subscriptionplanDescDescription.Validators[0].(func(string) error)
 	// subscriptionplanDescSortOrder is the schema descriptor for sort_order field.
-	subscriptionplanDescSortOrder := subscriptionplanFields[9].Descriptor()
+	subscriptionplanDescSortOrder := subscriptionplanFields[11].Descriptor()
 	// subscriptionplan.DefaultSortOrder holds the default value on creation for the sort_order field.
 	subscriptionplan.DefaultSortOrder = subscriptionplanDescSortOrder.Default.(int)
 	userMixin := schema.User{}.Mixin()

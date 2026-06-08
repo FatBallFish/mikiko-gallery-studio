@@ -1,0 +1,60 @@
+export const adminShell = {
+  root: 'bg-admin-grid grid h-screen overflow-hidden [grid-template-columns:var(--pg-sidebar-admin-width)_minmax(0,1fr)] max-[920px]:h-auto max-[920px]:min-h-screen max-[920px]:grid-cols-1',
+  sidebar: 'flex h-screen flex-col gap-6 overflow-y-auto border-r border-[var(--line)] bg-[rgba(248,250,251,0.88)] px-5 pb-5 pt-7 backdrop-blur-[14px] max-[920px]:sticky max-[920px]:top-0 max-[920px]:z-[var(--pg-z-nav)] max-[920px]:h-auto max-[920px]:border-r-0 max-[920px]:border-b max-[920px]:p-3.5',
+  brand: 'grid gap-0.5 text-[var(--blue)] no-underline',
+  nav: 'grid gap-5 max-[920px]:flex max-[920px]:gap-3 max-[920px]:overflow-x-auto',
+  navGroup: 'grid gap-1.5 max-[920px]:min-w-max',
+  navLabel: 'px-3 text-[10px] font-extrabold uppercase tracking-[.16em] text-[var(--soft)]',
+  navLink: 'flex items-center justify-between gap-2.5 rounded-[var(--pg-radius-sm)] px-3 py-2.5 text-[var(--soft)] no-underline transition hover:bg-[rgba(87,117,185,.09)] hover:text-[var(--text)]',
+  navLinkActive: 'bg-[rgba(87,117,185,.09)] text-[var(--text)] shadow-[inset_3px_0_0_var(--blue)]',
+  sideNote: 'mt-auto grid gap-1.5 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white/50 p-3.5 max-[920px]:hidden',
+  main: 'grid h-screen min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3.5 overflow-hidden px-6 pb-6 pt-[18px] max-[920px]:h-auto max-[920px]:min-h-0 max-[920px]:overflow-visible max-[920px]:p-3.5 max-[620px]:p-2.5',
+  topbar: 'flex min-h-[var(--pg-topbar-height)] items-center justify-between gap-4 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--surface-frost)] px-[18px] shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px] max-[920px]:flex-col max-[920px]:items-start',
+  flexRow: 'flex flex-wrap items-center gap-2',
+  metaRow: 'flex flex-wrap items-center justify-end gap-2',
+  chip: 'inline-flex min-h-[34px] items-center gap-2 rounded-full border border-[var(--line)] bg-white/70 px-2.5 py-[7px] text-[var(--soft)]',
+  providerPill: 'inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/70 px-3 py-2 text-[var(--soft)]',
+  avatarWidget: 'flex items-center gap-2.5',
+  avatarOrb: 'grid size-10 place-items-center rounded-full bg-[var(--blue)] text-white',
+  statusStrip: 'grid grid-cols-5 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--surface-frost)] shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px] max-[1260px]:grid-cols-3 max-[920px]:grid-cols-2 max-[620px]:grid-cols-1',
+  statusCell: 'min-w-0 border-r border-[var(--line)] px-4 py-3 last:border-r-0 max-[920px]:even:border-r-0 max-[620px]:border-r-0 max-[620px]:border-b max-[620px]:last:border-b-0',
+  statusLabel: 'block text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]',
+  statusValue: 'mt-1 block truncate text-[var(--text)]',
+}
+
+export const adminButton = {
+  base: 'inline-flex min-h-9 items-center justify-center gap-2 rounded-[10px] border border-[var(--line)] px-3 py-2 text-sm font-bold transition hover:-translate-y-px disabled:pointer-events-none disabled:opacity-50',
+  primary: 'border-[var(--blue)] bg-[var(--blue)] text-white',
+  ghost: 'bg-white/55 text-[var(--text)] hover:border-[rgba(87,117,185,0.22)] hover:bg-[rgba(87,117,185,0.08)]',
+  danger: 'border-[rgba(184,95,84,0.25)] bg-[rgba(184,95,84,0.1)] text-[var(--red)]',
+  success: 'border-[rgba(90,149,114,0.25)] bg-[rgba(90,149,114,0.1)] text-[var(--green)]',
+  small: 'min-h-8 px-2.5 py-1.5 text-xs',
+}
+
+export const adminSurface = {
+  card: 'rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--surface-frost)] shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px]',
+  lane: 'min-w-0 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white',
+}
+
+export const adminPage = {
+  stack: 'grid min-h-0 gap-3 overflow-hidden',
+  scrollStack: 'grid min-h-0 gap-3 overflow-auto',
+  fullSurface: 'grid min-h-0 grid-cols-1 overflow-hidden rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white',
+  splitSurface: 'grid min-h-0 grid-cols-[minmax(0,1fr)_280px] gap-3 overflow-hidden rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white max-[1260px]:grid-cols-1',
+  formGrid: 'grid grid-cols-2 gap-3 max-[620px]:grid-cols-1',
+  filterBand: 'rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--surface-frost)] p-3 shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px]',
+  filterRow: 'flex flex-wrap items-center gap-2',
+  mainLane: 'min-w-0 overflow-auto p-4',
+  sideRail: 'grid min-w-0 content-start overflow-y-auto border-l border-[var(--line)] bg-[var(--pg-admin-bg-subtle)] max-[1260px]:border-l-0 max-[1260px]:border-t',
+  signalSection: 'grid gap-2 border-b border-[var(--line)] p-4 last:border-b-0',
+  toolbar: 'mb-3 flex flex-wrap items-center justify-between gap-3',
+  pagination: 'mt-3 flex flex-wrap items-center justify-between gap-3',
+  microTabs: 'mb-3 flex flex-wrap items-center gap-2',
+  microTab: 'min-h-8 rounded-full border border-[var(--line)] bg-white/55 px-3 py-1.5 text-xs font-extrabold uppercase tracking-[.08em] text-[var(--soft)] hover:border-[rgba(87,117,185,.24)] hover:bg-[rgba(87,117,185,.08)]',
+  microTabActive: 'border-[rgba(87,117,185,.28)] bg-[rgba(87,117,185,.1)] text-[var(--blue)]',
+  mutedAction: 'text-xs font-extrabold text-[var(--soft)]',
+  detailStack: 'grid gap-3',
+  detailSection: 'grid min-w-0 gap-3',
+  sectionHead: 'flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3',
+  sectionTitle: 'font-bold text-[var(--text)]',
+}

@@ -28,6 +28,7 @@ import (
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
+	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
@@ -43,11 +44,24 @@ func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
 	_, err := store.CreateAdmin(ctx, domainadminauth.AdminUser{
 		Email:        email,
 		PasswordHash: adminauthservice.HashPassword(password),
-		Role:         "super_admin",
+		Role:         defaultAdminSeedRole(),
 		Status:       "active",
 	})
 	if err != nil {
 		slog.Warn("failed to seed default admin", "err", err)
+	}
+}
+
+func defaultAdminSeedRole() string {
+	role := strings.ToLower(strings.TrimSpace(os.Getenv("PIC_GALLERY_ADMIN_ROLE")))
+	switch role {
+	case "":
+		return domainadminauth.RoleAdmin
+	case domainadminauth.RoleAdmin, domainadminauth.RoleSuperAdmin:
+		return role
+	default:
+		slog.Warn("invalid PIC_GALLERY_ADMIN_ROLE, falling back to admin", "role", role)
+		return domainadminauth.RoleAdmin
 	}
 }
 
@@ -60,6 +74,9 @@ func Run() error {
 		return err
 	}
 	if err := authservice.ValidateProductionEmailCodeConfig(cfg.App.Env, cfg.Auth); err != nil {
+		return err
+	}
+	if err := validateSecureConfigEncryptionKey(cfg); err != nil {
 		return err
 	}
 
@@ -90,7 +107,9 @@ func Run() error {
 		authRedisRuntime = authservice.NewRedisRuntime(redisClient, cfg.Redis.KeyPrefix)
 	}
 
+	secureConfigSvc := secureconfigservice.NewService(entstore.NewSecureConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Auth.SMTP, cfg.App.Env)
 	authSvc := authservice.NewServiceWithStoreAndRedis(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client), authRedisRuntime, allowRedisFallback)
+	authSvc.SetSMTPConfigResolver(secureConfigSvc)
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	assetSvc := assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, entstore.NewAssetsStore(client), storageBackend)
@@ -113,6 +132,8 @@ func Run() error {
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
+	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
+	api.SetSecureConfigService(secureConfigSvc)
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,
@@ -126,6 +147,14 @@ func Run() error {
 		return nil
 	}
 	return err
+}
+
+func validateSecureConfigEncryptionKey(cfg config.Config) error {
+	key := strings.TrimSpace(cfg.Security.SecureConfigEncryptionKey)
+	if isProductionEnv(cfg.App.Env) && isWeakAPIKeySigningSecretEncryptionKey(key) {
+		return fmt.Errorf("secure config encryption key must be set to a non-development value in %s env", cfg.App.Env)
+	}
+	return nil
 }
 
 func newRuntimeAPIKeyService(cfg config.Config, store apikeyservice.Store) (*apikeyservice.Service, error) {

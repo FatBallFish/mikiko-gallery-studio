@@ -51,7 +51,7 @@ func TestBillingPlansOrdersWebhookAndSubscriptionFlow(t *testing.T) {
 		t.Fatalf("expected plans body=%s", plansRec.Body.String())
 	}
 
-	createOrderReq := httptest.NewRequest(http.MethodPost, "/api/agent/billing/v1/orders", bytes.NewBufferString(`{"plan_code":"basic-monthly","provider":"alipay"}`))
+	createOrderReq := httptest.NewRequest(http.MethodPost, "/api/agent/billing/v1/orders", bytes.NewBufferString(`{"plan_code":"basic-monthly","provider":"mock"}`))
 	createOrderReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	createOrderReq.Header.Set("Content-Type", "application/json")
 	createOrderRec := httptest.NewRecorder()
@@ -68,6 +68,12 @@ func TestBillingPlansOrdersWebhookAndSubscriptionFlow(t *testing.T) {
 	if orderResp.Data.ID == 0 || orderResp.Data.OrderNo == "" {
 		t.Fatalf("unexpected order payload %#v", orderResp)
 	}
+	if orderResp.Data.VisibleMethod != "mock" || orderResp.Data.ProviderType != "mock" || orderResp.Data.PaymentDisplay["type"] != "mock" {
+		t.Fatalf("expected legacy billing order to be created through cashier, got %#v", orderResp.Data)
+	}
+	if orderResp.Data.PaymentURL != "" || orderResp.Data.PaymentDisplay["payment_url"] != nil {
+		t.Fatalf("expected legacy billing mock order to avoid legacy mock:// payment_url, got order=%#v display=%#v", orderResp.Data, orderResp.Data.PaymentDisplay)
+	}
 
 	getOrderReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/orders/"+jsonInt64(orderResp.Data.ID), nil)
 	getOrderReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
@@ -77,26 +83,15 @@ func TestBillingPlansOrdersWebhookAndSubscriptionFlow(t *testing.T) {
 		t.Fatalf("get order: %d body=%s", getOrderRec.Code, getOrderRec.Body.String())
 	}
 
-	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/alipay", bytes.NewBufferString(`{"order_no":"`+orderResp.Data.OrderNo+`","trade_no":"ALI-001"}`))
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/mock", bytes.NewBufferString(`{"order_no":"`+orderResp.Data.OrderNo+`","trade_no":"MOCK-001"}`))
 	webhookReq.Header.Set("Content-Type", "application/json")
 	webhookRec := httptest.NewRecorder()
 	handler.ServeHTTP(webhookRec, webhookReq)
 	if webhookRec.Code != http.StatusOK {
 		t.Fatalf("webhook: %d body=%s", webhookRec.Code, webhookRec.Body.String())
 	}
-	if !bytes.Contains(webhookRec.Body.Bytes(), []byte(`"status":"paid"`)) {
-		t.Fatalf("expected paid webhook body=%s", webhookRec.Body.String())
-	}
-
-	subscriptionReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/subscription", nil)
-	subscriptionReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
-	subscriptionRec := httptest.NewRecorder()
-	handler.ServeHTTP(subscriptionRec, subscriptionReq)
-	if subscriptionRec.Code != http.StatusOK {
-		t.Fatalf("subscription: %d body=%s", subscriptionRec.Code, subscriptionRec.Body.String())
-	}
-	if !bytes.Contains(subscriptionRec.Body.Bytes(), []byte(`"plan_code":"basic-monthly"`)) {
-		t.Fatalf("expected subscription body=%s", subscriptionRec.Body.String())
+	if !bytes.Contains(webhookRec.Body.Bytes(), []byte(`"status":"completed"`)) {
+		t.Fatalf("expected completed recharge webhook body=%s", webhookRec.Body.String())
 	}
 
 	balanceReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/balance", nil)
@@ -106,8 +101,8 @@ func TestBillingPlansOrdersWebhookAndSubscriptionFlow(t *testing.T) {
 	if balanceRec.Code != http.StatusOK {
 		t.Fatalf("balance: %d body=%s", balanceRec.Code, balanceRec.Body.String())
 	}
-	if !bytes.Contains(balanceRec.Body.Bytes(), []byte(`"subscription_points":"100.00000"`)) {
-		t.Fatalf("expected subscription points body=%s", balanceRec.Body.String())
+	if !bytes.Contains(balanceRec.Body.Bytes(), []byte(`"recharge_points":"100.00000"`)) {
+		t.Fatalf("expected recharge points body=%s", balanceRec.Body.String())
 	}
 }
 

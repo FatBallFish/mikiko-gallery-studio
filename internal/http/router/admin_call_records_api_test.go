@@ -71,6 +71,27 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Save task: %v", err)
 	}
+	if err := taskStore.Save(t.Context(), domainimagetask.Task{
+		UserID:                77,
+		APIKeyID:              14,
+		SourceChannel:         "web",
+		ID:                    "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+		Status:                domainimagetask.StatusFailed,
+		Provider:              "openrouter",
+		AbstractModel:         "plus",
+		TaskType:              string(provider.TaskTypeTextToImage),
+		Prompt:                "admin failed list",
+		RequestedQuality:      "auto",
+		ResolvedQualityBucket: "2k",
+		OutputImageCount:      1,
+		ReferenceImageCount:   0,
+		EstimatedPoints:       "8.00000",
+		ActualPoints:          "0.00000",
+		ErrorCode:             "provider_error",
+		ErrorMessage:          "upstream failed",
+	}); err != nil {
+		t.Fatalf("Save failed task: %v", err)
+	}
 
 	adminToken := loginAdminForCallRecordsTest(t, handler)
 	listReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page=1&page_size=5&status=succeeded&provider=openai&source_channel=openapi&user_id=77&task_id=cccccccc-cccc-cccc-cccc-cccccccccccc", nil)
@@ -143,6 +164,30 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 		if !strings.Contains(listBody, `"`+key+`":`) {
 			t.Fatalf("expected response to contain stable key %q, got %s", key, listBody)
 		}
+	}
+	errorCodeReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page=1&page_size=5&status=failed&error_code=provider_error", nil)
+	errorCodeReq.Header.Set("Authorization", "Bearer "+adminToken)
+	errorCodeRec := httptest.NewRecorder()
+	handler.ServeHTTP(errorCodeRec, errorCodeReq)
+	if errorCodeRec.Code != http.StatusOK {
+		t.Fatalf("expected error_code list 200, got %d body=%s", errorCodeRec.Code, errorCodeRec.Body.String())
+	}
+	var errorCodeResp struct {
+		Data struct {
+			Items []struct {
+				TaskID    string  `json:"task_id"`
+				ErrorCode *string `json:"error_code"`
+			} `json:"items"`
+			Pagination struct {
+				Total int `json:"total"`
+			} `json:"pagination"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(errorCodeRec.Body).Decode(&errorCodeResp); err != nil {
+		t.Fatalf("decode error_code response: %v", err)
+	}
+	if errorCodeResp.Data.Pagination.Total != 1 || len(errorCodeResp.Data.Items) != 1 || errorCodeResp.Data.Items[0].TaskID != "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee" {
+		t.Fatalf("expected error_code filter to return failed task, got %#v", errorCodeResp.Data)
 	}
 	tooLargeReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page_size=101", nil)
 	tooLargeReq.Header.Set("Authorization", "Bearer "+adminToken)

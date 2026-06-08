@@ -1,16 +1,59 @@
 import { useMemo, useState } from 'react'
 import type { EndpointDoc } from '../../../shared/api-types'
+import { cn } from '../../../shared/classnames'
+import type { DocsErrorCode, DocsExample } from '../../../shared/open-api-docs'
+import { docsCopyableExamplesText } from '../../../shared/open-api-docs'
 import { openApi } from '../../../shared/open-api'
 import { CopyButton, EmptyState, LoadingState } from '../components'
+import { userCard, userPill, userShell, userText } from '../ui/classes'
 import { useApiResource } from '../useApiResource'
+import {
+  docsAuthLabel,
+  docsEndpointCountLabel,
+  docsErrorRows,
+  docsGroupOptions,
+  docsGroupTagLabel,
+  docsSearchPlaceholder,
+  docsSectionLabels,
+  filterDocsEndpoints,
+} from './docsPageModel'
 
-const groups = ['All', 'Agent API', 'Open API', 'OpenAI Compat', 'Ops API']
 const fallbackErrors = [
   ['insufficient_balance', '积分余额不足，降低输出质量或充值后重试。'],
   ['invalid_signature', 'Open API 签名校验失败，请检查 AK/SK 与时间戳。'],
   ['provider_unavailable', '上游模型暂不可用，系统会按错误策略重试或降级。'],
   ['rate_limit_exceeded', 'RPM 或并发限制命中，请降低调用频率。'],
-]
+] satisfies Array<[string, string]>
+
+const docsClasses = {
+  content: cn(userShell.content, 'docs-page'),
+  header: 'mb-12 flex flex-wrap items-end justify-between gap-5',
+  title: 'm-0 font-[var(--font-display)] text-5xl leading-none',
+  filters: 'flex flex-wrap gap-3',
+  search: 'w-full rounded-lg sm:w-80',
+  groupSelect: 'w-full rounded-lg sm:w-45',
+  layout: 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]',
+  endpointList: userCard.padded,
+  listMeta: 'mb-4 flex justify-between gap-3 text-[var(--muted)]',
+  endpointCard: 'mb-3.5 border-b border-[var(--border)] p-[18px]',
+  endpointHead: 'flex items-start justify-between gap-3',
+  endpointPath: 'min-w-0 [overflow-wrap:anywhere] font-mono text-[var(--accent)]',
+  endpointTitle: 'my-3 font-[var(--font-display)] text-2xl leading-tight',
+  authLine: 'text-sm text-[var(--muted)]',
+  examples: 'mt-3 grid gap-3 md:grid-cols-2',
+  examplePanel: 'min-w-0 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3',
+  exampleHead: 'mb-2 flex items-center justify-between gap-2',
+  examplePre: 'm-0 max-h-[360px] overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-[var(--muted)]',
+  aside: cn(userCard.padded, 'grid gap-4'),
+  asideTitle: 'm-0 font-[var(--font-display)] text-3xl leading-tight',
+  errorRow: 'grid gap-1 border-b border-[var(--border)] pb-3 last:border-b-0',
+  errorCode: '[overflow-wrap:anywhere] font-mono text-sm text-[var(--accent)]',
+  errorMessage: 'text-sm text-[var(--fg)]',
+  errorHint: 'text-xs text-[var(--muted)]',
+  codeSample: 'overflow-x-auto rounded-[14px] border border-[var(--border)] bg-[#05070d] p-[18px] text-[oklch(88%_.05_90)]',
+  codeSampleHead: 'mb-3 flex items-center justify-between gap-2',
+  codeSamplePre: 'm-0 whitespace-pre-wrap font-mono text-xs leading-5',
+}
 
 export function DocsPage() {
   const docs = useApiResource(() => openApi.listEndpointDocs(), [])
@@ -19,67 +62,74 @@ export function DocsPage() {
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState('All')
   const catalog = useMemo(() => docs.data ?? [], [docs.data])
-  const filtered = useMemo(() => catalog.filter((item: EndpointDoc) => {
-    const text = `${item.group} ${item.method} ${item.path} ${item.title} ${item.auth}`.toLowerCase()
-    return (group === 'All' || item.group === group) && (!query || text.includes(query.toLowerCase()))
-  }), [catalog, group, query])
-  const errorRows = Array.isArray(errors.data) ? errors.data : fallbackErrors
+  const groupOptions = useMemo(() => docsGroupOptions(), [])
+  const filtered = useMemo(() => filterDocsEndpoints(catalog, group, query), [catalog, group, query])
+  const docsError = docs.error || examples.error || errors.error
+  const endpointUnavailable = Boolean(docs.error)
+  const errorRows: Array<DocsErrorCode | [string, string]> = errors.data?.length ? errors.data : fallbackErrors
+  const errorRowModels = useMemo(() => docsErrorRows(errorRows), [errorRows])
+  const exampleRows: DocsExample[] = examples.data ?? []
+  const examplesText = docsCopyableExamplesText(exampleRows)
 
   return (
-    <div className="content docs-page" style={{ padding: 40 }}>
-      <div className="header" style={{ marginBottom: 48, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 20, flexWrap: 'wrap' }}>
+    <div className={docsClasses.content}>
+      <div className={docsClasses.header}>
         <div>
-          <p className="eyebrow">DEVELOPER PORTAL</p>
-          <h1 style={{ fontSize: 48, margin: 0 }}>开发文档</h1>
+          <p className={userText.eyebrow}>{docsSectionLabels.eyebrow}</p>
+          <h1 className={docsClasses.title}>开发文档</h1>
         </div>
-        <div className="filters" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 endpoint / auth / title" style={{ width: 320, borderRadius: 8 }} />
-          <select value={group} onChange={(event) => setGroup(event.target.value)} style={{ width: 180, borderRadius: 8 }}>{groups.map((item) => <option key={item}>{item}</option>)}</select>
+        <div className={docsClasses.filters}>
+          <input className={docsClasses.search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={docsSearchPlaceholder} />
+          <select className={docsClasses.groupSelect} value={group} onChange={(event) => setGroup(event.target.value)}>{groupOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
         </div>
       </div>
 
-      <section className="docs-layout">
-        <div className="endpoint-list card" style={{ background: 'var(--vault-panel)', borderRadius: 12, border: '1px solid var(--vault-line)', padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 16, color: 'var(--vault-muted)' }}>
-            <span>{filtered.length} / {catalog.length} endpoints</span>
-            <span>OpenAPI 实时目录</span>
+      <section className={docsClasses.layout}>
+        <div className={docsClasses.endpointList}>
+          <div className={docsClasses.listMeta}>
+            <span>{docsEndpointCountLabel(filtered.length, catalog.length)}</span>
+            <span>{docsSectionLabels.realtimeCatalog}</span>
           </div>
           {docs.loading ? <LoadingState label="正在读取 OpenAPI 文档..." /> : null}
-          {!docs.loading && !filtered.length ? <EmptyState title="没有匹配端点" detail="尝试搜索 tasks、images、balance 或 OpenAI。" /> : null}
+          {!docs.loading && endpointUnavailable ? <EmptyState title="文档接口不可用" detail={docsError ?? '请稍后重试，或联系管理员检查 /docs/openapi.json。'} /> : null}
+          {!docs.loading && !endpointUnavailable && !filtered.length ? <EmptyState title="没有匹配端点" detail="尝试搜索 tasks、images、balance 或 OpenAI。" /> : null}
           {filtered.map((doc) => (
-            <article key={`${doc.method}-${doc.path}`} className="endpoint-card" style={{ marginBottom: 14 }}>
-              <div className="endpoint-head">
-                <span className="status-pill neutral">{doc.group}</span>
+            <article key={`${doc.method}-${doc.path}`} className={docsClasses.endpointCard}>
+              <div className={docsClasses.endpointHead}>
+                <span className={cn(userPill.base, userPill.neutral)}>{docsGroupTagLabel(doc.group)}</span>
                 <b>{doc.method}</b>
-                <code>{doc.path}</code>
+                <code className={docsClasses.endpointPath}>{doc.path}</code>
               </div>
-              <h2>{doc.title}</h2>
-              <span>Auth: {doc.auth}</span>
-              <div className="endpoint-examples">
-                <div>
-                  <div><strong>Request</strong><CopyButton text={doc.requestExample} /></div>
-                  <pre>{doc.requestExample}</pre>
+              <h2 className={docsClasses.endpointTitle}>{doc.title}</h2>
+              <span className={docsClasses.authLine}>{docsSectionLabels.authPrefix}: {docsAuthLabel(doc.auth)}</span>
+              <div className={docsClasses.examples}>
+                <div className={docsClasses.examplePanel}>
+                  <div className={docsClasses.exampleHead}><strong>{docsSectionLabels.request}</strong><CopyButton text={doc.requestExample} /></div>
+                  <pre className={docsClasses.examplePre}>{doc.requestExample}</pre>
                 </div>
-                <div>
-                  <div><strong>Response</strong><CopyButton text={doc.responseExample} /></div>
-                  <pre>{doc.responseExample}</pre>
+                <div className={docsClasses.examplePanel}>
+                  <div className={docsClasses.exampleHead}><strong>{docsSectionLabels.response}</strong><CopyButton text={doc.responseExample} /></div>
+                  <pre className={docsClasses.examplePre}>{doc.responseExample}</pre>
                 </div>
               </div>
             </article>
           ))}
         </div>
 
-        <aside className="docs-aside card" style={{ background: 'var(--vault-panel)', borderRadius: 12, border: '1px solid var(--vault-line)' }}>
-          <p className="eyebrow">Error Codes</p>
-          <h2>错误码示例</h2>
-          {errorRows.map((row: any) => {
-            const code = Array.isArray(row) ? row[0] : row.code
-            const detail = Array.isArray(row) ? row[1] : row.message ?? row.detail
-            return <article key={code}><code>{code}</code><span>{detail}</span></article>
-          })}
-          <div className="code-sample small">
-            <div><strong>接口示例</strong><CopyButton text={JSON.stringify(examples.data ?? {}, null, 2)} /></div>
-            <pre>{JSON.stringify(examples.data ?? { code: 'ok', message: 'success', data: {}, request_id: 'req_x' }, null, 2)}</pre>
+        <aside className={docsClasses.aside}>
+          <p className={userText.eyebrow}>{docsSectionLabels.errors}</p>
+          <h2 className={docsClasses.asideTitle}>{docsSectionLabels.errors}</h2>
+          {docsError && !docs.error ? <EmptyState title="文档接口不可用" detail={docsError} /> : null}
+          {errorRowModels.map((row) => (
+            <article key={row.code} className={docsClasses.errorRow}>
+              <code className={docsClasses.errorCode}>{row.statusLabel} {row.code}</code>
+              <span className={docsClasses.errorMessage}>{row.message}</span>
+              <small className={docsClasses.errorHint}>{row.retryableLabel} · {row.recoveryHint}</small>
+            </article>
+          ))}
+          <div className={docsClasses.codeSample}>
+            <div className={docsClasses.codeSampleHead}><strong>{docsSectionLabels.examples}</strong><CopyButton text={examplesText} /></div>
+            <pre className={docsClasses.codeSamplePre}>{examplesText}</pre>
           </div>
         </aside>
       </section>

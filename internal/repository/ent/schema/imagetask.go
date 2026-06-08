@@ -21,7 +21,7 @@ func (ImageTask) Fields() []ent.Field {
 		field.String("status").MaxLen(32).Default("queued"),
 		field.Text("prompt"),
 		field.Text("negative_prompt").Optional().Nillable(),
-		field.String("abstract_model").MaxLen(32).NotEmpty(),
+		field.String("abstract_model").MaxLen(64).NotEmpty(),
 		field.String("requested_quality").MaxLen(16).Default("auto"),
 		field.String("resolved_quality_bucket").MaxLen(16).Default("1k"),
 		field.String("requested_size").MaxLen(32).Optional().Nillable(),

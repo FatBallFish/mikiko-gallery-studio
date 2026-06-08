@@ -31,6 +31,10 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/agent/billing/v1/subscription",
 		"/api/agent/billing/v1/orders",
 		"/api/agent/billing/v1/orders/{order_id}",
+		"/api/agent/cashier/v1/options",
+		"/api/agent/cashier/v1/orders",
+		"/api/agent/cashier/v1/orders/{order_id}",
+		"/api/agent/cashier/v1/orders/{order_id}/mock-pay",
 		"/api/agent/gallery/v1/images/{image_id}/publish",
 		"/api/agent/image/v1/capabilities",
 		"/api/agent/image/v1/tasks",
@@ -40,6 +44,8 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/open/image/v1/gallery/images",
 		"/api/open/image/v1/payments/webhooks/{channel}",
 		"/api/ops/admin/v1/config-tabs/{tab_key}",
+		"/api/ops/admin/v1/security/smtp",
+		"/api/ops/admin/v1/security/smtp/test",
 		"/api/ops/admin/v1/audit-logs",
 		"/api/ops/admin/v1/image-reviews",
 		"/api/ops/admin/v1/users",
@@ -52,6 +58,7 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/ops/admin/v1/users/{user_id}/points-adjustments",
 		"/api/ops/admin/v1/redeem-codes",
 		"/api/ops/admin/v1/redeem-codes:batch-create",
+		"/api/ops/admin/v1/redeem-codes:export",
 		"/api/ops/admin/v1/redeem-codes/{code_id}/status",
 		"/api/ops/admin/v1/redeem-codes/{code_id}/redemptions",
 		"/api/ops/admin/v1/model-accounts",
@@ -62,6 +69,16 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/ops/admin/v1/route-models/{route_model_id}/candidates",
 		"/api/ops/admin/v1/route-model-prices",
 		"/api/ops/admin/v1/metrics/dashboard",
+		"/api/ops/admin/v1/readiness",
+		"/api/ops/admin/v1/cashier/overview",
+		"/api/ops/admin/v1/cashier/plans",
+		"/api/ops/admin/v1/cashier/custom-amount-config",
+		"/api/ops/admin/v1/cashier/visible-methods",
+		"/api/ops/admin/v1/cashier/provider-instances",
+		"/api/ops/admin/v1/cashier/orders",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/chargeback",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/sync",
+		"/api/ops/admin/v1/cashier/webhook-events",
 		"/v1/images/generations",
 		"/v1/images/edits",
 		"/v1/models",
@@ -71,6 +88,230 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		if _, ok := doc.Paths[path]; !ok {
 			t.Fatalf("expected path %q in OpenAPI spec", path)
 		}
+	}
+}
+
+func TestOpenAPISpecDocumentsPublicGalleryPromptBoundaryContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name string `yaml:"name"`
+				In   string `yaml:"in"`
+			} `yaml:"parameters"`
+			Responses map[string]struct {
+				Content map[string]struct {
+					Schema struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"schema"`
+				} `yaml:"content"`
+			} `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	listOperation := doc.Paths["/api/open/image/v1/gallery/images"]["get"]
+	listParams := map[string]bool{}
+	for _, param := range listOperation.Parameters {
+		listParams[param.In+":"+param.Name] = true
+	}
+	for _, key := range []string{"query:page", "query:page_size", "query:sort", "query:query", "query:route_model_code", "query:task_type", "query:liked", "query:favorited"} {
+		if !listParams[key] {
+			t.Fatalf("expected public gallery list parameter %q", key)
+		}
+	}
+	listRef := listOperation.Responses["200"].Content["application/json"].Schema.Ref
+	if listRef != "./components/schemas/common.yaml#/components/schemas/PublicGalleryListResponse" {
+		t.Fatalf("expected public gallery list to use PublicGalleryListResponse, got %q", listRef)
+	}
+
+	detailOperation := doc.Paths["/api/open/image/v1/gallery/images/{image_id}"]["get"]
+	detailRef := detailOperation.Responses["200"].Content["application/json"].Schema.Ref
+	if detailRef != "./components/schemas/common.yaml#/components/schemas/PublicGalleryDetailResponse" {
+		t.Fatalf("expected public gallery detail to use PublicGalleryDetailResponse, got %q", detailRef)
+	}
+	if _, ok := detailOperation.Responses["401"]; !ok {
+		t.Fatal("expected public gallery detail to document 401 login-required response")
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schema: %v", err)
+	}
+	var schemaDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `yaml:"required"`
+				Properties map[string]struct {
+					Ref         string `yaml:"$ref"`
+					Type        string `yaml:"type"`
+					Nullable    bool   `yaml:"nullable"`
+					Description string `yaml:"description"`
+					Enum        []any  `yaml:"enum"`
+					Items       struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"items"`
+					Properties map[string]struct {
+						Ref   string `yaml:"$ref"`
+						Items struct {
+							Ref string `yaml:"$ref"`
+						} `yaml:"items"`
+					} `yaml:"properties"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemaDoc); err != nil {
+		t.Fatalf("unmarshal common schema: %v", err)
+	}
+
+	listImage, ok := schemaDoc.Components.Schemas["PublicGalleryListImage"]
+	if !ok {
+		t.Fatal("expected PublicGalleryListImage schema")
+	}
+	if _, ok := listImage.Properties["prompt_excerpt"]; !ok {
+		t.Fatal("expected PublicGalleryListImage.prompt_excerpt")
+	}
+	prompt := listImage.Properties["prompt"]
+	if !prompt.Nullable {
+		t.Fatal("expected PublicGalleryListImage.prompt to be nullable")
+	}
+	if len(prompt.Enum) != 1 || prompt.Enum[0] != nil {
+		t.Fatalf("expected PublicGalleryListImage.prompt enum to contain only null, got %#v", prompt.Enum)
+	}
+	if _, ok := listImage.Properties["comment_count"]; ok {
+		t.Fatal("PublicGalleryListImage must not expose comment_count because comments are not a product capability")
+	}
+
+	listResponse, ok := schemaDoc.Components.Schemas["PublicGalleryListResponse"]
+	if !ok {
+		t.Fatal("expected PublicGalleryListResponse schema")
+	}
+	itemsRef := listResponse.Properties["data"].Properties["items"].Items.Ref
+	if itemsRef != "#/components/schemas/PublicGalleryListImage" {
+		t.Fatalf("expected PublicGalleryListResponse items to reference PublicGalleryListImage, got %q", itemsRef)
+	}
+	detailResponse, ok := schemaDoc.Components.Schemas["PublicGalleryDetailResponse"]
+	if !ok {
+		t.Fatal("expected PublicGalleryDetailResponse schema")
+	}
+	if detailResponse.Properties["data"].Ref != "#/components/schemas/PublicGalleryDetailImage" {
+		t.Fatalf("expected PublicGalleryDetailResponse data to reference PublicGalleryDetailImage, got %q", detailResponse.Properties["data"].Ref)
+	}
+	detailImage, ok := schemaDoc.Components.Schemas["PublicGalleryDetailImage"]
+	if !ok {
+		t.Fatal("expected PublicGalleryDetailImage schema")
+	}
+	if _, ok := detailImage.Properties["comment_count"]; ok {
+		t.Fatal("PublicGalleryDetailImage must not expose comment_count because comments are not a product capability")
+	}
+	galleryPrompt := detailImage.Properties["prompt"]
+	if !galleryPrompt.Nullable || galleryPrompt.Description == "" {
+		t.Fatalf("expected PublicGalleryDetailImage.prompt to document nullable authenticated detail semantics, got %#v", galleryPrompt)
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminDashboardOperationsContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Content map[string]struct {
+					Schema struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"schema"`
+				} `yaml:"content"`
+			} `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+	dashboardRef := doc.Paths["/api/ops/admin/v1/metrics/dashboard"]["get"].Responses["200"].Content["application/json"].Schema.Ref
+	if dashboardRef != "./components/schemas/admin.yaml#/components/schemas/AdminDashboardResponse" {
+		t.Fatalf("expected admin dashboard to use AdminDashboardResponse, got %q", dashboardRef)
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	type schemaNode struct {
+		Required             []string              `yaml:"required"`
+		Properties           map[string]schemaNode `yaml:"properties"`
+		Type                 string                `yaml:"type"`
+		Ref                  string                `yaml:"$ref"`
+		AdditionalProperties any                   `yaml:"additionalProperties"`
+		Items                struct {
+			Ref string `yaml:"$ref"`
+		} `yaml:"items"`
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]schemaNode `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+
+	for _, name := range []string{"AdminDashboardResponse", "AdminDashboard", "AdminDashboardOperations", "AdminMetric", "AdminProviderHealth", "AdminDashboardQueueItem"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin dashboard schema %q", name)
+		}
+	}
+	response := schemasDoc.Components.Schemas["AdminDashboardResponse"]
+	if response.Properties["data"].Ref != "#/components/schemas/AdminDashboard" {
+		t.Fatalf("expected AdminDashboardResponse.data to reference AdminDashboard, got %#v", response.Properties["data"])
+	}
+	dashboard := schemasDoc.Components.Schemas["AdminDashboard"]
+	for _, field := range []string{"operations", "metrics", "providers", "queue", "audit"} {
+		if _, ok := dashboard.Properties[field]; !ok {
+			t.Fatalf("expected AdminDashboard to document %q", field)
+		}
+	}
+	if dashboard.Properties["operations"].Ref != "#/components/schemas/AdminDashboardOperations" {
+		t.Fatalf("expected AdminDashboard.operations ref, got %#v", dashboard.Properties["operations"])
+	}
+	if dashboard.Properties["metrics"].Items.Ref != "#/components/schemas/AdminMetric" {
+		t.Fatalf("expected AdminDashboard.metrics to reference AdminMetric, got %#v", dashboard.Properties["metrics"])
+	}
+	if dashboard.Properties["providers"].Items.Ref != "#/components/schemas/AdminProviderHealth" {
+		t.Fatalf("expected AdminDashboard.providers to reference AdminProviderHealth, got %#v", dashboard.Properties["providers"])
+	}
+	if dashboard.Properties["queue"].Items.Ref != "#/components/schemas/AdminDashboardQueueItem" {
+		t.Fatalf("expected AdminDashboard.queue to reference AdminDashboardQueueItem, got %#v", dashboard.Properties["queue"])
+	}
+	if dashboard.Properties["audit"].Items.Ref != "#/components/schemas/AdminAuditLog" {
+		t.Fatalf("expected AdminDashboard.audit to reference AdminAuditLog, got %#v", dashboard.Properties["audit"])
+	}
+
+	operations := schemasDoc.Components.Schemas["AdminDashboardOperations"]
+	required := map[string]bool{}
+	for _, field := range operations.Required {
+		required[field] = true
+	}
+	for _, field := range []string{"today_order_count", "payment_success_rate", "failed_webhook_count", "refund_compensation_failed_count", "mock_enabled", "signup_trial_granted_user_count", "trial_expiring_user_count", "preflight_failure_count", "preflight_failures_by_error_code", "public_gallery_list_views", "public_gallery_detail_login_blocks", "enabled_payment_methods", "generated_at"} {
+		if !required[field] {
+			t.Fatalf("expected AdminDashboardOperations to require %q", field)
+		}
+		if _, ok := operations.Properties[field]; !ok {
+			t.Fatalf("expected AdminDashboardOperations to document %q", field)
+		}
+	}
+	additionalProperties, ok := operations.Properties["preflight_failures_by_error_code"].AdditionalProperties.(map[string]any)
+	if !ok || additionalProperties["type"] != "integer" {
+		t.Fatalf("expected preflight_failures_by_error_code to be integer map, got %#v", operations.Properties["preflight_failures_by_error_code"])
 	}
 }
 
@@ -267,7 +508,7 @@ func TestOpenAPISpecDocumentsAdminUserManagementContract(t *testing.T) {
 			t.Fatalf("expected admin schema %q", name)
 		}
 	}
-	for _, name := range []string{"AdminRedeemCode", "AdminCreateRedeemCodeRequest", "AdminBatchCreateRedeemCodesRequest", "AdminRedeemCodeResponse", "AdminRedeemCodeListResponse", "AdminRedeemCodeRedemptionsResponse"} {
+	for _, name := range []string{"AdminRedeemCode", "AdminCreateRedeemCodeRequest", "AdminBatchCreateRedeemCodesRequest", "AdminExportRedeemCodesRequest", "AdminExportRedeemCodesResponse", "AdminRedeemCodeResponse", "AdminRedeemCodeListResponse", "AdminRedeemCodeRedemptionsResponse"} {
 		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
 			t.Fatalf("expected admin redeem schema %q", name)
 		}
@@ -280,6 +521,728 @@ func TestOpenAPISpecDocumentsAdminUserManagementContract(t *testing.T) {
 		if !required[field] {
 			t.Fatalf("expected AdminPointAdjustmentRequest to require %q", field)
 		}
+	}
+}
+
+func TestOpenAPISpecDocumentsTrialBalanceBucketAndLedgerContracts(t *testing.T) {
+	schemaContent, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	type schemaNode struct {
+		Required   []string              `yaml:"required"`
+		Properties map[string]schemaNode `yaml:"properties"`
+		Type       string                `yaml:"type"`
+		Ref        string                `yaml:"$ref"`
+		Items      struct {
+			Ref string `yaml:"$ref"`
+		} `yaml:"items"`
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]schemaNode `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+
+	for _, name := range []string{"SignupGrant", "BalanceBucket", "BalanceSummary", "PointLedgerEntry", "SessionResponse"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected agent schema %q", name)
+		}
+	}
+
+	sessionData := schemasDoc.Components.Schemas["SessionResponse"].Properties["data"]
+	if sessionData.Type != "object" {
+		t.Fatalf("expected SessionResponse.data object, got %#v", sessionData)
+	}
+	if sessionData.Properties["signup_grant"].Ref != "#/components/schemas/SignupGrant" {
+		t.Fatalf("expected SessionResponse.data.signup_grant to reference SignupGrant, got %#v", sessionData.Properties["signup_grant"])
+	}
+	if _, ok := schemasDoc.Components.Schemas["SignupGrant"]; !ok {
+		t.Fatal("expected SignupGrant schema")
+	}
+
+	balance := schemasDoc.Components.Schemas["BalanceSummary"]
+	for _, field := range []string{"available_points", "frozen_points", "trial_points", "subscription_points", "recharge_points", "buckets", "next_expiring_grant"} {
+		if _, ok := balance.Properties[field]; !ok {
+			t.Fatalf("expected BalanceSummary to document %q", field)
+		}
+	}
+	if balance.Properties["buckets"].Type != "array" || balance.Properties["buckets"].Items.Ref != "#/components/schemas/BalanceBucket" {
+		t.Fatalf("expected BalanceSummary.buckets to reference BalanceBucket, got %#v", balance.Properties["buckets"])
+	}
+
+	bucket := schemasDoc.Components.Schemas["BalanceBucket"]
+	for _, field := range []string{"bucket", "label", "available_points", "frozen_points", "expires_at", "expire_warning"} {
+		if _, ok := bucket.Properties[field]; !ok {
+			t.Fatalf("expected BalanceBucket to document %q", field)
+		}
+	}
+
+	signupGrant := schemasDoc.Components.Schemas["SignupGrant"]
+	for _, field := range []string{"granted", "balance"} {
+		if _, ok := signupGrant.Properties[field]; !ok {
+			t.Fatalf("expected SignupGrant to document %q", field)
+		}
+	}
+	if signupGrant.Properties["balance"].Ref != "#/components/schemas/BalanceSummary" {
+		t.Fatalf("expected SignupGrant.balance to reference BalanceSummary, got %#v", signupGrant.Properties["balance"])
+	}
+
+	ledger := schemasDoc.Components.Schemas["PointLedgerEntry"]
+	for _, field := range []string{"balance_bucket", "bucket_type", "source_type", "source_id", "bucket_balance_after", "expires_at"} {
+		if _, ok := ledger.Properties[field]; !ok {
+			t.Fatalf("expected PointLedgerEntry to document %q", field)
+		}
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminPermissionContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Tags []struct {
+			Name string `yaml:"name"`
+		} `yaml:"tags"`
+		Paths map[string]map[string]struct {
+			Tags      []string       `yaml:"tags"`
+			Responses map[string]any `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	seenTag := false
+	for _, tag := range doc.Tags {
+		if tag.Name == "Admin Auth" {
+			seenTag = true
+			break
+		}
+	}
+	if !seenTag {
+		t.Fatal("expected Admin Auth tag")
+	}
+	login := doc.Paths["/api/ops/admin/v1/auth/login"]["post"]
+	if len(login.Tags) != 1 || login.Tags[0] != "Admin Auth" {
+		t.Fatalf("expected admin login to use Admin Auth tag, got %#v", login.Tags)
+	}
+	if _, ok := login.Responses["200"]; !ok {
+		t.Fatal("expected admin login to document 200 response")
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `yaml:"required"`
+				Enum       []string `yaml:"enum"`
+				Properties map[string]struct {
+					Ref   string `yaml:"$ref"`
+					Type  string `yaml:"type"`
+					Items struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"items"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+	for _, name := range []string{"AdminPermission", "AdminRole", "AdminLoginRequest", "AdminLoginResponse", "AdminSession"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin permission schema %q", name)
+		}
+	}
+	permissionEnum := map[string]bool{}
+	for _, permission := range schemasDoc.Components.Schemas["AdminPermission"].Enum {
+		permissionEnum[permission] = true
+	}
+	for _, permission := range []string{"read:all", "manage:admins", "manage:users", "manage:billing", "manage:cashier", "manage:models", "manage:reviews", "manage:config", "manage:dangerous_config", "view:audit"} {
+		if !permissionEnum[permission] {
+			t.Fatalf("expected AdminPermission enum to include %q", permission)
+		}
+	}
+	session := schemasDoc.Components.Schemas["AdminSession"]
+	for _, field := range []string{"access_token", "expires_in_seconds", "admin_id", "email", "role", "permissions"} {
+		seen := false
+		for _, required := range session.Required {
+			if required == field {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			t.Fatalf("expected AdminSession to require %q", field)
+		}
+	}
+	if session.Properties["permissions"].Type != "array" || session.Properties["permissions"].Items.Ref != "#/components/schemas/AdminPermission" {
+		t.Fatalf("expected AdminSession.permissions to reference AdminPermission, got %#v", session.Properties["permissions"])
+	}
+	if session.Properties["role"].Ref != "#/components/schemas/AdminRole" {
+		t.Fatalf("expected AdminSession.role to reference AdminRole, got %#v", session.Properties["role"])
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminCallRecordOperationsContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Tags []struct {
+			Name string `yaml:"name"`
+		} `yaml:"tags"`
+		Paths map[string]map[string]struct {
+			Tags       []string              `yaml:"tags"`
+			Security   []map[string][]string `yaml:"security"`
+			Parameters []struct {
+				Name string `yaml:"name"`
+				In   string `yaml:"in"`
+			} `yaml:"parameters"`
+			Responses map[string]any `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	seenTag := false
+	for _, tag := range doc.Tags {
+		if tag.Name == "Admin Call Records" {
+			seenTag = true
+			break
+		}
+	}
+	if !seenTag {
+		t.Fatal("expected Admin Call Records tag")
+	}
+
+	operation := doc.Paths["/api/ops/admin/v1/call-records"]["get"]
+	if len(operation.Tags) != 1 || operation.Tags[0] != "Admin Call Records" {
+		t.Fatalf("expected admin call records to use Admin Call Records tag, got %#v", operation.Tags)
+	}
+	if len(operation.Security) != 1 || operation.Security[0]["bearerAuth"] == nil {
+		t.Fatalf("expected admin call records to require bearer auth, got %#v", operation.Security)
+	}
+	if _, ok := operation.Responses["200"]; !ok {
+		t.Fatal("expected admin call records to document 200 response")
+	}
+
+	params := map[string]bool{}
+	for _, param := range operation.Parameters {
+		params[param.In+":"+param.Name] = true
+	}
+	for _, key := range []string{"query:page", "query:page_size", "query:status", "query:error_code", "query:source_channel", "query:provider", "query:user_id", "query:task_id", "query:created_from", "query:created_to"} {
+		if !params[key] {
+			t.Fatalf("expected admin call records parameter %q", key)
+		}
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Ref   string `yaml:"$ref"`
+					Type  string `yaml:"type"`
+					Items struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"items"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+	callRecord, ok := schemasDoc.Components.Schemas["AdminCallRecord"]
+	if !ok {
+		t.Fatal("expected AdminCallRecord schema")
+	}
+	for _, field := range []string{"task_id", "user_id", "api_key_id", "source_channel", "task_type", "status", "provider", "account_model_id", "model_account_id", "upstream_model_code", "abstract_model", "quality", "estimated_points", "actual_points", "provider_cost", "gross_margin", "fallback_count", "route_snapshot_version", "error_code", "error_message", "error_detail", "attempt_count", "attempts", "started_at", "finished_at"} {
+		if _, ok := callRecord.Properties[field]; !ok {
+			t.Fatalf("expected AdminCallRecord to document %q", field)
+		}
+	}
+	if _, ok := schemasDoc.Components.Schemas["AdminCallRecordAttempt"]; !ok {
+		t.Fatal("expected AdminCallRecordAttempt schema")
+	}
+	listResponse := schemasDoc.Components.Schemas["AdminCallRecordListResponse"]
+	data := listResponse.Properties["data"]
+	if data.Type != "object" {
+		t.Fatalf("expected AdminCallRecordListResponse.data object, got %#v", data)
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminSecurityConfigContracts(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Tags []struct {
+			Name string `yaml:"name"`
+		} `yaml:"tags"`
+		Paths map[string]map[string]struct {
+			Tags        []string              `yaml:"tags"`
+			OperationID string                `yaml:"operationId"`
+			Security    []map[string][]string `yaml:"security"`
+			RequestBody struct {
+				Required bool `yaml:"required"`
+			} `yaml:"requestBody"`
+			Responses map[string]struct {
+				Content map[string]struct {
+					Schema struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"schema"`
+				} `yaml:"content"`
+			} `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	seenTag := false
+	for _, tag := range doc.Tags {
+		if tag.Name == "Admin Security Config" {
+			seenTag = true
+			break
+		}
+	}
+	if !seenTag {
+		t.Fatal("expected Admin Security Config tag")
+	}
+
+	for path, method := range map[string]string{
+		"/api/ops/admin/v1/security/smtp":      "get",
+		"/api/ops/admin/v1/security/smtp/test": "post",
+	} {
+		operation := doc.Paths[path][method]
+		if len(operation.Tags) != 1 || operation.Tags[0] != "Admin Security Config" {
+			t.Fatalf("expected %s %s to use Admin Security Config tag, got %#v", method, path, operation.Tags)
+		}
+		if len(operation.Security) != 1 || operation.Security[0]["bearerAuth"] == nil {
+			t.Fatalf("expected %s %s to require bearer auth, got %#v", method, path, operation.Security)
+		}
+		if _, ok := operation.Responses["200"]; !ok {
+			t.Fatalf("expected %s %s to document 200 response", method, path)
+		}
+	}
+	putSMTP := doc.Paths["/api/ops/admin/v1/security/smtp"]["put"]
+	if len(putSMTP.Tags) != 1 || putSMTP.Tags[0] != "Admin Security Config" {
+		t.Fatalf("expected put smtp to use Admin Security Config tag, got %#v", putSMTP.Tags)
+	}
+	if len(putSMTP.Security) != 1 || putSMTP.Security[0]["bearerAuth"] == nil {
+		t.Fatalf("expected put smtp to require bearer auth, got %#v", putSMTP.Security)
+	}
+	if !putSMTP.RequestBody.Required {
+		t.Fatal("expected put smtp request body to be required")
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	type schemaProperty struct {
+		Ref        string                    `yaml:"$ref"`
+		Type       string                    `yaml:"type"`
+		Properties map[string]schemaProperty `yaml:"properties"`
+		Items      struct {
+			Type string `yaml:"type"`
+		} `yaml:"items"`
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string                  `yaml:"required"`
+				Properties map[string]schemaProperty `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+	for _, name := range []string{"SecretStatus", "AdminSecuritySMTPConfig", "AdminSecuritySMTPConfigWriteRequest", "AdminSecuritySMTPConfigResponse", "AdminSecuritySMTPTestRequest", "AdminSecuritySMTPTestResponse"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin security schema %q", name)
+		}
+	}
+	secretStatus := schemasDoc.Components.Schemas["SecretStatus"]
+	for _, field := range []string{"has_secret", "fingerprint", "updated_at", "secret_fields"} {
+		if _, ok := secretStatus.Properties[field]; !ok {
+			t.Fatalf("expected SecretStatus to document %q", field)
+		}
+	}
+	smtp := schemasDoc.Components.Schemas["AdminSecuritySMTPConfig"]
+	if smtp.Properties["secret_status"].Ref != "#/components/schemas/SecretStatus" {
+		t.Fatalf("expected smtp secret_status to reference SecretStatus, got %#v", smtp.Properties["secret_status"])
+	}
+	smtpWrite := schemasDoc.Components.Schemas["AdminSecuritySMTPConfigWriteRequest"]
+	if _, ok := smtpWrite.Properties["secrets"]; !ok {
+		t.Fatal("expected smtp write request to document secrets")
+	}
+	if _, ok := smtpWrite.Properties["clear_secrets"]; !ok {
+		t.Fatal("expected smtp write request to document clear_secrets")
+	}
+}
+
+func TestOpenAPISpecDocumentsCashierAndReadinessContracts(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	var doc struct {
+		Tags []struct {
+			Name string `yaml:"name"`
+		} `yaml:"tags"`
+		Paths map[string]map[string]struct {
+			Tags        []string              `yaml:"tags"`
+			OperationID string                `yaml:"operationId"`
+			Security    []map[string][]string `yaml:"security"`
+			Parameters  []struct {
+				Name string `yaml:"name"`
+				In   string `yaml:"in"`
+				Ref  string `yaml:"$ref"`
+			} `yaml:"parameters"`
+			RequestBody struct {
+				Required bool `yaml:"required"`
+			} `yaml:"requestBody"`
+			Responses map[string]struct {
+				Content map[string]struct {
+					Schema struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"schema"`
+				} `yaml:"content"`
+			} `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	for _, expectedTag := range []string{"Agent Cashier", "Admin Readiness", "Admin Cashier"} {
+		seen := false
+		for _, tag := range doc.Tags {
+			if tag.Name == expectedTag {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			t.Fatalf("expected %s tag", expectedTag)
+		}
+	}
+
+	for path, method := range map[string]string{
+		"/api/agent/cashier/v1/options":                    "get",
+		"/api/agent/cashier/v1/orders":                     "post",
+		"/api/agent/cashier/v1/orders/{order_id}":          "get",
+		"/api/agent/cashier/v1/orders/{order_id}/mock-pay": "post",
+	} {
+		operation := doc.Paths[path][method]
+		if len(operation.Tags) != 1 || operation.Tags[0] != "Agent Cashier" {
+			t.Fatalf("expected %s %s to use Agent Cashier tag, got %#v", method, path, operation.Tags)
+		}
+		if len(operation.Security) != 1 || operation.Security[0]["bearerAuth"] == nil {
+			t.Fatalf("expected %s %s to require bearer auth, got %#v", method, path, operation.Security)
+		}
+		if _, ok := operation.Responses["200"]; method != "post" && !ok {
+			t.Fatalf("expected %s %s to document 200 response", method, path)
+		}
+	}
+	if !doc.Paths["/api/agent/cashier/v1/orders"]["post"].RequestBody.Required {
+		t.Fatal("expected cashier order create body to be required")
+	}
+	seenCashierIDKey := false
+	for _, param := range doc.Paths["/api/agent/cashier/v1/orders"]["post"].Parameters {
+		if param.Ref == "./components/parameters/common.yaml#/components/parameters/IdempotencyKey" || (param.In == "header" && param.Name == "Idempotency-Key") {
+			seenCashierIDKey = true
+		}
+	}
+	if !seenCashierIDKey {
+		t.Fatal("expected cashier order create to document Idempotency-Key header")
+	}
+
+	readiness := doc.Paths["/api/ops/admin/v1/readiness"]["get"]
+	if len(readiness.Tags) != 1 || readiness.Tags[0] != "Admin Readiness" {
+		t.Fatalf("expected admin readiness to use Admin Readiness tag, got %#v", readiness.Tags)
+	}
+	if len(readiness.Security) != 1 || readiness.Security[0]["bearerAuth"] == nil {
+		t.Fatalf("expected admin readiness to require bearer auth, got %#v", readiness.Security)
+	}
+
+	for path, method := range map[string]string{
+		"/api/ops/admin/v1/cashier/overview":                     "get",
+		"/api/ops/admin/v1/cashier/plans":                        "post",
+		"/api/ops/admin/v1/cashier/custom-amount-config":         "put",
+		"/api/ops/admin/v1/cashier/visible-methods":              "put",
+		"/api/ops/admin/v1/cashier/provider-instances":           "post",
+		"/api/ops/admin/v1/cashier/orders":                       "get",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/complete":   "post",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/close":      "post",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/refund":     "post",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/chargeback": "post",
+		"/api/ops/admin/v1/cashier/orders/{order_id}/sync":       "post",
+		"/api/ops/admin/v1/cashier/webhook-events":               "get",
+	} {
+		operation := doc.Paths[path][method]
+		if len(operation.Tags) != 1 || operation.Tags[0] != "Admin Cashier" {
+			t.Fatalf("expected %s %s to use Admin Cashier tag, got %#v", method, path, operation.Tags)
+		}
+		if len(operation.Security) != 1 || operation.Security[0]["bearerAuth"] == nil {
+			t.Fatalf("expected %s %s to require bearer auth, got %#v", method, path, operation.Security)
+		}
+		if (method == "post" || method == "put") && path != "/api/ops/admin/v1/cashier/orders/{order_id}/sync" {
+			if !operation.RequestBody.Required {
+				t.Fatalf("expected %s %s request body to be required", method, path)
+			}
+		}
+	}
+	orderSync := doc.Paths["/api/ops/admin/v1/cashier/orders/{order_id}/sync"]["post"]
+	if orderSync.OperationID != "postAdminCashierOrderSync" {
+		t.Fatalf("expected cashier order sync operationId postAdminCashierOrderSync, got %q", orderSync.OperationID)
+	}
+	seenOrderID := false
+	for _, param := range orderSync.Parameters {
+		if param.In == "path" && param.Name == "order_id" {
+			seenOrderID = true
+			break
+		}
+	}
+	if !seenOrderID {
+		t.Fatal("expected cashier order sync to document order_id path parameter")
+	}
+	syncResponseRef := orderSync.Responses["200"].Content["application/json"].Schema.Ref
+	if syncResponseRef != "./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderSyncResponse" {
+		t.Fatalf("expected cashier order sync 200 response to reference AdminCashierOrderSyncResponse, got %q", syncResponseRef)
+	}
+	orderChargeback := doc.Paths["/api/ops/admin/v1/cashier/orders/{order_id}/chargeback"]["post"]
+	if orderChargeback.OperationID != "postAdminCashierOrderChargeback" {
+		t.Fatalf("expected cashier order chargeback operationId postAdminCashierOrderChargeback, got %q", orderChargeback.OperationID)
+	}
+	seenChargebackIDKey := false
+	for _, param := range orderChargeback.Parameters {
+		if param.Ref == "./components/parameters/common.yaml#/components/parameters/RequiredIdempotencyKey" || (param.In == "header" && param.Name == "Idempotency-Key") {
+			seenChargebackIDKey = true
+			break
+		}
+	}
+	if !seenChargebackIDKey {
+		t.Fatal("expected cashier order chargeback to document required Idempotency-Key header")
+	}
+	chargebackResponseRef := orderChargeback.Responses["200"].Content["application/json"].Schema.Ref
+	if chargebackResponseRef != "./components/schemas/admin.yaml#/components/schemas/AdminCashierChargebackResponse" {
+		t.Fatalf("expected cashier order chargeback 200 response to reference AdminCashierChargebackResponse, got %q", chargebackResponseRef)
+	}
+	webhookRetry := doc.Paths["/api/ops/admin/v1/cashier/webhook-events/{event_id}/retry"]["post"]
+	if len(webhookRetry.Tags) != 1 || webhookRetry.Tags[0] != "Admin Cashier" {
+		t.Fatalf("expected webhook retry to use Admin Cashier tag, got %#v", webhookRetry.Tags)
+	}
+	if len(webhookRetry.Security) != 1 || webhookRetry.Security[0]["bearerAuth"] == nil {
+		t.Fatalf("expected webhook retry to require bearer auth, got %#v", webhookRetry.Security)
+	}
+	seenEventID := false
+	for _, param := range webhookRetry.Parameters {
+		if param.In == "path" && param.Name == "event_id" {
+			seenEventID = true
+			break
+		}
+	}
+	if !seenEventID {
+		t.Fatal("expected webhook retry to document event_id path parameter")
+	}
+	if _, ok := webhookRetry.Responses["200"]; !ok {
+		t.Fatal("expected webhook retry to document 200 response")
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	var agentSchemas struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `yaml:"required"`
+				Properties map[string]struct {
+					Type string   `yaml:"type"`
+					Ref  string   `yaml:"$ref"`
+					Enum []string `yaml:"enum"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &agentSchemas); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+	for _, name := range []string{"CashierOptionsResponse", "CashierOrderCreateRequest", "CashierOrderResponse", "PaymentDisplay"} {
+		if _, ok := agentSchemas.Components.Schemas[name]; !ok {
+			t.Fatalf("expected agent cashier schema %q", name)
+		}
+	}
+	createRequired := map[string]bool{}
+	for _, field := range agentSchemas.Components.Schemas["CashierOrderCreateRequest"].Required {
+		createRequired[field] = true
+	}
+	for _, field := range []string{"purchase_type", "visible_method"} {
+		if !createRequired[field] {
+			t.Fatalf("expected CashierOrderCreateRequest to require %q", field)
+		}
+	}
+	paymentOrder := agentSchemas.Components.Schemas["PaymentOrder"]
+	for _, field := range []string{"purchase_type", "visible_method", "provider_type", "provider_instance_id", "payment_display", "ledger_id", "completed_at", "refund_trade_no"} {
+		if _, ok := paymentOrder.Properties[field]; !ok {
+			t.Fatalf("expected PaymentOrder to document %q", field)
+		}
+	}
+	paymentDisplay := agentSchemas.Components.Schemas["PaymentDisplay"]
+	displayTypes := map[string]bool{}
+	for _, value := range paymentDisplay.Properties["type"].Enum {
+		displayTypes[value] = true
+	}
+	for _, value := range []string{"qr_code", "redirect", "form_html", "form", "jsapi", "mock", "none"} {
+		if !displayTypes[value] {
+			t.Fatalf("expected PaymentDisplay.type enum to document %q, got %#v", value, paymentDisplay.Properties["type"].Enum)
+		}
+	}
+
+	adminSchemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	type schemaProperty struct {
+		Enum       []string                  `yaml:"enum"`
+		Ref        string                    `yaml:"$ref"`
+		Type       string                    `yaml:"type"`
+		Required   []string                  `yaml:"required"`
+		Properties map[string]schemaProperty `yaml:"properties"`
+		Items      struct {
+			Ref string `yaml:"$ref"`
+		} `yaml:"items"`
+	}
+	var adminSchemas struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string                  `yaml:"required"`
+				Properties map[string]schemaProperty `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(adminSchemaContent, &adminSchemas); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+	for _, name := range []string{"ReadinessReport", "ReadinessCheck", "AdminCashierOverview", "AdminCashierPlan", "AdminCashierPlanWriteRequest", "AdminCashierCustomAmountConfig", "AdminCashierProviderInstance", "AdminCashierProviderInstanceWriteRequest", "AdminCashierManualCompleteRequest", "AdminCashierRefundRequest", "AdminCashierChargebackRequest", "AdminCashierChargebackResponse", "AdminCashierOrderSyncResult", "AdminCashierOrderSyncResponse", "AdminPaymentWebhookEvent"} {
+		if _, ok := adminSchemas.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin cashier/readiness schema %q", name)
+		}
+	}
+	for schemaName, requiredFields := range map[string][]string{
+		"AdminCashierPlanWriteRequest":             {"plan_code", "plan_name", "plan_type", "purchase_enabled", "price_cny", "points"},
+		"AdminCashierProviderInstanceWriteRequest": {"provider_type", "name", "supported_methods", "config"},
+		"AdminCashierManualCompleteRequest":        {"trade_no"},
+		"AdminCashierRefundRequest":                {"refund_trade_no"},
+		"AdminCashierChargebackRequest":            {"charge_points", "reason"},
+		"AdminCashierOrderSyncResult":              {"provider_type", "query_status", "paid", "completed", "synced_at"},
+	} {
+		required := map[string]bool{}
+		for _, field := range adminSchemas.Components.Schemas[schemaName].Required {
+			required[field] = true
+		}
+		for _, field := range requiredFields {
+			if !required[field] {
+				t.Fatalf("expected %s to require %q", schemaName, field)
+			}
+		}
+	}
+	refundRequest := adminSchemas.Components.Schemas["AdminCashierRefundRequest"]
+	if _, ok := refundRequest.Properties["refund_amount_cny"]; !ok {
+		t.Fatal("expected AdminCashierRefundRequest to document optional refund_amount_cny")
+	}
+	providerInstance := adminSchemas.Components.Schemas["AdminCashierProviderInstance"]
+	if providerInstance.Properties["credentials_status"].Ref != "#/components/schemas/SecretStatus" {
+		t.Fatalf("expected AdminCashierProviderInstance.credentials_status to reference SecretStatus, got %#v", providerInstance.Properties["credentials_status"])
+	}
+	providerWrite := adminSchemas.Components.Schemas["AdminCashierProviderInstanceWriteRequest"]
+	for _, field := range []string{"secrets", "clear_secrets"} {
+		if _, ok := providerWrite.Properties[field]; !ok {
+			t.Fatalf("expected AdminCashierProviderInstanceWriteRequest to document %q", field)
+		}
+	}
+	chargebackData := adminSchemas.Components.Schemas["AdminCashierChargebackResponse"].Properties["data"]
+	if chargebackData.Type != "object" {
+		t.Fatalf("expected AdminCashierChargebackResponse.data object, got %#v", chargebackData)
+	}
+	if chargebackData.Properties["order"].Ref != "./agent.yaml#/components/schemas/PaymentOrder" {
+		t.Fatalf("expected AdminCashierChargebackResponse.data.order to reference PaymentOrder, got %#v", chargebackData.Properties["order"])
+	}
+	if chargebackData.Properties["balance"].Ref != "./agent.yaml#/components/schemas/BalanceSummary" {
+		t.Fatalf("expected AdminCashierChargebackResponse.data.balance to reference BalanceSummary, got %#v", chargebackData.Properties["balance"])
+	}
+	orderSyncData := adminSchemas.Components.Schemas["AdminCashierOrderSyncResponse"].Properties["data"]
+	if orderSyncData.Type != "object" {
+		t.Fatalf("expected AdminCashierOrderSyncResponse.data object, got %#v", orderSyncData)
+	}
+	if orderSyncData.Properties["order"].Ref != "./agent.yaml#/components/schemas/PaymentOrder" {
+		t.Fatalf("expected AdminCashierOrderSyncResponse.data.order to reference PaymentOrder, got %#v", orderSyncData.Properties["order"])
+	}
+	if orderSyncData.Properties["sync"].Ref != "#/components/schemas/AdminCashierOrderSyncResult" {
+		t.Fatalf("expected AdminCashierOrderSyncResponse.data.sync to reference AdminCashierOrderSyncResult, got %#v", orderSyncData.Properties["sync"])
+	}
+	orderSyncStatusEnum := map[string]bool{}
+	for _, value := range adminSchemas.Components.Schemas["AdminCashierOrderSyncResult"].Properties["query_status"].Enum {
+		orderSyncStatusEnum[value] = true
+	}
+	for _, status := range []string{"pending", "paid", "closed", "failed", "refunded"} {
+		if !orderSyncStatusEnum[status] {
+			t.Fatalf("expected AdminCashierOrderSyncResult.query_status enum to include %q", status)
+		}
+	}
+	for _, schemaName := range []string{"AdminCashierProviderInstance", "AdminCashierProviderInstanceWriteRequest"} {
+		enumValues := map[string]bool{}
+		for _, value := range adminSchemas.Components.Schemas[schemaName].Properties["provider_type"].Enum {
+			enumValues[value] = true
+		}
+		for _, providerType := range []string{"jeepay_alipay", "jeepay_wxpay"} {
+			if !enumValues[providerType] {
+				t.Fatalf("expected %s provider_type enum to include %q", schemaName, providerType)
+			}
+		}
+		if enumValues["jeepay_placeholder"] {
+			t.Fatalf("expected %s provider_type enum to remove jeepay_placeholder", schemaName)
+		}
+	}
+	webhookStatusEnum := map[string]bool{}
+	for _, value := range adminSchemas.Components.Schemas["AdminPaymentWebhookEvent"].Properties["status"].Enum {
+		webhookStatusEnum[value] = true
+	}
+	for _, status := range []string{"received", "verified", "processed", "failed"} {
+		if !webhookStatusEnum[status] {
+			t.Fatalf("expected AdminPaymentWebhookEvent.status enum to include %q", status)
+		}
+	}
+	webhookListData := adminSchemas.Components.Schemas["AdminPaymentWebhookEventListResponse"].Properties["data"]
+	if webhookListData.Type != "object" {
+		t.Fatalf("expected AdminPaymentWebhookEventListResponse.data object, got %#v", webhookListData)
+	}
+	webhookResponse := adminSchemas.Components.Schemas["AdminPaymentWebhookEventResponse"].Properties["data"]
+	if webhookResponse.Ref != "#/components/schemas/AdminPaymentWebhookEvent" {
+		t.Fatalf("expected AdminPaymentWebhookEventResponse.data to reference AdminPaymentWebhookEvent, got %#v", webhookResponse)
 	}
 }
 

@@ -1,0 +1,89 @@
+import type { CashierPlan } from '../../../shared/api-types'
+import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
+
+const subscriptionPayload = cashierPlanSavePayload({
+  plan_code: 'sub-monthly',
+  plan_name: '订阅占位',
+  plan_type: 'subscription',
+  purchase_enabled: true,
+  status: 'active',
+  price_cny: '59.90000',
+  points: '500.00000',
+  bonus_points: '0.00000',
+  duration_days: '30',
+  currency: 'CNY',
+  sort_order: '10',
+  description: '保留订阅定义但不开放购买',
+})
+
+if (subscriptionPayload.purchase_enabled !== false) {
+  throw new Error(`subscription placeholders must be saved hidden even when toggled on, got ${JSON.stringify(subscriptionPayload)}`)
+}
+
+const pointsPayload = cashierPlanSavePayload({
+  plan_code: 'points-100',
+  plan_name: '100 积分包',
+  plan_type: 'points_package',
+  purchase_enabled: true,
+  status: 'active',
+  price_cny: '19.90000',
+  points: '100.00000',
+  bonus_points: '0.00000',
+  duration_days: '30',
+  currency: 'CNY',
+  sort_order: '5',
+  description: '可购买积分包',
+})
+
+if (pointsPayload.purchase_enabled !== true || pointsPayload.sort_order !== 5 || pointsPayload.duration_days !== 30) {
+  throw new Error(`points package should preserve purchasable payload fields, got ${JSON.stringify(pointsPayload)}`)
+}
+
+const subscriptionPlan = {
+  id: 1,
+  plan_code: 'sub-monthly',
+  plan_name: '订阅占位',
+  plan_type: 'subscription',
+  purchase_enabled: true,
+  status: 'active',
+  price_cny: '59.90000',
+  points: '500.00000',
+  bonus_points: '0.00000',
+  duration_days: 30,
+  currency: 'CNY',
+  created_at: '2026-06-05T00:00:00Z',
+  updated_at: '2026-06-05T00:00:00Z',
+} satisfies CashierPlan
+
+const hiddenBadge = cashierPlanPurchaseBadge(subscriptionPlan)
+
+if (hiddenBadge.label !== '未开放' || hiddenBadge.tone !== 'warning') {
+  throw new Error(`subscription placeholder badge should be hidden regardless of raw purchase flag, got ${JSON.stringify(hiddenBadge)}`)
+}
+
+const enabledBadge = cashierPlanPurchaseBadge(pointsPayload as CashierPlan)
+if (enabledBadge.label !== '开放购买' || enabledBadge.tone !== 'success') {
+  throw new Error(`points package purchase badge should be localized as open, got ${JSON.stringify(enabledBadge)}`)
+}
+
+if (cashierPlanEmptyState.title !== '暂无积分包' || !cashierPlanEmptyState.detail.includes('新增套餐') || !cashierPlanEmptyState.detail.includes('固定积分包')) {
+  throw new Error(`cashier plan empty state should give the current create action, got ${JSON.stringify(cashierPlanEmptyState)}`)
+}
+
+if (/后续|暂未|即将|版本|points_package|subscription/.test(`${cashierPlanEmptyState.title}${cashierPlanEmptyState.detail}`)) {
+  throw new Error(`cashier plan empty state should not use weak roadmap wording, got ${JSON.stringify(cashierPlanEmptyState)}`)
+}
+
+const visiblePlanCopy = [
+  cashierPlanSectionCopy.toolbarDetail,
+  cashierPlanSectionCopy.dialogDetail,
+  cashierPlanSectionCopy.subscriptionOptionLabel,
+].join(' ')
+
+if (!visiblePlanCopy.includes('订阅套餐') || !visiblePlanCopy.includes('不在用户端开放购买')) {
+  throw new Error(`cashier plan copy should explain subscription plans are retained but hidden from users, got ${visiblePlanCopy}`)
+}
+
+if (/占位|placeholder/i.test(visiblePlanCopy)) {
+  throw new Error(`cashier plan admin copy should avoid internal placeholder wording, got ${visiblePlanCopy}`)
+}

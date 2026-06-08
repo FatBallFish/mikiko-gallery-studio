@@ -10,6 +10,9 @@ type Config struct {
 	Auth             AuthConfig             `yaml:"auth"`
 	APIKey           APIKeyConfig           `yaml:"api_key"`
 	Billing          BillingConfig          `yaml:"billing"`
+	Cashier          CashierConfig          `yaml:"cashier"`
+	Security         SecurityConfig         `yaml:"security"`
+	Worker           WorkerConfig           `yaml:"worker"`
 	GenerationLimits GenerationLimitsConfig `yaml:"generation_limits"`
 	Providers        ProvidersConfig        `yaml:"providers"`
 	Routing          RoutingConfig          `yaml:"routing"`
@@ -78,11 +81,37 @@ type APIKeyConfig struct {
 type BillingConfig struct {
 	CNYPerPoint               string                       `yaml:"cny_per_point"`
 	PointsScale               int                          `yaml:"points_scale"`
+	SignupTrial               SignupTrialConfig            `yaml:"signup_trial"`
 	AutoQualityDefaultByGroup map[string]string            `yaml:"auto_quality_default_by_group"`
 	QualityPointsByModel      map[string]map[string]string `yaml:"quality_points_by_model"`
 	UserGroupMultipliers      map[string]string            `yaml:"user_group_multipliers"`
 	TaskMultipliers           map[string]string            `yaml:"task_multipliers"`
 	ReferenceImageExtra       ReferenceExtra               `yaml:"reference_image_extra"`
+}
+
+type SignupTrialConfig struct {
+	Enabled            bool   `yaml:"enabled"`
+	Points             string `yaml:"points"`
+	ValidDays          int    `yaml:"valid_days"`
+	ExpiryReminderDays int    `yaml:"expiry_reminder_days"`
+	GrantOncePerUser   bool   `yaml:"grant_once_per_user"`
+}
+
+type CashierConfig struct {
+	Enabled                     bool   `yaml:"enabled"`
+	MockEnabled                 bool   `yaml:"mock_enabled"`
+	OrderTimeoutSeconds         int    `yaml:"order_timeout_seconds"`
+	MaxPendingOrdersPerUser     int    `yaml:"max_pending_orders_per_user"`
+	SiteBaseURL                 string `yaml:"site_base_url"`
+	ProviderConfigEncryptionKey string `yaml:"provider_config_encryption_key"`
+}
+
+type SecurityConfig struct {
+	SecureConfigEncryptionKey string `yaml:"secure_config_encryption_key"`
+}
+
+type WorkerConfig struct {
+	MaxConcurrentTasks int `yaml:"max_concurrent_tasks"`
 }
 
 type ReferenceExtra struct {

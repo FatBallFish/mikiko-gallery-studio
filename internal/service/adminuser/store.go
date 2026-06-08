@@ -2,6 +2,8 @@ package adminuser
 
 import (
 	"context"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,11 +65,15 @@ func (s *MemoryStore) ListUsers(_ context.Context, req domainadminuser.ListReque
 		if status != "" && user.Status != status {
 			continue
 		}
+		if req.GroupCode != "" && !memoryUserHasGroup(user, req.GroupCode) {
+			continue
+		}
 		if query != "" && !strings.Contains(strings.ToLower(user.Email), query) && !strings.Contains(strings.ToLower(user.Nickname), query) {
 			continue
 		}
 		items = append(items, user)
 	}
+	sortMemoryUsers(items, req.SortBy, req.SortDir)
 	total := len(items)
 	start := (page - 1) * pageSize
 	if start > total {
@@ -78,6 +84,56 @@ func (s *MemoryStore) ListUsers(_ context.Context, req domainadminuser.ListReque
 		end = total
 	}
 	return domainadminuser.ListPage{Items: items[start:end], Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func memoryUserHasGroup(user domainadminuser.UserSummary, groupCode string) bool {
+	if strings.EqualFold(user.UserGroupCode, groupCode) {
+		return true
+	}
+	for _, group := range user.UserGroups {
+		if strings.EqualFold(group.GroupCode, groupCode) {
+			return true
+		}
+	}
+	return false
+}
+
+func sortMemoryUsers(items []domainadminuser.UserSummary, sortBy, sortDir string) {
+	desc := sortDir != "asc"
+	sort.SliceStable(items, func(i, j int) bool {
+		compare := 0
+		switch sortBy {
+		case "points":
+			left, _ := strconv.ParseFloat(items[i].Balance, 64)
+			right, _ := strconv.ParseFloat(items[j].Balance, 64)
+			if left < right {
+				compare = -1
+			} else if left > right {
+				compare = 1
+			}
+		case "last_seen_at":
+			compare = compareTime(items[i].LastSeenAt, items[j].LastSeenAt)
+		default:
+			compare = compareTime(items[i].CreatedAt, items[j].CreatedAt)
+		}
+		if compare == 0 {
+			compare = int(items[i].ID - items[j].ID)
+		}
+		if desc {
+			return compare > 0
+		}
+		return compare < 0
+	})
+}
+
+func compareTime(left, right time.Time) int {
+	if left.Before(right) {
+		return -1
+	}
+	if left.After(right) {
+		return 1
+	}
+	return 0
 }
 
 func (s *MemoryStore) CreateUser(_ context.Context, req domainadminuser.CreateUserRequest) (domainadminuser.UserSummary, error) {
@@ -265,6 +321,8 @@ func (s *MemoryStore) CreateUserGroup(_ context.Context, req domainadminuser.Use
 		Multiplier:  req.Multiplier,
 		Status:      req.Status,
 		Description: req.Description,
+		SortOrder:   req.SortOrder,
+		IsDefault:   req.IsDefault,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -283,6 +341,8 @@ func (s *MemoryStore) UpdateUserGroup(_ context.Context, groupCode string, req d
 	group.Multiplier = req.Multiplier
 	group.Status = req.Status
 	group.Description = req.Description
+	group.SortOrder = req.SortOrder
+	group.IsDefault = req.IsDefault
 	group.UpdatedAt = time.Now().UTC()
 	s.userGroups[groupCode] = group
 	return group, nil

@@ -12,6 +12,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 func TestUploadDeduplicatesByHash(t *testing.T) {
@@ -86,6 +87,31 @@ func TestUploadDoesNotCacheFailedPersistence(t *testing.T) {
 	}
 	if len(svc.assetsByID) != 0 || len(svc.assetsByHash) != 0 {
 		t.Fatalf("expected failed upload to avoid cache pollution, got ids=%d hashes=%d", len(svc.assetsByID), len(svc.assetsByHash))
+	}
+}
+
+func TestUploadReturnsTooLargeErrorWithSizeDetails(t *testing.T) {
+	svc := NewService(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 1})
+
+	_, err := svc.Upload(1, "large.png", "image/png", make([]byte, 1024*1024+1))
+	if err == nil {
+		t.Fatal("expected upload to reject oversized reference asset")
+	}
+	appErr, ok := err.(*errs.Error)
+	if !ok {
+		t.Fatalf("expected app error, got %T %v", err, err)
+	}
+	if appErr.Code != errs.CodeImageReferenceTooLarge {
+		t.Fatalf("expected %s, got %s", errs.CodeImageReferenceTooLarge, appErr.Code)
+	}
+	if appErr.Details["max_size_bytes"] != int64(1024*1024) {
+		t.Fatalf("expected max_size_bytes detail, got %#v", appErr.Details)
+	}
+	if appErr.Details["max_size_mb"] != 1 {
+		t.Fatalf("expected max_size_mb detail, got %#v", appErr.Details)
+	}
+	if appErr.Details["actual_size_bytes"] != int64(1024*1024+1) {
+		t.Fatalf("expected actual_size_bytes detail, got %#v", appErr.Details)
 	}
 }
 

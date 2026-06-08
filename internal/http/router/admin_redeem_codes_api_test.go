@@ -146,6 +146,34 @@ func TestAdminRedeemCodeManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected list to include manual code, got %s", listRec.Body.String())
 	}
 
+	exportReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/redeem-codes:export", bytes.NewBufferString(`{"status":"available","code":"manual"}`))
+	exportReq.Header.Set("Authorization", "Bearer "+adminToken)
+	exportReq.Header.Set("Content-Type", "application/json")
+	exportRec := httptest.NewRecorder()
+	handler.ServeHTTP(exportRec, exportReq)
+	if exportRec.Code != http.StatusOK {
+		t.Fatalf("expected export 200, got %d body=%s", exportRec.Code, exportRec.Body.String())
+	}
+	var exportResp struct {
+		Data struct {
+			Count   int `json:"count"`
+			Filters struct {
+				Status string `json:"status"`
+				Code   string `json:"code"`
+			} `json:"filters"`
+			Items []struct {
+				Code   string `json:"code"`
+				Status string `json:"status"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(exportRec.Body).Decode(&exportResp); err != nil {
+		t.Fatalf("decode export response: %v", err)
+	}
+	if exportResp.Data.Count != 1 || len(exportResp.Data.Items) != 1 || exportResp.Data.Items[0].Code != "MANUAL-COPY-1" || exportResp.Data.Filters.Status != "available" || exportResp.Data.Filters.Code != "manual" {
+		t.Fatalf("unexpected export response %#v", exportResp)
+	}
+
 	statusReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/redeem-codes/"+jsonNumber(createResp.Data.ID)+"/status", bytes.NewBufferString(`{"status":"disabled"}`))
 	statusReq.Header.Set("Authorization", "Bearer "+adminToken)
 	statusReq.Header.Set("Content-Type", "application/json")
@@ -195,10 +223,13 @@ func TestAdminRedeemCodeManagementEndpoints(t *testing.T) {
 	if auditRec.Code != http.StatusOK {
 		t.Fatalf("expected audit list 200, got %d body=%s", auditRec.Code, auditRec.Body.String())
 	}
-	for _, action := range []string{"redeem_code.create", "redeem_code.batch_create", "redeem_code.status_update"} {
+	for _, action := range []string{"redeem_code.create", "redeem_code.batch_create", "redeem_code.status_update", "redeem.export"} {
 		if !bytes.Contains(auditRec.Body.Bytes(), []byte(action)) {
 			t.Fatalf("expected audit action %s, got body=%s", action, auditRec.Body.String())
 		}
+	}
+	if !bytes.Contains(auditRec.Body.Bytes(), []byte(`"count":1`)) || !bytes.Contains(auditRec.Body.Bytes(), []byte(`"status":"available"`)) || !bytes.Contains(auditRec.Body.Bytes(), []byte(`"code":"manual"`)) {
+		t.Fatalf("expected export audit metadata, got body=%s", auditRec.Body.String())
 	}
 }
 

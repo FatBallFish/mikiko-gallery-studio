@@ -13,15 +13,20 @@ tags:
   - name: Agent Auth
   - name: Agent User
   - name: Agent Billing
+  - name: Agent Cashier
   - name: Agent Image
   - name: Open Image API
   - name: Admin Config
+  - name: Admin Security Config
+  - name: Admin Auth
   - name: Admin Users
   - name: Admin Redeem Codes
   - name: Admin Call Records
   - name: Admin Model Routing
   - name: Admin Gallery
   - name: Admin Metrics
+  - name: Admin Readiness
+  - name: Admin Cashier
   - name: OpenAI Compat
 paths:
   /:
@@ -383,6 +388,25 @@ paths:
         - name: page_size
           in: query
           schema: {type: integer, minimum: 1, default: 20}
+        - name: order_no
+          in: query
+          description: Fuzzy match payment order number.
+          schema: {type: string}
+        - name: user_id
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: status
+          in: query
+          schema: {type: string}
+        - name: visible_method
+          in: query
+          schema: {type: string, enum: [mock, alipay, wxpay]}
+        - name: provider_type
+          in: query
+          schema: {type: string}
+        - name: purchase_type
+          in: query
+          schema: {type: string, enum: [plan, custom_amount]}
       responses:
         '200':
           description: Payment orders
@@ -447,6 +471,119 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/PaymentOrderResponse
+  /api/agent/cashier/v1/options:
+    get:
+      tags: [Agent Cashier]
+      summary: Get cashier recharge plans, custom amount config, and visible payment methods
+      operationId: getAgentCashierOptions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cashier options
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOptionsResponse
+  /api/agent/cashier/v1/orders:
+    get:
+      tags: [Agent Cashier]
+      summary: List current user's cashier orders
+      operationId: getAgentCashierOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+      responses:
+        '200':
+          description: Cashier payment orders
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/PaymentOrderListResponse
+    post:
+      tags: [Agent Cashier]
+      summary: Create a cashier recharge order
+      operationId: postAgentCashierOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderCreateRequest
+      responses:
+        '201':
+          description: Cashier order created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderResponse
+  /api/agent/cashier/v1/orders/{order_id}:
+    get:
+      tags: [Agent Cashier]
+      summary: Get cashier order detail
+      operationId: getAgentCashierOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Cashier order detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderResponse
+  /api/agent/cashier/v1/orders/{order_id}/cancel:
+    post:
+      tags: [Agent Cashier]
+      summary: Cancel a pending cashier order
+      operationId: postAgentCashierOrderCancel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Cashier order canceled
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderResponse
+  /api/agent/cashier/v1/orders/{order_id}/mock-pay:
+    post:
+      tags: [Agent Cashier]
+      summary: Complete a mock cashier order in non-production environments
+      operationId: postAgentCashierOrderMockPay
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Mock payment completed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderResponse
   /api/agent/billing/v1/estimate:
     get:
       tags: [Agent Billing]
@@ -769,13 +906,34 @@ paths:
         - name: page_size
           in: query
           schema: {type: integer, minimum: 1, default: 20}
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [latest, hot]
+        - name: query
+          in: query
+          description: Keyword search over public image ID, prompt excerpt, model, task type, and author. Full prompts remain hidden from list responses.
+          schema: {type: string}
+        - name: route_model_code
+          in: query
+          schema: {type: string}
+        - name: task_type
+          in: query
+          schema: {type: string}
+        - name: liked
+          in: query
+          schema: {type: boolean}
+        - name: favorited
+          in: query
+          schema: {type: boolean}
       responses:
         '200':
           description: Public gallery images
           content:
             application/json:
               schema:
-                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminGalleryReviewListResponse
+                $ref: ./components/schemas/common.yaml#/components/schemas/PublicGalleryListResponse
   /api/open/image/v1/gallery/images/{image_id}:
     get:
       tags: [Open Image API]
@@ -792,10 +950,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    $ref: ./components/schemas/common.yaml#/components/schemas/GalleryImage
+                $ref: ./components/schemas/common.yaml#/components/schemas/PublicGalleryDetailResponse
+        '401':
+          description: Login required for full prompt and viewer interaction state
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/open/image/v1/payments/webhooks/{channel}:
     post:
       tags: [Open Image API]
@@ -851,6 +1012,59 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/ConfigTabResponse
+  /api/ops/admin/v1/security/smtp:
+    get:
+      tags: [Admin Security Config]
+      summary: Get SMTP delivery configuration without plaintext secrets
+      operationId: getAdminSecuritySMTP
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: SMTP configuration view
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPConfigResponse
+    put:
+      tags: [Admin Security Config]
+      summary: Replace SMTP delivery configuration and optionally rotate write-only secrets
+      operationId: putAdminSecuritySMTP
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPConfigWriteRequest
+      responses:
+        '200':
+          description: SMTP configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPConfigResponse
+  /api/ops/admin/v1/security/smtp/test:
+    post:
+      tags: [Admin Security Config]
+      summary: Send a test email using the resolved SMTP configuration
+      operationId: postAdminSecuritySMTPTest
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPTestRequest
+      responses:
+        '200':
+          description: Test email accepted for delivery
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPTestResponse
   /api/ops/admin/v1/users:
     get:
       tags: [Admin Users]
@@ -1401,6 +1615,26 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminBatchCreateRedeemCodesResponse
+  /api/ops/admin/v1/redeem-codes:export:
+    post:
+      tags: [Admin Redeem Codes]
+      summary: Export redeem codes and write audit log
+      operationId: postAdminRedeemCodesExport
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminExportRedeemCodesRequest
+      responses:
+        '200':
+          description: Redeem codes exported
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminExportRedeemCodesResponse
   /api/ops/admin/v1/redeem-codes/{code_id}/status:
     post:
       tags: [Admin Redeem Codes]
@@ -1480,6 +1714,9 @@ paths:
         - name: task_id
           in: query
           schema: { type: string, format: uuid }
+        - name: error_code
+          in: query
+          schema: { type: string }
         - name: created_from
           in: query
           schema: { type: string, format: date-time }
@@ -2006,6 +2243,484 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminDashboardResponse
+  /api/ops/admin/v1/readiness:
+    get:
+      tags: [Admin Readiness]
+      summary: Get launch readiness checks
+      operationId: getAdminReadiness
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Readiness report
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/ReadinessReportResponse
+  /api/ops/admin/v1/cashier/overview:
+    get:
+      tags: [Admin Cashier]
+      summary: Get cashier operations overview
+      operationId: getAdminCashierOverview
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cashier overview
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOverviewResponse
+  /api/ops/admin/v1/cashier/plans:
+    get:
+      tags: [Admin Cashier]
+      summary: List cashier points packages and retained subscription plan definitions
+      operationId: getAdminCashierPlans
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+      responses:
+        '200':
+          description: Cashier plan page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanListResponse
+    post:
+      tags: [Admin Cashier]
+      summary: Create a cashier plan
+      operationId: postAdminCashierPlan
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanWriteRequest
+      responses:
+        '201':
+          description: Cashier plan created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanResponse
+  /api/ops/admin/v1/cashier/plans/{plan_id}:
+    put:
+      tags: [Admin Cashier]
+      summary: Update a cashier plan
+      operationId: putAdminCashierPlan
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanWriteRequest
+      responses:
+        '200':
+          description: Cashier plan updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanResponse
+    delete:
+      tags: [Admin Cashier]
+      summary: Archive a cashier plan and hide it from purchase
+      operationId: deleteAdminCashierPlan
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Cashier plan archived
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierPlanResponse
+  /api/ops/admin/v1/cashier/custom-amount-config:
+    get:
+      tags: [Admin Cashier]
+      summary: Get custom amount recharge config
+      operationId: getAdminCashierCustomAmountConfig
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Custom amount config
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierCustomAmountConfigResponse
+    put:
+      tags: [Admin Cashier]
+      summary: Update custom amount recharge config
+      operationId: putAdminCashierCustomAmountConfig
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierCustomAmountConfig
+      responses:
+        '200':
+          description: Custom amount config updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierCustomAmountConfigResponse
+  /api/ops/admin/v1/cashier/visible-methods:
+    get:
+      tags: [Admin Cashier]
+      summary: List payment methods visible to users
+      operationId: getAdminCashierVisibleMethods
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Visible payment methods
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierVisibleMethodListResponse
+    put:
+      tags: [Admin Cashier]
+      summary: Replace payment methods visible to users
+      operationId: putAdminCashierVisibleMethods
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierVisibleMethodListResponse
+      responses:
+        '200':
+          description: Visible payment methods updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierVisibleMethodListResponse
+  /api/ops/admin/v1/cashier/provider-instances:
+    get:
+      tags: [Admin Cashier]
+      summary: List payment provider instances
+      operationId: getAdminCashierProviderInstances
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+      responses:
+        '200':
+          description: Payment provider instance page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceListResponse
+    post:
+      tags: [Admin Cashier]
+      summary: Create a payment provider instance
+      operationId: postAdminCashierProviderInstance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceWriteRequest
+      responses:
+        '201':
+          description: Payment provider instance created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceResponse
+  /api/ops/admin/v1/cashier/provider-instances/{instance_id}:
+    get:
+      tags: [Admin Cashier]
+      summary: Get payment provider instance detail
+      operationId: getAdminCashierProviderInstance
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Payment provider instance detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceResponse
+    put:
+      tags: [Admin Cashier]
+      summary: Update a payment provider instance
+      operationId: putAdminCashierProviderInstance
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceWriteRequest
+      responses:
+        '200':
+          description: Payment provider instance updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceResponse
+    delete:
+      tags: [Admin Cashier]
+      summary: Delete a payment provider instance
+      operationId: deleteAdminCashierProviderInstance
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Payment provider instance deleted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceResponse
+  /api/ops/admin/v1/cashier/orders:
+    get:
+      tags: [Admin Cashier]
+      summary: List cashier orders
+      operationId: getAdminCashierOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+      responses:
+        '200':
+          description: Cashier order page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderListResponse
+  /api/ops/admin/v1/cashier/orders/{order_id}:
+    get:
+      tags: [Admin Cashier]
+      summary: Get cashier order detail
+      operationId: getAdminCashierOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Cashier order detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderResponse
+  /api/ops/admin/v1/cashier/orders/{order_id}/complete:
+    post:
+      tags: [Admin Cashier]
+      summary: Manually complete a pending cashier order after channel-side confirmation
+      operationId: postAdminCashierOrderComplete
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierManualCompleteRequest
+      responses:
+        '200':
+          description: Cashier order completed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderResponse
+  /api/ops/admin/v1/cashier/orders/{order_id}/close:
+    post:
+      tags: [Admin Cashier]
+      summary: Close a pending cashier order that should no longer be paid
+      operationId: postAdminCashierOrderClose
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierCloseRequest
+      responses:
+        '200':
+          description: Cashier order closed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderResponse
+  /api/ops/admin/v1/cashier/orders/{order_id}/refund:
+    post:
+      tags: [Admin Cashier]
+      summary: Refund a completed cashier order when its recharge balance remains unused
+      operationId: postAdminCashierOrderRefund
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierRefundRequest
+      responses:
+        '200':
+          description: Cashier order refunded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderResponse
+  /api/ops/admin/v1/cashier/orders/{order_id}/chargeback:
+    post:
+      tags: [Admin Cashier]
+      summary: Manually deduct points for a confirmed cashier order chargeback
+      operationId: postAdminCashierOrderChargeback
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RequiredIdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierChargebackRequest
+      responses:
+        '200':
+          description: Cashier order chargeback adjustment applied. Replaying the same Idempotency-Key does not double deduct points.
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierChargebackResponse
+  /api/ops/admin/v1/cashier/orders/{order_id}/sync:
+    post:
+      tags: [Admin Cashier]
+      summary: Query the payment channel and sync a pending cashier order when paid
+      operationId: postAdminCashierOrderSync
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Cashier order sync result
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierOrderSyncResponse
+  /api/ops/admin/v1/cashier/webhook-events:
+    get:
+      tags: [Admin Cashier]
+      summary: List payment webhook events
+      operationId: getAdminCashierWebhookEvents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, default: 20}
+      responses:
+        '200':
+          description: Payment webhook event page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminPaymentWebhookEventListResponse
+  /api/ops/admin/v1/cashier/webhook-events/{event_id}/retry:
+    post:
+      tags: [Admin Cashier]
+      summary: Retry a failed payment webhook event
+      operationId: postAdminCashierWebhookEventRetry
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Payment webhook event retried
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminPaymentWebhookEventResponse
   /v1/images/generations:
     post:
       tags: [OpenAI Compat]
@@ -2361,7 +3076,7 @@ paths:
                 $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
   /api/ops/admin/v1/auth/login:
     post:
-      tags: [Admin Config]
+      tags: [Admin Auth]
       summary: Login to the independent admin account system
       operationId: postOpsAdminLogin
       requestBody:
@@ -2369,18 +3084,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [email, password]
-              properties:
-                email: { type: string, format: email }
-                password: { type: string, format: password }
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminLoginRequest
       responses:
         '200':
-          description: Admin session
+          description: Admin session with resolved page/action permissions
           content:
             application/json:
               schema:
-                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminLoginResponse
 components:
   securitySchemes:
     bearerAuth:

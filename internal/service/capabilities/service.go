@@ -17,16 +17,31 @@ type Item struct {
 }
 
 type Response struct {
-	Items       []Item                       `json:"items,omitempty"`
-	ModelGroups []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
+	Items                  []Item                       `json:"items,omitempty"`
+	ModelGroups            []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
+	ReferenceImageMaxMB    int                          `json:"reference_image_max_mb,omitempty"`
+	ReferenceImageMaxBytes int64                        `json:"reference_image_max_bytes,omitempty"`
+	UnavailableReason      *UnavailableReason           `json:"unavailable_reason,omitempty"`
+}
+
+type UnavailableReason struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type Service struct {
-	resolver *modelhub.Resolver
+	resolver              *modelhub.Resolver
+	referenceImageMaxMB   int
+	referenceImageMaxByte int64
 }
 
 func NewService(cfg config.Config) *Service {
-	return &Service{resolver: modelhub.NewResolver(cfg)}
+	maxMB := cfg.GenerationLimits.ReferenceImageMaxMB
+	return &Service{
+		resolver:              modelhub.NewResolver(cfg),
+		referenceImageMaxMB:   maxMB,
+		referenceImageMaxByte: int64(maxMB) * 1024 * 1024,
+	}
 }
 
 func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
@@ -46,7 +61,8 @@ func (s *Service) List() Response {
 			MaxReferenceImageCount: item.MaxReferenceImageCount,
 		})
 	}
-	return Response{Items: items}
+	resp := s.withReferenceUploadLimits(Response{Items: items})
+	return resp
 }
 
 func (s *Service) ListForGroups(ctx context.Context, groupCodes []string, taskMultipliers map[string]string) (Response, error) {
@@ -54,5 +70,18 @@ func (s *Service) ListForGroups(ctx context.Context, groupCodes []string, taskMu
 	if err != nil {
 		return Response{}, err
 	}
-	return Response{ModelGroups: items}, nil
+	resp := s.withReferenceUploadLimits(Response{ModelGroups: items})
+	if len(items) == 0 {
+		resp.UnavailableReason = &UnavailableReason{
+			Code:    "NO_ROUTE_MODEL",
+			Message: "平台模型配置中，暂不可生成。",
+		}
+	}
+	return resp, nil
+}
+
+func (s *Service) withReferenceUploadLimits(resp Response) Response {
+	resp.ReferenceImageMaxMB = s.referenceImageMaxMB
+	resp.ReferenceImageMaxBytes = s.referenceImageMaxByte
+	return resp
 }

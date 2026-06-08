@@ -68,7 +68,18 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 		return domainassets.ReferenceAsset{}, errs.New(400, errs.CodeImageReferenceRequired, "reference asset file is required")
 	}
 	if s.maxBytes > 0 && int64(len(content)) > s.maxBytes {
-		return domainassets.ReferenceAsset{}, errs.New(400, errs.CodeImageReferenceExceeded, "reference asset too large")
+		maxMB := int(s.maxBytes / (1024 * 1024))
+		if maxMB <= 0 {
+			maxMB = 1
+		}
+		return domainassets.ReferenceAsset{}, errs.WithDetails(
+			errs.New(400, errs.CodeImageReferenceTooLarge, fmt.Sprintf("参考图文件超过 %d MB，请压缩后重新上传。", maxMB)),
+			map[string]any{
+				"max_size_bytes":    s.maxBytes,
+				"max_size_mb":       maxMB,
+				"actual_size_bytes": int64(len(content)),
+			},
+		)
 	}
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])

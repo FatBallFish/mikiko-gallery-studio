@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	domainadmincallrecord "github.com/fatballfish/pic-gallery/internal/domain/admincallrecord"
+	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
@@ -48,6 +49,9 @@ func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicat
 	if status := strings.TrimSpace(req.Status); status != "" {
 		predicates = append(predicates, imagetask.StatusEQ(status))
 	}
+	if errorCode := strings.TrimSpace(req.ErrorCode); errorCode != "" {
+		predicates = append(predicates, imagetask.ErrorCodeEQ(errorCode))
+	}
 	if provider := strings.TrimSpace(req.Provider); provider != "" {
 		predicates = append(predicates, predicate.ImageTask(func(s *sql.Selector) {
 			s.Where(sqljson.ValueEQ(s.C(imagetask.FieldProviderTrace), provider, sqljson.Path("provider")))
@@ -82,6 +86,9 @@ func mapAdminCallRecord(entity *repoent.ImageTask) domainadmincallrecord.Record 
 		TaskType:                  entity.TaskType,
 		Status:                    entity.Status,
 		AbstractModel:             entity.AbstractModel,
+		AccountModelID:            entity.AccountModelID,
+		ModelAccountID:            entity.ModelAccountID,
+		UpstreamModelCode:         entity.UpstreamModelCode,
 		Quality:                   entity.ResolvedQualityBucket,
 		RequestedOutputImageCount: entity.RequestedOutputImageCount,
 		SuccessOutputImageCount:   entity.SuccessOutputImageCount,
@@ -101,9 +108,62 @@ func mapAdminCallRecord(entity *repoent.ImageTask) domainadmincallrecord.Record 
 		}
 		if attempts, err := decodeAttempts(entity.ProviderTrace["attempts"]); err == nil {
 			record.AttemptCount = len(attempts)
+			record.Attempts = mapAdminCallRecordAttempts(attempts)
+			record.ErrorDetail = lastAttemptErrorDetail(attempts)
 		}
 	}
 	return record
+}
+
+func mapAdminCallRecordAttempts(attempts []domainimagetask.Attempt) []domainadmincallrecord.Attempt {
+	if len(attempts) == 0 {
+		return nil
+	}
+	items := make([]domainadmincallrecord.Attempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		items = append(items, domainadmincallrecord.Attempt{
+			Provider:       attempt.Provider,
+			AdapterType:    attempt.AdapterType,
+			AccountModelID: int64PtrIfPositive(attempt.AccountModelID),
+			ModelAccountID: int64PtrIfPositive(attempt.ModelAccountID),
+			ModelCode:      attempt.ModelCode,
+			Status:         attempt.Status,
+			Error:          attempt.Error,
+			ErrorCode:      attempt.ErrorCode,
+			ErrorMessage:   attempt.ErrorMessage,
+			ErrorDetail:    cloneMapStringAny(attempt.ErrorDetail),
+			StartedAt:      attempt.StartedAt,
+			FinishedAt:     attempt.FinishedAt,
+		})
+	}
+	return items
+}
+
+func lastAttemptErrorDetail(attempts []domainimagetask.Attempt) map[string]any {
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if len(attempts[i].ErrorDetail) > 0 {
+			return cloneMapStringAny(attempts[i].ErrorDetail)
+		}
+	}
+	return nil
+}
+
+func int64PtrIfPositive(value int64) *int64 {
+	if value <= 0 {
+		return nil
+	}
+	return &value
+}
+
+func cloneMapStringAny(value map[string]any) map[string]any {
+	if len(value) == 0 {
+		return nil
+	}
+	cloned := make(map[string]any, len(value))
+	for key, item := range value {
+		cloned[key] = item
+	}
+	return cloned
 }
 
 func normalizeAdminCallRecordPage(page, pageSize int) (int, int) {

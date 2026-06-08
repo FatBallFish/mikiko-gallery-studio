@@ -166,6 +166,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 
 	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.RequestedQuality, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
 	if err != nil {
+		_ = s.persistPreflightFailedRequest(ctx, req, resolved, err)
 		return domainimagetask.Task{}, err
 	}
 	if strings.TrimSpace(req.TaskID) == "" {
@@ -174,6 +175,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 
 	task := buildTask(req, resolved, domainimagetask.StatusQueued)
 	if err := s.applyTaskEstimate(ctx, &task, req); err != nil {
+		_ = s.persistPreflightFailedTask(ctx, task, err)
 		return domainimagetask.Task{}, err
 	}
 	if err := s.store.Save(ctx, task); err != nil {
@@ -185,11 +187,36 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 	return cloneTask(task), nil
 }
 
+func (s *Service) persistPreflightFailedRequest(ctx context.Context, req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequest, failure error) error {
+	if strings.TrimSpace(req.TaskID) == "" {
+		req.TaskID = uuid.NewString()
+	}
+	task := buildTask(req, resolved, domainimagetask.StatusFailed)
+	return s.persistPreflightFailedTask(ctx, task, failure)
+}
+
+func (s *Service) persistPreflightFailedTask(ctx context.Context, task domainimagetask.Task, failure error) error {
+	task.Status = domainimagetask.StatusFailed
+	task.ErrorCode = errorCode(failure)
+	task.ErrorMessage = errorMessage(failure)
+	task.ActualPoints = s.zeroPoints()
+	if strings.TrimSpace(task.EstimatedPoints) == "" {
+		task.EstimatedPoints = s.zeroPoints()
+	}
+	if strings.TrimSpace(task.ChargedPoints) == "" {
+		task.ChargedPoints = s.zeroPoints()
+	}
+	return s.store.Save(ctx, task)
+}
+
 func (s *Service) AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
 	task, err := s.store.AcquireNextQueuedTask(ctx, owner, time.Now().UTC(), leaseTTL)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return domainimagetask.Task{}, false, nil
+		}
+		if repoerr.IsTransientContention(err) {
+			return domainimagetask.Task{}, false, repoerr.TransientContention(err)
 		}
 		return domainimagetask.Task{}, false, errs.Internal("failed to acquire queued image task")
 	}
@@ -320,6 +347,117 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 	})
 }
 
+func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.TestModelAccountRequest, candidate modelhub.ProviderCandidate) (domainimagetask.TestModelAccountResult, error) {
+	prompt := strings.TrimSpace(req.Prompt)
+	if prompt == "" {
+		prompt = "A small product photo of a ceramic coffee cup on a clean desk"
+	}
+	if strings.TrimSpace(req.SourceMode) != "" {
+		if candidate.AccountExtra == nil {
+			candidate.AccountExtra = map[string]any{}
+		}
+		candidate.AccountExtra["source_mode"] = strings.TrimSpace(req.SourceMode)
+	}
+	providerClient, ok := s.providerClientForCandidate(candidate)
+	if !ok {
+		return domainimagetask.TestModelAccountResult{}, errs.New(409, errs.CodeUpstreamUnavailable, "model account provider is not configured")
+	}
+	taskID := uuid.NewString()
+	task := domainimagetask.Task{
+		UserID:                0,
+		ID:                    taskID,
+		Status:                domainimagetask.StatusRunning,
+		SourceChannel:         "admin_test",
+		AbstractModel:         candidate.ModelCode,
+		TaskType:              string(provider.TaskTypeTextToImage),
+		Prompt:                prompt,
+		RequestedSize:         "1024x1024",
+		RequestedQuality:      "1K",
+		AspectRatio:           "1:1",
+		ResolvedQualityBucket: "1k",
+		ResponseMode:          "sync",
+		SavePolicy:            "private",
+		OutputImageCount:      1,
+		AccountModelID:        candidate.AccountModelID,
+		ModelAccountID:        candidate.ModelAccountID,
+		UpstreamModelCode:     candidate.ModelCode,
+		EstimatedPoints:       s.zeroPoints(),
+		ChargedPoints:         s.zeroPoints(),
+		ActualPoints:          s.zeroPoints(),
+	}
+	resolved := modelhub.ResolvedRequest{
+		ResolvedQualityBucket: "1k",
+		Providers:             []modelhub.ProviderCandidate{candidate},
+	}
+	providerReq := provider.ImageRequest{
+		Model:            candidate.ModelCode,
+		TaskType:         provider.TaskTypeTextToImage,
+		Prompt:           prompt,
+		Size:             task.RequestedSize,
+		Quality:          task.ResolvedQualityBucket,
+		OutputImageCount: 1,
+		ResponseFormat:   provider.ResponseFormatB64JSON,
+	}
+	if compatErr := applyProviderRequestCompatibility(&providerReq, task, candidate, resolved); compatErr != nil {
+		return domainimagetask.TestModelAccountResult{}, compatErr
+	}
+
+	startedAt := time.Now().UTC()
+	resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
+	finishedAt := time.Now().UTC()
+	task.Provider = candidate.Provider
+	task.ProviderModelID = candidate.ProviderModelID
+	task.RouteModelID = candidate.RouteModelID
+	task.RouteModelCode = candidate.RouteModelCode
+	task.AccountModelID = candidate.AccountModelID
+	task.ModelAccountID = candidate.ModelAccountID
+	task.UpstreamModelCode = candidate.ModelCode
+	task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
+	task.FallbackCount = 0
+	if err != nil {
+		task.Status = domainimagetask.StatusFailed
+		task.ErrorCode = errorCode(err)
+		task.ErrorMessage = errorMessage(err)
+		task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, err, startedAt, finishedAt))
+		_ = s.store.Save(ctx, task)
+		return domainimagetask.TestModelAccountResult{}, err
+	}
+	persisted, persistErr := s.persistImageResults(ctx, task, resp.Data)
+	if persistErr != nil {
+		task.Status = domainimagetask.StatusFailed
+		task.ErrorCode = errorCode(persistErr)
+		task.ErrorMessage = errorMessage(persistErr)
+		task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, persistErr, startedAt, finishedAt))
+		_ = s.store.Save(ctx, task)
+		return domainimagetask.TestModelAccountResult{}, persistErr
+	}
+	task.Status = domainimagetask.StatusSucceeded
+	task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, startedAt, finishedAt))
+	task.Results = append([]provider.ImageResult(nil), persisted...)
+	if err := s.store.Save(ctx, task); err != nil {
+		return domainimagetask.TestModelAccountResult{}, errs.Internal("failed to persist model account test image")
+	}
+	result := domainimagetask.TestModelAccountResult{
+		Status:            domainimagetask.StatusSucceeded,
+		ProviderRequestID: resp.ProviderRequestID,
+		ActualParams: map[string]string{
+			"model":   providerReq.Model,
+			"size":    providerReq.Size,
+			"quality": providerReq.Quality,
+		},
+		ElapsedMS: finishedAt.Sub(startedAt).Milliseconds(),
+		Task:      task,
+	}
+	if len(persisted) > 0 {
+		image := persisted[0]
+		result.Image = image
+		result.ImageURL = image.URL
+		result.Width = image.Width
+		result.Height = image.Height
+	}
+	return result, nil
+}
+
 func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.Task, owner string, resolved modelhub.ResolvedRequest, opts executionOptions) (domainimagetask.ExecuteResult, error) {
 	preferredProviders := opts.preferredProviders
 	if resolved.RuntimeRoutingApplied {
@@ -348,8 +486,13 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			Mask:             opts.mask,
 			User:             opts.user,
 		}
+		if compatErr := applyProviderRequestCompatibility(&providerReq, task, candidate, resolved); compatErr != nil {
+			return s.failOwnedTask(ctx, task, owner, compatErr)
+		}
 
+		attemptStarted := time.Now().UTC()
 		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
+		attemptFinished := time.Now().UTC()
 		if err == nil {
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
@@ -370,7 +513,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.UpstreamModelCode = candidate.ModelCode
 			task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
 			task.FallbackCount = len(task.Attempts)
-			task.Attempts = append(task.Attempts, domainimagetask.Attempt{Provider: candidate.Provider, Status: domainimagetask.StatusSucceeded})
+			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, attemptStarted, attemptFinished))
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
@@ -400,7 +543,15 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		}
 
 		lastErr = err
-		task.Attempts = append(task.Attempts, domainimagetask.Attempt{Provider: candidate.Provider, Status: domainimagetask.StatusFailed, Error: err.Error()})
+		task.Provider = candidate.Provider
+		task.ProviderModelID = candidate.ProviderModelID
+		task.RouteModelID = candidate.RouteModelID
+		task.RouteModelCode = candidate.RouteModelCode
+		task.AccountModelID = candidate.AccountModelID
+		task.ModelAccountID = candidate.ModelAccountID
+		task.UpstreamModelCode = candidate.ModelCode
+		task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
+		task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, err, attemptStarted, attemptFinished))
 		shouldRetry := false
 		if upstream, ok := provider.AsUpstreamError(err); ok && upstream.Action == provider.UpstreamErrorActionRetry {
 			shouldRetry = true
@@ -418,6 +569,92 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 	}
 
 	return s.failOwnedTask(ctx, task, owner, lastErr)
+}
+
+func applyProviderRequestCompatibility(req *provider.ImageRequest, task domainimagetask.Task, candidate modelhub.ProviderCandidate, resolved modelhub.ResolvedRequest) error {
+	if req == nil {
+		return nil
+	}
+	if !isGPTImage2CodexSource(req.Model, candidate) {
+		return nil
+	}
+	size, err := modelhub.CalculateImageSize(defaultString(resolved.ResolvedQualityBucket, task.ResolvedQualityBucket), defaultString(task.AspectRatio, "1:1"))
+	if err != nil {
+		return errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported gpt-image-2 size parameters")
+	}
+	req.Quality = "auto"
+	req.Size = size
+	return nil
+}
+
+func isGPTImage2CodexSource(model string, candidate modelhub.ProviderCandidate) bool {
+	if !strings.EqualFold(strings.TrimSpace(model), "gpt-image-2") && !strings.EqualFold(strings.TrimSpace(candidate.ModelCode), "gpt-image-2") {
+		return false
+	}
+	return truthyExtra(candidate.AccountExtra, "gpt_image_2_codex_source") ||
+		truthyExtra(candidate.ModelExtra, "gpt_image_2_codex_source") ||
+		strings.EqualFold(stringExtra(candidate.AccountExtra, "source_mode"), "codex_responses") ||
+		strings.EqualFold(stringExtra(candidate.ModelExtra, "source_mode"), "codex_responses")
+}
+
+func truthyExtra(extra map[string]any, key string) bool {
+	switch value := extra[key].(type) {
+	case bool:
+		return value
+	case string:
+		return strings.EqualFold(strings.TrimSpace(value), "true") || strings.EqualFold(strings.TrimSpace(value), "yes") || strings.EqualFold(strings.TrimSpace(value), "1")
+	case float64:
+		return value != 0
+	case int:
+		return value != 0
+	default:
+		return false
+	}
+}
+
+func stringExtra(extra map[string]any, key string) string {
+	if extra == nil {
+		return ""
+	}
+	switch value := extra[key].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
+}
+
+func buildProviderAttempt(candidate modelhub.ProviderCandidate, status string, err error, startedAt, finishedAt time.Time) domainimagetask.Attempt {
+	attempt := domainimagetask.Attempt{
+		Provider:       candidate.Provider,
+		AdapterType:    candidate.AdapterType,
+		AccountModelID: candidate.AccountModelID,
+		ModelAccountID: candidate.ModelAccountID,
+		ModelCode:      candidate.ModelCode,
+		Status:         status,
+		StartedAt:      &startedAt,
+		FinishedAt:     &finishedAt,
+	}
+	if err == nil {
+		return attempt
+	}
+	attempt.Error = err.Error()
+	attempt.ErrorMessage = err.Error()
+	if upstream, ok := provider.AsUpstreamError(err); ok {
+		attempt.ErrorCode = upstream.Code
+		attempt.ErrorMessage = defaultString(upstream.Message, err.Error())
+		attempt.ErrorDetail = map[string]any{
+			"provider":    string(upstream.Provider),
+			"http_status": upstream.HTTPStatus,
+			"code":        upstream.Code,
+			"type":        upstream.Type,
+			"message":     upstream.Message,
+			"request_id":  upstream.RequestID,
+			"action":      string(upstream.Action),
+			"family":      string(upstream.Family),
+		}
+	}
+	return attempt
 }
 
 func (s *Service) executeProviderRequest(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, taskType string, req provider.ImageRequest) (provider.ImageResponse, error) {
@@ -636,7 +873,7 @@ func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID strin
 }
 
 func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string) (provider.ImageResult, []byte, error) {
-	image, err := s.store.GetPublicImage(ctx, imageID)
+	image, err := s.store.GetPublicImage(ctx, imageID, 0)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
@@ -686,6 +923,42 @@ func (s *Service) DeleteByID(ctx context.Context, userID int64, taskID string) e
 		return errs.Internal("failed to delete image task")
 	}
 	return nil
+}
+
+func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, req domainimagetask.RetryRequest) (domainimagetask.Task, error) {
+	original, err := s.GetByID(ctx, userID, taskID)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	switch original.Status {
+	case domainimagetask.StatusFailed, domainimagetask.StatusPartialFailed, domainimagetask.StatusRejected:
+	default:
+		return domainimagetask.Task{}, errs.New(409, errs.CodeConflict, "only failed image tasks can be retried")
+	}
+	retryReq := domainimagetask.CreateRequest{
+		UserID:              userID,
+		APIKeyID:            original.APIKeyID,
+		SourceChannel:       defaultString(original.SourceChannel, "web"),
+		AbstractModel:       original.AbstractModel,
+		RouteModelCode:      original.RouteModelCode,
+		TaskType:            original.TaskType,
+		Prompt:              original.Prompt,
+		NegativePrompt:      original.NegativePrompt,
+		RequestedSize:       original.RequestedSize,
+		RequestedQuality:    original.RequestedQuality,
+		AspectRatio:         original.AspectRatio,
+		OutputImageCount:    original.OutputImageCount,
+		ReferenceImageCount: original.ReferenceImageCount,
+		ReferenceAssetIDs:   append([]string(nil), original.ReferenceAssetIDs...),
+		ReferenceStrength:   original.ReferenceStrength,
+		Seed:                original.Seed,
+		UserGroupCode:       req.UserGroupCode,
+		UserGroupCodes:      append([]string(nil), req.UserGroupCodes...),
+		UserGroupMultiplier: req.UserGroupMultiplier,
+		ResponseMode:        defaultString(original.ResponseMode, "async"),
+		SavePolicy:          defaultString(original.SavePolicy, "private"),
+	}
+	return s.CreateTask(ctx, retryReq)
 }
 
 func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID string) error {
@@ -782,8 +1055,8 @@ func (s *Service) ListPublicGallery(ctx context.Context, req domainimagetask.Gal
 	return page, nil
 }
 
-func (s *Service) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	image, err := s.store.GetPublicImage(ctx, imageID)
+func (s *Service) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	image, err := s.store.GetPublicImage(ctx, imageID, viewerUserID)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "gallery image not found")
@@ -887,6 +1160,10 @@ func (s *Service) persistImageResults(ctx context.Context, task domainimagetask.
 	for index, result := range results {
 		item := result
 		item.VisibilityStatus = defaultString(item.VisibilityStatus, "private")
+		if isDataURL(item.URL) {
+			item.B64JSON = item.URL
+			item.URL = ""
+		}
 		if strings.TrimSpace(item.URL) != "" {
 			mirrored, err := s.persistRemoteImageResult(ctx, task, index, item)
 			if err != nil {
@@ -906,6 +1183,10 @@ func (s *Service) persistImageResults(ctx context.Context, task domainimagetask.
 		persisted = append(persisted, local)
 	}
 	return persisted, nil
+}
+
+func isDataURL(value string) bool {
+	return strings.HasPrefix(strings.TrimSpace(value), "data:")
 }
 
 func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
@@ -1257,7 +1538,9 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		ID:                    taskID,
 		Status:                status,
 		AbstractModel:         defaultString(req.AbstractModel, req.RouteModelCode),
-		RouteModelCode:        req.RouteModelCode,
+		RouteModelCode:        defaultString(resolved.RouteModelCode, req.RouteModelCode),
+		RouteModelID:          resolved.RouteModelID,
+		RouteSnapshotVersion:  resolved.RouteSnapshotVersion,
 		TaskType:              req.TaskType,
 		Prompt:                req.Prompt,
 		NegativePrompt:        req.NegativePrompt,
