@@ -83,8 +83,8 @@ export const initialTasks: ImageTask[] = [
 ]
 
 export const initialKeys: ApiKey[] = [
-  { id: 'key_live', name: 'Production Gallery Bot', access_key: 'pk_live_4kL8m2z9X1', status: 'active', scopes: ['images:write', 'images:read', 'balance:read'], rpm_limit: 60, expires_at: null, created_at: '2026-05-19', last_used_at: '2026-05-21 13:12' },
-  { id: 'key_test', name: 'Local Playground', access_key: 'pk_test_m9R2p3B7', status: 'active', scopes: ['images:write', 'images:read'], rpm_limit: 20, expires_at: '2026-12-31', created_at: '2026-05-20', last_used_at: '2026-05-21 09:22' },
+  { id: 'key_live', name: 'Production Gallery Bot', access_key: 'pk_live_4kL8m2z9X1', status: 'active', scopes: ['images:write', 'images:read', 'balance:read'], total_quota_points: '500.00000', daily_quota_points: '60.00000', total_quota_used_points: '128.50000', daily_quota_used_points: '12.00000', rpm_limit: 60, expires_at: null, created_at: '2026-05-19', last_used_at: '2026-05-21 13:12' },
+  { id: 'key_test', name: 'Local Playground', access_key: 'pk_test_m9R2p3B7', status: 'active', scopes: ['images:write', 'images:read'], total_quota_points: null, daily_quota_points: '20.00000', total_quota_used_points: '3.00000', daily_quota_used_points: '1.00000', rpm_limit: 20, expires_at: '2026-12-31', created_at: '2026-05-20', last_used_at: '2026-05-21 09:22' },
 ]
 
 export const endpointDocs: EndpointDoc[] = [

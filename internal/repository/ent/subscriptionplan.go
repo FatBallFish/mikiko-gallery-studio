@@ -26,6 +26,10 @@ type SubscriptionPlan struct {
 	PlanCode string `json:"plan_code,omitempty"`
 	// PlanName holds the value of the "plan_name" field.
 	PlanName string `json:"plan_name,omitempty"`
+	// PlanType holds the value of the "plan_type" field.
+	PlanType string `json:"plan_type,omitempty"`
+	// PurchaseEnabled holds the value of the "purchase_enabled" field.
+	PurchaseEnabled bool `json:"purchase_enabled,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// PriceCny holds the value of the "price_cny" field.
@@ -54,9 +58,11 @@ func (*SubscriptionPlan) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case subscriptionplan.FieldMetadata:
 			values[i] = new([]byte)
+		case subscriptionplan.FieldPurchaseEnabled:
+			values[i] = new(sql.NullBool)
 		case subscriptionplan.FieldID, subscriptionplan.FieldDurationDays, subscriptionplan.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case subscriptionplan.FieldPlanCode, subscriptionplan.FieldPlanName, subscriptionplan.FieldStatus, subscriptionplan.FieldPriceCny, subscriptionplan.FieldPoints, subscriptionplan.FieldBonusPoints, subscriptionplan.FieldCurrency, subscriptionplan.FieldDescription:
+		case subscriptionplan.FieldPlanCode, subscriptionplan.FieldPlanName, subscriptionplan.FieldPlanType, subscriptionplan.FieldStatus, subscriptionplan.FieldPriceCny, subscriptionplan.FieldPoints, subscriptionplan.FieldBonusPoints, subscriptionplan.FieldCurrency, subscriptionplan.FieldDescription:
 			values[i] = new(sql.NullString)
 		case subscriptionplan.FieldCreatedAt, subscriptionplan.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -104,6 +110,18 @@ func (_m *SubscriptionPlan) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field plan_name", values[i])
 			} else if value.Valid {
 				_m.PlanName = value.String
+			}
+		case subscriptionplan.FieldPlanType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field plan_type", values[i])
+			} else if value.Valid {
+				_m.PlanType = value.String
+			}
+		case subscriptionplan.FieldPurchaseEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field purchase_enabled", values[i])
+			} else if value.Valid {
+				_m.PurchaseEnabled = value.Bool
 			}
 		case subscriptionplan.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -208,6 +226,12 @@ func (_m *SubscriptionPlan) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("plan_name=")
 	builder.WriteString(_m.PlanName)
+	builder.WriteString(", ")
+	builder.WriteString("plan_type=")
+	builder.WriteString(_m.PlanType)
+	builder.WriteString(", ")
+	builder.WriteString("purchase_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PurchaseEnabled))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)

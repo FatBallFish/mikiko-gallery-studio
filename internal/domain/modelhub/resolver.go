@@ -261,6 +261,8 @@ type ProviderCandidate struct {
 	InputCost              string
 	OutputCost             string
 	Currency               string
+	AccountExtra           map[string]any
+	ModelExtra             map[string]any
 	RouteSnapshotVersion   string
 }
 
@@ -344,6 +346,9 @@ type ModelRoutingSource interface {
 
 type ResolvedRequest struct {
 	ResolvedQualityBucket  string
+	RouteModelID           int64
+	RouteModelCode         string
+	RouteSnapshotVersion   string
 	Providers              []ProviderCandidate
 	MaxOutputImageCount    int
 	MaxReferenceImageCount int
@@ -411,7 +416,7 @@ func ResolveRouteQuality(routeModel RouteModelConfig, taskType, requestedQuality
 			return "", err
 		}
 		if !hasRoutePrice(routeModel.ID, taskType, quality, prices) {
-			return "", errs.New(409, errs.CodeConflict, "model pricing not found")
+			return "", errs.New(409, errs.CodeRouteModelPriceMissing, "model pricing not found")
 		}
 		return quality, nil
 	}
@@ -423,7 +428,7 @@ func ResolveRouteQuality(routeModel RouteModelConfig, taskType, requestedQuality
 		source = "first_configured_price"
 	}
 	if quality == "" {
-		return "", errs.New(409, errs.CodeConflict, "model pricing not found")
+		return "", errs.New(409, errs.CodeRouteModelPriceMissing, "model pricing not found")
 	}
 	slog.Warn("route model auto quality fell back to default bucket",
 		"route_model_id", routeModel.ID,
@@ -509,7 +514,7 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 			if !r.providerEnabledWithRouting(candidate.Provider, routing) {
 				continue
 			}
-			if candidate.HealthStatus != "" && !strings.EqualFold(candidate.HealthStatus, "healthy") && !strings.EqualFold(candidate.HealthStatus, "unknown") {
+			if !candidateHealthUsable(candidate.HealthStatus) {
 				continue
 			}
 			if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, req.TaskType) {
@@ -591,6 +596,15 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 	}, nil
 }
 
+func candidateHealthUsable(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "healthy", "unknown", "enabled":
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) (ResolvedRequest, error) {
 	routeCode := strings.ToLower(strings.TrimSpace(req.RouteModelCode))
 	routing, err := r.runtimeRouting(ctx)
@@ -605,28 +619,35 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		}
 	}
 	if routeModel.ID == 0 {
-		return ResolvedRequest{}, errs.New(404, errs.CodeNotFound, "route model not found")
+		return ResolvedRequest{}, errs.New(404, errs.CodeModelRouteNotFound, "route model not found")
 	}
 	if routeModel.Visibility == "hidden" {
-		return ResolvedRequest{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+		return ResolvedRequest{}, errs.New(403, errs.CodeModelRouteNotVisible, "route model is not visible")
 	}
 	matchedGroups := matchedActiveGroups(routing, req.UserGroupCodes, routeModel.ID)
 	if _, ok := effectiveMultiplier(routeModel, matchedGroups); !ok {
-		return ResolvedRequest{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+		return ResolvedRequest{}, errs.New(403, errs.CodeModelRouteNotVisible, "route model is not visible")
+	}
+	partial := ResolvedRequest{
+		RouteModelID:          routeModel.ID,
+		RouteModelCode:        routeModel.Code,
+		RouteSnapshotVersion:  routing.Version,
+		RuntimeRoutingApplied: true,
 	}
 	quality := strings.ToLower(strings.TrimSpace(req.RequestedQuality))
 	quality, err = ResolveRouteQuality(routeModel, req.TaskType, req.RequestedQuality, req.RequestedSize, r.cfg.Billing.AutoQualityDefaultByGroup, routing.Prices)
 	if err != nil {
-		return ResolvedRequest{}, err
+		return partial, err
 	}
+	partial.ResolvedQualityBucket = quality
 	if req.RequestedOutputImageCount <= 0 {
 		req.RequestedOutputImageCount = 1
 	}
 	if req.RequestedOutputImageCount > r.cfg.GenerationLimits.MaxImageCount {
-		return ResolvedRequest{}, errs.New(400, errs.CodeImageCapabilityMismatch, "requested output image count exceeds platform limit")
+		return partial, errs.New(400, errs.CodeImageCapabilityMismatch, "requested output image count exceeds platform limit")
 	}
 	if req.ReferenceImageCount > r.cfg.GenerationLimits.ReferenceImageMaxCount {
-		return ResolvedRequest{}, errs.New(400, errs.CodeImageReferenceExceeded, "reference image count exceeds platform limit")
+		return partial, errs.New(400, errs.CodeImageReferenceExceeded, "reference image count exceeds platform limit")
 	}
 	accountModels := make(map[int64]ProviderCandidate, len(routing.ProviderModels))
 	for _, candidate := range routing.ProviderModels {
@@ -656,7 +677,7 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
-		return ResolvedRequest{}, errs.New(409, errs.CodeConflict, "route model has no available candidate")
+		return partial, errs.New(409, errs.CodeModelRouteNoCandidate, "route model has no available candidate")
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].Priority != candidates[j].Priority {
@@ -669,6 +690,9 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 	})
 	return ResolvedRequest{
 		ResolvedQualityBucket:  quality,
+		RouteModelID:           routeModel.ID,
+		RouteModelCode:         routeModel.Code,
+		RouteSnapshotVersion:   routing.Version,
 		Providers:              candidates,
 		MaxOutputImageCount:    r.cfg.GenerationLimits.MaxImageCount,
 		MaxReferenceImageCount: r.cfg.GenerationLimits.ReferenceImageMaxCount,

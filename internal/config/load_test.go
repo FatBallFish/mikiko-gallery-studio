@@ -13,6 +13,8 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("REDIS_KEY_PREFIX", "test-prefix")
 	t.Setenv("OPENAI_API_KEY", "openai-test-key")
 	t.Setenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "api-key-secret-test-key")
+	t.Setenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "cashier-provider-config-test-key")
+	t.Setenv("PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "secure-config-test-key")
 	t.Setenv("SMTP_HOST", "smtp.example.com")
 	t.Setenv("SMTP_PORT", "587")
 	t.Setenv("SMTP_USERNAME", "mailer")
@@ -20,6 +22,7 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("SMTP_FROM", "Pic Gallery <noreply@example.com>")
 	t.Setenv("SMTP_STARTTLS", "true")
 	t.Setenv("SMTP_INSECURE_SKIP_VERIFY", "true")
+	t.Setenv("WORKER_MAX_CONCURRENT_TASKS", "12")
 
 	cfg, err := Load("../../configs/config.dev.yaml")
 	if err != nil {
@@ -41,14 +44,26 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	if cfg.Billing.PointsScale != 5 {
 		t.Fatalf("expected billing scale 5, got %d", cfg.Billing.PointsScale)
 	}
+	if cfg.Cashier.MaxPendingOrdersPerUser != 3 || cfg.Cashier.OrderTimeoutSeconds != 1800 {
+		t.Fatalf("expected cashier defaults from config, got %#v", cfg.Cashier)
+	}
 	if cfg.APIKey.SigningSecretEncryptionKey != "api-key-secret-test-key" {
 		t.Fatalf("expected API key signing secret env override, got %q", cfg.APIKey.SigningSecretEncryptionKey)
+	}
+	if cfg.Cashier.ProviderConfigEncryptionKey != "cashier-provider-config-test-key" {
+		t.Fatalf("expected cashier provider config env override, got %q", cfg.Cashier.ProviderConfigEncryptionKey)
+	}
+	if cfg.Security.SecureConfigEncryptionKey != "secure-config-test-key" {
+		t.Fatalf("expected secure config env override, got %q", cfg.Security.SecureConfigEncryptionKey)
 	}
 	if cfg.Auth.SMTP.Host != "smtp.example.com" || cfg.Auth.SMTP.Port != 587 || cfg.Auth.SMTP.Username != "mailer" || cfg.Auth.SMTP.Password != "secret" || cfg.Auth.SMTP.From != "Pic Gallery <noreply@example.com>" {
 		t.Fatalf("expected SMTP env overrides, got %#v", cfg.Auth.SMTP)
 	}
 	if !cfg.Auth.SMTP.StartTLS || !cfg.Auth.SMTP.InsecureSkipVerify {
 		t.Fatalf("expected SMTP bool env overrides, got %#v", cfg.Auth.SMTP)
+	}
+	if cfg.Worker.MaxConcurrentTasks != 12 {
+		t.Fatalf("expected worker max concurrency env override, got %d", cfg.Worker.MaxConcurrentTasks)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
@@ -22,6 +23,8 @@ import (
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+const adminModelTestTinyPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="
 
 func TestAdminModelManagementEndpoints(t *testing.T) {
 	cfg := adminConfigAPIConfig()
@@ -221,6 +224,111 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		if !bytes.Contains(auditRec.Body.Bytes(), []byte(action)) {
 			t.Fatalf("expected audit log action %q, got body=%s", action, auditRec.Body.String())
 		}
+	}
+}
+
+func TestAdminModelAccountTestImageUsesDirectAccountAndActualParams(t *testing.T) {
+	var upstreamReq struct {
+		Model   string `json:"model"`
+		Prompt  string `json:"prompt"`
+		Size    string `json:"size"`
+		Quality string `json:"quality"`
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/images/generations" {
+			t.Fatalf("unexpected upstream request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&upstreamReq); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("x-request-id", "req-admin-model-test")
+		_, _ = w.Write([]byte(`{"created":1770000100,"data":[{"b64_json":"` + adminModelTestTinyPNGBase64 + `"}]}`))
+	}))
+	defer upstream.Close()
+
+	cfg := adminConfigAPIConfig()
+	cfg.Storage.LocalRoot = t.TempDir()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-model-test-image?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	authSvc := authservice.NewServiceWithStore(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client))
+	adminStore := entstore.NewAdminAuthStore(client)
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-model@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	billingStore := entstore.NewBillingStore(client, 5)
+	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
+	modelAdminSvc := modeladminservice.NewServiceWithStore(entstore.NewModelAdminStore(client))
+	account, err := modelAdminSvc.CreateModelAccount(t.Context(), domainmodeladmin.ModelAccountWriteRequest{
+		Name:             "OpenAI Test",
+		AdapterType:      domainmodeladmin.AdapterTypeOpenAICompatible,
+		AuthType:         domainmodeladmin.AuthTypeAPIKey,
+		BaseURL:          upstream.URL,
+		Credentials:      map[string]string{"api_key": "test-key"},
+		Status:           domainmodeladmin.ModelAccountStatusEnabled,
+		ConcurrencyLimit: 1,
+		Extra:            map[string]any{"source_mode": "codex_responses"},
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	model, err := modelAdminSvc.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID:    account.ID,
+		ModelCode:    "gpt-image-2",
+		DisplayName:  "GPT Image 2",
+		TaskTypes:    []string{"text_to_image"},
+		Qualities:    []string{"1k", "2k", "4k"},
+		CostPerImage: "0.00000",
+		Currency:     "USD",
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccountModel: %v", err)
+	}
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, nil, nil, nil, nil, modelAdminSvc)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForModelTest(t, handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/test-image", bytes.NewBufferString(`{"model_id":`+jsonNumber(model.ID)+`,"prompt":"admin smoke image","source_mode":"codex_responses"}`))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected model test image 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			Status            string            `json:"status"`
+			ImageURL          string            `json:"image_url"`
+			Width             int               `json:"width"`
+			Height            int               `json:"height"`
+			ProviderRequestID string            `json:"provider_request_id"`
+			ActualParams      map[string]string `json:"actual_params"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if upstreamReq.Model != "gpt-image-2" || upstreamReq.Quality != "auto" || upstreamReq.Size != "1024x1024" {
+		t.Fatalf("unexpected upstream params %#v", upstreamReq)
+	}
+	if resp.Data.Status != "succeeded" || resp.Data.ProviderRequestID != "req-admin-model-test" || resp.Data.Width != 1 || resp.Data.Height != 1 {
+		t.Fatalf("unexpected response data %#v", resp.Data)
+	}
+	if resp.Data.ActualParams["quality"] != "auto" || resp.Data.ActualParams["size"] != "1024x1024" {
+		t.Fatalf("unexpected actual params %#v", resp.Data.ActualParams)
+	}
+	if resp.Data.ImageURL == "" || !bytes.Contains([]byte(resp.Data.ImageURL), []byte("/api/ops/admin/v1/image-reviews/")) {
+		t.Fatalf("expected admin preview image url, got %q", resp.Data.ImageURL)
 	}
 }
 

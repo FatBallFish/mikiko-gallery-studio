@@ -1,25 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AuditLog } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
+import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { adminButton, adminPage, adminSurface } from '../ui/classes'
+import {
+  auditActionOptions,
+  auditExportFilename,
+  auditRowsCSV,
+  auditSearchPlaceholder,
+  auditSearchText,
+  auditTimelineRow,
+} from './auditRows'
 
-const commonActions = [
-  'admin.login',
-  'admin.logout',
-  'user.create',
-  'user.delete',
-  'user.status_update',
-  'user.group_update',
-  'user.points_adjust',
-  'user.password_reset',
-  'user.limits_update',
-  'config.update',
-  'redeem.create',
-  'redeem.status_update',
-  'model_provider.create',
-  'provider_model.create',
-  'model_route.update',
-]
+const auditClasses = {
+  timeline: cn(adminSurface.card, 'grid gap-0 overflow-y-auto px-[18px] py-2'),
+  item: 'grid gap-2 border-t border-[var(--line)] py-3 first:border-t-0',
+  itemHead: 'flex flex-wrap items-center gap-2.5',
+  itemTitle: 'text-[var(--text)]',
+  itemDate: 'text-xs text-[var(--soft)]',
+  itemText: 'm-0 text-sm text-[var(--soft)]',
+  itemMeta: 'text-xs text-[var(--soft)]',
+  filterInput: 'min-w-60 max-[620px]:min-w-0 max-[620px]:w-full',
+}
 
 export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<AuditLog[]>([])
@@ -44,52 +47,68 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
     void load()
   }, [])
 
-  const actionOptions = useMemo(() => ['all', ...Array.from(new Set([...commonActions, ...rows.map((row) => row.action).filter(Boolean)]))], [rows])
+  const actionOptions = useMemo(() => auditActionOptions(rows), [rows])
   const visibleRows = useMemo(() => rows.filter((row) => {
     const matchesAction = actionFilter === 'all' || row.action === actionFilter
-    const haystack = `${row.actor} ${row.action} ${row.target} ${row.detail}`.toLowerCase()
+    const haystack = auditSearchText(row)
     return matchesAction && (!query || haystack.includes(query.toLowerCase()))
   }), [actionFilter, query, rows])
+
+  const exportVisibleRows = () => {
+    if (!visibleRows.length) {
+      onFeedback('没有可导出的审计日志', '放宽关键词或动作筛选后再导出。')
+      return
+    }
+    const blob = new Blob([`\uFEFF${auditRowsCSV(visibleRows)}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = auditExportFilename()
+    anchor.click()
+    URL.revokeObjectURL(url)
+    onFeedback('审计日志已导出', `${visibleRows.length} 行 CSV 已下载`)
+  }
 
   if (loading) return <LoadingBlock label="载入审计日志" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
 
   return (
-    <section className="page-stack">
+    <section className={adminPage.stack}>
       <PageHeader
         eyebrow="Audit"
         title="审计日志"
         detail="所有关键写操作都会追加审计行，便于回溯配置、价格、路由、审核与用户变更。"
-        actions={<button type="button" className="ghost" onClick={() => onFeedback('审计导出已生成', `${visibleRows.length} 行日志已准备下载`)}>导出日志</button>}
+        actions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={exportVisibleRows} disabled={!visibleRows.length}>导出日志</button>}
       />
-      <section className="pg-admin-card filter-band">
-        <form className="filter-row" onSubmit={(event) => event.preventDefault()}>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 actor / action / target" />
+      <section className={adminPage.filterBand}>
+        <form className={adminPage.filterRow} onSubmit={(event) => event.preventDefault()}>
+          <input className={auditClasses.filterInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={auditSearchPlaceholder} />
           <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
-            {actionOptions.map((action) => <option key={action} value={action}>{action === 'all' ? '全部动作' : action}</option>)}
+            {actionOptions.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}
           </select>
-          <button type="button" className="btn" onClick={() => void load()}>刷新</button>
+          <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => void load()}>刷新</button>
         </form>
       </section>
-      <section className="pg-admin-card timeline-surface">
+      <section className={auditClasses.timeline}>
         {!visibleRows.length ? <EmptyBlock title="没有匹配审计" detail="放宽关键词或动作筛选。" /> : visibleRows.map((row) => (
-          <article key={row.id} className="timeline-item">
-            <div><Badge tone={row.actor_type === 'system' ? 'neutral' : 'primary'}>{row.action || '-'}</Badge><strong>{row.target || '-'}</strong><span>{row.created_at}</span></div>
-            <p>{formatAuditDetail(row)}</p>
-            <small>{row.actor || '-'} · {row.result ?? 'success'} · audit_id {row.id}</small>
-          </article>
+          <AuditTimelineItem key={row.id} row={row} />
         ))}
       </section>
     </section>
   )
 }
 
-function formatAuditDetail(row: AuditLog) {
-  if (row.detail && row.detail !== row.result) return row.detail
-  const bits = [
-    row.actor_type ? `actor=${row.actor_type}:${row.actor_id ?? ''}` : '',
-    row.target_type ? `target=${row.target_type}:${row.target_id ?? ''}` : '',
-    row.ip_addr ? `ip=${row.ip_addr}` : '',
-  ].filter(Boolean)
-  return bits.join(' · ') || row.result || 'success'
+function AuditTimelineItem({ row }: { row: AuditLog }) {
+  const item = auditTimelineRow(row)
+  return (
+    <article className={auditClasses.item}>
+      <div className={auditClasses.itemHead}>
+        <Badge tone={item.actorTone}>{item.actionLabel}</Badge>
+        <strong className={auditClasses.itemTitle}>{item.targetLabel}</strong>
+        <span className={auditClasses.itemDate}>{item.createdAtLabel}</span>
+      </div>
+      <p className={auditClasses.itemText}>{item.detailText}</p>
+      <small className={auditClasses.itemMeta}>{item.actorLabel} · <Badge tone={item.result.tone}>{item.result.label}</Badge> · audit_id {item.raw.id}</small>
+    </article>
+  )
 }

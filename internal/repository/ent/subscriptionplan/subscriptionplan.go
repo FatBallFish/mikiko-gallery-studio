@@ -21,6 +21,10 @@ const (
 	FieldPlanCode = "plan_code"
 	// FieldPlanName holds the string denoting the plan_name field in the database.
 	FieldPlanName = "plan_name"
+	// FieldPlanType holds the string denoting the plan_type field in the database.
+	FieldPlanType = "plan_type"
+	// FieldPurchaseEnabled holds the string denoting the purchase_enabled field in the database.
+	FieldPurchaseEnabled = "purchase_enabled"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldPriceCny holds the string denoting the price_cny field in the database.
@@ -50,6 +54,8 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldPlanCode,
 	FieldPlanName,
+	FieldPlanType,
+	FieldPurchaseEnabled,
 	FieldStatus,
 	FieldPriceCny,
 	FieldPoints,
@@ -82,6 +88,12 @@ var (
 	PlanCodeValidator func(string) error
 	// PlanNameValidator is a validator for the "plan_name" field. It is called by the builders before save.
 	PlanNameValidator func(string) error
+	// DefaultPlanType holds the default value on creation for the "plan_type" field.
+	DefaultPlanType string
+	// PlanTypeValidator is a validator for the "plan_type" field. It is called by the builders before save.
+	PlanTypeValidator func(string) error
+	// DefaultPurchaseEnabled holds the default value on creation for the "purchase_enabled" field.
+	DefaultPurchaseEnabled bool
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
@@ -132,6 +144,16 @@ func ByPlanCode(opts ...sql.OrderTermOption) OrderOption {
 // ByPlanName orders the results by the plan_name field.
 func ByPlanName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlanName, opts...).ToFunc()
+}
+
+// ByPlanType orders the results by the plan_type field.
+func ByPlanType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPlanType, opts...).ToFunc()
+}
+
+// ByPurchaseEnabled orders the results by the purchase_enabled field.
+func ByPurchaseEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPurchaseEnabled, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

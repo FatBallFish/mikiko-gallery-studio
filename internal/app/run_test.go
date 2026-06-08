@@ -5,9 +5,34 @@ import (
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 )
+
+func TestDefaultAdminSeedRoleDefaultsToAdmin(t *testing.T) {
+	t.Setenv("PIC_GALLERY_ADMIN_ROLE", "")
+
+	if got := defaultAdminSeedRole(); got != domainadminauth.RoleAdmin {
+		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleAdmin)
+	}
+}
+
+func TestDefaultAdminSeedRoleAllowsExplicitSuperAdmin(t *testing.T) {
+	t.Setenv("PIC_GALLERY_ADMIN_ROLE", " super_admin ")
+
+	if got := defaultAdminSeedRole(); got != domainadminauth.RoleSuperAdmin {
+		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleSuperAdmin)
+	}
+}
+
+func TestDefaultAdminSeedRoleRejectsUnknownRole(t *testing.T) {
+	t.Setenv("PIC_GALLERY_ADMIN_ROLE", "ops_admin")
+
+	if got := defaultAdminSeedRole(); got != domainadminauth.RoleAdmin {
+		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleAdmin)
+	}
+}
 
 func TestRunWiresAPIKeySigningSecretEncryptionKey(t *testing.T) {
 	cfg := config.Config{
@@ -69,5 +94,34 @@ func TestRunAllowsDefaultAPIKeySigningSecretEncryptionKeyOutsideProd(t *testing.
 	}
 	if _, err := newRuntimeAPIKeyService(cfg, apikeyservice.NewMemoryStore()); err != nil {
 		t.Fatalf("expected local runtime API key service to allow default dev signing secret encryption key: %v", err)
+	}
+}
+
+func TestRunRejectsWeakSecureConfigEncryptionKeyInProd(t *testing.T) {
+	weakValues := []string{
+		"",
+		"secret",
+		"short-prod-key",
+		"example-secure-config-encryption-key",
+		"local-dev-secure-config-encryption-key",
+	}
+	for _, value := range weakValues {
+		cfg := config.Config{
+			App:      config.AppConfig{Env: "prod"},
+			Security: config.SecurityConfig{SecureConfigEncryptionKey: value},
+		}
+		if err := validateSecureConfigEncryptionKey(cfg); err == nil {
+			t.Fatalf("expected prod runtime to reject weak secure config encryption key %q", value)
+		}
+	}
+}
+
+func TestRunAllowsDefaultSecureConfigEncryptionKeyOutsideProd(t *testing.T) {
+	cfg := config.Config{
+		App:      config.AppConfig{Env: "local"},
+		Security: config.SecurityConfig{SecureConfigEncryptionKey: "local-dev-secure-config-encryption-key"},
+	}
+	if err := validateSecureConfigEncryptionKey(cfg); err != nil {
+		t.Fatalf("expected local runtime to allow default secure config encryption key: %v", err)
 	}
 }

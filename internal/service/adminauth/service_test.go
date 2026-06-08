@@ -46,6 +46,24 @@ func TestServiceLoginIssuesTokenWithRoleAndStatus(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreDefaultsAdminRoleToBuiltInAdmin(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+
+	admin, err := store.CreateAdmin(ctx, domainadminauth.AdminUser{
+		Email:        "default-role@example.com",
+		PasswordHash: HashPasswordForTest("password", "fixed-salt"),
+		Status:       "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+
+	if admin.Role != domainadminauth.RoleAdmin {
+		t.Fatalf("default admin role = %q, want %q", admin.Role, domainadminauth.RoleAdmin)
+	}
+}
+
 func TestServiceRejectsWrongPasswordAndDisabledAdmin(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()

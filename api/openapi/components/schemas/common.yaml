@@ -150,7 +150,55 @@ components:
           format: int64
         prompt:
           type: string
+          nullable: true
+          description: Full prompt. Present on authenticated detail responses; public list responses must use prompt_excerpt instead.
+        prompt_excerpt:
+          type: string
+          description: Redacted public prompt preview for list cards and search.
         abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        route_model_name:
+          type: string
+        task_type:
+          type: string
+        task_status:
+          type: string
+        quality:
+          type: string
+        aspect_ratio:
+          type: string
+        actual_points:
+          type: string
+        reference_asset_ids:
+          type: array
+          items:
+            type: string
+        reference_assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReferenceAsset'
+        url:
+          type: string
+        download_url:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        sha256:
+          type: string
+        object_key:
+          type: string
+        storage_driver:
+          type: string
+        image_group:
           type: string
         visibility_status:
           type: string
@@ -159,5 +207,159 @@ components:
         published_at:
           type: string
           format: date-time
+        author_name:
+          type: string
+        like_count:
+          type: integer
+        favorite_count:
+          type: integer
+        liked_by_viewer:
+          type: boolean
+        favorited_by_viewer:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
         image:
           $ref: '#/components/schemas/ImageResult'
+    PublicGalleryListImage:
+      type: object
+      required: [id, prompt, prompt_excerpt, width, height, visibility_status, like_count, favorite_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        prompt:
+          nullable: true
+          enum: [null]
+          description: Always null in public gallery list responses. Use the authenticated detail endpoint for the full prompt.
+        prompt_excerpt:
+          type: string
+          description: Redacted prompt preview for public list cards and search.
+        abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        route_model_name:
+          type: string
+        task_type:
+          type: string
+        task_status:
+          type: string
+        quality:
+          type: string
+        aspect_ratio:
+          type: string
+        url:
+          type: string
+        download_url:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        visibility_status:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        author_name:
+          type: string
+        like_count:
+          type: integer
+        favorite_count:
+          type: integer
+        liked_by_viewer:
+          type: boolean
+        favorited_by_viewer:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    PublicGalleryDetailImage:
+      type: object
+      required: [id, prompt, prompt_excerpt, width, height, visibility_status, like_count, favorite_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        prompt:
+          type: string
+          nullable: true
+          description: Full prompt. Present for authenticated public gallery detail responses.
+        prompt_excerpt:
+          type: string
+          description: Redacted prompt preview for public list cards and search.
+        abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        route_model_name:
+          type: string
+        task_type:
+          type: string
+        task_status:
+          type: string
+        quality:
+          type: string
+        aspect_ratio:
+          type: string
+        url:
+          type: string
+        download_url:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        visibility_status:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        author_name:
+          type: string
+        like_count:
+          type: integer
+        favorite_count:
+          type: integer
+        liked_by_viewer:
+          type: boolean
+        favorited_by_viewer:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    PublicGalleryListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PublicGalleryListImage'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+    PublicGalleryDetailResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicGalleryDetailImage'

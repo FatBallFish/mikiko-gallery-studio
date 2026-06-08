@@ -28,7 +28,7 @@ type Store interface {
 	ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
 	ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
 	ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error)
-	GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error)
+	GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error)
 	SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error)
 	DeleteByID(ctx context.Context, userID int64, taskID string) error
 	AcquireNextQueuedTask(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (domainimagetask.Task, error)
@@ -363,6 +363,15 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 				continue
 			}
 			image := s.decoratePublicImage(galleryImageFromMemoryTask(task, result), req.ViewerUserID)
+			if req.Query != "" && !publicGalleryQueryMatches(image, req.Query) {
+				continue
+			}
+			if req.RouteModelCode != "" && !publicGalleryRouteModelMatches(image, req.RouteModelCode) {
+				continue
+			}
+			if req.TaskType != "" && !strings.EqualFold(image.TaskType, req.TaskType) {
+				continue
+			}
 			if req.LikedOnly && !image.LikedByViewer {
 				continue
 			}
@@ -374,8 +383,8 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		if req.Sort == "hot" {
-			left := items[i].LikeCount*2 + items[i].FavoriteCount*3 + items[i].CommentCount
-			right := items[j].LikeCount*2 + items[j].FavoriteCount*3 + items[j].CommentCount
+			left := publicGalleryHotScore(items[i])
+			right := publicGalleryHotScore(items[j])
 			if left != right {
 				return left > right
 			}
@@ -385,7 +394,59 @@ func (s *MemoryStore) ListPublicGallery(_ context.Context, req domainimagetask.G
 	return sliceGalleryPage(items, page, pageSize), nil
 }
 
-func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+func publicGalleryRouteModelMatches(image domainimagetask.GalleryImage, routeModelCode string) bool {
+	routeModelCode = strings.TrimSpace(routeModelCode)
+	if routeModelCode == "" {
+		return true
+	}
+	return strings.EqualFold(image.RouteModelCode, routeModelCode) || (image.RouteModelCode == "" && strings.EqualFold(image.AbstractModel, routeModelCode))
+}
+
+func publicGalleryQueryMatches(image domainimagetask.GalleryImage, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	fields := []string{
+		image.ID,
+		image.PromptExcerpt,
+		publicGallerySearchExcerpt(image.Prompt, 24),
+		image.RouteModelCode,
+		image.AbstractModel,
+		image.TaskType,
+		image.AuthorName,
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(field)), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicGallerySearchExcerpt(prompt string, limit int) string {
+	prompt = strings.Join(strings.Fields(prompt), " ")
+	if limit <= 0 || prompt == "" {
+		return ""
+	}
+	runes := []rune(prompt)
+	if len(runes) <= limit {
+		visible := len(runes) / 2
+		if visible < 1 {
+			return "…"
+		}
+		if visible > limit-1 {
+			visible = limit - 1
+		}
+		return string(runes[:visible]) + "…"
+	}
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
+func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, task := range s.tasksByID {
@@ -394,7 +455,7 @@ func (s *MemoryStore) GetPublicImage(_ context.Context, imageID string) (domaini
 		}
 		for _, result := range task.Results {
 			if result.ID == imageID && defaultVisibilityStatus(result.VisibilityStatus) == domainimagetask.VisibilityApproved {
-				return s.decoratePublicImage(galleryImageFromMemoryTask(task, result), 0), nil
+				return s.decoratePublicImage(galleryImageFromMemoryTask(task, result), viewerUserID), nil
 			}
 		}
 	}
@@ -459,7 +520,6 @@ func (s *MemoryStore) decoratePublicImage(image domainimagetask.GalleryImage, vi
 	if stats != nil {
 		image.LikeCount = stats.likes
 		image.FavoriteCount = stats.favorites
-		image.CommentCount = stats.comments
 	}
 	image.AuthorName = fmt.Sprintf("user-%d", image.UserID)
 	if viewerUserID > 0 {
@@ -469,6 +529,10 @@ func (s *MemoryStore) decoratePublicImage(image domainimagetask.GalleryImage, vi
 		}
 	}
 	return image
+}
+
+func publicGalleryHotScore(image domainimagetask.GalleryImage) int {
+	return image.LikeCount*2 + image.FavoriteCount*3
 }
 
 func (s *MemoryStore) DeleteByID(_ context.Context, userID int64, taskID string) error {

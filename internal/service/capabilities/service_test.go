@@ -18,6 +18,7 @@ func TestCapabilitiesExposeConfiguredModelGroups(t *testing.T) {
 		GenerationLimits: config.GenerationLimitsConfig{
 			MaxImageCount:          5,
 			ReferenceImageMaxCount: 4,
+			ReferenceImageMaxMB:    12,
 		},
 		Providers: config.ProvidersConfig{
 			OpenAI: config.ProviderConfig{Enabled: true},
@@ -48,5 +49,8 @@ func TestCapabilitiesExposeConfiguredModelGroups(t *testing.T) {
 	}
 	if len(resp.Items[0].TaskTypes) != 2 {
 		t.Fatalf("expected configured task types, got %#v", resp.Items[0].TaskTypes)
+	}
+	if resp.ReferenceImageMaxMB != 12 || resp.ReferenceImageMaxBytes != 12*1024*1024 {
+		t.Fatalf("expected reference image upload limits, got mb=%d bytes=%d", resp.ReferenceImageMaxMB, resp.ReferenceImageMaxBytes)
 	}
 }

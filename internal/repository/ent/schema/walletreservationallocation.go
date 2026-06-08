@@ -32,5 +32,6 @@ func (WalletReservationAllocation) Indexes() []ent.Index {
 		index.Fields("task_id"),
 		index.Fields("task_id", "reservation_cycle"),
 		index.Fields("status"),
+		index.Fields("wallet_grant_id", "task_id", "reservation_cycle").Unique(),
 	}
 }

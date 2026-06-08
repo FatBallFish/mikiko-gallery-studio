@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/pic-gallery-api ./cmd/api
+RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/pic-gallery-api ./cmd/api
 
 FROM alpine:3.22
 WORKDIR /app
@@ -19,6 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
 COPY --from=build /out/pic-gallery-api /usr/local/bin/pic-gallery-api
 COPY configs ./configs
+COPY api/openapi ./api/openapi
 USER picgallery
 EXPOSE 8080
 ENV APP_CONFIG_PATH=configs/config.example.yaml \

@@ -72,6 +72,14 @@ func (s *Service) ListModelAccountModels(ctx context.Context, req domainmodeladm
 	return s.store.ListModelAccountModels(ctx, req)
 }
 
+func (s *Service) GetModelAccountModel(ctx context.Context, accountModelID int64) (domainmodeladmin.ModelAccountModel, error) {
+	if accountModelID <= 0 {
+		return domainmodeladmin.ModelAccountModel{}, errs.BadRequest("invalid account_model_id")
+	}
+	item, err := s.store.GetModelAccountModel(ctx, accountModelID)
+	return item, normalizeStoreError(err, "model account model not found")
+}
+
 func (s *Service) CreateModelAccountModel(ctx context.Context, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error) {
 	normalized, err := normalizeModelAccountModelWrite(req)
 	if err != nil {

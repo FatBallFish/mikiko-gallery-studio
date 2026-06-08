@@ -1,24 +1,47 @@
 import type {
   AdminLoginResult,
+  AdminDashboard,
   AdminMetric,
+  AdminPermission,
   AdminSession,
   AdminUser,
   AdminUserCreateRequest,
   AdminUserDetail,
   AuditLog,
   CallRecord,
+  CashierCustomAmountConfig,
+  CashierOverview,
+  CashierPlan,
+  ChargebackPaymentOrderRequest,
+  ClosePaymentOrderRequest,
+  CompletePaymentOrderRequest,
   ConfigItem,
   ConfigTab,
+  LedgerEntry,
   ModelProvider,
   ModelRoute,
   ModelAccount,
   ModelAccountModel,
   ModelAccountModelWriteRequest,
+  ModelAccountTestImageRequest,
+  ModelAccountTestImageResult,
   ModelAccountWriteRequest,
   PageResult,
   ProviderHealth,
   ProviderModel,
+  PaymentProviderInstance,
+  PaymentProviderInstanceWriteRequest,
+  PaymentOrder,
+  PaymentOrderChargebackResponse,
+  PaymentOrderSyncResponse,
+  PaymentVisibleMethod,
+  PaymentWebhookEvent,
+  ReadinessReport,
   RedeemCode,
+  RedeemCodeBatchCreateRequest,
+  RedeemCodeBatchCreateResult,
+  RedeemCodeExportRequest,
+  RedeemCodeExportResult,
   ReviewItem,
   RouteModel,
   RouteModelCandidate,
@@ -26,6 +49,10 @@ import type {
   RouteModelPrice,
   RouteModelPriceWriteRequest,
   RouteModelWriteRequest,
+  RefundPaymentOrderRequest,
+  SMTPConfigView,
+  SMTPConfigWriteRequest,
+  SMTPTestResponse,
   UserGroup,
   UserGroupWriteRequest,
 } from './api-types'
@@ -40,18 +67,21 @@ export const adminApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
   login: async (email: string, password: string): Promise<AdminSession> => {
     const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.login, { method: 'POST', body: { email, password }, auth: false })
-    return { token: result.access_token, admin_name: result.email || `Admin ${result.admin_id}`, role: result.role, email: result.email, admin_id: result.admin_id }
+    const permissions = (result as AdminLoginResult & { permissions?: AdminPermission[] }).permissions
+    return { token: result.access_token, admin_name: result.email || `Admin ${result.admin_id}`, role: result.role, email: result.email, admin_id: result.admin_id, permissions }
   },
   logout: () => sharedApiClient.request<void>(API_PATHS.ops.logout, { method: 'POST' }),
-  dashboard: async () => {
+  dashboard: async (): Promise<AdminDashboard> => {
     const raw: any = await sharedApiClient.request(API_PATHS.ops.dashboard)
     return {
+      operations: toDashboardOperations(raw.operations),
       metrics: (raw.metrics ?? []).map(toMetric),
       providers: (raw.providers ?? []).map(toProviderHealth),
       queue: raw.queue ?? [],
       audit: (raw.audit ?? []).map(toAudit),
     }
   },
+  getReadiness: async () => toReadinessReport(await sharedApiClient.request(API_PATHS.ops.readiness)),
   listConfig: async () => {
     const tabs = (await sharedApiClient.request<{ items: any[] }>(API_PATHS.ops.configTabs)).items ?? []
     return tabs.flatMap(toConfigItems)
@@ -63,8 +93,9 @@ export const adminApi = {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.users, { query: { query, page, page_size } }))
     return result.items.map(toAdminUser)
   },
-  listUsersPage: async (query = '', page = 1, page_size = 20): Promise<PageResult<AdminUser>> => {
-    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.users, { query: { query, page, page_size } }))
+  listUsersPage: async (query = '', page = 1, page_size = 20, filters: Record<string, string | number | undefined> = {}): Promise<PageResult<AdminUser>> => {
+    const params = { ...filters, query, page, page_size }
+    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.users, { query: params }))
     return { ...result, items: result.items.map(toAdminUser) }
   },
   createUser: async (input: AdminUserCreateRequest) => toAdminUser(await sharedApiClient.request(API_PATHS.ops.users, { method: 'POST', body: input })),
@@ -82,8 +113,8 @@ export const adminApi = {
   assignUserGroups: (user_id: string | number, group_ids: Array<string | number>) =>
     sharedApiClient.request(API_PATHS.ops.userGroupAssign, { method: 'PUT', pathParams: { user_id }, body: { group_ids: normalizeGroupIds(group_ids) } }),
   listUserGroups: async () => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.userGroups))).items.map(toUserGroup),
-  createUserGroup: async (group: UserGroupWriteRequest) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroups, { method: 'POST', body: group })),
-  updateUserGroup: async (group_id: string | number, group: Partial<UserGroupWriteRequest>) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroupDetail, { method: 'PUT', pathParams: { group_id }, body: group })),
+  createUserGroup: async (group: UserGroupWriteRequest) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroups, { method: 'POST', body: toUserGroupPayload(group) })),
+  updateUserGroup: async (group_id: string | number, group: Partial<UserGroupWriteRequest>) => toUserGroup(await sharedApiClient.request(API_PATHS.ops.userGroupDetail, { method: 'PUT', pathParams: { group_id }, body: toUserGroupPayload(group) })),
   deleteUserGroup: (group_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.userGroupDetail, { method: 'DELETE', pathParams: { group_id } }),
   listAudit: async (query: Record<string, string | number | undefined> = {}) => {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.auditLogs, { query }))
@@ -100,10 +131,43 @@ export const adminApi = {
   },
   listRedeemCodes: async (query: Record<string, string | number | undefined> = {}) => normalizePage<RedeemCode>(await sharedApiClient.request(API_PATHS.ops.redeemCodes, { query })),
   createRedeemCode: (input: Partial<RedeemCode>) => sharedApiClient.request<RedeemCode>(API_PATHS.ops.redeemCodes, { method: 'POST', body: input }),
-  batchCreateRedeemCodes: (input: Record<string, unknown>) => sharedApiClient.request(API_PATHS.ops.redeemCodesBatchCreate, { method: 'POST', body: input }),
+  batchCreateRedeemCodes: (input: RedeemCodeBatchCreateRequest) => sharedApiClient.request<RedeemCodeBatchCreateResult>(API_PATHS.ops.redeemCodesBatchCreate, { method: 'POST', body: input }),
+  exportRedeemCodes: (input: RedeemCodeExportRequest) => sharedApiClient.request<RedeemCodeExportResult>(API_PATHS.ops.redeemCodesExport, { method: 'POST', body: input }),
   updateRedeemCodeStatus: (code_id: string | number, status: string) => sharedApiClient.request<RedeemCode>(API_PATHS.ops.redeemCodeStatus, { method: 'POST', pathParams: { code_id }, body: { status } }),
-  listRedeemCodeRedemptions: (code_id: string | number, page = 1, page_size = 20) => sharedApiClient.request(API_PATHS.ops.redeemCodeRedemptions, { pathParams: { code_id }, query: { page, page_size } }),
+  listRedeemCodeRedemptions: async (code_id: string | number, page = 1, page_size = 20) => normalizePage<LedgerEntry>(await sharedApiClient.request(API_PATHS.ops.redeemCodeRedemptions, { pathParams: { code_id }, query: { page, page_size } })),
   listCallRecords: async (query: Record<string, string | number | undefined> = {}) => normalizePage<CallRecord>(await sharedApiClient.request(API_PATHS.ops.callRecords, { query })),
+  getCashierOverview: () => sharedApiClient.request<CashierOverview>(API_PATHS.ops.cashierOverview),
+  listCashierPlans: async (query: Record<string, string | number | boolean | undefined> = {}) => normalizePage<CashierPlan>(await sharedApiClient.request(API_PATHS.ops.cashierPlans, { query })),
+  createCashierPlan: (input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlans, { method: 'POST', body: input }),
+  updateCashierPlan: (plan_id: string | number, input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'PUT', pathParams: { plan_id }, body: input }),
+  deleteCashierPlan: (plan_id: string | number) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'DELETE', pathParams: { plan_id } }),
+  getCashierCustomAmountConfig: () => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig),
+  updateCashierCustomAmountConfig: (input: CashierCustomAmountConfig) => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig, { method: 'PUT', body: input }),
+  listPaymentVisibleMethods: async () => (await sharedApiClient.request<{ items: PaymentVisibleMethod[] }>(API_PATHS.ops.paymentVisibleMethods)).items ?? [],
+  updatePaymentVisibleMethods: (items: PaymentVisibleMethod[]) => sharedApiClient.request<{ items: PaymentVisibleMethod[] }>(API_PATHS.ops.paymentVisibleMethods, { method: 'PUT', body: { items } }),
+  listPaymentProviderInstances: async (query: Record<string, string | number | boolean | undefined> = {}) => normalizePage<PaymentProviderInstance>(await sharedApiClient.request(API_PATHS.ops.paymentProviderInstances, { query })),
+  createPaymentProviderInstance: (input: PaymentProviderInstanceWriteRequest) => sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstances, { method: 'POST', body: input }),
+  updatePaymentProviderInstance: (instance_id: string | number, input: Partial<PaymentProviderInstanceWriteRequest>) =>
+    sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstanceDetail, { method: 'PUT', pathParams: { instance_id }, body: input }),
+  deletePaymentProviderInstance: (instance_id: string | number) =>
+    sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstanceDetail, { method: 'DELETE', pathParams: { instance_id } }),
+  getSMTPConfig: () => sharedApiClient.request<SMTPConfigView>(API_PATHS.ops.securitySMTP),
+  updateSMTPConfig: (input: SMTPConfigWriteRequest) => sharedApiClient.request<SMTPConfigView>(API_PATHS.ops.securitySMTP, { method: 'PUT', body: input }),
+  testSMTPConfig: (email: string, scene = 'smtp_test') => sharedApiClient.request<SMTPTestResponse>(API_PATHS.ops.securitySMTPTest, { method: 'POST', body: { email, scene } }),
+  listPaymentOrders: async (query: Record<string, string | number | undefined> = {}) => normalizePage<PaymentOrder>(await sharedApiClient.request(API_PATHS.ops.paymentOrders, { query })),
+  getPaymentOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderDetail, { pathParams: { order_id } }),
+  completePaymentOrder: (order_id: string | number, input: CompletePaymentOrderRequest) =>
+    sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderComplete, { method: 'POST', pathParams: { order_id }, body: input }),
+  closePaymentOrder: (order_id: string | number, input: ClosePaymentOrderRequest = {}) =>
+    sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderClose, { method: 'POST', pathParams: { order_id }, body: input }),
+  refundPaymentOrder: (order_id: string | number, input: RefundPaymentOrderRequest) =>
+    sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderRefund, { method: 'POST', pathParams: { order_id }, body: input }),
+  chargebackPaymentOrder: (order_id: string | number, input: ChargebackPaymentOrderRequest, idempotencyKey: string) =>
+    sharedApiClient.request<PaymentOrderChargebackResponse>(API_PATHS.ops.paymentOrderChargeback, { method: 'POST', pathParams: { order_id }, headers: { 'Idempotency-Key': idempotencyKey }, body: input }),
+  syncPaymentOrder: (order_id: string | number) =>
+    sharedApiClient.request<PaymentOrderSyncResponse>(API_PATHS.ops.paymentOrderSync, { method: 'POST', pathParams: { order_id } }),
+  listPaymentWebhookEvents: async (query: Record<string, string | number | undefined> = {}) => normalizePage<PaymentWebhookEvent>(await sharedApiClient.request(API_PATHS.ops.paymentWebhookEvents, { query })),
+  retryPaymentWebhookEvent: (event_id: string | number) => sharedApiClient.request<PaymentWebhookEvent>(API_PATHS.ops.paymentWebhookEventRetry, { method: 'POST', pathParams: { event_id } }),
   listModelProviders: async (query: Record<string, string | number | boolean | undefined> = {}) => normalizePage<ModelProvider>(await sharedApiClient.request(API_PATHS.ops.modelProviders, { query })),
   createModelProvider: (input: Partial<ModelProvider>) => sharedApiClient.request<ModelProvider>(API_PATHS.ops.modelProviders, { method: 'POST', body: input }),
   updateModelProvider: (provider_code: string, input: Partial<ModelProvider>) => sharedApiClient.request<ModelProvider>(API_PATHS.ops.modelProviderDetail, { method: 'PUT', pathParams: { provider_code }, body: input }),
@@ -124,6 +188,9 @@ export const adminApi = {
   createModelAccountModel: async (account_id: string | number, input: ModelAccountModelWriteRequest) => toModelAccountModel(await sharedApiClient.request(API_PATHS.ops.modelAccountModels, { method: 'POST', pathParams: { account_id }, body: input }), account_id),
   updateModelAccountModel: async (account_id: string | number, model_id: string | number, input: Partial<ModelAccountModelWriteRequest>) => toModelAccountModel(await sharedApiClient.request(API_PATHS.ops.modelAccountModelDetail, { method: 'PUT', pathParams: { account_id, model_id }, body: input }), account_id),
   deleteModelAccountModel: (account_id: string | number, model_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.modelAccountModelDetail, { method: 'DELETE', pathParams: { account_id, model_id } }),
+  testModelAccountImage: (account_id: string | number, input: ModelAccountTestImageRequest) =>
+    sharedApiClient.request<ModelAccountTestImageResult>(API_PATHS.ops.modelAccountTestImage, { method: 'POST', pathParams: { account_id }, body: input }),
+  modelAccountTestImageUrl: (path: string, accessToken?: string | null) => adminAssetUrl(path, accessToken),
   listRouteModels: async (query: Record<string, string | number | boolean | undefined> = {}) => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.routeModels, { query }))).items.map(toRouteModel),
   createRouteModel: async (input: RouteModelWriteRequest) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModels, { method: 'POST', body: input })),
   updateRouteModel: async (route_model_id: string | number, input: Partial<RouteModelWriteRequest>) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModelDetail, { method: 'PUT', pathParams: { route_model_id }, body: input })),
@@ -149,6 +216,25 @@ function toMetric(raw: any): AdminMetric {
   return { label: raw.label ?? raw.key ?? 'Metric', value: String(raw.value ?? ''), trend: raw.trend ?? raw.detail ?? '', tone: raw.tone ?? 'neutral', key: raw.key, detail: raw.detail }
 }
 
+function toDashboardOperations(raw: any) {
+  return {
+    today_order_count: Number(raw?.today_order_count ?? 0),
+    payment_success_rate: raw?.payment_success_rate ?? '0.00%',
+    failed_webhook_count: Number(raw?.failed_webhook_count ?? 0),
+    refund_compensation_failed_count: Number(raw?.refund_compensation_failed_count ?? 0),
+    refund_compensation_oldest_failed_at: raw?.refund_compensation_oldest_failed_at ?? null,
+    mock_enabled: Boolean(raw?.mock_enabled),
+    signup_trial_granted_user_count: Number(raw?.signup_trial_granted_user_count ?? 0),
+    trial_expiring_user_count: Number(raw?.trial_expiring_user_count ?? 0),
+    preflight_failure_count: Number(raw?.preflight_failure_count ?? 0),
+    preflight_failures_by_error_code: raw?.preflight_failures_by_error_code ?? {},
+    public_gallery_list_views: Number(raw?.public_gallery_list_views ?? 0),
+    public_gallery_detail_login_blocks: Number(raw?.public_gallery_detail_login_blocks ?? 0),
+    enabled_payment_methods: Array.isArray(raw?.enabled_payment_methods) ? raw.enabled_payment_methods : [],
+    generated_at: raw?.generated_at ?? new Date(0).toISOString(),
+  }
+}
+
 function toProviderHealth(raw: any): ProviderHealth {
   const status = raw.status ?? raw.health_status ?? (raw.enabled === false ? 'down' : 'healthy')
   return {
@@ -158,6 +244,28 @@ function toProviderHealth(raw: any): ProviderHealth {
     latency_ms: Number(raw.latency_ms ?? 0),
     error_rate: raw.error_rate ?? '0%',
     note: raw.note ?? raw.health_status ?? (raw.enabled ? 'enabled' : 'disabled'),
+  }
+}
+
+function toReadinessReport(raw: any): ReadinessReport {
+  const checks = Array.isArray(raw.checks) ? raw.checks : Array.isArray(raw.items) ? raw.items : []
+  const normalizedChecks = checks.map((item: any) => ({
+    ...item,
+    detail: item.detail ?? item.summary ?? '',
+    summary: item.summary ?? item.detail ?? '',
+    fix_route: item.fix_route ?? item.action_route,
+    fix_action: item.fix_action ?? item.action_label,
+    action_route: item.action_route ?? item.fix_route,
+    action_label: item.action_label ?? item.fix_action,
+  }))
+  return {
+    ...raw,
+    status: raw.status ?? raw.overall_status ?? 'warn',
+    overall_status: raw.overall_status ?? raw.status ?? 'warn',
+    generated_at: raw.generated_at ?? new Date().toISOString(),
+    summary: raw.summary,
+    checks: normalizedChecks,
+    items: normalizedChecks,
   }
 }
 
@@ -218,6 +326,18 @@ function toUserGroup(raw: any): UserGroup {
     description: raw.description ?? null,
     created_at: raw.created_at ?? '',
     updated_at: raw.updated_at ?? '',
+  }
+}
+
+function toUserGroupPayload(group: Partial<UserGroupWriteRequest>) {
+  return {
+    group_code: group.code,
+    group_name: group.name,
+    multiplier: group.multiplier,
+    status: group.status,
+    sort_order: group.sort_order,
+    is_default: group.is_default,
+    description: group.description,
   }
 }
 
@@ -317,14 +437,21 @@ function toRouteModelPrice(raw: any): RouteModelPrice {
   }
 }
 
-function toAdminUserDetail(raw: AdminUserDetail | any): AdminUser {
+function toAdminUserDetail(raw: AdminUserDetail | any): AdminUserDetail {
   if (raw?.user) {
-    return toAdminUser({
-      ...raw.user,
-      balance: raw.balance?.available_points ?? raw.user.balance,
-    })
+    return {
+      ...raw,
+      user: toAdminUser({
+        ...raw.user,
+        balance: raw.balance?.available_points ?? raw.user.balance,
+      }),
+      recent_ledger: raw.recent_ledger ?? [],
+      recent_orders: raw.recent_orders ?? [],
+      recent_tasks: raw.recent_tasks ?? [],
+      api_keys: raw.api_keys ?? [],
+    }
   }
-  return toAdminUser(raw)
+  return { user: toAdminUser(raw), balance: raw.balance, recent_ledger: raw.recent_ledger ?? [], recent_orders: raw.recent_orders ?? [], recent_tasks: raw.recent_tasks ?? [], api_keys: raw.api_keys ?? [] }
 }
 
 function toAudit(raw: any): AuditLog {

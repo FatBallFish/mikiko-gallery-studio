@@ -159,6 +159,76 @@ func (_c *PointLedgerCreate) SetNillableFrozenAfter(v *string) *PointLedgerCreat
 	return _c
 }
 
+// SetBalanceBucket sets the "balance_bucket" field.
+func (_c *PointLedgerCreate) SetBalanceBucket(v string) *PointLedgerCreate {
+	_c.mutation.SetBalanceBucket(v)
+	return _c
+}
+
+// SetNillableBalanceBucket sets the "balance_bucket" field if the given value is not nil.
+func (_c *PointLedgerCreate) SetNillableBalanceBucket(v *string) *PointLedgerCreate {
+	if v != nil {
+		_c.SetBalanceBucket(*v)
+	}
+	return _c
+}
+
+// SetSourceType sets the "source_type" field.
+func (_c *PointLedgerCreate) SetSourceType(v string) *PointLedgerCreate {
+	_c.mutation.SetSourceType(v)
+	return _c
+}
+
+// SetNillableSourceType sets the "source_type" field if the given value is not nil.
+func (_c *PointLedgerCreate) SetNillableSourceType(v *string) *PointLedgerCreate {
+	if v != nil {
+		_c.SetSourceType(*v)
+	}
+	return _c
+}
+
+// SetSourceID sets the "source_id" field.
+func (_c *PointLedgerCreate) SetSourceID(v int64) *PointLedgerCreate {
+	_c.mutation.SetSourceID(v)
+	return _c
+}
+
+// SetNillableSourceID sets the "source_id" field if the given value is not nil.
+func (_c *PointLedgerCreate) SetNillableSourceID(v *int64) *PointLedgerCreate {
+	if v != nil {
+		_c.SetSourceID(*v)
+	}
+	return _c
+}
+
+// SetBucketBalanceAfter sets the "bucket_balance_after" field.
+func (_c *PointLedgerCreate) SetBucketBalanceAfter(v string) *PointLedgerCreate {
+	_c.mutation.SetBucketBalanceAfter(v)
+	return _c
+}
+
+// SetNillableBucketBalanceAfter sets the "bucket_balance_after" field if the given value is not nil.
+func (_c *PointLedgerCreate) SetNillableBucketBalanceAfter(v *string) *PointLedgerCreate {
+	if v != nil {
+		_c.SetBucketBalanceAfter(*v)
+	}
+	return _c
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (_c *PointLedgerCreate) SetExpiresAt(v time.Time) *PointLedgerCreate {
+	_c.mutation.SetExpiresAt(v)
+	return _c
+}
+
+// SetNillableExpiresAt sets the "expires_at" field if the given value is not nil.
+func (_c *PointLedgerCreate) SetNillableExpiresAt(v *time.Time) *PointLedgerCreate {
+	if v != nil {
+		_c.SetExpiresAt(*v)
+	}
+	return _c
+}
+
 // SetReason sets the "reason" field.
 func (_c *PointLedgerCreate) SetReason(v string) *PointLedgerCreate {
 	_c.mutation.SetReason(v)
@@ -256,6 +326,18 @@ func (_c *PointLedgerCreate) defaults() {
 		v := pointledger.DefaultFrozenAfter
 		_c.mutation.SetFrozenAfter(v)
 	}
+	if _, ok := _c.mutation.BalanceBucket(); !ok {
+		v := pointledger.DefaultBalanceBucket
+		_c.mutation.SetBalanceBucket(v)
+	}
+	if _, ok := _c.mutation.SourceType(); !ok {
+		v := pointledger.DefaultSourceType
+		_c.mutation.SetSourceType(v)
+	}
+	if _, ok := _c.mutation.BucketBalanceAfter(); !ok {
+		v := pointledger.DefaultBucketBalanceAfter
+		_c.mutation.SetBucketBalanceAfter(v)
+	}
 	if _, ok := _c.mutation.Reason(); !ok {
 		v := pointledger.DefaultReason
 		_c.mutation.SetReason(v)
@@ -289,6 +371,25 @@ func (_c *PointLedgerCreate) check() error {
 	}
 	if _, ok := _c.mutation.FrozenAfter(); !ok {
 		return &ValidationError{Name: "frozen_after", err: errors.New(`ent: missing required field "PointLedger.frozen_after"`)}
+	}
+	if _, ok := _c.mutation.BalanceBucket(); !ok {
+		return &ValidationError{Name: "balance_bucket", err: errors.New(`ent: missing required field "PointLedger.balance_bucket"`)}
+	}
+	if v, ok := _c.mutation.BalanceBucket(); ok {
+		if err := pointledger.BalanceBucketValidator(v); err != nil {
+			return &ValidationError{Name: "balance_bucket", err: fmt.Errorf(`ent: validator failed for field "PointLedger.balance_bucket": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.SourceType(); !ok {
+		return &ValidationError{Name: "source_type", err: errors.New(`ent: missing required field "PointLedger.source_type"`)}
+	}
+	if v, ok := _c.mutation.SourceType(); ok {
+		if err := pointledger.SourceTypeValidator(v); err != nil {
+			return &ValidationError{Name: "source_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.source_type": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.BucketBalanceAfter(); !ok {
+		return &ValidationError{Name: "bucket_balance_after", err: errors.New(`ent: missing required field "PointLedger.bucket_balance_after"`)}
 	}
 	if _, ok := _c.mutation.Reason(); !ok {
 		return &ValidationError{Name: "reason", err: errors.New(`ent: missing required field "PointLedger.reason"`)}
@@ -372,6 +473,26 @@ func (_c *PointLedgerCreate) createSpec() (*PointLedger, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.FrozenAfter(); ok {
 		_spec.SetField(pointledger.FieldFrozenAfter, field.TypeString, value)
 		_node.FrozenAfter = value
+	}
+	if value, ok := _c.mutation.BalanceBucket(); ok {
+		_spec.SetField(pointledger.FieldBalanceBucket, field.TypeString, value)
+		_node.BalanceBucket = value
+	}
+	if value, ok := _c.mutation.SourceType(); ok {
+		_spec.SetField(pointledger.FieldSourceType, field.TypeString, value)
+		_node.SourceType = value
+	}
+	if value, ok := _c.mutation.SourceID(); ok {
+		_spec.SetField(pointledger.FieldSourceID, field.TypeInt64, value)
+		_node.SourceID = &value
+	}
+	if value, ok := _c.mutation.BucketBalanceAfter(); ok {
+		_spec.SetField(pointledger.FieldBucketBalanceAfter, field.TypeString, value)
+		_node.BucketBalanceAfter = value
+	}
+	if value, ok := _c.mutation.ExpiresAt(); ok {
+		_spec.SetField(pointledger.FieldExpiresAt, field.TypeTime, value)
+		_node.ExpiresAt = &value
 	}
 	if value, ok := _c.mutation.Reason(); ok {
 		_spec.SetField(pointledger.FieldReason, field.TypeString, value)

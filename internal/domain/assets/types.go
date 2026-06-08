@@ -14,6 +14,8 @@ type ReferenceAsset struct {
 	SHA256        string    `json:"sha256"`
 	StorageDriver string    `json:"storage_driver"`
 	ObjectKey     string    `json:"object_key"`
+	PreviewURL    string    `json:"preview_url,omitempty"`
+	DownloadURL   string    `json:"download_url,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 

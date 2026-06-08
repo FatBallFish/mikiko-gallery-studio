@@ -13,7 +13,7 @@ func (AdminUser) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("email").MaxLen(255).NotEmpty(),
 		field.String("password_hash").MaxLen(255).NotEmpty(),
-		field.String("role").MaxLen(32).Default("ops_admin"),
+		field.String("role").MaxLen(32).Default("admin"),
 		field.String("status").MaxLen(32).Default("active"),
 	}
 }

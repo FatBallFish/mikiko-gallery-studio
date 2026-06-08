@@ -12,6 +12,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
@@ -51,6 +52,7 @@ func RunWorker() error {
 	}
 
 	assetSvc := entstore.NewAssetsStore(client)
+	adminCfgSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(
 		cfg,
@@ -64,11 +66,17 @@ func RunWorker() error {
 	slog.Info("database-backed task store enabled for worker")
 
 	runner := worker.NewRunner(taskSvc, worker.Config{
-		Owner:             workerOwner(),
-		LeaseTTL:          30 * time.Second,
-		HeartbeatInterval: 10 * time.Second,
-		PollInterval:      500 * time.Millisecond,
+		Owner:                 workerOwner(),
+		LeaseTTL:              30 * time.Second,
+		HeartbeatInterval:     10 * time.Second,
+		PollInterval:          500 * time.Millisecond,
+		MaxConcurrentTasks:    cfg.Worker.MaxConcurrentTasks,
+		ConfigRefreshInterval: 5 * time.Second,
+		MaxConcurrentTasksResolver: func(ctx context.Context) (int, error) {
+			return workerMaxConcurrentTasksFromAdminConfig(ctx, adminCfgSvc, cfg.Worker.MaxConcurrentTasks)
+		},
 	})
+	runner.SetCompensationService(billingSvc)
 
 	slog.Info("starting pic-gallery worker")
 	err = runner.Run(context.Background())
@@ -76,6 +84,30 @@ func RunWorker() error {
 		return nil
 	}
 	return err
+}
+
+func workerMaxConcurrentTasksFromAdminConfig(ctx context.Context, adminCfgSvc *adminconfigservice.Service, fallback int) (int, error) {
+	if adminCfgSvc == nil {
+		return fallback, nil
+	}
+	tab, err := adminCfgSvc.GetTab(ctx, "runtime")
+	if err != nil {
+		return fallback, nil
+	}
+	for _, item := range tab.Items {
+		if item.ConfigKey != "worker_max_concurrent_tasks" {
+			continue
+		}
+		switch value := item.ConfigValue["value"].(type) {
+		case int:
+			return value, nil
+		case int64:
+			return int(value), nil
+		case float64:
+			return int(value), nil
+		}
+	}
+	return fallback, nil
 }
 
 func workerOwner() string {

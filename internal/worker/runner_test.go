@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -142,8 +143,8 @@ func (s *countingStore) ListPublicGallery(ctx context.Context, req domainimageta
 	return s.base.ListPublicGallery(ctx, req)
 }
 
-func (s *countingStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
-	return s.base.GetPublicImage(ctx, imageID)
+func (s *countingStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
+	return s.base.GetPublicImage(ctx, imageID, viewerUserID)
 }
 
 func (s *countingStore) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
@@ -332,6 +333,168 @@ func (f fakeTaskService) HeartbeatTask(ctx context.Context, taskID, owner string
 
 func (f fakeTaskService) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error) {
 	return f.executeFunc(ctx, task, owner, preferredProviders)
+}
+
+type fakeCompensationService struct {
+	calls int
+	fn    func(ctx context.Context, limit int) (int, error)
+}
+
+func (f *fakeCompensationService) ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error) {
+	f.calls++
+	return f.fn(ctx, limit)
+}
+
+func TestProcessOnceTreatsTransientStoreLockAsNoWork(t *testing.T) {
+	var acquireCalls atomic.Int64
+	task := domainimagetask.Task{ID: "sqlite-lock-retry-task", Status: domainimagetask.StatusRunning}
+	runner := NewRunner(fakeTaskService{
+		acquireFunc: func(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
+			if acquireCalls.Add(1) == 1 {
+				return domainimagetask.Task{}, false, errors.New("database table is locked: image_tasks")
+			}
+			return task, true, nil
+		},
+		heartbeatFunc: func(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+		executeFunc: func(ctx context.Context, claimed domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error) {
+			return domainimagetask.ExecuteResult{
+				Task: domainimagetask.Task{ID: claimed.ID, Status: domainimagetask.StatusSucceeded},
+			}, nil
+		},
+	}, Config{Owner: "worker-sqlite-lock", LeaseTTL: 30 * time.Second, HeartbeatInterval: time.Hour})
+
+	processed, err := runner.ProcessOnce(context.Background())
+	if err != nil {
+		t.Fatalf("expected transient store lock to be swallowed, got %v", err)
+	}
+	if processed {
+		t.Fatal("expected transient store lock to count as no work for this poll")
+	}
+
+	processed, err = runner.ProcessOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOnce after transient lock: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected runner to keep processing after transient lock")
+	}
+}
+
+func TestRunnerProcessOnceProcessesRefundCompensationBeforeTasks(t *testing.T) {
+	var acquireCalls int
+	tasks := fakeTaskService{
+		acquireFunc: func(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
+			acquireCalls++
+			return domainimagetask.Task{}, false, nil
+		},
+		heartbeatFunc: func(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+		executeFunc: func(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error) {
+			return domainimagetask.ExecuteResult{}, nil
+		},
+	}
+	compensation := &fakeCompensationService{
+		fn: func(ctx context.Context, limit int) (int, error) {
+			if limit != 3 {
+				t.Fatalf("expected compensation batch limit 3, got %d", limit)
+			}
+			return 1, nil
+		},
+	}
+	runner := NewRunner(tasks, Config{Owner: "worker-compensation", RefundCompensationBatchSize: 3})
+	runner.SetCompensationService(compensation)
+
+	processed, err := runner.ProcessOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOnce: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected compensation work to count as processed")
+	}
+	if compensation.calls != 1 {
+		t.Fatalf("expected one compensation call, got %d", compensation.calls)
+	}
+	if acquireCalls != 0 {
+		t.Fatalf("expected task acquisition to be skipped when compensation was processed, got %d", acquireCalls)
+	}
+}
+
+func TestRunnerRunProcessesTasksConcurrently(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tasks := []domainimagetask.Task{
+		{ID: "concurrent-1", Status: domainimagetask.StatusRunning},
+		{ID: "concurrent-2", Status: domainimagetask.StatusRunning},
+		{ID: "concurrent-3", Status: domainimagetask.StatusRunning},
+	}
+	started := make(chan string, len(tasks))
+	release := make(chan struct{})
+	var mu sync.Mutex
+	maxActive := 0
+	active := 0
+
+	runner := NewRunner(fakeTaskService{
+		acquireFunc: func(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if len(tasks) == 0 {
+				return domainimagetask.Task{}, false, nil
+			}
+			task := tasks[0]
+			tasks = tasks[1:]
+			return task, true, nil
+		},
+		executeFunc: func(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error) {
+			mu.Lock()
+			active++
+			if active > maxActive {
+				maxActive = active
+			}
+			mu.Unlock()
+			started <- task.ID
+			select {
+			case <-ctx.Done():
+				return domainimagetask.ExecuteResult{}, ctx.Err()
+			case <-release:
+			}
+			mu.Lock()
+			active--
+			mu.Unlock()
+			return domainimagetask.ExecuteResult{Task: domainimagetask.Task{ID: task.ID, Status: domainimagetask.StatusSucceeded}}, nil
+		},
+		heartbeatFunc: func(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+	}, Config{Owner: "worker-concurrent", MaxConcurrentTasks: 3, LeaseTTL: time.Second, HeartbeatInterval: time.Hour, PollInterval: time.Millisecond})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.Run(ctx)
+	}()
+
+	for i := 0; i < 3; i++ {
+		select {
+		case <-started:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("expected task %d to start concurrently", i+1)
+		}
+	}
+
+	mu.Lock()
+	gotMaxActive := maxActive
+	mu.Unlock()
+	if gotMaxActive != 3 {
+		t.Fatalf("expected three active tasks, got %d", gotMaxActive)
+	}
+	close(release)
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run: %v", err)
+	}
 }
 
 func TestProcessClaimedTaskTreatsTerminalHeartbeatRaceAsSuccess(t *testing.T) {

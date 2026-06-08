@@ -803,9 +803,20 @@ func (s *MemoryStore) ModelRoutingConfig(_ context.Context) (modelhub.ModelRouti
 		if !item.Enabled || account.Status != domainmodeladmin.ModelAccountStatusEnabled {
 			continue
 		}
-		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{AccountModelID: item.ID, ModelAccountID: item.AccountID, Provider: account.AdapterType, AdapterType: account.AdapterType, AuthType: account.AuthType, BaseURL: account.BaseURL, Credentials: account.CredentialsEncrypted, ModelCode: item.ModelCode, SupportedTaskTypes: append([]string(nil), item.TaskTypes...), SupportedQualities: append([]string(nil), item.Qualities...), HealthStatus: account.Status, InputCost: item.CostPerImage, Currency: item.Currency})
+		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{AccountModelID: item.ID, ModelAccountID: item.AccountID, Provider: account.AdapterType, AdapterType: account.AdapterType, AuthType: account.AuthType, BaseURL: account.BaseURL, Credentials: account.CredentialsEncrypted, ModelCode: item.ModelCode, SupportedTaskTypes: append([]string(nil), item.TaskTypes...), SupportedQualities: append([]string(nil), item.Qualities...), HealthStatus: account.Status, InputCost: item.CostPerImage, Currency: item.Currency, AccountExtra: cloneModelAdminExtra(account.Extra), ModelExtra: cloneModelAdminExtra(item.Extra)})
 	}
 	return snapshot, nil
+}
+
+func cloneModelAdminExtra(input map[string]any) map[string]any {
+	if input == nil {
+		return map[string]any{}
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }
 
 func (s *MemoryStore) providerModelByRouteRequest(req domainmodeladmin.RouteWriteRequest) (domainmodeladmin.ProviderModel, bool) {

@@ -1,38 +1,38 @@
 import { FormEvent, useEffect, useState } from 'react'
+import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { useApp } from '../components'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
+import { loginCopy, loginLocale, socialLoginUnavailableMessage } from './loginCopy'
 
 const lastLoginEmailKey = 'pic-gallery-last-login-email'
 
-const loginCopy = {
-  zh: {
-    emailPlaceholder: '输入邮箱地址',
-    passwordPlaceholder: '输入密码',
-    codePlaceholder: '6 位验证码',
-    resetPasswordPlaceholder: '输入新密码',
-    sendCodeFailed: '验证码发送失败',
-    passwordLoginFailed: '账号密码登录失败',
-    codeLoginFailed: '验证码登录失败',
-    resetPasswordFailed: '密码重置失败',
-    socialUnavailable: '该登录方式暂不可用',
-  },
-  en: {
-    emailPlaceholder: 'Enter email address',
-    passwordPlaceholder: 'Enter password',
-    codePlaceholder: '6-digit code',
-    resetPasswordPlaceholder: 'Enter new password',
-    sendCodeFailed: 'Failed to send verification code',
-    passwordLoginFailed: 'Password sign-in failed',
-    codeLoginFailed: 'Verification code sign-in failed',
-    resetPasswordFailed: 'Password reset failed',
-    socialUnavailable: 'This sign-in method is not available yet',
-  },
-} as const
-
-function loginLocale() {
-  return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+const loginClasses = {
+  page: 'auth-page grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top_right,color-mix(in_oklch,var(--accent)_15%,transparent),transparent_40%)] p-6',
+  card: 'auth-card w-[min(460px,100%)] rounded-3xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_80%,transparent)] p-12 shadow-[0_32px_64px_rgba(0,0,0,0.5)] backdrop-blur-2xl max-[760px]:p-6',
+  header: 'mb-10 text-center',
+  logo: 'auth-logo mb-2.5 w-full bg-transparent font-vault-display text-[42px] font-medium text-[var(--accent)]',
+  subtitle: 'm-0 mt-2 text-sm text-[var(--muted)]',
+  tabs: 'auth-tabs-line mb-8 flex border-b border-[var(--border)]',
+  tab: 'relative flex-1 bg-transparent pb-3 text-center text-sm text-[var(--muted)] transition after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-0.5',
+  tabActive: 'active font-bold text-[var(--fg)] after:bg-[var(--accent)]',
+  field: 'auth-field mb-5 flex flex-col gap-2',
+  label: 'text-[13px] font-semibold text-[var(--muted)]',
+  input: 'w-full rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-3.5 text-[var(--fg)] outline-none focus:border-[var(--accent)] focus:ring-3 focus:ring-[color-mix(in_oklch,var(--accent)_18%,transparent)]',
+  passwordWrap: 'password-input-wrap relative',
+  passwordInput: 'pr-12',
+  passwordToggle: 'password-toggle absolute right-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-lg border-0 bg-transparent p-0 text-[var(--muted)] hover:bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] hover:text-[var(--accent)] aria-pressed:text-[var(--accent)]',
+  forgot: 'forgot-password-link self-end border-0 bg-transparent p-0 text-xs text-[var(--muted)] hover:text-[var(--accent)]',
+  inlineControl: 'inline-control flex gap-2',
+  codeButton: 'whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--surface)] px-[18px] py-2.5 text-[var(--fg)] transition hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] disabled:opacity-60',
+  submit: 'mt-3 block w-full rounded-xl border-0 bg-[var(--accent)] p-4 text-center font-vault-body text-base font-bold text-[var(--bg)] transition hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-70',
+  divider: 'auth-divider my-8 flex items-center text-center text-xs text-[var(--muted)] before:flex-1 before:border-b before:border-[var(--border)] after:flex-1 after:border-b after:border-[var(--border)]',
+  dividerText: 'px-3',
+  social: 'auth-social flex gap-3',
+  socialButton: 'flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] px-3 py-2 text-sm text-[var(--fg)] transition hover:border-[var(--accent)] hover:bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] hover:text-[var(--accent)]',
+  footer: 'auth-footer mt-6 text-center text-[13px] text-[var(--muted)]',
+  link: 'link-button border-0 bg-transparent p-0 font-extrabold text-[var(--accent)] hover:text-[color-mix(in_oklch,var(--accent)_78%,white_22%)]',
 }
 
 function readLastLoginEmail() {
@@ -51,7 +51,7 @@ function rememberLoginEmail(email: string) {
   }
 }
 
-export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
+export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?: string }) {
   const app = useApp()
   const env = import.meta.env as Record<string, string | undefined>
   const copy = loginCopy[loginLocale()]
@@ -99,7 +99,11 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
         : await userApi.loginWithEmailCode(email, code)
       const profile = await userApi.getProfileWithToken(result.access_token)
       rememberLoginEmail(email)
-      await app.login({ token: result.access_token, profile }, returnTo)
+      await app.login({ token: result.access_token, profile }, returnTo, { imageId })
+      if (result.signup_grant?.granted) {
+        app.notify('success', `已领取 ${result.signup_grant.balance.trial_points ?? result.signup_grant.balance.available_points} 体验积分`)
+        await app.refreshAccount()
+      }
     } catch (err) {
       const title = resetMode ? copy.resetPasswordFailed : mode === 'password' ? copy.passwordLoginFailed : copy.codeLoginFailed
       app.notify('error', `${title}: ${errorMessage(err)}`)
@@ -109,32 +113,32 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
   }
 
   return (
-    <main className="auth-page">
-      <div className="auth-card">
+    <main className={loginClasses.page}>
+      <div className={loginClasses.card}>
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+        <div className={loginClasses.header}>
           <button
             type="button"
             onClick={() => app.navigate('landing')}
-            className="auth-logo"
+            className={loginClasses.logo}
           >
             Pic Gallery
           </button>
-          <p style={{ color: 'var(--muted)', fontSize: 14, margin: '8px 0 0' }}>登入您的 AI 创作空间</p>
+          <p className={loginClasses.subtitle}>登入您的 AI 创作空间</p>
         </div>
 
         {/* Tabs */}
-        <div className="auth-tabs-line">
+        <div className={loginClasses.tabs}>
           <button
             type="button"
-            className={mode === 'password' ? 'active' : ''}
+            className={cn(loginClasses.tab, mode === 'password' && loginClasses.tabActive)}
             onClick={() => setMode('password')}
           >
             账号密码登录
           </button>
           <button
             type="button"
-            className={mode === 'code' ? 'active' : ''}
+            className={cn(loginClasses.tab, mode === 'code' && loginClasses.tabActive)}
             onClick={() => setMode('code')}
           >
             验证码登录
@@ -143,22 +147,22 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
 
         {/* Form */}
         <form onSubmit={submit}>
-          <div className="auth-field">
-            <label>邮箱地址</label>
+          <div className={loginClasses.field}>
+            <label className={loginClasses.label}>邮箱地址</label>
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder={copy.emailPlaceholder}
               type="email"
               required
-              className="input"
+              className={loginClasses.input}
             />
           </div>
 
           {mode === 'password' ? (
-            <div className="auth-field">
-              <label>密码</label>
-              <div className="password-input-wrap">
+            <div className={loginClasses.field}>
+              <label className={loginClasses.label}>密码</label>
+              <div className={loginClasses.passwordWrap}>
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -166,11 +170,11 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
                   type={showPassword ? 'text' : 'password'}
                   minLength={6}
                   required
-                  className="input"
+                  className={cn(loginClasses.input, loginClasses.passwordInput)}
                 />
                 <button
                   type="button"
-                  className="password-toggle"
+                  className={loginClasses.passwordToggle}
                   aria-label={showPassword ? '隐藏密码' : '显示密码'}
                   aria-pressed={showPassword}
                   onClick={() => setShowPassword((visible) => !visible)}
@@ -178,27 +182,25 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
                   {showPassword ? <EyeIcon /> : <EyeOffIcon />}
                 </button>
               </div>
-              <button type="button" className="forgot-password-link" onClick={() => { setResetMode(true); setMode('code') }}>忘记密码?</button>
+              <button type="button" className={loginClasses.forgot} onClick={() => { setResetMode(true); setMode('code') }}>忘记密码?</button>
             </div>
           ) : (
-            <div className="auth-field">
-              <label>{resetMode ? '重置验证码' : '验证码'}</label>
-              <div className="inline-control">
+            <div className={loginClasses.field}>
+              <label className={loginClasses.label}>{resetMode ? '重置验证码' : '验证码'}</label>
+              <div className={loginClasses.inlineControl}>
                 <input
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   placeholder={copy.codePlaceholder}
                   inputMode="numeric"
                   required
-                  className="input"
-                  style={{ flex: 1 }}
+                  className={cn(loginClasses.input, 'flex-1')}
                 />
                 <button
                   type="button"
-                  className="btn"
+                  className={loginClasses.codeButton}
                   onClick={sendCode}
                   disabled={cooldown > 0}
-                  style={{ whiteSpace: 'nowrap', opacity: cooldown > 0 ? 0.58 : 1 }}
                 >
                   {cooldown > 0 ? `${cooldown}s` : '获取验证码'}
                 </button>
@@ -207,8 +209,8 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
           )}
 
           {resetMode ? (
-            <div className="auth-field">
-              <label>新密码</label>
+            <div className={loginClasses.field}>
+              <label className={loginClasses.label}>新密码</label>
               <input
                 value={resetPassword}
                 onChange={(e) => setResetPassword(e.target.value)}
@@ -216,14 +218,14 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
                 type="password"
                 minLength={6}
                 required
-                className="input"
+                className={loginClasses.input}
               />
             </div>
           ) : null}
 
           <button
             type="submit"
-            className="btn-login"
+            className={loginClasses.submit}
             disabled={busy}
           >
             {busy ? '提交中...' : resetMode ? '重置密码' : '登 录'}
@@ -231,20 +233,20 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
         </form>
 
         {/* Divider */}
-        <div className="auth-divider">
-          <span>其他登录方式</span>
+        <div className={loginClasses.divider}>
+          <span className={loginClasses.dividerText}>其他登录方式</span>
         </div>
 
         {/* Social Login */}
-        <div className="auth-social">
-          <SocialButton icon={<WeChatIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>WeChat</SocialButton>
-          <SocialButton icon={<DingTalkIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>钉钉</SocialButton>
-          <SocialButton icon={<GoogleIcon />} onClick={() => app.notify('info', copy.socialUnavailable)}>Google</SocialButton>
+        <div className={loginClasses.social}>
+          <SocialButton icon={<WeChatIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('微信'))}>微信</SocialButton>
+          <SocialButton icon={<DingTalkIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('钉钉'))}>钉钉</SocialButton>
+          <SocialButton icon={<GoogleIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('Google'))}>Google</SocialButton>
         </div>
 
         {/* Footer */}
-        <div className="auth-footer">
-          还没有账号？ <button type="button" className="link-button" onClick={() => { setMode('code'); setResetMode(false) }}>验证码注册/登录</button>
+        <div className={loginClasses.footer}>
+          还没有账号？ <button type="button" className={loginClasses.link} onClick={() => { setMode('code'); setResetMode(false) }}>验证码注册/登录</button>
         </div>
       </div>
     </main>
@@ -253,7 +255,7 @@ export function LoginPage({ returnTo }: { returnTo?: RouteId }) {
 
 function SocialButton({ children, icon, onClick }: { children: React.ReactNode; icon: React.ReactNode; onClick: () => void }) {
   return (
-    <button type="button" className="social-login-btn" onClick={onClick}>
+    <button type="button" className={loginClasses.socialButton} onClick={onClick}>
       {icon}
       {children}
     </button>

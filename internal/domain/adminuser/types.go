@@ -7,26 +7,32 @@ import (
 )
 
 type UserSummary struct {
-	ID               int64      `json:"id"`
-	Email            string     `json:"email"`
-	Nickname         string     `json:"nickname"`
-	Status           string     `json:"status"`
-	UserGroupCode    string     `json:"user_group_code"`
-	TokenVersion     int        `json:"token_version"`
-	RPMLimit         int        `json:"rpm_limit"`
-	ConcurrencyLimit int        `json:"concurrency_limit"`
-	DefaultLocale    string     `json:"default_locale"`
-	Theme            string     `json:"theme"`
-	ClosedAt         *time.Time `json:"closed_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID               int64       `json:"id"`
+	Email            string      `json:"email"`
+	Nickname         string      `json:"nickname"`
+	Status           string      `json:"status"`
+	UserGroupCode    string      `json:"user_group_code"`
+	UserGroups       []UserGroup `json:"user_groups,omitempty"`
+	Balance          string      `json:"balance"`
+	TokenVersion     int         `json:"token_version"`
+	RPMLimit         int         `json:"rpm_limit"`
+	ConcurrencyLimit int         `json:"concurrency_limit"`
+	DefaultLocale    string      `json:"default_locale"`
+	Theme            string      `json:"theme"`
+	LastSeenAt       time.Time   `json:"last_seen_at"`
+	ClosedAt         *time.Time  `json:"closed_at,omitempty"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
 }
 
 type ListRequest struct {
-	Page     int
-	PageSize int
-	Query    string
-	Status   string
+	Page      int
+	PageSize  int
+	Query     string
+	Status    string
+	GroupCode string
+	SortBy    string
+	SortDir   string
 }
 
 type ListPage struct {
@@ -90,6 +96,8 @@ type UserGroup struct {
 	Multiplier  string    `json:"multiplier"`
 	Status      string    `json:"status"`
 	Description *string   `json:"description,omitempty"`
+	SortOrder   int       `json:"sort_order"`
+	IsDefault   bool      `json:"is_default"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -114,4 +122,6 @@ type UserGroupWriteRequest struct {
 	Multiplier  string
 	Status      string
 	Description *string
+	SortOrder   int
+	IsDefault   bool
 }

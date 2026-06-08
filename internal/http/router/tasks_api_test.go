@@ -57,7 +57,9 @@ func TestReferenceAssetDownloadAcceptsQueryToken(t *testing.T) {
 	}
 	var uploadResp struct {
 		Data struct {
-			ID string `json:"id"`
+			ID          string `json:"id"`
+			PreviewURL  string `json:"preview_url"`
+			DownloadURL string `json:"download_url"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(uploadRec.Body).Decode(&uploadResp); err != nil {
@@ -65,6 +67,30 @@ func TestReferenceAssetDownloadAcceptsQueryToken(t *testing.T) {
 	}
 	if uploadResp.Data.ID == "" {
 		t.Fatalf("expected reference asset id body=%s", uploadRec.Body.String())
+	}
+	expectedAssetURL := "/api/agent/image/v1/reference-assets/" + uploadResp.Data.ID + "/download"
+	if uploadResp.Data.PreviewURL != expectedAssetURL || uploadResp.Data.DownloadURL != expectedAssetURL {
+		t.Fatalf("expected upload response preview/download URLs %q, got preview=%q download=%q", expectedAssetURL, uploadResp.Data.PreviewURL, uploadResp.Data.DownloadURL)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/reference-assets/"+uploadResp.Data.ID, nil)
+	getReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get reference asset: %d body=%s", getRec.Code, getRec.Body.String())
+	}
+	var getResp struct {
+		Data struct {
+			PreviewURL  string `json:"preview_url"`
+			DownloadURL string `json:"download_url"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(getRec.Body).Decode(&getResp); err != nil {
+		t.Fatalf("decode get response: %v", err)
+	}
+	if getResp.Data.PreviewURL != expectedAssetURL || getResp.Data.DownloadURL != expectedAssetURL {
+		t.Fatalf("expected get response preview/download URLs %q, got preview=%q download=%q", expectedAssetURL, getResp.Data.PreviewURL, getResp.Data.DownloadURL)
 	}
 
 	downloadReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/reference-assets/"+uploadResp.Data.ID+"/download?access_token="+session.AccessToken, nil)
@@ -548,6 +574,54 @@ func TestAgentTaskRemoteResultIsMirroredAndDownloadable(t *testing.T) {
 	}
 }
 
+func TestAgentHistoryTaskRetryCreatesQueuedTask(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	authSvc, session := loginTestUser(t, "retry-task@example.com")
+	store := imagetaskservice.NewMemoryStore()
+	taskSvc := imagetaskservice.NewServiceWithProvidersAndStore(cfg, nil, store)
+	failed := domainimagetask.Task{
+		UserID:           1,
+		ID:               "22222222-2222-2222-2222-222222222222",
+		Status:           domainimagetask.StatusFailed,
+		AbstractModel:    "plus",
+		TaskType:         "text_to_image",
+		Prompt:           "Retry from history",
+		RequestedQuality: "auto",
+		RequestedSize:    "auto",
+		AspectRatio:      "1:1",
+		OutputImageCount: 1,
+		ResponseMode:     "async",
+		SavePolicy:       "private",
+		ErrorCode:        "IMAGE_TASK_FAILED",
+		ErrorMessage:     "upstream failed",
+	}
+	if err := store.Save(context.Background(), failed); err != nil {
+		t.Fatalf("Save failed task: %v", err)
+	}
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, nil))
+
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/history/tasks/"+failed.ID+"/retry", nil)
+	retryReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	retryRec := httptest.NewRecorder()
+	handler.ServeHTTP(retryRec, retryReq)
+	if retryRec.Code != http.StatusAccepted {
+		t.Fatalf("expected retry 202, got %d body=%s", retryRec.Code, retryRec.Body.String())
+	}
+	var retryResp struct {
+		Data struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Prompt string `json:"prompt"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(retryRec.Body).Decode(&retryResp); err != nil {
+		t.Fatalf("decode retry response: %v", err)
+	}
+	if retryResp.Data.ID == "" || retryResp.Data.ID == failed.ID || retryResp.Data.Status != domainimagetask.StatusQueued || retryResp.Data.Prompt != failed.Prompt {
+		t.Fatalf("unexpected retry response %#v", retryResp.Data)
+	}
+}
+
 func taskAPIConfig(openrouterBaseURL string) config.Config {
 	cfg := config.Config{}
 	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"plus": "2k"}
@@ -556,6 +630,8 @@ func taskAPIConfig(openrouterBaseURL string) config.Config {
 	}
 	cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000", "plus": "1.00000"}
 	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000", "reference_generate": "1.15000"}
+	cfg.Cashier.OrderTimeoutSeconds = 1800
+	cfg.Cashier.MaxPendingOrdersPerUser = 3
 	cfg.GenerationLimits.MaxImageCount = 5
 	cfg.GenerationLimits.ReferenceImageMaxCount = 4
 	cfg.Providers.OpenRouter.Enabled = true
@@ -833,7 +909,14 @@ func TestAgentBillingBalanceAndLedgerEndpoints(t *testing.T) {
 				ChangePoints string `json:"change_points"`
 				BalanceAfter string `json:"balance_after"`
 				FrozenAfter  string `json:"frozen_after"`
+				BucketType   string `json:"bucket_type"`
+				SourceType   string `json:"source_type"`
 				Reason       string `json:"reason"`
+				Title        string `json:"title"`
+				OccurredAt   string `json:"occurred_at"`
+				Amount       string `json:"amount"`
+				Type         string `json:"type"`
+				Detail       string `json:"detail"`
 			} `json:"items"`
 			Pagination struct {
 				Page     int `json:"page"`
@@ -856,6 +939,9 @@ func TestAgentBillingBalanceAndLedgerEndpoints(t *testing.T) {
 	}
 	if ledgerResp.Data.Items[0].ID == 0 || ledgerResp.Data.Items[0].TaskID == "" || ledgerResp.Data.Items[0].Reason == "" || ledgerResp.Data.Items[0].FrozenAfter == "" || ledgerResp.Data.Items[0].BalanceAfter == "" {
 		t.Fatalf("expected ledger entry contract fields to be populated, got %#v", ledgerResp.Data.Items[0])
+	}
+	if ledgerResp.Data.Items[0].BucketType == "" || ledgerResp.Data.Items[0].SourceType == "" || ledgerResp.Data.Items[0].Title == "" || ledgerResp.Data.Items[0].OccurredAt == "" || ledgerResp.Data.Items[0].Amount == "" || ledgerResp.Data.Items[0].Type == "" || ledgerResp.Data.Items[0].Detail == "" {
+		t.Fatalf("expected ledger entry display fields to be populated, got %#v", ledgerResp.Data.Items[0])
 	}
 	if ledgerResp.Meta.RequestID == "" || ledgerRec.Header().Get("X-Request-Id") == "" {
 		t.Fatalf("expected ledger response to include request id metadata, got body=%#v headers=%v", ledgerResp, ledgerRec.Header())
@@ -1074,6 +1160,75 @@ func TestAgentEstimateEndpointUsesSnakeCaseAndRejectsInvalidCounts(t *testing.T)
 	handler.ServeHTTP(invalidRec, invalidReq)
 	if invalidRec.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid estimate request to return 400, got %d body=%s", invalidRec.Code, invalidRec.Body.String())
+	}
+}
+
+func TestAgentEstimateEndpointReturnsBalanceSufficiency(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc, session := loginTestUser(t, "estimate-sufficiency@example.com")
+	billingSvc := billingservice.NewService(cfg.Billing)
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	handler := NewWithAPI(api)
+
+	estimateURL := "/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=1"
+	req := httptest.NewRequest(http.MethodGet, estimateURL, nil)
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected estimate 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var insufficientResp struct {
+		Data struct {
+			EstimatedPoints    string `json:"estimated_points"`
+			Sufficient         bool   `json:"sufficient"`
+			InsufficientPoints string `json:"insufficient_points"`
+			Balance            struct {
+				AvailablePoints string `json:"available_points"`
+			} `json:"balance"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&insufficientResp); err != nil {
+		t.Fatalf("decode insufficient estimate response: %v", err)
+	}
+	if insufficientResp.Data.EstimatedPoints != "16.00000" {
+		t.Fatalf("expected estimate to remain deterministic, got %#v", insufficientResp.Data)
+	}
+	if insufficientResp.Data.Sufficient {
+		t.Fatalf("expected insufficient balance, got %#v", insufficientResp.Data)
+	}
+	if insufficientResp.Data.Balance.AvailablePoints != "0.00000" || insufficientResp.Data.InsufficientPoints != "16.00000" {
+		t.Fatalf("expected balance and missing points in estimate, got %#v", insufficientResp.Data)
+	}
+
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: 1, ChangePoints: "20.00000", Reason: "seed enough balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	enoughReq := httptest.NewRequest(http.MethodGet, estimateURL, nil)
+	enoughReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	enoughRec := httptest.NewRecorder()
+	handler.ServeHTTP(enoughRec, enoughReq)
+	if enoughRec.Code != http.StatusOK {
+		t.Fatalf("expected enough estimate 200, got %d body=%s", enoughRec.Code, enoughRec.Body.String())
+	}
+	var enoughResp struct {
+		Data struct {
+			Sufficient         bool   `json:"sufficient"`
+			InsufficientPoints string `json:"insufficient_points"`
+			Balance            struct {
+				AvailablePoints string `json:"available_points"`
+			} `json:"balance"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(enoughRec.Body).Decode(&enoughResp); err != nil {
+		t.Fatalf("decode enough estimate response: %v", err)
+	}
+	if !enoughResp.Data.Sufficient {
+		t.Fatalf("expected sufficient balance, got %#v", enoughResp.Data)
+	}
+	if enoughResp.Data.Balance.AvailablePoints != "20.00000" || enoughResp.Data.InsufficientPoints != "0.00000" {
+		t.Fatalf("expected enough balance and zero missing points, got %#v", enoughResp.Data)
 	}
 }
 

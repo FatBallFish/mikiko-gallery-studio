@@ -24,6 +24,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
@@ -37,6 +38,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
@@ -116,6 +118,7 @@ func checkColumn(t, c string) error {
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
 			paymentorder.Table:                paymentorder.ValidColumn,
+			paymentproviderinstance.Table:     paymentproviderinstance.ValidColumn,
 			paymentwebhookevent.Table:         paymentwebhookevent.ValidColumn,
 			pointledger.Table:                 pointledger.ValidColumn,
 			providererrorpolicy.Table:         providererrorpolicy.ValidColumn,
@@ -129,6 +132,7 @@ func checkColumn(t, c string) error {
 			routemodelcandidate.Table:         routemodelcandidate.ValidColumn,
 			routemodelprice.Table:             routemodelprice.ValidColumn,
 			routemodelvisibilitygroup.Table:   routemodelvisibilitygroup.ValidColumn,
+			secureconfig.Table:                secureconfig.ValidColumn,
 			subscriptionplan.Table:            subscriptionplan.ValidColumn,
 			user.Table:                        user.ValidColumn,
 			usergroup.Table:                   usergroup.ValidColumn,

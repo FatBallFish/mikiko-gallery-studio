@@ -6,13 +6,15 @@ export class ApiError extends Error {
   status: number
   code: string
   requestId?: string
+  details?: Record<string, unknown>
 
-  constructor(message: string, status: number, code = 'request_failed', requestId?: string) {
+  constructor(message: string, status: number, code = 'request_failed', requestId?: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.requestId = requestId
+    this.details = details
   }
 }
 
@@ -98,6 +100,10 @@ const errorMessages: Record<string, Record<ErrorLocale, string>> = {
   IMAGE_REFERENCE_COUNT_EXCEEDED: {
     zh: '参考图数量超过当前模型上限，请减少后重试。',
     en: 'Too many reference images for the selected model. Please remove some and try again.',
+  },
+  IMAGE_REFERENCE_TOO_LARGE: {
+    zh: '参考图文件过大，请压缩后重新上传。',
+    en: 'The reference image is too large. Please compress it and upload again.',
   },
   IMAGE_AUTO_RESOLUTION_UNSUPPORTED: {
     zh: '当前模型不支持所选尺寸或自动清晰度，请调整后重试。',
@@ -189,7 +195,7 @@ export type RequestOptions = {
 }
 
 export function getDefaultBaseUrl() {
-  const metaEnv = import.meta.env as Record<string, string | undefined>
+  const metaEnv = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {})
   return (metaEnv.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 }
 
@@ -228,10 +234,10 @@ function unwrap<T>(payload: unknown): T {
 
 function errorFromPayload(payload: unknown, status: number) {
   if (payload && typeof payload === 'object' && 'error' in payload) {
-    const wrapped = payload as { error?: { message?: string; code?: string }; meta?: { request_id?: string } }
+    const wrapped = payload as { error?: { message?: string; code?: string; details?: Record<string, unknown> }; meta?: { request_id?: string } }
     const message = wrapped.error?.message ?? '请求失败'
     const requestId = wrapped.meta?.request_id
-    return new ApiError(requestId ? `${message} (${requestId})` : message, status, wrapped.error?.code, requestId)
+    return new ApiError(requestId ? `${message} (${requestId})` : message, status, wrapped.error?.code, requestId, wrapped.error?.details)
   }
   if (isEnvelope<unknown>(payload)) {
     const message = payload.message ?? '请求失败'

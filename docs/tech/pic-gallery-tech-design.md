@@ -806,7 +806,7 @@ return normalized_response
 | `id` | bigint PK | 管理员 ID | PK |
 | `email` | varchar(255) | 后台账号 | `uk_admin_users_email` |
 | `password_hash` | varchar(255) | 强密码哈希 | - |
-| `role` | varchar(32) | `super_admin/ops_admin` | `idx_admin_users_role` |
+| `role` | varchar(32) | `super_admin/admin`，后续自定义 RBAC 可扩展更多角色字符串 | `idx_admin_users_role` |
 | `status` | varchar(32) | `active/disabled` | `idx_admin_users_status` |
 | `created_at` | timestamptz | 创建时间 | - |
 | `updated_at` | timestamptz | 更新时间 | - |

@@ -496,10 +496,12 @@ func (s *ImageTaskStore) ListPublicGallery(ctx context.Context, req domainimaget
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
+	items = filterPublicGalleryItems(items, req)
+	total = len(items)
 	if req.Sort == "hot" {
 		sort.SliceStable(items, func(i, j int) bool {
-			left := items[i].LikeCount*2 + items[i].FavoriteCount*3 + items[i].CommentCount
-			right := items[j].LikeCount*2 + items[j].FavoriteCount*3 + items[j].CommentCount
+			left := publicGalleryHotScore(items[i])
+			right := publicGalleryHotScore(items[j])
 			if left != right {
 				return left > right
 			}
@@ -519,7 +521,78 @@ func (s *ImageTaskStore) ListPublicGallery(ctx context.Context, req domainimaget
 	return domainimagetask.GalleryPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
-func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string) (domainimagetask.GalleryImage, error) {
+func filterPublicGalleryItems(items []domainimagetask.GalleryImage, req domainimagetask.GalleryListRequest) []domainimagetask.GalleryImage {
+	query := strings.TrimSpace(req.Query)
+	routeModelCode := strings.TrimSpace(req.RouteModelCode)
+	taskType := strings.TrimSpace(req.TaskType)
+	if query == "" && routeModelCode == "" && taskType == "" {
+		return items
+	}
+	filtered := make([]domainimagetask.GalleryImage, 0, len(items))
+	for _, item := range items {
+		if query != "" && !publicGalleryQueryMatches(item, query) {
+			continue
+		}
+		if routeModelCode != "" && !galleryRouteModelMatches(item, routeModelCode) {
+			continue
+		}
+		if taskType != "" && !strings.EqualFold(item.TaskType, taskType) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func galleryRouteModelMatches(item domainimagetask.GalleryImage, routeModelCode string) bool {
+	return strings.EqualFold(item.RouteModelCode, routeModelCode) || (item.RouteModelCode == "" && strings.EqualFold(item.AbstractModel, routeModelCode))
+}
+
+func publicGalleryQueryMatches(item domainimagetask.GalleryImage, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	fields := []string{
+		item.ID,
+		item.PromptExcerpt,
+		publicGallerySearchExcerpt(item.Prompt, 24),
+		item.RouteModelCode,
+		item.AbstractModel,
+		item.TaskType,
+		item.AuthorName,
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(field)), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicGallerySearchExcerpt(prompt string, limit int) string {
+	prompt = strings.Join(strings.Fields(prompt), " ")
+	if limit <= 0 || prompt == "" {
+		return ""
+	}
+	runes := []rune(prompt)
+	if len(runes) <= limit {
+		visible := len(runes) / 2
+		if visible < 1 {
+			return "…"
+		}
+		if visible > limit-1 {
+			visible = limit - 1
+		}
+		return string(runes[:visible]) + "…"
+	}
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
+func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
@@ -532,7 +605,7 @@ func (s *ImageTaskStore) GetPublicImage(ctx context.Context, imageID string) (do
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	image := mapGalleryImageEntity(entity, taskEntity)
-	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, 0)
+	items, err := s.decoratePublicImages(ctx, []domainimagetask.GalleryImage{image}, viewerUserID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
@@ -1597,7 +1670,6 @@ func (s *ImageTaskStore) decoratePublicImages(ctx context.Context, items []domai
 		if stat := statsByImage[imageUUID]; stat != nil {
 			items[idx].LikeCount = stat.LikeCount
 			items[idx].FavoriteCount = stat.FavoriteCount
-			items[idx].CommentCount = stat.CommentCount
 		}
 		if interaction := interactionsByImage[imageUUID]; interaction != nil {
 			items[idx].LikedByViewer = interaction.Liked
@@ -1605,6 +1677,10 @@ func (s *ImageTaskStore) decoratePublicImages(ctx context.Context, items []domai
 		}
 	}
 	return items, nil
+}
+
+func publicGalleryHotScore(image domainimagetask.GalleryImage) int {
+	return image.LikeCount*2 + image.FavoriteCount*3
 }
 
 func (s *ImageTaskStore) recalculatePublicImageStats(ctx context.Context, imageID uuid.UUID) error {

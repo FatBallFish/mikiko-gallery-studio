@@ -112,6 +112,23 @@ func applyEnvOverrides(cfg *Config) {
 	if value := os.Getenv("PIC_GALLERY_API_KEY_SIGNING_SECRET_ENCRYPTION_KEY"); value != "" {
 		cfg.APIKey.SigningSecretEncryptionKey = value
 	}
+	if value := os.Getenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY"); value != "" {
+		cfg.Cashier.ProviderConfigEncryptionKey = value
+	}
+	if value := os.Getenv("PIC_GALLERY_CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY"); value != "" {
+		cfg.Cashier.ProviderConfigEncryptionKey = value
+	}
+	if value := os.Getenv("SECURE_CONFIG_ENCRYPTION_KEY"); value != "" {
+		cfg.Security.SecureConfigEncryptionKey = value
+	}
+	if value := os.Getenv("PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"); value != "" {
+		cfg.Security.SecureConfigEncryptionKey = value
+	}
+	if value := os.Getenv("WORKER_MAX_CONCURRENT_TASKS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			cfg.Worker.MaxConcurrentTasks = parsed
+		}
+	}
 	if value := os.Getenv("SMTP_HOST"); value != "" {
 		cfg.Auth.SMTP.Host = value
 	}
@@ -167,6 +184,34 @@ func applyDefaults(cfg *Config) {
 		cfg.APIKey.SigningSecretEncryptionKey = "local-dev-api-key-signing-secret-encryption-key"
 	}
 	cfg.Billing.PointsScale = 5
+	if strings.TrimSpace(cfg.Billing.SignupTrial.Points) == "" {
+		cfg.Billing.SignupTrial.Points = "20.00000"
+	}
+	if cfg.Billing.SignupTrial.ValidDays == 0 {
+		cfg.Billing.SignupTrial.ValidDays = 7
+	}
+	if cfg.Billing.SignupTrial.ExpiryReminderDays == 0 {
+		cfg.Billing.SignupTrial.ExpiryReminderDays = 2
+	}
+	cfg.Billing.SignupTrial.GrantOncePerUser = true
+	if cfg.Cashier.OrderTimeoutSeconds == 0 {
+		cfg.Cashier.OrderTimeoutSeconds = 1800
+	}
+	if cfg.Cashier.MaxPendingOrdersPerUser == 0 {
+		cfg.Cashier.MaxPendingOrdersPerUser = 3
+	}
+	if strings.TrimSpace(cfg.Cashier.ProviderConfigEncryptionKey) == "" {
+		cfg.Cashier.ProviderConfigEncryptionKey = "local-dev-cashier-provider-config-encryption-key"
+	}
+	if strings.TrimSpace(cfg.Security.SecureConfigEncryptionKey) == "" {
+		cfg.Security.SecureConfigEncryptionKey = "local-dev-secure-config-encryption-key"
+	}
+	if cfg.Worker.MaxConcurrentTasks <= 0 {
+		cfg.Worker.MaxConcurrentTasks = 4
+	}
+	if cfg.Worker.MaxConcurrentTasks > 64 {
+		cfg.Worker.MaxConcurrentTasks = 64
+	}
 	if len(cfg.Billing.AutoQualityDefaultByGroup) == 0 {
 		cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
 	}

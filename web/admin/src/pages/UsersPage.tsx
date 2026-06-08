@@ -1,50 +1,72 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import type { AdminUser, AdminUserCreateRequest, UserGroup, UserGroupWriteRequest } from '../../../shared/api-types'
+import type { AdminUser, AdminUserCreateRequest, AdminUserDetail, ApiKey, BalanceBucket, ImageTask, LedgerEntry, PaymentOrder, UserGroup } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal, PageHeader } from '../components'
+import { cn } from '../../../shared/classnames'
+import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
+import { adminButton, adminPage } from '../ui/classes'
+import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
+import { canSaveUserPointAdjustment, newUserPointAdjustmentKey } from './userPointAdjustment'
+import { userDetailLedgerRows } from './userDetailLedgerRows'
+import {
+  userDetailApiKeyRow,
+  userDetailBucketRow,
+  userDetailOrderRow,
+  userDetailTaskRow,
+} from './userDetailResourceRows'
+import { adminUserRowView, adminUserStatusBadge, adminUserStatusFilterOptions, adminUserStatusOptions, adminUserSummary } from './userRows'
 
 const pageSize = 20
-
-const userStatusLabel: Record<string, string> = {
-  active: '正常',
-  disabled: '禁用',
-  pending: '待验证',
-  closed: '已关闭',
-}
+const userFilterFormClass = 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] items-end gap-3 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white/70 p-3'
+const inlineControlClass = 'flex items-center gap-2'
+const dangerTextClass = 'text-[var(--red)]'
+const creditAmountClass = 'text-[var(--success)]'
+const debitAmountClass = 'text-[var(--danger)]'
 
 type UserAction =
   | { type: 'create'; draft: AdminUserCreateRequest }
   | { type: 'status'; user: AdminUser; status: string }
   | { type: 'group'; user: AdminUser; groupIds: string[] }
-  | { type: 'user-group'; row?: UserGroup; draft: UserGroupWriteRequest }
-  | { type: 'points'; user: AdminUser; changePoints: string; reason: string }
+  | { type: 'points'; user: AdminUser; changePoints: string; reason: string; idempotencyKey: string }
   | { type: 'limits'; user: AdminUser; rpmLimit: string; concurrencyLimit: string }
   | { type: 'password'; user: AdminUser; password: string }
   | { type: 'delete'; user: AdminUser; confirmEmail: string }
 
+type UserFilters = {
+  query: string
+  status: string
+  group: string
+  sortBy: 'points' | 'last_seen_at' | 'created_at'
+  sortDir: 'desc' | 'asc'
+}
+
+const initialFilters: UserFilters = { query: '', status: '', group: '', sortBy: 'created_at', sortDir: 'desc' }
+
 export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<AdminUser[]>([])
   const [groups, setGroups] = useState<UserGroup[]>([])
-  const [query, setQuery] = useState('')
-  const [appliedQuery, setAppliedQuery] = useState('')
+  const [filters, setFilters] = useState<UserFilters>(initialFilters)
+  const [appliedFilters, setAppliedFilters] = useState<UserFilters>(initialFilters)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [action, setAction] = useState<UserAction | null>(null)
+  const [detailTarget, setDetailTarget] = useState<AdminUser | null>(null)
+  const [detail, setDetail] = useState<AdminUserDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
 
-  const load = async (nextQuery = appliedQuery, nextPage = page) => {
+  const load = async (nextFilters = appliedFilters, nextPage = page) => {
     setLoading(true)
     setError(null)
     try {
-      const [userPage, userGroups] = await Promise.all([
-        adminApi.listUsersPage(nextQuery, nextPage, pageSize),
-        groups.length ? Promise.resolve(groups) : adminApi.listUserGroups(),
-      ])
+      const userPage = await adminApi.listUsersPage(nextFilters.query.trim(), nextPage, pageSize, userListFilters(nextFilters))
       setRows(userPage.items)
       setTotal(userPage.total)
-      setGroups(userGroups)
+      if (!groups.length) {
+        adminApi.listUserGroups().then(setGroups).catch(() => setGroups([]))
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '用户载入失败')
     } finally {
@@ -53,14 +75,10 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   }
 
   useEffect(() => {
-    void load(appliedQuery, page)
-  }, [appliedQuery, page])
+    void load(appliedFilters, page)
+  }, [appliedFilters, page])
 
-  const totals = useMemo(() => ({
-    active: rows.filter((row) => row.status === 'active').length,
-    disabled: rows.filter((row) => row.status === 'disabled').length,
-    pending: rows.filter((row) => row.status === 'pending').length,
-  }), [rows])
+  const totals = useMemo(() => adminUserSummary(rows), [rows])
 
   const saveAction = async () => {
     if (!action) return
@@ -72,19 +90,14 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
       }
       if (action.type === 'status') {
         const updated = await adminApi.updateUserStatus(action.user.id, action.status)
-        onFeedback('用户状态已更新', `${updated.display_name} · ${userStatusLabel[updated.status] ?? updated.status}`)
+        onFeedback('用户状态已更新', `${updated.display_name} · ${adminUserStatusBadge(updated.status).label}`)
       }
       if (action.type === 'group') {
         await adminApi.assignUserGroups(action.user.id, action.groupIds)
         onFeedback('用户分组已更新', `${action.user.display_name} · ${action.groupIds.length} 个分组`)
       }
-      if (action.type === 'user-group') {
-        const saved = action.row ? await adminApi.updateUserGroup(action.row.id ?? action.row.code, action.draft) : await adminApi.createUserGroup(action.draft)
-        onFeedback('权益分组已保存', `${saved.name} · ${saved.multiplier}x`)
-        setGroups([])
-      }
       if (action.type === 'points') {
-        await adminApi.adjustUserPoints(action.user.id, action.changePoints, action.reason, crypto.randomUUID())
+        await adminApi.adjustUserPoints(action.user.id, action.changePoints, action.reason, action.idempotencyKey)
         onFeedback('用户积分已调整', `${action.user.display_name} · ${action.changePoints}`)
       }
       if (action.type === 'limits') {
@@ -100,7 +113,7 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
         onFeedback('用户已删除', action.user.email)
       }
       setAction(null)
-      await load(appliedQuery, page)
+      await load(appliedFilters, page)
     } finally {
       setSaving(false)
     }
@@ -110,10 +123,24 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
     setSaving(true)
     try {
       const updated = await adminApi.updateUserStatus(user.id, status)
-      onFeedback('用户状态已更新', `${updated.display_name} · ${userStatusLabel[updated.status] ?? updated.status}`)
-      await load(appliedQuery, page)
+      onFeedback('用户状态已更新', `${updated.display_name} · ${adminUserStatusBadge(updated.status).label}`)
+      await load(appliedFilters, page)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const openDetail = async (user: AdminUser) => {
+    setDetailTarget(user)
+    setDetail(null)
+    setDetailError(null)
+    setDetailLoading(true)
+    try {
+      setDetail(await adminApi.getUser(user.id))
+    } catch (caught) {
+      setDetailError(caught instanceof Error ? caught.message : '用户详情载入失败')
+    } finally {
+      setDetailLoading(false)
     }
   }
 
@@ -121,90 +148,242 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   if (error) return <ErrorBlock message={error} onRetry={() => void load()} />
 
   return (
-    <section className="page-stack">
+    <section className={adminPage.stack}>
       <PageHeader
         eyebrow="Users"
         title="用户管理"
-        detail="用户可绑定多个权益分组；分组倍率由路由模型可见性命中后择优计费。"
-        actions={<><button className="ghost" type="button" onClick={() => setAction({ type: 'user-group', draft: blankGroupDraft(groups.length + 1) })}>新增分组</button><button className="btn primary" type="button" onClick={() => setAction({ type: 'create', draft: { email: '', nickname: '', status: 'active', user_group_code: groups[0]?.code ?? 'basic', password: '', rpm_limit: 0, concurrency_limit: 0, default_locale: 'zh-CN', theme: 'system' } })}>新增用户</button></>}
+        detail="按用户名、状态和分组定位用户，并支持按积分、最后活跃、创建时间排序。"
+        actions={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAction({ type: 'create', draft: { email: '', nickname: '', status: 'active', user_group_code: groups[0]?.code ?? 'basic', password: '', rpm_limit: 0, concurrency_limit: 0, default_locale: 'zh-CN', theme: 'system' } })}>新增用户</button>}
       />
-      <section className="ops-status-strip compact-strip">
-        <div className="status-cell"><label>正常</label><strong>{totals.active}</strong></div>
-        <div className="status-cell"><label>待验证</label><strong>{totals.pending}</strong></div>
-        <div className="status-cell"><label>禁用</label><strong>{totals.disabled}</strong></div>
-        <div className="status-cell"><label>权益分组</label><strong>{groups.length}</strong></div>
-      </section>
-      <section className="pg-admin-card ops-surface full-main">
-        <section className="main-lane table-lane no-divider">
-          <div className="list-toolbar">
-            <form className="search-form" onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedQuery(query) }}>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索邮箱 / 昵称" />
-              <button className="btn" type="submit">搜索</button>
-              <button className="ghost" type="button" onClick={() => { setQuery(''); setAppliedQuery(''); setPage(1) }}>清空</button>
+      <StatusStrip columns={4}>
+        <StatusCell label="正常" value={totals.active} />
+        <StatusCell label="待验证" value={totals.pending} />
+        <StatusCell label="禁用" value={totals.disabled} />
+        <StatusCell label="权益分组" value={groups.length} />
+      </StatusStrip>
+      <section className={adminPage.fullSurface}>
+        <section className={adminPage.mainLane}>
+          <div className={adminPage.toolbar}>
+            <form className={userFilterFormClass} onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedFilters(filters) }}>
+              <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="搜索用户名 / 邮箱" />
+              <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} aria-label="状态筛选">
+                {adminUserStatusFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}
+              </select>
+              <GroupSelect value={filters.group} groups={groups} includeAll onChange={(value) => setFilters({ ...filters, group: value })} />
+              <select value={filters.sortBy} onChange={(event) => setFilters({ ...filters, sortBy: event.target.value as UserFilters['sortBy'] })} aria-label="排序字段">
+                <option value="points">积分</option>
+                <option value="last_seen_at">最后活跃</option>
+                <option value="created_at">创建时间</option>
+              </select>
+              <select value={filters.sortDir} onChange={(event) => setFilters({ ...filters, sortDir: event.target.value as UserFilters['sortDir'] })} aria-label="排序方向">
+                <option value="desc">降序</option>
+                <option value="asc">升序</option>
+              </select>
+              <button className={adminButton.base} type="submit">筛选</button>
+              <button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => { setFilters(initialFilters); setAppliedFilters(initialFilters); setPage(1) }}>清空</button>
             </form>
             <span>第 {page} 页 / 共 {total} 条</span>
           </div>
           {!rows.length ? <EmptyBlock title="没有匹配用户" detail="尝试换一个关键词。" /> : (
-            <>
-              <div className="table-head users-grid"><span>用户</span><span>状态</span><span>分组</span><span>积分</span><span>最后活跃</span><span>操作</span></div>
-              {rows.map((row) => (
-                <div key={row.id} className="table-row users-grid">
-                  <div><strong>{row.display_name}</strong><p>{row.email} · {row.id}</p></div>
-                  <Badge tone={row.status === 'active' ? 'success' : row.status === 'pending' ? 'warning' : 'danger'}>{userStatusLabel[row.status] ?? row.status}</Badge>
-                  <span>{row.group}</span>
-                  <code>{row.balance}</code>
-                  <span>{row.last_seen_at || row.updated_at || '-'}</span>
-                  <div className="row-actions buttons">
-                    {row.status === 'active' ? <button className="btn small danger" type="button" disabled={saving} onClick={() => void updateStatus(row, 'disabled')}>禁用</button> : null}
-                    {row.status === 'disabled' ? <button className="btn small success" type="button" disabled={saving} onClick={() => void updateStatus(row, 'active')}>启用</button> : null}
-                    <button className="ghost small" type="button" onClick={() => setAction({ type: 'group', user: row, groupIds: currentGroupIds(row, groups) })}>分组</button>
-                    <button className="ghost small" type="button" onClick={() => setAction({ type: 'points', user: row, changePoints: '0.00000', reason: 'manual admin adjustment' })}>积分</button>
-                    <button className="ghost small" type="button" onClick={() => setAction({ type: 'limits', user: row, rpmLimit: String(row.rpm_limit ?? 0), concurrencyLimit: String(row.concurrency_limit ?? 0) })}>限额</button>
-                    <button className="ghost small" type="button" onClick={() => setAction({ type: 'password', user: row, password: '' })}>密码</button>
-                    <button className="ghost small danger-text" type="button" onClick={() => setAction({ type: 'delete', user: row, confirmEmail: '' })}>删除</button>
+            <div className={cn(adminDataGrid.root, adminGridCols.users)}>
+              <div className={cn(adminDataGrid.head, adminGridCols.users)}><span>用户</span><span>状态</span><span>分组</span><span>积分</span><span>最后活跃</span><span>创建时间</span><span>操作</span></div>
+              {rows.map((rawRow) => {
+                const row = adminUserRowView(rawRow)
+                return (
+                <div key={row.raw.id} className={cn(adminDataGrid.row, adminGridCols.users)}>
+                  <div className={adminDataGrid.stackCell}><strong>{row.name}</strong><p className={adminDataGrid.detail}>{row.subtitle}</p></div>
+                  <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
+                  <span>{row.groupLabel}</span>
+                  <code className={adminDataGrid.code}>{row.balanceLabel}</code>
+                  <span>{row.lastActiveAtLabel}</span>
+                  <span>{row.createdAtLabel}</span>
+                  <div className={adminDataGrid.actions}>
+                    <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => void openDetail(row.raw)}>详情</button>
+                    {row.raw.status === 'active' ? <button className={cn(adminButton.base, adminButton.danger, adminButton.small)} type="button" disabled={saving} onClick={() => void updateStatus(row.raw, 'disabled')}>禁用</button> : null}
+                    {row.raw.status === 'disabled' ? <button className={cn(adminButton.base, adminButton.success, adminButton.small)} type="button" disabled={saving} onClick={() => void updateStatus(row.raw, 'active')}>启用</button> : null}
+                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'group', user: row.raw, groupIds: currentGroupIds(row.raw, groups) })}>分组</button>
+                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'points', user: row.raw, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(row.raw.id) })}>积分</button>
+                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'limits', user: row.raw, rpmLimit: String(row.raw.rpm_limit ?? 0), concurrencyLimit: String(row.raw.concurrency_limit ?? 0) })}>限额</button>
+                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'password', user: row.raw, password: '' })}>密码</button>
+                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, dangerTextClass)} type="button" onClick={() => setAction({ type: 'delete', user: row.raw, confirmEmail: '' })}>删除</button>
                   </div>
                 </div>
-              ))}
-              <div className="pagination-row">
+                )
+              })}
+            </div>
+          )}
+          {rows.length ? (
+              <div className={adminPage.pagination}>
                 <span>每页 {pageSize} 条</span>
-                <div className="row-actions buttons">
-                  <button className="ghost small" type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
-                  <button className="ghost small" type="button" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
                 </div>
               </div>
-            </>
-          )}
-        </section>
-      </section>
-      <section className="pg-admin-card ops-surface full-main">
-        <section className="main-lane table-lane no-divider">
-          <div className="table-head user-group-grid"><span>分组</span><span>倍率</span><span>排序</span><span>默认</span><span>状态</span><span>操作</span></div>
-          {groups.map((group) => (
-            <div key={String(group.id ?? group.code)} className="table-row user-group-grid">
-              <div><strong>{group.name}</strong><p>{group.code} · {group.description || '无描述'}</p></div>
-              <code>{group.multiplier}</code>
-              <code>{group.sort_order ?? 0}</code>
-              <Badge tone={group.is_default ? 'primary' : 'neutral'}>{group.is_default ? '默认' : '普通'}</Badge>
-              <Badge tone={group.status === 'enabled' ? 'success' : 'warning'}>{group.status}</Badge>
-              <button className="ghost small" type="button" onClick={() => setAction({ type: 'user-group', row: group, draft: groupToDraft(group) })}>编辑</button>
-            </div>
-          ))}
+          ) : null}
         </section>
       </section>
       {action ? (
-        <Modal title={actionTitle(action)} detail={actionDetail(action)} onClose={() => setAction(null)} footer={<><button type="button" className="ghost" disabled={saving} onClick={() => setAction(null)}>取消</button><button type="button" className="btn primary" disabled={saving || !canSave(action)} onClick={() => void saveAction()}>{saving ? '保存中...' : '保存'}</button></>}>
+        <Modal title={actionTitle(action)} detail={actionDetail(action)} onClose={() => setAction(null)} footer={<><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={saving} onClick={() => setAction(null)}>取消</button><button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={saving || !canSave(action)} onClick={() => void saveAction()}>{saving ? '保存中...' : '保存'}</button></>}>
           {renderActionForm(action, groups, setAction)}
+        </Modal>
+      ) : null}
+      {detailTarget ? (
+        <Modal
+          title={`${detailTarget.display_name} · 用户详情`}
+          detail={detailTarget.email}
+          onClose={() => { setDetailTarget(null); setDetail(null); setDetailError(null) }}
+          footer={<button type="button" className={adminButton.base} onClick={() => { setDetailTarget(null); setDetail(null); setDetailError(null) }}>关闭</button>}
+        >
+          {detailLoading ? <LoadingBlock label="载入用户详情" /> : null}
+          {detailError ? <ErrorBlock message={detailError} onRetry={() => void openDetail(detailTarget)} /> : null}
+          {detail && !detailLoading && !detailError ? <UserDetailView detail={detail} /> : null}
         </Modal>
       ) : null}
     </section>
   )
 }
 
+function UserDetailView({ detail }: { detail: AdminUserDetail }) {
+  const buckets = detail.balance?.buckets ?? []
+  return (
+    <section className={adminPage.detailStack}>
+      <StatusStrip columns={4}>
+        <StatusCell label="可用积分" value={detail.balance?.available_points ?? detail.user.balance} />
+        <StatusCell label="体验额度" value={detail.balance?.trial_points ?? '0.00000'} />
+        <StatusCell label="充值余额" value={detail.balance?.recharge_points ?? '0.00000'} />
+        <StatusCell label="冻结积分" value={detail.balance?.frozen_points ?? '0.00000'} />
+      </StatusStrip>
+      <DetailSection title="余额桶" empty="暂无余额桶">
+        {buckets.length ? <BucketGrid buckets={buckets} /> : null}
+      </DetailSection>
+      <DetailSection title="最近流水" empty="暂无流水">
+        {detail.recent_ledger?.length ? <LedgerGrid items={detail.recent_ledger} /> : null}
+      </DetailSection>
+      <DetailSection title="最近订单" empty="暂无订单">
+        {detail.recent_orders?.length ? <OrderGrid items={detail.recent_orders} /> : null}
+      </DetailSection>
+      <DetailSection title="最近任务" empty="暂无任务">
+        {detail.recent_tasks?.length ? <TaskGrid items={detail.recent_tasks} /> : null}
+      </DetailSection>
+      <DetailSection title="API Key" empty="暂无 API Key">
+        {detail.api_keys?.length ? <APIKeyGrid items={detail.api_keys} /> : null}
+      </DetailSection>
+    </section>
+  )
+}
+
+function DetailSection({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+  return (
+    <section className={adminPage.detailSection}>
+      <div className={adminPage.sectionHead}><div className={adminPage.sectionTitle}>{title}</div></div>
+      {children || <EmptyBlock title={empty} detail="该用户暂无对应记录。" />}
+    </section>
+  )
+}
+
+function BucketGrid({ buckets }: { buckets: BalanceBucket[] }) {
+  const rows = buckets.map(userDetailBucketRow)
+  return (
+    <div className={cn(adminDataGrid.root, adminGridCols.userDetailBucket)}>
+      <div className={cn(adminDataGrid.head, adminGridCols.userDetailBucket)}><span>类型</span><span>可用</span><span>过期时间</span></div>
+      {rows.map((item) => (
+        <div className={cn(adminDataGrid.row, adminGridCols.userDetailBucket)} key={item.key}>
+          <strong>{item.label}</strong>
+          <code className={adminDataGrid.code}>{item.availablePoints}</code>
+          <span>{item.expiresAtLabel}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function LedgerGrid({ items }: { items: LedgerEntry[] }) {
+  const rows = userDetailLedgerRows(items)
+  return (
+    <div className={cn(adminDataGrid.root, adminGridCols.userDetailLedger)}>
+      <div className={cn(adminDataGrid.head, adminGridCols.userDetailLedger)}><span>类型</span><span>桶/来源</span><span>变更</span><span>余额</span><span>有效期</span><span>时间</span></div>
+      {rows.map((item) => (
+        <div className={cn(adminDataGrid.row, adminGridCols.userDetailLedger)} key={String(item.id)}>
+          <strong>{item.title}</strong>
+          <span>{item.bucketLabel} · {item.sourceLabel}</span>
+          <code className={cn(adminDataGrid.code, item.amountTone === 'credit' ? creditAmountClass : debitAmountClass)}>{item.amount}</code>
+          <code className={adminDataGrid.code}>{item.balanceAfter}</code>
+          <span>{item.expiryText}</span>
+          <span>{item.occurredAt}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function OrderGrid({ items }: { items: PaymentOrder[] }) {
+  const rows = items.map(userDetailOrderRow)
+  return (
+    <div className={cn(adminDataGrid.root, adminGridCols.userDetailOrder)}>
+      <div className={cn(adminDataGrid.head, adminGridCols.userDetailOrder)}><span>订单</span><span>状态</span><span>金额</span><span>积分</span><span>时间</span></div>
+      {rows.map((item) => (
+        <div className={cn(adminDataGrid.row, adminGridCols.userDetailOrder)} key={item.id}>
+          <strong>{item.orderNo}</strong>
+          <Badge tone={item.statusTone}>{item.statusLabel}</Badge>
+          <code className={adminDataGrid.code}>{item.amountCny}</code>
+          <code className={adminDataGrid.code}>{item.points}</code>
+          <span>{item.createdAtLabel}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function TaskGrid({ items }: { items: ImageTask[] }) {
+  const rows = items.map(userDetailTaskRow)
+  return (
+    <div className={cn(adminDataGrid.root, adminGridCols.userDetailTask)}>
+      <div className={cn(adminDataGrid.head, adminGridCols.userDetailTask)}><span>任务</span><span>状态</span><span>类型</span><span>模型</span><span>积分</span></div>
+      {rows.map((item) => (
+        <div className={cn(adminDataGrid.row, adminGridCols.userDetailTask)} key={item.id}>
+          <code className={adminDataGrid.code}>{item.shortId}</code>
+          <Badge tone={item.statusTone}>{item.statusLabel}</Badge>
+          <span>{item.typeLabel}</span>
+          <span>{item.modelLabel}</span>
+          <code className={adminDataGrid.code}>{item.pointsLabel}</code>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function APIKeyGrid({ items }: { items: ApiKey[] }) {
+  const rows = items.map(userDetailApiKeyRow)
+  return (
+    <div className={cn(adminDataGrid.root, adminGridCols.userDetailApiKey)}>
+      <div className={cn(adminDataGrid.head, adminGridCols.userDetailApiKey)}><span>名称</span><span>状态</span><span>分组</span><span>Access Key</span><span>最近使用</span></div>
+      {rows.map((item) => (
+        <div className={cn(adminDataGrid.row, adminGridCols.userDetailApiKey)} key={item.id}>
+          <strong>{item.name}</strong>
+          <Badge tone={item.statusTone}>{item.statusLabel}</Badge>
+          <span>{item.groupCode}</span>
+          <code className={adminDataGrid.code}>{item.accessKey}</code>
+          <span>{item.lastUsedAtLabel}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function userListFilters(filters: UserFilters): Record<string, string | undefined> {
+  return {
+    status: filters.status || undefined,
+    group_code: filters.group || undefined,
+    sort_by: filters.sortBy === initialFilters.sortBy ? undefined : filters.sortBy,
+    sort_dir: filters.sortDir === initialFilters.sortDir ? undefined : filters.sortDir,
+  }
+}
+
 function actionTitle(action: UserAction) {
   if (action.type === 'create') return '新增用户'
   if (action.type === 'status') return '修改用户状态'
   if (action.type === 'group') return '调整用户分组'
-  if (action.type === 'user-group') return action.row ? '编辑权益分组' : '新增权益分组'
   if (action.type === 'points') return '调整用户积分'
   if (action.type === 'limits') return '调整用户限额'
   if (action.type === 'delete') return '删除用户'
@@ -213,26 +392,24 @@ function actionTitle(action: UserAction) {
 
 function actionDetail(action: UserAction) {
   if (action.type === 'create') return '管理后台创建用户不需要邮箱验证码。'
-  if (action.type === 'user-group') return '权益分组可用于路由模型可见性和倍率择优。'
   return action.user.email
 }
 
 function canSave(action: UserAction) {
   if (action.type === 'create') return Boolean(action.draft.email?.trim())
   if (action.type === 'password') return action.password.length >= 8
-  if (action.type === 'points') return Boolean(action.changePoints.trim() && action.reason.trim())
+  if (action.type === 'points') return canSaveUserPointAdjustment(action)
   if (action.type === 'delete') return action.confirmEmail.trim() === action.user.email
-  if (action.type === 'user-group') return Boolean(action.draft.code.trim() && action.draft.name.trim() && action.draft.multiplier.trim())
   return true
 }
 
 function renderActionForm(action: UserAction, groups: UserGroup[], setAction: (action: UserAction) => void) {
   if (action.type === 'create') {
     return (
-      <form className="form-grid" onSubmit={(event: FormEvent) => event.preventDefault()}>
+      <form className={adminPage.formGrid} onSubmit={(event: FormEvent) => event.preventDefault()}>
         <Field label="邮箱"><input value={action.draft.email} onChange={(event) => setAction({ ...action, draft: { ...action.draft, email: event.target.value } })} required /></Field>
         <Field label="昵称"><input value={action.draft.nickname ?? ''} onChange={(event) => setAction({ ...action, draft: { ...action.draft, nickname: event.target.value } })} /></Field>
-        <Field label="状态"><select value={action.draft.status ?? 'active'} onChange={(event) => setAction({ ...action, draft: { ...action.draft, status: event.target.value } })}><option value="active">正常</option><option value="pending">待验证</option><option value="disabled">禁用</option></select></Field>
+        <Field label="状态"><select value={action.draft.status ?? 'active'} onChange={(event) => setAction({ ...action, draft: { ...action.draft, status: event.target.value } })}>{adminUserStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
         <Field label="默认分组"><GroupSelect value={action.draft.user_group_code ?? 'basic'} groups={groups} onChange={(value) => setAction({ ...action, draft: { ...action.draft, user_group_code: value } })} /></Field>
         <Field label="RPM 限额"><input type="number" min="0" value={action.draft.rpm_limit ?? 0} onChange={(event) => setAction({ ...action, draft: { ...action.draft, rpm_limit: Number(event.target.value) } })} /></Field>
         <Field label="并发限额"><input type="number" min="0" value={action.draft.concurrency_limit ?? 0} onChange={(event) => setAction({ ...action, draft: { ...action.draft, concurrency_limit: Number(event.target.value) } })} /></Field>
@@ -241,7 +418,7 @@ function renderActionForm(action: UserAction, groups: UserGroup[], setAction: (a
     )
   }
   if (action.type === 'status') {
-    return <Field label="新状态"><select value={action.status} onChange={(event) => setAction({ ...action, status: event.target.value })}><option value="active">正常</option><option value="pending">待验证</option><option value="disabled">禁用</option></select></Field>
+    return <Field label="新状态"><select value={action.status} onChange={(event) => setAction({ ...action, status: event.target.value })}>{adminUserStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
   }
   if (action.type === 'delete') {
     return <><p>删除后该用户会从列表隐藏，并撤销登录会话。为避免误操作，请输入用户邮箱确认。</p><Field label="确认邮箱"><input value={action.confirmEmail} onChange={(event) => setAction({ ...action, confirmEmail: event.target.value })} placeholder={action.user.email} /></Field></>
@@ -249,42 +426,32 @@ function renderActionForm(action: UserAction, groups: UserGroup[], setAction: (a
   if (action.type === 'group') {
     return <Field label="用户分组"><GroupOptionGrid selected={action.groupIds} groups={groups} onChange={(groupIds) => setAction({ ...action, groupIds })} /></Field>
   }
-  if (action.type === 'user-group') {
+  if (action.type === 'points') {
     return (
-      <div className="form-grid">
-        <Field label="分组代码"><input value={action.draft.code} onChange={(event) => setAction({ ...action, draft: { ...action.draft, code: event.target.value } })} /></Field>
-        <Field label="分组名称"><input value={action.draft.name} onChange={(event) => setAction({ ...action, draft: { ...action.draft, name: event.target.value } })} /></Field>
-        <Field label="计费倍率"><input value={action.draft.multiplier} onChange={(event) => setAction({ ...action, draft: { ...action.draft, multiplier: event.target.value } })} /></Field>
-        <Field label="排序"><input type="number" value={action.draft.sort_order ?? 0} onChange={(event) => setAction({ ...action, draft: { ...action.draft, sort_order: Number(event.target.value) } })} /></Field>
-        <Field label="状态"><select value={action.draft.status} onChange={(event) => setAction({ ...action, draft: { ...action.draft, status: event.target.value } })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
-        <Field label="默认分组"><select value={action.draft.is_default ? 'true' : 'false'} onChange={(event) => setAction({ ...action, draft: { ...action.draft, is_default: event.target.value === 'true' } })}><option value="false">否</option><option value="true">是</option></select></Field>
-        <Field label="描述"><input value={action.draft.description ?? ''} onChange={(event) => setAction({ ...action, draft: { ...action.draft, description: event.target.value } })} /></Field>
-      </div>
+      <>
+        <Field label="变更积分"><input value={action.changePoints} onChange={(event) => setAction({ ...action, changePoints: event.target.value })} /></Field>
+        <Field label="原因"><input value={action.reason} onChange={(event) => setAction({ ...action, reason: event.target.value })} placeholder="必填，写清本次调整原因" /></Field>
+        <Field label="幂等键">
+          <div className={inlineControlClass}>
+            <input value={action.idempotencyKey} onChange={(event) => setAction({ ...action, idempotencyKey: event.target.value })} placeholder="必填，用于防止重复调整" />
+            <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ ...action, idempotencyKey: newUserPointAdjustmentKey(action.user.id) })}>生成</button>
+          </div>
+        </Field>
+      </>
     )
   }
-  if (action.type === 'points') {
-    return <><Field label="变更积分"><input value={action.changePoints} onChange={(event) => setAction({ ...action, changePoints: event.target.value })} /></Field><Field label="原因"><input value={action.reason} onChange={(event) => setAction({ ...action, reason: event.target.value })} /></Field></>
-  }
   if (action.type === 'limits') {
-    return <div className="form-grid"><Field label="RPM 限额"><input type="number" min="0" value={action.rpmLimit} onChange={(event) => setAction({ ...action, rpmLimit: event.target.value })} /></Field><Field label="并发限额"><input type="number" min="0" value={action.concurrencyLimit} onChange={(event) => setAction({ ...action, concurrencyLimit: event.target.value })} /></Field></div>
+    return <div className={adminPage.formGrid}><Field label="RPM 限额"><input type="number" min="0" value={action.rpmLimit} onChange={(event) => setAction({ ...action, rpmLimit: event.target.value })} /></Field><Field label="并发限额"><input type="number" min="0" value={action.concurrencyLimit} onChange={(event) => setAction({ ...action, concurrencyLimit: event.target.value })} /></Field></div>
   }
   return <Field label="新密码"><input type="password" value={action.password} onChange={(event) => setAction({ ...action, password: event.target.value })} placeholder="至少 8 位" /></Field>
 }
 
-function GroupSelect({ value, groups, onChange }: { value: string; groups: UserGroup[]; onChange: (value: string) => void }) {
+function GroupSelect({ value, groups, onChange, includeAll = false }: { value: string; groups: UserGroup[]; onChange: (value: string) => void; includeAll?: boolean }) {
   const options = groups.length ? groups : [{ code: 'basic', name: 'basic', group_code: 'basic', group_name: 'basic', multiplier: '1.00000', status: 'enabled', created_at: '', updated_at: '' }] as UserGroup[]
-  return <select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((group) => <option key={group.code} value={group.code}>{group.code}</option>)}</select>
+  return <select value={value} onChange={(event) => onChange(event.target.value)} aria-label="分组筛选">{includeAll ? <option value="">全部分组</option> : null}{options.map((group) => <option key={group.code} value={group.code}>{group.name || group.code}</option>)}</select>
 }
 
 function currentGroupIds(user: AdminUser, groups: UserGroup[]) {
   const codes = user.user_group_codes?.length ? user.user_group_codes : user.group.split(',').map((item) => item.trim()).filter(Boolean)
   return codes.map((code) => String(groups.find((group) => group.code === code)?.id ?? code))
-}
-
-function blankGroupDraft(index: number): UserGroupWriteRequest {
-  return { code: `group_${index}`, name: `权益分组 ${index}`, multiplier: '1.00000', status: 'enabled', sort_order: index * 10, is_default: false, description: '' }
-}
-
-function groupToDraft(group: UserGroup): UserGroupWriteRequest {
-  return { code: group.code, name: group.name, multiplier: group.multiplier, status: group.status, sort_order: group.sort_order ?? 0, is_default: group.is_default ?? false, description: group.description ?? '' }
 }

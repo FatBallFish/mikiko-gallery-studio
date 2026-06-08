@@ -47,7 +47,7 @@ func defaultSuggestion(code string) string {
 		return "redeem or add points before creating a task"
 	case CodeUnauthorized, CodeAuthAccessExpired, CodeAuthRefreshExpired:
 		return "sign in again and retry"
-	case CodeImageReferenceRequired, CodeImageReferenceExceeded, CodeValidationFailed, CodeBadRequest:
+	case CodeImageReferenceRequired, CodeImageReferenceExceeded, CodeImageReferenceTooLarge, CodeValidationFailed, CodeBadRequest:
 		return "adjust request parameters and retry"
 	default:
 		return "retry later or contact support if the problem persists"

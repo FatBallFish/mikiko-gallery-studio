@@ -73,10 +73,45 @@ type CreateRequest struct {
 	SavePolicy          string
 }
 
+type RetryRequest struct {
+	UserGroupCode       string
+	UserGroupCodes      []string
+	UserGroupMultiplier string
+}
+
+type TestModelAccountRequest struct {
+	AccountID  int64
+	ModelID    int64
+	ModelCode  string
+	Prompt     string
+	SourceMode string
+}
+
+type TestModelAccountResult struct {
+	Status            string               `json:"status"`
+	ImageURL          string               `json:"image_url,omitempty"`
+	Width             int                  `json:"width,omitempty"`
+	Height            int                  `json:"height,omitempty"`
+	ProviderRequestID string               `json:"provider_request_id,omitempty"`
+	ActualParams      map[string]string    `json:"actual_params,omitempty"`
+	ElapsedMS         int64                `json:"elapsed_ms"`
+	Task              Task                 `json:"task,omitempty"`
+	Image             provider.ImageResult `json:"image,omitempty"`
+}
+
 type Attempt struct {
-	Provider string
-	Status   string
-	Error    string
+	Provider       string         `json:"provider,omitempty"`
+	AdapterType    string         `json:"adapter_type,omitempty"`
+	AccountModelID int64          `json:"account_model_id,omitempty"`
+	ModelAccountID int64          `json:"model_account_id,omitempty"`
+	ModelCode      string         `json:"model_code,omitempty"`
+	Status         string         `json:"status,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	ErrorCode      string         `json:"error_code,omitempty"`
+	ErrorMessage   string         `json:"error_message,omitempty"`
+	ErrorDetail    map[string]any `json:"error_detail,omitempty"`
+	StartedAt      *time.Time     `json:"started_at,omitempty"`
+	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
 }
 
 type Task struct {
@@ -136,6 +171,7 @@ type GalleryImage struct {
 	TaskID            string                  `json:"task_id"`
 	UserID            int64                   `json:"user_id,omitempty"`
 	Prompt            string                  `json:"prompt,omitempty"`
+	PromptExcerpt     string                  `json:"prompt_excerpt,omitempty"`
 	AbstractModel     string                  `json:"abstract_model,omitempty"`
 	RouteModelCode    string                  `json:"route_model_code,omitempty"`
 	TaskType          string                  `json:"task_type,omitempty"`
@@ -161,7 +197,6 @@ type GalleryImage struct {
 	AuthorName        string                  `json:"author_name,omitempty"`
 	LikeCount         int                     `json:"like_count"`
 	FavoriteCount     int                     `json:"favorite_count"`
-	CommentCount      int                     `json:"comment_count"`
 	LikedByViewer     bool                    `json:"liked_by_viewer,omitempty"`
 	FavoritedByViewer bool                    `json:"favorited_by_viewer,omitempty"`
 	CreatedAt         time.Time               `json:"created_at"`
@@ -174,14 +209,17 @@ type GalleryReferenceAsset struct {
 }
 
 type GalleryListRequest struct {
-	Page          int
-	PageSize      int
-	Status        string
-	ReviewOnly    bool
-	Sort          string
-	ViewerUserID  int64
-	LikedOnly     bool
-	FavoritedOnly bool
+	Page           int
+	PageSize       int
+	Status         string
+	ReviewOnly     bool
+	Sort           string
+	Query          string
+	RouteModelCode string
+	TaskType       string
+	ViewerUserID   int64
+	LikedOnly      bool
+	FavoritedOnly  bool
 }
 
 type GalleryPage struct {

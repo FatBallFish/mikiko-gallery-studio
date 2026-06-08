@@ -112,7 +112,7 @@ func (s *Service) UpdateTab(ctx context.Context, req domainadminconfig.UpdateTab
 		if strings.TrimSpace(item.ConfigKey) == "" {
 			return domainadminconfig.Tab{}, errs.BadRequest("config_key is required")
 		}
-		if item.ConfigCategory != "" && !strings.EqualFold(item.ConfigCategory, req.TabKey) {
+		if item.ConfigCategory != "" && !strings.EqualFold(item.ConfigCategory, req.TabKey) && !definitionContainsCategory(current.Items, item.ConfigKey, defaultString(item.Scope, "global"), item.ConfigCategory) {
 			return domainadminconfig.Tab{}, errs.BadRequest("config_category does not match tab_key")
 		}
 		if !definitionContainsItem(current.Items, item.ConfigKey, defaultString(item.Scope, "global")) {
@@ -139,6 +139,15 @@ func (s *Service) findDefinition(tabKey string) (tabDefinition, bool) {
 func definitionContainsItem(items []domainadminconfig.Item, configKey, scope string) bool {
 	for _, item := range items {
 		if item.ConfigKey == configKey && defaultString(item.Scope, "global") == scope {
+			return true
+		}
+	}
+	return false
+}
+
+func definitionContainsCategory(items []domainadminconfig.Item, configKey, scope, category string) bool {
+	for _, item := range items {
+		if item.ConfigKey == configKey && defaultString(item.Scope, "global") == scope && strings.EqualFold(item.ConfigCategory, category) {
 			return true
 		}
 	}
@@ -184,6 +193,19 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			},
 		},
 		{
+			Key:  "trial_credits",
+			Name: "Trial Credits",
+			Items: []domainadminconfig.Item{
+				valueItem("billing_trial", "signup_trial", map[string]any{
+					"enabled":              cfg.Billing.SignupTrial.Enabled,
+					"points":               cfg.Billing.SignupTrial.Points,
+					"valid_days":           cfg.Billing.SignupTrial.ValidDays,
+					"expiry_reminder_days": cfg.Billing.SignupTrial.ExpiryReminderDays,
+					"grant_once_per_user":  cfg.Billing.SignupTrial.GrantOncePerUser,
+				}),
+			},
+		},
+		{
 			Key:  "openai_compat",
 			Name: "OpenAI Compatibility",
 			Items: []domainadminconfig.Item{
@@ -207,11 +229,35 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			},
 		},
 		{
+			Key:  "runtime",
+			Name: "Runtime",
+			Items: []domainadminconfig.Item{
+				valueItem("runtime", "worker_max_concurrent_tasks", cfg.Worker.MaxConcurrentTasks),
+			},
+		},
+		{
 			Key:  "payments",
 			Name: "Payments",
 			Items: []domainadminconfig.Item{
 				valueItem("payments", "enabled", false),
 				valueItem("payments", "providers", []string{"alipay", "wxpay"}),
+				valueItem("payments", "custom_amount_enabled", true),
+				valueItem("payments", "custom_amount_min_cny", "1.00000"),
+				valueItem("payments", "custom_amount_max_cny", "999.00000"),
+				valueItem("payments", "custom_amount_cny_per_point", cfg.Billing.CNYPerPoint),
+				valueItem("payments", "visible_methods", []map[string]any{
+					{
+						"method":               "mock",
+						"label":                "Mock 支付",
+						"enabled":              true,
+						"source_provider_type": "mock",
+						"scheduler_strategy":   "round_robin",
+						"display_order":        10,
+						"description":          "测试环境模拟支付链路",
+					},
+				}),
+				valueItem("payments", "provider_instances", []map[string]any{}),
+				valueItem("payments", "scheduler_state", map[string]any{}),
 			},
 		},
 		{

@@ -30,6 +30,18 @@ type PaymentOrder struct {
 	OrderNo string `json:"order_no,omitempty"`
 	// Provider holds the value of the "provider" field.
 	Provider string `json:"provider,omitempty"`
+	// PurchaseType holds the value of the "purchase_type" field.
+	PurchaseType string `json:"purchase_type,omitempty"`
+	// VisibleMethod holds the value of the "visible_method" field.
+	VisibleMethod string `json:"visible_method,omitempty"`
+	// ProviderType holds the value of the "provider_type" field.
+	ProviderType string `json:"provider_type,omitempty"`
+	// ProviderInstanceID holds the value of the "provider_instance_id" field.
+	ProviderInstanceID *int64 `json:"provider_instance_id,omitempty"`
+	// ProviderSnapshot holds the value of the "provider_snapshot" field.
+	ProviderSnapshot map[string]interface{} `json:"provider_snapshot,omitempty"`
+	// PaymentDisplay holds the value of the "payment_display" field.
+	PaymentDisplay map[string]interface{} `json:"payment_display,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// Currency holds the value of the "currency" field.
@@ -54,10 +66,16 @@ type PaymentOrder struct {
 	ExpiresAt time.Time `json:"expires_at,omitempty"`
 	// PaidAt holds the value of the "paid_at" field.
 	PaidAt *time.Time `json:"paid_at,omitempty"`
+	// CompletedAt holds the value of the "completed_at" field.
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	// ClosedAt holds the value of the "closed_at" field.
 	ClosedAt *time.Time `json:"closed_at,omitempty"`
 	// RefundedAt holds the value of the "refunded_at" field.
 	RefundedAt *time.Time `json:"refunded_at,omitempty"`
+	// LedgerID holds the value of the "ledger_id" field.
+	LedgerID *int64 `json:"ledger_id,omitempty"`
+	// IdempotencyKey holds the value of the "idempotency_key" field.
+	IdempotencyKey *string `json:"idempotency_key,omitempty"`
 	// ProviderPayload holds the value of the "provider_payload" field.
 	ProviderPayload map[string]interface{} `json:"provider_payload,omitempty"`
 	selectValues    sql.SelectValues
@@ -68,13 +86,13 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case paymentorder.FieldProviderPayload:
+		case paymentorder.FieldProviderSnapshot, paymentorder.FieldPaymentDisplay, paymentorder.FieldProviderPayload:
 			values[i] = new([]byte)
-		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID:
+		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldProviderInstanceID, paymentorder.FieldLedgerID:
 			values[i] = new(sql.NullInt64)
-		case paymentorder.FieldOrderNo, paymentorder.FieldProvider, paymentorder.FieldStatus, paymentorder.FieldCurrency, paymentorder.FieldAmountCny, paymentorder.FieldPoints, paymentorder.FieldBonusPoints, paymentorder.FieldTradeNo, paymentorder.FieldPaymentURL, paymentorder.FieldQrCode, paymentorder.FieldClientToken, paymentorder.FieldFailureReason:
+		case paymentorder.FieldOrderNo, paymentorder.FieldProvider, paymentorder.FieldPurchaseType, paymentorder.FieldVisibleMethod, paymentorder.FieldProviderType, paymentorder.FieldStatus, paymentorder.FieldCurrency, paymentorder.FieldAmountCny, paymentorder.FieldPoints, paymentorder.FieldBonusPoints, paymentorder.FieldTradeNo, paymentorder.FieldPaymentURL, paymentorder.FieldQrCode, paymentorder.FieldClientToken, paymentorder.FieldFailureReason, paymentorder.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
-		case paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldClosedAt, paymentorder.FieldRefundedAt:
+		case paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldClosedAt, paymentorder.FieldRefundedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -132,6 +150,47 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field provider", values[i])
 			} else if value.Valid {
 				_m.Provider = value.String
+			}
+		case paymentorder.FieldPurchaseType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field purchase_type", values[i])
+			} else if value.Valid {
+				_m.PurchaseType = value.String
+			}
+		case paymentorder.FieldVisibleMethod:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field visible_method", values[i])
+			} else if value.Valid {
+				_m.VisibleMethod = value.String
+			}
+		case paymentorder.FieldProviderType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_type", values[i])
+			} else if value.Valid {
+				_m.ProviderType = value.String
+			}
+		case paymentorder.FieldProviderInstanceID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_instance_id", values[i])
+			} else if value.Valid {
+				_m.ProviderInstanceID = new(int64)
+				*_m.ProviderInstanceID = value.Int64
+			}
+		case paymentorder.FieldProviderSnapshot:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_snapshot", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ProviderSnapshot); err != nil {
+					return fmt.Errorf("unmarshal field provider_snapshot: %w", err)
+				}
+			}
+		case paymentorder.FieldPaymentDisplay:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field payment_display", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.PaymentDisplay); err != nil {
+					return fmt.Errorf("unmarshal field payment_display: %w", err)
+				}
 			}
 		case paymentorder.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -211,6 +270,13 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				_m.PaidAt = new(time.Time)
 				*_m.PaidAt = value.Time
 			}
+		case paymentorder.FieldCompletedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field completed_at", values[i])
+			} else if value.Valid {
+				_m.CompletedAt = new(time.Time)
+				*_m.CompletedAt = value.Time
+			}
 		case paymentorder.FieldClosedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field closed_at", values[i])
@@ -224,6 +290,20 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RefundedAt = new(time.Time)
 				*_m.RefundedAt = value.Time
+			}
+		case paymentorder.FieldLedgerID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field ledger_id", values[i])
+			} else if value.Valid {
+				_m.LedgerID = new(int64)
+				*_m.LedgerID = value.Int64
+			}
+		case paymentorder.FieldIdempotencyKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field idempotency_key", values[i])
+			} else if value.Valid {
+				_m.IdempotencyKey = new(string)
+				*_m.IdempotencyKey = value.String
 			}
 		case paymentorder.FieldProviderPayload:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -287,6 +367,26 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString("provider=")
 	builder.WriteString(_m.Provider)
 	builder.WriteString(", ")
+	builder.WriteString("purchase_type=")
+	builder.WriteString(_m.PurchaseType)
+	builder.WriteString(", ")
+	builder.WriteString("visible_method=")
+	builder.WriteString(_m.VisibleMethod)
+	builder.WriteString(", ")
+	builder.WriteString("provider_type=")
+	builder.WriteString(_m.ProviderType)
+	builder.WriteString(", ")
+	if v := _m.ProviderInstanceID; v != nil {
+		builder.WriteString("provider_instance_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("provider_snapshot=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ProviderSnapshot))
+	builder.WriteString(", ")
+	builder.WriteString("payment_display=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PaymentDisplay))
+	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
 	builder.WriteString(", ")
@@ -335,6 +435,11 @@ func (_m *PaymentOrder) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
+	if v := _m.CompletedAt; v != nil {
+		builder.WriteString("completed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
 	if v := _m.ClosedAt; v != nil {
 		builder.WriteString("closed_at=")
 		builder.WriteString(v.Format(time.ANSIC))
@@ -343,6 +448,16 @@ func (_m *PaymentOrder) String() string {
 	if v := _m.RefundedAt; v != nil {
 		builder.WriteString("refunded_at=")
 		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.LedgerID; v != nil {
+		builder.WriteString("ledger_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.IdempotencyKey; v != nil {
+		builder.WriteString("idempotency_key=")
+		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
 	builder.WriteString("provider_payload=")

@@ -36,6 +36,8 @@ type Tx struct {
 	ModelRoute *ModelRouteClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
 	PaymentOrder *PaymentOrderClient
+	// PaymentProviderInstance is the client for interacting with the PaymentProviderInstance builders.
+	PaymentProviderInstance *PaymentProviderInstanceClient
 	// PaymentWebhookEvent is the client for interacting with the PaymentWebhookEvent builders.
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
@@ -62,6 +64,8 @@ type Tx struct {
 	RouteModelPrice *RouteModelPriceClient
 	// RouteModelVisibilityGroup is the client for interacting with the RouteModelVisibilityGroup builders.
 	RouteModelVisibilityGroup *RouteModelVisibilityGroupClient
+	// SecureConfig is the client for interacting with the SecureConfig builders.
+	SecureConfig *SecureConfigClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
 	// User is the client for interacting with the User builders.
@@ -219,6 +223,7 @@ func (tx *Tx) init() {
 	tx.ModelProvider = NewModelProviderClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
+	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)
 	tx.PaymentWebhookEvent = NewPaymentWebhookEventClient(tx.config)
 	tx.PointLedger = NewPointLedgerClient(tx.config)
 	tx.ProviderErrorPolicy = NewProviderErrorPolicyClient(tx.config)
@@ -232,6 +237,7 @@ func (tx *Tx) init() {
 	tx.RouteModelCandidate = NewRouteModelCandidateClient(tx.config)
 	tx.RouteModelPrice = NewRouteModelPriceClient(tx.config)
 	tx.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(tx.config)
+	tx.SecureConfig = NewSecureConfigClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserGroup = NewUserGroupClient(tx.config)
