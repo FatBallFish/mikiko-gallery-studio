@@ -1,6 +1,6 @@
-import type { Balance, UserProfile } from '../../shared/api-types'
+import type { Balance, UserProfile, UserThemePreference } from '../../shared/api-types'
 
-export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'gallery' | 'public-gallery' | 'checkout' | 'api-keys' | 'profile' | 'docs'
+export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'gallery' | 'public-gallery' | 'checkout' | 'api-keys' | 'profile' | 'docs' | 'settings'
 
 export type ToastTone = 'success' | 'error' | 'info'
 
@@ -22,6 +22,8 @@ export type AppContextValue = {
   session: SessionState | null
   profile: UserProfile | null
   balance: Balance | null
+  themePreference: UserThemePreference
+  setThemePreference: (patch: Partial<UserThemePreference>) => Promise<void>
   refreshAccount: () => Promise<void>
   navigate: (route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null }) => void
   login: (session: SessionState, returnTo?: RouteId, options?: { imageId?: string | null }) => Promise<void>

@@ -8,7 +8,7 @@ export const demoProfile: UserProfile = {
   tier: 'PLUS',
   group: 'DEFAULT (1.0x)',
   signature: '用光、材质和构图构建可复用的视觉资产。',
-  preferences: { model_group: 'plus-image', quality: 'auto', aspect_ratio: '1:1', image_count: 2 },
+  preferences: { model_group: 'plus-image', quality: 'auto', aspect_ratio: '1:1', image_count: 2, theme_mode: 'dark', accent_theme: 'amber' },
 }
 
 export const demoCapability: Capability = {
@@ -51,6 +51,8 @@ export const initialTasks: ImageTask[] = [
     image_count: 2,
     estimate_points: '5.12500',
     progress: 100,
+    progress_stage: 'completed',
+    progress_message: '生成完成，结果已同步到资产',
     provider: 'OpenAI',
     route: 'primary',
     created_at: '2026-05-21 14:28',
@@ -73,6 +75,8 @@ export const initialTasks: ImageTask[] = [
     image_count: 1,
     estimate_points: '2.00000',
     progress: 100,
+    progress_stage: 'completed',
+    progress_message: '生成完成，结果已同步到资产',
     provider: 'OpenRouter',
     route: 'fallback-capability',
     created_at: '2026-05-20 21:40',

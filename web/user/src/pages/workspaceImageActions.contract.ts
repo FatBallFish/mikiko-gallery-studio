@@ -1,8 +1,8 @@
 import { workspaceUnavailableImageActionNotice } from './workspaceImageActions'
 
 const markNotice = workspaceUnavailableImageActionNotice('标记')
-if (markNotice.title !== '前往图库管理' || !markNotice.detail.includes('图库') || !markNotice.detail.includes('申请公开')) {
-  throw new Error(`mark action notice should guide users to gallery/public workflow, got ${JSON.stringify(markNotice)}`)
+if (markNotice.title !== '前往资产管理' || !markNotice.detail.includes('资产') || !markNotice.detail.includes('申请公开')) {
+  throw new Error(`mark action notice should guide users to asset/public workflow, got ${JSON.stringify(markNotice)}`)
 }
 
 const moreNotice = workspaceUnavailableImageActionNotice('更多')

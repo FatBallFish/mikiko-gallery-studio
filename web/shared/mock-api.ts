@@ -165,6 +165,8 @@ class MockPicGalleryApi {
       image_count: req.image_count,
       estimate_points: estimate.display_points ?? estimate.points,
       progress: 8,
+      progress_stage: 'queued',
+      progress_message: '任务已进入生成队列',
       provider: routeCode.includes('basic') ? 'OpenRouter' : 'OpenAI',
       route: req.task_type === 'text_to_image' ? 'primary' : 'capability-matrix',
       created_at: now(),
@@ -183,10 +185,14 @@ class MockPicGalleryApi {
     if (task.status === 'queued') {
       task.status = 'running'
       task.progress = 42
+      task.progress_stage = 'provider'
+      task.progress_message = `正在调用 ${task.route_model_code || task.model_group} 生成图片`
       task.updated_at = now()
     } else if (task.status === 'running') {
       task.status = 'succeeded'
       task.progress = 100
+      task.progress_stage = 'completed'
+      task.progress_message = '生成完成，结果已同步到资产'
       task.updated_at = now()
       task.results = Array.from({ length: task.image_count }, (_, index) => ({
         id: id('img'),

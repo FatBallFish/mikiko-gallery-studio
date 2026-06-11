@@ -19,3 +19,18 @@ const detailHash = userHashForRoute('public-gallery', { imageId: 'img_999' })
 if (detailHash !== '/public-gallery?image_id=img_999') {
   throw new Error(`public gallery hash should include image_id, got ${detailHash}`)
 }
+
+const settings = parseUserHashState('#/settings')
+if (settings.route !== 'settings') {
+  throw new Error(`settings route should be parseable, got ${JSON.stringify(settings)}`)
+}
+
+const settingsHash = userHashForRoute('settings')
+if (settingsHash !== '/settings') {
+  throw new Error(`settings route should have a stable hash, got ${settingsHash}`)
+}
+
+const retiredDemoRoute = parseUserHashState('#/redesign-demo')
+if (retiredDemoRoute.route !== 'landing') {
+  throw new Error(`redesign demo route should not be part of the production user router, got ${JSON.stringify(retiredDemoRoute)}`)
+}

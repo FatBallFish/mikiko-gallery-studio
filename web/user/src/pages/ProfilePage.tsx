@@ -3,19 +3,19 @@ import type { Balance, GenerationPreferences, LedgerEntry, UserProfile } from '.
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, Field, LoadingState, useApp } from '../components'
-import { userButton, userCard, userForm, userShell, userText } from '../ui/classes'
+import { userButton, userForm } from '../ui/classes'
 import { errorMessage } from '../useApiResource'
 import { balanceBucketLabel, bucketExpiryText, normalizeBalanceBuckets, profileLedgerRows } from './profileBalanceModel'
 
 const profileClasses = {
-  content: cn(userShell.content, 'max-w-[960px]'),
+  content: 'w-full flex-1 p-6 md:p-10',
   header: 'mb-12',
-  title: 'm-0 font-[var(--font-display)] text-[56px] leading-none',
+  title: 'm-0 text-4xl font-black leading-none md:text-6xl',
   grid: 'grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]',
   stack: 'grid gap-8',
   compactStack: 'grid gap-3',
-  card: cn(userCard.padded, 'h-fit'),
-  cardTitle: 'mb-6 flex items-center gap-2 text-sm font-extrabold uppercase tracking-[.1em] text-[var(--muted)]',
+  card: 'h-fit rounded-[2.5rem] border border-[var(--border)] bg-[var(--surface)] p-6 md:p-8',
+  cardTitle: 'mb-6 flex items-center gap-2 text-sm font-extrabold text-[var(--muted)]',
   balanceDisplay: 'mb-8',
   balanceNum: 'num mb-2 font-[var(--font-display)] text-[64px] leading-none text-[var(--accent)]',
   balanceLabel: 'text-sm text-[var(--muted)]',
@@ -40,7 +40,7 @@ const profileClasses = {
   ledgerFooter: 'mt-8 text-center',
   accentGhost: 'text-[var(--accent)]',
   bucketList: 'mt-6 grid gap-2.5',
-  bucketCard: 'rounded-lg border border-[var(--border)] bg-white/[.03] p-3.5',
+  bucketCard: 'rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-3.5',
   bucketTrial: 'bg-[rgba(191,161,106,.08)]',
   bucketWarning: 'border-[rgba(191,161,106,.55)]',
   bucketHead: 'flex items-baseline justify-between gap-3',
@@ -49,7 +49,7 @@ const profileClasses = {
   bucketHint: 'mt-1.5 text-xs text-[var(--muted)]',
   bucketHintWarning: 'text-[var(--accent)]',
   profileHeader: 'mb-8 flex items-center gap-6',
-  avatar: 'grid size-20 place-items-center rounded-full bg-[var(--accent)] font-[var(--font-display)] text-[32px] font-extrabold text-[var(--bg)]',
+  avatar: 'grid size-20 place-items-center rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] text-[32px] font-extrabold text-white shadow-[0_0_30px_rgba(var(--accent-rgb),0.3)]',
   profileName: 'text-xl font-bold',
   profileEmail: 'text-sm text-[var(--muted)]',
   prefGrid: 'grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3',
@@ -114,7 +114,6 @@ export function ProfilePage() {
   return (
     <div className={profileClasses.content}>
       <div className={profileClasses.header}>
-        <p className={userText.eyebrow}>ACCOUNT & CREDITS</p>
         <h1 className={profileClasses.title}>个人中心</h1>
       </div>
 

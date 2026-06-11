@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Balance, UserProfile } from '../../shared/api-types'
+import type { Balance, UserProfile, UserThemePreference } from '../../shared/api-types'
 import { userApi } from '../../shared/user-api'
 import { AppContext, protectedRoutes, Shell, ToastViewport } from './components'
 import type { RouteId, SessionState, Toast, ToastTone } from './types'
@@ -13,7 +13,9 @@ import { CheckoutPage } from './pages/CheckoutPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { DocsPage } from './pages/DocsPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { parseUserHashState, userHashForRoute } from './routeState'
+import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
 
 const sessionKey = 'pic-gallery-user-session'
 
@@ -46,6 +48,9 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(() => readStoredSession()?.profile ?? null)
   const [balance, setBalance] = useState<Balance | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [themePreference, setThemePreferenceState] = useState<UserThemePreference>(() => (
+    themePreferenceFromProfile(readStoredSession()?.profile) ?? readLocalThemePreference()
+  ))
 
   const notify = useCallback((tone: ToastTone, message: string) => {
     setToasts((items) => [...items, { id: Date.now() + Math.random(), tone, message, durationMs: 4200 }])
@@ -58,6 +63,11 @@ export default function App() {
   useEffect(() => {
     routeRef.current = route
   }, [route])
+
+  useEffect(() => {
+    applyThemePreference(themePreference)
+    writeLocalThemePreference(themePreference)
+  }, [themePreference])
 
   const expireSession = useCallback(() => {
     sessionRef.current = null
@@ -84,7 +94,7 @@ export default function App() {
           const currentProfile = sessionRef.current?.profile ?? profile ?? refreshed.profile ?? {
             id: String(refreshed.user_id ?? ''),
             email: '',
-            display_name: 'Pic User',
+            display_name: 'Mikiko User',
             avatar_initials: 'PG',
             tier: 'FREE' as const,
             group: 'DEFAULT',
@@ -108,10 +118,14 @@ export default function App() {
     })
   }, [expireSession, profile])
 
-  const installSession = useCallback((nextSession: SessionState) => {
+  const installSession = useCallback((nextSession: SessionState, options?: { applyProfileTheme?: boolean }) => {
     sessionRef.current = nextSession
     setSession(nextSession)
     setProfile(nextSession.profile)
+    if (options?.applyProfileTheme) {
+      const profileTheme = themePreferenceFromProfile(nextSession.profile)
+      if (profileTheme) setThemePreferenceState(profileTheme)
+    }
     window.localStorage.setItem(sessionKey, JSON.stringify(nextSession))
   }, [])
 
@@ -157,7 +171,7 @@ export default function App() {
         sessionRef.current = { token: refreshed.access_token, profile: profile ?? {
           id: String(refreshed.user_id ?? ''),
           email: '',
-          display_name: 'Pic User',
+          display_name: 'Mikiko User',
           avatar_initials: 'PG',
           tier: 'FREE',
           group: 'DEFAULT',
@@ -166,7 +180,7 @@ export default function App() {
         } }
         const nextProfile = await userApi.getProfile()
         if (cancelled) return
-        installSession({ token: refreshed.access_token, profile: nextProfile })
+        installSession({ token: refreshed.access_token, profile: nextProfile }, { applyProfileTheme: true })
         setBalance(await userApi.getBalance())
       } catch {
         window.localStorage.removeItem(sessionKey)
@@ -189,10 +203,31 @@ export default function App() {
     writeHash(next, options)
   }, [])
 
+  const setThemePreference = useCallback(async (patch: Partial<UserThemePreference>) => {
+    const next = { ...themePreference, ...patch } as UserThemePreference
+    setThemePreferenceState(next)
+    writeLocalThemePreference(next)
+    applyThemePreference(next)
+    if (!sessionRef.current?.token) return
+    try {
+      const nextProfile = await userApi.updatePreferences({
+        theme: serializeThemePreference(next),
+        theme_mode: next.mode,
+        accent_theme: next.accent,
+      })
+      setProfile(nextProfile)
+      sessionRef.current = { token: sessionRef.current.token, profile: nextProfile }
+      setSession(sessionRef.current)
+      window.localStorage.setItem(sessionKey, JSON.stringify(sessionRef.current))
+    } catch {
+      notify('error', '主题偏好已应用到本机，但暂未同步到账户')
+    }
+  }, [installSession, notify, themePreference])
+
   const login = useCallback(async (nextSession: SessionState, target?: RouteId, options?: { imageId?: string | null }) => {
     expiredNoticeRef.current = false
-    installSession(nextSession)
-    notify('success', '登录成功，欢迎回到 Vault')
+    installSession(nextSession, { applyProfileTheme: true })
+    notify('success', '登录成功，欢迎回到 Mikiko Studio')
     const destination = target ?? returnTo ?? 'home'
     writeHash(destination, { imageId: destination === 'public-gallery' ? options?.imageId ?? routeImageId : undefined })
   }, [installSession, notify, returnTo, routeImageId])
@@ -213,12 +248,14 @@ export default function App() {
     session,
     profile,
     balance,
+    themePreference,
+    setThemePreference,
     refreshAccount,
     navigate,
     login,
     logout,
     notify,
-  }), [route, session, profile, balance, refreshAccount, navigate, login, logout, notify])
+  }), [route, session, profile, balance, themePreference, setThemePreference, refreshAccount, navigate, login, logout, notify])
 
   const page = useMemo(() => {
     if (!session && protectedRoutes.includes(route)) {
@@ -243,6 +280,8 @@ export default function App() {
         return <Shell><ProfilePage /></Shell>
       case 'docs':
         return <Shell><DocsPage /></Shell>
+      case 'settings':
+        return <Shell><SettingsPage /></Shell>
       case 'landing':
       default:
         return <LandingPage />

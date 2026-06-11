@@ -3,7 +3,7 @@ import type { ImageResult } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
-import { EmptyState, LoadingState, Modal, PublicDetailIcon, PublicImageDetail, copyText, publicDetailButton, useApp } from '../components'
+import { EmptyState, ImageDetailModal, LoadingState, PublicDetailIcon, copyText, publicDetailButton, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 import { userForm, userText } from '../ui/classes'
 import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
@@ -177,7 +177,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
     <div className={publicGalleryClasses.content}>
       <div className={publicGalleryClasses.header}>
         <div>
-          <p className={userText.eyebrow}>PUBLIC GALLERY</p>
+          <p className={userText.eyebrow}>公开作品</p>
           <h1 className={publicGalleryClasses.title}>公开广场</h1>
         </div>
         <input className={cn(userForm.input, publicGalleryClasses.searchInput)} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索提示词、模型或作者" />
@@ -225,19 +225,18 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         })}
       </div>
 
-      {selected ? (
-        <Modal title="公开图片详情" onClose={() => setSelected(null)}>
-          <PublicImageDetail
-            image={selected}
-            imageUrl={selected.url || selected.download_url ? assetUrl(selected.url || selected.download_url || '') : undefined}
-            onLike={(image) => void toggleReaction(image as ImageResult, 'like')}
-            onFavorite={(image) => void toggleReaction(image as ImageResult, 'favorite')}
-            onDownload={(image) => downloadImage(image as ImageResult)}
-            onCopyPrompt={(prompt) => void copyPrompt(prompt)}
-            actions={[{ key: 'same', label: '同款生成', icon: <PublicDetailIcon name="edit" />, onClick: () => generateSame(selected), disabled: !selected.prompt }]}
-          />
-        </Modal>
-      ) : null}
+      <ImageDetailModal
+        title="公开图片详情"
+        image={selected}
+        imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
+        onLike={(image) => void toggleReaction(image as ImageResult, 'like')}
+        onFavorite={(image) => void toggleReaction(image as ImageResult, 'favorite')}
+        onDownload={(image) => downloadImage(image as ImageResult)}
+        onCopyPrompt={(prompt) => void copyPrompt(prompt)}
+        actions={selected ? [{ key: 'same', label: '同款生成', icon: <PublicDetailIcon name="edit" />, onClick: () => generateSame(selected), disabled: !selected.prompt }] : []}
+        previewSourceLabel="公开广场"
+        onClose={() => setSelected(null)}
+      />
     </div>
   )
 }

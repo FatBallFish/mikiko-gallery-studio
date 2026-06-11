@@ -1,39 +1,56 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import type { GalleryImage, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { cn } from '../../../shared/classnames'
-import { Button, EmptyState, ImageLightbox, LoadingState, Modal, PublicDetailIcon, PublicImageDetail, copyText, useApp } from '../components'
+import { Button, EmptyState, ImageDetailModal, ImageLightbox, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImageLightboxPayload } from '../components'
 import { errorMessage, useApiResource } from '../useApiResource'
-import { userButton, userForm, userState, userText } from '../ui/classes'
+import { userButton, userForm, userState } from '../ui/classes'
+import { rdGallery } from '../ui/redesign-classes'
 import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
 import { filterGalleryImages, galleryImageCard } from './galleryRows'
 
+function SearchIcon({ className = '' }: { className?: string }) {
+  return <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
+}
+
 const galleryClasses = {
-  content: 'mx-auto w-full max-w-[1200px] p-10 max-[760px]:p-5 max-[420px]:p-4',
-  header: 'mb-10 flex flex-wrap items-end justify-between gap-5',
-  title: 'm-0 font-vault-display text-5xl font-medium leading-none text-[var(--fg)] max-[620px]:text-4xl',
-  searchWrap: 'flex flex-wrap items-center gap-3',
-  searchInput: 'w-[280px] max-w-full rounded-lg',
-  filters: 'mb-8 flex flex-wrap gap-3',
-  filterRow: 'flex basis-full flex-wrap gap-2.5',
-  filterButton: 'rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 font-vault-mono text-sm text-[var(--muted)] transition hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:text-[var(--fg)]',
-  filterButtonActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-[var(--accent)]',
-  batchBar: 'mb-[18px] flex flex-wrap items-center gap-2.5 rounded-[10px] border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] px-3 py-2.5 text-[var(--muted)]',
+  content: 'w-full flex-1 p-6 md:p-10',
+  header: 'mb-8 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end',
+  title: 'm-0 text-4xl font-black text-[var(--fg)] md:text-6xl',
+  searchWrap: 'flex w-full flex-col gap-4 sm:flex-row md:w-auto',
+  searchInputWrap: 'relative w-full sm:w-80',
+  searchInput: 'h-12 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] pl-10 pr-4 text-sm text-[var(--fg)] transition-all focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/50',
+  filters: rdGallery.toolbar,
+  filterGroup: rdGallery.filterGroup,
+  filterSelect: rdGallery.filterSelectWrap,
+  filterTrigger: rdGallery.filterSelectBtn,
+  filterLabel: 'sr-only',
+  filterValue: 'overflow-hidden text-ellipsis whitespace-nowrap',
+  filterMenu: cn(rdGallery.filterSelectDropdown, 'max-h-64 overflow-auto'),
+  filterOption: rdGallery.filterOption,
+  filterOptionActive: rdGallery.filterOptionActive,
+  batchBar: rdGallery.batchBar,
   selectCheck: 'inline-flex items-center gap-2 text-sm text-[var(--fg)]',
+  batchSelectAll: 'flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-medium text-[var(--fg)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--accent)]',
+  batchSelectAllActive: 'bg-[var(--accent)]/12 text-[var(--accent)] ring-1 ring-[var(--accent)]/35',
   batchSpacer: 'min-w-0 flex-1',
-  grid: 'grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6 max-[760px]:grid-cols-1',
-  card: 'relative overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]',
-  assetSelect: 'absolute left-3 top-3 z-10 grid size-7 place-items-center rounded-lg border border-white/15 bg-[#05070db8] backdrop-blur-[10px]',
-  thumb: 'grid aspect-square w-full place-items-center overflow-hidden bg-[var(--bg)] p-0 text-[var(--muted)]',
-  thumbImage: 'h-full w-full object-cover',
-  status: 'absolute right-3 top-3 rounded-md bg-black/60 px-2 py-1 text-[10px] text-[var(--muted)] backdrop-blur',
-  info: 'p-4',
-  titleLine: 'mb-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-bold',
-  metaLine: 'flex justify-between gap-3 font-vault-mono text-[11px] text-[var(--muted)]',
-  groupLabel: 'mt-2.5 inline-flex w-fit rounded-full bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-2 py-1 text-[11px] text-[var(--accent)]',
-  iconActions: 'mt-3.5 flex flex-wrap justify-end gap-2',
-  iconButton: 'size-[34px] min-h-[34px] rounded-lg p-0 hover:border-[var(--accent)] hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45',
+  batchBtn: rdGallery.batchBtn,
+  grid: rdGallery.masonry,
+  card: rdGallery.item,
+  cardShell: rdGallery.itemShell,
+  cardInner: rdGallery.itemInner,
+  assetSelect: rdGallery.itemCheckbox,
+  thumb: 'block w-full cursor-zoom-in border-0 bg-transparent p-0 text-[var(--muted)]',
+  thumbImage: rdGallery.itemImg,
+  cardOverlay: rdGallery.itemOverlay,
+  status: rdGallery.itemBadge,
+  info: rdGallery.itemFooter,
+  titleLine: rdGallery.itemTitle,
+  metaLine: rdGallery.itemMeta,
+  groupLabel: rdGallery.itemBadge,
+  iconActions: cn(rdGallery.itemActionGroup, '!gap-1 !rounded-md !p-0.5 opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100'),
+  iconButton: cn(rdGallery.itemActionBtn, '!size-[24px] !min-h-[24px] !rounded !p-0.5 disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:!size-3.5'),
   iconButtonDanger: 'hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)] hover:text-[oklch(78%_.14_35)]',
   deleteConfirm: 'grid grid-cols-[42px_minmax(0,1fr)] items-start gap-4',
   deleteMark: 'grid size-[42px] place-items-center rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)] text-[oklch(78%_.14_35)]',
@@ -73,9 +90,64 @@ const publishFilters: Array<{ value: 'all' | PublishStatus; label: string }> = [
   { value: 'unpublished', label: '已下架' },
 ]
 
-function Icon({ name }: { name: 'eye' | 'download' | 'public' | 'delete' | 'edit' | 'copy' | 'group' }) {
-  const common = { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  if (name === 'eye') return <svg {...common}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+type FilterOption<T extends string> = {
+  value: T
+  label: string
+}
+
+function FilterSelect<T extends string>({ label, value, options, onChange }: {
+  label: string
+  value: T
+  options: Array<FilterOption<T>>
+  onChange: (value: T) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const current = options.find((item) => item.value === value) ?? options[0]
+
+  useEffect(() => {
+    if (!open) return undefined
+    const close = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [open])
+
+  return (
+    <div className={galleryClasses.filterSelect} ref={rootRef}>
+      <button type="button" className={galleryClasses.filterTrigger} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((next) => !next)}>
+        <span className="grid min-w-0 gap-0.5">
+          <span className={galleryClasses.filterLabel}>{label}</span>
+          <span className={galleryClasses.filterValue}>{current?.label ?? value}</span>
+        </span>
+        <span aria-hidden="true">⌄</span>
+      </button>
+      {open ? (
+        <div className={galleryClasses.filterMenu} role="listbox" aria-label={label}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              className={galleryClasses.filterOption}
+              onClick={() => {
+                onChange(option.value)
+                setOpen(false)
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function Icon({ name }: { name: 'download' | 'public' | 'delete' | 'edit' | 'copy' | 'group' }) {
+  const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   if (name === 'download') return <svg {...common}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
   if (name === 'public') return <svg {...common}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20" /><path d="M12 2a15 15 0 0 0 0 20" /></svg>
   if (name === 'delete') return <svg {...common}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /></svg>
@@ -92,7 +164,10 @@ function iconButton(label: string, icon: ReactNode, onClick: () => void, disable
       title={label}
       aria-label={label}
       disabled={disabled || busy}
-      onClick={onClick}
+      onClick={(event: MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+        onClick()
+      }}
     >
       {busy ? <span className={userState.spinner} /> : icon}
     </button>
@@ -108,7 +183,7 @@ export function GalleryPage() {
   const [publishStatus, setPublishStatus] = useState<(typeof publishFilters)[number]['value']>('all')
   const [imageGroup, setImageGroup] = useState('all')
   const [selected, setSelected] = useState<GalleryImage | null>(null)
-  const [imagePreview, setImagePreview] = useState<{ url: string; alt: string } | null>(null)
+  const [imagePreview, setImagePreview] = useState<ImageLightboxPayload | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [groupDialog, setGroupDialog] = useState<{ ids: string[] } | null>(null)
@@ -284,81 +359,114 @@ export function GalleryPage() {
     <div className={galleryClasses.content}>
       <div className={galleryClasses.header}>
         <div>
-          <p className={userText.eyebrow}>YOUR COLLECTION</p>
           <h1 className={galleryClasses.title}>历史资产</h1>
         </div>
         <div className={galleryClasses.searchWrap}>
-          <input className={cn(userForm.input, galleryClasses.searchInput)} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、提示词或模型" />
+          <div className={galleryClasses.searchInputWrap}>
+            <input className={galleryClasses.searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、提示词或模型" />
+            <SearchIcon className="absolute left-3 top-3.5 size-5 text-[var(--muted)]" />
+          </div>
         </div>
       </div>
 
       <div className={galleryClasses.filters}>
-            <div className={galleryClasses.filterRow}>
-              {typeFilters.map((item) => (
-                <button key={item.value} type="button" className={cn(galleryClasses.filterButton, type === item.value && galleryClasses.filterButtonActive)} onClick={() => setType(item.value)}>{item.label}</button>
-              ))}
-            </div>
-            <div className={galleryClasses.filterRow}>
-              <button type="button" className={cn(galleryClasses.filterButton, imageGroup === 'all' && galleryClasses.filterButtonActive)} onClick={() => setImageGroup('all')}>全部分组</button>
-              <button type="button" className={cn(galleryClasses.filterButton, imageGroup === 'ungrouped' && galleryClasses.filterButtonActive)} onClick={() => setImageGroup('ungrouped')}>未分组</button>
-              {groupFilters.map((group) => (
-                <button key={group} type="button" className={cn(galleryClasses.filterButton, imageGroup === group && galleryClasses.filterButtonActive)} onClick={() => setImageGroup(group)}>{group}</button>
-              ))}
-            </div>
-            <div className={galleryClasses.filterRow}>
-              {statusFilters.map((item) => (
-                <button key={item.value} type="button" className={cn(galleryClasses.filterButton, status === item.value && galleryClasses.filterButtonActive)} onClick={() => setStatus(item.value)}>{item.label}</button>
-              ))}
-            </div>
-            <div className={galleryClasses.filterRow}>
-              {publishFilters.map((item) => (
-                <button key={item.value} type="button" className={cn(galleryClasses.filterButton, publishStatus === item.value && galleryClasses.filterButtonActive)} onClick={() => setPublishStatus(item.value)}>{item.label}</button>
-              ))}
-            </div>
-          </div>
+        <div className={galleryClasses.filterGroup}>
+          <FilterSelect label="类型" value={type} options={typeFilters} onChange={setType} />
+          <FilterSelect
+            label="分组"
+            value={imageGroup}
+            options={[
+              { value: 'all', label: '全部分组' },
+              { value: 'ungrouped', label: '未分组' },
+              ...groupFilters.map((group) => ({ value: group, label: group })),
+            ]}
+            onChange={setImageGroup}
+          />
+          <FilterSelect label="任务状态" value={status} options={statusFilters} onChange={setStatus} />
+          <FilterSelect label="公开状态" value={publishStatus} options={publishFilters} onChange={setPublishStatus} />
+        </div>
+        <div className="text-xs text-[var(--muted)] whitespace-nowrap">共 {filtered.length} 个结果</div>
+      </div>
 
           {privateGallery.loading ? <LoadingState label="正在读取历史任务..." /> : null}
-          {!privateGallery.loading && !filtered.length ? <EmptyState title="没有匹配的图片" detail="换一个筛选条件，或回工作台创建新任务。" action={<Button onClick={() => app.navigate('genpic')}>继续生成</Button>} /> : null}
+          {!privateGallery.loading && !filtered.length ? <EmptyState title="暂无资产" detail="换一个筛选条件，或回工作台创建新任务。" action={<Button onClick={() => app.navigate('genpic')}>继续生成</Button>} /> : null}
 
-          {filtered.length ? (
+          {selectedImages.length ? (
             <div className={galleryClasses.batchBar}>
-              <label className={galleryClasses.selectCheck}><input type="checkbox" checked={filtered.length > 0 && selectedImages.length === filtered.length} onChange={(event) => selectAllVisible(event.target.checked)} /> 全选</label>
-              <span>{selectedImages.length ? `已选择 ${selectedImages.length} 张` : `共 ${filtered.length} 张`}</span>
-              <span className={galleryClasses.batchSpacer} />
-              {iconButton('批量下载', <Icon name="download" />, () => downloadImages(selectedImages), !selectedImages.length)}
-              {iconButton('批量公开', <Icon name="public" />, () => void publishImages(selectedImages), !selectedImages.length, busyId === 'batch')}
-              {iconButton('批量设置分组', <Icon name="group" />, () => openGroupDialog(selectedImages), !selectedImages.length)}
-              {iconButton('批量删除', <Icon name="delete" />, () => requestDeleteImages(selectedImages), !selectedImages.length, busyId === 'batch', 'danger')}
+              <div className={rdGallery.batchCount}>已选择 {selectedImages.length} 项</div>
+              <div className="flex items-center gap-1 pl-2">
+                <button
+                  className={cn(galleryClasses.batchSelectAll, filtered.length > 0 && selectedImages.length === filtered.length && galleryClasses.batchSelectAllActive)}
+                  type="button"
+                  aria-pressed={filtered.length > 0 && selectedImages.length === filtered.length}
+                  onClick={() => selectAllVisible(!(filtered.length > 0 && selectedImages.length === filtered.length))}
+                >
+                  <span className={cn(rdGallery.itemCheckbox, filtered.length > 0 && selectedImages.length === filtered.length && rdGallery.itemCheckboxChecked)}>
+                    {filtered.length > 0 && selectedImages.length === filtered.length ? '✓' : ''}
+                  </span>
+                  全选
+                </button>
+                <button className={galleryClasses.batchBtn} type="button" onClick={() => downloadImages(selectedImages)}><Icon name="download" /> 打包下载</button>
+                <button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void publishImages(selectedImages)}><Icon name="public" /> 公开</button>
+                <button className={galleryClasses.batchBtn} type="button" onClick={() => openGroupDialog(selectedImages)}><Icon name="group" /> 设为分组</button>
+                <div className="mx-1 h-4 w-px bg-[var(--border)]" />
+                <button className={cn(galleryClasses.batchBtn, 'text-red-500 hover:bg-red-500/10 hover:text-red-400')} type="button" disabled={busyId === 'batch'} onClick={() => requestDeleteImages(selectedImages)}><Icon name="delete" /> 删除</button>
+              </div>
             </div>
           ) : null}
 
-      <ImageGrid rows={filtered} accessToken={app.session?.token} busyId={busyId} selectedIds={selectedIds} onToggleSelected={toggleSelected} onPreview={setSelected} onContinue={continueEdit} onDownload={(image) => downloadImage(image)} onPublish={publishImage} onDelete={(image) => requestDeleteImages([image])} onGroup={(image) => openGroupDialog([image])} />
+      <ImageGrid
+        rows={filtered}
+        accessToken={app.session?.token}
+        busyId={busyId}
+        selectedIds={selectedIds}
+        onToggleSelected={toggleSelected}
+        onLightbox={(image) => setImagePreview({
+          url: assetUrl(image.url || image.download_url || ''),
+          downloadUrl: assetUrl(image.download_url || image.url || ''),
+          alt: image.prompt || image.id,
+          prompt: image.prompt,
+          width: image.width,
+          height: image.height,
+          ratio: image.aspect_ratio,
+          model: image.route_model_code || image.abstract_model,
+          source: '历史资产',
+        })}
+        onCopyPrompt={async (image) => {
+          await copyText(image.prompt || image.id)
+          app.notify('success', '提示词已复制')
+        }}
+        onContinue={continueEdit}
+        onDownload={(image) => downloadImage(image)}
+        onPublish={publishImage}
+        onDelete={(image) => requestDeleteImages([image])}
+        onGroup={(image) => openGroupDialog([image])}
+      />
 
-      {selected ? (
-        <Modal title="图片详情" onClose={() => setSelected(null)}>
-          <PublicImageDetail
-            image={selected}
-            imageUrl={selected.url || selected.download_url ? assetUrl(selected.url || selected.download_url || '') : undefined}
-            referenceImages={(selected.reference_assets ?? []).filter((asset) => asset.preview_url).map((asset) => {
-              const url = assetUrl(asset.preview_url || '')
-              return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图', onPreview: () => setImagePreview({ url, alt: asset.name || '原图' }) }
-            })}
-            showPublicStats={false}
-            onPreviewImage={(url, alt) => setImagePreview({ url, alt })}
-            onCopyPrompt={async (prompt) => {
-              await copyText(prompt)
-              app.notify('success', 'Prompt 已复制')
-            }}
-            actions={[
-              { key: 'edit', label: '继续编辑', icon: <PublicDetailIcon name="edit" />, onClick: () => continueEdit(selected) },
-              { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !selected.url && !selected.download_url },
-              { key: 'public', label: '申请公开', icon: <PublicDetailIcon name="public" />, onClick: () => void publishImage(selected), disabled: !selected.url },
-              { key: 'group', label: '设置分组', icon: <PublicDetailIcon name="group" />, onClick: () => openGroupDialog([selected]) },
-              { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
-            ]}
-          />
-        </Modal>
-      ) : null}
+      <ImageDetailModal
+        title="图片详情"
+        image={selected}
+        imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
+        referenceImages={(selected?.reference_assets ?? []).filter((asset) => asset.preview_url).map((asset) => {
+          const url = assetUrl(asset.preview_url || '')
+          return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图', onPreview: () => setImagePreview({ url, downloadUrl: url, alt: asset.name || '原图', source: '原图引用' }) }
+        })}
+        showPublicStats={false}
+        onPreviewImage={setImagePreview}
+        onCopyPrompt={async (prompt) => {
+          await copyText(prompt)
+          app.notify('success', 'Prompt 已复制')
+        }}
+        actions={selected ? [
+          { key: 'edit', label: '继续编辑', icon: <PublicDetailIcon name="edit" />, onClick: () => continueEdit(selected) },
+          { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !selected.url && !selected.download_url },
+          { key: 'public', label: '申请公开', icon: <PublicDetailIcon name="public" />, onClick: () => void publishImage(selected), disabled: !selected.url },
+          { key: 'group', label: '设置分组', icon: <PublicDetailIcon name="group" />, onClick: () => openGroupDialog([selected]) },
+          { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
+        ] : []}
+        previewSourceLabel="历史资产"
+        onClose={() => setSelected(null)}
+      />
       {deleteDialog ? (
         <Modal title="永久删除图片" onClose={() => setDeleteDialog(null)}>
           <div className={galleryClasses.deleteConfirm}>
@@ -403,13 +511,14 @@ export function GalleryPage() {
   )
 }
 
-function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onPreview, onContinue, onDownload, onPublish, onDelete, onGroup }: {
+function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onLightbox, onCopyPrompt, onContinue, onDownload, onPublish, onDelete, onGroup }: {
   rows: GalleryImage[]
   accessToken?: string
   busyId: string | null
   selectedIds: Set<string>
   onToggleSelected: (imageID: string, checked?: boolean) => void
-  onPreview: (image: GalleryImage) => void
+  onLightbox: (image: GalleryImage) => void
+  onCopyPrompt: (image: GalleryImage) => void | Promise<void>
   onContinue: (image: GalleryImage) => void
   onDownload: (image: GalleryImage) => void
   onPublish: (image: GalleryImage) => void
@@ -421,27 +530,61 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
       {rows.map((image) => {
         const card = galleryImageCard(image)
         return (
-          <article key={image.id} className={galleryClasses.card}>
-            <label className={galleryClasses.assetSelect} title="选择图片">
-              <input type="checkbox" checked={selectedIds.has(image.id)} onChange={(event) => onToggleSelected(image.id, event.target.checked)} />
-            </label>
-            <button type="button" className={galleryClasses.thumb} onClick={() => onPreview(image)}>
-              {card.assetPath ? <img src={userApi.imageAssetUrl(card.assetPath, accessToken)} alt={card.title} className={galleryClasses.thumbImage} /> : <span>无预览</span>}
-            </button>
-            <span className={galleryClasses.status}>{card.publishLabel}</span>
-            <div className={galleryClasses.info}>
-              <div className={galleryClasses.titleLine}>{card.title}</div>
-              <div className={galleryClasses.metaLine}>
-                <span>{card.modelLine}</span>
-                <span>{card.createdAtLabel}</span>
-              </div>
-              <div className={galleryClasses.groupLabel}>{card.groupLabel}</div>
-              <div className={galleryClasses.iconActions}>
-                {iconButton('编辑', <Icon name="edit" />, () => onContinue(image))}
-                {iconButton('下载', <Icon name="download" />, () => onDownload(image), !card.canDownload)}
-                {iconButton(card.publishActionLabel, <Icon name="public" />, () => onPublish(image), !card.canPublish, busyId === image.id)}
-                {iconButton('设置分组', <Icon name="group" />, () => onGroup(image))}
-                {iconButton('删除', <Icon name="delete" />, () => onDelete(image), false, busyId === image.id, 'danger')}
+          <article key={image.id} className={cn(galleryClasses.card, 'group/card')}>
+            <div className={galleryClasses.cardShell}>
+              <div className={galleryClasses.cardInner}>
+                <button type="button" className={galleryClasses.thumb} onClick={() => onLightbox(image)}>
+                  {card.assetPath ? <img src={userApi.imageAssetUrl(card.assetPath, accessToken)} alt={card.title} className={galleryClasses.thumbImage} /> : <span className="grid min-h-64 place-items-center">无预览</span>}
+                </button>
+                <div
+                  className={cn(galleryClasses.cardOverlay, selectedIds.has(image.id) && 'opacity-100 [background:var(--image-overlay-selected)]')}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onLightbox(image)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      onLightbox(image)
+                    }
+                  }}
+                >
+                  <div className={rdGallery.itemHeader}>
+                    <button
+                      type="button"
+                      className={cn(galleryClasses.assetSelect, selectedIds.has(image.id) && rdGallery.itemCheckboxChecked)}
+                      title="选择图片"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onToggleSelected(image.id)
+                      }}
+                    >
+                      {selectedIds.has(image.id) ? '✓' : ''}
+                    </button>
+                    <div className={galleryClasses.iconActions}>
+                      {iconButton('复制提示词', <Icon name="copy" />, () => void onCopyPrompt(image), !card.prompt)}
+                      {iconButton('编辑', <Icon name="edit" />, () => onContinue(image))}
+                      {iconButton('下载', <Icon name="download" />, () => onDownload(image), !card.canDownload)}
+                      {iconButton(card.publishActionLabel, <Icon name="public" />, () => onPublish(image), !card.canPublish, busyId === image.id)}
+                      {iconButton('设置分组', <Icon name="group" />, () => onGroup(image))}
+                      {iconButton('删除', <Icon name="delete" />, () => onDelete(image), false, busyId === image.id, 'danger')}
+                    </div>
+                  </div>
+                  <div className={galleryClasses.info}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={galleryClasses.status}>{card.publishLabel}</span>
+                      <span className={galleryClasses.groupLabel}>{card.groupLabel}</span>
+                    </div>
+                    <div className={galleryClasses.titleLine}>{card.title}</div>
+                    <div className={galleryClasses.metaLine}>
+                      <span>{card.modelLabel}</span>
+                      <span>{card.ratioLabel}</span>
+                    </div>
+                    <div className={galleryClasses.metaLine}>
+                      <span>{card.createdAtLabel}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </article>

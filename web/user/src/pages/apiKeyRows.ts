@@ -12,6 +12,7 @@ export type ApiKeyRow = {
   statusBadge: ApiKeyStatusBadge
   scopesText: string
   accessKeyMasked: string
+  secretMasked: string
   totalQuotaLabel: string
   dailyQuotaLabel: string
   expiresAtLabel: string
@@ -41,15 +42,12 @@ export type ApiKeyEditForm = {
 export const apiKeyTableHeaders = ['名称', 'Access Key', 'Secret', '状态', 'RPM 限制', '额度', '创建时间', '最近调用', '过期时间', '操作'] as const
 
 export const apiKeyPageLabels = {
-  eyebrow: '开发者中心',
   create: '创建新密钥',
   quickstartTitle: '快速接入',
   quickstartCodeTitle: '示例请求 (cURL)',
   copyCode: '复制示例',
   resetSecret: '重置 Secret',
   delete: '删除',
-  show: '显示',
-  hide: '隐藏',
   edit: '编辑',
 } as const
 
@@ -90,12 +88,27 @@ export function apiKeyScopeLabel(scope: string) {
   return scopeLabels[scope] ?? scope
 }
 
-export function apiKeyQuickstart(key: Pick<ApiKey, 'secret' | 'secret_preview'> | null) {
-  const secret = key?.secret_preview || key?.secret || 'sk_live_xxx'
+const OPEN_API_BASE_URL_LABEL = 'https://api.example.com'
+
+export function maskToken(value: string | null | undefined, head = 6, tail = 4) {
+  if (!value) return '-'
+  if (value.length <= head + tail) return `${value.slice(0, Math.min(2, value.length))}••••`
+  return `${value.slice(0, head)}••••••••${value.slice(-tail)}`
+}
+
+export function maskSecretPreview(value?: string | null) {
+  if (!value) return 'sk_••••••••••••'
+  return maskToken(value)
+}
+
+export function apiKeyQuickstart(key: Pick<ApiKey, 'access_key' | 'secret_preview'> | null) {
+  const secret = key?.secret_preview ? maskSecretPreview(key.secret_preview) : 'sk_live_xxx'
+  const accessKey = key?.access_key ? maskToken(key.access_key) : 'ak_live_xxx'
   return {
     title: apiKeyPageLabels.quickstartCodeTitle,
     copyLabel: apiKeyPageLabels.copyCode,
-    code: `curl https://api.picgallery.ai/v1/images/generations \\
+    visibleCredentials: { accessKey, secretKey: secret },
+    code: `curl ${OPEN_API_BASE_URL_LABEL}/v1/images/generations \\
   -H "Authorization: Bearer ${secret}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -160,6 +173,7 @@ export function apiKeyRow(key: ApiKey): ApiKeyRow {
     statusBadge: apiKeyStatusBadge(key.status),
     scopesText: apiKeyScopesText(key.scopes),
     accessKeyMasked: maskAccessKey(key.access_key),
+    secretMasked: maskSecretPreview(key.secret_preview),
     totalQuotaLabel: apiKeyQuotaText('总额度', key.total_quota_points, key.total_quota_used_points),
     dailyQuotaLabel: apiKeyQuotaText('日额度', key.daily_quota_points, key.daily_quota_used_points),
     expiresAtLabel: apiKeyExpiryText(key.expires_at),
@@ -174,8 +188,7 @@ function normalize(value?: string | null) {
 }
 
 function maskAccessKey(key: string) {
-  if (key.length <= 14) return key
-  return `${key.slice(0, 10)}...${key.slice(-4)}`
+  return maskToken(key, 10, 4)
 }
 
 function readableDate(value: string | null | undefined, emptyLabel: string) {

@@ -162,6 +162,7 @@ export type CheckoutOrderRuntimeState = {
 }
 
 export type CheckoutOrderActionState = {
+  canContinuePay: boolean
   canCancel: boolean
   canMockPay: boolean
   cancelLabel: string
@@ -190,15 +191,16 @@ export function checkoutOrderRuntimeState(order: CashierOrder | null, nowMs = Da
 }
 
 export function checkoutOrderActionState(order: CashierOrder | null, nowMs = Date.now()): CheckoutOrderActionState {
-  if (!order) return { canCancel: false, canMockPay: false, cancelLabel: '取消订单' }
+  if (!order) return { canContinuePay: false, canCancel: false, canMockPay: false, cancelLabel: '取消订单' }
   const status = order.status.toLowerCase()
   if (status === 'canceled' || status === 'cancelled') {
-    return { canCancel: false, canMockPay: false, cancelLabel: '取消订单', terminalLabel: '订单已取消' }
+    return { canContinuePay: false, canCancel: false, canMockPay: false, cancelLabel: '取消订单', terminalLabel: '订单已取消' }
   }
-  if (status !== 'pending') return { canCancel: false, canMockPay: false, cancelLabel: '取消订单' }
+  if (status !== 'pending') return { canContinuePay: false, canCancel: false, canMockPay: false, cancelLabel: '取消订单' }
   const expiresAt = Date.parse(order.expires_at)
-  if (Number.isFinite(expiresAt) && expiresAt <= nowMs) return { canCancel: false, canMockPay: false, cancelLabel: '取消订单' }
+  if (Number.isFinite(expiresAt) && expiresAt <= nowMs) return { canContinuePay: false, canCancel: false, canMockPay: false, cancelLabel: '取消订单' }
   return {
+    canContinuePay: true,
     canCancel: true,
     canMockPay: order.provider_type === 'mock' || order.visible_method === 'mock' || order.provider === 'mock',
     cancelLabel: '取消订单',

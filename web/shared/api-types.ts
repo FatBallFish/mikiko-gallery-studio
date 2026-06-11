@@ -35,6 +35,7 @@ export const API_PATHS = {
     redeemCode: '/api/agent/billing/v1/redeem-codes/redeem',
     capabilities: '/api/agent/image/v1/capabilities',
     referenceAssets: '/api/agent/image/v1/reference-assets',
+    importReferenceAssetsFromGallery: '/api/agent/image/v1/reference-assets:import-from-gallery',
     referenceAssetDetail: '/api/agent/image/v1/reference-assets/{asset_id}',
     referenceAssetDownload: '/api/agent/image/v1/reference-assets/{asset_id}/download',
     imageDownload: '/api/agent/image/v1/images/{image_id}',
@@ -165,8 +166,19 @@ export type PageResult<T> = { items: T[]; total: number; next_cursor?: string; p
 export type ImageTaskType = 'text_to_image' | 'reference_to_image' | 'image_edit'
 export type ImageTaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'rejected' | 'deleted'
 export type PublishStatus = 'private' | 'reviewing' | 'pending_review' | 'public' | 'approved' | 'rejected' | 'unpublished'
+export type ThemeMode = 'dark' | 'light'
+export type AccentTheme = 'amber' | 'violet' | 'emerald' | 'coral'
+export type UserThemePreference = { mode: ThemeMode; accent: AccentTheme }
 
-export type GenerationPreferences = { model_group: string; quality: string; aspect_ratio: string; image_count: number }
+export type GenerationPreferences = {
+  model_group: string
+  quality: string
+  aspect_ratio: string
+  image_count: number
+  theme_mode?: ThemeMode
+  accent_theme?: AccentTheme
+  default_locale?: string
+}
 export type UserProfile = {
   id: ID
   email: string
@@ -193,7 +205,16 @@ export type PasswordResetRequest = { email: string }
 export type PasswordResetConfirmRequest = { email: string; code: string; new_password: string }
 export type CloseAccountResponse = { id: ID; status: string; closed_at?: string | null }
 export type UpdateProfileRequest = { nickname?: string; bio?: string; avatar_object_key?: string; default_locale?: string; theme?: string }
-export type UpdatePreferencesRequest = { theme?: string; default_locale?: string }
+export type UpdatePreferencesRequest = Partial<{
+  theme: string
+  model_group: string
+  quality: string
+  aspect_ratio: string
+  image_count: number
+  theme_mode: ThemeMode
+  accent_theme: AccentTheme
+  default_locale: string
+}>
 
 export type GrantExpirySummary = { grant_id: number; grant_type: string; available_points: string; expires_at?: string | null }
 export type BalanceBucketType = 'trial' | 'subscription' | 'recharge' | string
@@ -536,6 +557,8 @@ export type ImageTask = {
   negative_prompt?: string
   task_type: ImageTaskType
   status: ImageTaskStatus
+  progress_stage?: string
+  progress_message?: string
   abstract_model?: string
   route_model_code?: string
   route_model_name?: string

@@ -15,6 +15,8 @@ import {
   apiKeyStatusToggleLabel,
   apiKeyTableHeaders,
   apiKeyQuotaText,
+  maskSecretPreview,
+  maskToken,
 } from './apiKeyRows'
 
 const active = apiKeyStatusBadge('active')
@@ -52,10 +54,10 @@ if (apiKeyScopeLabel('images:write') !== '创建图片任务' || apiKeyScopeLabe
   throw new Error('api key scopes should show readable labels and preserve unknown values')
 }
 
-if (apiKeyPageLabels.eyebrow !== '开发者中心' || apiKeyPageLabels.quickstartTitle !== '快速接入' || apiKeyPageLabels.quickstartCodeTitle !== '示例请求 (cURL)' || apiKeyPageLabels.copyCode !== '复制示例') {
+if ('eyebrow' in apiKeyPageLabels || apiKeyPageLabels.quickstartTitle !== '快速接入' || apiKeyPageLabels.quickstartCodeTitle !== '示例请求 (cURL)' || apiKeyPageLabels.copyCode !== '复制示例') {
   throw new Error(`api key page labels should be localized, got ${JSON.stringify(apiKeyPageLabels)}`)
 }
-for (const forbidden of ['DEVELOPER PORTAL', 'Example Request', 'copy']) {
+for (const forbidden of ['DEVELOPER PORTAL', 'Example Request', 'copy', '显示', '隐藏']) {
   if (Object.values(apiKeyPageLabels).join(' ').includes(forbidden)) {
     throw new Error(`api key visible labels should not expose ${forbidden}`)
   }
@@ -66,12 +68,25 @@ if (headers !== '名称,Access Key,Secret,状态,RPM 限制,额度,创建时间,
   throw new Error(`api key table headers should be localized but preserve standard key names, got ${headers}`)
 }
 
-const sample = apiKeyQuickstart(apiKey({ access_key: 'pk_test_123456', secret_preview: 'sk_once_abc123' }))
-if (!sample.code.includes('Authorization: Bearer sk_once_abc123') || !sample.code.includes('/v1/images/generations')) {
-  throw new Error(`api key quickstart should use selected secret and OpenAI-compatible path, got ${sample.code}`)
+if (maskToken('sk_abcdefghijklmnopqrstuvwxyz') !== 'sk_abc••••••••wxyz') {
+  throw new Error(`api key maskToken should keep token prefix and suffix only, got ${maskToken('sk_abcdefghijklmnopqrstuvwxyz')}`)
 }
-if (sample.code.includes('Bearer pk_test_123456')) {
-  throw new Error(`api key quickstart must not use access key as OpenAI-compatible bearer secret, got ${sample.code}`)
+if (maskToken('short') !== 'sh••••' || maskToken(null) !== '-') {
+  throw new Error(`api key maskToken should handle short or empty values, got ${maskToken('short')} / ${maskToken(null)}`)
+}
+if (maskSecretPreview('sk_once_abc123') !== 'sk_onc••••••••c123' || maskSecretPreview(null) !== 'sk_••••••••••••') {
+  throw new Error(`api key secret previews should be masked in normal rows, got ${maskSecretPreview('sk_once_abc123')} / ${maskSecretPreview(null)}`)
+}
+
+const sample = apiKeyQuickstart(apiKey({ access_key: 'pk_test_123456', secret_preview: 'sk_once_abc123' }))
+if (!sample.code.includes('Authorization: Bearer sk_onc••••••••c123') || !sample.code.includes('/v1/images/generations')) {
+  throw new Error(`api key quickstart should use masked selected secret and OpenAI-compatible path, got ${sample.code}`)
+}
+if (sample.code.includes('Bearer pk_test_123456') || sample.code.includes('sk_once_abc123') || sample.code.includes('api.picgallery.ai')) {
+  throw new Error(`api key quickstart must not expose access keys, raw secrets, or old brand domains, got ${sample.code}`)
+}
+if (sample.visibleCredentials.accessKey !== 'pk_tes••••••••3456' || sample.visibleCredentials.secretKey !== 'sk_onc••••••••c123') {
+  throw new Error(`api key quickstart should expose masked visible credential metadata, got ${JSON.stringify(sample.visibleCredentials)}`)
 }
 if (sample.title !== '示例请求 (cURL)' || sample.copyLabel !== '复制示例') {
   throw new Error(`api key quickstart labels should be localized, got ${JSON.stringify(sample)}`)
@@ -88,8 +103,11 @@ if (!confirm.title.includes('prod client') || !confirm.detail.includes('不可�
 }
 
 const row = apiKeyRow(apiKey({ access_key: 'pk_live_4kL8m2z9X1', expires_at: '2026-06-12T00:00:00Z', created_at: '2026-06-05T01:02:03Z', last_used_at: null }))
-if (row.accessKeyMasked !== 'pk_live_4k...z9X1') {
+if (row.accessKeyMasked !== 'pk_live_4k••••••••z9X1') {
   throw new Error(`api key row should mask access keys consistently, got ${row.accessKeyMasked}`)
+}
+if (row.secretMasked !== 'sk_••••••••••••') {
+  throw new Error(`api key row should not expose absent or persisted secret values, got ${row.secretMasked}`)
 }
 if (row.expiresAtLabel !== '2026/06/12' || /[TZ]/.test(row.expiresAtLabel)) {
   throw new Error(`api key row should expose readable expiry label without raw ISO markers, got ${row.expiresAtLabel}`)
