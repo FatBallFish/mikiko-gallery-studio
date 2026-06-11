@@ -157,9 +157,11 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	}
 	var createResp struct {
 		Data struct {
-			ID      string `json:"id"`
-			Status  string `json:"status"`
-			Results []struct {
+			ID              string `json:"id"`
+			Status          string `json:"status"`
+			ProgressStage   string `json:"progress_stage"`
+			ProgressMessage string `json:"progress_message"`
+			Results         []struct {
 				URL string `json:"url"`
 			} `json:"results"`
 		} `json:"data"`
@@ -169,6 +171,9 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	}
 	if createResp.Data.ID == "" || createResp.Data.Status != "queued" {
 		t.Fatalf("unexpected create response %#v", createResp)
+	}
+	if createResp.Data.ProgressStage != "queued" || createResp.Data.ProgressMessage == "" {
+		t.Fatalf("expected backend progress fields on create response, got %#v", createResp.Data)
 	}
 
 	runner := worker.NewRunner(taskSvc, worker.Config{
@@ -214,9 +219,11 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	}
 	var detailResp struct {
 		Data struct {
-			ID      string `json:"id"`
-			Status  string `json:"status"`
-			Results []struct {
+			ID              string `json:"id"`
+			Status          string `json:"status"`
+			ProgressStage   string `json:"progress_stage"`
+			ProgressMessage string `json:"progress_message"`
+			Results         []struct {
 				URL string `json:"url"`
 			} `json:"results"`
 		} `json:"data"`
@@ -226,6 +233,9 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	}
 	if detailResp.Data.ID != createResp.Data.ID || detailResp.Data.Status != "succeeded" || len(detailResp.Data.Results) != 1 || detailResp.Data.Results[0].URL == "" {
 		t.Fatalf("unexpected detail response %#v", detailResp)
+	}
+	if detailResp.Data.ProgressStage != "completed" || detailResp.Data.ProgressMessage == "" {
+		t.Fatalf("expected backend completion progress fields, got %#v", detailResp.Data)
 	}
 
 	eventsReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/"+createResp.Data.ID+"/events", nil)
@@ -239,7 +249,7 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	if got := eventsRec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
 		t.Fatalf("expected SSE content type, got %q", got)
 	}
-	if body := eventsRec.Body.String(); !strings.Contains(body, "event: task") || !strings.Contains(body, `"status":"succeeded"`) {
+	if body := eventsRec.Body.String(); !strings.Contains(body, "event: task") || !strings.Contains(body, `"status":"succeeded"`) || !strings.Contains(body, `"progress_stage":"completed"`) {
 		t.Fatalf("unexpected SSE body %q", body)
 	}
 
@@ -254,7 +264,7 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	if got := streamRec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
 		t.Fatalf("expected stream SSE content type, got %q", got)
 	}
-	if body := streamRec.Body.String(); !strings.Contains(body, "event: history") || !strings.Contains(body, createResp.Data.ID) {
+	if body := streamRec.Body.String(); !strings.Contains(body, "event: history") || !strings.Contains(body, createResp.Data.ID) || !strings.Contains(body, `"progress_message"`) {
 		t.Fatalf("unexpected stream body %q", body)
 	}
 
@@ -497,6 +507,93 @@ func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
 	handler.ServeHTTP(deletedDownloadRec, deletedDownloadReq)
 	if deletedDownloadRec.Code != http.StatusNotFound {
 		t.Fatalf("expected deleted task image download 404, got %d body=%s", deletedDownloadRec.Code, deletedDownloadRec.Body.String())
+	}
+}
+
+func TestReferenceAssetsImportFromGalleryCreatesDownloadableReference(t *testing.T) {
+	imageBytes := tinyPNG(t)
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"images": []map[string]any{{
+						"image_url": map[string]string{
+							"url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageBytes),
+						},
+					}},
+				},
+			}},
+		})
+	}))
+	defer providerServer.Close()
+
+	cfg := taskAPIConfig(providerServer.URL)
+	cfg.Storage.LocalRoot = t.TempDir()
+	authSvc, session := loginTestUser(t, "gallery-import@example.com")
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: 1, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	handler := NewWithAPI(api)
+
+	taskID := createAndProcessAgentTask(t, handler, taskSvc, session.AccessToken)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/"+taskID, nil)
+	detailReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	detailRec := httptest.NewRecorder()
+	handler.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("expected detail 200, got %d body=%s", detailRec.Code, detailRec.Body.String())
+	}
+	var detailResp struct {
+		Data struct {
+			Results []struct {
+				ID string `json:"id"`
+			} `json:"results"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(detailRec.Body).Decode(&detailResp); err != nil {
+		t.Fatalf("decode detail response: %v", err)
+	}
+	if len(detailResp.Data.Results) != 1 || detailResp.Data.Results[0].ID == "" {
+		t.Fatalf("expected generated image id, got %#v", detailResp)
+	}
+
+	importBody := bytes.NewBufferString(`{"gallery_image_ids":["` + detailResp.Data.Results[0].ID + `"]}`)
+	importReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets:import-from-gallery", importBody)
+	importReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	importReq.Header.Set("Content-Type", "application/json")
+	importRec := httptest.NewRecorder()
+	handler.ServeHTTP(importRec, importReq)
+	if importRec.Code != http.StatusCreated {
+		t.Fatalf("expected import 201, got %d body=%s", importRec.Code, importRec.Body.String())
+	}
+	var importResp struct {
+		Data struct {
+			Items []struct {
+				ID          string `json:"id"`
+				PreviewURL  string `json:"preview_url"`
+				DownloadURL string `json:"download_url"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(importRec.Body).Decode(&importResp); err != nil {
+		t.Fatalf("decode import response: %v", err)
+	}
+	if len(importResp.Data.Items) != 1 || importResp.Data.Items[0].ID == "" || importResp.Data.Items[0].DownloadURL == "" || importResp.Data.Items[0].PreviewURL == "" {
+		t.Fatalf("expected imported reference asset URLs, got %#v", importResp.Data.Items)
+	}
+
+	downloadReq := httptest.NewRequest(http.MethodGet, importResp.Data.Items[0].DownloadURL+"?access_token="+session.AccessToken, nil)
+	downloadRec := httptest.NewRecorder()
+	handler.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("expected imported reference download 200, got %d body=%s", downloadRec.Code, downloadRec.Body.String())
+	}
+	if got := downloadRec.Body.Bytes(); !bytes.Equal(got, imageBytes) {
+		t.Fatalf("downloaded imported reference bytes mismatch: got %d bytes want %d", len(got), len(imageBytes))
 	}
 }
 

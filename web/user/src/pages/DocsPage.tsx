@@ -5,7 +5,7 @@ import type { DocsErrorCode, DocsExample } from '../../../shared/open-api-docs'
 import { docsCopyableExamplesText } from '../../../shared/open-api-docs'
 import { openApi } from '../../../shared/open-api'
 import { CopyButton, EmptyState, LoadingState } from '../components'
-import { userCard, userPill, userShell, userText } from '../ui/classes'
+import { userPill } from '../ui/classes'
 import { useApiResource } from '../useApiResource'
 import {
   docsAuthLabel,
@@ -26,31 +26,31 @@ const fallbackErrors = [
 ] satisfies Array<[string, string]>
 
 const docsClasses = {
-  content: cn(userShell.content, 'docs-page'),
-  header: 'mb-12 flex flex-wrap items-end justify-between gap-5',
-  title: 'm-0 font-[var(--font-display)] text-5xl leading-none',
+  content: 'docs-page w-full flex-1 p-6 md:p-10',
+  header: 'mb-12 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between',
+  title: 'm-0 text-4xl font-black leading-none md:text-6xl',
   filters: 'flex flex-wrap gap-3',
-  search: 'w-full rounded-lg sm:w-80',
-  groupSelect: 'w-full rounded-lg sm:w-45',
+  search: 'h-12 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm text-[var(--fg)] sm:w-80',
+  groupSelect: 'h-12 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm text-[var(--fg)] sm:w-45',
   layout: 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]',
-  endpointList: userCard.padded,
+  endpointList: 'rounded-[2.5rem] border border-[var(--border)] bg-[var(--surface)] p-6 md:p-8',
   listMeta: 'mb-4 flex justify-between gap-3 text-[var(--muted)]',
-  endpointCard: 'mb-3.5 border-b border-[var(--border)] p-[18px]',
+  endpointCard: 'mb-3.5 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-[18px]',
   endpointHead: 'flex items-start justify-between gap-3',
   endpointPath: 'min-w-0 [overflow-wrap:anywhere] font-mono text-[var(--accent)]',
-  endpointTitle: 'my-3 font-[var(--font-display)] text-2xl leading-tight',
+  endpointTitle: 'my-3 text-2xl font-black leading-tight',
   authLine: 'text-sm text-[var(--muted)]',
   examples: 'mt-3 grid gap-3 md:grid-cols-2',
   examplePanel: 'min-w-0 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3',
   exampleHead: 'mb-2 flex items-center justify-between gap-2',
   examplePre: 'm-0 max-h-[360px] overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-[var(--muted)]',
-  aside: cn(userCard.padded, 'grid gap-4'),
-  asideTitle: 'm-0 font-[var(--font-display)] text-3xl leading-tight',
+  aside: 'grid gap-4 rounded-[2.5rem] border border-[var(--border)] bg-[var(--surface)] p-6 md:p-8',
+  asideTitle: 'm-0 text-2xl font-black leading-tight',
   errorRow: 'grid gap-1 border-b border-[var(--border)] pb-3 last:border-b-0',
   errorCode: '[overflow-wrap:anywhere] font-mono text-sm text-[var(--accent)]',
   errorMessage: 'text-sm text-[var(--fg)]',
   errorHint: 'text-xs text-[var(--muted)]',
-  codeSample: 'overflow-x-auto rounded-[14px] border border-[var(--border)] bg-[#05070d] p-[18px] text-[oklch(88%_.05_90)]',
+  codeSample: 'overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-[18px] text-[var(--fg)]',
   codeSampleHead: 'mb-3 flex items-center justify-between gap-2',
   codeSamplePre: 'm-0 whitespace-pre-wrap font-mono text-xs leading-5',
 }
@@ -75,7 +75,6 @@ export function DocsPage() {
     <div className={docsClasses.content}>
       <div className={docsClasses.header}>
         <div>
-          <p className={userText.eyebrow}>{docsSectionLabels.eyebrow}</p>
           <h1 className={docsClasses.title}>开发文档</h1>
         </div>
         <div className={docsClasses.filters}>
@@ -117,7 +116,6 @@ export function DocsPage() {
         </div>
 
         <aside className={docsClasses.aside}>
-          <p className={userText.eyebrow}>{docsSectionLabels.errors}</p>
           <h2 className={docsClasses.asideTitle}>{docsSectionLabels.errors}</h2>
           {docsError && !docs.error ? <EmptyState title="文档接口不可用" detail={docsError} /> : null}
           {errorRowModels.map((row) => (

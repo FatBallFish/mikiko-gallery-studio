@@ -468,11 +468,16 @@ func (a *API) HandlePreferences(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Theme         string `json:"theme"`
+		ThemeMode     string `json:"theme_mode"`
+		AccentTheme   string `json:"accent_theme"`
 		DefaultLocale string `json:"default_locale"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return
+	}
+	if strings.TrimSpace(req.Theme) == "" && strings.TrimSpace(req.ThemeMode) != "" && strings.TrimSpace(req.AccentTheme) != "" {
+		req.Theme = strings.TrimSpace(req.ThemeMode) + ":" + strings.TrimSpace(req.AccentTheme)
 	}
 	if strings.TrimSpace(req.Theme) == "" {
 		req.Theme = user.Theme
@@ -1937,6 +1942,63 @@ func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request)
 	httpx.WriteSuccess(w, r, http.StatusCreated, referenceAssetPayload(asset, false))
 }
 
+func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	var req struct {
+		GalleryImageIDs []string `json:"gallery_image_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	ids := make([]string, 0, len(req.GalleryImageIDs))
+	seen := make(map[string]struct{}, len(req.GalleryImageIDs))
+	for _, raw := range req.GalleryImageIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		httpx.WriteError(w, r, errs.BadRequest("gallery_image_ids is required"))
+		return
+	}
+	if len(ids) > 20 {
+		httpx.WriteError(w, r, errs.BadRequest("gallery_image_ids exceeds limit"))
+		return
+	}
+
+	items := make([]domainassets.ReferenceAsset, 0, len(ids))
+	for _, imageID := range ids {
+		result, content, err := a.tasks.DownloadImageResult(r.Context(), user.ID, imageID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		contentType := defaultString(result.MimeType, http.DetectContentType(content))
+		asset, svcErr := a.assets.UploadWithMetadata(user.ID, imageDownloadFilename(result), contentType, content, domainassets.UploadMetadata{UploadSource: "gallery_import"})
+		if svcErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(svcErr))
+			return
+		}
+		items = append(items, referenceAssetPayload(asset, false))
+	}
+	httpx.WriteSuccess(w, r, http.StatusCreated, map[string]any{"items": items})
+}
+
 func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 	assetID := strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/reference-assets/")
 	if strings.HasSuffix(assetID, "/download") {
@@ -2179,6 +2241,7 @@ func (a *API) HandleAgentTaskDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, err.(*errs.Error))
 		return
 	}
+	task = decorateTaskProgress(task)
 	httpx.WriteSuccess(w, r, http.StatusOK, task)
 }
 
@@ -2229,6 +2292,7 @@ func (a *API) handleAgentTaskEvents(w http.ResponseWriter, r *http.Request, user
 			flusher.Flush()
 			return true
 		}
+		task = decorateTaskProgress(task)
 		writeSSE(w, "task", task)
 		flusher.Flush()
 		return isTerminalTaskStatus(task.Status)
@@ -2321,6 +2385,7 @@ func (a *API) latestUserTasks(ctx context.Context, userID int64, limit int) ([]d
 	if limit > 0 && len(tasks) > limit {
 		tasks = tasks[:limit]
 	}
+	tasks = decorateTaskProgressList(tasks)
 	sort.SliceStable(tasks, func(i, j int) bool {
 		return taskSortTime(tasks[i]).Before(taskSortTime(tasks[j]))
 	})
@@ -2338,7 +2403,103 @@ func taskSortTime(task domainimagetask.Task) time.Time {
 }
 
 func taskStreamSignature(task domainimagetask.Task) string {
-	return fmt.Sprintf("%s:%s:%s:%d", task.ID, task.Status, task.UpdatedAt.Format(time.RFC3339Nano), len(task.Results))
+	return fmt.Sprintf("%s:%s:%s:%s:%s:%d", task.ID, task.Status, task.ProgressStage, task.ProgressMessage, task.UpdatedAt.Format(time.RFC3339Nano), len(task.Results))
+}
+
+func decorateTaskProgressList(tasks []domainimagetask.Task) []domainimagetask.Task {
+	for index := range tasks {
+		tasks[index] = decorateTaskProgress(tasks[index])
+	}
+	return tasks
+}
+
+func decorateTaskProgress(task domainimagetask.Task) domainimagetask.Task {
+	if task.ProgressStage != "" && task.ProgressMessage != "" {
+		return task
+	}
+	stage, message := taskProgressView(task)
+	if task.ProgressStage == "" {
+		task.ProgressStage = stage
+	}
+	if task.ProgressMessage == "" {
+		task.ProgressMessage = message
+	}
+	return task
+}
+
+func taskProgressView(task domainimagetask.Task) (string, string) {
+	switch task.Status {
+	case domainimagetask.StatusQueued:
+		return "queued", "任务已进入生成队列"
+	case domainimagetask.StatusRunning:
+		if len(task.Results) > 0 {
+			return "persisting", fmt.Sprintf("已生成 %d 张图片，正在同步结果", len(task.Results))
+		}
+		if attempt := latestTaskAttempt(task.Attempts); attempt != nil {
+			if attempt.ErrorMessage != "" {
+				return "provider", attempt.ErrorMessage
+			}
+			if attempt.Error != "" {
+				return "provider", attempt.Error
+			}
+			if attempt.ModelCode != "" {
+				return "provider", fmt.Sprintf("正在调用 %s 生成图片", attempt.ModelCode)
+			}
+			if attempt.Provider != "" {
+				return "provider", fmt.Sprintf("正在调用 %s 生成图片", attempt.Provider)
+			}
+		}
+		if task.RouteModelCode != "" {
+			return "routing", fmt.Sprintf("已匹配模型 %s，正在生成图片", task.RouteModelCode)
+		}
+		if task.AbstractModel != "" {
+			return "routing", fmt.Sprintf("已匹配模型 %s，正在生成图片", task.AbstractModel)
+		}
+		return "running", "任务正在生成中"
+	case domainimagetask.StatusSucceeded:
+		return "completed", "生成完成，结果已同步到资产"
+	case domainimagetask.StatusPartialFailed:
+		return "completed", "部分图片生成完成，其余图片生成失败"
+	case domainimagetask.StatusFailed:
+		if task.ErrorMessage != "" {
+			return "failed", task.ErrorMessage
+		}
+		if task.ErrorCode != "" {
+			return "failed", task.ErrorCode
+		}
+		return "failed", "任务生成失败"
+	case domainimagetask.StatusRejected:
+		if task.ErrorMessage != "" {
+			return "failed", task.ErrorMessage
+		}
+		return "failed", "任务已被拒绝"
+	case "cancelled":
+		return "cancelled", "任务已取消"
+	case domainimagetask.StatusDeleted:
+		return "deleted", "任务已删除"
+	default:
+		if task.Status != "" {
+			return task.Status, "任务状态已更新"
+		}
+		return "unknown", "正在等待任务状态"
+	}
+}
+
+func latestTaskAttempt(attempts []domainimagetask.Attempt) *domainimagetask.Attempt {
+	if len(attempts) == 0 {
+		return nil
+	}
+	latestIndex := len(attempts) - 1
+	for index := range attempts {
+		if attempts[index].StartedAt == nil {
+			continue
+		}
+		latest := attempts[latestIndex].StartedAt
+		if latest == nil || attempts[index].StartedAt.After(*latest) {
+			latestIndex = index
+		}
+	}
+	return &attempts[latestIndex]
 }
 
 func writeSSE(w io.Writer, event string, payload any) {
@@ -2550,6 +2711,7 @@ func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
+		task = decorateTaskProgress(task)
 		httpx.WriteSuccess(w, r, http.StatusAccepted, task)
 		return
 	}
@@ -2560,6 +2722,7 @@ func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Reques
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
+		task = decorateTaskProgress(task)
 		httpx.WriteSuccess(w, r, http.StatusOK, task)
 	case http.MethodDelete:
 		if err := a.tasks.DeleteByID(r.Context(), user.ID, taskID); err != nil {
@@ -6045,6 +6208,7 @@ func (a *API) HandleOpenTaskDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
+	task = decorateTaskProgress(task)
 	httpx.WriteSuccess(w, r, http.StatusOK, task)
 }
 
@@ -6097,6 +6261,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, compatservice.MapError(err))
 		return
 	}
+	result = decorateTaskProgress(result)
 	httpx.WriteSuccess(w, r, http.StatusAccepted, result)
 }
 
@@ -6176,6 +6341,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, compatservice.MapError(err))
 		return
 	}
+	result = decorateTaskProgress(result)
 	httpx.WriteSuccess(w, r, http.StatusAccepted, result)
 }
 
@@ -6190,6 +6356,7 @@ func (a *API) handleAgentTaskList(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, err.(*errs.Error))
 		return
 	}
+	tasks = decorateTaskProgressList(tasks)
 	httpx.WriteSuccess(w, r, http.StatusOK, tasks)
 }
 
@@ -6235,7 +6402,7 @@ func parseHMACTimestamp(value string) (time.Time, error) {
 }
 
 func profilePayload(user *domainauth.User) map[string]any {
-	return map[string]any{
+	payload := map[string]any{
 		"id":                user.ID,
 		"email":             user.Email,
 		"nickname":          user.Nickname,
@@ -6245,6 +6412,34 @@ func profilePayload(user *domainauth.User) map[string]any {
 		"theme":             defaultString(user.Theme, "system"),
 		"default_locale":    defaultString(user.DefaultLocale, "zh-CN"),
 	}
+	if mode, accent, ok := profileThemePreference(user.Theme); ok {
+		payload["preferences"] = map[string]any{
+			"theme_mode":     mode,
+			"accent_theme":   accent,
+			"default_locale": defaultString(user.DefaultLocale, "zh-CN"),
+		}
+	}
+	return payload
+}
+
+func profileThemePreference(theme string) (string, string, bool) {
+	parts := strings.Split(strings.TrimSpace(theme), ":")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	mode := strings.TrimSpace(parts[0])
+	accent := strings.TrimSpace(parts[1])
+	switch mode {
+	case "dark", "light":
+	default:
+		return "", "", false
+	}
+	switch accent {
+	case "amber", "violet", "emerald", "coral":
+	default:
+		return "", "", false
+	}
+	return mode, accent, true
 }
 
 func (a *API) requireOpenAPIKey(r *http.Request) (domainapikey.Identity, *errs.Error) {

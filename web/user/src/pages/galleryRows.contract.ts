@@ -91,6 +91,12 @@ const downloadable = galleryImageCard(image({
 if (!downloadable.canDownload) {
   throw new Error(`gallery card should allow download when download_url exists, got ${JSON.stringify(downloadable)}`)
 }
+if (!downloadable.canPreview || !downloadable.canEdit || downloadable.imageUrl !== '/api/open/image/v1/gallery/images/img_download/image') {
+  throw new Error(`gallery card should expose asset card preview/edit fields, got ${JSON.stringify(downloadable)}`)
+}
+if (downloadable.modelLabel !== 'gpt-image' || downloadable.ratioLabel !== '1:1') {
+  throw new Error(`gallery card should expose model and ratio labels, got ${JSON.stringify(downloadable)}`)
+}
 if (downloadable.createdAtLabel !== '2026/06/05 13:45') {
   throw new Error(`gallery card should format created_at without raw T/Z date, got ${downloadable.createdAtLabel}`)
 }
@@ -111,6 +117,9 @@ if (approved.canPublish || approved.publishActionLabel !== '已公开') {
 const privateWithoutAsset = galleryImageCard(image({ visibility_status: 'private', url: '', download_url: '' }))
 if (privateWithoutAsset.canPublish || privateWithoutAsset.canDownload || privateWithoutAsset.publishActionLabel !== '无图片文件') {
   throw new Error(`gallery card should block publish/download without image asset, got ${JSON.stringify(privateWithoutAsset)}`)
+}
+if (privateWithoutAsset.canPreview || privateWithoutAsset.canEdit) {
+  throw new Error(`gallery card should block preview/edit without image asset, got ${JSON.stringify(privateWithoutAsset)}`)
 }
 
 const invalidDate = galleryImageCard(image({ created_at: 'not-a-date' }))

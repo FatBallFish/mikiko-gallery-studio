@@ -8,17 +8,25 @@ export type GalleryImageFilter = {
   query: string
 }
 
-export type GalleryImageCardModel = {
+export type AssetCardModel = {
+  id: string
+  imageUrl: string
   title: string
+  prompt: string
+  modelLabel: string
+  ratioLabel: string
   modelLine: string
   groupLabel: string
   publishLabel: string
   createdAtLabel: string
   assetPath: string
+  canPreview: boolean
   canDownload: boolean
+  canEdit: boolean
   canPublish: boolean
   publishActionLabel: string
 }
+export type GalleryImageCardModel = AssetCardModel
 
 const publishLabels: Record<string, string> = {
   private: '私有',
@@ -41,14 +49,22 @@ export function galleryImageCard(image: GalleryImage): GalleryImageCardModel {
   const publishStatus = galleryPublishStatus(image)
   const hasAsset = Boolean(assetPath)
   const canPublish = hasAsset && ['private', 'rejected', 'unpublished'].includes(publishStatus)
+  const modelLabel = image.route_model_code || image.abstract_model || '-'
   return {
+    id: image.id,
+    imageUrl: assetPath,
     title: image.prompt || image.id,
-    modelLine: `${galleryTaskTypeLabel(image.task_type ?? 'text_to_image')} · ${image.route_model_code || image.abstract_model || '-'}`,
+    prompt: image.prompt || '',
+    modelLabel,
+    ratioLabel: image.aspect_ratio || '-',
+    modelLine: `${galleryTaskTypeLabel(image.task_type ?? 'text_to_image')} · ${modelLabel}`,
     groupLabel: image.image_group?.trim() || '未分组',
     publishLabel: galleryPublishLabel(image.visibility_status),
     createdAtLabel: galleryDateTime(image.created_at),
     assetPath,
+    canPreview: hasAsset,
     canDownload: hasAsset,
+    canEdit: hasAsset,
     canPublish,
     publishActionLabel: galleryPublishActionLabel(publishStatus, hasAsset),
   }

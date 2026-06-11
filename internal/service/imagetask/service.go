@@ -57,6 +57,12 @@ type executionOptions struct {
 	preferredProviders []string
 }
 
+type openAIFanoutProgress struct {
+	Response provider.ImageResponse
+	Results  []provider.ImageResult
+	Failures []error
+}
+
 type AssetLoader interface {
 	LoadInput(userID int64, assetID string) (provider.ImageInput, error)
 }
@@ -491,27 +497,70 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		}
 
 		attemptStarted := time.Now().UTC()
+		openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
+		if openAIFormat && normalizedCount(task.OutputImageCount) > 1 {
+			progress, progressErr := s.executeOpenAIFanoutWithProgress(ctx, providerClient, candidate, task, owner, providerReq)
+			attemptFinished := time.Now().UTC()
+			if progressErr != nil {
+				return s.failOwnedTask(ctx, task, owner, progressErr)
+			}
+			resp := progress.Response
+			resp.Data = append([]provider.ImageResult(nil), progress.Results...)
+			persistedResults := append([]provider.ImageResult(nil), progress.Results...)
+			finalStatus := domainimagetask.StatusSucceeded
+			if len(progress.Failures) > 0 && len(persistedResults) > 0 {
+				finalStatus = domainimagetask.StatusPartialFailed
+			}
+			task = s.decorateTaskProvider(task, candidate)
+			task.Status = domainimagetask.StatusRunning
+			task.FallbackCount = len(task.Attempts)
+			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, attemptStarted, attemptFinished))
+			task.Results = persistedResults
+			if len(progress.Failures) > 0 {
+				task.ErrorCode = errorCode(progress.Failures[0])
+				task.ErrorMessage = errorMessage(progress.Failures[0])
+			}
+			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
+				return s.failOwnedTask(ctx, task, owner, billingErr)
+			}
+			task.ProviderCost = calculateProviderCost(candidate, len(persistedResults))
+			task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
+			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
+				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, domainimagetask.StatusSucceeded, "task succeeded after lease conflict")
+				if recoverErr != nil {
+					return domainimagetask.ExecuteResult{}, recoverErr
+				}
+				if recovered {
+					return domainimagetask.ExecuteResult{Task: recoveredTask, Response: resp}, nil
+				}
+				return domainimagetask.ExecuteResult{}, saveErr
+			}
+			if settleErr := s.settleTaskBilling(ctx, task, "task succeeded"); settleErr != nil {
+				return domainimagetask.ExecuteResult{}, settleErr
+			}
+			task.Status = finalStatus
+			task.LeaseOwner = ""
+			task.LeaseExpiresAt = nil
+			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
+				return domainimagetask.ExecuteResult{}, saveErr
+			}
+			return domainimagetask.ExecuteResult{Task: task, Response: resp}, nil
+		}
+
 		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
 		attemptFinished := time.Now().UTC()
 		if err == nil {
+
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
 				return s.failOwnedTask(ctx, task, owner, persistErr)
 			}
 			finalStatus := domainimagetask.StatusSucceeded
-			openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
 			if openAIFormat && len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
 			}
+			task = s.decorateTaskProvider(task, candidate)
 			task.Status = domainimagetask.StatusRunning
-			task.Provider = candidate.Provider
-			task.ProviderModelID = candidate.ProviderModelID
-			task.RouteModelID = candidate.RouteModelID
-			task.RouteModelCode = candidate.RouteModelCode
-			task.AccountModelID = candidate.AccountModelID
-			task.ModelAccountID = candidate.ModelAccountID
-			task.UpstreamModelCode = candidate.ModelCode
-			task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
 			task.FallbackCount = len(task.Attempts)
 			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, attemptStarted, attemptFinished))
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
@@ -571,30 +620,147 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 	return s.failOwnedTask(ctx, task, owner, lastErr)
 }
 
+func (s *Service) decorateTaskProvider(task domainimagetask.Task, candidate modelhub.ProviderCandidate) domainimagetask.Task {
+	task.Provider = candidate.Provider
+	task.ProviderModelID = candidate.ProviderModelID
+	task.RouteModelID = candidate.RouteModelID
+	task.RouteModelCode = candidate.RouteModelCode
+	task.AccountModelID = candidate.AccountModelID
+	task.ModelAccountID = candidate.ModelAccountID
+	task.UpstreamModelCode = candidate.ModelCode
+	task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
+	return task
+}
+
+func (s *Service) executeOpenAIFanoutWithProgress(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, owner string, req provider.ImageRequest) (openAIFanoutProgress, error) {
+	call := func(ctx context.Context, singleReq provider.ImageRequest) (provider.ImageResponse, error) {
+		if task.TaskType == string(provider.TaskTypeImageEdit) {
+			return client.Edit(ctx, singleReq)
+		}
+		return client.Generate(ctx, singleReq)
+	}
+
+	count := normalizedCount(req.OutputImageCount)
+	progress := openAIFanoutProgress{
+		Results:  make([]provider.ImageResult, 0, count),
+		Failures: make([]error, 0),
+	}
+	var mu sync.Mutex
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(count)
+	for i := 0; i < count; i++ {
+		group.Go(func() error {
+			singleReq := req
+			singleReq.OutputImageCount = 1
+			resp, err := call(groupCtx, singleReq)
+			mu.Lock()
+			defer mu.Unlock()
+			if progress.Response.Created == 0 {
+				progress.Response.Created = resp.Created
+			}
+			if progress.Response.ProviderRequestID == "" {
+				progress.Response.ProviderRequestID = resp.ProviderRequestID
+			}
+			if err != nil {
+				progress.Failures = append(progress.Failures, err)
+				return nil
+			}
+			if len(resp.Data) == 0 {
+				progress.Failures = append(progress.Failures, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images"))
+				return nil
+			}
+			persisted, persistErr := s.persistImageResults(ctx, task, resp.Data)
+			if persistErr != nil {
+				progress.Failures = append(progress.Failures, persistErr)
+				return nil
+			}
+			progress.Results = append(progress.Results, persisted...)
+			snapshot := s.decorateTaskProvider(task, candidate)
+			snapshot.Status = domainimagetask.StatusRunning
+			snapshot.Results = append([]provider.ImageResult(nil), progress.Results...)
+			if len(progress.Failures) > 0 {
+				snapshot.ErrorCode = errorCode(progress.Failures[0])
+				snapshot.ErrorMessage = errorMessage(progress.Failures[0])
+			}
+			if billingErr := s.applyActualPoints(&snapshot, len(snapshot.Results)); billingErr != nil {
+				progress.Failures = append(progress.Failures, billingErr)
+				return nil
+			}
+			snapshot.ProviderCost = calculateProviderCost(candidate, len(snapshot.Results))
+			snapshot.GrossMargin = calculateGrossMargin(snapshot.ActualPoints, snapshot.ProviderCost)
+			if saveErr := s.saveOwnedTask(ctx, snapshot, owner); saveErr != nil {
+				return saveErr
+			}
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return openAIFanoutProgress{}, err
+	}
+	if len(progress.Results) == 0 {
+		if len(progress.Failures) > 0 {
+			return openAIFanoutProgress{}, progress.Failures[0]
+		}
+		return openAIFanoutProgress{}, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images")
+	}
+	return progress, nil
+}
+
 func applyProviderRequestCompatibility(req *provider.ImageRequest, task domainimagetask.Task, candidate modelhub.ProviderCandidate, resolved modelhub.ResolvedRequest) error {
 	if req == nil {
 		return nil
 	}
+	if !isGPTImage2Model(req.Model, candidate) || !isOpenAIImagesCompatibleCandidate(candidate) {
+		return nil
+	}
+
 	if !isGPTImage2CodexSource(req.Model, candidate) {
+		req.Quality = mapGPTImage2UpstreamQuality(defaultString(resolved.ResolvedQualityBucket, task.ResolvedQualityBucket), req.Quality)
+		return nil
+	}
+
+	req.Quality = "auto"
+	if width, height, ok := modelhub.ParseImageSize(req.Size); ok && width > 0 && height > 0 {
 		return nil
 	}
 	size, err := modelhub.CalculateImageSize(defaultString(resolved.ResolvedQualityBucket, task.ResolvedQualityBucket), defaultString(task.AspectRatio, "1:1"))
 	if err != nil {
 		return errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported gpt-image-2 size parameters")
 	}
-	req.Quality = "auto"
 	req.Size = size
 	return nil
 }
 
+func isGPTImage2Model(model string, candidate modelhub.ProviderCandidate) bool {
+	return strings.EqualFold(strings.TrimSpace(model), "gpt-image-2") || strings.EqualFold(strings.TrimSpace(candidate.ModelCode), "gpt-image-2")
+}
+
 func isGPTImage2CodexSource(model string, candidate modelhub.ProviderCandidate) bool {
-	if !strings.EqualFold(strings.TrimSpace(model), "gpt-image-2") && !strings.EqualFold(strings.TrimSpace(candidate.ModelCode), "gpt-image-2") {
+	if !isGPTImage2Model(model, candidate) {
 		return false
 	}
 	return truthyExtra(candidate.AccountExtra, "gpt_image_2_codex_source") ||
 		truthyExtra(candidate.ModelExtra, "gpt_image_2_codex_source") ||
 		strings.EqualFold(stringExtra(candidate.AccountExtra, "source_mode"), "codex_responses") ||
 		strings.EqualFold(stringExtra(candidate.ModelExtra, "source_mode"), "codex_responses")
+}
+
+func isOpenAIImagesCompatibleCandidate(candidate modelhub.ProviderCandidate) bool {
+	return strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) ||
+		strings.EqualFold(candidate.AdapterType, "openai_compatible")
+}
+
+func mapGPTImage2UpstreamQuality(resolvedQuality string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(defaultString(resolvedQuality, fallback))) {
+	case "1k", "low":
+		return "low"
+	case "2k", "medium":
+		return "medium"
+	case "4k", "high":
+		return "high"
+	default:
+		return "auto"
+	}
 }
 
 func truthyExtra(extra map[string]any, key string) bool {

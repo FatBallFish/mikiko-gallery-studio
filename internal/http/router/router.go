@@ -64,6 +64,7 @@ func newMux(api *handlers.API) http.Handler {
 		mux.HandleFunc("/api/agent/developer/v1/api-keys/", api.HandleDeveloperAPIKeyDetail)
 		mux.HandleFunc("/api/agent/billing/v1/redeem-codes/redeem", api.HandleRedeemCode)
 		mux.HandleFunc("/api/agent/image/v1/reference-assets", api.HandleReferenceAssetUpload)
+		mux.HandleFunc("/api/agent/image/v1/reference-assets:import-from-gallery", api.HandleReferenceAssetsImportFromGallery)
 		mux.HandleFunc("/api/agent/image/v1/reference-assets/", api.HandleReferenceAssetGet)
 		mux.HandleFunc("/api/agent/image/v1/images/", api.HandleImageDownload)
 		mux.HandleFunc("/api/agent/image/v1/tasks", api.HandleAgentTasks)

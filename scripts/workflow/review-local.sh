@@ -55,6 +55,7 @@ secret_candidates="$(
       name=$0
       sub(/^.*\//, "", name)
       lower=tolower(name)
+      if (lower == "tokens.css") next
       if (lower ~ /id_rsa|private[._-]?key|secret|token/) print
     }
   '

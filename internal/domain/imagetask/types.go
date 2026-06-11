@@ -120,6 +120,8 @@ type Task struct {
 	SourceChannel         string                        `json:"-"`
 	ID                    string                        `json:"id"`
 	Status                string                        `json:"status"`
+	ProgressStage         string                        `json:"progress_stage,omitempty"`
+	ProgressMessage       string                        `json:"progress_message,omitempty"`
 	Provider              string                        `json:"provider,omitempty"`
 	ProviderModelID       int64                         `json:"provider_model_id,omitempty"`
 	ProviderCost          string                        `json:"provider_cost,omitempty"`

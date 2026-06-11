@@ -11,7 +11,7 @@ export type UserRouteOptions = {
   imageId?: string | null
 }
 
-export const userRouteSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'gallery', 'public-gallery', 'checkout', 'api-keys', 'profile', 'docs'])
+export const userRouteSet = new Set<RouteId>(['landing', 'login', 'home', 'genpic', 'gallery', 'public-gallery', 'checkout', 'api-keys', 'profile', 'docs', 'settings'])
 
 export function parseUserHashState(hash: string): UserRouteState {
   const raw = hash.replace(/^#\/?/, '')

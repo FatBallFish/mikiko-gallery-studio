@@ -17,7 +17,7 @@ const baseOrder: CashierOrder = {
 }
 
 const pendingActions = checkoutOrderActionState(baseOrder, Date.parse('2026-06-05T10:05:00Z'))
-if (!pendingActions.canCancel || !pendingActions.canMockPay || pendingActions.cancelLabel !== '取消订单') {
+if (!pendingActions.canContinuePay || !pendingActions.canCancel || !pendingActions.canMockPay || pendingActions.cancelLabel !== '取消订单') {
   throw new Error(`pending cashier orders should expose cancel action, got ${JSON.stringify(pendingActions)}`)
 }
 

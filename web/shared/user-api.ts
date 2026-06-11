@@ -19,25 +19,19 @@ import type {
   PaymentOrder,
   ReferenceAsset,
   Subscription,
+  UpdatePreferencesRequest,
   UserProfile,
 } from './api-types'
 import { API_PATHS } from './api-types'
 import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
-
-const sizeMap: Record<string, string> = {
-  '1:1': '1024x1024',
-  '16:9': '1536x864',
-  '9:16': '864x1536',
-  '4:3': '1536x1152',
-  '3:4': '1152x1536',
-}
+import { calculateImageSizeForQuality } from './image-size'
 
 function initials(input: string) {
   return input.trim().slice(0, 2).toUpperCase() || 'PG'
 }
 
 export function toUserProfile(raw: any): UserProfile {
-  const name = raw.nickname || raw.display_name || raw.email?.split('@')[0] || 'Pic User'
+  const name = raw.nickname || raw.display_name || raw.email?.split('@')[0] || 'Mikiko User'
   return {
     ...raw,
     id: String(raw.id ?? raw.user_id ?? ''),
@@ -52,6 +46,9 @@ export function toUserProfile(raw: any): UserProfile {
       quality: raw.preferences?.quality ?? 'auto',
       aspect_ratio: raw.preferences?.aspect_ratio ?? '16:9',
       image_count: raw.preferences?.image_count ?? 1,
+      theme_mode: raw.preferences?.theme_mode,
+      accent_theme: raw.preferences?.accent_theme,
+      default_locale: raw.preferences?.default_locale ?? raw.default_locale,
     },
   }
 }
@@ -123,6 +120,8 @@ export function toTask(raw: any): ImageTask {
     prompt: raw.prompt ?? '',
     task_type: taskType,
     status: raw.status ?? 'queued',
+    progress_stage: raw.progress_stage ?? raw.progressStage ?? '',
+    progress_message: raw.progress_message ?? raw.progressMessage ?? '',
     route_model_code: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
     route_model_name: raw.route_model_name,
     model_group: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
@@ -149,7 +148,7 @@ function toEstimateQuery(req: EstimateRequest) {
     task_type: toBackendTaskType(req.task_type),
     route_model_code: req.route_model_code,
     requested_quality: req.quality,
-    requested_size: sizeMap[req.aspect_ratio] ?? req.aspect_ratio,
+    requested_size: calculateImageSizeForQuality(req.quality, req.aspect_ratio),
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,
   }
@@ -161,7 +160,7 @@ function toBackendTask(req: CreateTaskRequest) {
     prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
     route_model_code: req.route_model_code,
     requested_quality: req.quality,
-    requested_size: sizeMap[req.aspect_ratio] ?? req.aspect_ratio,
+    requested_size: calculateImageSizeForQuality(req.quality, req.aspect_ratio),
     requested_output_image_count: req.image_count,
     reference_asset_ids: req.reference_asset_ids ?? [],
     response_mode: req.response_mode ?? 'async',
@@ -237,7 +236,7 @@ export const userApi = {
       theme: patch.theme,
     },
   })),
-  updatePreferences: async (theme: string, default_locale: string) => toUserProfile(await sharedApiClient.request(API_PATHS.agent.preferences, { method: 'PUT', body: { theme, default_locale } })),
+  updatePreferences: async (preferences: UpdatePreferencesRequest) => toUserProfile(await sharedApiClient.request(API_PATHS.agent.preferences, { method: 'PUT', body: preferences })),
   uploadAvatar: async (file: File) => {
     const formData = new FormData()
     formData.set('file', file)
@@ -326,6 +325,14 @@ export const userApi = {
     return toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssets, { method: 'POST', formData }))
   },
   listReferenceAssets: async () => [] as ReferenceAsset[],
+  importReferenceAssetsFromGallery: async (galleryImageIds: string[]) => {
+    const response = await sharedApiClient.request<{ items?: any[]; assets?: any[]; references?: any[] } | any[]>(API_PATHS.agent.importReferenceAssetsFromGallery, {
+      method: 'POST',
+      body: { gallery_image_ids: galleryImageIds },
+    })
+    const items = Array.isArray(response) ? response : response.items ?? response.assets ?? response.references ?? []
+    return items.map(toReferenceAsset)
+  },
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
   deleteReferenceAsset: (asset_id: string) => sharedApiClient.request<void>(API_PATHS.agent.referenceAssetDetail, { method: 'DELETE', pathParams: { asset_id } }),
   imageAssetUrl: (url: string, accessToken?: string | null) => apiEventUrl(url, accessToken),

@@ -1,0 +1,161 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Manrope:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
+@import 'tailwindcss';
+@import '../shared/base.css';
+@import '../shared/user-theme.css';
+
+@theme {
+  --font-vault-display: 'Cormorant Garamond', serif;
+  --font-vault-body: 'Manrope', system-ui, sans-serif;
+  --font-vault-mono: 'JetBrains Mono', monospace;
+
+  --color-vault-bg: oklch(12% 0.015 260);
+  --color-vault-surface: oklch(16% 0.02 260);
+  --color-vault-fg: oklch(95% 0.01 80);
+  --color-vault-muted: oklch(90% 0.01 80 / 0.68);
+  --color-vault-border: oklch(100% 0 0 / 0.1);
+  --color-vault-accent: oklch(70% 0.12 75);
+  --color-vault-coral: oklch(65% 0.14 45);
+  --color-vault-purple: oklch(60% 0.18 275);
+  --color-vault-emerald: oklch(75% 0.15 165);
+
+  --radius-vault: 12px;
+}
+
+:root {
+  --bg: oklch(12% 0.015 260);
+  --surface: oklch(16% 0.02 260);
+  --fg: oklch(95% 0.01 80);
+  --muted: oklch(90% 0.01 80 / 0.68);
+  --border: oklch(100% 0 0 / 0.1);
+  --accent: oklch(70% 0.12 75);
+  --accent-coral: oklch(65% 0.14 45);
+  --accent-purple: oklch(60% 0.18 275);
+  --accent-emerald: oklch(75% 0.15 165);
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --sidebar-w: 108px;
+  --topbar-h: 76px;
+  --radius: 12px;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+    radial-gradient(circle at 18% 8%, rgba(212,157,94,.18), transparent 28%),
+    radial-gradient(circle at 82% 16%, rgba(131,118,255,.15), transparent 32%),
+    radial-gradient(circle at 68% 84%, rgba(65,185,149,.12), transparent 32%);
+  background-size: 72px 72px, 72px 72px, auto, auto, auto;
+}
+
+@layer utilities {
+  .bg-vault-atmosphere {
+    background:
+      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+      radial-gradient(circle at 18% 8%, rgba(212,157,94,.18), transparent 28%),
+      radial-gradient(circle at 82% 16%, rgba(131,118,255,.15), transparent 32%),
+      radial-gradient(circle at 68% 84%, rgba(65,185,149,.12), transparent 32%);
+    background-size: 72px 72px, 72px 72px, auto, auto, auto;
+  }
+}
+
+button, input, textarea, select { font-family: inherit; }
+button { color: inherit; }
+code, .num { font-family: var(--font-mono); }
+
+@property --toast-progress {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 1turn;
+}
+@keyframes toast-ring-countdown {
+  to { --toast-progress: 0turn; }
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+/* Admin redesign demo light theme */
+.theme-light {
+  --bg: oklch(96% 0.012 88);
+  --surface: oklch(99% 0.004 95);
+  --fg: oklch(19% 0.018 255);
+  --muted: oklch(42% 0.02 255 / 0.72);
+  --border: oklch(30% 0.018 255 / 0.12);
+  --accent: oklch(58% 0.13 72);
+  --accent-coral: oklch(61% 0.14 42);
+  --accent-purple: oklch(50% 0.15 276);
+  --accent-emerald: oklch(55% 0.13 160);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.theme-light [class*='bg-[#050505]'],
+.theme-light [class*='bg-[#0a0a0a]'] {
+  background-color: var(--surface);
+}
+
+.theme-light [class*='bg-[#0a0a0a]/50'] {
+  background-color: oklch(99% 0.004 95 / 0.82);
+}
+
+.theme-light [class*='border-white/5'],
+.theme-light [class*='border-white/10'],
+.theme-light [class*='border-white/[0.02]'] {
+  border-color: oklch(30% 0.018 255 / 0.12);
+}
+
+.theme-light [class*='bg-white/5'],
+.theme-light [class*='bg-white/[0.02]'],
+.theme-light [class*='bg-white/[0.01]'] {
+  background-color: oklch(23% 0.016 255 / 0.045);
+}
+
+.theme-light [class*='hover:bg-white/5']:hover,
+.theme-light [class*='hover:bg-white/10']:hover {
+  background-color: oklch(23% 0.016 255 / 0.08);
+}
+
+.theme-light [class*='text-white'] {
+  color: var(--fg);
+}
+
+.theme-light [class*='text-white/80'] {
+  color: oklch(19% 0.018 255 / 0.8);
+}
+
+.theme-light [class*='text-white/70'] {
+  color: oklch(19% 0.018 255 / 0.7);
+}
+
+.theme-light [class*='text-white/60'] {
+  color: oklch(19% 0.018 255 / 0.62);
+}
+
+.theme-light [class*='text-white/50'] {
+  color: oklch(19% 0.018 255 / 0.54);
+}
+
+.theme-light [class*='text-white/40'],
+.theme-light [class*='text-white/30'],
+.theme-light [class*='text-white/20'] {
+  color: oklch(19% 0.018 255 / 0.42);
+}
