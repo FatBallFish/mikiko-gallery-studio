@@ -136,10 +136,13 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        restart: true
       user-web:
         condition: service_healthy
+        restart: true
       admin-web:
         condition: service_healthy
+        restart: true
     ports:
       - "${NGINX_PORT:-80}:80"
     volumes:

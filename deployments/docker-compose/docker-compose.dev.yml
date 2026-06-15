@@ -162,10 +162,13 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        restart: true
       user-web:
         condition: service_healthy
+        restart: true
       admin-web:
         condition: service_healthy
+        restart: true
     ports:
       - "${DEV_NGINX_PORT:-8088}:80"
     volumes:
