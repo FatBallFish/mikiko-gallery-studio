@@ -2,14 +2,17 @@ package middleware
 
 import (
 	"net/http"
-	"os"
 	"strings"
 )
 
 const defaultAllowedOrigins = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 
 func CORS(next http.Handler) http.Handler {
-	allowed := parseAllowedOrigins(os.Getenv("PIC_GALLERY_CORS_ALLOWED_ORIGINS"))
+	return CORSWithAllowedOrigins(nil, next)
+}
+
+func CORSWithAllowedOrigins(origins []string, next http.Handler) http.Handler {
+	allowed := allowedOrigins(origins)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" && allowed[origin] {
@@ -25,6 +28,20 @@ func CORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func allowedOrigins(origins []string) map[string]bool {
+	if len(origins) == 0 {
+		return parseAllowedOrigins(defaultAllowedOrigins)
+	}
+	allowed := make(map[string]bool)
+	for _, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			allowed[origin] = true
+		}
+	}
+	return allowed
 }
 
 func parseAllowedOrigins(raw string) map[string]bool {

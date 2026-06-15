@@ -18,6 +18,7 @@ API_ADDR="${API_ADDR#http://localhost}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke.XXXXXX")"
 SMOKE_ID="$(basename "$TMP_DIR" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 DB_PATH="$TMP_DIR/smoke.db"
+SMOKE_CONFIG_PATH="$TMP_DIR/config.yaml"
 SERVER_LOG="$TMP_DIR/api.log"
 WORKER_LOG="$TMP_DIR/worker.log"
 FAKE_PROVIDER_LOG="$TMP_DIR/fake-provider.log"
@@ -48,6 +49,12 @@ print(secrets.token_urlsafe(32))
 PY
 )"
 CASHIER_PROVIDER_CONFIG_KEY="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_urlsafe(32))
+PY
+)"
+SECURE_CONFIG_KEY="$(python3 - <<'PY'
 import secrets
 
 print(secrets.token_urlsafe(32))
@@ -1080,20 +1087,182 @@ PY
   exit 1
 }
 
+write_smoke_config() {
+  cat >"$SMOKE_CONFIG_PATH" <<YAML
+app:
+  name: pic-gallery-smoke
+  env: local
+  addr: $API_ADDR
+
+database:
+  url: file:$DB_PATH?cache=shared&_fk=1&_busy_timeout=10000&_journal_mode=WAL
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime: 15m
+
+redis:
+  url: ""
+  key_prefix: pic-gallery-smoke-${SMOKE_ID}
+
+storage:
+  driver: local
+  local_root: $STORAGE_ROOT
+  public_base_url: $BASE_URL/files
+  shared_volume: true
+  s3:
+    endpoint: ""
+    region: us-east-1
+    bucket: ""
+    access_key_id: ""
+    secret_access_key: ""
+    force_path_style: true
+    prefix: pic-gallery-smoke
+
+auth:
+  access_token_ttl: 10m
+  refresh_token_ttl: 2h
+  issuer: pic-gallery-local
+  access_token_secret: $ACCESS_TOKEN_SECRET
+  refresh_cookie_name: pg_refresh_token
+  fixed_email_code: ""
+  dev_email_codes: true
+  smtp:
+    host: ""
+    port: 0
+    username: ""
+    password: ""
+    from: ""
+    starttls: true
+    insecure_skip_verify: false
+
+admin:
+  seed_email: $SMOKE_ADMIN_EMAIL
+  seed_password: $ADMIN_PASSWORD
+  seed_role: admin
+
+api_key:
+  signing_secret_encryption_key: $API_KEY_ENCRYPTION_KEY
+
+http:
+  cors_allowed_origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+
+billing:
+  cny_per_point: "0.31250"
+  points_scale: 5
+  signup_trial:
+    enabled: true
+    points: "20.00000"
+    valid_days: 7
+    expiry_reminder_days: 2
+    grant_once_per_user: true
+  auto_quality_default_by_group:
+    basic: 1k
+    plus: 2k
+    pro: 4k
+  quality_points_by_model:
+    basic:
+      1k: "2.00000"
+      2k: "4.00000"
+      4k: "8.00000"
+    plus:
+      1k: "5.00000"
+      2k: "8.00000"
+      4k: "16.00000"
+    pro:
+      1k: "8.00000"
+      2k: "12.00000"
+      4k: "20.00000"
+  user_group_multipliers:
+    basic: "1.00000"
+    plus: "1.00000"
+    pro: "1.00000"
+  task_multipliers:
+    text_to_image: "1.00000"
+    image_edit: "1.25000"
+    reference_generate: "1.15000"
+  reference_image_extra:
+    first: "0.10000"
+    additional: "0.05000"
+
+cashier:
+  enabled: true
+  mock_enabled: true
+  order_timeout_seconds: 1800
+  max_pending_orders_per_user: 3
+  site_base_url: $BASE_URL
+  provider_config_encryption_key: $CASHIER_PROVIDER_CONFIG_KEY
+
+security:
+  secure_config_encryption_key: $SECURE_CONFIG_KEY
+
+generation_limits:
+  max_image_count: 5
+  reference_image_max_mb: 10
+  reference_image_max_count: 4
+  prompt_max_chars: 4000
+  negative_prompt_max_chars: 1000
+
+providers:
+  openai:
+    enabled: true
+    base_url: ${FAKE_PROVIDER_URL:-http://127.0.0.1:1}
+    api_key: ""
+  openrouter:
+    enabled: true
+    base_url: ${FAKE_PROVIDER_URL:-http://127.0.0.1:1}
+    api_key: ""
+
+routing:
+  default_provider: openai
+  fallback_providers:
+    - openrouter
+  openai_compat_model_map:
+    gpt-image-2: plus
+  provider_model_map:
+    basic:
+      openai: gpt-image-1
+      openrouter: openai/gpt-image-1
+    plus:
+      openai: gpt-image-1
+      openrouter: openai/gpt-image-1
+    pro:
+      openai: gpt-image-1
+      openrouter: openai/gpt-image-1
+  provider_capabilities:
+    openai:
+      supported_models: [basic, plus, pro]
+      supported_task_types: [text_to_image, image_edit, reference_generate]
+      supported_qualities: [1k, 2k, 4k]
+      supported_aspect_ratios: ["1:1", "4:3", "16:9"]
+      max_image_count: 5
+      max_reference_image_count: 4
+      supports_image_input: true
+      supports_mask: true
+      priority: 1
+    openrouter:
+      supported_models: [basic, plus, pro]
+      supported_task_types: [text_to_image, image_edit, reference_generate]
+      supported_qualities: [1k, 2k, 4k]
+      supported_aspect_ratios: ["1:1", "4:3", "16:9"]
+      max_image_count: 5
+      max_reference_image_count: 4
+      supports_image_input: true
+      supports_mask: false
+      priority: 2
+
+worker:
+  max_concurrent_tasks: 4
+
+docs:
+  title: Pic Gallery API Docs
+  base_path: /developers/docs
+YAML
+}
+
 start_worker() {
-  APP_ADDR="$API_ADDR" \
-  DATABASE_URL="file:$DB_PATH?cache=shared&_fk=1" \
-  PIC_GALLERY_AUTH_DEV_EMAIL_CODES=true \
-  PIC_GALLERY_ADMIN_EMAIL="$SMOKE_ADMIN_EMAIL" \
-  PIC_GALLERY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-  AUTH_ACCESS_TOKEN_SECRET="$ACCESS_TOKEN_SECRET" \
-  API_KEY_SIGNING_SECRET_ENCRYPTION_KEY="$API_KEY_ENCRYPTION_KEY" \
-  CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY="$CASHIER_PROVIDER_CONFIG_KEY" \
-  REDIS_KEY_PREFIX="pic-gallery-smoke-${SMOKE_ID}" \
-  STORAGE_LOCAL_ROOT="$STORAGE_ROOT" \
-  STORAGE_PUBLIC_BASE_URL="$BASE_URL/files" \
-  OPENAI_API_KEY="" \
-  OPENROUTER_API_KEY="" \
+  APP_CONFIG_PATH="$SMOKE_CONFIG_PATH" \
   go run ./cmd/worker >"$WORKER_LOG" 2>&1 &
   WORKER_PID="$!"
 }
@@ -1125,20 +1294,9 @@ wait_for_task_status() {
 }
 
 cd "$ROOT_DIR"
+write_smoke_config
 
-APP_ADDR="$API_ADDR" \
-DATABASE_URL="file:$DB_PATH?cache=shared&_fk=1" \
-PIC_GALLERY_AUTH_DEV_EMAIL_CODES=true \
-PIC_GALLERY_ADMIN_EMAIL="$SMOKE_ADMIN_EMAIL" \
-PIC_GALLERY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-AUTH_ACCESS_TOKEN_SECRET="$ACCESS_TOKEN_SECRET" \
-API_KEY_SIGNING_SECRET_ENCRYPTION_KEY="$API_KEY_ENCRYPTION_KEY" \
-CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY="$CASHIER_PROVIDER_CONFIG_KEY" \
-REDIS_KEY_PREFIX="pic-gallery-smoke-${SMOKE_ID}" \
-STORAGE_LOCAL_ROOT="$STORAGE_ROOT" \
-STORAGE_PUBLIC_BASE_URL="$BASE_URL/files" \
-OPENAI_API_KEY="" \
-OPENROUTER_API_KEY="" \
+APP_CONFIG_PATH="$SMOKE_CONFIG_PATH" \
 go run ./cmd/api >"$SERVER_LOG" 2>&1 &
 SERVER_PID="$!"
 

@@ -104,7 +104,7 @@ cd pic-gallery
 cp .env.example .env
 ```
 
-For local development, the default `.env.example` is enough to start the infrastructure. Add `OPENAI_API_KEY` or `OPENROUTER_API_KEY` when you want to call real upstream providers.
+For local development, the default `.env.example` is enough to start the infrastructure. Edit `configs/config.compose.dev.yaml` when you want to point the app at real upstream providers or change backend runtime settings.
 
 ### 3. Start the development full stack
 
@@ -125,7 +125,7 @@ Default development admin login:
 - Email: `admin@example.com`
 - Password: `admin123456`
 
-Override these with `PIC_GALLERY_ADMIN_EMAIL` and `PIC_GALLERY_ADMIN_PASSWORD` in your Compose env file before exposing the service outside a local development machine.
+Override these in `configs/config.compose.dev.yaml` before exposing the service outside a local development machine.
 
 Stop it with:
 
@@ -298,23 +298,20 @@ powershell -ExecutionPolicy Bypass -File scripts/service/install.ps1 -Components
 Main configuration templates:
 
 - [`configs/config.example.yaml`](./configs/config.example.yaml): application config template.
+- [`configs/config.dev.yaml`](./configs/config.dev.yaml): host-run local development config.
+- [`configs/config.compose.dev.yaml`](./configs/config.compose.dev.yaml): Docker Compose local development config.
+- [`configs/config.pro.yaml`](./configs/config.pro.yaml): DevOps/server production config template.
+- [`configs/config.compose.prod.yaml`](./configs/config.compose.prod.yaml): Docker Compose production config template.
 - [`.env.example`](./.env.example): local development environment variables.
 - [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example): compose environment template.
 - [`deployments/docker-compose/.env.prod.example`](./deployments/docker-compose/.env.prod.example): production compose environment template.
 
-Important environment variables:
+Backend runtime configuration:
 
-- `APP_CONFIG_PATH`: path to the YAML config file.
-- `DATABASE_URL`: PostgreSQL connection URL.
-- `REDIS_URL`: Redis connection URL.
-- `AUTH_ACCESS_TOKEN_SECRET`: access-token signing secret for production.
-- `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`: encryption key for API-key signing secrets.
-- `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`: encryption key for payment provider merchant secrets.
-- `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY` or `SECURE_CONFIG_ENCRYPTION_KEY`: encryption key for admin-managed secure settings such as SMTP passwords.
-- `PIC_GALLERY_ADMIN_EMAIL`: initial admin account email. Development Compose defaults to `admin@example.com`; production Compose requires an explicit value.
-- `PIC_GALLERY_ADMIN_PASSWORD`: initial admin account password. Development Compose defaults to `admin123456`; production Compose requires an explicit value.
-- `OPENAI_API_KEY`: OpenAI provider key.
-- `OPENROUTER_API_KEY`: OpenRouter provider key.
+- The backend reads `config.yaml` by default.
+- `APP_CONFIG_PATH` and `PIC_GALLERY_CONFIG` are path selectors only; database, Redis, storage, auth secrets, provider keys, SMTP, CORS, and initial admin settings are read from YAML.
+- For DevOps packages, set build-time `APP_ENV=dev` or `APP_ENV=pro`; `scripts/devops/package.sh` copies the selected config into the artifact as `config.yaml`.
+- For Docker Compose production, edit `configs/config.compose.prod.yaml` or set `PIC_GALLERY_CONFIG_FILE` in `deployments/docker-compose/.env.prod` to a server-local config file.
 
 Before public launch, configure at least one enabled model provider/account/route/price and one usable payment channel if recharge is exposed.
 
@@ -336,6 +333,8 @@ docker compose --env-file deployments/docker-compose/.env.prod \
   -f deployments/docker-compose/docker-compose.prod.yml up -d --build
 ```
 
+Before the first production start, replace all `CHANGE_ME` values in `configs/config.compose.prod.yaml` or point `PIC_GALLERY_CONFIG_FILE` at your server-local `config.yaml`.
+
 The production stack includes PostgreSQL, Redis, API, worker, user web, admin web, Nginx, shared storage, and optional Prometheus. PostgreSQL, Redis, API, worker, and frontend containers are on the same Compose network and are not published to the host. Nginx is the public entrypoint.
 
 Default public routes:
@@ -350,7 +349,7 @@ See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.m
 
 `docker-compose.dev.yml` is optimized for local iteration:
 
-- Uses `APP_ENV=local` and `configs/config.dev.yaml`.
+- Mounts `configs/config.compose.dev.yaml` into API and worker containers as `/app/config.yaml`.
 - Uses trust-based local PostgreSQL defaults.
 - Starts API, worker, user web, admin web, Nginx, and middleware by default.
 - Keeps API, worker, frontend containers, PostgreSQL, Redis, MinIO, and Mailpit inside the Compose network.
@@ -360,8 +359,8 @@ See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.m
 
 `docker-compose.prod.yml` is optimized for deployment:
 
-- Uses `APP_ENV=prod` and `configs/config.example.yaml` with required secret environment variables.
-- Requires explicit database password, JWT secret, API-key encryption key, cashier provider encryption key, secure config encryption key, and admin credentials.
+- Mounts `PIC_GALLERY_CONFIG_FILE` into API and worker containers as `/app/config.yaml`.
+- Requires explicit database URL, JWT secret, API-key encryption key, cashier provider encryption key, secure config encryption key, provider keys, and admin credentials in that YAML file.
 - Does not expose PostgreSQL, Redis, API, worker, or frontend containers to the host.
 - Exposes only Nginx on `NGINX_PORT` (`80` by default).
 - Adds optional Prometheus through the `monitoring` profile.

@@ -11,8 +11,9 @@
 ## Release checklist
 
 - [ ] Fill `deployments/docker-compose/.env.prod` from `deployments/docker-compose/.env.prod.example`.
-- [ ] Set a strong `AUTH_ACCESS_TOKEN_SECRET`.
-- [ ] Set provider keys when generation providers should be enabled.
+- [ ] Replace all `CHANGE_ME` values in the backend `config.yaml`.
+- [ ] Set a strong `auth.access_token_secret`.
+- [ ] Set provider keys in YAML when generation providers should be enabled.
 - [ ] Build and start with `docker compose --env-file deployments/docker-compose/.env.prod -f deployments/docker-compose/docker-compose.prod.yml up -d --build`.
 - [ ] Verify `api`, `worker`, `postgres`, `redis`, and `nginx` are healthy.
 - [ ] Run `./scripts/test/smoke_readyz.sh http://localhost:8080` and `./scripts/test/smoke_readyz.sh http://localhost:80`.

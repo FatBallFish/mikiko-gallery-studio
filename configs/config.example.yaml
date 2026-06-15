@@ -23,6 +23,8 @@ auth:
   issuer: pic-gallery
   access_token_secret: change-me-in-prod
   refresh_cookie_name: pg_refresh_token
+  fixed_email_code: ""
+  dev_email_codes: false
   smtp:
     host: ""
     port: 587
@@ -32,9 +34,21 @@ auth:
     starttls: true
     insecure_skip_verify: false
 
+admin:
+  seed_email: admin@example.com
+  seed_password: change-me-before-first-start
+  seed_role: super_admin
+
 api_key:
-  # Set API_KEY_SIGNING_SECRET_ENCRYPTION_KEY in production; used to encrypt stored API key HMAC signing secrets.
+  # Set a non-development value in production; used to encrypt stored API key HMAC signing secrets.
   signing_secret_encryption_key: ""
+
+http:
+  cors_allowed_origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+    - http://localhost:5174
+    - http://127.0.0.1:5174
 
 billing:
   cny_per_point: "0.31250"
@@ -80,7 +94,7 @@ cashier:
   order_timeout_seconds: 1800
   max_pending_orders_per_user: 3
   site_base_url: http://localhost:8080
-  # Set CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY in production; used to encrypt stored payment provider merchant secrets.
+  # Set a non-development value in production; used to encrypt stored payment provider merchant secrets.
   provider_config_encryption_key: ""
 
 generation_limits:

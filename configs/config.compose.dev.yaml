@@ -4,19 +4,19 @@ app:
   addr: :8080
 
 database:
-  url: postgres://postgres@localhost:5432/pic_gallery?sslmode=disable
+  url: postgres://postgres@postgres:5432/pic_gallery?sslmode=disable
   max_open_conns: 10
   max_idle_conns: 5
   conn_max_lifetime: 15m
 
 redis:
-  url: redis://localhost:6379/0
+  url: redis://redis:6379/0
 
 storage:
   driver: local
-  local_root: ./tmp/storage
+  local_root: /var/lib/pic-gallery/storage
   public_base_url: http://localhost:8080/files
-  shared_volume: false
+  shared_volume: true
   s3:
     endpoint: ""
     region: us-east-1
@@ -57,6 +57,8 @@ http:
     - http://127.0.0.1:5173
     - http://localhost:5174
     - http://127.0.0.1:5174
+    - http://localhost:8088
+    - http://127.0.0.1:8088
 
 billing:
   cny_per_point: "0.31250"

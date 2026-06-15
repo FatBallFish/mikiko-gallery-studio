@@ -104,7 +104,7 @@ cd pic-gallery
 cp .env.example .env
 ```
 
-本地开发时，默认 `.env.example` 已足够启动依赖服务。若需要调用真实上游模型，请补充 `OPENAI_API_KEY` 或 `OPENROUTER_API_KEY`。
+本地开发时，默认 `.env.example` 已足够启动依赖服务。若需要调用真实上游模型或调整后端运行配置，请编辑 `configs/config.compose.dev.yaml`。
 
 ### 3. 启动开发全栈
 
@@ -125,7 +125,7 @@ make compose-up
 - 邮箱：`admin@example.com`
 - 密码：`admin123456`
 
-如果要把服务暴露到本机开发环境之外，请先在 Compose env 文件中通过 `PIC_GALLERY_ADMIN_EMAIL` 和 `PIC_GALLERY_ADMIN_PASSWORD` 覆盖默认值。
+如果要把服务暴露到本机开发环境之外，请先在 `configs/config.compose.dev.yaml` 中覆盖默认值。
 
 停止依赖：
 
@@ -298,23 +298,20 @@ powershell -ExecutionPolicy Bypass -File scripts/service/install.ps1 -Components
 主要配置模板：
 
 - [`configs/config.example.yaml`](./configs/config.example.yaml)：应用配置模板。
+- [`configs/config.dev.yaml`](./configs/config.dev.yaml)：宿主机本地开发配置。
+- [`configs/config.compose.dev.yaml`](./configs/config.compose.dev.yaml)：Docker Compose 本地开发配置。
+- [`configs/config.pro.yaml`](./configs/config.pro.yaml)：DevOps/服务器生产配置模板。
+- [`configs/config.compose.prod.yaml`](./configs/config.compose.prod.yaml)：Docker Compose 生产配置模板。
 - [`.env.example`](./.env.example)：本地开发环境变量。
 - [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example)：Compose 环境变量模板。
 - [`deployments/docker-compose/.env.prod.example`](./deployments/docker-compose/.env.prod.example)：生产 Compose 环境变量模板。
 
-重要环境变量：
+后端运行配置：
 
-- `APP_CONFIG_PATH`：YAML 配置文件路径。
-- `DATABASE_URL`：PostgreSQL 连接地址。
-- `REDIS_URL`：Redis 连接地址。
-- `AUTH_ACCESS_TOKEN_SECRET`：生产环境 Access Token 签名密钥。
-- `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`：API Key 签名密钥的加密密钥。
-- `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`：支付渠道商户密钥的加密密钥。
-- `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY` 或 `SECURE_CONFIG_ENCRYPTION_KEY`：后台安全配置的加密密钥，例如 SMTP 密码。
-- `PIC_GALLERY_ADMIN_EMAIL`：初始管理员邮箱。开发 Compose 默认值为 `admin@example.com`；生产 Compose 要求显式配置。
-- `PIC_GALLERY_ADMIN_PASSWORD`：初始管理员密码。开发 Compose 默认值为 `admin123456`；生产 Compose 要求显式配置。
-- `OPENAI_API_KEY`：OpenAI Provider Key。
-- `OPENROUTER_API_KEY`：OpenRouter Provider Key。
+- 后端默认读取 `config.yaml`。
+- `APP_CONFIG_PATH` 和 `PIC_GALLERY_CONFIG` 只用于选择 YAML 文件路径；数据库、Redis、存储、认证密钥、模型 Provider Key、SMTP、CORS 和初始管理员都从 YAML 读取。
+- DevOps 打包时设置构建期 `APP_ENV=dev` 或 `APP_ENV=pro`；`scripts/devops/package.sh` 会把对应配置复制为产物中的 `config.yaml`。
+- Docker Compose 生产部署时，编辑 `configs/config.compose.prod.yaml`，或在 `deployments/docker-compose/.env.prod` 中用 `PIC_GALLERY_CONFIG_FILE` 指向服务器上的配置文件。
 
 正式对外发布前，至少需要配置一个可用的模型 Provider、模型账号、路由模型、价格，以及一个可用支付渠道。
 
@@ -336,6 +333,8 @@ docker compose --env-file deployments/docker-compose/.env.prod \
   -f deployments/docker-compose/docker-compose.prod.yml up -d --build
 ```
 
+生产环境首次启动前，请替换 `configs/config.compose.prod.yaml` 中所有 `CHANGE_ME` 值，或用 `PIC_GALLERY_CONFIG_FILE` 指向服务器上的最终 `config.yaml`。
+
 生产栈包含 PostgreSQL、Redis、API、Worker、用户端 Web、管理端 Web、Nginx、共享存储和可选 Prometheus。PostgreSQL、Redis、API、Worker 和前端容器都在同一个 Compose network 中，不对宿主机发布端口；Nginx 是唯一公开入口。
 
 默认公开路由：
@@ -350,7 +349,7 @@ docker compose --env-file deployments/docker-compose/.env.prod \
 
 `docker-compose.dev.yml` 面向本地迭代：
 
-- 使用 `APP_ENV=local` 和 `configs/config.dev.yaml`。
+- 将 `configs/config.compose.dev.yaml` 挂载到 API 与 Worker 容器内的 `/app/config.yaml`。
 - PostgreSQL 默认使用本地 trust 认证。
 - 默认启动 API、Worker、用户端 Web、管理端 Web、Nginx 和中间件。
 - API、Worker、前端容器、PostgreSQL、Redis、MinIO 和 Mailpit 都在 Compose network 内部。
@@ -360,8 +359,8 @@ docker compose --env-file deployments/docker-compose/.env.prod \
 
 `docker-compose.prod.yml` 面向部署：
 
-- 使用 `APP_ENV=prod` 和 `configs/config.example.yaml`，并要求显式传入密钥类环境变量。
-- 必须配置数据库密码、JWT secret、API Key 加密密钥、收银台渠道配置加密密钥、安全配置加密密钥和管理员账号。
+- 将 `PIC_GALLERY_CONFIG_FILE` 挂载到 API 与 Worker 容器内的 `/app/config.yaml`。
+- 必须在该 YAML 中配置数据库连接、JWT secret、API Key 加密密钥、收银台渠道配置加密密钥、安全配置加密密钥、模型 Provider Key 和管理员账号。
 - PostgreSQL、Redis、API、Worker 和前端容器都不向宿主机暴露端口。
 - 只暴露 Nginx，默认端口为 `NGINX_PORT=80`。
 - 可通过 `monitoring` profile 额外启动 Prometheus。

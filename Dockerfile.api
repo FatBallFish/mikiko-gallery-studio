@@ -18,16 +18,10 @@ RUN apk add --no-cache ca-certificates tzdata && \
     mkdir -p /var/lib/pic-gallery/storage && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
 COPY --from=build /out/pic-gallery-api /usr/local/bin/pic-gallery-api
-COPY configs ./configs
+COPY configs/config.example.yaml ./config.yaml
 COPY api/openapi ./api/openapi
 USER picgallery
 EXPOSE 8080
-ENV APP_CONFIG_PATH=configs/config.example.yaml \
-    APP_ENV=prod \
-    APP_ADDR=:8080 \
-    STORAGE_DRIVER=local \
-    STORAGE_LOCAL_ROOT=/var/lib/pic-gallery/storage \
-    STORAGE_SHARED_VOLUME=true
 VOLUME ["/var/lib/pic-gallery/storage"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/readyz >/dev/null || exit 1

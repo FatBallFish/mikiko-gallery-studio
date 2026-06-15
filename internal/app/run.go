@@ -32,9 +32,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
-func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
-	email := os.Getenv("PIC_GALLERY_ADMIN_EMAIL")
-	password := os.Getenv("PIC_GALLERY_ADMIN_PASSWORD")
+func seedDefaultAdmin(ctx context.Context, cfg config.AdminConfig, store *entstore.AdminAuthStore) {
+	email := strings.TrimSpace(cfg.SeedEmail)
+	password := cfg.SeedPassword
 	if email == "" || password == "" {
 		return
 	}
@@ -44,7 +44,7 @@ func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
 	_, err := store.CreateAdmin(ctx, domainadminauth.AdminUser{
 		Email:        email,
 		PasswordHash: adminauthservice.HashPassword(password),
-		Role:         defaultAdminSeedRole(),
+		Role:         defaultAdminSeedRole(cfg.SeedRole),
 		Status:       "active",
 	})
 	if err != nil {
@@ -52,15 +52,15 @@ func seedDefaultAdmin(ctx context.Context, store *entstore.AdminAuthStore) {
 	}
 }
 
-func defaultAdminSeedRole() string {
-	role := strings.ToLower(strings.TrimSpace(os.Getenv("PIC_GALLERY_ADMIN_ROLE")))
+func defaultAdminSeedRole(value string) string {
+	role := strings.ToLower(strings.TrimSpace(value))
 	switch role {
 	case "":
 		return domainadminauth.RoleAdmin
 	case domainadminauth.RoleAdmin, domainadminauth.RoleSuperAdmin:
 		return role
 	default:
-		slog.Warn("invalid PIC_GALLERY_ADMIN_ROLE, falling back to admin", "role", role)
+		slog.Warn("invalid admin.seed_role, falling back to admin", "role", role)
 		return domainadminauth.RoleAdmin
 	}
 }
@@ -122,7 +122,7 @@ func Run() error {
 		return err
 	}
 	adminStore := entstore.NewAdminAuthStore(client)
-	seedDefaultAdmin(context.Background(), adminStore)
+	seedDefaultAdmin(context.Background(), cfg.Admin, adminStore)
 	adminAuthSvc := adminauthservice.NewService(cfg.Auth, adminStore)
 	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
 	adminUserSvc := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
@@ -137,7 +137,7 @@ func Run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,
-		Handler:           apphttp.NewWithAPI(api),
+		Handler:           apphttp.NewWithAPIAndConfig(api, cfg),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

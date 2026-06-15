@@ -1,7 +1,6 @@
 param(
   [string]$Components = "api,worker,user-web,admin-web",
   [string]$AppConfigPath = "",
-  [string]$ApiAddr = ":8080",
   [string]$UserWebPort = "5173",
   [string]$AdminWebPort = "5174",
   [string]$ApiProxyTarget = "http://127.0.0.1:8080"
@@ -18,7 +17,7 @@ function Install-Component {
   $TaskName = "PicGallery-$Component"
   switch ($Component) {
     "api" {
-      $Command = "cd `"$Root`"; `$env:APP_CONFIG_PATH=`"$AppConfigPath`"; `$env:APP_ADDR=`"$ApiAddr`"; go run ./cmd/api"
+      $Command = "cd `"$Root`"; `$env:APP_CONFIG_PATH=`"$AppConfigPath`"; go run ./cmd/api"
     }
     "worker" {
       $Command = "cd `"$Root`"; `$env:APP_CONFIG_PATH=`"$AppConfigPath`"; go run ./cmd/worker"

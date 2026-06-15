@@ -6,11 +6,13 @@ import (
 	"testing"
 )
 
-func TestLoadAppliesEnvOverrides(t *testing.T) {
+func TestLoadIgnoresBusinessEnvOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_ADDR", ":9090")
 	t.Setenv("REDIS_URL", "redis://localhost:6379/1")
 	t.Setenv("REDIS_KEY_PREFIX", "test-prefix")
+	t.Setenv("STORAGE_DRIVER", "s3")
+	t.Setenv("STORAGE_LOCAL_ROOT", "/var/lib/override")
 	t.Setenv("OPENAI_API_KEY", "openai-test-key")
 	t.Setenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "api-key-secret-test-key")
 	t.Setenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "cashier-provider-config-test-key")
@@ -29,17 +31,20 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if cfg.App.Env != "test" {
-		t.Fatalf("expected APP_ENV override, got %q", cfg.App.Env)
+	if cfg.App.Env != "local" {
+		t.Fatalf("expected app env from YAML, got %q", cfg.App.Env)
 	}
-	if cfg.App.Addr != ":9090" {
-		t.Fatalf("expected APP_ADDR override, got %q", cfg.App.Addr)
+	if cfg.App.Addr != ":8080" {
+		t.Fatalf("expected app addr from YAML, got %q", cfg.App.Addr)
 	}
-	if cfg.Redis.URL != "redis://localhost:6379/1" || cfg.Redis.KeyPrefix != "test-prefix" {
-		t.Fatalf("expected Redis env overrides, got %#v", cfg.Redis)
+	if cfg.Redis.URL != "redis://localhost:6379/0" || cfg.Redis.KeyPrefix != "pic-gallery" {
+		t.Fatalf("expected Redis values from YAML/defaults, got %#v", cfg.Redis)
 	}
-	if cfg.Providers.OpenAI.APIKey != "openai-test-key" {
-		t.Fatalf("expected OPENAI_API_KEY override, got %q", cfg.Providers.OpenAI.APIKey)
+	if cfg.Storage.Driver != "local" || cfg.Storage.LocalRoot != "./tmp/storage" {
+		t.Fatalf("expected storage values from YAML, got %#v", cfg.Storage)
+	}
+	if cfg.Providers.OpenAI.APIKey != "" {
+		t.Fatalf("expected OpenAI API key from YAML, got %q", cfg.Providers.OpenAI.APIKey)
 	}
 	if cfg.Billing.PointsScale != 5 {
 		t.Fatalf("expected billing scale 5, got %d", cfg.Billing.PointsScale)
@@ -47,23 +52,23 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	if cfg.Cashier.MaxPendingOrdersPerUser != 3 || cfg.Cashier.OrderTimeoutSeconds != 1800 {
 		t.Fatalf("expected cashier defaults from config, got %#v", cfg.Cashier)
 	}
-	if cfg.APIKey.SigningSecretEncryptionKey != "api-key-secret-test-key" {
-		t.Fatalf("expected API key signing secret env override, got %q", cfg.APIKey.SigningSecretEncryptionKey)
+	if cfg.APIKey.SigningSecretEncryptionKey != "local-dev-api-key-signing-secret-encryption-key" {
+		t.Fatalf("expected API key signing secret default, got %q", cfg.APIKey.SigningSecretEncryptionKey)
 	}
-	if cfg.Cashier.ProviderConfigEncryptionKey != "cashier-provider-config-test-key" {
-		t.Fatalf("expected cashier provider config env override, got %q", cfg.Cashier.ProviderConfigEncryptionKey)
+	if cfg.Cashier.ProviderConfigEncryptionKey != "local-dev-cashier-provider-config-encryption-key" {
+		t.Fatalf("expected cashier provider config default, got %q", cfg.Cashier.ProviderConfigEncryptionKey)
 	}
-	if cfg.Security.SecureConfigEncryptionKey != "secure-config-test-key" {
-		t.Fatalf("expected secure config env override, got %q", cfg.Security.SecureConfigEncryptionKey)
+	if cfg.Security.SecureConfigEncryptionKey != "local-dev-secure-config-encryption-key" {
+		t.Fatalf("expected secure config default, got %q", cfg.Security.SecureConfigEncryptionKey)
 	}
-	if cfg.Auth.SMTP.Host != "smtp.example.com" || cfg.Auth.SMTP.Port != 587 || cfg.Auth.SMTP.Username != "mailer" || cfg.Auth.SMTP.Password != "secret" || cfg.Auth.SMTP.From != "Pic Gallery <noreply@example.com>" {
-		t.Fatalf("expected SMTP env overrides, got %#v", cfg.Auth.SMTP)
+	if cfg.Auth.SMTP.Host != "" || cfg.Auth.SMTP.Port != 0 || cfg.Auth.SMTP.Username != "" || cfg.Auth.SMTP.Password != "" || cfg.Auth.SMTP.From != "" {
+		t.Fatalf("expected SMTP values from YAML, got %#v", cfg.Auth.SMTP)
 	}
-	if !cfg.Auth.SMTP.StartTLS || !cfg.Auth.SMTP.InsecureSkipVerify {
-		t.Fatalf("expected SMTP bool env overrides, got %#v", cfg.Auth.SMTP)
+	if !cfg.Auth.SMTP.StartTLS || cfg.Auth.SMTP.InsecureSkipVerify {
+		t.Fatalf("expected SMTP bool values from YAML, got %#v", cfg.Auth.SMTP)
 	}
-	if cfg.Worker.MaxConcurrentTasks != 12 {
-		t.Fatalf("expected worker max concurrency env override, got %d", cfg.Worker.MaxConcurrentTasks)
+	if cfg.Worker.MaxConcurrentTasks != 4 {
+		t.Fatalf("expected worker max concurrency default, got %d", cfg.Worker.MaxConcurrentTasks)
 	}
 }
 
@@ -85,7 +90,7 @@ func TestLoadUsesPicGalleryConfigEnv(t *testing.T) {
 	}
 }
 
-func TestLoadAppliesBFSSStorageEnvAliases(t *testing.T) {
+func TestLoadIgnoresBFSSStorageEnvAliases(t *testing.T) {
 	t.Setenv("BFSS_ENDPOINT", "https://bfss.example.com")
 	t.Setenv("BFSS_REGION", "cn-test-1")
 	t.Setenv("BFSS_BUCKET", "pic-gallery-assets")
@@ -99,13 +104,13 @@ func TestLoadAppliesBFSSStorageEnvAliases(t *testing.T) {
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if cfg.Storage.S3.Endpoint != "https://bfss.example.com" ||
-		cfg.Storage.S3.Region != "cn-test-1" ||
-		cfg.Storage.S3.Bucket != "pic-gallery-assets" ||
-		cfg.Storage.S3.AccessKeyID != "bfss-ak" ||
-		cfg.Storage.S3.SecretAccessKey != "bfss-sk" ||
-		cfg.Storage.S3.ForcePathStyle ||
-		cfg.Storage.S3.Prefix != "prod/pic-gallery" {
-		t.Fatalf("expected BFSS env aliases to configure S3-compatible storage, got %#v", cfg.Storage.S3)
+	if cfg.Storage.S3.Endpoint != "" ||
+		cfg.Storage.S3.Region != "us-east-1" ||
+		cfg.Storage.S3.Bucket != "" ||
+		cfg.Storage.S3.AccessKeyID != "" ||
+		cfg.Storage.S3.SecretAccessKey != "" ||
+		!cfg.Storage.S3.ForcePathStyle ||
+		cfg.Storage.S3.Prefix != "pic-gallery" {
+		t.Fatalf("expected BFSS env aliases to be ignored, got %#v", cfg.Storage.S3)
 	}
 }
