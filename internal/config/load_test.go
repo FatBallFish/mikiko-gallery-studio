@@ -84,3 +84,28 @@ func TestLoadUsesPicGalleryConfigEnv(t *testing.T) {
 		t.Fatalf("expected PIC_GALLERY_CONFIG path to load config, got app name %q", cfg.App.Name)
 	}
 }
+
+func TestLoadAppliesBFSSStorageEnvAliases(t *testing.T) {
+	t.Setenv("BFSS_ENDPOINT", "https://bfss.example.com")
+	t.Setenv("BFSS_REGION", "cn-test-1")
+	t.Setenv("BFSS_BUCKET", "pic-gallery-assets")
+	t.Setenv("BFSS_ACCESS_KEY_ID", "bfss-ak")
+	t.Setenv("BFSS_SECRET_ACCESS_KEY", "bfss-sk")
+	t.Setenv("BFSS_FORCE_PATH_STYLE", "false")
+	t.Setenv("BFSS_PREFIX", "prod/pic-gallery")
+
+	cfg, err := Load("../../configs/config.dev.yaml")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.Storage.S3.Endpoint != "https://bfss.example.com" ||
+		cfg.Storage.S3.Region != "cn-test-1" ||
+		cfg.Storage.S3.Bucket != "pic-gallery-assets" ||
+		cfg.Storage.S3.AccessKeyID != "bfss-ak" ||
+		cfg.Storage.S3.SecretAccessKey != "bfss-sk" ||
+		cfg.Storage.S3.ForcePathStyle ||
+		cfg.Storage.S3.Prefix != "prod/pic-gallery" {
+		t.Fatalf("expected BFSS env aliases to configure S3-compatible storage, got %#v", cfg.Storage.S3)
+	}
+}
