@@ -88,6 +88,8 @@ func newMux(api *handlers.API) http.Handler {
 		mux.HandleFunc("/api/ops/admin/v1/audit-logs", api.HandleAdminAuditLogs)
 		mux.HandleFunc("/api/ops/admin/v1/image-reviews", api.HandleAdminImageReviews)
 		mux.HandleFunc("/api/ops/admin/v1/image-reviews/", api.HandleAdminImageReviewDetail)
+		mux.HandleFunc("/api/ops/admin/v1/admin-users", api.HandleAdminSystemUsers)
+		mux.HandleFunc("/api/ops/admin/v1/admin-users/", api.HandleAdminSystemUserDetail)
 		mux.HandleFunc("/api/ops/admin/v1/users", api.HandleAdminUsers)
 		mux.HandleFunc("/api/ops/admin/v1/users/", api.HandleAdminUserDetail)
 		mux.HandleFunc("/api/ops/admin/v1/user-groups", api.HandleAdminUserGroups)

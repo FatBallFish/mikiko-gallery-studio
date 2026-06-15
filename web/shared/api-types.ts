@@ -82,6 +82,9 @@ export const API_PATHS = {
     login: '/api/ops/admin/v1/auth/login',
     logout: '/api/ops/admin/v1/auth/logout',
     auditLogs: '/api/ops/admin/v1/audit-logs',
+    adminUsers: '/api/ops/admin/v1/admin-users',
+    adminUserDetail: '/api/ops/admin/v1/admin-users/{admin_id}',
+    adminUserResetPassword: '/api/ops/admin/v1/admin-users/{admin_id}/reset-password',
     users: '/api/ops/admin/v1/users',
     userDetail: '/api/ops/admin/v1/users/{user_id}',
     userStatus: '/api/ops/admin/v1/users/{user_id}/status',
@@ -734,6 +737,10 @@ export type ReviewItem = { id: string; image_id?: string; title: string; owner: 
 export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[]; recent_orders?: PaymentOrder[]; recent_tasks?: ImageTask[]; api_keys?: ApiKey[] }
 export type AdminUserCreateRequest = { email: string; nickname?: string; status?: string; user_group_code?: string; password?: string; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string }
+export type SystemAdminUser = { id: ID; email: string; role: AdminRole; status: 'active' | 'disabled' | string; created_at: string; updated_at: string }
+export type SystemAdminUserCreateRequest = { email: string; password: string; role: AdminRole; status?: string }
+export type SystemAdminUserUpdateRequest = { role?: AdminRole; status?: string }
+export type SystemAdminPasswordResetRequest = { new_password: string }
 export type UserGroup = { id?: ID; code: string; name: string; group_code: string; group_name: string; multiplier: string; status: string; sort_order?: number; is_default?: boolean; description?: string | null; created_at: string; updated_at: string }
 export type UserGroupWriteRequest = { code: string; name: string; multiplier: string; status: string; sort_order?: number; is_default?: boolean; description?: string | null }
 export type ModelAccountStatus = 'enabled' | 'disabled' | 'error' | string

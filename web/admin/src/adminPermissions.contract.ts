@@ -6,7 +6,7 @@ import {
   firstAccessibleAdminRoute,
   resolveAdminPermissions,
 } from './types'
-import { navGroups } from './components'
+import { navGroups } from './layout/admin-navigation'
 
 const opsAdmin: AdminSession = {
   token: 'token',
@@ -14,8 +14,8 @@ const opsAdmin: AdminSession = {
   role: 'admin',
 }
 
-if (!canAccessAdminRoute(opsAdmin, 'cashier') || !canAccessAdminRoute(opsAdmin, 'users')) {
-  throw new Error('admin should retain operational access to users and cashier')
+if (!canAccessAdminRoute(opsAdmin, 'cashier-config') || !canAccessAdminRoute(opsAdmin, 'users')) {
+  throw new Error('admin should retain operational access to users and cashier config')
 }
 
 if (canAdmin(opsAdmin, 'manage:admins')) {
@@ -37,7 +37,7 @@ const unknownRole: AdminSession = {
   role: 'finance_admin',
 }
 
-if (resolveAdminPermissions(unknownRole).length !== 0 || canAccessAdminRoute(unknownRole, 'overview')) {
+if (resolveAdminPermissions(unknownRole).length !== 0 || canAccessAdminRoute(unknownRole, 'dashboard')) {
   throw new Error('unknown roles without explicit permissions must default to no access')
 }
 
@@ -46,17 +46,17 @@ const customCashierRole: AdminSession = {
   permissions: ['read:all', 'manage:cashier'],
 }
 
-if (!canAccessAdminRoute(customCashierRole, 'cashier') || canAccessAdminRoute(customCashierRole, 'users')) {
+if (!canAccessAdminRoute(customCashierRole, 'cashier-config') || canAccessAdminRoute(customCashierRole, 'users')) {
   throw new Error('custom roles should be governed by explicit session permissions')
 }
 
-if (firstAccessibleAdminRoute(customCashierRole) !== 'overview') {
-  throw new Error('custom role with read permission should land on overview')
+if (firstAccessibleAdminRoute(customCashierRole) !== 'dashboard') {
+  throw new Error('custom role with read permission should land on dashboard')
 }
 
 const filtered = filterAdminNavGroups(navGroups, customCashierRole)
 const visibleIds = filtered.flatMap((group) => group.items.map((item) => item.id)).join(',')
 
-if (visibleIds.includes('users') || !visibleIds.includes('cashier')) {
+if (visibleIds.includes('users') || !visibleIds.includes('cashier-config')) {
   throw new Error(`admin navigation should hide unauthorized entries, got ${visibleIds}`)
 }

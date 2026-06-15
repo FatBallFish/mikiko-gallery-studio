@@ -1,4 +1,5 @@
 import type { ProviderHealth, ReadinessCheck } from '../../shared/api-types'
+import { adminActionHref } from './adminRouteLinks'
 
 export type HealthTone = 'success' | 'warning' | 'danger' | 'neutral'
 
@@ -73,7 +74,6 @@ export function healthProviderRows(providers: ProviderHealth[]): HealthProviderR
 
 export function healthReadinessRows(checks: ReadinessCheck[]): HealthReadinessRow[] {
   return checks.map((check) => {
-    const route = check.fix_route ?? check.action_route ?? 'readiness'
     return {
       key: check.key,
       name: check.label,
@@ -82,7 +82,7 @@ export function healthReadinessRows(checks: ReadinessCheck[]): HealthReadinessRo
       scope: check.key,
       probeLabel: check.blocking ? '阻塞上线' : '上线检查',
       detail: check.detail || check.summary || '-',
-      actionHref: `#/${route}`,
+      actionHref: adminActionHref(check.fix_route ?? check.action_route),
       actionLabel: check.fix_action ?? check.action_label ?? '查看',
     }
   })

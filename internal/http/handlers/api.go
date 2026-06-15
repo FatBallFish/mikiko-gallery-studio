@@ -4433,6 +4433,157 @@ func (a *API) HandleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *API) HandleAdminSystemUsers(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageAdmins)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, queryErr := parsePositiveIntQuery(r, "page", 1)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+		if queryErr != nil {
+			httpx.WriteError(w, r, queryErr)
+			return
+		}
+		result, err := a.adminAuth.ListAdmins(r.Context(), domainadminauth.AdminListRequest{
+			Page:     page,
+			PageSize: pageSize,
+			Query:    r.URL.Query().Get("query"),
+			Role:     r.URL.Query().Get("role"),
+			Status:   r.URL.Query().Get("status"),
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+			"items": result.Items,
+			"pagination": map[string]any{
+				"page":      result.Page,
+				"page_size": result.PageSize,
+				"total":     result.Total,
+			},
+		})
+	case http.MethodPost:
+		var req struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+			Role     string `json:"role"`
+			Status   string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		created, err := a.adminAuth.CreateAdmin(r.Context(), domainadminauth.AdminCreateRequest{Email: req.Email, Password: req.Password, Role: req.Role, Status: req.Status})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "admin_user.create", "admin_user", fmt.Sprintf("%d", created.ID), map[string]any{"email": created.Email, "role": created.Role, "status": created.Status}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		httpx.WriteError(w, r, methodNotAllowedError())
+	}
+}
+
+func (a *API) HandleAdminSystemUserDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageAdmins)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	adminID, action, parseErr := parseAdminSystemUserAction(r.URL.Path)
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	switch action {
+	case "":
+		switch r.Method {
+		case http.MethodPut:
+			var req struct {
+				Role   *string `json:"role"`
+				Status *string `json:"status"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+				return
+			}
+			role := ""
+			if req.Role != nil {
+				role = *req.Role
+			}
+			status := ""
+			if req.Status != nil {
+				status = *req.Status
+			}
+			updated, err := a.adminAuth.UpdateAdmin(r.Context(), domainadminauth.AdminUpdateRequest{
+				AdminID:        adminID,
+				OperatorID:     admin.AdminID,
+				Role:           role,
+				Status:         status,
+				RoleProvided:   req.Role != nil,
+				StatusProvided: req.Status != nil,
+			})
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "admin_user.update", "admin_user", fmt.Sprintf("%d", updated.ID), map[string]any{"email": updated.Email, "role": updated.Role, "status": updated.Status}); auditErr != nil {
+				httpx.WriteError(w, r, normalizeAppError(auditErr))
+				return
+			}
+			httpx.WriteSuccess(w, r, http.StatusOK, updated)
+		case http.MethodDelete:
+			deleted, err := a.adminAuth.DeleteAdmin(r.Context(), domainadminauth.AdminDeleteRequest{AdminID: adminID, OperatorID: admin.AdminID})
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "admin_user.delete", "admin_user", fmt.Sprintf("%d", deleted.ID), map[string]any{"email": deleted.Email, "role": deleted.Role, "status": deleted.Status}); auditErr != nil {
+				httpx.WriteError(w, r, normalizeAppError(auditErr))
+				return
+			}
+			httpx.WriteSuccess(w, r, http.StatusOK, deleted)
+		default:
+			httpx.WriteError(w, r, methodNotAllowedError())
+		}
+	case "reset-password":
+		if r.Method != http.MethodPost {
+			httpx.WriteError(w, r, methodNotAllowedError())
+			return
+		}
+		var req struct {
+			NewPassword string `json:"new_password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		if err := a.adminAuth.ResetAdminPassword(r.Context(), domainadminauth.AdminPasswordResetRequest{AdminID: adminID, NewPassword: req.NewPassword}); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "admin_user.reset_password", "admin_user", fmt.Sprintf("%d", adminID), nil); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"status": "password_reset"})
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found"))
+	}
+}
+
 func (a *API) HandleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageUsers)
 	if appErr != nil {
@@ -6571,6 +6722,25 @@ func parseAdminUserAction(path string) (int64, string, *errs.Error) {
 	}
 	if len(parts) == 2 {
 		return userID, parts[1], nil
+	}
+	return 0, "", errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found")
+}
+
+func parseAdminSystemUserAction(path string) (int64, string, *errs.Error) {
+	trimmed := strings.Trim(strings.TrimPrefix(path, "/api/ops/admin/v1/admin-users/"), "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return 0, "", errs.BadRequest("invalid admin_id")
+	}
+	adminID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || adminID <= 0 {
+		return 0, "", errs.BadRequest("invalid admin_id")
+	}
+	if len(parts) == 1 {
+		return adminID, "", nil
+	}
+	if len(parts) == 2 {
+		return adminID, parts[1], nil
 	}
 	return 0, "", errs.New(http.StatusNotFound, errs.CodeNotFound, "admin user route not found")
 }

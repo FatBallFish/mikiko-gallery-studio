@@ -1,7 +1,7 @@
 export const adminDataGrid = {
-  root: 'min-w-0 overflow-x-auto rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white',
-  head: 'grid items-center gap-3 border-b border-[var(--line-strong)] bg-[var(--pg-admin-bg-subtle)] px-4 py-3 text-[10px] font-extrabold uppercase tracking-[.12em] text-[var(--soft)] [&>*]:min-w-0 [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap',
-  row: 'grid min-h-14 items-center gap-3 border-b border-[var(--line)] px-4 py-3 last:border-b-0 [&>*]:min-w-0',
+  root: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
+  head: 'grid items-center gap-3 border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-[var(--muted-strong)] [&>*]:min-w-0 [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap',
+  row: 'grid min-h-14 items-center gap-3 border-b border-[var(--line)]/60 px-6 py-4 text-sm text-[var(--muted)] transition-colors last:border-b-0 hover:bg-white/[0.03] [&>*]:min-w-0',
   cell: 'min-w-0 overflow-hidden text-ellipsis',
   stackCell: 'flex min-w-0 flex-col justify-center',
   detail: 'm-0 mt-1 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',

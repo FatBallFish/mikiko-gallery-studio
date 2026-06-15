@@ -1065,6 +1065,147 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPTestResponse
+  /api/ops/admin/v1/admin-users:
+    get:
+      tags: [Admin System Users]
+      summary: List administrator accounts
+      operationId: getAdminSystemUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive match against administrator email.
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [super_admin, admin]
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, disabled]
+      responses:
+        '200':
+          description: Administrator account page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminUserListResponse
+    post:
+      tags: [Admin System Users]
+      summary: Create an administrator account
+      operationId: postAdminSystemUsers
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminUserCreateRequest
+      responses:
+        '201':
+          description: Created administrator account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminUserResponse
+  /api/ops/admin/v1/admin-users/{admin_id}:
+    put:
+      tags: [Admin System Users]
+      summary: Update an administrator role or status
+      operationId: putAdminSystemUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: admin_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminUserUpdateRequest
+      responses:
+        '200':
+          description: Updated administrator account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminUserResponse
+    delete:
+      tags: [Admin System Users]
+      summary: Delete an administrator account
+      operationId: deleteAdminSystemUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: admin_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Deleted administrator account
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminUserResponse
+  /api/ops/admin/v1/admin-users/{admin_id}/reset-password:
+    post:
+      tags: [Admin System Users]
+      summary: Reset an administrator password
+      operationId: postAdminSystemUserResetPassword
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: admin_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminPasswordResetRequest
+      responses:
+        '200':
+          description: Password reset accepted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/SystemAdminPasswordResetResponse
   /api/ops/admin/v1/users:
     get:
       tags: [Admin Users]

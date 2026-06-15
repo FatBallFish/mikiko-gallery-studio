@@ -79,7 +79,7 @@ if (rows[1]?.status !== '警告' || rows[1]?.rawStatus !== 'warn') {
   throw new Error(`overview readiness warn row should display localized status and preserve raw status, got ${JSON.stringify(rows[1])}`)
 }
 
-if (rows[2]?.detail !== '-' || rows[2]?.actionHref !== '#/readiness' || rows[2]?.actionLabel !== '处理') {
+if (rows[2]?.detail !== '-' || rows[2]?.actionHref !== '#/monitoring' || rows[2]?.actionLabel !== '处理') {
   throw new Error(`overview readiness row should fallback detail/action safely, got ${JSON.stringify(rows[2])}`)
 }
 

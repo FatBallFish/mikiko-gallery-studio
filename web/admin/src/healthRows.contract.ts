@@ -50,7 +50,7 @@ const readinessRows = healthReadinessRows([
 assertEqual(readinessRows[0]?.name ?? '', '模型账号', 'readiness row name')
 assertEqual(readinessRows[0]?.statusLabel ?? '', '失败', 'readiness row localized fail status')
 assertEqual(readinessRows[0]?.probeLabel ?? '', '阻塞上线', 'readiness blocking probe label')
-assertEqual(readinessRows[0]?.actionHref ?? '', '#/provider-models', 'readiness action route')
+assertEqual(readinessRows[0]?.actionHref ?? '', '#/access-accounts', 'readiness action route')
 assertEqual(readinessRows[1]?.statusLabel ?? '', '通过', 'readiness pass status')
 assertEqual(readinessRows[1]?.probeLabel ?? '', '上线检查', 'readiness non-blocking probe label')
 

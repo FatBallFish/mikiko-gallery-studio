@@ -20,17 +20,24 @@ type SMTPDraft = {
 }
 
 const securityClasses = {
-  section: 'grid gap-4 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white p-4',
+  summaryList: 'space-y-4',
+  summaryToggle: 'flex items-center justify-between gap-4 rounded-2xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:bg-white/[0.04]',
+  summaryTitle: 'text-sm font-bold text-[var(--text)]',
+  summaryDetail: 'mt-1 text-xs text-[var(--muted-strong)]',
+  switch: 'relative h-6 w-12 rounded-full bg-[var(--accent)]',
+  switchOff: 'bg-white/10',
+  knob: 'absolute top-1 size-4 rounded-full bg-white shadow-lg',
+  section: 'grid gap-4 rounded-3xl border border-white/5 bg-white/[0.02] p-6',
   sectionHead: 'flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3',
   form: 'grid gap-4',
-  toggle: 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 p-2 text-sm has-[:checked]:border-[var(--blue)] has-[:checked]:bg-[rgba(87,117,185,.08)]',
+  toggle: 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10',
   actions: 'flex flex-wrap items-center justify-end gap-2',
   note: 'm-0 text-sm text-[var(--soft)] [overflow-wrap:anywhere]',
-  secretBox: 'grid gap-3 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--pg-admin-bg-subtle)] p-3',
+  secretBox: 'grid gap-3 rounded-3xl border border-white/5 bg-white/[0.02] p-4',
   testRow: 'grid grid-cols-[minmax(220px,1fr)_auto] items-end gap-3 max-[620px]:grid-cols-1',
 }
 
-export function SecurityConfigPage({ onFeedback }: { onFeedback?: (title: string, detail?: string) => void }) {
+export function SecurityConfigPage({ onFeedback, compact = false, summaryMode = false }: { onFeedback?: (title: string, detail?: string) => void; compact?: boolean; summaryMode?: boolean }) {
   const [config, setConfig] = useState<SMTPConfigView | null>(null)
   const [draft, setDraft] = useState<SMTPDraft | null>(null)
   const [loading, setLoading] = useState(true)
@@ -94,23 +101,38 @@ export function SecurityConfigPage({ onFeedback }: { onFeedback?: (title: string
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader
-        eyebrow="Security Config"
-        title="安全配置"
-        detail="管理 SMTP 发信服务器等敏感配置；密钥只写不读，后端加密存储。"
-        actions={<button type="button" className={adminButton.base} onClick={() => void load()}>刷新</button>}
-      />
-      <StatusStrip columns={4}>
-        <StatusCell label="SMTP" value={config?.enabled ? '启用' : '未启用'} />
-        <StatusCell label="密码状态" value={config?.secret_status?.has_secret ? '已配置' : '未配置'} />
-        <StatusCell label="版本" value={String(config?.version ?? 0)} />
-        <StatusCell label="指纹" value={config?.secret_status?.fingerprint ?? '-'} />
-      </StatusStrip>
+      {!compact ? (
+        <PageHeader
+          eyebrow="Security Config"
+          title="安全配置"
+          detail="管理 SMTP 发信服务器等敏感配置；密钥只写不读，后端加密存储。"
+          actions={<button type="button" className={adminButton.base} onClick={() => void load()}>刷新</button>}
+        />
+      ) : null}
+      {!summaryMode ? (
+        <StatusStrip columns={4}>
+          <StatusCell label="SMTP" value={config?.enabled ? '启用' : '未启用'} />
+          <StatusCell label="密码状态" value={config?.secret_status?.has_secret ? '已配置' : '未配置'} />
+          <StatusCell label="版本" value={String(config?.version ?? 0)} />
+          <StatusCell label="指纹" value={config?.secret_status?.fingerprint ?? '-'} />
+        </StatusStrip>
+      ) : null}
       {error ? <ErrorBlock message={error} onRetry={() => setError(null)} /> : null}
       {draft && config ? (
-        <section className={adminPage.fullSurface}>
-          <section className={adminPage.mainLane}>
-            <form className={securityClasses.section} onSubmit={(event) => void save(event)}>
+        <>
+          {summaryMode ? (
+            <section className={securityClasses.summaryList}>
+              <SecuritySummaryToggle title="SMTP 发信服务" detail={smtpSecretSummary(config)} enabled={config.enabled} />
+              <SecuritySummaryToggle title="强制邮箱验证" detail="登录、注册、密码重置邮件走真实配置中心。" enabled />
+              <SecuritySummaryToggle title="启用全站内容审核 (Moderation)" detail="内容策略由系统配置类目控制。" enabled />
+              <SecuritySummaryToggle title="限制单用户日最大生图数" detail="当前限制来自生成配置类目。" enabled />
+            </section>
+          ) : null}
+          <details className={summaryMode ? 'group rounded-3xl border border-white/5 bg-white/[0.02] p-4' : ''} open={!summaryMode}>
+            {summaryMode ? <summary className="cursor-pointer list-none text-sm font-bold text-[var(--accent)]">SMTP 高级配置</summary> : null}
+            <section className={summaryMode ? 'mt-4' : adminPage.fullSurface}>
+              <section className={summaryMode ? 'grid gap-4' : adminPage.mainLane}>
+                <form className={securityClasses.section} onSubmit={(event) => void save(event)}>
               <div className={securityClasses.sectionHead}>
                 <div>
                   <strong>SMTP 发信服务器</strong>
@@ -118,6 +140,7 @@ export function SecurityConfigPage({ onFeedback }: { onFeedback?: (title: string
                 </div>
                 <div className={securityClasses.actions}>
                   <Badge tone={config.enabled ? 'success' : 'neutral'}>{config.enabled ? '已启用' : '未启用'}</Badge>
+                  {compact ? <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => void load()}>刷新</button> : null}
                   <button type="submit" className={cn(adminButton.base, adminButton.primary)} disabled={saving}>{saving ? '保存中...' : '保存 SMTP'}</button>
                 </div>
               </div>
@@ -174,8 +197,8 @@ export function SecurityConfigPage({ onFeedback }: { onFeedback?: (title: string
                   </label>
                 </div>
               </section>
-            </form>
-            <section className={securityClasses.section}>
+                </form>
+                <section className={securityClasses.section}>
               <div className={securityClasses.sectionHead}>
                 <div>
                   <strong>发送测试邮件</strong>
@@ -188,11 +211,27 @@ export function SecurityConfigPage({ onFeedback }: { onFeedback?: (title: string
                 </Field>
                 <button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={testing} onClick={() => void testSMTP()}>{testing ? '发送中...' : '发送测试邮件'}</button>
               </div>
+                </section>
+              </section>
             </section>
-          </section>
-        </section>
+          </details>
+        </>
       ) : null}
     </section>
+  )
+}
+
+function SecuritySummaryToggle({ title, detail, enabled }: { title: string; detail?: string; enabled: boolean }) {
+  return (
+    <div className={securityClasses.summaryToggle}>
+      <div>
+        <h4 className={securityClasses.summaryTitle}>{title}</h4>
+        {detail ? <p className={securityClasses.summaryDetail}>{detail}</p> : null}
+      </div>
+      <div className={cn(securityClasses.switch, !enabled && securityClasses.switchOff)} aria-hidden="true">
+        <div className={cn(securityClasses.knob, enabled ? 'right-1' : 'left-1')} />
+      </div>
+    </div>
   )
 }
 

@@ -53,6 +53,10 @@ import type {
   SMTPConfigView,
   SMTPConfigWriteRequest,
   SMTPTestResponse,
+  SystemAdminPasswordResetRequest,
+  SystemAdminUser,
+  SystemAdminUserCreateRequest,
+  SystemAdminUserUpdateRequest,
   UserGroup,
   UserGroupWriteRequest,
 } from './api-types'
@@ -71,6 +75,22 @@ export const adminApi = {
     return { token: result.access_token, admin_name: result.email || `Admin ${result.admin_id}`, role: result.role, email: result.email, admin_id: result.admin_id, permissions }
   },
   logout: () => sharedApiClient.request<void>(API_PATHS.ops.logout, { method: 'POST' }),
+  systemAdmins: {
+    list: async (query: Record<string, string | number | undefined> = {}): Promise<PageResult<SystemAdminUser>> => {
+      const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.adminUsers, { query }))
+      return { ...result, items: result.items.map(toSystemAdminUser) }
+    },
+    create: async (input: SystemAdminUserCreateRequest) => toSystemAdminUser(await sharedApiClient.request(API_PATHS.ops.adminUsers, { method: 'POST', body: input })),
+    update: async (admin_id: string | number, input: SystemAdminUserUpdateRequest) =>
+      toSystemAdminUser(await sharedApiClient.request(API_PATHS.ops.adminUserDetail, { method: 'PUT', pathParams: { admin_id }, body: input })),
+    resetPassword: (admin_id: string | number, input: SystemAdminPasswordResetRequest | string) =>
+      sharedApiClient.request<void>(API_PATHS.ops.adminUserResetPassword, {
+        method: 'POST',
+        pathParams: { admin_id },
+        body: typeof input === 'string' ? { new_password: input } : input,
+      }),
+    delete: (admin_id: string | number) => sharedApiClient.request<SystemAdminUser>(API_PATHS.ops.adminUserDetail, { method: 'DELETE', pathParams: { admin_id } }),
+  },
   dashboard: async (): Promise<AdminDashboard> => {
     const raw: any = await sharedApiClient.request(API_PATHS.ops.dashboard)
     return {
@@ -306,6 +326,18 @@ function toAdminUser(raw: any): AdminUser {
     balance: String(balance ?? raw.available_points ?? raw.user?.available_points ?? '0.00000'),
     created_at: raw.created_at ?? '',
     last_seen_at: raw.last_seen_at ?? raw.updated_at ?? '',
+  }
+}
+
+function toSystemAdminUser(raw: any): SystemAdminUser {
+  return {
+    ...raw,
+    id: raw.id ?? raw.admin_id,
+    email: raw.email ?? '',
+    role: raw.role ?? 'admin',
+    status: raw.status ?? 'active',
+    created_at: raw.created_at ?? '',
+    updated_at: raw.updated_at ?? '',
   }
 }
 

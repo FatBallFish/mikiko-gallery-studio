@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { type AdminSession, type ConfigItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
@@ -23,14 +24,15 @@ import {
 type DraftMap = Record<string, ConfigValue>
 
 const configClasses = {
-  statusStrip: 'grid grid-cols-4 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--surface-frost)] shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px] max-[920px]:grid-cols-2 max-[620px]:grid-cols-1',
+  statusStrip: 'grid grid-cols-4 gap-4 max-[920px]:grid-cols-2 max-[620px]:grid-cols-1',
   statusCell: 'min-w-0 border-r border-[var(--line)] px-4 py-3 last:border-r-0 max-[620px]:border-r-0 max-[620px]:border-b max-[620px]:last:border-b-0',
   statusLabel: 'block text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]',
   statusValue: 'mt-1 block truncate text-[var(--text)]',
-  board: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)_280px] overflow-hidden rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white max-[1260px]:grid-cols-1',
-  rail: 'grid content-start gap-1 border-r border-[var(--line)] bg-[var(--pg-admin-bg-subtle)] p-3 max-[1260px]:grid-cols-[repeat(4,minmax(0,1fr))] max-[1260px]:border-r-0 max-[1260px]:border-b max-[620px]:grid-cols-1',
-  railButton: 'min-h-[38px] rounded-[var(--pg-radius-sm)] border border-transparent px-3 py-2 text-left text-sm font-extrabold text-[var(--soft)] transition hover:border-[rgba(87,117,185,.24)] hover:bg-[rgba(87,117,185,.09)] hover:text-[var(--blue)]',
-  railButtonActive: 'border-[rgba(87,117,185,.24)] bg-[rgba(87,117,185,.09)] text-[var(--blue)]',
+  statusCard: 'rounded-3xl border border-white/5 bg-white/[0.02] p-5',
+  board: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)_280px] overflow-hidden rounded-3xl border border-white/5 bg-white/[0.01] max-[1260px]:grid-cols-1',
+  rail: 'grid content-start gap-1 border-r border-[var(--line)] bg-white/[0.02] p-3 max-[1260px]:grid-cols-[repeat(4,minmax(0,1fr))] max-[1260px]:border-r-0 max-[1260px]:border-b max-[620px]:grid-cols-1',
+  railButton: 'min-h-[38px] rounded-xl border border-transparent px-3 py-2 text-left text-sm font-extrabold text-[var(--soft)] transition hover:border-[var(--accent)]/25 hover:bg-[var(--accent)]/10 hover:text-[var(--accent)]',
+  railButtonActive: 'border-[var(--accent)]/25 bg-[var(--accent)]/10 text-[var(--accent)]',
   lane: 'min-w-0 overflow-y-auto border-r border-[var(--line)] px-[18px] py-4 max-[1260px]:border-r-0',
   head: 'mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-3',
   headTitle: 'block text-[var(--text)]',
@@ -38,7 +40,7 @@ const configClasses = {
   permissionNote: 'rounded-xl border border-[rgba(184,135,64,.28)] bg-[rgba(184,135,64,.08)] px-3 py-2 text-sm text-[var(--amber)]',
   formGrid: 'mt-4 grid grid-cols-[repeat(2,minmax(220px,1fr))] items-start gap-3.5 max-[760px]:grid-cols-1',
   formItem: 'grid min-w-0 self-start gap-2',
-  sideRail: 'grid min-w-0 content-start overflow-y-auto bg-[var(--pg-admin-bg-subtle)]',
+  sideRail: 'grid min-w-0 content-start overflow-y-auto bg-white/[0.02]',
   sideStrip: 'border-b border-[var(--line)] px-4 py-[15px] last:border-b-0',
   sideLabel: 'block text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]',
   sideStrong: 'mt-2 block text-[var(--text)]',
@@ -47,7 +49,17 @@ const configClasses = {
   kvRow: 'grid grid-cols-[minmax(90px,.9fr)_minmax(100px,1fr)] gap-2 max-[620px]:grid-cols-1',
 }
 
-export function ConfigPage({ session, onFeedback }: { session: AdminSession; onFeedback: (title: string, detail?: string) => void }) {
+export function ConfigPage({
+  session,
+  onFeedback,
+  compact = false,
+  summaryMode = false,
+}: {
+  session: AdminSession
+  onFeedback: (title: string, detail?: string) => void
+  compact?: boolean
+  summaryMode?: boolean
+}) {
   const [rows, setRows] = useState<ConfigItem[]>([])
   const [drafts, setDrafts] = useState<DraftMap>({})
   const [activeTab, setActiveTab] = useState('')
@@ -91,6 +103,7 @@ export function ConfigPage({ session, onFeedback }: { session: AdminSession; onF
   const requiredPermission = configPermission(activeTab)
   const canEditActiveTab = canAdmin(session, requiredPermission)
   const lockedDetail = configLockedDetail(requiredPermission)
+  const sampleFields = activeRows.slice(0, 4)
 
   const saveActiveTab = async () => {
     if (!activeRows.length || conflicts.length || !canEditActiveTab) return
@@ -130,26 +143,131 @@ export function ConfigPage({ session, onFeedback }: { session: AdminSession; onF
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader
-        eyebrow="Settings"
-        title="系统设置"
-        detail="按类目维护配置表单，保存时统一提交当前类目。"
-        actions={
-          <>
-            <button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
-            <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
-          </>
-        }
-      />
+      {!compact ? (
+        <PageHeader
+          eyebrow="Settings"
+          title="系统设置"
+          detail="按类目维护配置表单，保存时统一提交当前类目。"
+          actions={
+            <>
+              <button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
+              <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
+            </>
+          }
+        />
+      ) : null}
 
-      <section className={configClasses.statusStrip}>
-        <div className={configClasses.statusCell}><label className={configClasses.statusLabel}>当前类目</label><strong className={configClasses.statusValue}>{activeMeta.label}</strong></div>
-        <div className={configClasses.statusCell}><label className={configClasses.statusLabel}>字段</label><strong className={configClasses.statusValue}>{activeRows.length} 项</strong></div>
-        <div className={configClasses.statusCell}><label className={configClasses.statusLabel}>未保存</label><strong className={configClasses.statusValue}>{dirtyKeys.length} 项</strong></div>
-        <div className={configClasses.statusCell}><label className={configClasses.statusLabel}>校验</label><strong className={configClasses.statusValue}>{conflicts.length ? `${conflicts.length} 项需处理` : '通过'}</strong></div>
-      </section>
+      {!summaryMode ? (
+        <section className={configClasses.statusStrip}>
+          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>当前类目</label><strong className={configClasses.statusValue}>{activeMeta.label}</strong></div>
+          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>字段</label><strong className={configClasses.statusValue}>{activeRows.length} 项</strong></div>
+          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>未保存</label><strong className={configClasses.statusValue}>{dirtyKeys.length} 项</strong></div>
+          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>校验</label><strong className={configClasses.statusValue}>{conflicts.length ? `${conflicts.length} 项需处理` : '通过'}</strong></div>
+        </section>
+      ) : (
+        <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          {sampleFields.map((row, index) => {
+            const key = row.config_key ?? row.key
+            const value = extractConfigValue(row)
+            const label = configFieldMeta(key, row.description).label || key
+            return (
+              <div key={`${draftId(row)}:summary`} className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]">{label}</label>
+                <div className="relative">
+                  <input readOnly value={summaryValue(value)} className="w-full" />
+                  {index === 1 ? <span className="absolute right-4 top-1/2 size-2 -translate-y-1/2 rounded-full bg-emerald-500" /> : null}
+                </div>
+              </div>
+            )
+          })}
+        </section>
+      )}
 
-      <section className={configClasses.board}>
+      {summaryMode ? (
+        <details className="group rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+          <summary className="cursor-pointer list-none text-sm font-bold text-[var(--accent)]">编辑通用配置</summary>
+          <div className="mt-4">
+            <ConfigEditor
+              activeMeta={activeMeta}
+              tabs={tabs}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              activeRows={activeRows}
+              drafts={drafts}
+              setDrafts={setDrafts}
+              conflicts={conflicts}
+              canEditActiveTab={canEditActiveTab}
+              lockedDetail={lockedDetail}
+              saving={saving}
+              activeDirty={activeDirty}
+              compact={compact}
+              notice={notice}
+              revertActiveTab={revertActiveTab}
+              saveActiveTab={saveActiveTab}
+            />
+          </div>
+        </details>
+      ) : (
+        <ConfigEditor
+          activeMeta={activeMeta}
+          tabs={tabs}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          activeRows={activeRows}
+          drafts={drafts}
+          setDrafts={setDrafts}
+          conflicts={conflicts}
+          canEditActiveTab={canEditActiveTab}
+          lockedDetail={lockedDetail}
+          saving={saving}
+          activeDirty={activeDirty}
+          compact={compact}
+          notice={notice}
+          revertActiveTab={revertActiveTab}
+          saveActiveTab={saveActiveTab}
+        />
+      )}
+    </section>
+  )
+}
+
+function ConfigEditor({
+  activeMeta,
+  tabs,
+  activeTab,
+  setActiveTab,
+  activeRows,
+  drafts,
+  setDrafts,
+  conflicts,
+  canEditActiveTab,
+  lockedDetail,
+  saving,
+  activeDirty,
+  compact,
+  notice,
+  revertActiveTab,
+  saveActiveTab,
+}: {
+  activeMeta: ReturnType<typeof configTabMeta>
+  tabs: Array<{ key: string; label: string }>
+  activeTab: string
+  setActiveTab: (tab: string) => void
+  activeRows: ConfigItem[]
+  drafts: DraftMap
+  setDrafts: Dispatch<SetStateAction<DraftMap>>
+  conflicts: Array<{ key: string; message: string }>
+  canEditActiveTab: boolean
+  lockedDetail: string
+  saving: boolean
+  activeDirty: boolean
+  compact: boolean
+  notice: string
+  revertActiveTab: () => void
+  saveActiveTab: () => Promise<void>
+}) {
+  return (
+    <section className={configClasses.board}>
         <aside className={configClasses.rail}>
           {tabs.map((tab) => <button key={tab.key} className={cn(configClasses.railButton, activeTab === tab.key && configClasses.railButtonActive)} type="button" onClick={() => setActiveTab(tab.key)}>{tab.label}</button>)}
         </aside>
@@ -160,7 +278,15 @@ export function ConfigPage({ session, onFeedback }: { session: AdminSession; onF
               <strong className={configClasses.headTitle}>{activeMeta.label}</strong>
               <p className={configClasses.headDetail}>{activeMeta.detail}</p>
             </div>
-            <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? '需修正' : '可保存'}</Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? '需修正' : '可保存'}</Badge>
+              {compact ? (
+                <>
+                  <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
+                  <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
+                </>
+              ) : null}
+            </div>
           </div>
           {!canEditActiveTab ? <div className={configClasses.permissionNote}>{lockedDetail}</div> : null}
 
@@ -184,8 +310,14 @@ export function ConfigPage({ session, onFeedback }: { session: AdminSession; onF
           <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>提示</label><p className={configClasses.sideText}>鼠标悬停字段名旁的提示符可查看用途说明；复杂列表以结构化文本编辑，保存后仍按原始接口契约提交。</p></section>
         </aside>
       </section>
-    </section>
   )
+}
+
+function summaryValue(value: ConfigValue) {
+  if (typeof value === 'boolean') return value ? '开启' : '关闭'
+  if (Array.isArray(value)) return `${value.length} 项`
+  if (isRecord(value)) return Object.keys(value).join(', ') || '-'
+  return String(value ?? '-')
 }
 
 function renderConfigField(row: ConfigItem, meta: ConfigFieldMeta, value: ConfigValue, onChange: (value: ConfigValue) => void, error: string | null, disabled: boolean) {

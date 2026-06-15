@@ -16,11 +16,27 @@ import {
 import { adminUserRowView, adminUserStatusBadge, adminUserStatusFilterOptions, adminUserStatusOptions, adminUserSummary } from './userRows'
 
 const pageSize = 20
-const userFilterFormClass = 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] items-end gap-3 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white/70 p-3'
+const userFilterFormClass = 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] items-end gap-3 rounded-3xl border border-white/5 bg-white/[0.02] p-4'
 const inlineControlClass = 'flex items-center gap-2'
 const dangerTextClass = 'text-[var(--red)]'
 const creditAmountClass = 'text-[var(--success)]'
 const debitAmountClass = 'text-[var(--danger)]'
+
+const userClasses = {
+  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
+  table: 'w-full min-w-[1040px] border-collapse text-left',
+  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
+  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
+  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
+  userCell: 'flex min-w-0 items-center gap-3',
+  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sm font-black text-[var(--muted-strong)]',
+  userName: 'font-bold text-[var(--text)]',
+  userMeta: 'mt-1 text-[10px] text-[var(--muted-strong)] [overflow-wrap:anywhere]',
+  balance: 'font-mono font-bold text-[var(--text)]',
+  balanceUnit: 'text-[10px] text-[var(--muted-strong)]',
+  actionRow: 'flex flex-wrap items-center gap-2',
+  pager: 'flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] p-4 text-xs text-[var(--muted)]',
+}
 
 type UserAction =
   | { type: 'create'; draft: AdminUserCreateRequest }
@@ -185,42 +201,42 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
             <span>第 {page} 页 / 共 {total} 条</span>
           </div>
           {!rows.length ? <EmptyBlock title="没有匹配用户" detail="尝试换一个关键词。" /> : (
-            <div className={cn(adminDataGrid.root, adminGridCols.users)}>
-              <div className={cn(adminDataGrid.head, adminGridCols.users)}><span>用户</span><span>状态</span><span>分组</span><span>积分</span><span>最后活跃</span><span>创建时间</span><span>操作</span></div>
-              {rows.map((rawRow) => {
-                const row = adminUserRowView(rawRow)
-                return (
-                <div key={row.raw.id} className={cn(adminDataGrid.row, adminGridCols.users)}>
-                  <div className={adminDataGrid.stackCell}><strong>{row.name}</strong><p className={adminDataGrid.detail}>{row.subtitle}</p></div>
-                  <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
-                  <span>{row.groupLabel}</span>
-                  <code className={adminDataGrid.code}>{row.balanceLabel}</code>
-                  <span>{row.lastActiveAtLabel}</span>
-                  <span>{row.createdAtLabel}</span>
-                  <div className={adminDataGrid.actions}>
-                    <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => void openDetail(row.raw)}>详情</button>
-                    {row.raw.status === 'active' ? <button className={cn(adminButton.base, adminButton.danger, adminButton.small)} type="button" disabled={saving} onClick={() => void updateStatus(row.raw, 'disabled')}>禁用</button> : null}
-                    {row.raw.status === 'disabled' ? <button className={cn(adminButton.base, adminButton.success, adminButton.small)} type="button" disabled={saving} onClick={() => void updateStatus(row.raw, 'active')}>启用</button> : null}
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'group', user: row.raw, groupIds: currentGroupIds(row.raw, groups) })}>分组</button>
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'points', user: row.raw, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(row.raw.id) })}>积分</button>
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'limits', user: row.raw, rpmLimit: String(row.raw.rpm_limit ?? 0), concurrencyLimit: String(row.raw.concurrency_limit ?? 0) })}>限额</button>
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAction({ type: 'password', user: row.raw, password: '' })}>密码</button>
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, dangerTextClass)} type="button" onClick={() => setAction({ type: 'delete', user: row.raw, confirmEmail: '' })}>删除</button>
-                  </div>
-                </div>
-                )
-              })}
-            </div>
-          )}
-          {rows.length ? (
-              <div className={adminPage.pagination}>
-                <span>每页 {pageSize} 条</span>
+            <div className={userClasses.tableWrap}>
+              <table className={userClasses.table}>
+                <thead>
+                  <tr>
+                    <th className={userClasses.th}>用户信息</th>
+                    <th className={userClasses.th}>所属分组</th>
+                    <th className={userClasses.th}>账户余额</th>
+                    <th className={userClasses.th}>最后活跃</th>
+                    <th className={userClasses.th}>状态</th>
+                    <th className={userClasses.th}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((rawRow) => (
+                    <UserTableRow
+                      key={rawRow.id}
+                      row={adminUserRowView(rawRow)}
+                      saving={saving}
+                      groups={groups}
+                      onOpenDetail={openDetail}
+                      onUpdateStatus={updateStatus}
+                      onAction={setAction}
+                    />
+                  ))}
+                </tbody>
+              </table>
+              <div className={userClasses.pager}>
+                <span>显示 {(page - 1) * pageSize + 1} 到 {Math.min(page * pageSize, total)} 共 {total} 条记录</span>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
+                  <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" disabled>{page}</button>
                   <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
                 </div>
               </div>
-          ) : null}
+            </div>
+          )}
         </section>
       </section>
       {action ? (
@@ -241,6 +257,57 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
         </Modal>
       ) : null}
     </section>
+  )
+}
+
+function UserTableRow({
+  row,
+  groups,
+  saving,
+  onOpenDetail,
+  onUpdateStatus,
+  onAction,
+}: {
+  row: ReturnType<typeof adminUserRowView>
+  groups: UserGroup[]
+  saving: boolean
+  onOpenDetail: (user: AdminUser) => Promise<void>
+  onUpdateStatus: (user: AdminUser, status: string) => Promise<void>
+  onAction: (action: UserAction) => void
+}) {
+  return (
+    <tr className={userClasses.tr}>
+      <td className={userClasses.td}>
+        <div className={userClasses.userCell}>
+          <div className={userClasses.avatar}>{row.name.slice(0, 1).toUpperCase()}</div>
+          <div className="min-w-0">
+            <div className={userClasses.userName}>{row.name}</div>
+            <div className={userClasses.userMeta}>{row.subtitle}</div>
+          </div>
+        </div>
+      </td>
+      <td className={userClasses.td}>{row.groupLabel}</td>
+      <td className={userClasses.td}>
+        <div className="flex items-baseline gap-1">
+          <span className={userClasses.balance}>{row.balanceLabel}</span>
+          <span className={userClasses.balanceUnit}>POINTS</span>
+        </div>
+      </td>
+      <td className={userClasses.td}>{row.lastActiveAtLabel}</td>
+      <td className={userClasses.td}><Badge tone={row.statusTone}>{row.statusLabel}</Badge></td>
+      <td className={userClasses.td}>
+        <div className={userClasses.actionRow}>
+          <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => void onOpenDetail(row.raw)}>详情</button>
+          {row.raw.status === 'active' ? <button className={cn(adminButton.base, adminButton.danger, adminButton.small)} type="button" disabled={saving} onClick={() => void onUpdateStatus(row.raw, 'disabled')}>禁用</button> : null}
+          {row.raw.status === 'disabled' ? <button className={cn(adminButton.base, adminButton.success, adminButton.small)} type="button" disabled={saving} onClick={() => void onUpdateStatus(row.raw, 'active')}>启用</button> : null}
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'group', user: row.raw, groupIds: currentGroupIds(row.raw, groups) })}>分组</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'points', user: row.raw, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(row.raw.id) })}>积分</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'limits', user: row.raw, rpmLimit: String(row.raw.rpm_limit ?? 0), concurrencyLimit: String(row.raw.concurrency_limit ?? 0) })}>限额</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'password', user: row.raw, password: '' })}>密码</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, dangerTextClass)} type="button" onClick={() => onAction({ type: 'delete', user: row.raw, confirmEmail: '' })}>删除</button>
+        </div>
+      </td>
+    </tr>
   )
 }
 
