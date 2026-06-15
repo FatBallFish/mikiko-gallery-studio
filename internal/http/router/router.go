@@ -5,19 +5,24 @@ import (
 	stdpprof "net/http/pprof"
 
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
+	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	"github.com/fatballfish/pic-gallery/internal/http/middleware"
 )
 
 func New() http.Handler {
-	return newMux(nil)
+	return newMux(nil, nil)
 }
 
 func NewWithAPI(api *handlers.API) http.Handler {
-	return newMux(api)
+	return newMux(api, nil)
 }
 
-func newMux(api *handlers.API) http.Handler {
+func NewWithAPIAndConfig(api *handlers.API, cfg config.Config) http.Handler {
+	return newMux(api, cfg.HTTP.CORSAllowedOrigins)
+}
+
+func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Root)
 	mux.HandleFunc("/healthz", handlers.Healthz)
@@ -138,7 +143,7 @@ func newMux(api *handlers.API) http.Handler {
 	handler := middleware.Recovery(mux)
 	handler = middleware.RequestID(handler)
 	handler = middleware.Metrics(handler)
-	handler = middleware.CORS(handler)
+	handler = middleware.CORSWithAllowedOrigins(corsAllowedOrigins, handler)
 	handler = observability.RequestLogger(handler)
 	return handler
 }

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -391,14 +390,7 @@ func (s *Service) decryptSecret(ciphertext string) (string, error) {
 }
 
 func defaultSigningSecretEncryptionKey() string {
-	material := strings.TrimSpace(os.Getenv("PIC_GALLERY_API_KEY_ENCRYPTION_KEY"))
-	if material == "" {
-		material = strings.TrimSpace(os.Getenv("AUTH_ACCESS_TOKEN_SECRET"))
-	}
-	if material == "" {
-		material = "pic-gallery-local-api-key-secret-encryption"
-	}
-	return material
+	return "pic-gallery-local-api-key-secret-encryption"
 }
 
 func mapLookupError(err error) error {

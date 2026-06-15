@@ -39,24 +39,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      APP_CONFIG_PATH: configs/config.example.yaml
-      APP_ENV: prod
-      APP_ADDR: :8080
-      DATABASE_URL: postgres://${POSTGRES_USER:-pic_gallery}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
-      REDIS_URL: redis://redis:6379/0
-      STORAGE_DRIVER: local
-      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
-      STORAGE_SHARED_VOLUME: "true"
-      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
-      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: ${API_KEY_SIGNING_SECRET_ENCRYPTION_KEY:?set API_KEY_SIGNING_SECRET_ENCRYPTION_KEY in the env file}
-      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: ${CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY:?set CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY in the env file}
-      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: ${PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY:?set PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY in the env file}
-      PIC_GALLERY_ADMIN_EMAIL: ${PIC_GALLERY_ADMIN_EMAIL:?set PIC_GALLERY_ADMIN_EMAIL in the env file}
-      PIC_GALLERY_ADMIN_PASSWORD: ${PIC_GALLERY_ADMIN_PASSWORD:?set PIC_GALLERY_ADMIN_PASSWORD in the env file}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
+      - ${PIC_GALLERY_CONFIG_FILE:-../../configs/config.compose.prod.yaml}:/app/config.yaml:ro
       - shared-storage:/var/lib/pic-gallery/storage
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
@@ -77,21 +61,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      APP_CONFIG_PATH: configs/config.example.yaml
-      APP_ENV: prod
-      DATABASE_URL: postgres://${POSTGRES_USER:-pic_gallery}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
-      REDIS_URL: redis://redis:6379/0
-      STORAGE_DRIVER: local
-      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
-      STORAGE_SHARED_VOLUME: "true"
-      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
-      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: ${API_KEY_SIGNING_SECRET_ENCRYPTION_KEY:?set API_KEY_SIGNING_SECRET_ENCRYPTION_KEY in the env file}
-      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: ${CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY:?set CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY in the env file}
-      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: ${PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY:?set PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY in the env file}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
+      - ${PIC_GALLERY_CONFIG_FILE:-../../configs/config.compose.prod.yaml}:/app/config.yaml:ro
       - shared-storage:/var/lib/pic-gallery/storage
 
   user-web:

@@ -6,6 +6,7 @@ TARGET_ROOT=${DEVOPS_TARGET_ROOT:-"$ROOT_DIR/target/devops"}
 GOOS_TARGET=${DEVOPS_GOOS:-linux}
 GOARCH_TARGET=${DEVOPS_GOARCH:-amd64}
 CGO_TARGET=${DEVOPS_CGO_ENABLED:-0}
+APP_ENV_TARGET=${APP_ENV:-dev}
 
 usage() {
   cat <<'USAGE'
@@ -16,6 +17,8 @@ Environment overrides:
   DEVOPS_GOOS          Backend GOOS, default linux
   DEVOPS_GOARCH        Backend GOARCH, default amd64
   DEVOPS_CGO_ENABLED   Backend CGO_ENABLED, default 0
+  APP_ENV              Backend config selector, default dev. Uses configs/config.<APP_ENV>.yaml.
+                       prod and production are aliases for pro.
 USAGE
 }
 
@@ -24,6 +27,28 @@ copy_file() {
   local dst=$2
   mkdir -p "$(dirname "$dst")"
   cp "$src" "$dst"
+}
+
+backend_config_env() {
+  case "$APP_ENV_TARGET" in
+    prod|production)
+      echo "pro"
+      ;;
+    *)
+      echo "$APP_ENV_TARGET"
+      ;;
+  esac
+}
+
+backend_config_path() {
+  local config_env
+  config_env=$(backend_config_env)
+  local config_path="$ROOT_DIR/configs/config.$config_env.yaml"
+  if [[ ! -f "$config_path" ]]; then
+    echo "missing backend config for APP_ENV=$APP_ENV_TARGET: $config_path" >&2
+    exit 2
+  fi
+  echo "$config_path"
 }
 
 package_frontend() {
@@ -73,9 +98,11 @@ package_backend() {
   esac
 
   local out_dir="$TARGET_ROOT/$target"
-  echo "==> Building $target ($GOOS_TARGET/$GOARCH_TARGET, CGO_ENABLED=$CGO_TARGET)"
+  local config_path
+  config_path=$(backend_config_path)
+  echo "==> Building $target ($GOOS_TARGET/$GOARCH_TARGET, CGO_ENABLED=$CGO_TARGET, APP_ENV=$(backend_config_env))"
   rm -rf "$out_dir"
-  mkdir -p "$out_dir/bin" "$out_dir/env"
+  mkdir -p "$out_dir/bin"
 
   (
     cd "$ROOT_DIR"
@@ -83,8 +110,7 @@ package_backend() {
       go build -trimpath -ldflags="-s -w" -o "$out_dir/bin/$bin_name" "$cmd_pkg"
   )
 
-  cp -R "$ROOT_DIR/configs" "$out_dir/configs"
-  copy_file "$ROOT_DIR/deployments/devops/env/backend.env.example" "$out_dir/env/backend.env.example"
+  copy_file "$config_path" "$out_dir/config.yaml"
   copy_file "$ROOT_DIR/deployments/devops/$run_script" "$out_dir/$run_script"
   chmod +x "$out_dir/$run_script"
 

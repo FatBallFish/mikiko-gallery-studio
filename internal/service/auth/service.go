@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/mail"
 	"net/smtp"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -194,11 +193,11 @@ func ValidateProductionEmailCodeConfig(env string, cfg config.AuthConfig) error 
 	if !isProductionEnv(env) {
 		return nil
 	}
-	if strings.TrimSpace(os.Getenv("PIC_GALLERY_AUTH_FIXED_CODE")) != "" {
-		return fmt.Errorf("PIC_GALLERY_AUTH_FIXED_CODE is not allowed in %s env", env)
+	if strings.TrimSpace(cfg.FixedEmailCode) != "" {
+		return fmt.Errorf("auth.fixed_email_code is not allowed in %s env", env)
 	}
-	if enabled, err := strconv.ParseBool(os.Getenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES")); err == nil && enabled {
-		return fmt.Errorf("PIC_GALLERY_AUTH_DEV_EMAIL_CODES is not allowed in %s env", env)
+	if cfg.DevEmailCodes {
+		return fmt.Errorf("auth.dev_email_codes is not allowed in %s env", env)
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.Issuer), "test") {
 		return fmt.Errorf("auth.issuer=test is not allowed in %s env because it enables fixed email codes", env)
@@ -281,10 +280,10 @@ func (s *Service) emailSenderLocked(ctx context.Context) (EmailSender, error) {
 }
 
 func fixedEmailCode(cfg config.AuthConfig) string {
-	if code := strings.TrimSpace(os.Getenv("PIC_GALLERY_AUTH_FIXED_CODE")); code != "" {
+	if code := strings.TrimSpace(cfg.FixedEmailCode); code != "" {
 		return code
 	}
-	if enabled, err := strconv.ParseBool(os.Getenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES")); err == nil && enabled {
+	if cfg.DevEmailCodes {
 		return "123456"
 	}
 	if cfg.Issuer == "test" {

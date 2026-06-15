@@ -18,7 +18,6 @@ Options:
 
 Environment:
   APP_CONFIG_PATH     Config path for API and worker. Default: configs/config.dev.yaml.
-  APP_ADDR            API listen address. Default: :8080.
   USER_WEB_PORT       User web port. Default: 5173.
   ADMIN_WEB_PORT      Admin web port. Default: 5174.
   VITE_API_PROXY_TARGET Frontend dev proxy target. Default: http://127.0.0.1:8080.
@@ -93,7 +92,6 @@ After=network.target
 Type=simple
 WorkingDirectory=$ROOT_DIR
 Environment=APP_CONFIG_PATH=$APP_CONFIG_PATH
-Environment=APP_ADDR=${APP_ADDR:-:8080}
 Environment=USER_WEB_PORT=${USER_WEB_PORT:-5173}
 Environment=ADMIN_WEB_PORT=${ADMIN_WEB_PORT:-5174}
 Environment=VITE_API_PROXY_TARGET=${VITE_API_PROXY_TARGET:-http://127.0.0.1:8080}

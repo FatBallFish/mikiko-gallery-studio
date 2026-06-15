@@ -69,27 +69,11 @@ services:
     command: sh -lc "/usr/local/go/bin/go run ./cmd/api"
     environment:
       CGO_ENABLED: "0"
-      APP_CONFIG_PATH: configs/config.example.yaml
-      APP_ENV: local
-      APP_ADDR: :8080
-      DATABASE_URL: postgres://pic_gallery:pic_gallery_e2e_password@postgres:5432/pic_gallery?sslmode=disable
-      REDIS_URL: redis://redis:6379/0
-      STORAGE_DRIVER: local
-      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
-      STORAGE_SHARED_VOLUME: "true"
-      AUTH_ACCESS_TOKEN_SECRET: local-compose-access-secret-change-me
-      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-compose-api-key-encryption-secret-change-me
-      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-compose-cashier-provider-secret-change-me
-      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-compose-secure-config-secret-change-me
-      PIC_GALLERY_AUTH_DEV_EMAIL_CODES: "true"
-      PIC_GALLERY_ADMIN_EMAIL: admin@example.com
-      PIC_GALLERY_ADMIN_PASSWORD: admin123456
-      OPENAI_API_KEY: ""
-      OPENROUTER_API_KEY: ""
     ports:
       - "${API_PORT:-18080}:8080"
     volumes:
       - ../../:/app
+      - ../../configs/config.compose.e2e.yaml:/app/config.yaml:ro
       - go-cache:/go
       - shared-storage:/var/lib/pic-gallery/storage
     depends_on:
@@ -110,22 +94,9 @@ services:
     command: sh -lc "/usr/local/go/bin/go run ./cmd/worker"
     environment:
       CGO_ENABLED: "0"
-      APP_CONFIG_PATH: configs/config.example.yaml
-      APP_ENV: local
-      DATABASE_URL: postgres://pic_gallery:pic_gallery_e2e_password@postgres:5432/pic_gallery?sslmode=disable
-      REDIS_URL: redis://redis:6379/0
-      STORAGE_DRIVER: local
-      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
-      STORAGE_SHARED_VOLUME: "true"
-      AUTH_ACCESS_TOKEN_SECRET: local-compose-access-secret-change-me
-      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-compose-api-key-encryption-secret-change-me
-      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-compose-cashier-provider-secret-change-me
-      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-compose-secure-config-secret-change-me
-      PIC_GALLERY_AUTH_DEV_EMAIL_CODES: "true"
-      OPENAI_API_KEY: ""
-      OPENROUTER_API_KEY: ""
     volumes:
       - ../../:/app
+      - ../../configs/config.compose.e2e.yaml:/app/config.yaml:ro
       - go-cache:/go
       - shared-storage:/var/lib/pic-gallery/storage
     depends_on:

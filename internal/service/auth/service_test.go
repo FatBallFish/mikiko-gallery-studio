@@ -125,8 +125,7 @@ func TestSendEmailCodeFailsClosedWithoutDeliveryOrExplicitFixedCode(t *testing.T
 }
 
 func TestSendEmailCodeAllowsExplicitFixedCodeForTests(t *testing.T) {
-	t.Setenv("PIC_GALLERY_AUTH_FIXED_CODE", "654321")
-	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "pic-gallery-local", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"})
+	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "pic-gallery-local", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh", FixedEmailCode: "654321"}, map[string]string{"basic": "1.00000"})
 	if err := svc.SendEmailCode("fixed@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
@@ -136,9 +135,7 @@ func TestSendEmailCodeAllowsExplicitFixedCodeForTests(t *testing.T) {
 }
 
 func TestRejectsFixedEmailCodeInProd(t *testing.T) {
-	t.Setenv("PIC_GALLERY_AUTH_FIXED_CODE", "654321")
-	t.Setenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES", "")
-	cfg := config.AuthConfig{Issuer: "pic-gallery"}
+	cfg := config.AuthConfig{Issuer: "pic-gallery", FixedEmailCode: "654321"}
 
 	if err := ValidateProductionEmailCodeConfig("prod", cfg); err == nil {
 		t.Fatal("expected prod auth config to reject fixed email code")
@@ -146,9 +143,7 @@ func TestRejectsFixedEmailCodeInProd(t *testing.T) {
 }
 
 func TestRejectsDevEmailCodesInProd(t *testing.T) {
-	t.Setenv("PIC_GALLERY_AUTH_FIXED_CODE", "")
-	t.Setenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES", "true")
-	cfg := config.AuthConfig{Issuer: "pic-gallery"}
+	cfg := config.AuthConfig{Issuer: "pic-gallery", DevEmailCodes: true}
 
 	if err := ValidateProductionEmailCodeConfig("production", cfg); err == nil {
 		t.Fatal("expected production auth config to reject dev email codes")
@@ -156,8 +151,6 @@ func TestRejectsDevEmailCodesInProd(t *testing.T) {
 }
 
 func TestRejectsTestIssuerFixedCodeInProd(t *testing.T) {
-	t.Setenv("PIC_GALLERY_AUTH_FIXED_CODE", "")
-	t.Setenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES", "")
 	cfg := config.AuthConfig{Issuer: "test"}
 
 	if err := ValidateProductionEmailCodeConfig("prod", cfg); err == nil {
@@ -166,9 +159,7 @@ func TestRejectsTestIssuerFixedCodeInProd(t *testing.T) {
 }
 
 func TestAllowsFixedEmailCodeOutsideProd(t *testing.T) {
-	t.Setenv("PIC_GALLERY_AUTH_FIXED_CODE", "654321")
-	t.Setenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES", "")
-	cfg := config.AuthConfig{Issuer: "test"}
+	cfg := config.AuthConfig{Issuer: "test", FixedEmailCode: "654321"}
 
 	if err := ValidateProductionEmailCodeConfig("local", cfg); err != nil {
 		t.Fatalf("expected local auth config to allow fixed test codes, got %v", err)
@@ -176,9 +167,7 @@ func TestAllowsFixedEmailCodeOutsideProd(t *testing.T) {
 }
 
 func TestAllowsDevEmailCodesOutsideProd(t *testing.T) {
-	t.Setenv("PIC_GALLERY_AUTH_FIXED_CODE", "")
-	t.Setenv("PIC_GALLERY_AUTH_DEV_EMAIL_CODES", "true")
-	cfg := config.AuthConfig{Issuer: "pic-gallery-local"}
+	cfg := config.AuthConfig{Issuer: "pic-gallery-local", DevEmailCodes: true}
 
 	if err := ValidateProductionEmailCodeConfig("test", cfg); err != nil {
 		t.Fatalf("expected test auth config to allow dev email codes, got %v", err)

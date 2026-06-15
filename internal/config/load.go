@@ -3,13 +3,12 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-const defaultConfigPath = "configs/config.dev.yaml"
+const defaultConfigPath = "config.yaml"
 
 func Load(path string) (Config, error) {
 	if path == "" {
@@ -26,7 +25,6 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("unmarshal config file %q: %w", path, err)
 	}
 
-	applyEnvOverrides(&cfg)
 	applyDefaults(&cfg)
 	return cfg, nil
 }
@@ -39,146 +37,6 @@ func configPathFromEnv() string {
 		return value
 	}
 	return defaultConfigPath
-}
-
-func applyEnvOverrides(cfg *Config) {
-	if value := os.Getenv("APP_NAME"); value != "" {
-		cfg.App.Name = value
-	}
-	if value := os.Getenv("APP_ENV"); value != "" {
-		cfg.App.Env = value
-	}
-	if value := os.Getenv("APP_ADDR"); value != "" {
-		cfg.App.Addr = value
-	}
-	if value := os.Getenv("DATABASE_URL"); value != "" {
-		cfg.Database.URL = value
-	}
-	if value := os.Getenv("REDIS_URL"); value != "" {
-		cfg.Redis.URL = value
-	}
-	if value := os.Getenv("REDIS_KEY_PREFIX"); value != "" {
-		cfg.Redis.KeyPrefix = value
-	}
-	if value := os.Getenv("STORAGE_DRIVER"); value != "" {
-		cfg.Storage.Driver = value
-	}
-	if value := os.Getenv("STORAGE_LOCAL_ROOT"); value != "" {
-		cfg.Storage.LocalRoot = value
-	}
-	if value := os.Getenv("STORAGE_PUBLIC_BASE_URL"); value != "" {
-		cfg.Storage.PublicBaseURL = value
-	}
-	if value := os.Getenv("STORAGE_SHARED_VOLUME"); value != "" {
-		if parsed, err := strconv.ParseBool(value); err == nil {
-			cfg.Storage.SharedVolume = parsed
-		}
-	}
-	if value := os.Getenv("STORAGE_S3_ENDPOINT"); value != "" {
-		cfg.Storage.S3.Endpoint = value
-	}
-	if value := os.Getenv("BFSS_ENDPOINT"); value != "" {
-		cfg.Storage.S3.Endpoint = value
-	}
-	if value := os.Getenv("STORAGE_S3_REGION"); value != "" {
-		cfg.Storage.S3.Region = value
-	}
-	if value := os.Getenv("BFSS_REGION"); value != "" {
-		cfg.Storage.S3.Region = value
-	}
-	if value := os.Getenv("STORAGE_S3_BUCKET"); value != "" {
-		cfg.Storage.S3.Bucket = value
-	}
-	if value := os.Getenv("BFSS_BUCKET"); value != "" {
-		cfg.Storage.S3.Bucket = value
-	}
-	if value := os.Getenv("STORAGE_S3_ACCESS_KEY_ID"); value != "" {
-		cfg.Storage.S3.AccessKeyID = value
-	}
-	if value := os.Getenv("BFSS_ACCESS_KEY_ID"); value != "" {
-		cfg.Storage.S3.AccessKeyID = value
-	}
-	if value := os.Getenv("STORAGE_S3_SECRET_ACCESS_KEY"); value != "" {
-		cfg.Storage.S3.SecretAccessKey = value
-	}
-	if value := os.Getenv("BFSS_SECRET_ACCESS_KEY"); value != "" {
-		cfg.Storage.S3.SecretAccessKey = value
-	}
-	if value := os.Getenv("STORAGE_S3_FORCE_PATH_STYLE"); value != "" {
-		if parsed, err := strconv.ParseBool(value); err == nil {
-			cfg.Storage.S3.ForcePathStyle = parsed
-		}
-	}
-	if value := os.Getenv("BFSS_FORCE_PATH_STYLE"); value != "" {
-		if parsed, err := strconv.ParseBool(value); err == nil {
-			cfg.Storage.S3.ForcePathStyle = parsed
-		}
-	}
-	if value := os.Getenv("STORAGE_S3_PREFIX"); value != "" {
-		cfg.Storage.S3.Prefix = value
-	}
-	if value := os.Getenv("BFSS_PREFIX"); value != "" {
-		cfg.Storage.S3.Prefix = value
-	}
-	if value := os.Getenv("OPENAI_API_KEY"); value != "" {
-		cfg.Providers.OpenAI.APIKey = value
-	}
-	if value := os.Getenv("OPENROUTER_API_KEY"); value != "" {
-		cfg.Providers.OpenRouter.APIKey = value
-	}
-	if value := os.Getenv("AUTH_ACCESS_TOKEN_SECRET"); value != "" {
-		cfg.Auth.AccessTokenSecret = value
-	}
-	if value := os.Getenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY"); value != "" {
-		cfg.APIKey.SigningSecretEncryptionKey = value
-	}
-	if value := os.Getenv("PIC_GALLERY_API_KEY_SIGNING_SECRET_ENCRYPTION_KEY"); value != "" {
-		cfg.APIKey.SigningSecretEncryptionKey = value
-	}
-	if value := os.Getenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY"); value != "" {
-		cfg.Cashier.ProviderConfigEncryptionKey = value
-	}
-	if value := os.Getenv("PIC_GALLERY_CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY"); value != "" {
-		cfg.Cashier.ProviderConfigEncryptionKey = value
-	}
-	if value := os.Getenv("SECURE_CONFIG_ENCRYPTION_KEY"); value != "" {
-		cfg.Security.SecureConfigEncryptionKey = value
-	}
-	if value := os.Getenv("PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"); value != "" {
-		cfg.Security.SecureConfigEncryptionKey = value
-	}
-	if value := os.Getenv("WORKER_MAX_CONCURRENT_TASKS"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			cfg.Worker.MaxConcurrentTasks = parsed
-		}
-	}
-	if value := os.Getenv("SMTP_HOST"); value != "" {
-		cfg.Auth.SMTP.Host = value
-	}
-	if value := os.Getenv("SMTP_PORT"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			cfg.Auth.SMTP.Port = parsed
-		}
-	}
-	if value := os.Getenv("SMTP_USERNAME"); value != "" {
-		cfg.Auth.SMTP.Username = value
-	}
-	if value := os.Getenv("SMTP_PASSWORD"); value != "" {
-		cfg.Auth.SMTP.Password = value
-	}
-	if value := os.Getenv("SMTP_FROM"); value != "" {
-		cfg.Auth.SMTP.From = value
-	}
-	if value := os.Getenv("SMTP_STARTTLS"); value != "" {
-		if parsed, err := strconv.ParseBool(value); err == nil {
-			cfg.Auth.SMTP.StartTLS = parsed
-		}
-	}
-	if value := os.Getenv("SMTP_INSECURE_SKIP_VERIFY"); value != "" {
-		if parsed, err := strconv.ParseBool(value); err == nil {
-			cfg.Auth.SMTP.InsecureSkipVerify = parsed
-		}
-	}
 }
 
 func applyDefaults(cfg *Config) {
@@ -202,6 +60,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Auth.RefreshCookieName == "" {
 		cfg.Auth.RefreshCookieName = "pg_refresh_token"
+	}
+	if len(cfg.HTTP.CORSAllowedOrigins) == 0 {
+		cfg.HTTP.CORSAllowedOrigins = []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"}
 	}
 	if cfg.APIKey.SigningSecretEncryptionKey == "" {
 		cfg.APIKey.SigningSecretEncryptionKey = "local-dev-api-key-signing-secret-encryption-key"
@@ -296,13 +157,6 @@ func applyDefaults(cfg *Config) {
 			"pro":   {"openai": "gpt-image-1", "openrouter": "openai/gpt-image-1"},
 		}
 	}
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func defaultProviderCapability(cfg *Config, models []string, supportsImageInput bool, supportsMask bool, priority int) ProviderCapabilityConfig {
