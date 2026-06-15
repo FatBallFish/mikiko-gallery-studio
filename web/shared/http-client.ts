@@ -26,6 +26,16 @@ export type ApiClientOptions = {
   onError?: (error: ApiError) => void
 }
 
+type RuntimeConfig = {
+  apiBaseUrl?: string
+}
+
+declare global {
+  interface Window {
+    __PIC_GALLERY_CONFIG__?: RuntimeConfig
+  }
+}
+
 type ErrorLocale = 'zh' | 'en'
 
 const errorMessages: Record<string, Record<ErrorLocale, string>> = {
@@ -195,6 +205,9 @@ export type RequestOptions = {
 }
 
 export function getDefaultBaseUrl() {
+  const runtimeBaseUrl = globalThis.window?.__PIC_GALLERY_CONFIG__?.apiBaseUrl
+  if (runtimeBaseUrl) return runtimeBaseUrl.replace(/\/$/, '')
+
   const metaEnv = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {})
   return (metaEnv.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 }

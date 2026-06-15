@@ -77,16 +77,31 @@ func applyEnvOverrides(cfg *Config) {
 	if value := os.Getenv("STORAGE_S3_ENDPOINT"); value != "" {
 		cfg.Storage.S3.Endpoint = value
 	}
+	if value := os.Getenv("BFSS_ENDPOINT"); value != "" {
+		cfg.Storage.S3.Endpoint = value
+	}
 	if value := os.Getenv("STORAGE_S3_REGION"); value != "" {
+		cfg.Storage.S3.Region = value
+	}
+	if value := os.Getenv("BFSS_REGION"); value != "" {
 		cfg.Storage.S3.Region = value
 	}
 	if value := os.Getenv("STORAGE_S3_BUCKET"); value != "" {
 		cfg.Storage.S3.Bucket = value
 	}
+	if value := os.Getenv("BFSS_BUCKET"); value != "" {
+		cfg.Storage.S3.Bucket = value
+	}
 	if value := os.Getenv("STORAGE_S3_ACCESS_KEY_ID"); value != "" {
 		cfg.Storage.S3.AccessKeyID = value
 	}
+	if value := os.Getenv("BFSS_ACCESS_KEY_ID"); value != "" {
+		cfg.Storage.S3.AccessKeyID = value
+	}
 	if value := os.Getenv("STORAGE_S3_SECRET_ACCESS_KEY"); value != "" {
+		cfg.Storage.S3.SecretAccessKey = value
+	}
+	if value := os.Getenv("BFSS_SECRET_ACCESS_KEY"); value != "" {
 		cfg.Storage.S3.SecretAccessKey = value
 	}
 	if value := os.Getenv("STORAGE_S3_FORCE_PATH_STYLE"); value != "" {
@@ -94,7 +109,15 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.Storage.S3.ForcePathStyle = parsed
 		}
 	}
+	if value := os.Getenv("BFSS_FORCE_PATH_STYLE"); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			cfg.Storage.S3.ForcePathStyle = parsed
+		}
+	}
 	if value := os.Getenv("STORAGE_S3_PREFIX"); value != "" {
+		cfg.Storage.S3.Prefix = value
+	}
+	if value := os.Getenv("BFSS_PREFIX"); value != "" {
 		cfg.Storage.S3.Prefix = value
 	}
 	if value := os.Getenv("OPENAI_API_KEY"); value != "" {
