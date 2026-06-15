@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +64,134 @@ func NewService(cfg config.AuthConfig, store Store) *Service {
 		store = NewMemoryStore()
 	}
 	return &Service{cfg: cfg, store: store, sessions: map[string]memorySession{}, failures: map[string]loginFailure{}}
+}
+
+func (s *Service) ListAdmins(ctx context.Context, req domainadminauth.AdminListRequest) (domainadminauth.AdminListPage, error) {
+	req.Page, req.PageSize = normalizeAdminPage(req.Page, req.PageSize)
+	req.Query = normalizeEmail(req.Query)
+	rawRole := strings.TrimSpace(req.Role)
+	req.Role = normalizeAdminRole(rawRole)
+	if rawRole != "" && req.Role == "" {
+		return domainadminauth.AdminListPage{}, errs.BadRequest("invalid role")
+	}
+	rawStatus := strings.TrimSpace(req.Status)
+	req.Status = normalizeAdminStatus(rawStatus)
+	if rawStatus != "" && req.Status == "" {
+		return domainadminauth.AdminListPage{}, errs.BadRequest("invalid status")
+	}
+	return s.store.ListAdmins(ctx, req)
+}
+
+func (s *Service) CreateAdmin(ctx context.Context, req domainadminauth.AdminCreateRequest) (domainadminauth.AdminUser, error) {
+	email := normalizeEmail(req.Email)
+	if email == "" {
+		return domainadminauth.AdminUser{}, errs.BadRequest("email is required")
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		return domainadminauth.AdminUser{}, errs.BadRequest("email is invalid")
+	}
+	password := strings.TrimSpace(req.Password)
+	if len(password) < 6 {
+		return domainadminauth.AdminUser{}, errs.BadRequest("password must be at least 6 characters")
+	}
+	role := normalizeAdminRole(req.Role)
+	if role == "" {
+		if strings.TrimSpace(req.Role) != "" {
+			return domainadminauth.AdminUser{}, errs.BadRequest("invalid role")
+		}
+		role = domainadminauth.RoleAdmin
+	}
+	status := normalizeAdminStatus(req.Status)
+	if status == "" {
+		if strings.TrimSpace(req.Status) != "" {
+			return domainadminauth.AdminUser{}, errs.BadRequest("invalid status")
+		}
+		status = "active"
+	}
+	admin, err := s.store.CreateAdmin(ctx, domainadminauth.AdminUser{
+		Email:        email,
+		PasswordHash: HashPassword(password),
+		Role:         role,
+		Status:       status,
+	})
+	if errors.Is(err, repoerr.ErrConflict) {
+		return domainadminauth.AdminUser{}, errs.New(409, errs.CodeConflict, "admin already exists")
+	}
+	return admin, err
+}
+
+func (s *Service) UpdateAdmin(ctx context.Context, req domainadminauth.AdminUpdateRequest) (domainadminauth.AdminUser, error) {
+	if req.AdminID <= 0 {
+		return domainadminauth.AdminUser{}, errs.BadRequest("invalid admin_id")
+	}
+	role := ""
+	if req.RoleProvided {
+		role = normalizeAdminRole(req.Role)
+		if role == "" {
+			return domainadminauth.AdminUser{}, errs.BadRequest("invalid role")
+		}
+	}
+	status := ""
+	if req.StatusProvided {
+		status = normalizeAdminStatus(req.Status)
+		if status == "" {
+			return domainadminauth.AdminUser{}, errs.BadRequest("invalid status")
+		}
+	}
+	current, err := s.store.GetAdminByID(ctx, req.AdminID)
+	if err != nil {
+		return domainadminauth.AdminUser{}, normalizeAdminStoreError(err, "admin not found")
+	}
+	if req.AdminID == req.OperatorID && req.StatusProvided && status != "active" {
+		return domainadminauth.AdminUser{}, errs.BadRequest("cannot disable current admin")
+	}
+	if req.AdminID == req.OperatorID && req.RoleProvided && role != current.Role {
+		return domainadminauth.AdminUser{}, errs.BadRequest("cannot change current admin role")
+	}
+	if activeSuperAdminWouldBeRemoved(current, role, status, req.RoleProvided, req.StatusProvided) {
+		if count, err := s.store.CountActiveSuperAdmins(ctx); err != nil {
+			return domainadminauth.AdminUser{}, err
+		} else if count <= 1 {
+			return domainadminauth.AdminUser{}, errs.New(409, errs.CodeConflict, "cannot remove the last active super admin")
+		}
+	}
+	updated, err := s.store.UpdateAdmin(ctx, req.AdminID, role, status, req.RoleProvided, req.StatusProvided)
+	return updated, normalizeAdminStoreError(err, "admin not found")
+}
+
+func (s *Service) ResetAdminPassword(ctx context.Context, req domainadminauth.AdminPasswordResetRequest) error {
+	if req.AdminID <= 0 {
+		return errs.BadRequest("invalid admin_id")
+	}
+	password := strings.TrimSpace(req.NewPassword)
+	if len(password) < 6 {
+		return errs.BadRequest("new_password must be at least 6 characters")
+	}
+	return normalizeAdminStoreError(s.store.UpdateAdminPassword(ctx, req.AdminID, HashPassword(password)), "admin not found")
+}
+
+func (s *Service) DeleteAdmin(ctx context.Context, req domainadminauth.AdminDeleteRequest) (domainadminauth.AdminUser, error) {
+	if req.AdminID <= 0 {
+		return domainadminauth.AdminUser{}, errs.BadRequest("invalid admin_id")
+	}
+	if req.AdminID == req.OperatorID {
+		return domainadminauth.AdminUser{}, errs.BadRequest("cannot delete current admin")
+	}
+	current, err := s.store.GetAdminByID(ctx, req.AdminID)
+	if err != nil {
+		return domainadminauth.AdminUser{}, normalizeAdminStoreError(err, "admin not found")
+	}
+	if current.Role == domainadminauth.RoleSuperAdmin && current.Status == "active" {
+		if count, err := s.store.CountActiveSuperAdmins(ctx); err != nil {
+			return domainadminauth.AdminUser{}, err
+		} else if count <= 1 {
+			return domainadminauth.AdminUser{}, errs.New(409, errs.CodeConflict, "cannot remove the last active super admin")
+		}
+	}
+	if err := s.store.DeleteAdmin(ctx, req.AdminID); err != nil {
+		return domainadminauth.AdminUser{}, normalizeAdminStoreError(err, "admin not found")
+	}
+	return current, nil
 }
 
 func (s *Service) Login(ctx context.Context, req domainadminauth.LoginRequest) (domainadminauth.Session, error) {
@@ -227,4 +357,63 @@ func randomSalt() string {
 		panic(err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buffer)
+}
+
+func normalizeAdminPage(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize
+}
+
+func normalizeAdminRole(role string) string {
+	switch strings.TrimSpace(role) {
+	case "", domainadminauth.RoleAdmin, domainadminauth.RoleSuperAdmin:
+		return strings.TrimSpace(role)
+	default:
+		return ""
+	}
+}
+
+func normalizeAdminStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "active", "disabled":
+		return strings.ToLower(strings.TrimSpace(status))
+	default:
+		return ""
+	}
+}
+
+func activeSuperAdminWouldBeRemoved(current domainadminauth.AdminUser, role string, status string, setRole bool, setStatus bool) bool {
+	if current.Role != domainadminauth.RoleSuperAdmin || current.Status != "active" {
+		return false
+	}
+	nextRole := current.Role
+	if setRole {
+		nextRole = role
+	}
+	nextStatus := current.Status
+	if setStatus {
+		nextStatus = status
+	}
+	return nextRole != domainadminauth.RoleSuperAdmin || nextStatus != "active"
+}
+
+func normalizeAdminStoreError(err error, notFoundMessage string) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, repoerr.ErrNotFound) {
+		return errs.New(404, errs.CodeNotFound, notFoundMessage)
+	}
+	if errors.Is(err, repoerr.ErrConflict) {
+		return errs.New(409, errs.CodeConflict, "admin conflict")
+	}
+	return err
 }

@@ -2,15 +2,30 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReviewItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, LoadingBlock } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
-import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
-import { reviewDefaultReason, reviewRowView, reviewStatusLabel, reviewStatusTabs } from './reviewRows'
+import { reviewDefaultReason, reviewRowView, reviewStatusLabel } from './reviewRows'
 import type { ReviewDecision } from './reviewRows'
 
 type DrawerState = { item: ReviewItem; decision: ReviewDecision } | null
-const reviewImageCellClass = 'grid grid-cols-[54px_minmax(0,1fr)] items-center gap-3'
-const reviewImageClass = 'size-[54px] rounded-lg border border-[var(--line)] object-cover'
+const primaryReviewTabs = ['pending_review', 'approved', 'rejected'] as const
+const secondaryReviewTabs = ['unpublished', 'all'] as const
+const allReviewTabs = [...primaryReviewTabs, ...secondaryReviewTabs] as const
+const reviewClasses = {
+  tabBar: 'flex flex-wrap items-center gap-4 rounded-2xl bg-white/5 p-1 w-fit',
+  cardList: 'grid grid-cols-1 gap-4',
+  card: 'group flex items-center gap-6 rounded-3xl border border-[var(--line)] bg-white/[0.02] p-6 transition-all hover:border-[var(--line-strong)] hover:bg-white/[0.04] max-[720px]:grid max-[720px]:grid-cols-1',
+  imageWrap: 'relative size-24 shrink-0 overflow-hidden rounded-2xl border border-[var(--line)] bg-white/5',
+  image: 'size-full object-cover transition-transform duration-300 group-hover:scale-105',
+  content: 'min-w-0 flex-1',
+  titleRow: 'mb-1 flex min-w-0 flex-wrap items-center gap-3',
+  title: 'min-w-0 truncate text-lg font-bold text-[var(--text)]',
+  meta: 'flex flex-wrap items-center gap-3 text-xs text-[var(--muted-strong)]',
+  dot: 'size-1 rounded-full bg-white/10',
+  actions: 'flex shrink-0 flex-wrap justify-end gap-3',
+  actionPrimary: 'border-emerald-500 bg-emerald-500 px-6 py-2.5 text-white shadow-lg shadow-emerald-500/20 hover:scale-105',
+  actionDanger: 'border-transparent bg-white/5 px-6 py-2.5 text-[var(--muted)] hover:bg-[var(--red)]/10 hover:text-[var(--red)]',
+}
 
 export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ReviewItem[]>([])
@@ -62,32 +77,47 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader eyebrow="Reviews" title="审核队列" detail="公开申请、驳回与下架都要求填写原因，并写入审计轨迹。" />
-      <section className="grid min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white max-[1260px]:grid-cols-1">
-        <section className={adminPage.mainLane}>
-          <div className={adminPage.microTabs}>
-            {reviewStatusTabs.map((tab) => <button key={tab} type="button" className={cn(adminPage.microTab, filter === tab && adminPage.microTabActive)} onClick={() => setFilter(tab)}>{tab === 'all' ? '全部' : reviewStatusLabel(tab)}</button>)}
+      <section className="grid min-h-0 gap-5">
+        <section>
+          <div className={reviewClasses.tabBar}>
+            {allReviewTabs.map((tab) => (
+              <button key={tab} type="button" className={cn(adminPage.microTab, filter === tab && adminPage.microTabActive)} onClick={() => setFilter(tab)}>
+                {reviewTabLabel(tab)}{tab === 'pending_review' ? ` (${rows.filter((row) => row.status === 'pending_review' || row.status === 'pending').length})` : ''}
+              </button>
+            ))}
           </div>
 
           {!visibleRows.length ? <EmptyBlock title="没有匹配的审核项" detail="切换筛选或等待用户提交公开申请。" /> : (
-            <div className={cn(adminDataGrid.root, adminGridCols.review)}>
-              <div className={cn(adminDataGrid.head, adminGridCols.review)}><span>图片</span><span>用户</span><span>类型</span><span>上下文</span><span>状态</span><span>动作</span></div>
+            <div className={reviewClasses.cardList}>
               {visibleRows.map((rawRow) => {
                 const row = reviewRowView(rawRow)
                 return (
-                <div key={row.raw.id} className={cn(adminDataGrid.row, adminGridCols.review)}>
-                  <div className={reviewImageCellClass}><img className={reviewImageClass} src={adminApi.imageReviewUrl(row.imageID, accessToken)} alt="" /><div className={adminDataGrid.stackCell}><strong>{row.title}</strong><p className={adminDataGrid.detail}>{row.createdAtLabel}</p></div></div>
-                  <span>{row.owner}</span>
-                  <span>{row.taskTypeLabel}</span>
-                  <span>{row.context}</span>
-                  <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
-                  <div className={adminDataGrid.actions}>
+                <article key={row.raw.id} className={reviewClasses.card}>
+                  <div className={reviewClasses.imageWrap}>
+                    <img className={reviewClasses.image} src={adminApi.imageReviewUrl(row.imageID, accessToken)} alt={row.title} />
+                    {row.statusTone === 'danger' ? <span className="absolute left-2 top-2 size-3 rounded-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]" /> : null}
+                  </div>
+                  <div className={reviewClasses.content}>
+                    <div className={reviewClasses.titleRow}>
+                      <h3 className={reviewClasses.title}>{row.title}</h3>
+                      <Badge tone="primary">{row.taskTypeLabel}</Badge>
+                      {filter !== 'pending_review' ? <Badge tone={row.statusTone}>{row.statusLabel}</Badge> : null}
+                    </div>
+                    <div className={reviewClasses.meta}>
+                      <span>用户: <strong className="text-[var(--soft)]">{row.owner}</strong></span>
+                      <span className={reviewClasses.dot} />
+                      <span>位置: <strong className="text-[var(--soft)]">{row.context}</strong></span>
+                      <span className={reviewClasses.dot} />
+                      <span>提交于: {row.createdAtLabel}</span>
+                    </div>
+                  </div>
+                  <div className={reviewClasses.actions}>
                     {row.actions.map((action) => (
-                      <button key={action.decision} type="button" className={action.tone === 'primary' ? cn(adminButton.base, adminButton.primary, adminButton.small) : cn(adminButton.base, adminButton.ghost, adminButton.small, 'text-[var(--red)]')} onClick={() => openDrawer(row.raw, action.decision)}>{action.label}</button>
+                      <button key={action.decision} type="button" className={cn(adminButton.base, action.tone === 'primary' ? reviewClasses.actionPrimary : reviewClasses.actionDanger)} onClick={() => openDrawer(row.raw, action.decision)}>{action.label}</button>
                     ))}
                     {!row.actions.length ? <span className={adminPage.mutedAction}>{row.terminalActionLabel}</span> : null}
                   </div>
-                </div>
+                </article>
                 )
               })}
             </div>
@@ -109,4 +139,10 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
       </section>
     </section>
   )
+}
+
+function reviewTabLabel(tab: typeof allReviewTabs[number]) {
+  if (tab === 'pending_review') return '待处理'
+  if (tab === 'all') return '全部'
+  return reviewStatusLabel(tab)
 }

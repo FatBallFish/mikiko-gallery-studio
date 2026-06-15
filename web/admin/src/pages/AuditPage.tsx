@@ -3,7 +3,7 @@ import type { AuditLog } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
-import { adminButton, adminPage, adminSurface } from '../ui/classes'
+import { adminButton, adminPage } from '../ui/classes'
 import {
   auditActionOptions,
   auditExportFilename,
@@ -14,13 +14,18 @@ import {
 } from './auditRows'
 
 const auditClasses = {
-  timeline: cn(adminSurface.card, 'grid gap-0 overflow-y-auto px-[18px] py-2'),
-  item: 'grid gap-2 border-t border-[var(--line)] py-3 first:border-t-0',
-  itemHead: 'flex flex-wrap items-center gap-2.5',
-  itemTitle: 'text-[var(--text)]',
-  itemDate: 'text-xs text-[var(--soft)]',
-  itemText: 'm-0 text-sm text-[var(--soft)]',
-  itemMeta: 'text-xs text-[var(--soft)]',
+  timeline: 'grid gap-2',
+  item: 'group flex items-center gap-6 rounded-2xl border border-[var(--line)] bg-white/[0.01] p-5 transition-all hover:border-[var(--line-strong)] hover:bg-white/[0.03] max-[720px]:grid max-[720px]:grid-cols-1',
+  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-xs font-bold text-[var(--muted-strong)]',
+  itemMain: 'min-w-0 flex-1',
+  itemHead: 'mb-1 flex min-w-0 flex-wrap items-center gap-3',
+  actionText: 'text-xs font-black tracking-widest text-[var(--accent)]',
+  itemTitle: 'min-w-0 truncate text-sm font-bold text-[var(--text)]',
+  dot: 'size-1 rounded-full bg-white/10',
+  itemText: 'm-0 text-xs leading-relaxed text-[var(--muted-strong)]',
+  itemSide: 'shrink-0 text-right max-[720px]:text-left',
+  itemActor: 'text-xs font-bold text-[var(--soft)]',
+  itemDate: 'mt-0.5 text-[10px] text-[var(--muted-strong)]',
   filterInput: 'min-w-60 max-[620px]:min-w-0 max-[620px]:w-full',
 }
 
@@ -102,13 +107,20 @@ function AuditTimelineItem({ row }: { row: AuditLog }) {
   const item = auditTimelineRow(row)
   return (
     <article className={auditClasses.item}>
-      <div className={auditClasses.itemHead}>
-        <Badge tone={item.actorTone}>{item.actionLabel}</Badge>
-        <strong className={auditClasses.itemTitle}>{item.targetLabel}</strong>
-        <span className={auditClasses.itemDate}>{item.createdAtLabel}</span>
+      <div className={auditClasses.avatar}>{item.actorLabel.slice(0, 1).toUpperCase()}</div>
+      <div className={auditClasses.itemMain}>
+        <div className={auditClasses.itemHead}>
+          <span className={auditClasses.actionText}>{item.actionLabel}</span>
+          <span className={auditClasses.dot} />
+          <strong className={auditClasses.itemTitle}>{item.targetLabel}</strong>
+          <Badge tone={item.result.tone}>{item.result.label}</Badge>
+        </div>
+        <p className={auditClasses.itemText}>{item.detailText} · audit_id {item.raw.id}</p>
       </div>
-      <p className={auditClasses.itemText}>{item.detailText}</p>
-      <small className={auditClasses.itemMeta}>{item.actorLabel} · <Badge tone={item.result.tone}>{item.result.label}</Badge> · audit_id {item.raw.id}</small>
+      <div className={auditClasses.itemSide}>
+        <div className={auditClasses.itemActor}>{item.actorLabel}</div>
+        <div className={auditClasses.itemDate}>{item.createdAtLabel}</div>
+      </div>
     </article>
   )
 }

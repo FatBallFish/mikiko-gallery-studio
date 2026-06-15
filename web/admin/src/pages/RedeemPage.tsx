@@ -25,9 +25,19 @@ const redeemClasses = {
   actionRow: 'flex flex-wrap items-center gap-2',
   surface: adminPage.fullSurface,
   laneHead: 'mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-3',
-  codeCell: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-bold',
+  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
+  table: 'w-full min-w-[920px] border-collapse text-left',
+  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
+  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
+  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
+  codeCell: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-sm font-extrabold text-[var(--text)]',
   textCell: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[var(--soft)]',
   amountCredit: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[var(--green)]',
+  rewardValue: 'font-mono text-base font-black text-[var(--green)]',
+  rewardUnit: 'text-[10px] font-extrabold uppercase tracking-[.12em] text-[var(--muted-strong)]',
+  progressTrack: 'h-1.5 w-28 overflow-hidden rounded-full bg-white/5',
+  progressFill: 'h-full rounded-full bg-[var(--accent)]',
+  progressMeta: 'mb-1.5 block text-xs font-bold text-[var(--muted)]',
 }
 
 export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -180,33 +190,34 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
             </div>
           </div>
           {!rows.length ? <EmptyBlock title="暂无兑换码" detail="创建一个兑换码后可在用户侧兑换。" /> : (
-            <div className={adminDataGrid.root}>
-              <div className={cn(adminDataGrid.head, adminGridCols.redeem)}><span>兑换码</span><span>状态</span><span>奖励</span><span>批次</span><span>有效期</span><span>核销</span><span>操作</span></div>
-              {redeemCodeRows(rows).map((row) => {
-                const action = row.statusAction
-                return (
-                  <div key={row.id} className={cn(adminDataGrid.row, adminGridCols.redeem)}>
-                    <strong className={redeemClasses.codeCell}>{row.code}</strong>
-                    <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
-                    <span className={redeemClasses.textCell}>{row.rewardLabel}</span>
-                    <span className={redeemClasses.textCell}>{row.batchLabel}</span>
-                    <span className={redeemClasses.textCell}>{row.validUntilLabel}</span>
-                    <span className={redeemClasses.textCell}>{row.redeemedLabel}</span>
-                    <div className={redeemClasses.actionRow}>
-                      <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => {
-                        const source = rows.find((item) => item.id === row.id)
-                        if (source) void openRedemptions(source)
-                      }}>核销记录</button>
-                      {action ? (
-                        <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => {
-                          const source = rows.find((item) => item.id === row.id)
-                          if (source) setDialog({ type: 'status', row: source, status: action.status })
-                        }}>{action.label}</button>
-                      ) : <span className={redeemClasses.textCell}>无需操作</span>}
-                    </div>
-                  </div>
-                )
-              })}
+            <div className={redeemClasses.tableWrap}>
+              <table className={redeemClasses.table}>
+                <thead>
+                  <tr>
+                    <th className={redeemClasses.th}>兑换码</th>
+                    <th className={redeemClasses.th}>奖励值</th>
+                    <th className={redeemClasses.th}>有效期</th>
+                    <th className={redeemClasses.th}>使用情况</th>
+                    <th className={redeemClasses.th}>状态</th>
+                    <th className={redeemClasses.th}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {redeemCodeRows(rows).map((row) => {
+                    const source = rows.find((item) => item.id === row.id)
+                    if (!source) return null
+                    return (
+                      <CouponTableRow
+                        key={row.id}
+                        row={row}
+                        source={source}
+                        onOpenRedemptions={openRedemptions}
+                        onStatus={(status) => setDialog({ type: 'status', row: source, status })}
+                      />
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -258,6 +269,61 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
       ) : null}
     </section>
   )
+}
+
+function CouponTableRow({
+  row,
+  source,
+  onOpenRedemptions,
+  onStatus,
+}: {
+  row: ReturnType<typeof redeemCodeRows>[number]
+  source: RedeemCode
+  onOpenRedemptions: (row: RedeemCode) => void
+  onStatus: (status: string) => void
+}) {
+  const action = row.statusAction
+  const progress = couponProgress(source)
+
+  return (
+    <tr className={redeemClasses.tr}>
+      <td className={redeemClasses.td}>
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className={redeemClasses.codeCell}>{row.code}</span>
+          <span className="text-[10px] font-bold uppercase tracking-[.12em] text-[var(--muted-strong)]">Batch {row.batchLabel}</span>
+        </div>
+      </td>
+      <td className={redeemClasses.td}>
+        <div className="flex items-baseline gap-1.5">
+          <span className={redeemClasses.rewardValue}>{source.reward_value}</span>
+          <span className={redeemClasses.rewardUnit}>POINTS</span>
+        </div>
+      </td>
+      <td className={redeemClasses.td}><span className={redeemClasses.textCell}>{row.validUntilLabel}</span></td>
+      <td className={redeemClasses.td}>
+        <div className="flex flex-col gap-1">
+          <span className={redeemClasses.progressMeta}>{row.redeemedLabel}</span>
+          <div className={redeemClasses.progressTrack} aria-label={`核销进度 ${Math.round(progress)}%`}>
+            <div className={redeemClasses.progressFill} style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      </td>
+      <td className={redeemClasses.td}><Badge tone={row.statusTone}>{row.statusLabel}</Badge></td>
+      <td className={redeemClasses.td}>
+        <div className={redeemClasses.actionRow}>
+          <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => void onOpenRedemptions(source)}>查看详情</button>
+          {action ? (
+            <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => onStatus(action.status)}>{action.label}</button>
+          ) : null}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function couponProgress(row: RedeemCode) {
+  if (!row.max_redemptions || row.max_redemptions <= 0) return 100
+  return Math.max(0, Math.min(100, (row.redeemed_count / row.max_redemptions) * 100))
 }
 
 function downloadCodes(codes: RedeemCode[], batchID: number | string) {

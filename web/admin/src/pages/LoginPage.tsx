@@ -3,22 +3,29 @@ import type { AdminSession } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Field, InlineFeedback } from '../components'
+import { useAdminTheme } from '../layout/useAdminTheme'
 import { adminButton } from '../ui/classes'
 import { adminLoginCopy, adminLoginInitialForm, adminLoginValidation, adminLoginVisibleError } from './adminLoginCopy'
 
 const loginClasses = {
-  screen: 'grid min-h-screen place-items-center bg-[linear-gradient(90deg,rgba(87,117,185,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(87,117,185,0.06)_1px,transparent_1px),radial-gradient(circle_at_25%_20%,rgba(87,117,185,0.16),transparent_28%),var(--pg-admin-bg-app)] bg-[length:42px_42px,42px_42px,auto,auto] p-6 max-[620px]:p-2.5',
-  panel: 'grid min-h-[560px] w-[min(980px,100%)] grid-cols-[minmax(0,1.1fr)_420px] overflow-hidden rounded-[22px] border border-[var(--line)] bg-[var(--surface-frost)] shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px] max-[920px]:min-h-0 max-[920px]:grid-cols-1',
-  copy: 'grid content-end gap-3.5 bg-[linear-gradient(135deg,rgba(87,117,185,0.18),rgba(255,255,255,0.16)),rgba(248,250,251,0.72)] p-[clamp(26px,5vw,54px)]',
-  hero: 'max-w-[10ch] text-[clamp(2rem,5vw,4.4rem)] font-medium leading-[.94] text-[var(--text)]',
-  detail: 'max-w-[56ch]',
-  proofGrid: 'mt-2.5 grid grid-cols-2 gap-2 max-[620px]:grid-cols-1',
-  proofItem: 'rounded-xl bg-white/60 px-3 py-2.5 text-[0.82rem] font-extrabold text-[var(--text)]',
-  form: 'grid content-center gap-3.5 bg-white/80 p-[clamp(26px,5vw,54px)]',
-  title: 'm-0 text-[1.7rem] font-medium text-[var(--text)]',
+  screen: 'grid min-h-screen place-items-center bg-[var(--bg)] p-6 text-[var(--text)] selection:bg-[var(--accent)]/30 max-[620px]:p-3',
+  panel: 'grid w-[min(460px,100%)] gap-8 rounded-[2rem] border border-white/5 bg-white/[0.02] p-8 shadow-2xl backdrop-blur-xl max-[620px]:p-5',
+  brand: 'flex items-center gap-3',
+  brandOrb: 'grid size-10 place-items-center rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] text-sm font-black text-white',
+  brandText: 'grid gap-0.5',
+  brandName: 'text-lg font-bold tracking-tight text-[var(--text)]',
+  brandMeta: 'text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted-strong)]',
+  hero: 'text-3xl font-black tracking-tight text-[var(--text)]',
+  detail: 'text-sm leading-6 text-[var(--soft)]',
+  proofGrid: 'grid grid-cols-2 gap-2 max-[620px]:grid-cols-1',
+  proofItem: 'rounded-xl border border-white/5 bg-white/5 px-3 py-2.5 text-[0.72rem] font-extrabold uppercase tracking-wider text-[var(--muted)]',
+  form: 'grid gap-4',
+  title: 'm-0 text-lg font-bold text-[var(--text)]',
+  themeButton: 'absolute right-4 top-4 grid size-10 place-items-center rounded-xl border border-[var(--line)] bg-white/5 text-[var(--muted)] transition hover:text-[var(--text)]',
 }
 
 export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => void }) {
+  const { theme, setTheme } = useAdminTheme()
   const env = import.meta.env as Record<string, string | undefined>
   const initialForm = adminLoginInitialForm(env)
   const [email, setEmail] = useState(initialForm.email)
@@ -47,11 +54,26 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
   }
 
   return (
-    <main className={loginClasses.screen}>
+    <main className={cn(loginClasses.screen, 'relative')} data-theme={theme}>
+      <button
+        type="button"
+        className={loginClasses.themeButton}
+        aria-label={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+        title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+        onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+      >
+        {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+      </button>
       <section className={loginClasses.panel}>
-        <div className={loginClasses.copy}>
-          <label>{adminLoginCopy.brand}</label>
-          <strong className={loginClasses.hero}>{adminLoginCopy.heroTitle}</strong>
+        <div className="grid gap-5">
+          <div className={loginClasses.brand}>
+            <span className={loginClasses.brandOrb}>M</span>
+            <div className={loginClasses.brandText}>
+              <strong className={loginClasses.brandName}>Mikiko Admin</strong>
+              <span className={loginClasses.brandMeta}>{adminLoginCopy.brand}</span>
+            </div>
+          </div>
+          <strong className={loginClasses.hero}>登录运营后台</strong>
           <p className={loginClasses.detail}>{adminLoginCopy.heroDetail}</p>
           <div className={loginClasses.proofGrid}>
             {adminLoginCopy.proofItems.map((item) => <span key={item} className={loginClasses.proofItem}>{item}</span>)}
@@ -60,7 +82,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
 
         <form className={loginClasses.form} onSubmit={submit} noValidate>
           <label>{adminLoginCopy.formEyebrow}</label>
-          <h1 className={loginClasses.title}>{adminLoginCopy.heroTitle}</h1>
+          <h1 className={loginClasses.title}>Administrator Access</h1>
           {error ? <InlineFeedback tone="danger" message={error} /> : <InlineFeedback tone="neutral" message={adminLoginCopy.idleNotice} />}
 
           <Field label={adminLoginCopy.emailLabel} error={emailError}>
@@ -78,3 +100,6 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
     </main>
   )
 }
+
+const SunIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
+const MoonIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>

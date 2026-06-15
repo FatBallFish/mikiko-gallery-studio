@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
 import { adminApi } from '../../shared/admin-api'
-import { AdminLayout, EmptyBlock, normalizeRoute, protectedRoutes, routeHref, ToastRail, useHashRoute, useToasts } from './components'
-import { AuditPage, CallRecordsPage, CashierPage, ConfigPage, HealthPage, LoginPage, OverviewPage, PricingPage, ProviderModelsPage, ReadinessPage, RedeemPage, ReviewPage, RoutingPage, SecurityConfigPage, UserGroupsPage, UsersPage } from './pages/index'
-import { canAccessAdminRoute, firstAccessibleAdminRoute } from './types'
+import { EmptyBlock, ToastRail, useHashRoute, useToasts } from './components'
+import { AdminLayout, normalizeRoute, protectedRoutes, routeHref } from './layout/AdminLayout'
+import { AuditPage, CallRecordsPage, CashierPage, ConfigPage, LoginPage, MonitoringPage, OverviewPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, SecurityConfigPage, SystemUsersPage, UserGroupsPage, UsersPage } from './pages/index'
+import { canAccessAdminRoute, firstAccessibleAdminRoute, canAdmin } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId } from './types'
 
 const sessionKey = 'pic_gallery_admin_session'
@@ -65,7 +66,7 @@ export default function App() {
       return
     }
     if (isAuthed && route === 'login') {
-      setRoute('overview')
+      setRoute('dashboard')
     }
   }, [isAuthed, route, setRoute])
 
@@ -94,9 +95,9 @@ export default function App() {
     sessionRef.current = nextSession
     setSession(nextSession)
     window.sessionStorage.setItem(sessionKey, JSON.stringify(nextSession))
-    const returnRoute = normalizeRoute(`#/${window.sessionStorage.getItem(returnKey) ?? 'overview'}`)
+    const returnRoute = normalizeRoute(`#/${window.sessionStorage.getItem(returnKey) ?? 'dashboard'}`)
     window.sessionStorage.removeItem(returnKey)
-    setRoute(returnRoute === 'login' ? 'overview' : returnRoute)
+    setRoute(returnRoute === 'login' ? 'dashboard' : returnRoute)
     pushToast({ tone: 'success', title: '管理员已登录', detail: nextSession.admin_name })
   }
 
@@ -113,12 +114,10 @@ export default function App() {
       return <EmptyBlock title="暂无后台权限" detail="当前管理员角色没有可访问的后台页面，请联系超级管理员调整权限。" />
     }
     switch (route) {
-      case 'config':
-        return session ? <ConfigPage session={session} onFeedback={feedback} /> : null
-      case 'security-config':
-        return <SecurityConfigPage onFeedback={feedback} />
-      case 'readiness':
-        return <ReadinessPage />
+      case 'dashboard':
+        return <OverviewPage />
+      case 'monitoring':
+        return <MonitoringPage />
       case 'routing':
         return <RoutingPage onFeedback={feedback} />
       case 'pricing':
@@ -131,17 +130,22 @@ export default function App() {
         return <UserGroupsPage onFeedback={feedback} />
       case 'redeem':
         return <RedeemPage onFeedback={feedback} />
-      case 'cashier':
-        return <CashierPage onFeedback={feedback} />
+      case 'orders':
+        return <CashierPage onFeedback={feedback} initialTab="overview" allowedTabs={['overview', 'orders', 'events']} pageTitle="订单管理" />
+      case 'packages':
+        return <CashierPage onFeedback={feedback} initialTab="plans" allowedTabs={['plans']} pageTitle="套餐管理" />
+      case 'cashier-config':
+        return <CashierPage onFeedback={feedback} initialTab="overview" allowedTabs={['overview', 'methods', 'instances']} pageTitle="收银台配置" />
       case 'call-records':
         return <CallRecordsPage />
-      case 'provider-models':
+      case 'access-accounts':
         return <ProviderModelsPage accessToken={session?.token} />
       case 'audit':
         return <AuditPage onFeedback={feedback} />
-      case 'health':
-        return <HealthPage />
-      case 'overview':
+      case 'system-users':
+        return session ? <SystemUsersPage session={session} onFeedback={feedback} /> : null
+      case 'system-settings':
+        return session ? <SystemSettingsSuite session={session} onFeedback={feedback} /> : null
       default:
         return <OverviewPage />
     }
@@ -156,7 +160,7 @@ export default function App() {
     )
   }
 
-  const protectedRoute = protectedRoutes.includes(route as ProtectedAdminRouteId) ? route as ProtectedAdminRouteId : 'overview'
+  const protectedRoute = protectedRoutes.includes(route as ProtectedAdminRouteId) ? route as ProtectedAdminRouteId : 'dashboard'
 
   return (
     <>
@@ -176,5 +180,55 @@ export default function App() {
       </AdminLayout>
       <ToastRail toasts={toasts} onDismiss={dismissToast} />
     </>
+  )
+}
+
+function SystemSettingsSuite({ session, onFeedback }: { session: AdminSession; onFeedback: (title: string, detail?: string) => void }) {
+  return (
+    <section className="grid max-w-4xl gap-12">
+      <section className="grid gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)]">通用设置 / General</h3>
+        </div>
+        <ConfigPage session={session} onFeedback={onFeedback} compact summaryMode />
+      </section>
+      <section className="grid gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)]">安全策略 / Security</h3>
+        </div>
+        {canAdmin(session, 'manage:dangerous_config') ? <SecurityConfigPage onFeedback={onFeedback} compact summaryMode /> : (
+          <EmptyBlock title="安全配置需要更高权限" detail="SMTP 密钥、危险配置和测试发信仅 super_admin 或具备 manage:dangerous_config 权限的管理员可操作。" />
+        )}
+      </section>
+      <section className="grid gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)]">存储配置 / Storage</h3>
+        </div>
+        <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-8">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="grid size-12 place-items-center rounded-2xl bg-white/5 text-[var(--accent)]">
+                <span className="text-xl font-black">S</span>
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-[var(--text)]">Object Storage</h4>
+                <p className="mt-0.5 text-xs uppercase tracking-widest text-[var(--muted-strong)]">Primary Storage</p>
+              </div>
+            </div>
+            <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">Connected</span>
+          </div>
+          <div className="grid grid-cols-2 gap-8 max-[620px]:grid-cols-1">
+            <div>
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]">Bucket</div>
+              <div className="font-mono text-sm text-[var(--text)]">configured-assets</div>
+            </div>
+            <div>
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]">Region</div>
+              <div className="font-mono text-sm text-[var(--text)]">runtime-config</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
   )
 }

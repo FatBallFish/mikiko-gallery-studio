@@ -2,12 +2,28 @@ import { FormEvent, useEffect, useState } from 'react'
 import type { UserGroup, UserGroupWriteRequest } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
+import { EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
-import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { userGroupRows, userGroupSummary } from './userGroupRows'
 
 type GroupAction = { row?: UserGroup; draft: UserGroupWriteRequest }
+const groupClasses = {
+  header: 'flex items-center justify-between gap-4',
+  sectionTitle: 'flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
+  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
+  table: 'w-full min-w-[860px] border-collapse text-left',
+  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
+  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
+  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
+  code: 'font-mono text-xs font-bold text-[var(--accent)]',
+  name: 'font-bold text-[var(--text)]',
+  desc: 'max-w-[520px] text-xs leading-relaxed text-[var(--muted-strong)]',
+  routeCount: 'text-xs font-bold text-[var(--text)]',
+  actionLinks: 'flex flex-wrap items-center gap-3',
+  linkButton: 'text-xs font-bold text-[var(--muted)] transition-colors hover:text-[var(--text)]',
+  dangerLink: 'text-xs font-bold text-rose-400 transition-colors hover:text-rose-300',
+  summary: 'rounded-3xl border border-[var(--line)] bg-white/[0.02] px-5 py-4 text-sm text-[var(--muted)]',
+}
 
 export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [groups, setGroups] = useState<UserGroup[]>([])
@@ -53,40 +69,53 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader
-        eyebrow="Groups"
-        title="分组管理"
-        detail="维护用户权益分组、倍率、排序、默认分组和状态。"
-        actions={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAction({ draft: blankGroupDraft(groups.length + 1) })}>新增分组</button>}
-      />
-      <StatusStrip columns={4}>
-        <StatusCell label="分组总数" value={summary.total} />
-        <StatusCell label="启用" value={summary.enabled} />
-        <StatusCell label="默认" value={summary.defaultName} />
-        <StatusCell label="最高倍率" value={`${summary.highestMultiplier}x`} />
-      </StatusStrip>
-      <section className={adminPage.fullSurface}>
-        <section className={adminPage.mainLane}>
-          {!groups.length ? <EmptyBlock title="暂无分组" detail="新增分组后可用于用户归属和路由模型可见性。" /> : (
-            <div className={adminDataGrid.root}>
-              <div className={cn(adminDataGrid.head, adminGridCols.userGroup)}><span>分组名称</span><span>倍率</span><span>排序</span><span>默认</span><span>状态</span><span>操作</span></div>
+      <div className={groupClasses.header}>
+        <h3 className={groupClasses.sectionTitle}>用户分组 / User Groups</h3>
+        <button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAction({ draft: blankGroupDraft(groups.length + 1) })}>添加用户分组</button>
+      </div>
+      <details className={groupClasses.summary}>
+        <summary className="cursor-pointer list-none font-bold text-[var(--text)]">分组摘要 / Summary</summary>
+        <div className="mt-3 flex flex-wrap gap-4 text-xs">
+          <span>分组总数 <strong className="text-[var(--text)]">{summary.total}</strong></span>
+          <span>启用 <strong className="text-[var(--text)]">{summary.enabled}</strong></span>
+          <span>默认 <strong className="text-[var(--text)]">{summary.defaultName}</strong></span>
+          <span>最高倍率 <strong className="text-[var(--text)]">{summary.highestMultiplier}x</strong></span>
+        </div>
+      </details>
+      {!groups.length ? <EmptyBlock title="暂无分组" detail="新增分组后可用于用户归属和路由模型可见性。" /> : (
+        <div className={groupClasses.tableWrap}>
+          <table className={groupClasses.table}>
+            <thead>
+              <tr>
+                <th className={groupClasses.th}>分组代码</th>
+                <th className={groupClasses.th}>分组名称</th>
+                <th className={groupClasses.th}>描述</th>
+                <th className={groupClasses.th}>关联路由模型数</th>
+                <th className={groupClasses.th}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
               {userGroupRows(groups).map((row) => (
-                <div key={row.id} className={cn(adminDataGrid.row, adminGridCols.userGroup)}>
-                  <div className={adminDataGrid.stackCell}><strong>{row.name}</strong><p className={adminDataGrid.detail}>{row.code} · {row.description}</p></div>
-                  <code className={adminDataGrid.code}>{row.multiplier}</code>
-                  <code className={adminDataGrid.code}>{row.sortOrder}</code>
-                  <Badge tone={row.defaultTone}>{row.defaultLabel}</Badge>
-                  <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
-                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => {
-                    const group = groups.find((item) => String(item.id ?? item.code) === row.id)
-                    if (group) setAction({ row: group, draft: groupToDraft(group) })
-                  }}>编辑</button>
-                </div>
+                <tr key={row.id} className={groupClasses.tr}>
+                  <td className={groupClasses.td}><span className={groupClasses.code}>{row.code}</span></td>
+                  <td className={groupClasses.td}><span className={groupClasses.name}>{row.name}</span></td>
+                  <td className={groupClasses.td}><span className={groupClasses.desc}>{row.description ? `${row.description} · 倍率 ${row.multiplier}` : `倍率 ${row.multiplier} · ${row.defaultLabel} · ${row.statusLabel}`}</span></td>
+                  <td className={groupClasses.td}><span className={groupClasses.routeCount}>配置模型可见性</span></td>
+                  <td className={groupClasses.td}>
+                    <div className={groupClasses.actionLinks}>
+                      <a className={groupClasses.linkButton} href="#/routing">配置模型可见性</a>
+                      <button className={groupClasses.linkButton} type="button" onClick={() => {
+                        const group = groups.find((item) => String(item.id ?? item.code) === row.id)
+                        if (group) setAction({ row: group, draft: groupToDraft(group) })
+                      }}>编辑</button>
+                    </div>
+                  </td>
+                </tr>
               ))}
-            </div>
-          )}
-        </section>
-      </section>
+            </tbody>
+          </table>
+        </div>
+      )}
       {action ? (
         <Modal
           title={action.row ? '编辑权益分组' : '新增权益分组'}

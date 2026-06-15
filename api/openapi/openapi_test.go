@@ -46,6 +46,9 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/ops/admin/v1/config-tabs/{tab_key}",
 		"/api/ops/admin/v1/security/smtp",
 		"/api/ops/admin/v1/security/smtp/test",
+		"/api/ops/admin/v1/admin-users",
+		"/api/ops/admin/v1/admin-users/{admin_id}",
+		"/api/ops/admin/v1/admin-users/{admin_id}/reset-password",
 		"/api/ops/admin/v1/audit-logs",
 		"/api/ops/admin/v1/image-reviews",
 		"/api/ops/admin/v1/users",
@@ -475,6 +478,25 @@ func TestOpenAPISpecDocumentsAdminUserManagementContract(t *testing.T) {
 		}
 	}
 
+	systemListParams := map[string]bool{}
+	for _, param := range doc.Paths["/api/ops/admin/v1/admin-users"]["get"].Parameters {
+		systemListParams[param.In+":"+param.Name] = true
+	}
+	for _, key := range []string{"query:page", "query:page_size", "query:query", "query:role", "query:status"} {
+		if !systemListParams[key] {
+			t.Fatalf("expected system admin user list parameter %q", key)
+		}
+	}
+	if !doc.Paths["/api/ops/admin/v1/admin-users"]["post"].RequestBody.Required {
+		t.Fatal("expected system admin create body to be required")
+	}
+	if !doc.Paths["/api/ops/admin/v1/admin-users/{admin_id}"]["put"].RequestBody.Required {
+		t.Fatal("expected system admin update body to be required")
+	}
+	if !doc.Paths["/api/ops/admin/v1/admin-users/{admin_id}/reset-password"]["post"].RequestBody.Required {
+		t.Fatal("expected system admin reset-password body to be required")
+	}
+
 	adjust := doc.Paths["/api/ops/admin/v1/users/{user_id}/points-adjustments"]["post"]
 	if !adjust.RequestBody.Required {
 		t.Fatal("expected admin point adjustment body to be required")
@@ -506,6 +528,11 @@ func TestOpenAPISpecDocumentsAdminUserManagementContract(t *testing.T) {
 	for _, name := range []string{"AdminUserSummary", "AdminUserListResponse", "AdminUserDetailResponse", "AdminPointAdjustmentRequest", "AdminUpdateUserStatusRequest"} {
 		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
 			t.Fatalf("expected admin schema %q", name)
+		}
+	}
+	for _, name := range []string{"SystemAdminUser", "SystemAdminUserListResponse", "SystemAdminUserCreateRequest", "SystemAdminUserUpdateRequest", "SystemAdminPasswordResetRequest", "SystemAdminUserResponse"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected system admin schema %q", name)
 		}
 	}
 	for _, name := range []string{"AdminRedeemCode", "AdminCreateRedeemCodeRequest", "AdminBatchCreateRedeemCodesRequest", "AdminExportRedeemCodesRequest", "AdminExportRedeemCodesResponse", "AdminRedeemCodeResponse", "AdminRedeemCodeListResponse", "AdminRedeemCodeRedemptionsResponse"} {

@@ -1,4 +1,5 @@
 import type { ReadinessCheck } from '../../../shared/api-types'
+import { adminActionHref } from '../adminRouteLinks'
 
 export type OverviewReadinessRow = {
   key: string
@@ -35,7 +36,7 @@ export function overviewReadinessRows(checks: ReadinessCheck[]): OverviewReadine
       rawStatus: check.status,
       statusTone: readinessTone(check.status),
       detail: check.detail || check.summary || '-',
-      actionHref: `#/${check.fix_route ?? check.action_route ?? 'readiness'}`,
+      actionHref: adminActionHref(check.fix_route ?? check.action_route),
       actionLabel: check.fix_action ?? check.action_label ?? '处理',
     }))
 }

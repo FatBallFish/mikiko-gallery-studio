@@ -207,6 +207,12 @@ func (s *blockingRehashStore) GetAdminByEmail(_ context.Context, email string) (
 	return s.admin, nil
 }
 
+func (s *blockingRehashStore) ListAdmins(_ context.Context, _ domainadminauth.AdminListRequest) (domainadminauth.AdminListPage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return domainadminauth.AdminListPage{Items: []domainadminauth.AdminUser{s.admin}, Page: 1, PageSize: 20, Total: 1}, nil
+}
+
 func (s *blockingRehashStore) GetAdminByID(_ context.Context, id int64) (domainadminauth.AdminUser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,6 +224,31 @@ func (s *blockingRehashStore) GetAdminByID(_ context.Context, id int64) (domaina
 
 func (s *blockingRehashStore) CreateAdmin(_ context.Context, admin domainadminauth.AdminUser) (domainadminauth.AdminUser, error) {
 	return admin, nil
+}
+
+func (s *blockingRehashStore) UpdateAdmin(_ context.Context, id int64, role string, status string, setRole bool, setStatus bool) (domainadminauth.AdminUser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id != s.admin.ID {
+		return domainadminauth.AdminUser{}, errors.New("not found")
+	}
+	if setRole {
+		s.admin.Role = role
+	}
+	if setStatus {
+		s.admin.Status = status
+	}
+	return s.admin, nil
+}
+
+func (s *blockingRehashStore) UpdateAdminPassword(_ context.Context, id int64, newHash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id != s.admin.ID {
+		return errors.New("not found")
+	}
+	s.admin.PasswordHash = newHash
+	return nil
 }
 
 func (s *blockingRehashStore) UpdateAdminPasswordHash(_ context.Context, id int64, oldHash string, newHash string) error {
@@ -241,6 +272,25 @@ func (s *blockingRehashStore) UpdateAdminPasswordHash(_ context.Context, id int6
 	}
 	s.admin.PasswordHash = newHash
 	return nil
+}
+
+func (s *blockingRehashStore) DeleteAdmin(_ context.Context, id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id != s.admin.ID {
+		return errors.New("not found")
+	}
+	s.admin = domainadminauth.AdminUser{}
+	return nil
+}
+
+func (s *blockingRehashStore) CountActiveSuperAdmins(_ context.Context) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.admin.Role == domainadminauth.RoleSuperAdmin && s.admin.Status == "active" {
+		return 1, nil
+	}
+	return 0, nil
 }
 
 func (s *blockingRehashStore) staleCount() int {

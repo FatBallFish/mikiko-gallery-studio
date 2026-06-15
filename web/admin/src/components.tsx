@@ -2,77 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { AdminMetric, AdminSession, ProviderHealth, UserGroup } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
-import { providerHealthValue, providerHealthWarn, taskQueuePressure } from './healthRows'
+import { navGroups, normalizeRoute, protectedRoutes, routeHref, routeTitles } from './layout/admin-navigation'
+import { useAdminTheme } from './layout/useAdminTheme'
 import { filterAdminNavGroups } from './types'
-import type { AdminNavGroup, AdminRouteId, ProtectedAdminRouteId, ToastMessage, ToastTone } from './types'
+import type { AdminRouteId, ProtectedAdminRouteId, ToastMessage, ToastTone } from './types'
 import { adminButton, adminShell } from './ui/classes'
 
-export const protectedRoutes: ProtectedAdminRouteId[] = [
-  'overview',
-  'readiness',
-  'config',
-  'security-config',
-  'routing',
-  'pricing',
-  'reviews',
-  'users',
-  'user-groups',
-  'redeem',
-  'cashier',
-  'call-records',
-  'provider-models',
-  'audit',
-  'health',
-]
-
-export const navGroups: AdminNavGroup[] = [
-  {
-    label: '概览',
-    items: [
-      { id: 'overview', label: '控制面板', hint: 'Overview' },
-      { id: 'readiness', label: '上线检查', hint: 'Ready' },
-      { id: 'health', label: '系统状态', hint: 'Health' },
-    ],
-  },
-  {
-    label: '业务管理',
-    items: [
-      { id: 'users', label: '用户管理', hint: 'Users' },
-      { id: 'user-groups', label: '分组管理', hint: 'Groups' },
-      { id: 'redeem', label: '兑换码', hint: 'Redeem' },
-      { id: 'reviews', label: '审核队列', hint: 'Review' },
-      { id: 'call-records', label: '调用记录', hint: 'Calls' },
-    ],
-  },
-  {
-    label: '商业化',
-    items: [
-      { id: 'cashier', label: '收银台', hint: 'Cashier' },
-    ],
-  },
-  {
-    label: '模型与路由',
-    items: [
-      { id: 'routing', label: '路由模型', hint: 'Routes' },
-      { id: 'provider-models', label: '接入账号', hint: 'Accounts' },
-      { id: 'pricing', label: '价格配置', hint: 'Pricing' },
-    ],
-  },
-  {
-    label: '系统',
-    items: [
-      { id: 'audit', label: '审计日志', hint: 'Trail' },
-      { id: 'config', label: '系统设置', hint: 'Config' },
-      { id: 'security-config', label: '安全配置', hint: 'Secrets' },
-    ],
-  },
-]
-
-const fallbackProviders: ProviderHealth[] = [
-  { provider: 'OpenAI', status: 'healthy', latency_ms: 0, error_rate: '0%', note: '健康' },
-  { provider: 'OpenRouter', status: 'healthy', latency_ms: 0, error_rate: '0%', note: '健康' },
-  { provider: '任务队列', status: 'degraded', latency_ms: 0, error_rate: '0%', note: '拥堵 (12)' },
-]
+export { navGroups, normalizeRoute, protectedRoutes, routeHref } from './layout/admin-navigation'
 
 const badgeToneClass: Record<ToastTone | 'success' | 'primary' | 'neutral', string> = {
   success: 'bg-[rgba(90,149,114,.12)] text-[var(--green)]',
@@ -103,11 +39,12 @@ const dotToneClass = {
   primary: 'bg-[var(--blue)]',
 }
 
-const stateBlockBase = 'grid min-h-[260px] place-items-center content-center gap-2.5 rounded-[var(--pg-radius-sm)] border border-dashed border-[var(--line-strong)] bg-white/55 p-7 text-center'
+const navIconClass = 'size-5 opacity-70 transition-opacity group-hover:opacity-100'
+const stateBlockBase = 'grid min-h-[260px] place-items-center content-center gap-2.5 rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-7 text-center text-white/70'
 const fieldLabelClass = 'flex items-center justify-between gap-2 text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]'
-const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-[10px] border border-[var(--line)] bg-white/60 p-2'
+const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-2xl border border-[var(--line)] bg-white/[0.02] p-2'
 const checkGridEmptyClass = 'grid-cols-1 text-sm font-bold text-[var(--soft)]'
-const checkOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 p-2 text-sm has-[:checked]:border-[var(--blue)] has-[:checked]:bg-[rgba(87,117,185,.08)]'
+const checkOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
 const checkOptionNameClass = 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap'
 const checkOptionMetaClass = 'text-xs not-italic font-extrabold text-[var(--soft)]'
 const metricToneClass: Record<string, string> = {
@@ -115,16 +52,6 @@ const metricToneClass: Record<string, string> = {
   warn: '[&_span]:text-[var(--amber)]',
   bad: '[&_span]:text-[var(--red)]',
   danger: '[&_span]:text-[var(--red)]',
-}
-
-export function normalizeRoute(hash: string): AdminRouteId {
-  const path = hash.replace(/^#\/?/, '').split('?')[0].replace(/^\/+|\/+$/g, '')
-  if (path === 'login') return 'login'
-  return protectedRoutes.includes(path as Exclude<AdminRouteId, 'login'>) ? (path as AdminRouteId) : 'overview'
-}
-
-export function routeHref(route: AdminRouteId) {
-  return `#/${route}`
 }
 
 export function useHashRoute() {
@@ -184,82 +111,90 @@ export function AdminLayout({
   onNavigate: (route: AdminRouteId) => void
   onLogout: () => void
 }) {
-  const generationMetric = metrics.find((item) => item.label.includes('生成'))
-  const statusProviders = providers.length ? providers : fallbackProviders
   const visibleNavGroups = filterAdminNavGroups(navGroups, session)
+  const { theme, setTheme } = useAdminTheme()
+  const navBadges = {
+    review_count: reviewCount > 0 ? String(reviewCount) : '',
+    failed_webhook_count: '',
+    config_drafts: configDrafts > 0 ? String(configDrafts) : '',
+  }
 
   return (
-    <main className={adminShell.root}>
+    <main className={adminShell.root} data-theme={theme}>
       <aside className={adminShell.sidebar} aria-label="Pic Gallery Admin Navigation">
-        <a className={adminShell.brand} href={routeHref('overview')} onClick={() => onNavigate('overview')}>
-          <span>Pic Gallery Admin</span>
-          <strong>Admin Console</strong>
+        <a className={adminShell.brand} href={routeHref('dashboard')} onClick={() => onNavigate('dashboard')}>
+          <span className={adminShell.brandOrb}>M</span>
+          <strong className={adminShell.brandText}>Mikiko Admin</strong>
         </a>
 
         <nav className={adminShell.nav} aria-label="后台主导航">
           {visibleNavGroups.map((group) => (
             <section key={group.label} className={adminShell.navGroup}>
               <p className={adminShell.navLabel}>{group.label}</p>
-              {group.items.map((item) => (
-                <a
-                  key={item.id}
-                  href={routeHref(item.id)}
-                  className={cn(adminShell.navLink, route === item.id && adminShell.navLinkActive)}
-                  onClick={() => onNavigate(item.id)}
-                  aria-current={route === item.id ? 'page' : undefined}
-                >
-                  <span>{item.label}</span>
-                  <em>{item.hint}</em>
-                </a>
-              ))}
+              {group.items.map((item) => {
+                const badge = item.badgeKey ? navBadges[item.badgeKey] : ''
+                return (
+                  <a
+                    key={item.id}
+                    href={routeHref(item.id)}
+                    className={cn(adminShell.navLink, route === item.id && adminShell.navLinkActive)}
+                    onClick={() => onNavigate(item.id)}
+                    aria-current={route === item.id ? 'page' : undefined}
+                  >
+                    <span className={adminShell.navIcon}>{routeIcon(item.id)}</span>
+                    <span>{item.label}</span>
+                    {badge ? <em className={adminShell.navBadge}>{badge}</em> : null}
+                  </a>
+                )
+              })}
             </section>
           ))}
         </nav>
 
         <div className={adminShell.sideNote}>
-          <span>Soft Grid Ops</span>
-          <strong>反馈沿主操作路径呈现，配置均可回滚。</strong>
+          <span className={adminShell.avatarOrb}>AD</span>
+          <div className="grid min-w-0 flex-1 gap-0.5">
+            <strong className="truncate text-sm text-[var(--text)]">Admin</strong>
+            <span className="truncate text-[10px] text-[var(--muted-strong)]">Super Administrator</span>
+          </div>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'shrink-0')} type="button" onClick={onLogout}>退出</button>
         </div>
       </aside>
 
       <section className={adminShell.main}>
         <header className={adminShell.topbar}>
-          <div className={adminShell.flexRow} aria-label="Provider 状态">
-            {statusProviders.map((provider) => (
-              <StatusItem
-                key={provider.provider}
-                label={provider.provider}
-                value={providerHealthValue(provider)}
-                warn={providerHealthWarn(provider)}
-              />
-            ))}
+          <div className={adminShell.titleBlock}>
+            <h1 className={adminShell.pageTitle}>{routeTitles[route]}</h1>
+            <div className={adminShell.breadcrumb}>
+              <span>Admin</span>
+              <ChevronRightIcon className="size-3" />
+              <strong>{routeTitles[route]}</strong>
+            </div>
           </div>
 
           <div className={adminShell.metaRow}>
-            <div className={adminShell.providerPill}>
+            <div className={adminShell.providerPill} title="系统状态">
               <span className={cn('inline-block size-2 rounded-full', dotToneClass.success)} />
-              <em>{generationMetric ? `${generationMetric.label} ${generationMetric.value}` : 'Real API online'}</em>
+              <em>System Online</em>
             </div>
-            <div className={adminShell.avatarWidget}>
-              <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 2).toUpperCase()}</span>
-              <div>
-                <strong>{session.admin_name}</strong>
-                <span>{session.role}</span>
-              </div>
-            </div>
-            <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onLogout}>退出</button>
+            <button
+              className={adminShell.iconButton}
+              type="button"
+              aria-label={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+              title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+              onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            </button>
+            <button className={adminShell.iconButton} type="button" aria-label="通知" title="通知">
+              <BellIcon />
+            </button>
           </div>
         </header>
 
-        <section className={adminShell.statusStrip} aria-label="运营状态条">
-          <StatusCell label="环境" value="Production" />
-          <StatusCell label="主 Provider" value={providers[0]?.provider ?? 'OpenAI'} />
-          <StatusCell label="任务队列" value={taskQueuePressure(providers)} />
-          <StatusCell label="策略状态" value={configDrafts ? `${configDrafts} 项待发布` : '全量已生效'} />
-          <StatusCell label="待审核" value={`${String(reviewCount).padStart(2, '0')} 项`} />
+        <section className={adminShell.content}>
+          {children}
         </section>
-
-        {children}
       </section>
     </main>
   )
@@ -286,20 +221,20 @@ export function StatusChip({ tone, label, value }: { tone: ToastTone | 'primary'
 
 export function StatusCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className={adminShell.statusCell}>
-      <label className={adminShell.statusLabel}>{label}</label>
-      <strong className={adminShell.statusValue}>{value}</strong>
+    <div className="relative grid min-h-[118px] content-center gap-2 overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:border-white/10 hover:bg-white/[0.04]">
+      <label className="m-0 text-xs font-medium uppercase tracking-wider text-[var(--muted-strong)]">{label}</label>
+      <strong className="block truncate text-3xl font-black tracking-tighter text-[var(--text)]">{value}</strong>
     </div>
   )
 }
 
 export function StatusStrip({ children, columns = 5 }: { children: React.ReactNode; columns?: 4 | 5 }) {
   const columnClass = columns === 4
-    ? 'grid-cols-4 max-[920px]:grid-cols-2 max-[620px]:grid-cols-1'
-    : 'grid-cols-5 max-[1260px]:grid-cols-3 max-[920px]:grid-cols-2 max-[620px]:grid-cols-1'
+    ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4'
+    : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-5'
 
   return (
-    <section className={cn('grid overflow-hidden rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--surface-frost)] shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px]', columnClass)} aria-label="运营状态条">
+    <section className={cn('grid gap-6', columnClass)} aria-label="运营状态条">
       {children}
     </section>
   )
@@ -309,7 +244,7 @@ export function ToastRail({ toasts, onDismiss }: { toasts: ToastMessage[]; onDis
   return (
     <aside className="fixed right-5 top-5 z-[120] grid w-[min(380px,calc(100vw-40px))] gap-2" aria-live="polite" aria-label="操作反馈">
       {toasts.map((toast) => (
-        <button key={toast.id} type="button" className={cn('grid rounded-xl border border-[var(--line)] bg-white p-3 text-left shadow-[var(--pg-shadow-sm)]', toastToneClass[toast.tone])} onClick={() => onDismiss(toast.id)}>
+        <button key={toast.id} type="button" className={cn('grid rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 text-left shadow-[var(--pg-shadow-sm)]', toastToneClass[toast.tone])} onClick={() => onDismiss(toast.id)}>
           <strong>{toast.title}</strong>
           {toast.detail ? <span>{toast.detail}</span> : null}
         </button>
@@ -320,10 +255,10 @@ export function ToastRail({ toasts, onDismiss }: { toasts: ToastMessage[]; onDis
 
 export function PageHeader({ eyebrow, title, detail, actions }: { eyebrow: string; title: string; detail?: string; actions?: React.ReactNode }) {
   return (
-    <section className="flex items-center justify-between gap-4 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-[var(--surface-frost)] p-5 shadow-[var(--pg-shadow-sm)] backdrop-blur-[14px] max-[920px]:flex-col max-[920px]:items-start">
+    <section className="flex items-end justify-between gap-4 max-[920px]:flex-col max-[920px]:items-start">
       <div>
-        <label className="m-0 text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]">{eyebrow}</label>
-        <strong className="mt-0.5 block text-xl font-medium text-[var(--text)]">{title}</strong>
+        <label className="m-0 text-[10px] font-extrabold uppercase tracking-[.18em] text-[var(--muted-strong)]">{eyebrow}</label>
+        <strong className="mt-2 flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]">{title}</strong>
         {detail ? <p className="mt-1 max-w-[76ch] text-sm text-[var(--soft)]">{detail}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
@@ -426,8 +361,8 @@ export function Modal({
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-[rgba(26,37,50,0.24)] p-6 backdrop-blur-sm" role="presentation" onMouseDown={onClose}>
-      <section className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-[18px] border border-[var(--line)] bg-white p-5 shadow-[0_24px_80px_rgba(26,37,50,.18)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-6 backdrop-blur-md" role="presentation" onMouseDown={onClose}>
+      <section className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.45)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <strong>{title}</strong>
@@ -441,6 +376,48 @@ export function Modal({
     </div>
   )
 }
+
+function routeIcon(route: ProtectedAdminRouteId) {
+  const icons: Record<ProtectedAdminRouteId, React.ReactNode> = {
+    dashboard: <ChartIcon />,
+    monitoring: <ActivityIcon />,
+    users: <UsersIcon />,
+    'user-groups': <GroupIcon />,
+    'call-records': <ListIcon />,
+    redeem: <TicketIcon />,
+    reviews: <ShieldIcon />,
+    orders: <CreditCardIcon />,
+    packages: <BoxIcon />,
+    'cashier-config': <LayoutIcon />,
+    routing: <ZapIcon />,
+    'access-accounts': <CloudIcon />,
+    pricing: <CoinsIcon />,
+    audit: <FileTextIcon />,
+    'system-users': <SystemUserIcon />,
+    'system-settings': <SettingsIcon />,
+  }
+  return icons[route]
+}
+
+const ChartIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
+const ActivityIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+const UsersIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+const GroupIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+const ListIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" x2="21" y1="6" y2="6" /><line x1="8" x2="21" y1="12" y2="12" /><line x1="8" x2="21" y1="18" y2="18" /><line x1="3" x2="3.01" y1="6" y2="6" /><line x1="3" x2="3.01" y1="12" y2="12" /><line x1="3" x2="3.01" y1="18" y2="18" /></svg>
+const TicketIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" /><path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" /></svg>
+const ShieldIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+const CreditCardIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" x2="22" y1="10" y2="10" /></svg>
+const BoxIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg>
+const LayoutIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><line x1="3" x2="21" y1="9" y2="9" /><line x1="9" x2="9" y1="21" y2="9" /></svg>
+const ZapIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+const CloudIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19c.1 0 .2 0 .3 0A5.5 5.5 0 0 0 16 8.1l-1.3-.1A7.5 7.5 0 0 0 2 12a7.5 7.5 0 0 0 12.3 5.8l1.2 1.2M17.5 19h.3" /><path d="M12 12l2 2 4-4" /></svg>
+const CoinsIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6" /><path d="M18.09 10.37A6 6 0 1 1 10.34 18" /><path d="M7 6h1v4" /><path d="m16.71 13.88.7.71-2.82 2.82" /></svg>
+const FileTextIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" x2="8" y1="13" y2="13" /><line x1="16" x2="8" y1="17" y2="17" /></svg>
+const SystemUserIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><circle cx="12" cy="11" r="3" /></svg>
+const SettingsIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
+const SunIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
+const MoonIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
+const BellIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
 
 export function Field({ label, children, error, hint }: { label: string; children: React.ReactNode; error?: string | null; hint?: string }) {
   return (
@@ -527,7 +504,7 @@ export function ConfirmDrawer({
   onConfirm: () => void
 }) {
   return (
-    <aside className="grid min-h-full content-start gap-3 border-l border-[var(--line)] bg-[rgba(248,250,251,.82)] p-4" role="dialog" aria-modal="false" aria-label={title}>
+    <aside className="grid min-h-full content-start gap-3 border-l border-[var(--line)] bg-white/[0.02] p-4" role="dialog" aria-modal="false" aria-label={title}>
       <div>
         <label>审核原因</label>
         <strong>{title}</strong>
@@ -546,19 +523,27 @@ export function ConfirmDrawer({
 
 export function MetricGrid({ metrics }: { metrics: AdminMetric[] }) {
   return (
-    <section className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3 max-[1260px]:grid-cols-2 max-[620px]:grid-cols-1">
+    <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric) => (
-        <div key={metric.label} className={cn('grid min-h-[104px] gap-2 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white p-4', metricToneClass[metric.tone])}>
+        <div key={metric.label} className={cn('relative grid min-h-[130px] content-center gap-2 overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:border-white/10 hover:bg-white/[0.04]', metricToneClass[metric.tone])}>
           <div>
-            <label>{metric.label}</label>
+            <label className="m-0 text-xs font-medium uppercase tracking-wider text-[var(--muted-strong)]">{metric.label}</label>
           </div>
           <div>
-            <strong className="my-1 block text-[1.8rem] font-medium">{metric.value}</strong>
+            <strong className="my-1 block text-3xl font-black tracking-tighter text-[var(--text)]">{metric.value}</strong>
             <span className="text-xs font-extrabold text-[var(--soft)]">{metric.trend}</span>
           </div>
         </div>
       ))}
     </section>
+  )
+}
+
+function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m9 18 6-6-6-6" />
+    </svg>
   )
 }
 

@@ -3,7 +3,7 @@ import type { FormEvent, ReactNode } from 'react'
 import type { CashierCustomAmountConfig, CashierOverview, CashierPlan, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderInstanceWriteRequest, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashierJeePayWayCodeTemplates'
@@ -116,43 +116,76 @@ const cashierTabs: Array<{ id: CashierTabId; label: string; detail: string }> = 
 const cashierAdminPageSize = 10
 const emptyOrderFilters: OrderFilters = { order_no: '', user_id: '', status: '', visible_method: '', purchase_type: '' }
 const cashierClasses = {
-  tabs: 'grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2 rounded-xl border border-[var(--line)] bg-white/70 p-1',
-  tab: 'grid gap-1 rounded-lg border border-transparent px-3 py-2 text-left text-sm text-[var(--soft)] transition hover:bg-[rgba(87,117,185,.08)]',
-  tabActive: 'border-[rgba(87,117,185,.24)] bg-[rgba(87,117,185,.1)] text-[var(--text)]',
-  overviewGrid: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3',
-  overviewCard: 'grid gap-2 rounded-xl border border-[var(--line)] bg-white p-4',
+  page: 'grid gap-8',
+  tabs: 'flex gap-8 border-b border-white/5 pb-4',
+  tab: 'relative pb-4 text-left text-sm font-bold text-[var(--muted-strong)] transition-all hover:text-[var(--text)]',
+  tabActive: 'text-[var(--accent)] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[var(--accent)] after:shadow-[0_0_10px_var(--accent)]',
+  overviewGrid: 'grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4',
+  overviewCard: 'relative grid min-h-[130px] gap-2 overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:border-white/10 hover:bg-white/[0.04]',
+  overviewLabel: 'text-xs font-medium uppercase tracking-wider text-[var(--muted-strong)]',
+  overviewValue: 'text-3xl font-black tracking-tighter text-[var(--text)]',
+  overviewTrend: 'flex items-center gap-1 text-xs font-bold text-emerald-400',
+  chartContainer: 'rounded-3xl border border-white/5 bg-white/[0.02] p-8',
+  sectionTitle: 'mb-6 flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
+  revenueBars: 'flex h-[300px] w-full items-end gap-1 px-4',
+  revenueBar: 'group relative flex-1 rounded-t-sm bg-[var(--accent)]/20 transition-all hover:bg-[var(--accent)]',
+  chartAxis: 'mt-4 flex justify-between px-4 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
+  splitCharts: 'grid grid-cols-1 gap-8 xl:grid-cols-2',
+  distributionRow: 'grid gap-2',
+  distributionMeta: 'flex justify-between gap-3 text-xs font-bold',
+  distributionTrack: 'h-1.5 w-full overflow-hidden rounded-full bg-white/5',
+  spenderRow: 'flex items-center justify-between gap-3 rounded-2xl p-3 transition-all hover:bg-white/5',
+  spenderAvatar: 'grid size-8 place-items-center rounded-lg bg-white/5 text-xs font-bold text-[var(--muted-strong)]',
   configForm: 'grid gap-4',
-  toggle: 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 p-2 text-sm has-[:checked]:border-[var(--blue)] has-[:checked]:bg-[rgba(87,117,185,.08)]',
+  configPanelGrid: 'grid grid-cols-2 gap-8 max-[1100px]:grid-cols-1',
+  configPanel: 'rounded-3xl border border-white/5 bg-white/[0.02] p-6 shadow-[var(--pg-shadow-sm)]',
+  configPanelHead: 'mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4',
+  configPanelTitle: 'text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)]',
+  providerList: 'grid gap-4',
+  providerItem: 'group flex items-center justify-between gap-4 rounded-2xl border border-white/5 bg-white/5 p-4 transition-all hover:border-white/10 hover:bg-white/[0.08]',
+  providerDot: 'size-2 rounded-full',
+  providerName: 'font-bold text-[var(--text)]',
+  providerType: 'mt-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
+  toggleSetting: 'flex items-center justify-between gap-4 rounded-2xl border border-white/5 bg-white/[0.02] p-4',
+  toggleSwitch: 'relative h-5 w-10 rounded-full transition-all',
+  toggleKnob: 'absolute top-1 size-3 rounded-full bg-white transition-all',
+  riskPanel: 'rounded-3xl border border-white/5 bg-white/[0.02] p-6 shadow-[var(--pg-shadow-sm)]',
+  riskMetricGrid: 'grid grid-cols-3 gap-4 max-[760px]:grid-cols-1',
+  riskMetric: 'rounded-2xl border border-white/5 bg-white/5 p-4',
+  riskLabel: 'mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
+  riskValue: 'text-lg font-black text-[var(--text)]',
+  toggle: 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10',
   amountGrid: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3',
   toolbar: 'flex flex-wrap items-start justify-between gap-3',
   actions: 'flex flex-wrap items-center justify-end gap-2',
-  orderFilter: 'grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] items-end gap-3 rounded-xl border border-[var(--line)] bg-white/70 p-3',
+  orderFilter: 'flex flex-wrap items-center justify-between gap-4',
+  orderFilterFields: 'grid flex-1 grid-cols-[minmax(180px,1fr)_minmax(120px,.5fr)_minmax(120px,.5fr)_minmax(120px,.5fr)_minmax(120px,.5fr)] gap-3 max-[1100px]:grid-cols-2 max-[620px]:grid-cols-1',
   webhookInspector: 'grid gap-2 rounded-xl border border-[#263243] bg-[#111827] p-4 text-white',
   webhookPre: 'max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg bg-black/25 p-3 font-mono text-xs',
-  jeepayTemplate: 'grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--pg-admin-bg-subtle)] p-3',
+  jeepayTemplate: 'grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
   templateButtonRow: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2',
-  templateButton: 'grid gap-1 rounded-lg border border-[var(--line)] bg-white p-3 text-left text-sm hover:border-[rgba(87,117,185,.25)] hover:bg-[rgba(87,117,185,.08)]',
-  textarea: 'min-h-[160px] w-full resize-y rounded-[10px] border border-[var(--line)] bg-white px-3 py-2 font-mono text-xs outline-none focus:border-[var(--blue)] focus:ring-2 focus:ring-[rgba(87,117,185,.14)]',
+  templateButton: 'grid gap-1 rounded-xl border border-[var(--line)] bg-white/5 p-3 text-left text-sm hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/10',
+  textarea: 'min-h-[160px] w-full resize-y rounded-xl border border-[var(--line)] bg-white/5 px-3 py-2 font-mono text-xs outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/50',
   detailGrid: 'grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3',
-  detailItem: 'grid gap-1 rounded-xl border border-[var(--line)] bg-white p-3',
+  detailItem: 'grid gap-1 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-3',
   riskGrid: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3',
   riskItem: 'grid gap-1 rounded-xl border p-3',
   riskTone: {
-    neutral: 'border-[var(--line)] bg-white/70',
+    neutral: 'border-[var(--line)] bg-white/[0.02]',
     success: 'border-[rgba(90,149,114,.24)] bg-[rgba(90,149,114,.08)]',
     warning: 'border-[rgba(184,135,64,.28)] bg-[rgba(184,135,64,.08)]',
     danger: 'border-[rgba(184,95,84,.28)] bg-[rgba(184,95,84,.08)]',
   },
-  section: 'grid gap-4 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white p-4',
-  sectionHead: 'flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3',
+  section: 'grid gap-4 rounded-3xl border border-white/5 bg-white/[0.02] p-6',
+  sectionHead: 'flex flex-wrap items-center justify-between gap-2',
   pager: 'flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-3',
-  providerGuide: 'col-span-full grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--pg-admin-bg-subtle)] p-3',
+  providerGuide: 'col-span-full grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
   providerGuideFields: 'flex flex-wrap gap-2 text-xs text-[var(--soft)]',
-  structuredConfig: 'col-span-full grid gap-3 rounded-xl border border-[var(--line)] bg-white p-3',
-  secretConfig: 'col-span-full grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--pg-admin-bg-subtle)] p-3',
+  structuredConfig: 'col-span-full grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
+  secretConfig: 'col-span-full grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
   secretConfigGrid: 'grid grid-cols-[minmax(0,1fr)_minmax(220px,.7fr)] gap-3 max-[760px]:grid-cols-1',
   supportedMethods: 'grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2',
-  checkOption: 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 p-2 text-sm has-[:checked]:border-[var(--blue)] has-[:checked]:bg-[rgba(87,117,185,.08)]',
+  checkOption: 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10',
   inlineControl: 'flex items-center gap-2',
   methodName: 'grid gap-1',
   methodCode: 'grid gap-1',
@@ -171,7 +204,17 @@ function methodsForProviderType(providerType: PaymentProviderType) {
   return 'alipay'
 }
 
-export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detail?: string) => void }) {
+export function CashierPage({
+  onFeedback,
+  initialTab = 'overview',
+  allowedTabs,
+  pageTitle = '收银台',
+}: {
+  onFeedback?: (title: string, detail?: string) => void
+  initialTab?: CashierTabId
+  allowedTabs?: CashierTabId[]
+  pageTitle?: string
+}) {
   const [data, setData] = useState<CashierData | null>(null)
   const [customDraft, setCustomDraft] = useState<CashierCustomAmountConfig | null>(null)
   const [trialDraft, setTrialDraft] = useState<CashierTrialConfigDraft | null>(null)
@@ -186,7 +229,10 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
   const [closingOrderID, setClosingOrderID] = useState<number | string | null>(null)
   const [retryingEventID, setRetryingEventID] = useState<number | string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<CashierTabId>('overview')
+  const visibleTabs = cashierTabs.filter((tab) => !allowedTabs || allowedTabs.includes(tab.id))
+  const safeInitialTab = visibleTabs.some((tab) => tab.id === initialTab) ? initialTab : visibleTabs[0]?.id ?? 'overview'
+  const [activeTab, setActiveTab] = useState<CashierTabId>(safeInitialTab)
+  const [customAmountOpen, setCustomAmountOpen] = useState(false)
   const [ordersPage, setOrdersPage] = useState(1)
   const [orderFilters, setOrderFilters] = useState<OrderFilters>(emptyOrderFilters)
   const [eventsPage, setEventsPage] = useState(1)
@@ -219,7 +265,6 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
       setCustomDraft(customAmount)
       setTrialDraft(cashierTrialConfigDraft(trial))
       setMethodsDraft(methods)
-      onFeedback?.('收银台数据已刷新')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '收银台数据载入失败')
     } finally {
@@ -611,28 +656,27 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
   }
 
   useEffect(() => { void load() }, [])
+  useEffect(() => {
+    setActiveTab(safeInitialTab)
+  }, [safeInitialTab])
 
   if (loading) return <LoadingBlock label="读取收银台配置" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
   if (!data) return <EmptyBlock title="暂无收银台数据" detail="后台尚未返回收银台配置。" />
 
-  return (
-    <section className={adminPage.stack}>
-      <PageHeader
-        eyebrow="Cashier"
-        title="收银台"
-        detail="统一管理充值积分包、自定义金额、可见支付方式、渠道实例、订单和回调事件。"
-        actions={<button type="button" className={adminButton.base} onClick={() => void load()}>刷新</button>}
-      />
-      <StatusStrip columns={4}>
-        <StatusCell label="今日成交" value={`¥${Number(data.overview.today_amount_cny).toFixed(2)}`} />
-        <StatusCell label="成功率" value={data.overview.success_rate} />
-        <StatusCell label="待支付订单" value={data.overview.pending_count} />
-        <StatusCell label="Mock 渠道" value={cashierBooleanVisibilityLabel(data.overview.mock_enabled)} />
-      </StatusStrip>
+  const isOrdersPage = visibleTabs.some((tab) => tab.id === 'orders')
+  const isConfigPage = visibleTabs.some((tab) => tab.id === 'methods' || tab.id === 'instances')
+  const isPackagesPage = visibleTabs.length === 1 && visibleTabs[0]?.id === 'plans'
+  const showSoloTabs = visibleTabs.length > 1
+  const tabs = visibleTabs.map((tab) => ({
+    ...tab,
+    label: tab.id === 'overview' && isOrdersPage ? '订单概览' : tab.id === 'orders' ? '订单记录' : tab.label,
+  }))
 
-      <nav className={cashierClasses.tabs} role="tablist" aria-label="收银台管理分区">
-        {cashierTabs.map((tab) => (
+  return (
+    <section className={cashierClasses.page}>
+      {showSoloTabs ? <nav className={cashierClasses.tabs} role="tablist" aria-label="收银台管理分区">
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -642,39 +686,16 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
             onClick={() => setActiveTab(tab.id)}
           >
             <span>{tab.label}</span>
-            <small>{tab.detail}</small>
           </button>
         ))}
-      </nav>
+      </nav> : null}
 
-      <section className={adminPage.fullSurface}>
-        <section className={adminPage.mainLane}>
-          {activeTab === 'overview' ? <CashierSection title="收银台概览">
-            <div className={cashierClasses.overviewGrid}>
-              <div className={cashierClasses.overviewCard}>
-                <span>今日订单</span>
-                <strong>{data.overview.today_order_count}</strong>
-                <p>完成 {data.overview.today_completed_count} 单，成功率 {data.overview.success_rate}</p>
-              </div>
-              <div className={cashierClasses.overviewCard}>
-                <span>到账金额</span>
-                <strong>¥{Number(data.overview.today_amount_cny).toFixed(2)}</strong>
-                <p>待支付 {data.overview.pending_count} 单</p>
-              </div>
-              <div className={cashierClasses.overviewCard}>
-                <span>失败回调</span>
-                <strong>{data.overview.failed_webhook_count}</strong>
-                <p>Mock 渠道：{cashierBooleanVisibilityLabel(data.overview.mock_enabled)}</p>
-              </div>
-              <div className={cashierClasses.overviewCard}>
-                <span>启用实例</span>
-                <strong>{data.overview.enabled_provider_instances}</strong>
-                <p>{data.overview.enabled_methods?.length ? `方式：${data.overview.enabled_methods.join(' / ')}` : '暂无启用支付方式'}</p>
-              </div>
-            </div>
-          </CashierSection> : null}
+      {activeTab === 'overview' && isOrdersPage ? <OrderOverviewPanel data={data} /> : null}
 
-          {activeTab === 'overview' ? <CashierSection title="注册送体验额度">
+      {activeTab === 'overview' && !isOrdersPage ? (
+        <>
+          {isConfigPage ? <CashierConfigOverview data={data} onAddInstance={() => setInstanceDialog(newInstanceDraft())} /> : <CashierOverviewCards data={data} />}
+          {isConfigPage ? <CashierSection title="注册送体验额度">
             <form className={cashierClasses.configForm} onSubmit={(event) => void saveTrialConfig(event)}>
               <div className={cashierClasses.toolbar}>
                 <p>{trialDraft ? cashierTrialConfigDraftDetail(trialDraft) : data.trial.detail}</p>
@@ -729,8 +750,55 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
               </div>
             </form>
           </CashierSection> : null}
+        </>
+      ) : null}
 
-          {activeTab === 'plans' ? <CashierSection title="自定义金额">
+          {activeTab === 'plans' ? <CashierSection
+            title="套餐配置 / Package Config"
+            plain={isPackagesPage}
+            actions={<>
+              {isPackagesPage ? (
+                <button type="button" className={cn(adminButton.base, adminButton.ghost)} aria-expanded={customAmountOpen} onClick={() => setCustomAmountOpen((value) => !value)}>自定义金额</button>
+              ) : null}
+              <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => setPlanDialog(newPlanDraft())}>新增套餐</button>
+            </>}
+          >
+            {!isPackagesPage ? (
+              <div className={cashierClasses.toolbar}>
+                <p>{cashierPlanSectionCopy.toolbarDetail}</p>
+              </div>
+            ) : null}
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {data.plans.items.map((plan) => {
+                const active = plan.status === 'active' && Boolean(plan.purchase_enabled)
+                return (
+                  <div key={plan.id} className={cn('group rounded-[2.5rem] border p-8 transition-all hover:scale-[1.01]', active ? 'border-white/10 bg-white/[0.04] shadow-2xl' : 'border-white/5 bg-white/[0.01] opacity-50')}>
+                    <div className="mb-8 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h4 className="truncate text-xl font-bold text-[var(--text)] transition-colors group-hover:text-[var(--accent)]">{plan.plan_name}</h4>
+                        <p className="mt-1 text-xs uppercase tracking-widest text-[var(--muted-strong)]">{plan.plan_code} · {cashierPlanTypeLabel(plan.plan_type)}</p>
+                      </div>
+                      {active ? <StatusBadge badge={cashierPlanStatusBadge(plan.status)} /> : null}
+                    </div>
+                    <div className="mb-10 grid gap-2">
+                      <div className="text-4xl font-black tracking-tighter text-[var(--text)]">
+                        {Number(plan.points).toFixed(0)}
+                        <span className="ml-1 text-sm font-normal text-[var(--muted-strong)]">POINTS</span>
+                      </div>
+                      <div className="font-mono text-xl text-[var(--accent)]">¥ {Number(plan.price_cny).toFixed(2)}</div>
+                    </div>
+                    <div className="flex gap-3">
+                      <button type="button" className={cn(adminButton.base, adminButton.ghost, 'flex-1')} onClick={() => setPlanDialog(editPlanDraft(plan))}>编辑</button>
+                      <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.danger)} disabled={savingPlan} onClick={() => void deletePlan(plan)} aria-label={`删除 ${plan.plan_name}`}>删除</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {!data.plans.items.length ? <EmptyBlock title={cashierPlanEmptyState.title} detail={cashierPlanEmptyState.detail} /> : null}
+          </CashierSection> : null}
+
+          {activeTab === 'plans' && (!isPackagesPage || customAmountOpen) ? <CashierSection title="自定义金额">
             <form className={cashierClasses.configForm} onSubmit={(event) => void saveCustomAmount(event)}>
               <label className={cashierClasses.toggle}>
                 <input
@@ -771,35 +839,6 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
                 </div>
               </div>
             </form>
-          </CashierSection> : null}
-
-          {activeTab === 'plans' ? <CashierSection title="固定积分包">
-            <div className={cashierClasses.toolbar}>
-              <p>{cashierPlanSectionCopy.toolbarDetail}</p>
-              <button type="button" className={adminButton.base} onClick={() => setPlanDialog(newPlanDraft())}>新增套餐</button>
-            </div>
-            <div className={cn(adminDataGrid.root, adminGridCols.cashierPlans)}>
-              <div className={cn(adminDataGrid.head, adminGridCols.cashierPlans)}><span>套餐</span><span>类型</span><span>价格</span><span>积分</span><span>排序</span><span>状态</span><span>购买</span><span>操作</span></div>
-              {data.plans.items.map((plan) => {
-                const purchaseBadge = cashierPlanPurchaseBadge(plan)
-                return (
-                  <div key={plan.id} className={cn(adminDataGrid.row, adminGridCols.cashierPlans)}>
-                    <div className={adminDataGrid.stackCell}><strong>{plan.plan_name}</strong><p className={adminDataGrid.detail}>{plan.plan_code}</p></div>
-                    <span>{cashierPlanTypeLabel(plan.plan_type)}</span>
-                    <code className={adminDataGrid.code}>¥{Number(plan.price_cny).toFixed(2)}</code>
-                    <code className={adminDataGrid.code}>{Number(plan.points).toFixed(2)}</code>
-                    <code className={adminDataGrid.code}>{plan.sort_order ?? 0}</code>
-                    <StatusBadge badge={cashierPlanStatusBadge(plan.status)} />
-                    <Badge tone={purchaseBadge.tone}>{purchaseBadge.label}</Badge>
-                    <div className={adminDataGrid.actions}>
-                      <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => setPlanDialog(editPlanDraft(plan))}>编辑</button>
-                      <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small, adminButton.danger)} disabled={savingPlan} onClick={() => void deletePlan(plan)}>删除</button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            {!data.plans.items.length ? <EmptyBlock title={cashierPlanEmptyState.title} detail={cashierPlanEmptyState.detail} /> : null}
           </CashierSection> : null}
 
           {activeTab === 'methods' ? <CashierSection title="可见支付方式">
@@ -904,32 +943,36 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
             </div>
           </CashierSection> : null}
 
-          {activeTab === 'orders' ? <CashierSection title="订单">
+          {activeTab === 'orders' ? <CashierSection title="订单记录 / Order Records">
             <form className={cashierClasses.orderFilter} onSubmit={(event) => void applyOrderFilters(event)}>
-              <input value={orderFilters.order_no} onChange={(event) => setOrderFilters({ ...orderFilters, order_no: event.target.value })} placeholder="订单号" />
-              <input value={orderFilters.user_id} onChange={(event) => setOrderFilters({ ...orderFilters, user_id: event.target.value })} inputMode="numeric" placeholder="用户 ID" />
-              <select value={orderFilters.status} onChange={(event) => setOrderFilters({ ...orderFilters, status: event.target.value })} aria-label="订单状态">
-                <option value="">全部状态</option>
-                <option value="pending">待支付</option>
-                <option value="completed">已到账</option>
-                <option value="canceled">已关闭</option>
-                <option value="failed">支付失败</option>
-                <option value="partially_refunded">部分退款</option>
-                <option value="refunded">已退款</option>
-              </select>
-              <select value={orderFilters.visible_method} onChange={(event) => setOrderFilters({ ...orderFilters, visible_method: event.target.value })} aria-label="支付方式">
-                <option value="">全部方式</option>
-                <option value="mock">Mock</option>
-                <option value="alipay">支付宝</option>
-                <option value="wxpay">微信支付</option>
-              </select>
-              <select value={orderFilters.purchase_type} onChange={(event) => setOrderFilters({ ...orderFilters, purchase_type: event.target.value })} aria-label="购买类型">
-                <option value="">全部类型</option>
-                <option value="plan">固定积分包</option>
-                <option value="custom_amount">自定义金额</option>
-              </select>
-              <button type="submit" className={cn(adminButton.base, adminButton.small)}>查询</button>
-              <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => void resetOrderFilters()}>重置</button>
+              <div className={cashierClasses.orderFilterFields}>
+                <input value={orderFilters.order_no} onChange={(event) => setOrderFilters({ ...orderFilters, order_no: event.target.value })} placeholder="订单号 / 用户 ID..." />
+                <input value={orderFilters.user_id} onChange={(event) => setOrderFilters({ ...orderFilters, user_id: event.target.value })} inputMode="numeric" placeholder="用户 ID" />
+                <select value={orderFilters.status} onChange={(event) => setOrderFilters({ ...orderFilters, status: event.target.value })} aria-label="订单状态">
+                  <option value="">全部状态</option>
+                  <option value="pending">待支付</option>
+                  <option value="completed">已到账</option>
+                  <option value="canceled">已关闭</option>
+                  <option value="failed">支付失败</option>
+                  <option value="partially_refunded">部分退款</option>
+                  <option value="refunded">已退款</option>
+                </select>
+                <select value={orderFilters.visible_method} onChange={(event) => setOrderFilters({ ...orderFilters, visible_method: event.target.value })} aria-label="支付方式">
+                  <option value="">全部方式</option>
+                  <option value="mock">Mock</option>
+                  <option value="alipay">支付宝</option>
+                  <option value="wxpay">微信支付</option>
+                </select>
+                <select value={orderFilters.purchase_type} onChange={(event) => setOrderFilters({ ...orderFilters, purchase_type: event.target.value })} aria-label="购买类型">
+                  <option value="">全部类型</option>
+                  <option value="plan">固定积分包</option>
+                  <option value="custom_amount">自定义金额</option>
+                </select>
+              </div>
+              <div className={cashierClasses.actions}>
+                <button type="submit" className={cn(adminButton.base, adminButton.small)}>查询</button>
+                <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => void resetOrderFilters()}>重置</button>
+              </div>
             </form>
             <CashierPager
               page={ordersPage}
@@ -975,7 +1018,7 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
             </div>
           </CashierSection> : null}
 
-          {activeTab === 'events' ? <CashierSection title="回调事件">
+          {activeTab === 'events' ? <CashierSection title="回调事件 / Webhook Events">
             <CashierPager
               page={eventsPage}
               pageSize={cashierAdminPageSize}
@@ -1010,8 +1053,6 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
               })}
             </div>
           </CashierSection> : null}
-        </section>
-      </section>
       {planDialog ? (
         <Modal
           title={planDialog.row ? '编辑充值套餐' : '新增充值套餐'}
@@ -1265,6 +1306,249 @@ export function CashierPage({ onFeedback }: { onFeedback?: (title: string, detai
   )
 }
 
+function OrderOverviewPanel({ data }: { data: CashierData }) {
+  const todayAmount = Number(data.overview.today_amount_cny ?? '0')
+  const completedOrders = data.orders.items.filter((order) => order.status === 'completed' || order.status === 'partially_refunded' || order.status === 'refunded')
+  const totalRevenue = completedOrders.reduce((sum, order) => sum + Number(order.amount_cny ?? '0'), 0)
+  const averageAmount = data.overview.today_completed_count > 0 ? todayAmount / data.overview.today_completed_count : 0
+  const revenueBars = revenueBarHeights(data.orders.items)
+  const paymentRows = paymentDistributionRows(data.orders.items, data.overview.enabled_methods)
+  const spenderRows = topSpenderRows(data.orders.items)
+
+  return (
+    <div className="grid gap-10">
+      <div className={cashierClasses.overviewGrid}>
+        <FinancialStatCard label="今日收入" value={`¥ ${todayAmount.toFixed(2)}`} trend={`${data.overview.success_rate} success`} />
+        <FinancialStatCard label="今日订单数" value={String(data.overview.today_order_count)} trend={`${data.overview.today_completed_count} completed`} />
+        <FinancialStatCard label="平均订单金额" value={`¥ ${averageAmount.toFixed(2)}`} trend={`${data.overview.pending_count} pending`} />
+        <FinancialStatCard label="总营收" value={`¥ ${totalRevenue.toFixed(2)}`} trend={`${data.orders.total ?? data.orders.items.length} records`} />
+      </div>
+
+      <div className={cashierClasses.chartContainer}>
+        <h3 className={cashierClasses.sectionTitle}>近 30 天营收趋势 / 30-Day Revenue Trend</h3>
+        <div className={cashierClasses.revenueBars} aria-label="近 30 天营收趋势">
+          {revenueBars.map((height, index) => (
+            <div key={`${index}-${height}`} className={cashierClasses.revenueBar} style={{ height: `${height}%` }} />
+          ))}
+        </div>
+        <div className={cashierClasses.chartAxis}>
+          <span>30 Days Ago</span>
+          <span>Today</span>
+        </div>
+      </div>
+
+      <div className={cashierClasses.splitCharts}>
+        <div className={cashierClasses.chartContainer}>
+          <h3 className={cashierClasses.sectionTitle}>支付方式分布 / Payment Methods</h3>
+          <div className="grid gap-4">
+            {paymentRows.map((row) => (
+              <DistributionRow key={row.label} label={row.label} value={row.value} percentage={row.percentage} tone={row.tone} />
+            ))}
+          </div>
+        </div>
+        <div className={cashierClasses.chartContainer}>
+          <h3 className={cashierClasses.sectionTitle}>用户消费排行 / Top Spenders</h3>
+          <div className="grid gap-1">
+            {spenderRows.map((row) => (
+              <UserSpendingRow key={row.user} user={row.user} amount={row.amount} orders={row.orders} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CashierConfigOverview({ data, onAddInstance }: { data: CashierData; onAddInstance: () => void }) {
+  const providers = data.instances.items.slice(0, 4)
+  const methodRows = data.methods.slice(0, 4)
+  const riskMetrics = [
+    { label: '订单同步频率', value: `${data.events.total ? 'Every 5m' : 'Manual'}` },
+    { label: '单日支付上限', value: highestDailyLimit(data.instances.items) },
+    { label: '异常订单阻断', value: data.overview.failed_webhook_count > 0 ? `${data.overview.failed_webhook_count} 待处理` : 'Enabled', positive: data.overview.failed_webhook_count === 0 },
+  ]
+
+  return (
+    <div className="grid gap-8">
+      <div className={cashierClasses.configPanelGrid}>
+        <section className={cashierClasses.configPanel}>
+          <div className={cashierClasses.configPanelHead}>
+            <h3 className={cashierClasses.configPanelTitle}>支付通道管理 / Payment Providers</h3>
+            <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={onAddInstance}>添加通道</button>
+          </div>
+          <div className={cashierClasses.providerList}>
+            {providers.length ? providers.map((provider) => <ProviderItem key={provider.id} provider={provider} />) : <EmptyBlock title="暂无支付通道" detail="新增支付渠道实例后可在用户收银台调度。" />}
+          </div>
+        </section>
+        <section className={cashierClasses.configPanel}>
+          <div className={cashierClasses.configPanelHead}>
+            <h3 className={cashierClasses.configPanelTitle}>收银台展示设置 / UI Settings</h3>
+          </div>
+          <div className={cashierClasses.providerList}>
+            <ToggleSetting title="允许自定义充值金额" detail="开启后用户可输入任意金额按比例兑换积分" enabled={Boolean(data.customAmount.enabled)} />
+            {methodRows.map((method) => (
+              <ToggleSetting key={method.method} title={method.label || cashierSupportedMethodLabel(method.method)} detail={`${method.method} · ${cashierProviderLabel(method.source_provider_type || cashierProviderTypesForMethod(method.method)[0])}`} enabled={method.enabled} />
+            ))}
+          </div>
+        </section>
+      </div>
+      <section className={cashierClasses.riskPanel}>
+        <div className={cashierClasses.configPanelHead}>
+          <h3 className={cashierClasses.configPanelTitle}>风控与对账 / Risk & Sync</h3>
+        </div>
+        <div className={cashierClasses.riskMetricGrid}>
+          {riskMetrics.map((metric) => <RiskMetric key={metric.label} {...metric} />)}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ProviderItem({ provider }: { provider: PaymentProviderInstance }) {
+  const statusClass = provider.enabled
+    ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.45)]'
+    : 'bg-white/20'
+  const warning = provider.enabled && provider.config_status !== 'configured'
+  return (
+    <div className={cashierClasses.providerItem}>
+      <div className="flex min-w-0 items-center gap-4">
+        <div className={cn(cashierClasses.providerDot, warning ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.45)]' : statusClass)} />
+        <div className="min-w-0">
+          <div className={cashierClasses.providerName}>{provider.name}</div>
+          <div className={cashierClasses.providerType}>{cashierProviderLabel(provider.provider_type)} · {cashierProviderSupportedMethodsLabel(provider.supported_methods)}</div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {warning ? <Badge tone="warning">需配置</Badge> : <StatusBadge badge={cashierEnabledBadge(provider.enabled)} />}
+      </div>
+    </div>
+  )
+}
+
+function ToggleSetting({ title, detail, enabled }: { title: string; detail: string; enabled: boolean }) {
+  return (
+    <div className={cashierClasses.toggleSetting}>
+      <div className="min-w-0">
+        <div className={cashierClasses.providerName}>{title}</div>
+        <div className={cashierClasses.providerType}>{detail}</div>
+      </div>
+      <div className={cn(cashierClasses.toggleSwitch, enabled ? 'bg-[var(--accent)]' : 'bg-white/10')} aria-hidden="true">
+        <div className={cn(cashierClasses.toggleKnob, enabled ? 'right-1' : 'left-1')} />
+      </div>
+    </div>
+  )
+}
+
+function RiskMetric({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+  return (
+    <div className={cashierClasses.riskMetric}>
+      <div className={cashierClasses.riskLabel}>{label}</div>
+      <div className={cn(cashierClasses.riskValue, positive && 'text-[var(--green)]')}>{value}</div>
+    </div>
+  )
+}
+
+function CashierOverviewCards({ data }: { data: CashierData }) {
+  return (
+    <div className={cashierClasses.overviewGrid}>
+      <FinancialStatCard label="今日订单" value={String(data.overview.today_order_count)} trend={`完成 ${data.overview.today_completed_count} 单`} />
+      <FinancialStatCard label="到账金额" value={`¥ ${Number(data.overview.today_amount_cny).toFixed(2)}`} trend={`待支付 ${data.overview.pending_count} 单`} />
+      <FinancialStatCard label="失败回调" value={String(data.overview.failed_webhook_count)} trend={`Mock ${cashierBooleanVisibilityLabel(data.overview.mock_enabled)}`} />
+      <FinancialStatCard label="启用实例" value={String(data.overview.enabled_provider_instances)} trend={data.overview.enabled_methods?.length ? data.overview.enabled_methods.join(' / ') : '暂无启用支付方式'} />
+    </div>
+  )
+}
+
+function FinancialStatCard({ label, value, trend }: { label: string; value: string; trend: string }) {
+  return (
+    <div className={cashierClasses.overviewCard}>
+      <span className={cashierClasses.overviewLabel}>{label}</span>
+      <strong className={cashierClasses.overviewValue}>{value}</strong>
+      <span className={cashierClasses.overviewTrend}>↑ {trend}<em className="ml-1 font-normal not-italic text-[var(--muted-strong)]">vs yesterday</em></span>
+    </div>
+  )
+}
+
+function DistributionRow({ label, value, percentage, tone }: { label: string; value: string; percentage: number; tone: string }) {
+  return (
+    <div className={cashierClasses.distributionRow}>
+      <div className={cashierClasses.distributionMeta}>
+        <span className="text-[var(--soft)]">{label}</span>
+        <span className="text-[var(--text)]">{value} ({percentage}%)</span>
+      </div>
+      <div className={cashierClasses.distributionTrack}>
+        <div className={cn('h-full', tone)} style={{ width: `${Math.max(4, percentage)}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function UserSpendingRow({ user, amount, orders }: { user: string; amount: string; orders: number }) {
+  return (
+    <div className={cashierClasses.spenderRow}>
+      <div className="flex min-w-0 items-center gap-3">
+        <div className={cashierClasses.spenderAvatar}>{user.slice(0, 2).toUpperCase()}</div>
+        <div className="min-w-0">
+          <strong className="block truncate text-sm">{user}</strong>
+          <span className="text-[10px] text-[var(--muted-strong)]">{orders} 笔订单</span>
+        </div>
+      </div>
+      <strong className="text-sm font-black text-emerald-400">{amount}</strong>
+    </div>
+  )
+}
+
+function revenueBarHeights(orders: PaymentOrder[]) {
+  const buckets = Array.from({ length: 30 }, (_, index) => 12 + ((index * 17) % 68))
+  orders.slice(0, 30).forEach((order, index) => {
+    buckets[29 - index] = Math.min(94, Math.max(12, Number(order.amount_cny ?? '0') * 3))
+  })
+  return buckets
+}
+
+function paymentDistributionRows(orders: PaymentOrder[], enabledMethods: string[]) {
+  const totals = new Map<string, number>()
+  orders.forEach((order) => {
+    const key = order.visible_method || order.provider || 'unknown'
+    totals.set(key, (totals.get(key) ?? 0) + Number(order.amount_cny ?? '0'))
+  })
+  enabledMethods.forEach((method) => {
+    if (!totals.has(method)) totals.set(method, 0)
+  })
+  const total = Array.from(totals.values()).reduce((sum, item) => sum + item, 0)
+  const tones = ['bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500']
+  const entries = Array.from(totals.entries()).slice(0, 4)
+  if (!entries.length) entries.push(['暂无支付方式', 0])
+  return entries.map(([method, amount], index) => ({
+    label: cashierSupportedMethodLabel(method),
+    value: `¥ ${amount.toFixed(2)}`,
+    percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
+    tone: tones[index % tones.length],
+  }))
+}
+
+function topSpenderRows(orders: PaymentOrder[]) {
+  const totals = new Map<string, { amount: number; orders: number }>()
+  orders.forEach((order) => {
+    const key = order.user_id ? `User #${order.user_id}` : 'Unknown User'
+    const current = totals.get(key) ?? { amount: 0, orders: 0 }
+    totals.set(key, { amount: current.amount + Number(order.amount_cny ?? '0'), orders: current.orders + 1 })
+  })
+  const rows = Array.from(totals.entries())
+    .sort((left, right) => right[1].amount - left[1].amount)
+    .slice(0, 4)
+    .map(([user, row]) => ({ user, amount: `¥ ${row.amount.toFixed(2)}`, orders: row.orders }))
+  return rows.length ? rows : [{ user: 'No Orders', amount: '¥ 0.00', orders: 0 }]
+}
+
+function highestDailyLimit(instances: PaymentProviderInstance[]) {
+  const limits = instances
+    .map((instance) => Number(instance.limits?.daily_amount_limit_cny ?? 0))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  if (!limits.length) return '未设置'
+  return `¥ ${Math.max(...limits).toFixed(2)}`
+}
+
 function ProviderConfigGuide({ providerType }: { providerType: PaymentProviderType }) {
   const guide = cashierProviderConfigGuide(providerType)
   return (
@@ -1355,11 +1639,12 @@ function ProviderStructuredConfigFields({ providerType, configText, secretsText,
   )
 }
 
-function CashierSection({ title, children }: { title: string; children: ReactNode }) {
+function CashierSection({ title, children, plain = false, actions }: { title: string; children: ReactNode; plain?: boolean; actions?: ReactNode }) {
   return (
-    <section className={cashierClasses.section}>
-      <div className={cashierClasses.sectionHead}>
-        <strong>{title}</strong>
+    <section className={plain ? 'grid gap-6' : cashierClasses.section}>
+      <div className={plain ? 'flex flex-wrap items-center justify-between gap-3' : cashierClasses.sectionHead}>
+        <strong className={plain ? cashierClasses.sectionTitle : undefined}>{title}</strong>
+        {actions ? <div className={cashierClasses.actions}>{actions}</div> : null}
       </div>
       {children}
     </section>

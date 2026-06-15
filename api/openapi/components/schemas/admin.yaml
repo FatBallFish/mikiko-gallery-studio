@@ -234,6 +234,101 @@ components:
           properties:
             request_id:
               type: string
+    SystemAdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [super_admin, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SystemAdminUserListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SystemAdminUser'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    SystemAdminUserCreateRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+        role:
+          type: string
+          enum: [super_admin, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+          default: active
+    SystemAdminUserUpdateRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [super_admin, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+    SystemAdminPasswordResetRequest:
+      type: object
+      required: [new_password]
+      properties:
+        new_password:
+          type: string
+          minLength: 6
+    SystemAdminUserResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SystemAdminUser'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    SystemAdminPasswordResetResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [password_reset]
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
     AdminUserSummary:
       type: object
       properties:

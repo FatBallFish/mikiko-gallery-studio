@@ -1,5 +1,5 @@
 import { API_PATHS } from '../../../shared/api-types'
-import { protectedRoutes } from '../components'
+import { protectedRoutes } from '../layout/admin-navigation'
 import { ADMIN_ROUTE_PERMISSION_MAP } from '../types'
 import { SecurityConfigPage } from './SecurityConfigPage'
 
@@ -11,12 +11,12 @@ if (API_PATHS.ops.securitySMTPTest !== '/api/ops/admin/v1/security/smtp/test') {
   throw new Error(`security smtp test API path should be stable, got ${API_PATHS.ops.securitySMTPTest}`)
 }
 
-if (!protectedRoutes.includes('security-config')) {
-  throw new Error('security config route should be protected and navigable')
+if (!protectedRoutes.includes('system-settings')) {
+  throw new Error('system settings route should be protected and navigable')
 }
 
-if (ADMIN_ROUTE_PERMISSION_MAP['security-config'] !== 'manage:dangerous_config') {
-  throw new Error(`security config route should require manage:dangerous_config, got ${ADMIN_ROUTE_PERMISSION_MAP['security-config']}`)
+if (ADMIN_ROUTE_PERMISSION_MAP['system-settings'] !== 'manage:config') {
+  throw new Error(`system settings route should require manage:config, got ${ADMIN_ROUTE_PERMISSION_MAP['system-settings']}`)
 }
 
 if (typeof SecurityConfigPage !== 'function') {

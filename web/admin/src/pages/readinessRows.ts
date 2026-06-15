@@ -1,4 +1,5 @@
 import type { ReadinessCheck } from '../../../shared/api-types'
+import { adminActionHref } from '../adminRouteLinks'
 
 function tone(status: string): 'success' | 'warning' | 'danger' {
   if (status === 'pass') return 'success'
@@ -35,7 +36,6 @@ export function readinessOverallStatusLabel(status: string) {
 
 export function readinessRows(checks: ReadinessCheck[]): ReadinessRowModel[] {
   return checks.map((check) => {
-    const route = check.fix_route ?? check.action_route ?? 'readiness'
     return {
       key: check.key,
       label: check.label,
@@ -45,7 +45,7 @@ export function readinessRows(checks: ReadinessCheck[]): ReadinessRowModel[] {
       blockingLabel: check.blocking ? '阻塞上线' : '非阻塞',
       blockingTone: check.blocking ? 'danger' : 'success',
       detail: check.detail || check.summary || '-',
-      actionHref: `#/${route}`,
+      actionHref: adminActionHref(check.fix_route ?? check.action_route),
       actionLabel: check.fix_action ?? check.action_label ?? '查看',
     }
   })

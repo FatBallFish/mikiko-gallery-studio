@@ -1,11 +1,28 @@
 import type { AdminPermission, AdminRole, AdminSession } from '../../shared/api-types'
 
-export type AdminRouteId = 'login' | 'overview' | 'readiness' | 'config' | 'security-config' | 'routing' | 'pricing' | 'reviews' | 'users' | 'user-groups' | 'redeem' | 'cashier' | 'call-records' | 'provider-models' | 'audit' | 'health'
+export type AdminRouteId =
+  | 'login'
+  | 'dashboard'
+  | 'monitoring'
+  | 'users'
+  | 'user-groups'
+  | 'call-records'
+  | 'redeem'
+  | 'reviews'
+  | 'orders'
+  | 'packages'
+  | 'cashier-config'
+  | 'routing'
+  | 'access-accounts'
+  | 'pricing'
+  | 'audit'
+  | 'system-users'
+  | 'system-settings'
 export type ProtectedAdminRouteId = Exclude<AdminRouteId, 'login'>
 
 export type AdminNavGroup = {
   label: string
-  items: Array<{ id: ProtectedAdminRouteId; label: string; hint: string }>
+  items: Array<{ id: ProtectedAdminRouteId; label: string; hint: string; badgeKey?: 'review_count' | 'failed_webhook_count' | 'config_drafts' }>
 }
 
 export const ROLE_PERMISSION_MAP: Partial<Record<AdminRole, AdminPermission[]>> = {
@@ -14,39 +31,41 @@ export const ROLE_PERMISSION_MAP: Partial<Record<AdminRole, AdminPermission[]>> 
 }
 
 export const ADMIN_ROUTE_PERMISSION_MAP: Record<ProtectedAdminRouteId, AdminPermission> = {
-  overview: 'read:all',
-  readiness: 'read:all',
-  health: 'read:all',
+  dashboard: 'read:all',
+  monitoring: 'read:all',
   users: 'manage:users',
   'user-groups': 'manage:users',
+  'call-records': 'read:all',
   redeem: 'manage:billing',
   reviews: 'manage:reviews',
-  'call-records': 'read:all',
-  cashier: 'manage:cashier',
+  orders: 'manage:cashier',
+  packages: 'manage:cashier',
+  'cashier-config': 'manage:cashier',
   routing: 'manage:models',
-  'provider-models': 'manage:models',
+  'access-accounts': 'manage:models',
   pricing: 'manage:models',
   audit: 'view:audit',
-  config: 'manage:config',
-  'security-config': 'manage:dangerous_config',
+  'system-users': 'manage:admins',
+  'system-settings': 'manage:config',
 }
 
 export const ADMIN_ROUTE_ORDER: ProtectedAdminRouteId[] = [
-  'overview',
-  'readiness',
-  'health',
+  'dashboard',
+  'monitoring',
   'users',
   'user-groups',
+  'call-records',
   'redeem',
   'reviews',
-  'call-records',
-  'cashier',
+  'orders',
+  'packages',
+  'cashier-config',
   'routing',
-  'provider-models',
+  'access-accounts',
   'pricing',
   'audit',
-  'config',
-  'security-config',
+  'system-users',
+  'system-settings',
 ]
 
 export function resolveAdminPermissions(session: AdminSession | null): AdminPermission[] {
@@ -66,7 +85,7 @@ export function canAccessAdminRoute(session: AdminSession | null, route: AdminRo
 }
 
 export function firstAccessibleAdminRoute(session: AdminSession | null): ProtectedAdminRouteId {
-  return ADMIN_ROUTE_ORDER.find((route) => canAccessAdminRoute(session, route)) ?? 'overview'
+  return ADMIN_ROUTE_ORDER.find((route) => canAccessAdminRoute(session, route)) ?? 'dashboard'
 }
 
 export function filterAdminNavGroups(groups: AdminNavGroup[], session: AdminSession): AdminNavGroup[] {

@@ -19,7 +19,7 @@ const rows = readinessRows([
   },
 ] satisfies ReadinessCheck[])
 
-if (rows[0]?.actionHref !== '#/cashier' || rows[0]?.actionLabel !== '去配置') {
+if (rows[0]?.actionHref !== '#/cashier-config' || rows[0]?.actionLabel !== '去配置') {
   throw new Error(`readiness rows should expose clickable action route, got ${JSON.stringify(rows[0])}`)
 }
 
@@ -31,7 +31,7 @@ if (rows[0]?.status !== '阻塞' || rows[0]?.rawStatus !== 'fail') {
   throw new Error(`readiness fail row should display localized status and preserve raw status, got ${JSON.stringify(rows[0])}`)
 }
 
-if (rows[1]?.actionHref !== '#/readiness' || rows[1]?.actionLabel !== '查看') {
+if (rows[1]?.actionHref !== '#/monitoring' || rows[1]?.actionLabel !== '查看') {
   throw new Error(`readiness rows should provide safe fallback action, got ${JSON.stringify(rows[1])}`)
 }
 

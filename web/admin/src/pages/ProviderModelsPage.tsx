@@ -2,17 +2,14 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ImageTaskType, ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
-import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
+import { adminDataGrid } from '../ui/dataGrid'
 import { adminTaskTypeOptions } from './adminTaskTypes'
 import {
   credentialsStatusLabel,
   modelAccountStatusLabel,
   modelAccountStatusTone,
-  modelCapabilitySummary,
-  modelEnabledLabel,
-  modelEnabledTone,
   providerAccountDialogDetail,
   providerAdapterLabel,
   providerAuthLabel,
@@ -25,24 +22,55 @@ type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string;
 const qualityOptions = ['auto', '1K', '2K', '4K']
 const blankAccount: AccountDraft = { name: '', adapterType: 'openai_compatible', authType: 'api_key', baseUrl: '', apiKey: '', priority: '1', weight: '100', concurrencyLimit: '5', timeoutMS: '120000', status: 'enabled', sourceMode: 'images' }
 const defaultTestPrompt = 'A small product photo of a ceramic coffee cup on a clean desk'
-const accountTextButtonClass = 'w-full min-w-0 bg-transparent text-left text-[var(--text)] hover:text-[var(--blue)]'
+const accountTextButtonClass = 'w-full min-w-0 bg-transparent text-left text-[var(--text)] hover:text-[var(--accent)]'
+const accountTableClasses = {
+  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
+  toolbar: 'flex flex-wrap items-center justify-between gap-3',
+  toolbarActions: 'flex flex-wrap gap-3',
+  searchBox: 'min-h-10 w-64 rounded-xl border border-[var(--line)] bg-white/5 px-4 py-2 text-sm text-[var(--text)] placeholder:text-[var(--soft)] outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/40',
+  table: 'w-full min-w-[1120px] border-collapse text-left',
+  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
+  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
+  trActive: 'bg-white/[0.025]',
+  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
+  identity: 'flex min-w-0 items-center gap-3',
+  icon: 'grid size-9 shrink-0 place-items-center rounded-xl bg-white/5 text-[var(--accent)]',
+  title: 'block truncate font-bold text-[var(--text)]',
+  detail: 'mt-1 block truncate text-[11px] font-medium text-[var(--soft)]',
+  stack: 'grid gap-1',
+  configCode: 'block max-w-[220px] truncate font-mono text-[11px] text-[var(--muted)]',
+  configMeta: 'text-[11px] text-[var(--soft)]',
+  expandButton: 'inline-flex items-center gap-2 text-xs font-extrabold text-[var(--accent)] transition hover:text-[var(--text)]',
+  actions: 'flex flex-wrap justify-end gap-2',
+  actionLink: 'bg-transparent text-xs font-bold text-[var(--accent)] transition hover:text-[var(--text)]',
+  subPanelCell: 'bg-black/10 px-6 py-5',
+  subPanel: 'overflow-hidden rounded-2xl border border-[var(--line)] bg-white/[0.02]',
+  subHeader: 'flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] p-4',
+  subTitle: 'text-[10px] font-extrabold uppercase tracking-[0.15em] text-[var(--muted-strong)]',
+  subTable: 'w-full min-w-[760px] border-collapse text-left',
+  subTh: 'border-b border-[var(--line)] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
+  subTd: 'px-4 py-3 align-middle text-xs text-[var(--muted)]',
+  tagList: 'flex flex-wrap gap-1',
+  modelTag: 'rounded-md border border-[var(--line)] bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase text-[var(--muted)]',
+  statusDot: 'size-2 rounded-full',
+}
 const tagInputClasses = {
   root: 'grid gap-2',
   list: 'flex flex-wrap gap-1.5',
-  tag: 'inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-white px-2 py-1 text-xs text-[var(--text)]',
+  tag: 'inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-white/5 px-2 py-1 text-xs text-[var(--text)]',
   remove: 'ml-0.5 grid size-4 place-items-center rounded-full text-[var(--soft)] hover:bg-[rgba(184,95,84,.12)] hover:text-[var(--red)] focus-visible:bg-[rgba(184,95,84,.12)] focus-visible:text-[var(--red)] focus-visible:outline-none',
   inputRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
 }
-const providerModelTaskTypeGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-[10px] border border-[var(--line)] bg-white/60 p-2'
-const providerModelTaskTypeOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 p-2 text-sm has-[:checked]:border-[var(--blue)] has-[:checked]:bg-[rgba(87,117,185,.08)]'
+const providerModelTaskTypeGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-2xl border border-[var(--line)] bg-white/[0.02] p-2'
+const providerModelTaskTypeOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
 
 export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
   const [accounts, setAccounts] = useState<ModelAccount[]>([])
   const [modelsByAccount, setModelsByAccount] = useState<Record<string, ModelAccountModel[]>>({})
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('')
+  const [expandedAccountId, setExpandedAccountId] = useState<string>('')
+  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState('账号响应只展示密钥状态，不返回明文凭据。')
   const [accountDialog, setAccountDialog] = useState<AccountDraft | null>(null)
   const [modelDialog, setModelDialog] = useState<ModelDraft | null>(null)
   const [testDialog, setTestDialog] = useState<TestImageDialog | null>(null)
@@ -58,7 +86,6 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
       const nextModels = Object.fromEntries(modelPairs)
       setAccounts(nextAccounts)
       setModelsByAccount(nextModels)
-      setSelectedAccountId((current) => current || String(nextAccounts[0]?.id ?? ''))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '模型接入载入失败')
     } finally {
@@ -68,12 +95,17 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
 
   useEffect(() => { void load() }, [])
 
-  const selectedAccount = accounts.find((account) => String(account.id) === selectedAccountId) ?? accounts[0]
-  const selectedModels = selectedAccount ? modelsByAccount[String(selectedAccount.id)] ?? [] : []
-  const totals = useMemo(() => ({
-    enabledAccounts: accounts.filter((item) => item.status === 'enabled').length,
-    enabledModels: Object.values(modelsByAccount).flat().filter((item) => item.enabled).length,
-  }), [accounts, modelsByAccount])
+  const filteredAccounts = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    if (!keyword) return accounts
+    return accounts.filter((account) => [
+      account.name,
+      account.adapter_type,
+      account.auth_type,
+      account.base_url,
+      account.status,
+    ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
+  }, [accounts, query])
 
   async function saveAccount() {
     if (!accountDialog) return
@@ -95,7 +127,6 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
       if (accountDialog.id) await adminApi.updateModelAccount(accountDialog.id, payload)
       else await adminApi.createModelAccount(payload)
       setAccountDialog(null)
-      setNotice(`${accountDialog.name || '模型账号'} 已保存。`)
       await load()
     } finally {
       setSaving(false)
@@ -118,7 +149,6 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
       if (modelDialog.row) await adminApi.updateModelAccountModel(modelDialog.account.id, modelDialog.row.id, payload)
       else await adminApi.createModelAccountModel(modelDialog.account.id, payload)
       setModelDialog(null)
-      setNotice(`${payload.model_code} 已保存。`)
       await load()
     } finally {
       setSaving(false)
@@ -136,7 +166,6 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         source_mode: testDialog.sourceMode,
       })
       setTestDialog((current) => current ? { ...current, result } : current)
-      setNotice(`${testDialog.account.name} 测试出图完成。`)
     } catch (caught) {
       setTestDialog((current) => current ? { ...current, error: caught instanceof Error ? caught.message : '测试出图失败' } : current)
     } finally {
@@ -149,50 +178,54 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader eyebrow="Model Accounts" title="模型接入" detail="维护上游账号、端点、密钥状态，以及账号下真实可请求模型。" actions={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => void load()}>刷新</button><button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAccountDialog(blankAccount)}>新增账号</button></>} />
-      <StatusStrip columns={4}>
-        <StatusCell label="接入账号" value={accounts.length} />
-        <StatusCell label="启用账号" value={totals.enabledAccounts} />
-        <StatusCell label="真实模型" value={Object.values(modelsByAccount).flat().length} />
-        <StatusCell label="启用模型" value={totals.enabledModels} />
-      </StatusStrip>
-      <section className={adminPage.fullSurface}>
-        <section className={adminPage.mainLane}>
-          <InlineFeedback tone="neutral" message={notice} />
-          {!accounts.length ? <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" /> : (
-            <div className={cn(adminDataGrid.root, adminGridCols.account)}>
-              <div className={cn(adminDataGrid.head, adminGridCols.account)}><span>账号</span><span>接入方式</span><span>Base URL</span><span>调度</span><span>状态</span><span>操作</span></div>
-              {accounts.map((row) => (
-                <div key={String(row.id)} className={cn(adminDataGrid.row, adminGridCols.account)}>
-                  <button type="button" className={accountTextButtonClass} onClick={() => setSelectedAccountId(String(row.id))}><strong>{row.name}</strong><p className={adminDataGrid.detail}>{credentialsStatusLabel(row.credentials_status?.has_api_key)}</p></button>
-                  <span>{providerAdapterLabel(row.adapter_type)} / {providerAuthLabel(row.auth_type)}</span>
-                  <code className={adminDataGrid.code}>{row.base_url}</code>
-                  <span>优先级 {row.priority} · 权重 {row.weight}</span>
-                  <Badge tone={modelAccountStatusTone(row.status)}>{modelAccountStatusLabel(row.status)}</Badge>
-                  <div className={adminDataGrid.actions}>
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setAccountDialog(editAccountDraft(row))}>编辑</button>
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setModelDialog(newModelDraft(row))}>加模型</button>
-                    <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setTestDialog(newTestImageDialog(row, modelsByAccount[String(row.id)] ?? []))}>测试</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-        <aside className={adminPage.sideRail}>
-          <section className={adminPage.signalSection}>
-            <strong>{selectedAccount?.name ?? '真实模型'}</strong>
-            <p>{selectedAccount ? `${selectedModels.length} 个上游模型挂载在此账号下。` : '选择账号查看模型。'}</p>
-          </section>
-          {selectedModels.length ? selectedModels.map((model) => (
-            <section key={String(model.id)} className={adminPage.signalSection}>
-              <strong>{model.display_name || model.model_code}</strong>
-              <p>{model.model_code} · {modelCapabilitySummary(model)}</p>
-              <div className="flex flex-wrap items-center gap-2"><Badge tone={modelEnabledTone(model.enabled)}>{modelEnabledLabel(model.enabled)}</Badge><button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => selectedAccount && setModelDialog(editModelDraft(selectedAccount, model))}>编辑</button></div>
-            </section>
-          )) : <EmptyBlock title="暂无真实模型" detail="为当前账号添加 gpt-image-1 等上游模型代码。" />}
-        </aside>
+      <section className={accountTableClasses.toolbar}>
+        <div className={accountTableClasses.toolbarActions}>
+          <button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAccountDialog(blankAccount)}>添加账号</button>
+          <button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled title="批量操作暂未开放">批量操作</button>
+        </div>
+        <input className={accountTableClasses.searchBox} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索账号名称或适配器..." />
       </section>
+      {!accounts.length ? <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" /> : null}
+      {accounts.length ? (
+        <div className={accountTableClasses.tableWrap}>
+          <table className={accountTableClasses.table}>
+                <thead>
+                  <tr>
+                    <th className="w-10 px-6 py-4"><input type="checkbox" className="accent-[var(--accent)]" aria-label="选择全部账号" disabled /></th>
+                    <th className={accountTableClasses.th}>账号名称</th>
+                    <th className={accountTableClasses.th}>接入/鉴权方式</th>
+                    <th className={accountTableClasses.th}>配置信息</th>
+                    <th className={accountTableClasses.th}>状态</th>
+                    <th className={accountTableClasses.th}>支持模型</th>
+                    <th className={cn(accountTableClasses.th, 'text-right')}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAccounts.map((row) => {
+                    const rowId = String(row.id)
+                    const rowModels = modelsByAccount[rowId] ?? []
+                    const expanded = expandedAccountId === rowId
+                    return (
+                      <AccountRow
+                        key={rowId}
+                        account={row}
+                        models={rowModels}
+                        expanded={expanded}
+                        onToggle={() => {
+                          setExpandedAccountId((current) => current === rowId ? '' : rowId)
+                        }}
+                        onEditAccount={() => setAccountDialog(editAccountDraft(row))}
+                        onAddModel={() => setModelDialog(newModelDraft(row))}
+                        onTest={() => setTestDialog(newTestImageDialog(row, rowModels))}
+                        onEditModel={(model) => setModelDialog(editModelDraft(row, model))}
+                      />
+                    )
+                  })}
+              </tbody>
+            </table>
+          </div>
+      ) : null}
+      {accounts.length && !filteredAccounts.length ? <EmptyBlock title="未找到接入账号" detail="换一个账号名称、适配器或 Base URL 关键词再试。" /> : null}
       {accountDialog ? (
         <Modal title={accountDialog.id ? '编辑模型账号' : '新增模型账号'} detail={providerAccountDialogDetail()} onClose={() => setAccountDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={() => setAccountDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !accountDialog.name || !accountDialog.baseUrl} onClick={() => void saveAccount()}>{saving ? '保存中...' : '保存'}</button></>}>
           <div className={adminPage.formGrid}>
@@ -231,7 +264,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             <Field label="提示词"><textarea value={testDialog.prompt} onChange={(event) => setTestDialog({ ...testDialog, prompt: event.target.value, result: undefined, error: undefined })} rows={4} /></Field>
             {testDialog.error ? <InlineFeedback tone="danger" message={testDialog.error} /> : null}
             {testDialog.result ? (
-              <section className="col-span-full grid gap-3 rounded-[var(--pg-radius-sm)] border border-[var(--line)] bg-white p-3">
+              <section className="col-span-full grid gap-3 rounded-3xl border border-[var(--line)] bg-white/[0.02] p-3">
                 {testDialog.result.image_url ? <img className="max-h-[360px] w-full rounded-lg border border-[var(--line)] object-contain" src={adminApi.modelAccountTestImageUrl(testDialog.result.image_url, accessToken)} alt="" /> : null}
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2 text-sm">
                   <code className={adminDataGrid.code}>status: {testDialog.result.status}</code>
@@ -239,13 +272,147 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
                   <code className={adminDataGrid.code}>elapsed: {testDialog.result.elapsed_ms}ms</code>
                   <code className={adminDataGrid.code}>request: {testDialog.result.provider_request_id || '-'}</code>
                 </div>
-                <pre className="max-h-[180px] overflow-auto rounded-lg bg-[var(--pg-admin-bg-subtle)] p-3 text-xs">{JSON.stringify(testDialog.result.actual_params ?? {}, null, 2)}</pre>
+                <pre className="max-h-[180px] overflow-auto rounded-2xl border border-[var(--line)] bg-white/5 p-3 text-xs">{JSON.stringify(testDialog.result.actual_params ?? {}, null, 2)}</pre>
               </section>
             ) : null}
           </div>
         </Modal>
       ) : null}
     </section>
+  )
+}
+
+function AccountRow({
+  account,
+  models,
+  expanded,
+  onToggle,
+  onEditAccount,
+  onAddModel,
+  onTest,
+  onEditModel,
+}: {
+  account: ModelAccount
+  models: ModelAccountModel[]
+  expanded: boolean
+  onToggle: () => void
+  onEditAccount: () => void
+  onAddModel: () => void
+  onTest: () => void
+  onEditModel: (model: ModelAccountModel) => void
+}) {
+  return (
+    <>
+      <tr className={cn(accountTableClasses.tr, expanded && accountTableClasses.trActive)}>
+        <td className="px-6 py-4"><input type="checkbox" className="accent-[var(--accent)]" aria-label={`选择 ${account.name}`} disabled /></td>
+        <td className={accountTableClasses.td}>
+          <button type="button" className={accountTextButtonClass} onClick={onToggle}>
+            <span className={accountTableClasses.identity}>
+              <span className={accountTableClasses.icon}><CloudIcon /></span>
+              <span className="min-w-0">
+                <span className={accountTableClasses.title}>{account.name}</span>
+                <span className={accountTableClasses.detail}>{credentialsStatusLabel(account.credentials_status?.has_api_key)}</span>
+              </span>
+            </span>
+          </button>
+        </td>
+        <td className={accountTableClasses.td}>
+          <span className={accountTableClasses.stack}>
+            <span className="font-bold text-[var(--text)]">{providerAdapterLabel(account.adapter_type)}</span>
+            <span className={accountTableClasses.detail}>{providerAuthLabel(account.auth_type)}</span>
+          </span>
+        </td>
+        <td className={accountTableClasses.td}>
+          <code className={accountTableClasses.configCode} title={account.base_url}>{account.base_url}</code>
+          <span className={accountTableClasses.configMeta}>P:{account.priority} | W:{account.weight} | C:{account.concurrency_limit} | {account.timeout_ms}ms</span>
+        </td>
+        <td className={accountTableClasses.td}>
+          <Badge tone={modelAccountStatusTone(account.status)}>{modelAccountStatusLabel(account.status)}</Badge>
+        </td>
+        <td className={accountTableClasses.td}>
+          <button type="button" className={accountTableClasses.expandButton} onClick={onToggle}>
+            {models.length} 个模型
+            <ChevronIcon expanded={expanded} />
+          </button>
+        </td>
+        <td className={cn(accountTableClasses.td, 'text-right')}>
+          <div className={accountTableClasses.actions}>
+            <button className={accountTableClasses.actionLink} type="button" onClick={onEditAccount}>编辑</button>
+            <button className={accountTableClasses.actionLink} type="button" onClick={onAddModel}>加模型</button>
+            <button className={accountTableClasses.actionLink} type="button" onClick={onTest}>测试</button>
+          </div>
+        </td>
+      </tr>
+      {expanded ? (
+        <tr className="border-b border-[var(--line)]/60">
+          <td colSpan={7} className={accountTableClasses.subPanelCell}>
+            <div className={accountTableClasses.subPanel}>
+              <div className={accountTableClasses.subHeader}>
+                <h4 className={accountTableClasses.subTitle}>支持模型 / Supported Models</h4>
+                <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onAddModel}>添加模型</button>
+              </div>
+              {models.length ? (
+                <table className={accountTableClasses.subTable}>
+                  <thead>
+                    <tr>
+                      <th className={accountTableClasses.subTh}>模型代码 / 名称</th>
+                      <th className={accountTableClasses.subTh}>任务类型</th>
+                      <th className={accountTableClasses.subTh}>质量标准</th>
+                      <th className={accountTableClasses.subTh}>单图成本</th>
+                      <th className={accountTableClasses.subTh}>状态</th>
+                      <th className={accountTableClasses.subTh}>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {models.map((model) => (
+                      <tr key={String(model.id)} className="border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.02]">
+                        <td className={accountTableClasses.subTd}>
+                          <span className={accountTableClasses.stack}>
+                            <span className="font-bold text-[var(--text)]">{model.display_name || model.model_code}</span>
+                            <code className="font-mono text-[10px] text-[var(--soft)]">{model.model_code}</code>
+                          </span>
+                        </td>
+                        <td className={accountTableClasses.subTd}>
+                          <span className={accountTableClasses.tagList}>{model.task_types.map((task) => <span key={task} className={accountTableClasses.modelTag}>{task}</span>)}</span>
+                        </td>
+                        <td className={accountTableClasses.subTd}>{normalizeQualities(model.qualities).join(', ') || '-'}</td>
+                        <td className={accountTableClasses.subTd}>
+                          <span className="font-bold text-emerald-400">{model.cost_per_image}</span>
+                          <span className="ml-1 text-[10px] uppercase text-[var(--soft)]">{model.currency}</span>
+                        </td>
+                        <td className={accountTableClasses.subTd}>
+                          <span className={cn(accountTableClasses.statusDot, model.enabled ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.45)]' : 'bg-white/20')} />
+                        </td>
+                        <td className={accountTableClasses.subTd}>
+                          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onEditModel(model)}>编辑</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <EmptyBlock title="暂无真实模型" detail="为当前账号添加可请求的上游模型代码。" />}
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </>
+  )
+}
+
+function CloudIcon() {
+  return (
+    <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17.5 19h.3a5.2 5.2 0 0 0 .2-10.4A6.6 6.6 0 0 0 5.4 9.8 4.8 4.8 0 0 0 6.1 19h11.4Z" />
+      <path d="m10 13 2 2 4-4" />
+    </svg>
+  )
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg className={cn('size-4 transition-transform', expanded && 'rotate-180')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   )
 }
 
