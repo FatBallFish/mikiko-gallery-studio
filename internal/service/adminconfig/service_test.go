@@ -57,6 +57,20 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 		"task_multipliers",
 	})
 	assertTabKeys(t, tabs, "openai_compat", []string{"openai_compat_model_map"})
+	assertTabKeys(t, tabs, "payments", []string{
+		"custom_amount_cny_per_point",
+		"custom_amount_enabled",
+		"custom_amount_max_cny",
+		"custom_amount_min_cny",
+		"enabled",
+		"max_pending_orders_per_user",
+		"order_timeout_seconds",
+		"provider_instances",
+		"providers",
+		"scheduler_state",
+		"site_base_url",
+		"visible_methods",
+	})
 	assertTabKeys(t, tabs, "runtime", []string{"worker_max_concurrent_tasks"})
 }
 

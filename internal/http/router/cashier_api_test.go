@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
@@ -26,9 +27,11 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
+	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 )
@@ -273,6 +276,96 @@ func TestCashierCreateOrderReusesIdempotencyKey(t *testing.T) {
 	}
 	if listResp.Data.Total != 1 {
 		t.Fatalf("expected idempotency replay to keep one order, got total=%d items=%#v", listResp.Data.Total, listResp.Data.Items)
+	}
+}
+
+func TestCashierPendingOrderLimitUsesAdminConfig(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	session := loginExistingAuthUser(t, authSvc, "cashier-limit-admin-config@example.com")
+	adminCfgSvc := adminconfigservice.NewService(cfg)
+	if _, err := adminCfgSvc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "payments",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "payments",
+			ConfigKey:      "max_pending_orders_per_user",
+			ConfigValue:    map[string]any{"value": 1},
+			Scope:          "global",
+		}},
+	}); err != nil {
+		t.Fatalf("UpdateTab payments: %v", err)
+	}
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, adminCfgSvc, billingservice.NewService(cfg.Billing)))
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}`))
+	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("first create expected 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}`))
+	secondReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondRec := httptest.NewRecorder()
+	handler.ServeHTTP(secondRec, secondReq)
+	if secondRec.Code != http.StatusConflict {
+		t.Fatalf("second create expected admin-configured pending limit 409, got %d body=%s", secondRec.Code, secondRec.Body.String())
+	}
+}
+
+func TestCashierOptionsUsesAdminConfiguredOrderTimeout(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	cfg.Cashier.OrderTimeoutSeconds = 1800
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	session := loginExistingAuthUser(t, authSvc, "cashier-timeout-admin-config@example.com")
+	adminCfgSvc := adminconfigservice.NewService(cfg)
+	if _, err := adminCfgSvc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "payments",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "payments",
+			ConfigKey:      "order_timeout_seconds",
+			ConfigValue:    map[string]any{"value": 900},
+			Scope:          "global",
+		}},
+	}); err != nil {
+		t.Fatalf("UpdateTab payments: %v", err)
+	}
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, adminCfgSvc, billingservice.NewService(cfg.Billing)))
+
+	optionsReq := httptest.NewRequest(http.MethodGet, "/api/agent/cashier/v1/options", nil)
+	optionsReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	optionsRec := httptest.NewRecorder()
+	handler.ServeHTTP(optionsRec, optionsReq)
+	if optionsRec.Code != http.StatusOK {
+		t.Fatalf("options expected 200, got %d body=%s", optionsRec.Code, optionsRec.Body.String())
+	}
+	var optionsResp struct {
+		Data struct {
+			OrderTimeoutSeconds int `json:"order_timeout_seconds"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(optionsRec.Body).Decode(&optionsResp); err != nil {
+		t.Fatalf("decode options: %v", err)
+	}
+	if optionsResp.Data.OrderTimeoutSeconds != 900 {
+		t.Fatalf("expected admin configured order timeout 900, got %d", optionsResp.Data.OrderTimeoutSeconds)
 	}
 }
 

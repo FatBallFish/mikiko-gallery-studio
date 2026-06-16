@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -11,6 +13,13 @@ import (
 const defaultConfigPath = "config.yaml"
 
 func Load(path string) (Config, error) {
+	if path == "" {
+		return LoadEnv("")
+	}
+	return LoadYAML(path)
+}
+
+func LoadYAML(path string) (Config, error) {
 	if path == "" {
 		path = configPathFromEnv()
 	}
@@ -26,6 +35,86 @@ func Load(path string) (Config, error) {
 	}
 
 	applyDefaults(&cfg)
+	return cfg, nil
+}
+
+func LoadEnv(path string) (Config, error) {
+	fileEnv := map[string]string{}
+	if path == "" {
+		path = os.Getenv("PIC_GALLERY_ENV_FILE")
+	}
+	if path != "" {
+		loaded, err := loadDotEnv(path)
+		if err != nil {
+			return Config{}, err
+		}
+		fileEnv = loaded
+	} else if _, err := os.Stat(".env"); err == nil {
+		loaded, err := loadDotEnv(".env")
+		if err != nil {
+			return Config{}, err
+		}
+		fileEnv = loaded
+	} else if err != nil && !os.IsNotExist(err) {
+		return Config{}, fmt.Errorf("stat .env: %w", err)
+	}
+
+	cfg := Config{}
+	cfg.App.Name = envString(fileEnv, "PIC_GALLERY_NAME", envString(fileEnv, "APP_NAME", ""))
+	cfg.App.Env = envString(fileEnv, "PIC_GALLERY_ENV", envString(fileEnv, "APP_ENV", ""))
+	cfg.App.Addr = envString(fileEnv, "PIC_GALLERY_ADDR", envString(fileEnv, "APP_ADDR", ""))
+
+	cfg.Database.URL = envString(fileEnv, "DATABASE_URL", "")
+	cfg.Database.MaxOpenConns = envInt(fileEnv, "DATABASE_MAX_OPEN_CONNS", 0)
+	cfg.Database.MaxIdleConns = envInt(fileEnv, "DATABASE_MAX_IDLE_CONNS", 0)
+	cfg.Database.ConnMaxLifetime = envDuration(fileEnv, "DATABASE_CONN_MAX_LIFETIME", 0)
+
+	cfg.Redis.URL = envString(fileEnv, "REDIS_URL", "")
+	cfg.Redis.KeyPrefix = envString(fileEnv, "REDIS_KEY_PREFIX", "")
+
+	cfg.Storage.Driver = envString(fileEnv, "STORAGE_DRIVER", "")
+	cfg.Storage.LocalRoot = envString(fileEnv, "STORAGE_LOCAL_ROOT", "")
+	cfg.Storage.PublicBaseURL = envString(fileEnv, "STORAGE_PUBLIC_BASE_URL", "")
+	cfg.Storage.SharedVolume = envBool(fileEnv, "STORAGE_SHARED_VOLUME", false)
+
+	cfg.Auth.AccessTokenTTL = envDuration(fileEnv, "AUTH_ACCESS_TOKEN_TTL", 0)
+	cfg.Auth.RefreshTokenTTL = envDuration(fileEnv, "AUTH_REFRESH_TOKEN_TTL", 0)
+	cfg.Auth.Issuer = envString(fileEnv, "AUTH_ISSUER", "")
+	cfg.Auth.AccessTokenSecret = envString(fileEnv, "AUTH_ACCESS_TOKEN_SECRET", "")
+	cfg.Auth.RefreshCookieName = envString(fileEnv, "AUTH_REFRESH_COOKIE_NAME", "")
+	cfg.Auth.FixedEmailCode = envString(fileEnv, "AUTH_FIXED_EMAIL_CODE", "")
+	cfg.Auth.DevEmailCodes = envBool(fileEnv, "AUTH_DEV_EMAIL_CODES", false)
+
+	cfg.Admin.SeedEmail = envString(fileEnv, "PIC_GALLERY_ADMIN_EMAIL", "")
+	cfg.Admin.SeedPassword = envString(fileEnv, "PIC_GALLERY_ADMIN_PASSWORD", "")
+	cfg.Admin.SeedRole = envString(fileEnv, "PIC_GALLERY_ADMIN_ROLE", "")
+
+	cfg.APIKey.SigningSecretEncryptionKey = envString(fileEnv, "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "")
+	cfg.Security.SecureConfigEncryptionKey = envString(fileEnv, "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", envString(fileEnv, "SECURE_CONFIG_ENCRYPTION_KEY", ""))
+	cfg.Cashier.ProviderConfigEncryptionKey = envString(fileEnv, "CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", envString(fileEnv, "PIC_GALLERY_CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", ""))
+	cfg.Cashier.Enabled = envBool(fileEnv, "CASHIER_ENABLED", false)
+	cfg.Cashier.MockEnabled = envBool(fileEnv, "CASHIER_MOCK_ENABLED", false)
+	cfg.Cashier.OrderTimeoutSeconds = envInt(fileEnv, "CASHIER_ORDER_TIMEOUT_SECONDS", 0)
+	cfg.Cashier.MaxPendingOrdersPerUser = envInt(fileEnv, "CASHIER_MAX_PENDING_ORDERS_PER_USER", 0)
+	cfg.Cashier.SiteBaseURL = envString(fileEnv, "CASHIER_SITE_BASE_URL", "")
+
+	cfg.Worker.MaxConcurrentTasks = envInt(fileEnv, "WORKER_MAX_CONCURRENT_TASKS", 0)
+	cfg.HTTP.CORSAllowedOrigins = envCSV(fileEnv, "CORS_ALLOWED_ORIGINS")
+
+	cfg.Providers.OpenAI.Enabled = envBool(fileEnv, "OPENAI_ENABLED", false)
+	cfg.Providers.OpenAI.BaseURL = envString(fileEnv, "OPENAI_BASE_URL", "")
+	cfg.Providers.OpenAI.APIKey = envString(fileEnv, "OPENAI_API_KEY", "")
+	cfg.Providers.OpenRouter.Enabled = envBool(fileEnv, "OPENROUTER_ENABLED", false)
+	cfg.Providers.OpenRouter.BaseURL = envString(fileEnv, "OPENROUTER_BASE_URL", "")
+	cfg.Providers.OpenRouter.APIKey = envString(fileEnv, "OPENROUTER_API_KEY", "")
+
+	cfg.Docs.Title = envString(fileEnv, "DOCS_TITLE", "")
+	cfg.Docs.BasePath = envString(fileEnv, "DOCS_BASE_PATH", "")
+
+	applyDefaults(&cfg)
+	if err := validateEnvConfig(cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
 }
 
@@ -98,6 +187,13 @@ func applyDefaults(cfg *Config) {
 	}
 	if len(cfg.Billing.AutoQualityDefaultByGroup) == 0 {
 		cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
+	}
+	if len(cfg.Billing.QualityPointsByModel) == 0 {
+		cfg.Billing.QualityPointsByModel = map[string]map[string]string{
+			"basic": {"1k": "2.00000", "2k": "4.00000", "4k": "8.00000"},
+			"plus":  {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
+			"pro":   {"1k": "8.00000", "2k": "12.00000", "4k": "20.00000"},
+		}
 	}
 	if len(cfg.Billing.UserGroupMultipliers) == 0 {
 		cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000", "plus": "1.00000", "pro": "1.00000"}
@@ -184,4 +280,123 @@ func providerPriority(cfg RoutingConfig, provider string) int {
 		}
 	}
 	return len(cfg.FallbackProviders) + 2
+}
+
+func loadDotEnv(path string) (map[string]string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read env file %q: %w", path, err)
+	}
+	values := map[string]string{}
+	for lineNo, rawLine := range strings.Split(string(content), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("parse env file %q line %d: missing '='", path, lineNo+1)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("parse env file %q line %d: empty key", path, lineNo+1)
+		}
+		value = stripInlineComment(strings.TrimSpace(value))
+		value = strings.Trim(value, `"'`)
+		values[key] = value
+	}
+	return values, nil
+}
+
+func stripInlineComment(value string) string {
+	if strings.HasPrefix(value, `"`) || strings.HasPrefix(value, `'`) {
+		return value
+	}
+	if idx := strings.Index(value, " #"); idx >= 0 {
+		return strings.TrimSpace(value[:idx])
+	}
+	return value
+}
+
+func envString(fileEnv map[string]string, key string, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	if value := fileEnv[key]; value != "" {
+		return value
+	}
+	return fallback
+}
+
+func envInt(fileEnv map[string]string, key string, fallback int) int {
+	value := strings.TrimSpace(envString(fileEnv, key, ""))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envBool(fileEnv map[string]string, key string, fallback bool) bool {
+	value := strings.TrimSpace(envString(fileEnv, key, ""))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envDuration(fileEnv map[string]string, key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(envString(fileEnv, key, ""))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err == nil {
+		return parsed
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func envCSV(fileEnv map[string]string, key string) []string {
+	raw := strings.TrimSpace(envString(fileEnv, key, ""))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
+}
+
+func validateEnvConfig(cfg Config) error {
+	if strings.TrimSpace(cfg.Database.URL) == "" && !isLocalLikeEnv(cfg.App.Env) {
+		return fmt.Errorf("DATABASE_URL must be configured in %s env", cfg.App.Env)
+	}
+	return nil
+}
+
+func isLocalLikeEnv(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "", "local", "dev", "development", "test":
+		return true
+	default:
+		return false
+	}
 }
