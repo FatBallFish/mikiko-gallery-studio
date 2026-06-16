@@ -85,12 +85,91 @@ build_component() {
   local component=$1
   mkdir -p "$ROOT_DIR/target/local/bin"
   case "$component" in
-    api) (cd "$ROOT_DIR" && go build -o target/local/bin/pic-gallery-api ./cmd/api) ;;
-    worker) (cd "$ROOT_DIR" && go build -o target/local/bin/pic-gallery-worker ./cmd/worker) ;;
+    api)
+      (cd "$ROOT_DIR" && go build -o target/local/bin/pic-gallery-api ./cmd/api)
+      write_service_start_script api
+      ;;
+    worker)
+      (cd "$ROOT_DIR" && go build -o target/local/bin/pic-gallery-worker ./cmd/worker)
+      write_service_start_script worker
+      ;;
     user-web) (cd "$ROOT_DIR/web/user" && npm run build) ;;
     admin-web) (cd "$ROOT_DIR/web/admin" && npm run build) ;;
     *) echo "Unknown component: $component" >&2; exit 2 ;;
   esac
+}
+
+write_service_start_script() {
+  local component=$1
+  local script="$ROOT_DIR/target/local/bin/start-pic-gallery-$component.sh"
+  cat > "$script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/../../.." && pwd)"
+COMPONENT="$component"
+USER_FLAG=(--user)
+if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
+  USER_FLAG=()
+fi
+ENV_ARGS=()
+if [[ -n "\${PIC_GALLERY_ENV_FILE:-}" ]]; then
+  ENV_ARGS=(--env-file "\$PIC_GALLERY_ENV_FILE")
+fi
+
+service_is_registered() {
+  case "\$(uname -s)" in
+    Linux)
+      local unit="pic-gallery-\$COMPONENT.service"
+      local unit_path="/etc/systemd/system/\$unit"
+      if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" != "1" ]]; then
+        unit_path="\$HOME/.config/systemd/user/\$unit"
+      fi
+      [[ -f "\$unit_path" ]] || systemctl "\${USER_FLAG[@]}" list-unit-files "\$unit" --no-legend 2>/dev/null | grep -q "\$unit"
+      ;;
+    Darwin)
+      local plist="\$HOME/Library/LaunchAgents/com.picgallery.\$COMPONENT.plist"
+      if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
+        plist="/Library/LaunchDaemons/com.picgallery.\$COMPONENT.plist"
+      fi
+      [[ -f "\$plist" ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+service_is_running() {
+  case "\$(uname -s)" in
+    Linux)
+      systemctl "\${USER_FLAG[@]}" is-active --quiet "pic-gallery-\$COMPONENT.service"
+      ;;
+    Darwin)
+      local domain="gui/\$(id -u)"
+      if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
+        domain="system"
+      fi
+      launchctl print "\$domain/com.picgallery.\$COMPONENT" 2>/dev/null | grep -Eq 'state = running|pid = [0-9]+'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if ! service_is_registered; then
+  "\$ROOT_DIR/scripts/service/manage.sh" install --components "\$COMPONENT" "\${USER_FLAG[@]}" "\${ENV_ARGS[@]}"
+fi
+
+if service_is_running; then
+  "\$ROOT_DIR/scripts/service/manage.sh" restart --components "\$COMPONENT" "\${USER_FLAG[@]}" "\${ENV_ARGS[@]}"
+else
+  "\$ROOT_DIR/scripts/service/manage.sh" start --components "\$COMPONENT" "\${USER_FLAG[@]}" "\${ENV_ARGS[@]}"
+fi
+EOF
+  chmod +x "$script"
+  echo "wrote $script"
 }
 
 run_component() {
