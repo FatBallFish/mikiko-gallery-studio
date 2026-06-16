@@ -13,6 +13,7 @@ run() {
 
 run "go test" go test ./...
 run "go vet" go vet ./...
+run "local build service startup scripts" ./scripts/local/pgctl_contract_test.sh
 
 run "frontend/shared contracts" ./scripts/workflow/verify-contracts.sh
 
