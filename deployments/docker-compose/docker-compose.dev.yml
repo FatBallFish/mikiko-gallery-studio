@@ -63,8 +63,28 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    environment:
+      PIC_GALLERY_ENV: local
+      PIC_GALLERY_ADDR: :8080
+      DATABASE_URL: postgres://postgres@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      REDIS_KEY_PREFIX: pic-gallery
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
+      STORAGE_PUBLIC_BASE_URL: http://localhost:${DEV_NGINX_PORT:-8088}/files
+      STORAGE_SHARED_VOLUME: "true"
+      AUTH_ACCESS_TOKEN_SECRET: local-dev-secret
+      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-dev-api-key-signing-secret-encryption-key
+      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-dev-cashier-provider-config-encryption-key
+      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-dev-secure-config-encryption-key
+      PIC_GALLERY_ADMIN_EMAIL: ${PIC_GALLERY_ADMIN_EMAIL:-admin@example.com}
+      PIC_GALLERY_ADMIN_PASSWORD: ${PIC_GALLERY_ADMIN_PASSWORD:-admin123456}
+      PIC_GALLERY_ADMIN_ROLE: super_admin
+      CASHIER_ENABLED: "true"
+      CASHIER_MOCK_ENABLED: "true"
+      CASHIER_SITE_BASE_URL: http://localhost:${DEV_NGINX_PORT:-8088}
+      WORKER_MAX_CONCURRENT_TASKS: "4"
     volumes:
-      - ../../configs/config.compose.dev.yaml:/app/config.yaml:ro
       - shared-storage:/var/lib/pic-gallery/storage
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
@@ -85,8 +105,25 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    environment:
+      PIC_GALLERY_ENV: local
+      PIC_GALLERY_ADDR: :8080
+      DATABASE_URL: postgres://postgres@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      REDIS_KEY_PREFIX: pic-gallery
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_ROOT: /var/lib/pic-gallery/storage
+      STORAGE_PUBLIC_BASE_URL: http://localhost:${DEV_NGINX_PORT:-8088}/files
+      STORAGE_SHARED_VOLUME: "true"
+      AUTH_ACCESS_TOKEN_SECRET: local-dev-secret
+      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-dev-api-key-signing-secret-encryption-key
+      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-dev-cashier-provider-config-encryption-key
+      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-dev-secure-config-encryption-key
+      CASHIER_ENABLED: "true"
+      CASHIER_MOCK_ENABLED: "true"
+      CASHIER_SITE_BASE_URL: http://localhost:${DEV_NGINX_PORT:-8088}
+      WORKER_MAX_CONCURRENT_TASKS: "4"
     volumes:
-      - ../../configs/config.compose.dev.yaml:/app/config.yaml:ro
       - shared-storage:/var/lib/pic-gallery/storage
 
   user-web:

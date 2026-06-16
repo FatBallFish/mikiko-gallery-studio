@@ -104,7 +104,7 @@ cd pic-gallery
 cp .env.example .env
 ```
 
-本地开发时，默认 `.env.example` 已足够启动依赖服务。若需要调用真实上游模型或调整后端运行配置，请编辑 `configs/config.compose.dev.yaml`。
+本地开发时，默认 `.env.example` 已足够启动依赖服务。宿主机运行 API/Worker 时编辑 `.env`；Compose 默认值在 `deployments/docker-compose/.env.example` 中调整。
 
 ### 3. 启动开发全栈
 
@@ -125,7 +125,7 @@ make compose-up
 - 邮箱：`admin@example.com`
 - 密码：`admin123456`
 
-如果要把服务暴露到本机开发环境之外，请先在 `configs/config.compose.dev.yaml` 中覆盖默认值。
+如果要把服务暴露到本机开发环境之外，请先在 `.env` 或 `deployments/docker-compose/.env.example` 中覆盖相关默认值。
 
 停止依赖：
 
@@ -209,11 +209,63 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make user-web-dev
 VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 ```
 
-## 源码服务安装
+## 本机源码部署
 
-通过源码安装时，后端 API、Worker、用户端 Web 和管理端 Web 都可以注册成当前操作系统的服务。适合在自托管机器上让源码运行的进程自动启动和异常重启。
+当本机已经具备 Go、Node.js、npm、PostgreSQL、Redis，或中间件由 Docker 启动、应用进程跑在宿主机上时，使用本机源码部署模式。
 
-服务脚本默认安装四个组件，也可以通过 `--components api,worker,user-web,admin-web` 指定部分组件。
+1. 准备 env 文件：
+
+   ```bash
+   cp .env.example .env
+   $EDITOR .env
+   ```
+
+2. 构建全部组件，或只构建需要的组件：
+
+   ```bash
+   ./scripts/local/pgctl.sh build
+   ./scripts/local/pgctl.sh build --components api,worker
+   ```
+
+3. 以前台或后台方式从源码运行：
+
+   ```bash
+   ./scripts/local/pgctl.sh up --components api,worker --background
+   ```
+
+4. 如果希望退出登录或重启机器后 API/Worker 仍自动运行，可以安装成本机服务：
+
+   ```bash
+   ./scripts/local/pgctl.sh install --components api,worker --env-file .env --user
+   ./scripts/local/pgctl.sh status --components api,worker --user
+   ```
+
+5. 管理已安装服务：
+
+   ```bash
+   ./scripts/local/pgctl.sh start --components api,worker --user
+   ./scripts/local/pgctl.sh stop --components api,worker --user
+   ./scripts/local/pgctl.sh restart --components api,worker --user
+   ./scripts/local/pgctl.sh logs --components api,worker --user
+   ./scripts/local/pgctl.sh uninstall --components api,worker --user
+   ```
+
+如果 API/Worker 跑在宿主机，但 PostgreSQL/Redis 等中间件由 Docker 管理，先启动中间件：
+
+```bash
+make compose-middleware-up
+./scripts/local/pgctl.sh up --components api,worker --background
+```
+
+API 默认监听 `http://127.0.0.1:8080`。部署后可用下面命令检查：
+
+```bash
+curl http://127.0.0.1:8080/readyz
+```
+
+### 操作系统服务
+
+本机服务管理脚本支持 Linux、macOS 和 Windows。Shell 脚本默认管理 API 和 Worker；建议显式传入 `--components api,worker`，避免把前端开发服务器作为服务安装。
 
 ### Linux
 
@@ -222,25 +274,25 @@ Linux 使用 `systemd`。
 安装用户级服务：
 
 ```bash
-./scripts/service/install.sh --user
+./scripts/service/manage.sh install --components api,worker --env-file .env --user
 ```
 
 卸载用户级服务：
 
 ```bash
-./scripts/service/uninstall.sh --user
+./scripts/service/manage.sh uninstall --components api,worker --user
 ```
 
 安装系统级服务：
 
 ```bash
-sudo ./scripts/service/install.sh
+sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
 ```
 
 卸载系统级服务：
 
 ```bash
-sudo ./scripts/service/uninstall.sh
+sudo ./scripts/service/manage.sh uninstall --components api,worker
 ```
 
 ### macOS
@@ -250,25 +302,25 @@ macOS 使用 `launchd`。
 安装用户级服务：
 
 ```bash
-./scripts/service/install.sh --user
+./scripts/service/manage.sh install --components api,worker --env-file .env --user
 ```
 
 卸载用户级服务：
 
 ```bash
-./scripts/service/uninstall.sh --user
+./scripts/service/manage.sh uninstall --components api,worker --user
 ```
 
 安装系统级守护进程：
 
 ```bash
-sudo ./scripts/service/install.sh
+sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
 ```
 
 卸载系统级守护进程：
 
 ```bash
-sudo ./scripts/service/uninstall.sh
+sudo ./scripts/service/manage.sh uninstall --components api,worker
 ```
 
 ### Windows
@@ -278,40 +330,37 @@ Windows 源码服务安装使用计划任务托管，避免普通 Go/Vite 前台
 安装服务：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/install.ps1
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile ".env"
 ```
 
 卸载服务：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/uninstall.ps1
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 uninstall -Components "api,worker"
 ```
 
-只安装部分组件：
+查看状态：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/install.ps1 -Components "api,worker"
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 status -Components "api,worker"
 ```
 
 ## 配置
 
-主要配置模板：
+运行时配置改为用 env 文件完成部署启动，用数据库和管理后台承载业务配置。
 
-- [`configs/config.example.yaml`](./configs/config.example.yaml)：应用配置模板。
-- [`configs/config.dev.yaml`](./configs/config.dev.yaml)：宿主机本地开发配置。
-- [`configs/config.compose.dev.yaml`](./configs/config.compose.dev.yaml)：Docker Compose 本地开发配置。
-- [`configs/config.pro.yaml`](./configs/config.pro.yaml)：DevOps/服务器生产配置模板。
-- [`configs/config.compose.prod.yaml`](./configs/config.compose.prod.yaml)：Docker Compose 生产配置模板。
-- [`.env.example`](./.env.example)：本地开发环境变量。
-- [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example)：Compose 环境变量模板。
+主要模板：
+
+- [`.env.example`](./.env.example)：本地源码运行环境变量模板。
+- [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example)：本地 Compose 环境变量模板。
 - [`deployments/docker-compose/.env.prod.example`](./deployments/docker-compose/.env.prod.example)：生产 Compose 环境变量模板。
 
 后端运行配置：
 
-- 后端默认读取 `config.yaml`。
-- `APP_CONFIG_PATH` 和 `PIC_GALLERY_CONFIG` 只用于选择 YAML 文件路径；数据库、Redis、存储、认证密钥、模型 Provider Key、SMTP、CORS 和初始管理员都从 YAML 读取。
-- DevOps 打包时设置构建期 `APP_ENV=dev` 或 `APP_ENV=pro`；`scripts/devops/package.sh` 会把对应配置复制为产物中的 `config.yaml`。
-- Docker Compose 生产部署时，编辑 `configs/config.compose.prod.yaml`，或在 `deployments/docker-compose/.env.prod` 中用 `PIC_GALLERY_CONFIG_FILE` 指向服务器上的配置文件。
+- API 和 Worker 默认从 `.env`/进程环境变量加载配置；本地服务托管时可用 `PIC_GALLERY_ENV_FILE` 指向指定 env 文件。
+- `APP_CONFIG_PATH` 和 `PIC_GALLERY_CONFIG` 仅作为显式 `LoadYAML` 迁移工具/测试的兼容入口保留；API 和 Worker 默认启动会忽略它们，新部署不再使用。
+- env 只保留启动必需项：数据库、Redis、存储 bootstrap、认证和加密密钥、首次管理员 bootstrap、基础端口。
+- SMTP、支付渠道、积分计费、模型供应商账号、模型路由和其他运营配置在启动后进入管理后台配置。
 
 正式对外发布前，至少需要配置一个可用的模型 Provider、模型账号、路由模型、价格，以及一个可用支付渠道。
 
@@ -323,17 +372,57 @@ powershell -ExecutionPolicy Bypass -File scripts/service/install.ps1 -Components
 
 ## Docker Compose 部署
 
-生产 Compose 文件位于 [`deployments/docker-compose/docker-compose.prod.yml`](./deployments/docker-compose/docker-compose.prod.yml)。
+生产 Compose 文件位于 [`deployments/docker-compose/docker-compose.prod.yml`](./deployments/docker-compose/docker-compose.prod.yml)。生产 Compose 从 `PIC_GALLERY_IMAGE_REGISTRY` 拉取预构建镜像，不再从本地源码构建，也不再挂载 `config.yaml`。
+
+### 新项目 Clone 后首次部署
+
+当一台新服务器刚 clone 仓库，并希望由 Docker Compose 管理 PostgreSQL、Redis、API、Worker、前端容器和 Nginx 时，使用这个流程。
 
 ```bash
 cp deployments/docker-compose/.env.prod.example deployments/docker-compose/.env.prod
 $EDITOR deployments/docker-compose/.env.prod
 
 docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml up -d --build
+  -f deployments/docker-compose/docker-compose.prod.yml pull
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml up -d
 ```
 
-生产环境首次启动前，请替换 `configs/config.compose.prod.yaml` 中所有 `CHANGE_ME` 值，或用 `PIC_GALLERY_CONFIG_FILE` 指向服务器上的最终 `config.yaml`。
+首次启动前至少要设置这些值：
+
+- `PIC_GALLERY_IMAGE_REGISTRY`
+- `PIC_GALLERY_IMAGE_TAG`
+- `POSTGRES_PASSWORD`
+- `AUTH_ACCESS_TOKEN_SECRET`
+- `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`
+- `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`
+- `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`
+- `PIC_GALLERY_ADMIN_EMAIL`
+- `PIC_GALLERY_ADMIN_PASSWORD`
+- `CORS_ALLOWED_ORIGINS`
+
+检查部署状态：
+
+```bash
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml ps
+curl http://localhost:${NGINX_PORT:-80}/readyz
+```
+
+也可以生成独立部署目录并自动生成密钥。注意保持 `docker-compose/` 目录和 `nginx/` 目录同级，这样 Compose 文件里的 Nginx 相对挂载路径才能正确解析：
+
+```bash
+mkdir -p pic-gallery-deploy && cd pic-gallery-deploy
+mkdir -p docker-compose
+cd docker-compose
+/path/to/pic-gallery/deployments/docker-compose/prepare.sh
+cd ..
+cp -R /path/to/pic-gallery/deployments/nginx ./nginx
+cd docker-compose
+$EDITOR .env.prod
+docker compose --env-file .env.prod -f docker-compose.yml pull
+docker compose --env-file .env.prod -f docker-compose.yml up -d
+```
 
 生产栈包含 PostgreSQL、Redis、API、Worker、用户端 Web、管理端 Web、Nginx、共享存储和可选 Prometheus。PostgreSQL、Redis、API、Worker 和前端容器都在同一个 Compose network 中，不对宿主机发布端口；Nginx 是唯一公开入口。
 
@@ -345,25 +434,56 @@ docker compose --env-file deployments/docker-compose/.env.prod \
 
 部署细节见 [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md)。
 
-### Dev 与 Prod Compose 的区别
+### 后续版本更新
 
-`docker-compose.dev.yml` 面向本地迭代：
+Docker 部署更新时，先发布新镜像，再只修改 `.env.prod` 里的 `PIC_GALLERY_IMAGE_TAG`，然后拉取并重启：
 
-- 将 `configs/config.compose.dev.yaml` 挂载到 API 与 Worker 容器内的 `/app/config.yaml`。
-- PostgreSQL 默认使用本地 trust 认证。
-- 默认启动 API、Worker、用户端 Web、管理端 Web、Nginx 和中间件。
-- API、Worker、前端容器、PostgreSQL、Redis、MinIO 和 Mailpit 都在 Compose network 内部。
-- 只暴露 Nginx，默认端口为 `DEV_NGINX_PORT=8088`。
-- 默认注入便捷的本地管理员账号配置。
-- 只想启动中间件时使用 [`deployments/docker-compose/docker-compose-middileware.yml`](./deployments/docker-compose/docker-compose-middileware.yml)。
+```bash
+$EDITOR deployments/docker-compose/.env.prod
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml pull
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml up -d
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml ps
+curl http://localhost:${NGINX_PORT:-80}/readyz
+```
 
-`docker-compose.prod.yml` 面向部署：
+本机源码部署更新时，拉取新代码、重新构建并重启已安装服务：
 
-- 将 `PIC_GALLERY_CONFIG_FILE` 挂载到 API 与 Worker 容器内的 `/app/config.yaml`。
-- 必须在该 YAML 中配置数据库连接、JWT secret、API Key 加密密钥、收银台渠道配置加密密钥、安全配置加密密钥、模型 Provider Key 和管理员账号。
-- PostgreSQL、Redis、API、Worker 和前端容器都不向宿主机暴露端口。
-- 只暴露 Nginx，默认端口为 `NGINX_PORT=80`。
-- 可通过 `monitoring` profile 额外启动 Prometheus。
+```bash
+git pull
+./scripts/local/pgctl.sh build --components api,worker
+./scripts/local/pgctl.sh restart --components api,worker --user
+curl http://127.0.0.1:8080/readyz
+```
+
+回滚使用同一套流程：Docker 模式把 `PIC_GALLERY_IMAGE_TAG` 改回上一个镜像标签；本机模式把 Git 代码切回上一个版本后重新构建并重启。
+
+### 本地模式与 Docker 模式
+
+本地源码运行使用 [`scripts/local/pgctl.sh`](./scripts/local/pgctl.sh)：
+
+```bash
+cp .env.example .env
+./scripts/local/pgctl.sh build --components api,worker
+./scripts/local/pgctl.sh up --components api,worker --background
+./scripts/service/manage.sh status --user
+```
+
+Docker 模式使用 Compose 和镜像仓库：
+
+- `docker-compose.dev.yml` 面向本地迭代，仍可构建本地镜像，但 API/Worker 使用 env 配置，不再挂载 YAML。
+- `docker-compose.prod.yml` 面向部署，只拉取预构建镜像。
+- `docker-compose.e2e.yml` 面向测试，源码容器直接注入 env 配置。
+
+镜像构建与发布：
+
+```bash
+./scripts/docker/images.sh build --tag test --registry docker.io/your-org
+./scripts/docker/images.sh push --tag test --registry docker.io/your-org
+./scripts/docker/images.sh release --version v1.2.3 --latest --registry docker.io/your-org
+```
 
 ## 开发指南
 
@@ -421,7 +541,6 @@ docker compose -f deployments/docker-compose/docker-compose.e2e.yml down --remov
 api/openapi/              OpenAPI 契约与 API 文档源文件
 cmd/api/                  API 服务入口
 cmd/worker/               异步 Worker 入口
-configs/                  本地与部署配置模板
 deployments/              Docker Compose、Nginx 与监控配置
 docs/                     PRD、技术方案、计划、评审与 Runbook
 internal/app/             应用启动与运行时装配

@@ -240,6 +240,9 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			Name: "Payments",
 			Items: []domainadminconfig.Item{
 				valueItem("payments", "enabled", false),
+				valueItem("payments", "site_base_url", cfg.Cashier.SiteBaseURL),
+				valueItem("payments", "order_timeout_seconds", defaultInt(cfg.Cashier.OrderTimeoutSeconds, 1800)),
+				valueItem("payments", "max_pending_orders_per_user", defaultInt(cfg.Cashier.MaxPendingOrdersPerUser, 3)),
 				valueItem("payments", "providers", []string{"alipay", "wxpay"}),
 				valueItem("payments", "custom_amount_enabled", true),
 				valueItem("payments", "custom_amount_min_cny", "1.00000"),
@@ -269,6 +272,13 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			},
 		},
 	}
+}
+
+func defaultInt(value, fallback int) int {
+	if value == 0 {
+		return fallback
+	}
+	return value
 }
 
 func valueItem(category, key string, value any) domainadminconfig.Item {

@@ -937,7 +937,7 @@ func (a *API) HandleCashierOptions(w http.ResponseWriter, r *http.Request) {
 		"plans":                 cashierPlans,
 		"custom_amount":         a.cashierCustomAmountConfig(r.Context()),
 		"visible_methods":       a.cashierVisibleMethods(r.Context(), false),
-		"order_timeout_seconds": a.cashierOrderTimeoutSeconds(),
+		"order_timeout_seconds": a.cashierOrderTimeoutSeconds(r.Context()),
 	})
 }
 
@@ -1131,10 +1131,7 @@ func legacyBillingProviderToVisibleMethod(provider string) string {
 }
 
 func (a *API) ensureCashierPendingOrderLimit(ctx context.Context, userID int64) *errs.Error {
-	limit := a.cfg.Cashier.MaxPendingOrdersPerUser
-	if limit <= 0 {
-		limit = 3
-	}
+	limit := a.cashierMaxPendingOrdersPerUser(ctx)
 	page, err := a.billing.ListOrders(ctx, domainbilling.ListOrdersRequest{UserID: userID, Status: "pending", Page: 1, PageSize: limit})
 	if err != nil {
 		return normalizeAppError(err)
@@ -1145,11 +1142,12 @@ func (a *API) ensureCashierPendingOrderLimit(ctx context.Context, userID int64) 
 	return nil
 }
 
-func (a *API) cashierOrderTimeoutSeconds() int {
-	if a.cfg.Cashier.OrderTimeoutSeconds > 0 {
-		return a.cfg.Cashier.OrderTimeoutSeconds
-	}
-	return 1800
+func (a *API) cashierOrderTimeoutSeconds(ctx context.Context) int {
+	return a.adminConfigInt(ctx, "payments", "order_timeout_seconds", defaultPositiveInt(a.cfg.Cashier.OrderTimeoutSeconds, 1800))
+}
+
+func (a *API) cashierMaxPendingOrdersPerUser(ctx context.Context) int {
+	return a.adminConfigInt(ctx, "payments", "max_pending_orders_per_user", defaultPositiveInt(a.cfg.Cashier.MaxPendingOrdersPerUser, 3))
 }
 
 func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
@@ -6961,6 +6959,9 @@ func parseAdminImageReviewAction(path string) (string, string, *errs.Error) {
 }
 
 func (a *API) adminConfigBool(ctx context.Context, tabKey, configKey string, fallback bool) bool {
+	if a.admin == nil {
+		return fallback
+	}
 	tab, err := a.admin.GetTab(ctx, tabKey)
 	if err != nil {
 		return fallback
@@ -6978,6 +6979,55 @@ func (a *API) adminConfigBool(ctx context.Context, tabKey, configKey string, fal
 				return parsed
 			}
 		}
+	}
+	return fallback
+}
+
+func (a *API) adminConfigInt(ctx context.Context, tabKey, configKey string, fallback int) int {
+	if a.admin == nil {
+		return fallback
+	}
+	tab, err := a.admin.GetTab(ctx, tabKey)
+	if err != nil {
+		return fallback
+	}
+	for _, item := range tab.Items {
+		if item.ConfigKey != configKey {
+			continue
+		}
+		value, ok := configIntValue(item.ConfigValue["value"])
+		if !ok || value <= 0 {
+			return fallback
+		}
+		return value
+	}
+	return fallback
+}
+
+func (a *API) adminConfigString(ctx context.Context, tabKey, configKey string, fallback string) string {
+	if a.admin == nil {
+		return strings.TrimSpace(fallback)
+	}
+	tab, err := a.admin.GetTab(ctx, tabKey)
+	if err != nil {
+		return strings.TrimSpace(fallback)
+	}
+	for _, item := range tab.Items {
+		if item.ConfigKey != configKey {
+			continue
+		}
+		value, ok := configStringValue(item.ConfigValue["value"])
+		if !ok {
+			return strings.TrimSpace(fallback)
+		}
+		return value
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func defaultPositiveInt(value, fallback int) int {
+	if value > 0 {
+		return value
 	}
 	return fallback
 }
@@ -7156,7 +7206,7 @@ func summarizeReadinessChecks(checks []adminReadinessCheck) (string, map[string]
 }
 
 func (a *API) paymentReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
-	if !a.cfg.Cashier.Enabled {
+	if !a.adminConfigBool(ctx, "payments", "enabled", a.cfg.Cashier.Enabled) {
 		return readinessCheck("payments", "支付配置", "warn", "收银台未启用，用户无法在线充值", "cashier", "去配置", checkedAt)
 	}
 	methods := a.cashierVisibleMethods(ctx, false)
@@ -8085,11 +8135,12 @@ func newCashierOrderNo() string {
 func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMethod, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (cashierPaymentBuildResult, *errs.Error) {
 	req.Method = method
 	req.Instance = instance
+	siteBaseURL := a.cashierSiteBaseURL(ctx)
 	registry := cashierservice.NewPaymentAdapterRegistryWithBuilders(cashierservice.PaymentProviderBuilders{
-		AlipayDirect: cashierservice.NewAlipayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
-		WxPayDirect:  cashierservice.NewWxPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
-		EasyPay:      cashierservice.NewEasyPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
-		JeePay:       cashierservice.NewJeePayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: a.cfg.Cashier.SiteBaseURL}),
+		AlipayDirect: cashierservice.NewAlipayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
+		WxPayDirect:  cashierservice.NewWxPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
+		EasyPay:      cashierservice.NewEasyPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
+		JeePay:       cashierservice.NewJeePayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
 	})
 
 	result, err := registry.BuildPaymentDisplay(ctx, req)
@@ -8111,7 +8162,7 @@ func (a *API) cashierCallbackURLs(instance cashierProviderInstance, providerType
 			break
 		}
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(a.cfg.Cashier.SiteBaseURL), "/")
+	baseURL := strings.TrimRight(strings.TrimSpace(a.cashierSiteBaseURL(context.Background())), "/")
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
 	}
@@ -8122,6 +8173,10 @@ func (a *API) cashierCallbackURLs(instance cashierProviderInstance, providerType
 		returnURL = baseURL + "/#/checkout"
 	}
 	return notifyURL, returnURL
+}
+
+func (a *API) cashierSiteBaseURL(ctx context.Context) string {
+	return a.adminConfigString(ctx, "payments", "site_base_url", a.cfg.Cashier.SiteBaseURL)
 }
 
 func trimEasyPayEndpointBase(raw string) string {

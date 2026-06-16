@@ -104,7 +104,7 @@ cd pic-gallery
 cp .env.example .env
 ```
 
-For local development, the default `.env.example` is enough to start the infrastructure. Edit `configs/config.compose.dev.yaml` when you want to point the app at real upstream providers or change backend runtime settings.
+For local development, the default `.env.example` is enough to start the infrastructure. Edit `.env` for host-run API/worker settings, or `deployments/docker-compose/.env.example` for Compose defaults.
 
 ### 3. Start the development full stack
 
@@ -125,7 +125,7 @@ Default development admin login:
 - Email: `admin@example.com`
 - Password: `admin123456`
 
-Override these in `configs/config.compose.dev.yaml` before exposing the service outside a local development machine.
+Override the relevant values in `.env` or `deployments/docker-compose/.env.example` before exposing the service outside a local development machine.
 
 Stop it with:
 
@@ -209,11 +209,63 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make user-web-dev
 VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 ```
 
-## Source Service Installation
+## Local Source Deployment
 
-When installing from source, the API, worker, user web app, and admin web app can be registered as operating-system services. This is useful for a self-hosted machine where you want the source-run processes to restart automatically.
+Use local source deployment when the machine has Go, Node.js, npm, PostgreSQL, and Redis available, or when middleware is started by Docker and the application processes run on the host.
 
-The service scripts install all four components by default. You can restrict the target components with `--components api,worker,user-web,admin-web`.
+1. Prepare the env file:
+
+   ```bash
+   cp .env.example .env
+   $EDITOR .env
+   ```
+
+2. Build everything, or only the components you need:
+
+   ```bash
+   ./scripts/local/pgctl.sh build
+   ./scripts/local/pgctl.sh build --components api,worker
+   ```
+
+3. Run from source in the foreground/background:
+
+   ```bash
+   ./scripts/local/pgctl.sh up --components api,worker --background
+   ```
+
+4. Install API and worker as host services when the host should keep them running after logout or restart:
+
+   ```bash
+   ./scripts/local/pgctl.sh install --components api,worker --env-file .env --user
+   ./scripts/local/pgctl.sh status --components api,worker --user
+   ```
+
+5. Manage installed services:
+
+   ```bash
+   ./scripts/local/pgctl.sh start --components api,worker --user
+   ./scripts/local/pgctl.sh stop --components api,worker --user
+   ./scripts/local/pgctl.sh restart --components api,worker --user
+   ./scripts/local/pgctl.sh logs --components api,worker --user
+   ./scripts/local/pgctl.sh uninstall --components api,worker --user
+   ```
+
+For local host-run API/worker with Docker-managed middleware, start the middleware first:
+
+```bash
+make compose-middleware-up
+./scripts/local/pgctl.sh up --components api,worker --background
+```
+
+The API listens on `http://127.0.0.1:8080` by default. Check deployment health with:
+
+```bash
+curl http://127.0.0.1:8080/readyz
+```
+
+### Operating System Services
+
+The local service manager supports Linux, macOS, and Windows. The shell scripts install API and worker by default; use `--components api,worker` explicitly when you want to avoid frontend dev servers as services.
 
 ### Linux
 
@@ -222,25 +274,25 @@ Linux uses `systemd`.
 Install user-level services:
 
 ```bash
-./scripts/service/install.sh --user
+./scripts/service/manage.sh install --components api,worker --env-file .env --user
 ```
 
 Uninstall user-level services:
 
 ```bash
-./scripts/service/uninstall.sh --user
+./scripts/service/manage.sh uninstall --components api,worker --user
 ```
 
 Install system-level services:
 
 ```bash
-sudo ./scripts/service/install.sh
+sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
 ```
 
 Uninstall system-level services:
 
 ```bash
-sudo ./scripts/service/uninstall.sh
+sudo ./scripts/service/manage.sh uninstall --components api,worker
 ```
 
 ### macOS
@@ -250,25 +302,25 @@ macOS uses `launchd`.
 Install user-level services:
 
 ```bash
-./scripts/service/install.sh --user
+./scripts/service/manage.sh install --components api,worker --env-file .env --user
 ```
 
 Uninstall user-level services:
 
 ```bash
-./scripts/service/uninstall.sh --user
+./scripts/service/manage.sh uninstall --components api,worker --user
 ```
 
 Install system-level daemons:
 
 ```bash
-sudo ./scripts/service/install.sh
+sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
 ```
 
 Uninstall system-level daemons:
 
 ```bash
-sudo ./scripts/service/uninstall.sh
+sudo ./scripts/service/manage.sh uninstall --components api,worker
 ```
 
 ### Windows
@@ -278,40 +330,37 @@ Windows source service installation uses Scheduled Tasks so the ordinary Go and 
 Install services:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/install.ps1
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile ".env"
 ```
 
 Uninstall services:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/uninstall.ps1
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 uninstall -Components "api,worker"
 ```
 
-Install selected components:
+Check status:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/install.ps1 -Components "api,worker"
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 status -Components "api,worker"
 ```
 
 ## Configuration
 
-Main configuration templates:
+Runtime configuration now uses env files for deployment bootstrap and database-backed admin settings for business configuration.
 
-- [`configs/config.example.yaml`](./configs/config.example.yaml): application config template.
-- [`configs/config.dev.yaml`](./configs/config.dev.yaml): host-run local development config.
-- [`configs/config.compose.dev.yaml`](./configs/config.compose.dev.yaml): Docker Compose local development config.
-- [`configs/config.pro.yaml`](./configs/config.pro.yaml): DevOps/server production config template.
-- [`configs/config.compose.prod.yaml`](./configs/config.compose.prod.yaml): Docker Compose production config template.
-- [`.env.example`](./.env.example): local development environment variables.
-- [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example): compose environment template.
-- [`deployments/docker-compose/.env.prod.example`](./deployments/docker-compose/.env.prod.example): production compose environment template.
+Main templates:
+
+- [`.env.example`](./.env.example): local source-run environment template.
+- [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example): local Compose environment template.
+- [`deployments/docker-compose/.env.prod.example`](./deployments/docker-compose/.env.prod.example): production Compose environment template.
 
 Backend runtime configuration:
 
-- The backend reads `config.yaml` by default.
-- `APP_CONFIG_PATH` and `PIC_GALLERY_CONFIG` are path selectors only; database, Redis, storage, auth secrets, provider keys, SMTP, CORS, and initial admin settings are read from YAML.
-- For DevOps packages, set build-time `APP_ENV=dev` or `APP_ENV=pro`; `scripts/devops/package.sh` copies the selected config into the artifact as `config.yaml`.
-- For Docker Compose production, edit `configs/config.compose.prod.yaml` or set `PIC_GALLERY_CONFIG_FILE` in `deployments/docker-compose/.env.prod` to a server-local config file.
+- API and worker load `.env`/process environment by default. `PIC_GALLERY_ENV_FILE` can point to an explicit env file for local or service-managed runs.
+- `APP_CONFIG_PATH` and `PIC_GALLERY_CONFIG` are compatibility-only selectors for explicit `LoadYAML` migration tools/tests. API and worker default startup ignores them; new deployments should not use them.
+- Keep only bootstrap settings in env: database, Redis, storage bootstrap, auth/encryption secrets, initial admin bootstrap, and basic service ports.
+- Configure SMTP, payment channels, billing/pricing, provider accounts, model routing, and other operational settings in the admin console after startup.
 
 Before public launch, configure at least one enabled model provider/account/route/price and one usable payment channel if recharge is exposed.
 
@@ -323,17 +372,57 @@ Admin-managed sensitive settings are write-only by contract:
 
 ## Docker Compose Deployment
 
-The production compose file is located at [`deployments/docker-compose/docker-compose.prod.yml`](./deployments/docker-compose/docker-compose.prod.yml).
+The production compose file is located at [`deployments/docker-compose/docker-compose.prod.yml`](./deployments/docker-compose/docker-compose.prod.yml). It pulls prebuilt images from `PIC_GALLERY_IMAGE_REGISTRY`; it does not build from local source and does not mount `config.yaml`.
+
+### First Deployment After Clone
+
+Use this path on a new server when the repository has just been cloned and you want Docker Compose to manage PostgreSQL, Redis, API, worker, frontend containers, and Nginx.
 
 ```bash
 cp deployments/docker-compose/.env.prod.example deployments/docker-compose/.env.prod
 $EDITOR deployments/docker-compose/.env.prod
 
 docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml up -d --build
+  -f deployments/docker-compose/docker-compose.prod.yml pull
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml up -d
 ```
 
-Before the first production start, replace all `CHANGE_ME` values in `configs/config.compose.prod.yaml` or point `PIC_GALLERY_CONFIG_FILE` at your server-local `config.yaml`.
+Set at least these values before the first start:
+
+- `PIC_GALLERY_IMAGE_REGISTRY`
+- `PIC_GALLERY_IMAGE_TAG`
+- `POSTGRES_PASSWORD`
+- `AUTH_ACCESS_TOKEN_SECRET`
+- `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`
+- `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`
+- `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`
+- `PIC_GALLERY_ADMIN_EMAIL`
+- `PIC_GALLERY_ADMIN_PASSWORD`
+- `CORS_ALLOWED_ORIGINS`
+
+Check the deployment:
+
+```bash
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml ps
+curl http://localhost:${NGINX_PORT:-80}/readyz
+```
+
+To prepare a standalone deployment directory with generated secrets, keep the `docker-compose/` directory beside `nginx/` so the relative Nginx mount in the compose file resolves correctly:
+
+```bash
+mkdir -p pic-gallery-deploy && cd pic-gallery-deploy
+mkdir -p docker-compose
+cd docker-compose
+/path/to/pic-gallery/deployments/docker-compose/prepare.sh
+cd ..
+cp -R /path/to/pic-gallery/deployments/nginx ./nginx
+cd docker-compose
+$EDITOR .env.prod
+docker compose --env-file .env.prod -f docker-compose.yml pull
+docker compose --env-file .env.prod -f docker-compose.yml up -d
+```
 
 The production stack includes PostgreSQL, Redis, API, worker, user web, admin web, Nginx, shared storage, and optional Prometheus. PostgreSQL, Redis, API, worker, and frontend containers are on the same Compose network and are not published to the host. Nginx is the public entrypoint.
 
@@ -345,25 +434,56 @@ Default public routes:
 
 See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md) for a deployment runbook.
 
-### Dev vs Prod Compose
+### Version Updates
 
-`docker-compose.dev.yml` is optimized for local iteration:
+For Docker deployments, publish the new images first, then update only `PIC_GALLERY_IMAGE_TAG` in `.env.prod` and restart the stack:
 
-- Mounts `configs/config.compose.dev.yaml` into API and worker containers as `/app/config.yaml`.
-- Uses trust-based local PostgreSQL defaults.
-- Starts API, worker, user web, admin web, Nginx, and middleware by default.
-- Keeps API, worker, frontend containers, PostgreSQL, Redis, MinIO, and Mailpit inside the Compose network.
-- Exposes only Nginx on `DEV_NGINX_PORT` (`8088` by default).
-- Seeds a convenient local admin by default.
-- Uses [`deployments/docker-compose/docker-compose-middileware.yml`](./deployments/docker-compose/docker-compose-middileware.yml) when you only want middleware for host-run source development.
+```bash
+$EDITOR deployments/docker-compose/.env.prod
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml pull
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml up -d
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml ps
+curl http://localhost:${NGINX_PORT:-80}/readyz
+```
 
-`docker-compose.prod.yml` is optimized for deployment:
+For local source deployments, pull the new code, rebuild, and restart the installed services:
 
-- Mounts `PIC_GALLERY_CONFIG_FILE` into API and worker containers as `/app/config.yaml`.
-- Requires explicit database URL, JWT secret, API-key encryption key, cashier provider encryption key, secure config encryption key, provider keys, and admin credentials in that YAML file.
-- Does not expose PostgreSQL, Redis, API, worker, or frontend containers to the host.
-- Exposes only Nginx on `NGINX_PORT` (`80` by default).
-- Adds optional Prometheus through the `monitoring` profile.
+```bash
+git pull
+./scripts/local/pgctl.sh build --components api,worker
+./scripts/local/pgctl.sh restart --components api,worker --user
+curl http://127.0.0.1:8080/readyz
+```
+
+Rollback is the same flow with `PIC_GALLERY_IMAGE_TAG` set back to the previous image tag, or with Git checked out to the previous source revision for local mode.
+
+### Local vs Docker Mode
+
+Local source-run mode uses [`scripts/local/pgctl.sh`](./scripts/local/pgctl.sh):
+
+```bash
+cp .env.example .env
+./scripts/local/pgctl.sh build --components api,worker
+./scripts/local/pgctl.sh up --components api,worker --background
+./scripts/service/manage.sh status --user
+```
+
+Docker mode uses Compose and images from the configured registry:
+
+- `docker-compose.dev.yml` is optimized for local iteration and still builds local images, but API and worker receive env configuration instead of a mounted YAML file.
+- `docker-compose.prod.yml` is optimized for deployment and only pulls prebuilt images.
+- `docker-compose.e2e.yml` runs source containers for tests and injects env configuration directly.
+
+Build and publish images with:
+
+```bash
+./scripts/docker/images.sh build --tag test --registry docker.io/your-org
+./scripts/docker/images.sh push --tag test --registry docker.io/your-org
+./scripts/docker/images.sh release --version v1.2.3 --latest --registry docker.io/your-org
+```
 
 ## Development Guide
 
@@ -421,7 +541,6 @@ docker compose -f deployments/docker-compose/docker-compose.e2e.yml down --remov
 api/openapi/              OpenAPI contract and API documentation source
 cmd/api/                  API service entrypoint
 cmd/worker/               async worker entrypoint
-configs/                  local and deployment config templates
 deployments/              Docker Compose, Nginx, and monitoring assets
 docs/                     PRD, technical design, plans, reviews, and runbooks
 internal/app/             application bootstrap and runtime wiring
