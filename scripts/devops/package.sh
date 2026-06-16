@@ -18,6 +18,9 @@ Environment overrides:
   DEVOPS_CGO_ENABLED   Backend CGO_ENABLED, default 0
   PIC_GALLERY_ENV_FILE Runtime env file path used by generated service scripts,
                        default ./env/backend.env beside the backend package.
+  PIC_GALLERY_ADMIN_BASE_PATH
+                       Admin frontend base path. Default /admin/. Use / for a
+                       dedicated admin domain.
 USAGE
 }
 
@@ -34,7 +37,7 @@ package_frontend() {
   local out_dir="$TARGET_ROOT/$app-web"
   local base_path="/"
   if [[ "$app" == "admin" ]]; then
-    base_path="/admin/"
+    base_path="${PIC_GALLERY_ADMIN_BASE_PATH:-/admin/}"
   fi
 
   echo "==> Building $app-web"
@@ -46,7 +49,17 @@ package_frontend() {
   mkdir -p "$out_dir/env"
   copy_file "$ROOT_DIR/deployments/devops/env/frontend.env.example" "$out_dir/env/frontend.env.example"
   copy_file "$ROOT_DIR/deployments/devops/frontend-env.template.js" "$out_dir/env.template.js"
-  copy_file "$ROOT_DIR/deployments/devops/nginx-$app-web.conf" "$out_dir/nginx.conf"
+  if [[ "$app" == "admin" ]]; then
+    copy_file "$ROOT_DIR/deployments/devops/nginx-admin-web-subpath.conf" "$out_dir/nginx-subpath.conf"
+    copy_file "$ROOT_DIR/deployments/devops/nginx-admin-web-domain.conf" "$out_dir/nginx-domain.conf"
+    if [[ "$base_path" == "/" ]]; then
+      copy_file "$ROOT_DIR/deployments/devops/nginx-admin-web-domain.conf" "$out_dir/nginx.conf"
+    else
+      copy_file "$ROOT_DIR/deployments/devops/nginx-admin-web-subpath.conf" "$out_dir/nginx.conf"
+    fi
+  else
+    copy_file "$ROOT_DIR/deployments/devops/nginx-$app-web.conf" "$out_dir/nginx.conf"
+  fi
   copy_file "$ROOT_DIR/deployments/devops/start-$app-web.sh" "$out_dir/start-$app-web.sh"
   chmod +x "$out_dir/start-$app-web.sh"
 }
@@ -77,12 +90,12 @@ package_backend() {
   local out_dir="$TARGET_ROOT/$target"
   echo "==> Building $target ($GOOS_TARGET/$GOARCH_TARGET, CGO_ENABLED=$CGO_TARGET)"
   rm -rf "$out_dir"
-  mkdir -p "$out_dir/bin"
+  mkdir -p "$out_dir"
 
   (
     cd "$ROOT_DIR"
     GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" \
-      go build -trimpath -ldflags="-s -w" -o "$out_dir/bin/$bin_name" "$cmd_pkg"
+      go build -trimpath -ldflags="-s -w" -o "$out_dir/$bin_name" "$cmd_pkg"
   )
 
   mkdir -p "$out_dir/env"

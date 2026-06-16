@@ -3,7 +3,10 @@ set -eu
 
 SERVICE_NAME=${PIC_GALLERY_WORKER_SERVICE_NAME:-pic-gallery-worker}
 APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-BIN_PATH="$APP_DIR/bin/pic-gallery-worker"
+BIN_PATH=${PIC_GALLERY_WORKER_BIN_PATH:-"$APP_DIR/pic-gallery-worker"}
+if [ ! -x "$BIN_PATH" ] && [ -x "$APP_DIR/bin/pic-gallery-worker" ]; then
+  BIN_PATH="$APP_DIR/bin/pic-gallery-worker"
+fi
 ENV_FILE=${PIC_GALLERY_ENV_FILE:-"$APP_DIR/env/backend.env"}
 UNIT_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 

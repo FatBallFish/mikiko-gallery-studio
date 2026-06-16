@@ -115,14 +115,25 @@ write_service_start_script() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_ROOT="\$(cd "\$SCRIPT_DIR/../../.." 2>/dev/null && pwd || true)"
 COMPONENT="$component"
-BIN_PATH="\$ROOT_DIR/target/local/bin/$bin_name"
+APP_DIR="\$SCRIPT_DIR"
+if [[ -x "\$SCRIPT_DIR/$bin_name" ]]; then
+  BIN_PATH="\$SCRIPT_DIR/$bin_name"
+elif [[ -x "\$SCRIPT_DIR/bin/$bin_name" ]]; then
+  BIN_PATH="\$SCRIPT_DIR/bin/$bin_name"
+elif [[ -n "\$SOURCE_ROOT" && -x "\$SOURCE_ROOT/target/local/bin/$bin_name" ]]; then
+  APP_DIR="\$SOURCE_ROOT"
+  BIN_PATH="\$SOURCE_ROOT/target/local/bin/$bin_name"
+else
+  BIN_PATH="\$SCRIPT_DIR/$bin_name"
+fi
 DESCRIPTION="$description"
 SERVICE_NAME="pic-gallery-\$COMPONENT"
 UNIT="\$SERVICE_NAME.service"
 LABEL="com.picgallery.\$COMPONENT"
-ENV_FILE="\${PIC_GALLERY_ENV_FILE:-\$ROOT_DIR/.env}"
+ENV_FILE="\${PIC_GALLERY_ENV_FILE:-\$APP_DIR/.env}"
 SYSTEMCTL_ARGS=(--user)
 if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
   SYSTEMCTL_ARGS=()
@@ -218,7 +229,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=\$ROOT_DIR
+WorkingDirectory=\$APP_DIR
 Environment=PIC_GALLERY_ENV_FILE=\$ENV_FILE
 ExecStart=\$BIN_PATH
 Restart=always
@@ -242,7 +253,7 @@ install_launchd_service() {
   local plist
   plist="\$(launchd_plist_path)"
   if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" != "1" ]]; then
-    mkdir -p "\$(dirname "\$plist")" "\$ROOT_DIR/tmp"
+    mkdir -p "\$(dirname "\$plist")" "\$APP_DIR/tmp"
   elif [[ "\$(id -u)" -ne 0 ]] && ! command -v sudo >/dev/null 2>&1; then
     echo "root permission or sudo is required to install \$LABEL" >&2
     exit 1
@@ -256,13 +267,13 @@ install_launchd_service() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>\$LABEL</string>
-  <key>WorkingDirectory</key><string>\$ROOT_DIR</string>
+  <key>WorkingDirectory</key><string>\$APP_DIR</string>
   <key>ProgramArguments</key><array><string>\$BIN_PATH</string></array>
   <key>EnvironmentVariables</key><dict><key>PIC_GALLERY_ENV_FILE</key><string>\$ENV_FILE</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>\$ROOT_DIR/tmp/\$COMPONENT.out.log</string>
-  <key>StandardErrorPath</key><string>\$ROOT_DIR/tmp/\$COMPONENT.err.log</string>
+  <key>StandardOutPath</key><string>\$APP_DIR/tmp/\$COMPONENT.out.log</string>
+  <key>StandardErrorPath</key><string>\$APP_DIR/tmp/\$COMPONENT.err.log</string>
 </dict></plist>
 PLIST
 
@@ -273,13 +284,11 @@ PLIST
   fi
 }
 
-if ! service_is_registered; then
-  case "\$(uname -s)" in
-    Linux) install_systemd_service ;;
-    Darwin) install_launchd_service ;;
-    *) echo "Unsupported OS. This script supports Linux systemd and macOS launchd." >&2; exit 1 ;;
-  esac
-fi
+case "\$(uname -s)" in
+  Linux) install_systemd_service ;;
+  Darwin) install_launchd_service ;;
+  *) echo "Unsupported OS. This script supports Linux systemd and macOS launchd." >&2; exit 1 ;;
+esac
 
 if service_is_running; then
   case "\$(uname -s)" in
