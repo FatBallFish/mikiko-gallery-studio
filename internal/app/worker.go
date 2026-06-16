@@ -54,6 +54,7 @@ func RunWorker() error {
 	assetSvc := entstore.NewAssetsStore(client)
 	adminCfgSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
+	billingSvc.SetAdminConfigResolver(adminCfgSvc)
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(
 		cfg,
 		nil,

@@ -4,7 +4,7 @@ set -eu
 SERVICE_NAME=${PIC_GALLERY_WORKER_SERVICE_NAME:-pic-gallery-worker}
 APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 BIN_PATH="$APP_DIR/bin/pic-gallery-worker"
-CONFIG_PATH="$APP_DIR/config.yaml"
+ENV_FILE=${PIC_GALLERY_ENV_FILE:-"$APP_DIR/env/backend.env"}
 UNIT_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 
 if [ ! -x "$BIN_PATH" ]; then
@@ -12,8 +12,9 @@ if [ ! -x "$BIN_PATH" ]; then
   exit 2
 fi
 
-if [ ! -f "$CONFIG_PATH" ]; then
-  echo "missing runtime config: $CONFIG_PATH" >&2
+if [ ! -f "$ENV_FILE" ]; then
+  echo "missing runtime env file: $ENV_FILE" >&2
+  echo "copy $APP_DIR/env/backend.env.example to $ENV_FILE and edit it before installing" >&2
   exit 2
 fi
 
@@ -42,6 +43,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
+Environment=PIC_GALLERY_ENV_FILE=$ENV_FILE
 ExecStart=$BIN_PATH
 Restart=always
 RestartSec=5

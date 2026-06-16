@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -19,6 +21,11 @@ type Service struct {
 	calc    *domainbilling.Calculator
 	store   Store
 	routing modelhub.ModelRoutingSource
+	admin   adminConfigResolver
+}
+
+type adminConfigResolver interface {
+	GetTab(ctx context.Context, tabKey string) (domainadminconfig.Tab, error)
 }
 
 type SignupTrialGrantRequest struct {
@@ -73,19 +80,25 @@ func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
 	s.routing = source
 }
 
+func (s *Service) SetAdminConfigResolver(resolver adminConfigResolver) {
+	s.admin = resolver
+}
+
 func (s *Service) Estimate(req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
 	if strings.TrimSpace(req.RouteModelCode) != "" {
 		return s.estimateRouteModel(req)
 	}
-	return s.calc.Estimate(req)
+	cfg := s.currentBillingConfig(context.Background())
+	return domainbilling.NewCalculator(cfg).Estimate(req)
 }
 
 func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
 	if s.routing == nil {
 		return domainbilling.EstimateResult{}, errs.New(409, errs.CodeConflict, "model routing is not configured")
 	}
+	cfg := s.currentBillingConfig(context.Background())
 	resolver := modelhub.NewResolver(config.Config{
-		Billing: s.cfg,
+		Billing: cfg,
 		GenerationLimits: config.GenerationLimitsConfig{
 			MaxImageCount:          1 << 30,
 			ReferenceImageMaxCount: 1 << 30,
@@ -109,7 +122,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 		return domainbilling.EstimateResult{}, err
 	}
 	quality := resolved.ResolvedQualityBucket
-	models, err := resolver.ListVisibleRouteModels(context.Background(), groupCodes, s.cfg.TaskMultipliers)
+	models, err := resolver.ListVisibleRouteModels(context.Background(), groupCodes, cfg.TaskMultipliers)
 	if err != nil {
 		return domainbilling.EstimateResult{}, err
 	}
@@ -146,7 +159,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 				UserGroupCode:             strings.Join(groupCodes, ","),
 				UserGroupMultiplier:       model.EffectiveMultiplier,
 				BaseUnitPoints:            price.BasePoints,
-				TaskMultiplier:            defaultBillingString(s.cfg.TaskMultipliers[req.TaskType], "1.00000"),
+				TaskMultiplier:            defaultBillingString(cfg.TaskMultipliers[req.TaskType], "1.00000"),
 				ReferenceExtraMultiplier:  "0.00000",
 				EstimatedPoints:           total.StringFixed(5),
 			}
@@ -174,6 +187,81 @@ func defaultBillingString(value, fallback string) string {
 
 func (s *Service) ActualPoints(snapshot domainbilling.PricingSnapshot, successOutputImageCount int) (string, error) {
 	return s.calc.ActualPoints(snapshot, successOutputImageCount)
+}
+
+func (s *Service) currentBillingConfig(ctx context.Context) config.BillingConfig {
+	cfg := s.cfg
+	if s == nil || s.admin == nil {
+		return normalizeBillingConfig(cfg)
+	}
+	tab, err := s.admin.GetTab(ctx, "billing_pricing")
+	if err != nil {
+		return normalizeBillingConfig(cfg)
+	}
+	for _, item := range tab.Items {
+		raw, ok := item.ConfigValue["value"]
+		if !ok {
+			continue
+		}
+		switch item.ConfigKey {
+		case "cny_per_point":
+			if value := stringConfigValue(raw); value != "" {
+				cfg.CNYPerPoint = value
+			}
+		case "auto_quality_default_by_group":
+			if value := stringMapConfigValue(raw); len(value) > 0 {
+				cfg.AutoQualityDefaultByGroup = value
+			}
+		case "task_multipliers":
+			if value := stringMapConfigValue(raw); len(value) > 0 {
+				cfg.TaskMultipliers = value
+			}
+		case "reference_image_extra":
+			if value, ok := referenceExtraConfigValue(raw); ok {
+				cfg.ReferenceImageExtra = value
+			}
+		}
+	}
+	return normalizeBillingConfig(cfg)
+}
+
+func stringConfigValue(raw any) string {
+	switch typed := raw.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(raw))
+	}
+}
+
+func stringMapConfigValue(raw any) map[string]string {
+	values, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	result := map[string]string{}
+	for key, value := range values {
+		normalizedKey := strings.TrimSpace(key)
+		normalizedValue := stringConfigValue(value)
+		if normalizedKey == "" || normalizedValue == "" {
+			continue
+		}
+		result[normalizedKey] = normalizedValue
+	}
+	return result
+}
+
+func referenceExtraConfigValue(raw any) (config.ReferenceExtra, bool) {
+	values, ok := raw.(map[string]any)
+	if !ok {
+		return config.ReferenceExtra{}, false
+	}
+	return config.ReferenceExtra{
+		First:      stringConfigValue(values["first"]),
+		Additional: stringConfigValue(values["additional"]),
+	}, true
 }
 
 func (s *Service) GetBalance(ctx context.Context, userID int64, userGroupMultiplier string) (domainbilling.BalanceSummary, error) {

@@ -7,22 +7,30 @@
 - PostgreSQL is the source of truth for users, billing, tasks, images, config, and audit data.
 - Redis is required for production cooldowns, rate limits, and runtime cache invalidation.
 - Local storage is single-node only unless mounted as a shared volume; use S3-compatible storage for clusters.
-- Production must set `api_key.signing_secret_encryption_key` in `config.yaml`; it protects stored API key HMAC signing secrets and should be stable across API/worker restarts.
-- Production should set `cashier.provider_config_encryption_key` in `config.yaml`; it protects stored payment provider merchant credentials and should be stable across API/worker restarts.
+- Production must set stable env secrets: `AUTH_ACCESS_TOKEN_SECRET`, `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`, `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`, and `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`.
 
 ## Smoke Test
 
-1. `docker compose -f deployments/docker-compose/docker-compose.prod.yml up --build`
-2. `curl http://localhost:8080/healthz`
-3. Send an email code, log in, redeem points, create an image task with a mock provider, query task detail, and download the generated image.
+1. `docker compose --env-file deployments/docker-compose/.env.prod -f deployments/docker-compose/docker-compose.prod.yml pull`
+2. `docker compose --env-file deployments/docker-compose/.env.prod -f deployments/docker-compose/docker-compose.prod.yml up -d`
+3. `curl http://localhost:${NGINX_PORT:-80}/healthz`
+4. Send an email code, log in, redeem points, create an image task with a mock provider, query task detail, and download the generated image.
 
 ## Rollback
 
-Roll back API and worker images together. Existing queued/running tasks are safe to reclaim through task leases after the previous worker version exits.
+Roll back API, worker, user web, and admin web images together by setting `PIC_GALLERY_IMAGE_TAG` back to the previous version and running:
 
+```bash
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml pull
+docker compose --env-file deployments/docker-compose/.env.prod \
+  -f deployments/docker-compose/docker-compose.prod.yml up -d
+```
 
-## Production configuration
+Existing queued/running tasks are safe to reclaim through task leases after the previous worker version exits.
 
-Copy `configs/config.pro.yaml` or `configs/config.compose.prod.yaml` to the server as `config.yaml`, then fill all required secret values before starting API and worker. The server-local `config.yaml` must not be committed.
+## Production Configuration
 
-At minimum set database credentials, Redis URL, SMTP settings, `auth.access_token_secret`, `api_key.signing_secret_encryption_key`, `cashier.provider_config_encryption_key`, `security.secure_config_encryption_key`, and `admin.seed_password`.
+Production bootstrap config lives in `deployments/docker-compose/.env.prod` or the server-local env file used by your service manager. `config.yaml` is no longer part of the production deployment path.
+
+Keep env focused on startup requirements. Configure SMTP, provider accounts, model routing, billing/pricing, and payment channels in the admin console after first startup.

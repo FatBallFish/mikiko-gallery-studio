@@ -18,7 +18,6 @@ RUN apk add --no-cache ca-certificates tzdata && \
     mkdir -p /var/lib/pic-gallery/storage && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
 COPY --from=build /out/pic-gallery-worker /usr/local/bin/pic-gallery-worker
-COPY configs/config.example.yaml ./config.yaml
 USER picgallery
 VOLUME ["/var/lib/pic-gallery/storage"]
 ENTRYPOINT ["pic-gallery-worker"]

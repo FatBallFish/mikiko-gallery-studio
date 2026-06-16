@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -363,6 +365,48 @@ func TestNewServiceDefaultsPointsScaleToFiveDecimals(t *testing.T) {
 	}
 	if actual != "8.00000" {
 		t.Fatalf("expected normalized 5-decimal actual points, got %q", actual)
+	}
+}
+
+func TestEstimateUsesAdminBillingPricingOverrides(t *testing.T) {
+	cfg := config.BillingConfig{
+		CNYPerPoint:               "0.31250",
+		PointsScale:               5,
+		QualityPointsByModel:      map[string]map[string]string{"plus": {"2k": "10.00000"}},
+		TaskMultipliers:           map[string]string{"text_to_image": "1.00000"},
+		UserGroupMultipliers:      map[string]string{"basic": "1.00000"},
+		AutoQualityDefaultByGroup: map[string]string{"plus": "2k"},
+		ReferenceImageExtra:       config.ReferenceExtra{First: "0.00000", Additional: "0.00000"},
+	}
+	adminSvc := adminconfigservice.NewService(config.Config{Billing: cfg})
+	if _, err := adminSvc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "billing_pricing",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "billing_pricing",
+			ConfigKey:      "task_multipliers",
+			ConfigValue:    map[string]any{"value": map[string]any{"text_to_image": "2.00000"}},
+			Scope:          "global",
+		}},
+	}); err != nil {
+		t.Fatalf("UpdateTab billing_pricing: %v", err)
+	}
+
+	svc := NewService(cfg)
+	svc.SetAdminConfigResolver(adminSvc)
+
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType:                  "text_to_image",
+		AbstractModel:             "plus",
+		RequestedQuality:          "auto",
+		RequestedOutputImageCount: 1,
+		UserGroupCode:             "basic",
+	})
+	if err != nil {
+		t.Fatalf("Estimate: %v", err)
+	}
+	if result.EstimatedPoints != "20.00000" {
+		t.Fatalf("expected DB task multiplier override to affect estimate, got %#v", result)
 	}
 }
 

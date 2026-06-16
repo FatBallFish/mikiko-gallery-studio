@@ -6,7 +6,7 @@ USER_WEB_DIR := web/user
 ADMIN_WEB_DIR := web/admin
 DEV_COMPOSE_FILE := deployments/docker-compose/docker-compose.dev.yml
 
-.PHONY: dev worker test lint openapi compose-up compose-fullstack-up compose-middleware-up compose-down compose-clean service-install service-uninstall user-web-install admin-web-install user-web-dev admin-web-dev
+.PHONY: dev worker test lint openapi compose-up compose-fullstack-up compose-middleware-up compose-down compose-clean service-install service-uninstall service-start service-stop service-restart service-status service-logs local-build local-up user-web-install admin-web-install user-web-dev admin-web-dev
 
 dev:
 	$(GO) run ./cmd/api
@@ -39,10 +39,31 @@ compose-clean:
 	./scripts/dev/down.sh --volumes
 
 service-install:
-	./scripts/service/install.sh --user
+	./scripts/service/manage.sh install --user
 
 service-uninstall:
-	./scripts/service/uninstall.sh --user
+	./scripts/service/manage.sh uninstall --user
+
+service-start:
+	./scripts/service/manage.sh start --user
+
+service-stop:
+	./scripts/service/manage.sh stop --user
+
+service-restart:
+	./scripts/service/manage.sh restart --user
+
+service-status:
+	./scripts/service/manage.sh status --user
+
+service-logs:
+	./scripts/service/manage.sh logs --user
+
+local-build:
+	./scripts/local/pgctl.sh build
+
+local-up:
+	./scripts/local/pgctl.sh up --background
 
 user-web-install:
 	cd $(USER_WEB_DIR) && $(NPM) install

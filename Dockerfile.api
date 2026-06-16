@@ -18,7 +18,6 @@ RUN apk add --no-cache ca-certificates tzdata && \
     mkdir -p /var/lib/pic-gallery/storage && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
 COPY --from=build /out/pic-gallery-api /usr/local/bin/pic-gallery-api
-COPY configs/config.example.yaml ./config.yaml
 COPY api/openapi ./api/openapi
 USER picgallery
 EXPOSE 8080
