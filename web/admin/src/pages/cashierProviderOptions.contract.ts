@@ -253,3 +253,44 @@ for (const providerType of ['alipay_direct', 'wxpay_direct', 'easypay_alipay', '
     throw new Error(`${providerType} return_url hint should explain the page-suggested return URL, got ${JSON.stringify(returned)}`)
   }
 }
+
+const expectedSecretFields = {
+  alipay_direct: ['app_private_key'],
+  wxpay_direct: ['api_v3_key', 'merchant_private_key'],
+  easypay_alipay: ['key'],
+  easypay_wxpay: ['key'],
+  jeepay_alipay: ['key'],
+  jeepay_wxpay: ['key'],
+} as const
+
+const expectedPublicCredentialFields = {
+  alipay_direct: ['app_id', 'alipay_public_key'],
+  wxpay_direct: ['app_id', 'mch_id', 'merchant_certificate_serial', 'wechat_pay_public_key', 'wechat_pay_public_key_id'],
+  easypay_alipay: ['pid'],
+  easypay_wxpay: ['pid'],
+  jeepay_alipay: ['mch_no', 'app_id'],
+  jeepay_wxpay: ['mch_no', 'app_id'],
+} as const
+
+for (const [providerType, secretKeys] of Object.entries(expectedSecretFields)) {
+  const fields = cashierProviderConfigFields(providerType)
+  for (const key of secretKeys) {
+    const field = fields.find((item) => item.key === key)
+    if (field?.secret !== true) {
+      throw new Error(`${providerType}.${key} should be submitted as write-only secret, got ${JSON.stringify(field)}`)
+    }
+  }
+}
+
+for (const [providerType, publicKeys] of Object.entries(expectedPublicCredentialFields)) {
+  const fields = cashierProviderConfigFields(providerType)
+  for (const key of publicKeys) {
+    const field = fields.find((item) => item.key === key)
+    if (!field) {
+      throw new Error(`${providerType}.${key} should exist in structured provider fields`)
+    }
+    if (field.secret === true) {
+      throw new Error(`${providerType}.${key} should remain in public config because backend runtime reads it from instance.config, got ${JSON.stringify(field)}`)
+    }
+  }
+}
