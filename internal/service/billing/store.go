@@ -95,6 +95,7 @@ type Store interface {
 	ListWebhookEvents(ctx context.Context, page, pageSize int) (domainbilling.PaymentWebhookEventPage, error)
 	GetOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
 	GetOrderByIdempotencyKey(ctx context.Context, userID int64, idempotencyKey string) (domainbilling.PaymentOrder, error)
+	GetOrderByOrderNo(ctx context.Context, orderNo string) (domainbilling.PaymentOrder, error)
 	GetOrderForAdmin(ctx context.Context, orderID int64) (domainbilling.PaymentOrder, error)
 	RecordChargebackSummary(ctx context.Context, req ChargebackSummaryStoreRequest) (domainbilling.PaymentOrder, error)
 	RetryWebhookEvent(ctx context.Context, eventID int64) (domainbilling.PaymentWebhookEvent, error)
@@ -398,6 +399,21 @@ func (s *MemoryStore) GetOrderByIdempotencyKey(_ context.Context, userID int64, 
 	}
 	for _, order := range s.orders {
 		if order.UserID == userID && order.IdempotencyKey == idempotencyKey {
+			return order, nil
+		}
+	}
+	return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+}
+
+func (s *MemoryStore) GetOrderByOrderNo(_ context.Context, orderNo string) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	orderNo = strings.TrimSpace(orderNo)
+	if orderNo == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	for _, order := range s.orders {
+		if order.OrderNo == orderNo {
 			return order, nil
 		}
 	}
