@@ -1299,18 +1299,23 @@ func TestAdminCashierOrderRefundCallsJeePayProvider(t *testing.T) {
 	var upstreamPath string
 	var upstreamValues url.Values
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstreamPath = r.URL.Path
 		if r.Method != http.MethodPost {
-			t.Fatalf("expected jeepay refund POST, got %s", r.Method)
+			t.Fatalf("expected jeepay POST, got %s", r.Method)
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("read jeepay refund body: %v", err)
+			t.Fatalf("read jeepay body: %v", err)
 		}
 		values, err := url.ParseQuery(string(body))
 		if err != nil {
-			t.Fatalf("parse jeepay refund form: %v body=%s", err, string(body))
+			t.Fatalf("parse jeepay form: %v body=%s", err, string(body))
 		}
+		if r.URL.Path == "/api/pay/unifiedOrder" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+			return
+		}
+		upstreamPath = r.URL.Path
 		upstreamValues = values
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"refundOrderId":"JEEPAY-REFUND-001","mchRefundNo":"REFUND-JEEPAY-001","refundAmount":1250,"state":2,"channelOrderNo":"CHANNEL-REFUND-001"}}`))
@@ -1978,21 +1983,26 @@ func TestAdminCashierOrderSyncQueriesJeePayProvider(t *testing.T) {
 	var upstreamPath string
 	var upstreamValues url.Values
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstreamPath = r.URL.Path
 		if r.Method != http.MethodPost {
-			t.Fatalf("expected jeepay query POST, got %s", r.Method)
+			t.Fatalf("expected jeepay POST, got %s", r.Method)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read jeepay body: %v", err)
+		}
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			t.Fatalf("parse jeepay form: %v", err)
+		}
+		if r.URL.Path == "/api/pay/unifiedOrder" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-QUERY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+			return
 		}
 		if r.URL.Path != "/api/pay/query" {
 			t.Fatalf("expected jeepay query path /api/pay/query, got %s", r.URL.Path)
 		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read jeepay query body: %v", err)
-		}
-		values, err := url.ParseQuery(string(body))
-		if err != nil {
-			t.Fatalf("parse jeepay query form: %v", err)
-		}
+		upstreamPath = r.URL.Path
 		upstreamValues = values
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{"state":2,"amount":1250,"payOrderId":"JEEPAY-QUERY-001"}}`))

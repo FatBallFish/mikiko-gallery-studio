@@ -211,6 +211,8 @@ func JeePayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequ
 		"mchNo":      mchNo,
 		"appId":      appID,
 		"mchOrderNo": strings.TrimSpace(order.OrderNo),
+		"reqTime":    strconv.FormatInt(time.Now().UnixMilli(), 10),
+		"version":    "1.0",
 		"signType":   "MD5",
 	}
 	params["sign"] = jeepaySign(params, key)

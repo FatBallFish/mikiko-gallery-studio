@@ -2,6 +2,9 @@ package cashier
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
@@ -26,6 +29,45 @@ func TestQueryAdapterRegistryBuildsConfigDrivenResult(t *testing.T) {
 	}
 	if result.Raw["source"] != "provider_instance_config" || result.ProviderInstanceID != int64(5) {
 		t.Fatalf("expected config raw/provider metadata, got %#v", result)
+	}
+}
+
+func TestJeePayOrderStatusQuerySendsVersionAndReqTime(t *testing.T) {
+	var values url.Values
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pay/query" {
+			t.Fatalf("expected jeepay query POST, got %s %s", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		values = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{"state":2,"amount":1250,"payOrderId":"JEEPAY-QUERY-001"}}`))
+	}))
+	defer upstream.Close()
+
+	result, err := JeePayOrderStatusQueryBuilder(context.Background(), QueryOrderStatusRequest{
+		Order: OrderSnapshot{OrderNo: "PGO-JEEPAY-QUERY-001", AmountCNY: "12.50000", Status: "pending"},
+		Instance: domaincashier.ProviderInstance{
+			ID:           42,
+			ProviderType: "jeepay_alipay",
+			Config: map[string]any{
+				"gateway_url": upstream.URL,
+				"mch_no":      "MCH10001",
+				"app_id":      "APP10001",
+				"key":         "merchant-secret",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("JeePayOrderStatusQueryBuilder returned error: %v", err)
+	}
+	if !result.Paid || result.TradeNo != "JEEPAY-QUERY-001" {
+		t.Fatalf("unexpected query result %#v", result)
+	}
+	if values.Get("version") != "1.0" || values.Get("reqTime") == "" || values.Get("signType") != "MD5" || values.Get("sign") == "" {
+		t.Fatalf("expected jeepay query version, reqTime, and signature, got %#v", values)
 	}
 }
 

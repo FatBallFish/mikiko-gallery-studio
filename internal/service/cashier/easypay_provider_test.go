@@ -46,7 +46,7 @@ func TestEasyPayPaymentDisplayBuilderBuildsSignedPopupURL(t *testing.T) {
 	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != "PGO-EASY-001" || query.Get("money") != "12.50000" {
 		t.Fatalf("unexpected easypay params: %s", result.PaymentURL)
 	}
-	if query.Get("notify_url") != "https://pic.example.com/api/open/image/v1/payments/webhooks/easypay_alipay" || query.Get("return_url") != "https://client.example.com/#/checkout" {
+	if query.Get("notify_url") != "https://pic.example.com/api/open/image/v1/payments/webhooks/easypay_alipay" || query.Get("return_url") != "https://client.example.com/" {
 		t.Fatalf("unexpected callback params: %s", result.PaymentURL)
 	}
 	if query.Get("sign") == "" || query.Get("sign_type") != "MD5" {
@@ -54,6 +54,38 @@ func TestEasyPayPaymentDisplayBuilderBuildsSignedPopupURL(t *testing.T) {
 	}
 	if result.Display["type"] != "redirect" || result.Display["payment_url"] != result.PaymentURL || result.Display["sign_type"] != "MD5" {
 		t.Fatalf("unexpected easypay display %#v", result.Display)
+	}
+}
+
+func TestEasyPayPaymentDisplayBuilderNormalizesClientReturnURLToOriginRoot(t *testing.T) {
+	builder := NewEasyPayPaymentDisplayBuilder(CallbackURLConfig{SiteBaseURL: "https://pic.example.com"})
+	req := PaymentDisplayRequest{
+		Method: domaincashier.VisibleMethod{Method: "alipay"},
+		Instance: domaincashier.ProviderInstance{
+			ID:           23,
+			ProviderType: "easypay_alipay",
+			Config: map[string]any{
+				"gateway_url": "https://pay.example.com",
+				"pid":         "10001",
+				"key":         "merchant-secret",
+			},
+		},
+		OrderNo:         "PGO-EASY-RETURN-001",
+		AmountCNY:       "1.00000",
+		Subject:         "自定义充值",
+		ClientReturnURL: "https://app.example.com/#/checkout",
+	}
+
+	result, err := builder(context.Background(), req, BasePaymentDisplay(req, "easypay_alipay"))
+	if err != nil {
+		t.Fatalf("BuildEasyPayPaymentDisplay returned error: %v", err)
+	}
+	parsed, err := url.Parse(result.PaymentURL)
+	if err != nil {
+		t.Fatalf("parse easypay payment url: %v", err)
+	}
+	if got := parsed.Query().Get("return_url"); got != "https://app.example.com/" {
+		t.Fatalf("expected EasyPay return_url to use origin root, got %q in %s", got, result.PaymentURL)
 	}
 }
 

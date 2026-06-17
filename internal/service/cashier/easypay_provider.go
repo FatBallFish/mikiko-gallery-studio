@@ -138,6 +138,7 @@ func BuildEasyPayPaymentParams(callbacks CallbackURLConfig, req PaymentDisplayRe
 		return "", nil, "", "", errs.BadRequest("easypay pid and key are required")
 	}
 	notifyURL, returnURL := cashierCallbackURLs(callbacks, req.Instance.Config, strings.ToLower(strings.TrimSpace(req.Instance.ProviderType)), req.ClientReturnURL)
+	returnURL = easyPayCompatibleReturnURL(returnURL)
 	params := map[string]string{
 		"pid":          pid,
 		"type":         paymentType,
@@ -154,6 +155,18 @@ func BuildEasyPayPaymentParams(callbacks CallbackURLConfig, req PaymentDisplayRe
 	params["sign"] = sign
 	params["sign_type"] = "MD5"
 	return baseURL, params, sign, key, nil
+}
+
+func easyPayCompatibleReturnURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return trimmed
+	}
+	return parsed.Scheme + "://" + parsed.Host + "/"
 }
 
 func trimEasyPayEndpointBase(raw string) string {

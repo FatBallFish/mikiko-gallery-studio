@@ -529,21 +529,10 @@ func TestCashierJeePayDisplayIsSignedAndPersisted(t *testing.T) {
 	if order.Provider != "jeepay_alipay" || order.ProviderType != "jeepay_alipay" || order.ProviderInstanceID == 0 || order.PaymentURL == "" {
 		t.Fatalf("expected jeepay order provider metadata and payment url, got %#v", order)
 	}
-	payURL, err := url.Parse(order.PaymentURL)
-	if err != nil {
-		t.Fatalf("parse jeepay payment url: %v", err)
+	if order.PaymentURL != "https://jeepay.example.com/pay/session" {
+		t.Fatalf("expected jeepay returned payment URL, got %s", order.PaymentURL)
 	}
-	query := payURL.Query()
-	if !strings.HasSuffix(payURL.Path, "/api/pay/unifiedOrder") {
-		t.Fatalf("expected jeepay unifiedOrder URL, got %s", order.PaymentURL)
-	}
-	if query.Get("mchNo") != "MCH10001" || query.Get("appId") != "APP10001" || query.Get("wayCode") != "ALI_PC" || query.Get("mchOrderNo") != order.OrderNo || query.Get("amount") != "1250" {
-		t.Fatalf("unexpected jeepay payment params: %s", order.PaymentURL)
-	}
-	if query.Get("notifyUrl") == "" || query.Get("returnUrl") == "" || query.Get("sign") == "" || query.Get("signType") != "MD5" {
-		t.Fatalf("expected jeepay callbacks and MD5 signature, got %s", order.PaymentURL)
-	}
-	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["sign_type"] != "MD5" || order.PaymentDisplay["way_code"] != "ALI_PC" {
+	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["prepay_mode"] != "api" || order.PaymentDisplay["sign_type"] != "MD5" || order.PaymentDisplay["way_code"] != "ALI_PC" || order.PaymentDisplay["channel_trade_no"] != "JEEPAY-TEST-PAY-001" {
 		t.Fatalf("expected signed jeepay display to mirror payment url, got %#v", order.PaymentDisplay)
 	}
 
@@ -1039,7 +1028,7 @@ func TestCashierEasyPayPopupDisplayIsSignedAndPersisted(t *testing.T) {
 	providerBody := `{"provider_type":"easypay_alipay","name":"易支付支付宝","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":"https://pay.example.com","pid":"10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/payments/easypay/notify","return_url":"https://merchant.example.com/checkout/return","payment_mode":"popup"}}`
 	providerID := createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"12.50000","visible_method":"alipay"}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"12.50000","visible_method":"alipay","client_return_url":"https://client.example.com/#/checkout"}`))
 	createReq.Header.Set("Authorization", "Bearer "+userSession.AccessToken)
 	createReq.Header.Set("Content-Type", "application/json")
 	createRec := httptest.NewRecorder()
@@ -1066,6 +1055,9 @@ func TestCashierEasyPayPopupDisplayIsSignedAndPersisted(t *testing.T) {
 	}
 	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != createResp.Data.OrderNo || query.Get("money") != "12.50000" || query.Get("sign") == "" || query.Get("sign_type") != "MD5" {
 		t.Fatalf("unexpected easypay query params: %s", createResp.Data.PaymentURL)
+	}
+	if query.Get("return_url") != "https://client.example.com/" {
+		t.Fatalf("expected easypay return_url to be origin root, got %q in %s", query.Get("return_url"), createResp.Data.PaymentURL)
 	}
 	if createResp.Data.PaymentDisplay["sign_type"] != "MD5" || createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL {
 		t.Fatalf("expected signed display to mirror payment url, got %#v", createResp.Data.PaymentDisplay)
@@ -2085,6 +2077,20 @@ func setupEasyPayCashierTest(t *testing.T, userEmail string) (http.Handler, stri
 
 func setupJeePayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string) {
 	t.Helper()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pay/unifiedOrder" {
+			t.Fatalf("expected jeepay unifiedOrder POST, got %s %s", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse jeepay unified order form: %v", err)
+		}
+		if r.PostForm.Get("mchNo") != "MCH10001" || r.PostForm.Get("appId") != "APP10001" || r.PostForm.Get("wayCode") != "ALI_PC" || r.PostForm.Get("amount") == "" || r.PostForm.Get("sign") == "" {
+			t.Fatalf("unexpected jeepay unified order params: %#v", r.PostForm)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-TEST-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+	}))
+	t.Cleanup(upstream.Close)
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{
 		AccessTokenTTL:    10 * time.Minute,
@@ -2116,7 +2122,7 @@ func setupJeePayCashierTest(t *testing.T, userEmail string) (http.Handler, strin
 		t.Fatalf("expected visible methods update 200, got %d body=%s", visibleRec.Code, visibleRec.Body.String())
 	}
 
-	providerBody := `{"provider_type":"jeepay_alipay","name":"JeePay 支付宝","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":"https://jeepay.example.com","mch_no":"MCH10001","app_id":"APP10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/payments/jeepay/notify","return_url":"https://merchant.example.com/checkout/return","way_code":"ALI_PC"}}`
+	providerBody := fmt.Sprintf(`{"provider_type":"jeepay_alipay","name":"JeePay 支付宝","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":%q,"mch_no":"MCH10001","app_id":"APP10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/payments/jeepay/notify","return_url":"https://merchant.example.com/checkout/return","way_code":"ALI_PC"}}`, upstream.URL)
 	createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
 	return handler, userSession.AccessToken, adminToken
 }
