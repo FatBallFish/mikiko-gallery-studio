@@ -8737,7 +8737,7 @@ func easyPaySign(params map[string]string, key string) string {
 func jeepaySign(params map[string]string, key string) string {
 	keys := make([]string, 0, len(params))
 	for name, value := range params {
-		if strings.EqualFold(name, "sign") || strings.EqualFold(name, "signType") || strings.TrimSpace(value) == "" {
+		if strings.EqualFold(name, "sign") || strings.TrimSpace(value) == "" {
 			continue
 		}
 		keys = append(keys, name)

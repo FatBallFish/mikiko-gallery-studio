@@ -2393,15 +2393,15 @@ func jeepayWebhookValuesForTest(order domainbilling.PaymentOrder, mchNo, key, am
 	values.Set("amount", amountFen)
 	values.Set("state", "2")
 	values.Set("wayCode", "ALI_PC")
-	values.Set("sign", jeepaySignForTest(values, key))
 	values.Set("signType", "MD5")
+	values.Set("sign", jeepaySignForTest(values, key))
 	return values
 }
 
 func jeepaySignForTest(values url.Values, key string) string {
 	keys := make([]string, 0, len(values))
 	for name, items := range values {
-		if strings.EqualFold(name, "sign") || strings.EqualFold(name, "signType") || len(items) == 0 || strings.TrimSpace(items[0]) == "" {
+		if strings.EqualFold(name, "sign") || len(items) == 0 || strings.TrimSpace(items[0]) == "" {
 			continue
 		}
 		keys = append(keys, name)
