@@ -103,36 +103,32 @@ write_service_start_script() {
   local component=$1
   local script="$ROOT_DIR/target/local/bin/start-pic-gallery-$component.sh"
   cat > "$script" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env sh
+set -eu
 
-ROOT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPT_DIR="\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)"
+ROOT_DIR="\$(cd "\$SCRIPT_DIR/../../.." && pwd)"
 COMPONENT="$component"
-USER_FLAG=(--user)
-if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
-  USER_FLAG=()
-fi
-ENV_ARGS=()
-if [[ -n "\${PIC_GALLERY_ENV_FILE:-}" ]]; then
-  ENV_ARGS=(--env-file "\$PIC_GALLERY_ENV_FILE")
-fi
+MANAGE_SH="\$ROOT_DIR/scripts/service/manage.sh"
 
 service_is_registered() {
   case "\$(uname -s)" in
     Linux)
-      local unit="pic-gallery-\$COMPONENT.service"
-      local unit_path="/etc/systemd/system/\$unit"
-      if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" != "1" ]]; then
+      unit="pic-gallery-\$COMPONENT.service"
+      unit_path="/etc/systemd/system/\$unit"
+      if [ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" != "1" ]; then
         unit_path="\$HOME/.config/systemd/user/\$unit"
+        [ -f "\$unit_path" ] || systemctl --user list-unit-files "\$unit" --no-legend 2>/dev/null | grep -q "\$unit"
+      else
+        [ -f "\$unit_path" ] || systemctl list-unit-files "\$unit" --no-legend 2>/dev/null | grep -q "\$unit"
       fi
-      [[ -f "\$unit_path" ]] || systemctl "\${USER_FLAG[@]}" list-unit-files "\$unit" --no-legend 2>/dev/null | grep -q "\$unit"
       ;;
     Darwin)
-      local plist="\$HOME/Library/LaunchAgents/com.picgallery.\$COMPONENT.plist"
-      if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
+      plist="\$HOME/Library/LaunchAgents/com.picgallery.\$COMPONENT.plist"
+      if [ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" = "1" ]; then
         plist="/Library/LaunchDaemons/com.picgallery.\$COMPONENT.plist"
       fi
-      [[ -f "\$plist" ]]
+      [ -f "\$plist" ]
       ;;
     *)
       return 1
@@ -143,11 +139,15 @@ service_is_registered() {
 service_is_running() {
   case "\$(uname -s)" in
     Linux)
-      systemctl "\${USER_FLAG[@]}" is-active --quiet "pic-gallery-\$COMPONENT.service"
+      if [ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" = "1" ]; then
+        systemctl is-active --quiet "pic-gallery-\$COMPONENT.service"
+      else
+        systemctl --user is-active --quiet "pic-gallery-\$COMPONENT.service"
+      fi
       ;;
     Darwin)
-      local domain="gui/\$(id -u)"
-      if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
+      domain="gui/\$(id -u)"
+      if [ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" = "1" ]; then
         domain="system"
       fi
       launchctl print "\$domain/com.picgallery.\$COMPONENT" 2>/dev/null | grep -Eq 'state = running|pid = [0-9]+'
@@ -158,14 +158,51 @@ service_is_running() {
   esac
 }
 
+manage_service() {
+  action="\$1"
+  if [ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" = "1" ]; then
+    if [ -n "\${PIC_GALLERY_ENV_FILE:-}" ]; then
+      "\$MANAGE_SH" "\$action" --components "\$COMPONENT" --env-file "\$PIC_GALLERY_ENV_FILE"
+    else
+      "\$MANAGE_SH" "\$action" --components "\$COMPONENT"
+    fi
+  else
+    if [ -n "\${PIC_GALLERY_ENV_FILE:-}" ]; then
+      "\$MANAGE_SH" "\$action" --components "\$COMPONENT" --user --env-file "\$PIC_GALLERY_ENV_FILE"
+    else
+      "\$MANAGE_SH" "\$action" --components "\$COMPONENT" --user
+    fi
+  fi
+}
+
+restart_packaged_systemd_service() {
+  unit="pic-gallery-\$COMPONENT.service"
+  if [ "\$(uname -s)" != "Linux" ]; then
+    echo "packaged fallback only supports Linux systemd; missing source manager: \$MANAGE_SH" >&2
+    exit 1
+  fi
+  if [ -f "/etc/systemd/system/\$unit" ] || systemctl list-unit-files "\$unit" --no-legend 2>/dev/null | grep -q "\$unit"; then
+    systemctl restart "\$unit"
+    systemctl is-active --quiet "\$unit"
+    echo "systemd service restarted: \$unit"
+    exit 0
+  fi
+  echo "missing source manager and systemd unit: \$MANAGE_SH, \$unit" >&2
+  exit 1
+}
+
+if [ ! -x "\$MANAGE_SH" ]; then
+  restart_packaged_systemd_service
+fi
+
 if ! service_is_registered; then
-  "\$ROOT_DIR/scripts/service/manage.sh" install --components "\$COMPONENT" "\${USER_FLAG[@]}" "\${ENV_ARGS[@]}"
+  manage_service install
 fi
 
 if service_is_running; then
-  "\$ROOT_DIR/scripts/service/manage.sh" restart --components "\$COMPONENT" "\${USER_FLAG[@]}" "\${ENV_ARGS[@]}"
+  manage_service restart
 else
-  "\$ROOT_DIR/scripts/service/manage.sh" start --components "\$COMPONENT" "\${USER_FLAG[@]}" "\${ENV_ARGS[@]}"
+  manage_service start
 fi
 EOF
   chmod +x "$script"

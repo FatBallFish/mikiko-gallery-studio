@@ -614,8 +614,8 @@ function StorageSettingsPanel({ onFeedback }: { onFeedback: (title: string, deta
               <option value="disabled">disabled</option>
             </select>
           </Field>
-          <Field label="Access Key"><input value={draft.access_key_id ?? ''} onChange={(event) => setDraft((current) => ({ ...current, access_key_id: event.target.value }))} disabled={draft.driver === 'local'} placeholder={editingID ? '留空则保留原密钥' : ''} /></Field>
-          <Field label="Secret Key"><input type="password" value={draft.secret_access_key ?? ''} onChange={(event) => setDraft((current) => ({ ...current, secret_access_key: event.target.value }))} disabled={draft.driver === 'local'} placeholder={editingID ? '留空则保留原密钥' : ''} /></Field>
+          <Field label="Access Key"><input value={draft.access_key_id ?? ''} onChange={(event) => setDraft((current) => ({ ...current, access_key_id: event.target.value }))} disabled={draft.driver === 'local'} placeholder={editingID ? '留空则保留原密钥' : ''} autoComplete="off" name="storage-access-key-id" /></Field>
+          <Field label="Secret Key"><input type="password" value={draft.secret_access_key ?? ''} onChange={(event) => setDraft((current) => ({ ...current, secret_access_key: event.target.value }))} disabled={draft.driver === 'local'} placeholder={editingID ? '留空则保留原密钥' : ''} autoComplete="new-password" name="storage-secret-access-key-new" /></Field>
         </div>
         <label className="inline-flex items-center gap-2 text-sm font-bold text-[var(--soft)]">
           <input type="checkbox" checked={Boolean(draft.force_path_style)} onChange={(event) => setDraft((current) => ({ ...current, force_path_style: event.target.checked }))} disabled={draft.driver === 'local'} />

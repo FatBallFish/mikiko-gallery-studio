@@ -238,7 +238,7 @@ function DialogForm({ dialog, setDialog }: { dialog: DialogState; setDialog: (ne
     return (
       <div className={adminPage.formGrid}>
         <Field label="邮箱"><input value={dialog.email} onChange={(event) => setDialog({ ...dialog, email: event.target.value })} /></Field>
-        <Field label="初始密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} /></Field>
+        <Field label="初始密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} autoComplete="new-password" name="system-user-initial-password" /></Field>
         <RoleField value={dialog.role} onChange={(role) => setDialog({ ...dialog, role })} />
         <StatusField value={dialog.status} onChange={(status) => setDialog({ ...dialog, status })} />
       </div>
@@ -253,7 +253,7 @@ function DialogForm({ dialog, setDialog }: { dialog: DialogState; setDialog: (ne
     )
   }
   if (dialog.type === 'password') {
-    return <Field label="新密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} /></Field>
+    return <Field label="新密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} autoComplete="new-password" name="system-user-reset-password" /></Field>
   }
   return <Field label="输入邮箱确认删除"><input value={dialog.confirmEmail} onChange={(event) => setDialog({ ...dialog, confirmEmail: event.target.value })} placeholder={dialog.user.email} /></Field>
 }

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
+import { API_PATHS } from '../../../shared/api-types'
 import type { CashierCustomAmountConfig, CashierOverview, CashierPlan, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderInstanceWriteRequest, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
+import { getDefaultBaseUrl } from '../../../shared/http-client'
 import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { CurrencyInput } from '../ui/CurrencyInput'
@@ -10,7 +12,7 @@ import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashierJeePayWayCodeTemplates'
 import { cashierAdminDateTime, cashierManualCompletionProviderOptions, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel, cashierProviderConfigStatusLabel, cashierProviderSupportedMethodsLabel, cashierWebhookEventTypeLabel, cashierWebhookProviderLabel } from './cashierPaymentDisplay'
 import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
-import { cashierProviderConfigFields, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod } from './cashierProviderOptions'
+import { cashierProviderConfigFields, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod, defaultCashierProviderConfigText } from './cashierProviderOptions'
 import type { CashierProviderConfigField } from './cashierProviderOptions'
 import { cashierOrderRiskRows, cashierWebhookRiskRow } from './cashierRiskRows'
 import type { CashierRiskRow } from './cashierRiskRows'
@@ -163,9 +165,6 @@ const cashierClasses = {
   orderFilterFields: 'grid flex-1 grid-cols-[minmax(180px,1fr)_minmax(120px,.5fr)_minmax(120px,.5fr)_minmax(120px,.5fr)_minmax(120px,.5fr)] gap-3 max-[1100px]:grid-cols-2 max-[620px]:grid-cols-1',
   webhookInspector: 'grid gap-2 rounded-xl border border-[#263243] bg-[#111827] p-4 text-white',
   webhookPre: 'max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg bg-black/25 p-3 font-mono text-xs',
-  jeepayTemplate: 'grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
-  templateButtonRow: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2',
-  templateButton: 'grid gap-1 rounded-xl border border-[var(--line)] bg-white/5 p-3 text-left text-sm hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/10',
   textarea: 'min-h-[160px] w-full resize-y rounded-xl border border-[var(--line)] bg-white/5 px-3 py-2 font-mono text-sm outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/50',
   detailGrid: 'grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3',
   detailItem: 'grid gap-1 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-3',
@@ -183,11 +182,14 @@ const cashierClasses = {
   providerGuide: 'col-span-full grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
   providerGuideFields: 'flex flex-wrap gap-2 text-xs text-[var(--soft)]',
   structuredConfig: 'col-span-full grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
-  secretConfig: 'col-span-full grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
-  secretConfigGrid: 'grid grid-cols-[minmax(0,1fr)_minmax(220px,.7fr)] gap-3 max-[760px]:grid-cols-1',
+  callbackGuide: 'grid gap-2 rounded-xl border border-[var(--line)] bg-white/[0.03] p-3',
+  callbackGuideGrid: 'grid grid-cols-[minmax(120px,.35fr)_minmax(0,1fr)] items-start gap-2 text-xs max-[640px]:grid-cols-1',
+  callbackGuideLabel: 'font-bold uppercase tracking-[0.12em] text-[var(--muted-strong)]',
+  callbackGuideCode: 'break-all font-mono text-[var(--text)]',
   supportedMethods: 'grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2',
   checkOption: 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10',
   inlineControl: 'flex items-center gap-2',
+  inlineFieldActions: 'mt-2 flex flex-wrap gap-2',
   methodName: 'grid gap-1',
   methodCode: 'grid gap-1',
 }
@@ -1087,25 +1089,26 @@ export function CashierPage({
       {instanceDialog ? (
         <Modal
           title={instanceDialog.row ? '编辑支付渠道实例' : '新增支付渠道实例'}
-          detail="配置 JSON 中可填写商户号、密钥、网关地址等渠道参数；保存后不会回显密钥明文。"
+          detail="按渠道填写商户号、密钥、网关和回调参数；密钥保存后不会回显明文。"
           onClose={() => setInstanceDialog(null)}
           footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={savingInstance} onClick={() => setInstanceDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={savingInstance || !instanceDialog.name || !instanceDialog.provider_type} onClick={() => void saveInstance()}>{savingInstance ? '保存中...' : '保存'}</button></>}
         >
           <div className={adminPage.formGrid}>
             <ProviderConfigGuide providerType={instanceDialog.provider_type} />
-            <Field label="实例名称"><input value={instanceDialog.name} onChange={(event) => setInstanceDialog({ ...instanceDialog, name: event.target.value })} placeholder="支付宝沙箱主账号" /></Field>
-            <Field label="渠道类型">
+            <Field label="实例名称" required><input value={instanceDialog.name} onChange={(event) => setInstanceDialog({ ...instanceDialog, name: event.target.value })} placeholder="支付宝沙箱主账号" autoComplete="off" name="payment-provider-instance-name" required /></Field>
+            <Field label="渠道类型" required>
               <select
                 value={instanceDialog.provider_type}
                 onChange={(event) => {
                   const providerType = event.target.value as PaymentProviderType
-                  setInstanceDialog({ ...instanceDialog, provider_type: providerType, supported_methods: methodsForProviderType(providerType) })
+                  setInstanceDialog(resetInstanceDraftProvider(instanceDialog, providerType))
                 }}
+                required
               >
                 {cashierProviderTypes.map((providerType) => <option key={providerType} value={providerType}>{cashierProviderLabel(providerType)}</option>)}
               </select>
             </Field>
-            <Field label="支持方式">
+            <Field label="支持方式" required>
               <div className={cashierClasses.supportedMethods}>
                 {cashierProviderSupportedMethodOptions(instanceDialog.provider_type, instanceDialog.supported_methods).map((option) => (
                   <label key={option.value} className={cashierClasses.checkOption}>
@@ -1122,8 +1125,8 @@ export function CashierPage({
                 ))}
               </div>
             </Field>
-            <Field label="排序" hint={cashierProviderInstanceFieldHints.sortOrder}><input value={instanceDialog.sort_order} onChange={(event) => setInstanceDialog({ ...instanceDialog, sort_order: event.target.value })} type="number" min="0" /></Field>
-            <Field label="调度权重" hint={cashierProviderInstanceFieldHints.schedulerWeight}><input value={instanceDialog.scheduler_weight} onChange={(event) => setInstanceDialog({ ...instanceDialog, scheduler_weight: event.target.value })} type="number" min="1" /></Field>
+            <Field label="排序" hint={cashierProviderInstanceFieldHints.sortOrder} required><input value={instanceDialog.sort_order} onChange={(event) => setInstanceDialog({ ...instanceDialog, sort_order: event.target.value })} type="number" min="0" required /></Field>
+            <Field label="调度权重" hint={cashierProviderInstanceFieldHints.schedulerWeight} required><input value={instanceDialog.scheduler_weight} onChange={(event) => setInstanceDialog({ ...instanceDialog, scheduler_weight: event.target.value })} type="number" min="1" required /></Field>
             <Field label="最小金额" hint={cashierProviderInstanceFieldHints.minAmount}><input value={instanceDialog.min_amount_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, min_amount_cny: event.target.value })} inputMode="decimal" placeholder="1.00000" /></Field>
             <Field label="最大金额" hint={cashierProviderInstanceFieldHints.maxAmount}><input value={instanceDialog.max_amount_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, max_amount_cny: event.target.value })} inputMode="decimal" placeholder="500.00000" /></Field>
             <Field label="日限额" hint={cashierProviderInstanceFieldHints.dailyLimit}><input value={instanceDialog.daily_amount_limit_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, daily_amount_limit_cny: event.target.value })} inputMode="decimal" placeholder="5000.00000" /></Field>
@@ -1131,35 +1134,6 @@ export function CashierPage({
               <input type="checkbox" checked={instanceDialog.enabled} onChange={(event) => setInstanceDialog({ ...instanceDialog, enabled: event.target.checked })} />
               <span>启用实例</span>
             </label>
-            {jeepayTemplatesForProvider(instanceDialog.provider_type).length ? (
-              <div className={cashierClasses.jeepayTemplate}>
-                <div>
-                  <strong>JeePay 场景模板</strong>
-                  <p>按基础支付、网页支付、服务商、分账和行业参数套用模板；会保留已有商户号、密钥和网关地址，只补齐支付模式、wayCode 和 channelExtra 示例。</p>
-                </div>
-                <div className={cashierClasses.templateButtonRow}>
-                  {jeepayTemplatesForProvider(instanceDialog.provider_type).map((template) => (
-                    <button
-                      key={template.way_code}
-                      type="button"
-                      className={cn(adminButton.base, adminButton.ghost, adminButton.small, cashierClasses.templateButton)}
-                      title={`${template.category} · ${template.description}`}
-                      onClick={() => {
-                        try {
-                          setInstanceDialog({ ...instanceDialog, config_text: applyJeePayWayCodeTemplate(instanceDialog.config_text, template.way_code) })
-                        } catch (caught) {
-                          setError(caught instanceof Error ? caught.message : 'JeePay 模板套用失败')
-                        }
-                      }}
-                    >
-                      <span>{template.category}</span>
-                      <strong>{template.label}</strong>
-                      <em>{template.way_code}</em>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             <ProviderStructuredConfigFields
               providerType={instanceDialog.provider_type}
               configText={instanceDialog.config_text}
@@ -1168,45 +1142,17 @@ export function CashierPage({
               onSecretsChange={(secretsText) => setInstanceDialog({ ...instanceDialog, secrets_text: secretsText })}
               onError={setError}
             />
-            <section className={cashierClasses.secretConfig}>
-              <div>
-                <strong>密钥配置</strong>
-                <p>密钥只写不读；编辑已有实例时留空表示保留旧密钥。若上方配置 JSON 中包含敏感字段，保存时会自动拆入 secrets。</p>
-                {instanceDialog.row?.credentials_status ? (
-                  <p>
-                    <Badge tone={instanceDialog.row.credentials_status.has_secret ? 'success' : 'warning'}>
-                      {instanceDialog.row.credentials_status.has_secret ? '已保存密钥' : '未保存密钥'}
-                    </Badge>
-                    {instanceDialog.row.credentials_status.fingerprint ? <span> 指纹 {instanceDialog.row.credentials_status.fingerprint}</span> : null}
-                  </p>
-                ) : null}
+            {instanceDialog.row?.credentials_status ? (
+              <div className={cashierClasses.callbackGuide}>
+                <strong>密钥状态</strong>
+                <p>
+                  <Badge tone={instanceDialog.row.credentials_status.has_secret ? 'success' : 'warning'}>
+                    {instanceDialog.row.credentials_status.has_secret ? '已保存密钥' : '未保存密钥'}
+                  </Badge>
+                  {instanceDialog.row.credentials_status.fingerprint ? <span> 指纹 {instanceDialog.row.credentials_status.fingerprint}</span> : null}
+                </p>
               </div>
-              <div className={cashierClasses.secretConfigGrid}>
-                <Field label="密钥 JSON" hint="仅填写需要新增或轮换的密钥；不要填写星号占位符。">
-                  <textarea
-                    className={cashierClasses.textarea}
-                    value={instanceDialog.secrets_text}
-                    onChange={(event) => setInstanceDialog({ ...instanceDialog, secrets_text: event.target.value })}
-                    rows={5}
-                    spellCheck={false}
-                    placeholder={'{\n  "key": "secret-value"\n}'}
-                  />
-                </Field>
-                <Field label="清空密钥字段" hint="逗号分隔，例如 key, private_key。">
-                  <textarea
-                    className={cashierClasses.textarea}
-                    value={instanceDialog.clear_secrets_text}
-                    onChange={(event) => setInstanceDialog({ ...instanceDialog, clear_secrets_text: event.target.value })}
-                    rows={5}
-                    spellCheck={false}
-                    placeholder="key, private_key"
-                  />
-                </Field>
-              </div>
-            </section>
-            <Field label="渠道配置 JSON" hint={cashierProviderInstanceFieldHints.configJSON}>
-              <textarea className={cashierClasses.textarea} value={instanceDialog.config_text} onChange={(event) => setInstanceDialog({ ...instanceDialog, config_text: event.target.value })} rows={8} spellCheck={false} />
-            </Field>
+            ) : null}
           </div>
         </Modal>
       ) : null}
@@ -1587,7 +1533,7 @@ function ProviderStructuredConfigFields({ providerType, configText, secretsText,
       <section className={cashierClasses.structuredConfig}>
         <div>
           <strong>渠道字段配置</strong>
-          <p>当前配置 JSON 或密钥 JSON 不是有效对象，修正后即可使用字段级表单。</p>
+          <p>当前渠道字段配置格式异常，修正后即可继续使用字段级表单。</p>
         </div>
       </section>
     )
@@ -1603,40 +1549,92 @@ function ProviderStructuredConfigFields({ providerType, configText, secretsText,
       onError(caught instanceof Error ? caught.message : '渠道字段更新失败')
     }
   }
+  const callbackURLs = suggestedPaymentCallbackURLs(providerType)
   return (
     <section className={cashierClasses.structuredConfig}>
       <div>
         <strong>渠道字段配置</strong>
-        <p>普通字段会同步写入渠道配置 JSON；密钥字段会写入密钥 JSON，保存后不回显明文。</p>
+        <p>普通字段写入渠道配置，密钥字段只写入密钥存储；保存后不回显明文。</p>
+      </div>
+      <div className={cashierClasses.callbackGuide}>
+        <strong>推荐回调地址</strong>
+        <div className={cashierClasses.callbackGuideGrid}>
+          <span className={cashierClasses.callbackGuideLabel}>异步回调</span>
+          <code className={cashierClasses.callbackGuideCode}>{callbackURLs.notifyURL}</code>
+          <span className={cashierClasses.callbackGuideLabel}>同步返回</span>
+          <code className={cashierClasses.callbackGuideCode}>{callbackURLs.returnURL}</code>
+        </div>
       </div>
       <div className={adminPage.formGrid}>
-        {fields.map((field) => (
-          <Field key={field.key} label={field.label} hint={field.hint}>
-            {field.options ? (
-              <select value={stringFromRecord(field.secret ? secrets : config, field.key)} onChange={(event) => updateField(field, event.target.value)}>
-                {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            ) : field.multiline ? (
-              <textarea
-                className={cashierClasses.textarea}
-                value={stringFromRecord(field.secret ? secrets : config, field.key)}
-                onChange={(event) => updateField(field, event.target.value)}
-                rows={4}
-                placeholder={field.placeholder}
-                spellCheck={false}
-              />
-            ) : (
-              <input
-                type={field.secret ? 'password' : 'text'}
-                value={stringFromRecord(field.secret ? secrets : config, field.key)}
-                onChange={(event) => updateField(field, event.target.value)}
-                placeholder={field.placeholder}
-              />
-            )}
-          </Field>
-        ))}
+        {fields.map((field) => {
+          const value = stringFromRecord(field.secret ? secrets : config, field.key)
+          const autoComplete = cashierFieldAutoComplete(field)
+          return (
+            <Field key={field.key} label={field.label} hint={field.hint} required={field.required}>
+              {field.options ? (
+                <select value={value} onChange={(event) => updateField(field, event.target.value)} required={field.required}>
+                  {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              ) : field.multiline ? (
+                <textarea
+                  className={cashierClasses.textarea}
+                  value={value}
+                  onChange={(event) => updateField(field, event.target.value)}
+                  rows={4}
+                  placeholder={field.placeholder}
+                  spellCheck={false}
+                  autoComplete={autoComplete}
+                  name={`cashier-${providerType}-${field.key}`}
+                  required={field.required}
+                />
+              ) : (
+                <input
+                  type={field.secret ? 'password' : 'text'}
+                  value={value}
+                  onChange={(event) => updateField(field, event.target.value)}
+                  placeholder={field.placeholder}
+                  autoComplete={autoComplete}
+                  name={`cashier-${providerType}-${field.key}`}
+                  required={field.required}
+                />
+              )}
+              {field.key === 'way_code' ? (
+                <JeePayWayCodeActions
+                  providerType={providerType}
+                  onApply={(wayCode) => {
+                    try {
+                      onChange(applyJeePayWayCodeTemplate(configText, wayCode))
+                    } catch (caught) {
+                      onError(caught instanceof Error ? caught.message : 'JeePay 模板套用失败')
+                    }
+                  }}
+                />
+              ) : null}
+            </Field>
+          )
+        })}
       </div>
     </section>
+  )
+}
+
+function JeePayWayCodeActions({ providerType, onApply }: { providerType: PaymentProviderType; onApply: (wayCode: string) => void }) {
+  const templates = jeepayTemplatesForProvider(providerType)
+  if (!templates.length) return null
+  return (
+    <div className={cashierClasses.inlineFieldActions}>
+      {templates.map((template) => (
+        <button
+          key={template.way_code}
+          type="button"
+          className={cn(adminButton.base, adminButton.ghost, adminButton.small)}
+          title={`${template.category} · ${template.description}`}
+          onClick={() => onApply(template.way_code)}
+        >
+          {template.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -1741,6 +1739,21 @@ function stringifyConfigPatch(base: Record<string, unknown>, field: CashierProvi
     next[field.key] = rawValue
   }
   return JSON.stringify(next, null, 2)
+}
+
+function cashierFieldAutoComplete(field: CashierProviderConfigField) {
+  if (field.secret) return 'new-password'
+  return 'off'
+}
+
+function suggestedPaymentCallbackURLs(providerType: PaymentProviderType) {
+  const pageOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+  const apiOrigin = getDefaultBaseUrl() || pageOrigin
+  const notifyPath = API_PATHS.open.paymentWebhook.replace('{channel}', providerType)
+  return {
+    notifyURL: `${apiOrigin}${notifyPath}`,
+    returnURL: `${pageOrigin}/checkout/return`,
+  }
 }
 
 function parseStructuredFieldJSON(value: string, label: string) {
@@ -1908,17 +1921,29 @@ function editPlanDraft(row: CashierPlan): PlanDraft {
 }
 
 function newInstanceDraft(): InstanceDraft {
+  const providerType: PaymentProviderType = 'mock'
   return {
-    provider_type: 'mock',
+    provider_type: providerType,
     name: '',
     enabled: true,
-    supported_methods: 'mock',
+    supported_methods: methodsForProviderType(providerType),
     sort_order: '10',
     scheduler_weight: '100',
     min_amount_cny: '1.00000',
     max_amount_cny: '999.00000',
     daily_amount_limit_cny: '',
-    config_text: '{\n  "mock": true\n}',
+    config_text: defaultCashierProviderConfigText(providerType),
+    secrets_text: '',
+    clear_secrets_text: '',
+  }
+}
+
+function resetInstanceDraftProvider(draft: InstanceDraft, providerType: PaymentProviderType): InstanceDraft {
+  return {
+    ...draft,
+    provider_type: providerType,
+    supported_methods: methodsForProviderType(providerType),
+    config_text: defaultCashierProviderConfigText(providerType),
     secrets_text: '',
     clear_secrets_text: '',
   }
