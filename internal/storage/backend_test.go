@@ -5,8 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
@@ -89,5 +91,46 @@ func TestS3BackendRoundTrip(t *testing.T) {
 	}
 	if _, err := backend.Get(context.Background(), "generated-images/result.png"); err != ErrNotFound {
 		t.Fatalf("expected deleted object to be gone, got %v", err)
+	}
+}
+
+func TestS3BackendPresignGet(t *testing.T) {
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint:        "https://objects.example.com",
+			Region:          "us-east-1",
+			Bucket:          "bucket",
+			AccessKeyID:     "access",
+			SecretAccessKey: "secret",
+			ForcePathStyle:  true,
+			Prefix:          "prefix",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	rawURL, expiresAt, err := backend.PresignGet(context.Background(), "generated-images/result.png", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("PresignGet: %v", err)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse presigned url: %v", err)
+	}
+	if parsed.Path != "/bucket/prefix/generated-images/result.png" {
+		t.Fatalf("unexpected presigned path %q", parsed.Path)
+	}
+	query := parsed.Query()
+	for _, key := range []string{"X-Amz-Algorithm", "X-Amz-Credential", "X-Amz-Date", "X-Amz-Expires", "X-Amz-SignedHeaders", "X-Amz-Signature"} {
+		if query.Get(key) == "" {
+			t.Fatalf("expected %s in presigned query: %s", key, rawURL)
+		}
+	}
+	if query.Get("X-Amz-Expires") != "300" {
+		t.Fatalf("expected 300 second ttl, got %q", query.Get("X-Amz-Expires"))
+	}
+	if time.Until(expiresAt) <= 0 {
+		t.Fatalf("expected future expiry, got %s", expiresAt)
 	}
 }

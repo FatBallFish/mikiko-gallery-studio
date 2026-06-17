@@ -1,5 +1,5 @@
 import type { ImageResult, ImageTask } from '../../../shared/api-types'
-import { generationSlots, workspaceProgressNodes, workspaceQualityLabel } from './workspaceTaskProgress'
+import { generationOutputVisibility, generationSlots, workspaceProgressNodes, workspaceQualityLabel } from './workspaceTaskProgress'
 
 if (workspaceQualityLabel('auto') !== '自动') {
   throw new Error(`quality auto should localize to 自动, got ${workspaceQualityLabel('auto')}`)
@@ -47,6 +47,16 @@ if (pendingSlots.some((item) => item.kind !== 'pending')) {
   throw new Error(`running task without results should show pending slots, got ${JSON.stringify(pendingSlots)}`)
 }
 
+const restoredRunningVisibility = generationOutputVisibility(task({ status: 'running', progress: 42, progress_stage: 'provider', image_count: 2, results: [] }), false)
+if (restoredRunningVisibility.showInitialLoading || !restoredRunningVisibility.showSlots) {
+  throw new Error(`running task with backend progress should restore per-image slots, got ${JSON.stringify(restoredRunningVisibility)}`)
+}
+
+const freshRunningVisibility = generationOutputVisibility(task({ status: 'running', progress: 0, progress_stage: '', progress_message: '', image_count: 2, results: [] }), false)
+if (!freshRunningVisibility.showInitialLoading || freshRunningVisibility.showSlots) {
+  throw new Error(`fresh running task without backend progress should keep initial loading, got ${JSON.stringify(freshRunningVisibility)}`)
+}
+
 function image(id: string): ImageResult {
   return {
     id,
@@ -75,6 +85,8 @@ function task(patch: Partial<ImageTask>): ImageTask {
     image_count: patch.image_count ?? 1,
     estimate_points: patch.estimate_points ?? '1.00000',
     progress: patch.progress ?? 0,
+    progress_stage: patch.progress_stage,
+    progress_message: patch.progress_message,
     provider: patch.provider ?? 'openai',
     route: patch.route ?? 'default',
     created_at: patch.created_at ?? '2026-06-05T00:00:00Z',

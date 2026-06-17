@@ -39,6 +39,7 @@ export const API_PATHS = {
     referenceAssetDetail: '/api/agent/image/v1/reference-assets/{asset_id}',
     referenceAssetDownload: '/api/agent/image/v1/reference-assets/{asset_id}/download',
     imageDownload: '/api/agent/image/v1/images/{image_id}',
+    imageAccessUrl: '/api/agent/image/v1/images/{image_id}/access-url',
     tasks: '/api/agent/image/v1/tasks',
     taskDetail: '/api/agent/image/v1/tasks/{task_id}',
     taskEvents: '/api/agent/image/v1/tasks/{task_id}/events',
@@ -121,6 +122,12 @@ export const API_PATHS = {
     modelRouteDetail: '/api/ops/admin/v1/model-routes/{route_id}',
     configTabs: '/api/ops/admin/v1/config-tabs',
     configTabDetail: '/api/ops/admin/v1/config-tabs/{tab_key}',
+    storageConfigs: '/api/ops/admin/v1/storage/configs',
+    storageConfigDetail: '/api/ops/admin/v1/storage/configs/{storage_config_id}',
+    storageConfigTest: '/api/ops/admin/v1/storage/configs/{storage_config_id}/test',
+    storageConfigSetDefault: '/api/ops/admin/v1/storage/configs/{storage_config_id}/set-default',
+    storageMigrations: '/api/ops/admin/v1/storage/migrations',
+    storageStats: '/api/ops/admin/v1/storage/stats',
     imageReviews: '/api/ops/admin/v1/image-reviews',
     imageReviewImage: '/api/ops/admin/v1/image-reviews/{image_id}/image',
     imageReviewApprove: '/api/ops/admin/v1/image-reviews/{image_id}:approve',
@@ -527,6 +534,9 @@ export type ReferenceAsset = {
 export type ImageResult = {
   id: string
   url: string
+  asset_url?: string
+  expires_at?: string | null
+  delivery_mode?: 'proxy' | 'presigned' | string
   download_url?: string
   mime_type?: string
   file_size_bytes?: number
@@ -552,6 +562,12 @@ export type ImageResult = {
   liked_by_viewer?: boolean
   favorited_by_viewer?: boolean
   created_at?: string
+}
+export type ImageAccessURL = {
+  image_id: string
+  asset_url: string
+  expires_at?: string | null
+  delivery_mode: 'proxy' | 'presigned' | string
 }
 export type ImageTask = {
   id: string
@@ -688,6 +704,97 @@ export type ConfigItem = {
 }
 export type ConfigTab = { tab_key: string; tab_name: string; version: number; items: ConfigItem[]; read_only?: boolean }
 export type UpdateConfigTabRequest = { version: number; items: Array<Pick<ConfigItem, 'config_category' | 'config_key' | 'config_value' | 'scope'>> }
+export type StorageDriver = 'local' | 's3' | 'bfss' | string
+export type StorageConfigStatus = 'active' | 'disabled' | string
+export type StorageTestStatus = 'unknown' | 'passed' | 'failed' | string
+export type StorageConfig = {
+  id: ID
+  code: string
+  name: string
+  driver: StorageDriver
+  endpoint?: string
+  region?: string
+  bucket: string
+  prefix?: string
+  force_path_style: boolean
+  access_key_id_set: boolean
+  secret_access_key_set: boolean
+  status: StorageConfigStatus
+  is_default_write: boolean
+  last_test_status: StorageTestStatus
+  last_test_error?: string
+  last_tested_at?: string | null
+  created_at: string
+  updated_at: string
+}
+export type StorageConfigWriteRequest = {
+  code: string
+  name: string
+  driver: StorageDriver
+  endpoint?: string
+  region?: string
+  bucket: string
+  prefix?: string
+  force_path_style?: boolean
+  access_key_id?: string
+  secret_access_key?: string
+  status: StorageConfigStatus
+}
+export type StorageConfigPage = { items: StorageConfig[] }
+export type StorageStatsItem = {
+  storage_config_id?: ID | null
+  storage_code: string
+  driver: StorageDriver
+  bucket: string
+  image_count: number
+  generated_image_count: number
+  reference_asset_count: number
+  avatar_count: number
+  total_bytes: number
+  last_written_at?: string | null
+  legacy_storage_driver?: string
+  legacy_storage_root_key?: string
+}
+export type StorageStatsPage = { items: StorageStatsItem[] }
+export type StorageTestResult = { status: StorageTestStatus; latency_ms: number; error?: string; checked_at: string }
+export type StorageMigrationScope = { object_roles?: string[]; created_before?: string | null }
+export type StorageMigrationCreateRequest = {
+  source_storage_config_id?: ID | null
+  target_storage_config_id: ID
+  scope: StorageMigrationScope
+  dry_run: boolean
+  update_records: boolean
+}
+export type StorageMigrationJob = {
+  job_id: string
+  source_storage_config_id?: ID | null
+  target_storage_config_id: ID
+  scope: StorageMigrationScope
+  dry_run: boolean
+  update_records: boolean
+  status: string
+  total_items: number
+  processed_items: number
+  failed_items: number
+  total_bytes: number
+  created_at: string
+  started_at?: string | null
+  finished_at?: string | null
+}
+export type StorageMigrationItem = {
+  id: string
+  job_id: string
+  object_kind: string
+  object_id: string
+  source_storage_config_id?: ID | null
+  source_object_key: string
+  target_storage_config_id: ID
+  target_object_key?: string
+  size_bytes: number
+  status: string
+  error?: string
+}
+export type StorageMigrationResult = { job: StorageMigrationJob; items?: StorageMigrationItem[] }
 export type ModelProvider = { id: number; provider_code: string; provider_type: string; auth_config_encrypted?: string; health_status: string; enabled: boolean; created_at: string; updated_at: string }
 export type ModelProviderWriteRequest = { provider_code: string; provider_type: string; auth_config_encrypted?: string; health_status: string; enabled: boolean }
 export type ProviderModel = {
@@ -732,7 +839,7 @@ export type ModelRoute = {
 }
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
-export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; quality?: string; aspect_ratio?: string; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
+export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; quality?: string; aspect_ratio?: string; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; asset_url?: string; download_url?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
 export type ReviewItem = { id: string; image_id?: string; title: string; owner: string; task_type: ImageTaskType; image_url: string; status: 'pending' | 'pending_review' | 'approved' | 'rejected' | 'unpublished' | string; reason: string; created_at: string; review_reason?: string; visibility_status?: string }
 export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[]; recent_orders?: PaymentOrder[]; recent_tasks?: ImageTask[]; api_keys?: ApiKey[] }

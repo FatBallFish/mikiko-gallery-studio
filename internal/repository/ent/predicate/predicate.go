@@ -87,6 +87,15 @@ type RouteModelVisibilityGroup func(*sql.Selector)
 // SecureConfig is the predicate function for secureconfig builders.
 type SecureConfig func(*sql.Selector)
 
+// StorageConfig is the predicate function for storageconfig builders.
+type StorageConfig func(*sql.Selector)
+
+// StorageMigrationItem is the predicate function for storagemigrationitem builders.
+type StorageMigrationItem func(*sql.Selector)
+
+// StorageMigrationJob is the predicate function for storagemigrationjob builders.
+type StorageMigrationJob func(*sql.Selector)
+
 // SubscriptionPlan is the predicate function for subscriptionplan builders.
 type SubscriptionPlan func(*sql.Selector)
 

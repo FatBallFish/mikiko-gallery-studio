@@ -32,6 +32,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/schema"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storageconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storagemigrationitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storagemigrationjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
@@ -468,13 +471,13 @@ func init() {
 	// imageresult.ImageRoleValidator is a validator for the "image_role" field. It is called by the builders before save.
 	imageresult.ImageRoleValidator = imageresultDescImageRole.Validators[0].(func(string) error)
 	// imageresultDescStorageDriver is the schema descriptor for storage_driver field.
-	imageresultDescStorageDriver := imageresultFields[4].Descriptor()
+	imageresultDescStorageDriver := imageresultFields[5].Descriptor()
 	// imageresult.DefaultStorageDriver holds the default value on creation for the storage_driver field.
 	imageresult.DefaultStorageDriver = imageresultDescStorageDriver.Default.(string)
 	// imageresult.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
 	imageresult.StorageDriverValidator = imageresultDescStorageDriver.Validators[0].(func(string) error)
 	// imageresultDescObjectKey is the schema descriptor for object_key field.
-	imageresultDescObjectKey := imageresultFields[5].Descriptor()
+	imageresultDescObjectKey := imageresultFields[6].Descriptor()
 	// imageresult.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
 	imageresult.ObjectKeyValidator = func() func(string) error {
 		validators := imageresultDescObjectKey.Validators
@@ -492,7 +495,7 @@ func init() {
 		}
 	}()
 	// imageresultDescMimeType is the schema descriptor for mime_type field.
-	imageresultDescMimeType := imageresultFields[6].Descriptor()
+	imageresultDescMimeType := imageresultFields[7].Descriptor()
 	// imageresult.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
 	imageresult.MimeTypeValidator = func() func(string) error {
 		validators := imageresultDescMimeType.Validators
@@ -510,19 +513,19 @@ func init() {
 		}
 	}()
 	// imageresultDescFileSizeBytes is the schema descriptor for file_size_bytes field.
-	imageresultDescFileSizeBytes := imageresultFields[7].Descriptor()
+	imageresultDescFileSizeBytes := imageresultFields[8].Descriptor()
 	// imageresult.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
 	imageresult.DefaultFileSizeBytes = imageresultDescFileSizeBytes.Default.(int64)
 	// imageresultDescWidth is the schema descriptor for width field.
-	imageresultDescWidth := imageresultFields[8].Descriptor()
+	imageresultDescWidth := imageresultFields[9].Descriptor()
 	// imageresult.DefaultWidth holds the default value on creation for the width field.
 	imageresult.DefaultWidth = imageresultDescWidth.Default.(int)
 	// imageresultDescHeight is the schema descriptor for height field.
-	imageresultDescHeight := imageresultFields[9].Descriptor()
+	imageresultDescHeight := imageresultFields[10].Descriptor()
 	// imageresult.DefaultHeight holds the default value on creation for the height field.
 	imageresult.DefaultHeight = imageresultDescHeight.Default.(int)
 	// imageresultDescSha256 is the schema descriptor for sha256 field.
-	imageresultDescSha256 := imageresultFields[10].Descriptor()
+	imageresultDescSha256 := imageresultFields[11].Descriptor()
 	// imageresult.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
 	imageresult.Sha256Validator = func() func(string) error {
 		validators := imageresultDescSha256.Validators
@@ -540,19 +543,19 @@ func init() {
 		}
 	}()
 	// imageresultDescImageGroup is the schema descriptor for image_group field.
-	imageresultDescImageGroup := imageresultFields[11].Descriptor()
+	imageresultDescImageGroup := imageresultFields[12].Descriptor()
 	// imageresult.DefaultImageGroup holds the default value on creation for the image_group field.
 	imageresult.DefaultImageGroup = imageresultDescImageGroup.Default.(string)
 	// imageresult.ImageGroupValidator is a validator for the "image_group" field. It is called by the builders before save.
 	imageresult.ImageGroupValidator = imageresultDescImageGroup.Validators[0].(func(string) error)
 	// imageresultDescVisibilityStatus is the schema descriptor for visibility_status field.
-	imageresultDescVisibilityStatus := imageresultFields[12].Descriptor()
+	imageresultDescVisibilityStatus := imageresultFields[13].Descriptor()
 	// imageresult.DefaultVisibilityStatus holds the default value on creation for the visibility_status field.
 	imageresult.DefaultVisibilityStatus = imageresultDescVisibilityStatus.Default.(string)
 	// imageresult.VisibilityStatusValidator is a validator for the "visibility_status" field. It is called by the builders before save.
 	imageresult.VisibilityStatusValidator = imageresultDescVisibilityStatus.Validators[0].(func(string) error)
 	// imageresultDescReviewReason is the schema descriptor for review_reason field.
-	imageresultDescReviewReason := imageresultFields[13].Descriptor()
+	imageresultDescReviewReason := imageresultFields[14].Descriptor()
 	// imageresult.ReviewReasonValidator is a validator for the "review_reason" field. It is called by the builders before save.
 	imageresult.ReviewReasonValidator = imageresultDescReviewReason.Validators[0].(func(string) error)
 	// imageresultDescID is the schema descriptor for id field.
@@ -1671,13 +1674,13 @@ func init() {
 	// referenceasset.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	referenceasset.StatusValidator = referenceassetDescStatus.Validators[0].(func(string) error)
 	// referenceassetDescStorageDriver is the schema descriptor for storage_driver field.
-	referenceassetDescStorageDriver := referenceassetFields[5].Descriptor()
+	referenceassetDescStorageDriver := referenceassetFields[6].Descriptor()
 	// referenceasset.DefaultStorageDriver holds the default value on creation for the storage_driver field.
 	referenceasset.DefaultStorageDriver = referenceassetDescStorageDriver.Default.(string)
 	// referenceasset.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
 	referenceasset.StorageDriverValidator = referenceassetDescStorageDriver.Validators[0].(func(string) error)
 	// referenceassetDescObjectKey is the schema descriptor for object_key field.
-	referenceassetDescObjectKey := referenceassetFields[6].Descriptor()
+	referenceassetDescObjectKey := referenceassetFields[7].Descriptor()
 	// referenceasset.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
 	referenceasset.ObjectKeyValidator = func() func(string) error {
 		validators := referenceassetDescObjectKey.Validators
@@ -1695,7 +1698,7 @@ func init() {
 		}
 	}()
 	// referenceassetDescMimeType is the schema descriptor for mime_type field.
-	referenceassetDescMimeType := referenceassetFields[7].Descriptor()
+	referenceassetDescMimeType := referenceassetFields[8].Descriptor()
 	// referenceasset.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
 	referenceasset.MimeTypeValidator = func() func(string) error {
 		validators := referenceassetDescMimeType.Validators
@@ -1713,11 +1716,11 @@ func init() {
 		}
 	}()
 	// referenceassetDescFileSizeBytes is the schema descriptor for file_size_bytes field.
-	referenceassetDescFileSizeBytes := referenceassetFields[8].Descriptor()
+	referenceassetDescFileSizeBytes := referenceassetFields[9].Descriptor()
 	// referenceasset.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
 	referenceasset.DefaultFileSizeBytes = referenceassetDescFileSizeBytes.Default.(int64)
 	// referenceassetDescSha256 is the schema descriptor for sha256 field.
-	referenceassetDescSha256 := referenceassetFields[11].Descriptor()
+	referenceassetDescSha256 := referenceassetFields[12].Descriptor()
 	// referenceasset.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
 	referenceasset.Sha256Validator = func() func(string) error {
 		validators := referenceassetDescSha256.Validators
@@ -1735,7 +1738,7 @@ func init() {
 		}
 	}()
 	// referenceassetDescExpiresAt is the schema descriptor for expires_at field.
-	referenceassetDescExpiresAt := referenceassetFields[13].Descriptor()
+	referenceassetDescExpiresAt := referenceassetFields[14].Descriptor()
 	// referenceasset.DefaultExpiresAt holds the default value on creation for the expires_at field.
 	referenceasset.DefaultExpiresAt = referenceassetDescExpiresAt.Default.(func() time.Time)
 	// referenceassetDescID is the schema descriptor for id field.
@@ -2007,6 +2010,247 @@ func init() {
 	secureconfigDescUpdatedBy := secureconfigFields[7].Descriptor()
 	// secureconfig.DefaultUpdatedBy holds the default value on creation for the updated_by field.
 	secureconfig.DefaultUpdatedBy = secureconfigDescUpdatedBy.Default.(int64)
+	storageconfigMixin := schema.StorageConfig{}.Mixin()
+	storageconfigMixinFields0 := storageconfigMixin[0].Fields()
+	_ = storageconfigMixinFields0
+	storageconfigFields := schema.StorageConfig{}.Fields()
+	_ = storageconfigFields
+	// storageconfigDescCreatedAt is the schema descriptor for created_at field.
+	storageconfigDescCreatedAt := storageconfigMixinFields0[0].Descriptor()
+	// storageconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
+	storageconfig.DefaultCreatedAt = storageconfigDescCreatedAt.Default.(func() time.Time)
+	// storageconfigDescUpdatedAt is the schema descriptor for updated_at field.
+	storageconfigDescUpdatedAt := storageconfigMixinFields0[1].Descriptor()
+	// storageconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	storageconfig.DefaultUpdatedAt = storageconfigDescUpdatedAt.Default.(func() time.Time)
+	// storageconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	storageconfig.UpdateDefaultUpdatedAt = storageconfigDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// storageconfigDescCode is the schema descriptor for code field.
+	storageconfigDescCode := storageconfigFields[0].Descriptor()
+	// storageconfig.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	storageconfig.CodeValidator = func() func(string) error {
+		validators := storageconfigDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// storageconfigDescName is the schema descriptor for name field.
+	storageconfigDescName := storageconfigFields[1].Descriptor()
+	// storageconfig.DefaultName holds the default value on creation for the name field.
+	storageconfig.DefaultName = storageconfigDescName.Default.(string)
+	// storageconfig.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	storageconfig.NameValidator = storageconfigDescName.Validators[0].(func(string) error)
+	// storageconfigDescDriver is the schema descriptor for driver field.
+	storageconfigDescDriver := storageconfigFields[2].Descriptor()
+	// storageconfig.DefaultDriver holds the default value on creation for the driver field.
+	storageconfig.DefaultDriver = storageconfigDescDriver.Default.(string)
+	// storageconfig.DriverValidator is a validator for the "driver" field. It is called by the builders before save.
+	storageconfig.DriverValidator = storageconfigDescDriver.Validators[0].(func(string) error)
+	// storageconfigDescEndpoint is the schema descriptor for endpoint field.
+	storageconfigDescEndpoint := storageconfigFields[3].Descriptor()
+	// storageconfig.DefaultEndpoint holds the default value on creation for the endpoint field.
+	storageconfig.DefaultEndpoint = storageconfigDescEndpoint.Default.(string)
+	// storageconfig.EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
+	storageconfig.EndpointValidator = storageconfigDescEndpoint.Validators[0].(func(string) error)
+	// storageconfigDescRegion is the schema descriptor for region field.
+	storageconfigDescRegion := storageconfigFields[4].Descriptor()
+	// storageconfig.DefaultRegion holds the default value on creation for the region field.
+	storageconfig.DefaultRegion = storageconfigDescRegion.Default.(string)
+	// storageconfig.RegionValidator is a validator for the "region" field. It is called by the builders before save.
+	storageconfig.RegionValidator = storageconfigDescRegion.Validators[0].(func(string) error)
+	// storageconfigDescBucket is the schema descriptor for bucket field.
+	storageconfigDescBucket := storageconfigFields[5].Descriptor()
+	// storageconfig.DefaultBucket holds the default value on creation for the bucket field.
+	storageconfig.DefaultBucket = storageconfigDescBucket.Default.(string)
+	// storageconfig.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
+	storageconfig.BucketValidator = storageconfigDescBucket.Validators[0].(func(string) error)
+	// storageconfigDescPrefix is the schema descriptor for prefix field.
+	storageconfigDescPrefix := storageconfigFields[6].Descriptor()
+	// storageconfig.DefaultPrefix holds the default value on creation for the prefix field.
+	storageconfig.DefaultPrefix = storageconfigDescPrefix.Default.(string)
+	// storageconfig.PrefixValidator is a validator for the "prefix" field. It is called by the builders before save.
+	storageconfig.PrefixValidator = storageconfigDescPrefix.Validators[0].(func(string) error)
+	// storageconfigDescForcePathStyle is the schema descriptor for force_path_style field.
+	storageconfigDescForcePathStyle := storageconfigFields[7].Descriptor()
+	// storageconfig.DefaultForcePathStyle holds the default value on creation for the force_path_style field.
+	storageconfig.DefaultForcePathStyle = storageconfigDescForcePathStyle.Default.(bool)
+	// storageconfigDescAccessKeyIDEncrypted is the schema descriptor for access_key_id_encrypted field.
+	storageconfigDescAccessKeyIDEncrypted := storageconfigFields[8].Descriptor()
+	// storageconfig.DefaultAccessKeyIDEncrypted holds the default value on creation for the access_key_id_encrypted field.
+	storageconfig.DefaultAccessKeyIDEncrypted = storageconfigDescAccessKeyIDEncrypted.Default.(string)
+	// storageconfigDescSecretAccessKeyEncrypted is the schema descriptor for secret_access_key_encrypted field.
+	storageconfigDescSecretAccessKeyEncrypted := storageconfigFields[9].Descriptor()
+	// storageconfig.DefaultSecretAccessKeyEncrypted holds the default value on creation for the secret_access_key_encrypted field.
+	storageconfig.DefaultSecretAccessKeyEncrypted = storageconfigDescSecretAccessKeyEncrypted.Default.(string)
+	// storageconfigDescStatus is the schema descriptor for status field.
+	storageconfigDescStatus := storageconfigFields[10].Descriptor()
+	// storageconfig.DefaultStatus holds the default value on creation for the status field.
+	storageconfig.DefaultStatus = storageconfigDescStatus.Default.(string)
+	// storageconfig.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	storageconfig.StatusValidator = storageconfigDescStatus.Validators[0].(func(string) error)
+	// storageconfigDescIsDefaultWrite is the schema descriptor for is_default_write field.
+	storageconfigDescIsDefaultWrite := storageconfigFields[11].Descriptor()
+	// storageconfig.DefaultIsDefaultWrite holds the default value on creation for the is_default_write field.
+	storageconfig.DefaultIsDefaultWrite = storageconfigDescIsDefaultWrite.Default.(bool)
+	// storageconfigDescLastTestStatus is the schema descriptor for last_test_status field.
+	storageconfigDescLastTestStatus := storageconfigFields[12].Descriptor()
+	// storageconfig.DefaultLastTestStatus holds the default value on creation for the last_test_status field.
+	storageconfig.DefaultLastTestStatus = storageconfigDescLastTestStatus.Default.(string)
+	// storageconfig.LastTestStatusValidator is a validator for the "last_test_status" field. It is called by the builders before save.
+	storageconfig.LastTestStatusValidator = storageconfigDescLastTestStatus.Validators[0].(func(string) error)
+	// storageconfigDescLastTestError is the schema descriptor for last_test_error field.
+	storageconfigDescLastTestError := storageconfigFields[13].Descriptor()
+	// storageconfig.DefaultLastTestError holds the default value on creation for the last_test_error field.
+	storageconfig.DefaultLastTestError = storageconfigDescLastTestError.Default.(string)
+	// storageconfig.LastTestErrorValidator is a validator for the "last_test_error" field. It is called by the builders before save.
+	storageconfig.LastTestErrorValidator = storageconfigDescLastTestError.Validators[0].(func(string) error)
+	storagemigrationitemMixin := schema.StorageMigrationItem{}.Mixin()
+	storagemigrationitemMixinFields0 := storagemigrationitemMixin[0].Fields()
+	_ = storagemigrationitemMixinFields0
+	storagemigrationitemFields := schema.StorageMigrationItem{}.Fields()
+	_ = storagemigrationitemFields
+	// storagemigrationitemDescCreatedAt is the schema descriptor for created_at field.
+	storagemigrationitemDescCreatedAt := storagemigrationitemMixinFields0[0].Descriptor()
+	// storagemigrationitem.DefaultCreatedAt holds the default value on creation for the created_at field.
+	storagemigrationitem.DefaultCreatedAt = storagemigrationitemDescCreatedAt.Default.(func() time.Time)
+	// storagemigrationitemDescUpdatedAt is the schema descriptor for updated_at field.
+	storagemigrationitemDescUpdatedAt := storagemigrationitemMixinFields0[1].Descriptor()
+	// storagemigrationitem.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	storagemigrationitem.DefaultUpdatedAt = storagemigrationitemDescUpdatedAt.Default.(func() time.Time)
+	// storagemigrationitem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	storagemigrationitem.UpdateDefaultUpdatedAt = storagemigrationitemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// storagemigrationitemDescObjectKind is the schema descriptor for object_kind field.
+	storagemigrationitemDescObjectKind := storagemigrationitemFields[1].Descriptor()
+	// storagemigrationitem.ObjectKindValidator is a validator for the "object_kind" field. It is called by the builders before save.
+	storagemigrationitem.ObjectKindValidator = func() func(string) error {
+		validators := storagemigrationitemDescObjectKind.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(object_kind string) error {
+			for _, fn := range fns {
+				if err := fn(object_kind); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// storagemigrationitemDescSourceObjectKey is the schema descriptor for source_object_key field.
+	storagemigrationitemDescSourceObjectKey := storagemigrationitemFields[3].Descriptor()
+	// storagemigrationitem.SourceObjectKeyValidator is a validator for the "source_object_key" field. It is called by the builders before save.
+	storagemigrationitem.SourceObjectKeyValidator = func() func(string) error {
+		validators := storagemigrationitemDescSourceObjectKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(source_object_key string) error {
+			for _, fn := range fns {
+				if err := fn(source_object_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// storagemigrationitemDescTargetObjectKey is the schema descriptor for target_object_key field.
+	storagemigrationitemDescTargetObjectKey := storagemigrationitemFields[4].Descriptor()
+	// storagemigrationitem.DefaultTargetObjectKey holds the default value on creation for the target_object_key field.
+	storagemigrationitem.DefaultTargetObjectKey = storagemigrationitemDescTargetObjectKey.Default.(string)
+	// storagemigrationitem.TargetObjectKeyValidator is a validator for the "target_object_key" field. It is called by the builders before save.
+	storagemigrationitem.TargetObjectKeyValidator = storagemigrationitemDescTargetObjectKey.Validators[0].(func(string) error)
+	// storagemigrationitemDescStatus is the schema descriptor for status field.
+	storagemigrationitemDescStatus := storagemigrationitemFields[5].Descriptor()
+	// storagemigrationitem.DefaultStatus holds the default value on creation for the status field.
+	storagemigrationitem.DefaultStatus = storagemigrationitemDescStatus.Default.(string)
+	// storagemigrationitem.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	storagemigrationitem.StatusValidator = storagemigrationitemDescStatus.Validators[0].(func(string) error)
+	// storagemigrationitemDescSizeBytes is the schema descriptor for size_bytes field.
+	storagemigrationitemDescSizeBytes := storagemigrationitemFields[6].Descriptor()
+	// storagemigrationitem.DefaultSizeBytes holds the default value on creation for the size_bytes field.
+	storagemigrationitem.DefaultSizeBytes = storagemigrationitemDescSizeBytes.Default.(int64)
+	// storagemigrationitemDescError is the schema descriptor for error field.
+	storagemigrationitemDescError := storagemigrationitemFields[7].Descriptor()
+	// storagemigrationitem.DefaultError holds the default value on creation for the error field.
+	storagemigrationitem.DefaultError = storagemigrationitemDescError.Default.(string)
+	// storagemigrationitem.ErrorValidator is a validator for the "error" field. It is called by the builders before save.
+	storagemigrationitem.ErrorValidator = storagemigrationitemDescError.Validators[0].(func(string) error)
+	storagemigrationjobMixin := schema.StorageMigrationJob{}.Mixin()
+	storagemigrationjobMixinFields0 := storagemigrationjobMixin[0].Fields()
+	_ = storagemigrationjobMixinFields0
+	storagemigrationjobFields := schema.StorageMigrationJob{}.Fields()
+	_ = storagemigrationjobFields
+	// storagemigrationjobDescCreatedAt is the schema descriptor for created_at field.
+	storagemigrationjobDescCreatedAt := storagemigrationjobMixinFields0[0].Descriptor()
+	// storagemigrationjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	storagemigrationjob.DefaultCreatedAt = storagemigrationjobDescCreatedAt.Default.(func() time.Time)
+	// storagemigrationjobDescUpdatedAt is the schema descriptor for updated_at field.
+	storagemigrationjobDescUpdatedAt := storagemigrationjobMixinFields0[1].Descriptor()
+	// storagemigrationjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	storagemigrationjob.DefaultUpdatedAt = storagemigrationjobDescUpdatedAt.Default.(func() time.Time)
+	// storagemigrationjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	storagemigrationjob.UpdateDefaultUpdatedAt = storagemigrationjobDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// storagemigrationjobDescSourceLegacyDriver is the schema descriptor for source_legacy_driver field.
+	storagemigrationjobDescSourceLegacyDriver := storagemigrationjobFields[3].Descriptor()
+	// storagemigrationjob.DefaultSourceLegacyDriver holds the default value on creation for the source_legacy_driver field.
+	storagemigrationjob.DefaultSourceLegacyDriver = storagemigrationjobDescSourceLegacyDriver.Default.(string)
+	// storagemigrationjob.SourceLegacyDriverValidator is a validator for the "source_legacy_driver" field. It is called by the builders before save.
+	storagemigrationjob.SourceLegacyDriverValidator = storagemigrationjobDescSourceLegacyDriver.Validators[0].(func(string) error)
+	// storagemigrationjobDescDryRun is the schema descriptor for dry_run field.
+	storagemigrationjobDescDryRun := storagemigrationjobFields[5].Descriptor()
+	// storagemigrationjob.DefaultDryRun holds the default value on creation for the dry_run field.
+	storagemigrationjob.DefaultDryRun = storagemigrationjobDescDryRun.Default.(bool)
+	// storagemigrationjobDescUpdateRecords is the schema descriptor for update_records field.
+	storagemigrationjobDescUpdateRecords := storagemigrationjobFields[6].Descriptor()
+	// storagemigrationjob.DefaultUpdateRecords holds the default value on creation for the update_records field.
+	storagemigrationjob.DefaultUpdateRecords = storagemigrationjobDescUpdateRecords.Default.(bool)
+	// storagemigrationjobDescStatus is the schema descriptor for status field.
+	storagemigrationjobDescStatus := storagemigrationjobFields[7].Descriptor()
+	// storagemigrationjob.DefaultStatus holds the default value on creation for the status field.
+	storagemigrationjob.DefaultStatus = storagemigrationjobDescStatus.Default.(string)
+	// storagemigrationjob.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	storagemigrationjob.StatusValidator = storagemigrationjobDescStatus.Validators[0].(func(string) error)
+	// storagemigrationjobDescTotalItems is the schema descriptor for total_items field.
+	storagemigrationjobDescTotalItems := storagemigrationjobFields[8].Descriptor()
+	// storagemigrationjob.DefaultTotalItems holds the default value on creation for the total_items field.
+	storagemigrationjob.DefaultTotalItems = storagemigrationjobDescTotalItems.Default.(int64)
+	// storagemigrationjobDescProcessedItems is the schema descriptor for processed_items field.
+	storagemigrationjobDescProcessedItems := storagemigrationjobFields[9].Descriptor()
+	// storagemigrationjob.DefaultProcessedItems holds the default value on creation for the processed_items field.
+	storagemigrationjob.DefaultProcessedItems = storagemigrationjobDescProcessedItems.Default.(int64)
+	// storagemigrationjobDescFailedItems is the schema descriptor for failed_items field.
+	storagemigrationjobDescFailedItems := storagemigrationjobFields[10].Descriptor()
+	// storagemigrationjob.DefaultFailedItems holds the default value on creation for the failed_items field.
+	storagemigrationjob.DefaultFailedItems = storagemigrationjobDescFailedItems.Default.(int64)
+	// storagemigrationjobDescTotalBytes is the schema descriptor for total_bytes field.
+	storagemigrationjobDescTotalBytes := storagemigrationjobFields[11].Descriptor()
+	// storagemigrationjob.DefaultTotalBytes holds the default value on creation for the total_bytes field.
+	storagemigrationjob.DefaultTotalBytes = storagemigrationjobDescTotalBytes.Default.(int64)
+	// storagemigrationjobDescLastError is the schema descriptor for last_error field.
+	storagemigrationjobDescLastError := storagemigrationjobFields[12].Descriptor()
+	// storagemigrationjob.DefaultLastError holds the default value on creation for the last_error field.
+	storagemigrationjob.DefaultLastError = storagemigrationjobDescLastError.Default.(string)
+	// storagemigrationjob.LastErrorValidator is a validator for the "last_error" field. It is called by the builders before save.
+	storagemigrationjob.LastErrorValidator = storagemigrationjobDescLastError.Validators[0].(func(string) error)
+	// storagemigrationjobDescCreatedBy is the schema descriptor for created_by field.
+	storagemigrationjobDescCreatedBy := storagemigrationjobFields[13].Descriptor()
+	// storagemigrationjob.DefaultCreatedBy holds the default value on creation for the created_by field.
+	storagemigrationjob.DefaultCreatedBy = storagemigrationjobDescCreatedBy.Default.(int64)
+	// storagemigrationjobDescID is the schema descriptor for id field.
+	storagemigrationjobDescID := storagemigrationjobFields[0].Descriptor()
+	// storagemigrationjob.DefaultID holds the default value on creation for the id field.
+	storagemigrationjob.DefaultID = storagemigrationjobDescID.Default.(func() uuid.UUID)
 	subscriptionplanMixin := schema.SubscriptionPlan{}.Mixin()
 	subscriptionplanMixinFields0 := subscriptionplanMixin[0].Fields()
 	_ = subscriptionplanMixinFields0

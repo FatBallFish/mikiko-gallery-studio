@@ -114,6 +114,42 @@ func TestOpenImageEstimateTaskAndReferenceUploadUseAPIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestOpenImageEstimateUsesCurrentUserBillingMultiplier(t *testing.T) {
+	handler, creds, billingSvc := newOpenAPIHandlerWithUserMultipliers(t, map[string]string{"basic": "0.50000", "plus": "1.00000"}, apikeyservice.CreateRequest{
+		Name:      "openapi",
+		GroupCode: "plus",
+		Secret:    "sk-openapi-special-secret",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=0", nil)
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected estimate 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			EstimatedPoints     string `json:"estimated_points"`
+			UserGroupMultiplier string `json:"user_group_multiplier"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode estimate response: %v", err)
+	}
+	if resp.Data.EstimatedPoints != "8.00000" || resp.Data.UserGroupMultiplier != "0.50000" {
+		t.Fatalf("expected OpenAPI estimate to use current user billing multiplier, got %#v", resp.Data)
+	}
+
+	summary, err := billingSvc.GetBalance(context.Background(), creds.UserID, "0.50000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if summary.UserGroupMultiplier != "0.50000" {
+		t.Fatalf("expected balance metadata to use current user multiplier, got %#v", summary)
+	}
+}
+
 func TestOpenImageAPIRejectsMissingAccessKeyInvalidSignatureAndInvalidParams(t *testing.T) {
 	handler, creds, _ := newOpenAPIHandler(t)
 
@@ -239,7 +275,17 @@ func newOpenAPIHandlerWithCreateRequest(t *testing.T, createReq apikeyservice.Cr
 	return handler, creds, billingSvc
 }
 
+func newOpenAPIHandlerWithUserMultipliers(t *testing.T, multipliers map[string]string, createReq apikeyservice.CreateRequest) (http.Handler, openAPICredentials, *billingservice.Service) {
+	t.Helper()
+	handler, creds, _, billingSvc := newOpenAPIHandlerWithAuthAndMultipliers(t, multipliers, createReq)
+	return handler, creds, billingSvc
+}
+
 func newOpenAPIHandlerWithAuth(t *testing.T, createReq apikeyservice.CreateRequest) (http.Handler, openAPICredentials, *authservice.Service, *billingservice.Service) {
+	return newOpenAPIHandlerWithAuthAndMultipliers(t, map[string]string{"basic": "1.00000", "plus": "1.00000"}, createReq)
+}
+
+func newOpenAPIHandlerWithAuthAndMultipliers(t *testing.T, multipliers map[string]string, createReq apikeyservice.CreateRequest) (http.Handler, openAPICredentials, *authservice.Service, *billingservice.Service) {
 	t.Helper()
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	cfg.Storage.LocalRoot = t.TempDir()
@@ -249,7 +295,7 @@ func newOpenAPIHandlerWithAuth(t *testing.T, createReq apikeyservice.CreateReque
 		Issuer:            "test",
 		AccessTokenSecret: "secret",
 		RefreshCookieName: "pg_refresh",
-	}, map[string]string{"basic": "1.00000", "plus": "1.00000"})
+	}, multipliers)
 	if err := authSvc.SendEmailCode("openapi@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminstorage "github.com/fatballfish/pic-gallery/internal/domain/adminstorage"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
@@ -38,6 +39,7 @@ type Service struct {
 	maxBytes     int64
 	assetsByID   map[string]storedAsset
 	assetsByHash map[string]string
+	registry     storage.Registry
 }
 
 func NewService(cfg config.StorageConfig, limits config.GenerationLimitsConfig) *Service {
@@ -57,6 +59,10 @@ func NewServiceWithStoreAndBackend(_ config.StorageConfig, limits config.Generat
 		backend = storage.NewLocalBackend("")
 	}
 	return &Service{store: store, backend: backend, maxBytes: int64(limits.ReferenceImageMaxMB) * 1024 * 1024, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
+}
+
+func (s *Service) SetStorageRegistry(registry storage.Registry) {
+	s.registry = registry
 }
 
 func (s *Service) Upload(userID int64, filename string, contentType string, content []byte) (domainassets.ReferenceAsset, error) {
@@ -118,10 +124,14 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 		}
 	}
 	objectKey := filepath.Join("reference-assets", assetID+strings.ToLower(ext))
-	if err := s.backend.Put(context.Background(), objectKey, contentType, content); err != nil {
+	resolved, err := s.resolveWriteBackend(context.Background())
+	if err != nil {
+		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to resolve reference asset storage")
+	}
+	if err := resolved.StorageBackend().Put(context.Background(), objectKey, contentType, content); err != nil {
 		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store reference asset")
 	}
-	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageDriver: s.backend.Driver(), MimeType: contentType, FileSizeBytes: int64(len(content)), Width: config.Width, Height: config.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
+	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageConfigID: resolved.StorageID(), StorageDriver: resolved.StorageDriver(), MimeType: contentType, FileSizeBytes: int64(len(content)), Width: config.Width, Height: config.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
 	if s.store != nil {
 		if metadataStore, ok := s.store.(MetadataStore); ok {
 			err = metadataStore.SaveWithMetadata(context.Background(), userID, asset, metadata)
@@ -129,7 +139,7 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 			err = s.store.Save(context.Background(), userID, asset)
 		}
 		if err != nil {
-			_ = s.backend.Delete(context.Background(), objectKey)
+			_ = resolved.StorageBackend().Delete(context.Background(), objectKey)
 			return domainassets.ReferenceAsset{}, err
 		}
 	}
@@ -197,7 +207,11 @@ func (s *Service) Download(userID int64, assetID string) (domainassets.Reference
 	if err != nil {
 		return domainassets.ReferenceAsset{}, nil, err
 	}
-	content, readErr := s.backend.Get(context.Background(), asset.ObjectKey)
+	backend, readErr := s.resolveReadBackend(context.Background(), asset)
+	if readErr != nil {
+		return domainassets.ReferenceAsset{}, nil, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
+	}
+	content, readErr := backend.Get(context.Background(), asset.ObjectKey)
 	if readErr != nil {
 		return domainassets.ReferenceAsset{}, nil, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
 	}
@@ -209,7 +223,11 @@ func (s *Service) LoadInput(userID int64, assetID string) (provider.ImageInput, 
 	if err != nil {
 		return provider.ImageInput{}, err
 	}
-	content, readErr := s.backend.Get(context.Background(), asset.ObjectKey)
+	backend, readErr := s.resolveReadBackend(context.Background(), asset)
+	if readErr != nil {
+		return provider.ImageInput{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
+	}
+	content, readErr := backend.Get(context.Background(), asset.ObjectKey)
 	if readErr != nil {
 		return provider.ImageInput{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
 	}
@@ -218,6 +236,28 @@ func (s *Service) LoadInput(userID int64, assetID string) (provider.ImageInput, 
 		MIMEType: asset.MimeType,
 		Data:     content,
 	}, nil
+}
+
+func (s *Service) resolveWriteBackend(ctx context.Context) (storage.ResolvedBackend, error) {
+	if s.registry != nil {
+		return s.registry.ResolveWriteBackend(ctx)
+	}
+	return storage.ResolvedBackend{Driver: s.backend.Driver(), Backend: s.backend}, nil
+}
+
+func (s *Service) resolveReadBackend(ctx context.Context, asset domainassets.ReferenceAsset) (storage.Backend, error) {
+	if s.registry != nil {
+		resolved, err := s.registry.ResolveReadBackend(ctx, domainadminstorage.ObjectLocation{
+			StorageConfigID: asset.StorageConfigID,
+			LegacyDriver:    asset.StorageDriver,
+			ObjectKey:       asset.ObjectKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return resolved.StorageBackend(), nil
+	}
+	return s.backend, nil
 }
 
 func defaultString(value, fallback string) string {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -327,6 +328,7 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 		}
 		seenGroups[normalized] = struct{}{}
 		groupCodes = append(groupCodes, groupEntity.GroupCode)
+		groupMultiplier = lowestEnabledGroupMultiplier(groupMultiplier, groupEntity.Multiplier, groupEntity.Status)
 	}
 	if len(groupCodes) == 0 {
 		groupCodes = []string{groupCode}
@@ -357,6 +359,21 @@ func (s *AuthStore) mapUserEntity(ctx context.Context, entity *repoent.User) (do
 		ClosedAt:          entity.ClosedAt,
 		CreatedAt:         entity.CreatedAt,
 	}, nil
+}
+
+func lowestEnabledGroupMultiplier(current, candidate, status string) string {
+	if !strings.EqualFold(strings.TrimSpace(status), "enabled") && !strings.EqualFold(strings.TrimSpace(status), "active") {
+		return current
+	}
+	currentDecimal, currentErr := decimal.NewFromString(strings.TrimSpace(current))
+	candidateDecimal, candidateErr := decimal.NewFromString(strings.TrimSpace(candidate))
+	if candidateErr != nil {
+		return current
+	}
+	if currentErr != nil || candidateDecimal.LessThan(currentDecimal) {
+		return candidateDecimal.StringFixed(5)
+	}
+	return current
 }
 
 func (s *AuthStore) ensureUserGroup(ctx context.Context, code string, multiplier string) (*repoent.UserGroup, error) {

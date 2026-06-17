@@ -37,6 +37,7 @@ import (
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainadmincallrecord "github.com/fatballfish/pic-gallery/internal/domain/admincallrecord"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
+	domainadminstorage "github.com/fatballfish/pic-gallery/internal/domain/adminstorage"
 	domainadminuser "github.com/fatballfish/pic-gallery/internal/domain/adminuser"
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
@@ -53,6 +54,7 @@ import (
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	adminstorageservice "github.com/fatballfish/pic-gallery/internal/service/adminstorage"
 	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
@@ -72,25 +74,26 @@ import (
 )
 
 type API struct {
-	auth       *authservice.Service
-	adminAuth  *adminauthservice.Service
-	apiKeys    *apikeyservice.Service
-	billing    *billingservice.Service
-	assets     *assetservice.Service
-	caps       *capserv.Service
-	compat     *compatservice.Service
-	tasks      *imagetaskservice.Service
-	admin      *adminconfigservice.Service
-	cashierCfg *cashierservice.ConfigFacade
-	adminUser  *adminuserservice.Service
-	callRecord *admincallrecordservice.Service
-	modelAdmin *modeladminservice.Service
-	secureCfg  *secureconfigservice.Service
-	redeem     *redeemservice.Service
-	audit      *auditservice.Service
-	adminPerms domainadminauth.PermissionResolver
-	docsReady  DocsReadinessChecker
-	cfg        config.Config
+	auth         *authservice.Service
+	adminAuth    *adminauthservice.Service
+	apiKeys      *apikeyservice.Service
+	billing      *billingservice.Service
+	assets       *assetservice.Service
+	caps         *capserv.Service
+	compat       *compatservice.Service
+	tasks        *imagetaskservice.Service
+	admin        *adminconfigservice.Service
+	cashierCfg   *cashierservice.ConfigFacade
+	adminUser    *adminuserservice.Service
+	callRecord   *admincallrecordservice.Service
+	modelAdmin   *modeladminservice.Service
+	secureCfg    *secureconfigservice.Service
+	storageAdmin *adminstorageservice.Service
+	redeem       *redeemservice.Service
+	audit        *auditservice.Service
+	adminPerms   domainadminauth.PermissionResolver
+	docsReady    DocsReadinessChecker
+	cfg          config.Config
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -197,23 +200,24 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 	}
 	callRecordSvc := admincallrecordservice.NewServiceWithStore(nil)
 	return &API{
-		auth:       authSvc,
-		adminAuth:  adminAuthSvc,
-		apiKeys:    apiKeySvc,
-		billing:    billingSvc,
-		assets:     assetSvc,
-		caps:       capserv.NewService(cfg),
-		compat:     compatservice.NewServiceWithTaskService(cfg, taskSvc),
-		tasks:      taskSvc,
-		admin:      adminSvc,
-		cashierCfg: cashierservice.NewConfigFacade(cashierservice.NewAdminConfigStoreWithDefaultCNYPerPoint(adminSvc, isProductionAppEnv(cfg.App.Env), cfg.Billing.CNYPerPoint)),
-		adminUser:  adminUserSvc,
-		callRecord: callRecordSvc,
-		redeem:     redeemservice.NewServiceWithStore(nil),
-		audit:      auditSvc,
-		adminPerms: domainadminauth.RolePermissionResolver{},
-		docsReady:  defaultDocsReadinessChecker,
-		cfg:        cfg,
+		auth:         authSvc,
+		adminAuth:    adminAuthSvc,
+		apiKeys:      apiKeySvc,
+		billing:      billingSvc,
+		assets:       assetSvc,
+		caps:         capserv.NewService(cfg),
+		compat:       compatservice.NewServiceWithTaskService(cfg, taskSvc),
+		tasks:        taskSvc,
+		admin:        adminSvc,
+		cashierCfg:   cashierservice.NewConfigFacade(cashierservice.NewAdminConfigStoreWithDefaultCNYPerPoint(adminSvc, isProductionAppEnv(cfg.App.Env), cfg.Billing.CNYPerPoint)),
+		adminUser:    adminUserSvc,
+		callRecord:   callRecordSvc,
+		storageAdmin: adminstorageservice.NewService(cfg.Storage),
+		redeem:       redeemservice.NewServiceWithStore(nil),
+		audit:        auditSvc,
+		adminPerms:   domainadminauth.RolePermissionResolver{},
+		docsReady:    defaultDocsReadinessChecker,
+		cfg:          cfg,
 	}
 }
 
@@ -239,6 +243,17 @@ func (a *API) SetCashierProviderInstanceStore(store cashierservice.ProviderInsta
 
 func (a *API) SetSecureConfigService(service *secureconfigservice.Service) {
 	a.secureCfg = service
+}
+
+func (a *API) SetStorageAdminService(service *adminstorageservice.Service) {
+	a.storageAdmin = service
+}
+
+func (a *API) storageAdminService() *adminstorageservice.Service {
+	if a.storageAdmin == nil {
+		a.storageAdmin = adminstorageservice.NewService(a.cfg.Storage)
+	}
+	return a.storageAdmin
 }
 
 func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {
@@ -1226,6 +1241,7 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
+	billingCtx := a.apiKeyBillingContext(identity)
 	result, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
@@ -1234,9 +1250,9 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		RequestedSize:             r.URL.Query().Get("requested_size"),
 		RequestedOutputImageCount: outputCount,
 		ReferenceImageCount:       refCount,
-		UserGroupCode:             identity.GroupCode,
-		UserGroupCodes:            []string{identity.GroupCode},
-		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
+		UserGroupCode:             billingCtx.GroupCode,
+		UserGroupCodes:            billingCtx.GroupCodes,
+		UserGroupMultiplier:       billingCtx.GroupMultiplier,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, err.(*errs.Error))
@@ -2065,6 +2081,10 @@ func referenceAssetPayload(asset domainassets.ReferenceAsset, openAPI bool) doma
 }
 
 func (a *API) HandleImageDownload(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/access-url") {
+		a.HandleImageAccessURL(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
@@ -2084,6 +2104,29 @@ func (a *API) HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+imageDownloadFilename(result)+`"`)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+func (a *API) HandleImageAccessURL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	imageID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/images/"), "/access-url")
+	result, err := a.tasks.GetImageAccessResult(r.Context(), user.ID, imageID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, a.storageAdminService().BuildAccessURL(r.Context(), imageID, domainadminstorage.ObjectLocation{
+		StorageConfigID: result.StorageConfigID,
+		LegacyDriver:    result.StorageDriver,
+		ObjectKey:       result.ObjectKey,
+	}, 10*time.Minute))
 }
 
 func imageDownloadFilename(result provider.ImageResult) string {
@@ -2703,7 +2746,7 @@ func (a *API) HandleAgentHistoryTaskDetail(w http.ResponseWriter, r *http.Reques
 		task, err := a.tasks.RetryTask(r.Context(), user.ID, taskID, domainimagetask.RetryRequest{
 			UserGroupCode:       user.GroupCode,
 			UserGroupCodes:      userGroupCodes(user),
-			UserGroupMultiplier: a.userGroupMultiplier(user.GroupCode),
+			UserGroupMultiplier: user.GroupMultiplier,
 		})
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
@@ -4356,6 +4399,154 @@ func (a *API) HandleAdminSecuritySMTPTest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"status": "sent", "recipient": recipient})
+}
+
+func (a *API) HandleAdminStorageConfigs(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, err := a.storageAdminService().ListConfigs(r.Context(), domainadminstorage.ConfigListRequest{
+			Driver: strings.TrimSpace(r.URL.Query().Get("driver")),
+			Status: strings.TrimSpace(r.URL.Query().Get("status")),
+		})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, page)
+	case http.MethodPost:
+		var req domainadminstorage.ConfigWriteRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		created, err := a.storageAdminService().CreateConfig(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.create", "storage_config", fmt.Sprintf("%d", created.ID), map[string]any{"code": created.Code, "driver": created.Driver}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminStorageConfigDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/storage/configs/")
+	id, parseErr := parseInt64Part(parts, 0, "storage_config_id")
+	if parseErr != nil {
+		httpx.WriteError(w, r, parseErr)
+		return
+	}
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "test":
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w, r)
+				return
+			}
+			result, err := a.storageAdminService().TestConfig(r.Context(), id)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			httpx.WriteSuccess(w, r, http.StatusOK, result)
+			return
+		case "set-default":
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w, r)
+				return
+			}
+			updated, err := a.storageAdminService().SetDefaultWrite(r.Context(), id)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.set_default", "storage_config", fmt.Sprintf("%d", id), map[string]any{"code": updated.Code}); auditErr != nil {
+				httpx.WriteError(w, r, normalizeAppError(auditErr))
+				return
+			}
+			httpx.WriteSuccess(w, r, http.StatusOK, updated)
+			return
+		}
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var req domainadminstorage.ConfigWriteRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.storageAdminService().UpdateConfig(r.Context(), id, req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.update", "storage_config", fmt.Sprintf("%d", id), map[string]any{"code": updated.Code, "driver": updated.Driver}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminStorageStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageConfig); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	page, err := a.storageAdminService().Stats(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, page)
+}
+
+func (a *API) HandleAdminStorageMigrations(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var req domainadminstorage.MigrationCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	result, err := a.storageAdminService().CreateMigration(r.Context(), req, admin.AdminID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_migration.create", "storage_migration", result.Job.JobID, map[string]any{"dry_run": result.Job.DryRun, "update_records": result.Job.UpdateRecords, "total_items": result.Job.TotalItems}); auditErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(auditErr))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusCreated, result)
 }
 
 func (a *API) HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
@@ -6190,14 +6381,16 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	billingCtx := a.apiKeyBillingContext(identity)
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
 		AbstractModel:             a.compatAbstractModel(req.Model),
 		RequestedQuality:          compatQuality(req.Quality),
 		RequestedSize:             req.Size,
 		RequestedOutputImageCount: req.N,
-		UserGroupCode:             identity.GroupCode,
-		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
+		UserGroupCode:             billingCtx.GroupCode,
+		UserGroupCodes:            billingCtx.GroupCodes,
+		UserGroupMultiplier:       billingCtx.GroupMultiplier,
 	})
 	if err != nil {
 		a.writeCompatError(w, compatservice.MapError(err))
@@ -6212,8 +6405,8 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		UserID:              identity.UserID,
 		APIKeyID:            identity.APIKeyID,
 		SourceChannel:       "openai_compat",
-		UserGroupCode:       identity.GroupCode,
-		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
+		UserGroupCode:       billingCtx.GroupCode,
+		UserGroupMultiplier: billingCtx.GroupMultiplier,
 		Model:               req.Model,
 		Prompt:              req.Prompt,
 		Size:                req.Size,
@@ -6277,6 +6470,7 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	billingCtx := a.apiKeyBillingContext(identity)
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeImageEdit),
 		AbstractModel:             a.compatAbstractModel(r.FormValue("model")),
@@ -6284,8 +6478,9 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 		RequestedSize:             r.FormValue("size"),
 		RequestedOutputImageCount: count,
 		ReferenceImageCount:       len(images),
-		UserGroupCode:             identity.GroupCode,
-		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
+		UserGroupCode:             billingCtx.GroupCode,
+		UserGroupCodes:            billingCtx.GroupCodes,
+		UserGroupMultiplier:       billingCtx.GroupMultiplier,
 	})
 	if err != nil {
 		a.writeCompatError(w, compatservice.MapError(err))
@@ -6300,8 +6495,8 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 		UserID:              identity.UserID,
 		APIKeyID:            identity.APIKeyID,
 		SourceChannel:       "openai_compat",
-		UserGroupCode:       identity.GroupCode,
-		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
+		UserGroupCode:       billingCtx.GroupCode,
+		UserGroupMultiplier: billingCtx.GroupMultiplier,
 		Model:               r.FormValue("model"),
 		Prompt:              r.FormValue("prompt"),
 		Size:                r.FormValue("size"),
@@ -6445,6 +6640,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	billingCtx := a.apiKeyBillingContext(identity)
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
@@ -6453,9 +6649,9 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		RequestedSize:             req.RequestedSize,
 		RequestedOutputImageCount: req.RequestedOutputImageCount,
 		ReferenceImageCount:       len(req.ReferenceAssetIDs),
-		UserGroupCode:             identity.GroupCode,
-		UserGroupCodes:            []string{identity.GroupCode},
-		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
+		UserGroupCode:             billingCtx.GroupCode,
+		UserGroupCodes:            billingCtx.GroupCodes,
+		UserGroupMultiplier:       billingCtx.GroupMultiplier,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, compatservice.MapError(err))
@@ -6479,9 +6675,9 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
-		UserGroupCode:       identity.GroupCode,
-		UserGroupCodes:      []string{identity.GroupCode},
-		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
+		UserGroupCode:       billingCtx.GroupCode,
+		UserGroupCodes:      billingCtx.GroupCodes,
+		UserGroupMultiplier: billingCtx.GroupMultiplier,
 		ResponseMode:        req.ResponseMode,
 		SavePolicy:          "private",
 	})
@@ -8825,6 +9021,31 @@ func (a *API) userGroupMultiplier(groupCode string) string {
 		return value
 	}
 	return "1.00000"
+}
+
+type apiKeyBillingContext struct {
+	GroupCode       string
+	GroupCodes      []string
+	GroupMultiplier string
+}
+
+func (a *API) apiKeyBillingContext(identity domainapikey.Identity) apiKeyBillingContext {
+	ctx := apiKeyBillingContext{
+		GroupCode:       defaultString(identity.GroupCode, "basic"),
+		GroupCodes:      []string{defaultString(identity.GroupCode, "basic")},
+		GroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
+	}
+	if a.auth == nil {
+		return ctx
+	}
+	user, ok := a.auth.GetUserByID(identity.UserID)
+	if !ok {
+		return ctx
+	}
+	ctx.GroupCode = user.GroupCode
+	ctx.GroupCodes = userGroupCodes(&user)
+	ctx.GroupMultiplier = user.GroupMultiplier
+	return ctx
 }
 
 func userGroupCodes(user *domainauth.User) []string {

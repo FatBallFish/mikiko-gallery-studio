@@ -45,7 +45,7 @@ const taskTypeLabels: Record<string, string> = {
 }
 
 export function galleryImageCard(image: GalleryImage): GalleryImageCardModel {
-  const assetPath = image.url || image.download_url || ''
+  const assetPath = image.asset_url || image.download_url || image.url || ''
   const publishStatus = galleryPublishStatus(image)
   const hasAsset = Boolean(assetPath)
   const canPublish = hasAsset && ['private', 'rejected', 'unpublished'].includes(publishStatus)

@@ -111,6 +111,20 @@ func (_c *ReferenceAssetCreate) SetNillableStatus(v *string) *ReferenceAssetCrea
 	return _c
 }
 
+// SetStorageConfigID sets the "storage_config_id" field.
+func (_c *ReferenceAssetCreate) SetStorageConfigID(v int64) *ReferenceAssetCreate {
+	_c.mutation.SetStorageConfigID(v)
+	return _c
+}
+
+// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
+func (_c *ReferenceAssetCreate) SetNillableStorageConfigID(v *int64) *ReferenceAssetCreate {
+	if v != nil {
+		_c.SetStorageConfigID(*v)
+	}
+	return _c
+}
+
 // SetStorageDriver sets the "storage_driver" field.
 func (_c *ReferenceAssetCreate) SetStorageDriver(v string) *ReferenceAssetCreate {
 	_c.mutation.SetStorageDriver(v)
@@ -423,6 +437,10 @@ func (_c *ReferenceAssetCreate) createSpec() (*ReferenceAsset, *sqlgraph.CreateS
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(referenceasset.FieldStatus, field.TypeString, value)
 		_node.Status = value
+	}
+	if value, ok := _c.mutation.StorageConfigID(); ok {
+		_spec.SetField(referenceasset.FieldStorageConfigID, field.TypeInt64, value)
+		_node.StorageConfigID = &value
 	}
 	if value, ok := _c.mutation.StorageDriver(); ok {
 		_spec.SetField(referenceasset.FieldStorageDriver, field.TypeString, value)

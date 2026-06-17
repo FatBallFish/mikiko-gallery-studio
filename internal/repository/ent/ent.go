@@ -39,6 +39,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storageconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storagemigrationitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storagemigrationjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
@@ -133,6 +136,9 @@ func checkColumn(t, c string) error {
 			routemodelprice.Table:             routemodelprice.ValidColumn,
 			routemodelvisibilitygroup.Table:   routemodelvisibilitygroup.ValidColumn,
 			secureconfig.Table:                secureconfig.ValidColumn,
+			storageconfig.Table:               storageconfig.ValidColumn,
+			storagemigrationitem.Table:        storagemigrationitem.ValidColumn,
+			storagemigrationjob.Table:         storagemigrationjob.ValidColumn,
 			subscriptionplan.Table:            subscriptionplan.ValidColumn,
 			user.Table:                        user.ValidColumn,
 			usergroup.Table:                   usergroup.ValidColumn,

@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
+import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
-import { rdCommon, rdShell, rdWorkspace } from '../ui/redesign-classes'
+import { rdHome, rdShell, rdWorkspace } from '../ui/redesign-classes'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
 import { loginCopy, loginLocale, socialLoginUnavailableMessage } from './loginCopy'
@@ -11,18 +12,31 @@ import { loginCopy, loginLocale, socialLoginUnavailableMessage } from './loginCo
 const lastLoginEmailKey = 'pic-gallery-last-login-email'
 
 const loginClasses = {
-  page: cn(rdShell.main, 'grid place-items-center p-6'),
-  card: cn(rdCommon.glass, 'w-[min(500px,100%)] rounded-[2.5rem] p-10 md:p-14 shadow-[0_40px_100px_rgba(0,0,0,0.6)] animate-in fade-in zoom-in-95 duration-700'),
-  header: 'mb-12 text-center',
-  logo: 'mb-6 inline-flex transition-transform hover:scale-110 active:scale-95',
+  page: cn(rdShell.main, 'min-h-screen p-5 md:p-8'),
+  shell: 'mx-auto grid min-h-[calc(100vh-64px)] w-full max-w-[1180px] grid-cols-[minmax(0,1fr)_minmax(380px,460px)] overflow-hidden rounded-[2.5rem] border border-[var(--border)] bg-[var(--surface)]/58 shadow-2xl max-[920px]:grid-cols-1',
+  preview: 'relative min-h-[640px] overflow-hidden bg-[var(--bg)] max-[920px]:hidden',
+  previewImg: 'absolute inset-0 size-full object-cover opacity-58',
+  previewOverlay: 'absolute inset-0 bg-gradient-to-r from-[var(--bg)]/86 via-[var(--bg)]/62 to-transparent',
+  previewContent: 'relative z-10 flex h-full flex-col justify-between p-10',
+  previewBrand: 'inline-flex w-fit items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/72 px-4 py-3 backdrop-blur-xl',
+  previewTitle: 'm-0 max-w-[560px] font-vault-display text-[clamp(3rem,5vw,5.4rem)] leading-[0.9] text-[var(--fg)]',
+  previewText: 'mt-5 max-w-[560px] text-base leading-relaxed text-[var(--muted)]',
+  previewStats: 'grid max-w-[560px] grid-cols-3 gap-3',
+  previewStat: 'rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4 backdrop-blur-xl',
+  previewStatValue: 'block text-lg font-black text-[var(--fg)]',
+  previewStatLabel: 'mt-1 block text-[10px] font-vault-mono uppercase tracking-[.14em] text-[var(--muted)]',
+  card: 'grid content-center gap-8 bg-[color-mix(in_oklch,var(--surface)_90%,var(--bg))] p-8 md:p-10',
+  header: 'grid gap-5',
+  logo: 'inline-flex w-fit transition-transform hover:scale-105 active:scale-95',
   brandOrb: rdShell.brandOrb,
-  subtitle: 'm-0 text-xs font-vault-mono uppercase tracking-[0.2em] text-[var(--muted)]',
-  tabs: 'auth-tabs mb-10 flex gap-2 rounded-2xl bg-[var(--bg)]/50 p-1.5 border border-[var(--border)]',
+  title: 'm-0 text-3xl font-black leading-tight text-[var(--fg)]',
+  subtitle: 'm-0 text-sm leading-relaxed text-[var(--muted)]',
+  tabs: 'auth-tabs flex gap-2 rounded-2xl bg-[var(--bg)]/50 p-1.5 border border-[var(--border)]',
   tab: 'flex-1 rounded-xl py-3 text-center text-[13px] font-bold text-[var(--muted)] transition-all duration-300 hover:text-[var(--fg)] hover:bg-[var(--surface)]',
   tabActive: '!bg-[var(--accent)] !text-white shadow-[0_8px_20px_rgba(var(--accent-rgb),0.2)]',
-  field: 'auth-field mb-6 flex flex-col gap-2.5',
+  field: 'auth-field mb-5 flex flex-col gap-2.5',
   label: 'text-[11px] font-vault-mono uppercase tracking-widest text-[var(--muted)] pl-1',
-  input: 'w-full rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-[var(--fg)] outline-none transition-all focus:border-[var(--accent)]/50 focus:bg-[var(--surface)] focus:ring-4 focus:ring-[var(--accent)]/5',
+  input: 'w-full rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-[15px] text-[var(--fg)] outline-none transition-all focus:border-[var(--accent)]/50 focus:bg-[var(--surface)] focus:ring-4 focus:ring-[var(--accent)]/5',
   passwordWrap: 'relative',
   passwordInput: 'pr-14',
   passwordToggle: 'absolute right-2 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-xl border-0 bg-transparent text-[var(--muted)] transition-colors hover:text-[var(--accent)] hover:bg-[var(--accent)]/5',
@@ -30,7 +44,7 @@ const loginClasses = {
   inlineControl: 'flex gap-3',
   codeButton: 'whitespace-nowrap rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 px-5 text-[13px] font-bold text-[var(--fg)] transition-all hover:border-[var(--accent)]/50 hover:bg-[var(--surface)] disabled:opacity-50',
   submit: cn(rdWorkspace.generateBtn, 'mt-4 h-14'),
-  divider: 'auth-divider my-10 flex items-center text-[10px] font-vault-mono uppercase tracking-[0.2em] text-[var(--muted)] before:flex-1 before:border-b before:border-[var(--border)] after:flex-1 after:border-b after:border-[var(--border)]',
+  divider: 'auth-divider my-8 flex items-center text-[10px] font-vault-mono uppercase tracking-[0.2em] text-[var(--muted)] before:flex-1 before:border-b before:border-[var(--border)] after:flex-1 after:border-b after:border-[var(--border)]',
   dividerText: 'px-4',
   social: 'auth-social flex gap-3',
   socialButton: 'flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 transition-all hover:border-[var(--accent)]/50 hover:bg-[var(--surface)] hover:scale-[1.02] active:scale-[0.98]',
@@ -117,22 +131,44 @@ export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?:
 
   return (
     <main className={loginClasses.page}>
-      <div className={loginClasses.card}>
-        {/* Logo */}
-        <div className={loginClasses.header}>
-          <button
-            type="button"
-            onClick={() => app.navigate('landing')}
-            className={loginClasses.logo}
-            aria-label={`${siteBrand.name} 首页`}
-          >
-            <div className={loginClasses.brandOrb}>M</div>
-          </button>
-          <p className={loginClasses.subtitle}>Welcome to Luminous Vault</p>
-        </div>
+      <section className={loginClasses.shell}>
+        <aside className={loginClasses.preview}>
+          <img src={heroImage} alt="Mikiko Studio workspace preview" className={loginClasses.previewImg} />
+          <div className={loginClasses.previewOverlay} />
+          <div className={loginClasses.previewContent}>
+            <button type="button" className={loginClasses.previewBrand} onClick={() => app.navigate('landing')} aria-label={`${siteBrand.name} 首页`}>
+              <BrandMark withText />
+            </button>
+            <div>
+              <div className={rdHome.heroBadge}>Mikiko Studio</div>
+              <h1 className={loginClasses.previewTitle}>回到你的 AI 图像工作台。</h1>
+              <p className={loginClasses.previewText}>登录后继续使用模型路由、历史图库、余额与 API Key 管理，创作状态会和主应用保持一致。</p>
+            </div>
+            <div className={loginClasses.previewStats}>
+              <span className={loginClasses.previewStat}><strong className={loginClasses.previewStatValue}>Web</strong><span className={loginClasses.previewStatLabel}>工作台</span></span>
+              <span className={loginClasses.previewStat}><strong className={loginClasses.previewStatValue}>API</strong><span className={loginClasses.previewStatLabel}>兼容调用</span></span>
+              <span className={loginClasses.previewStat}><strong className={loginClasses.previewStatValue}>5 位</strong><span className={loginClasses.previewStatLabel}>积分精度</span></span>
+            </div>
+          </div>
+        </aside>
 
-        {/* Tabs */}
-        <div className={loginClasses.tabs}>
+        <div className={loginClasses.card}>
+          <div className={loginClasses.header}>
+            <button
+              type="button"
+              onClick={() => app.navigate('landing')}
+              className={loginClasses.logo}
+              aria-label={`${siteBrand.name} 首页`}
+            >
+              <div className={loginClasses.brandOrb}>M</div>
+            </button>
+            <div>
+              <h1 className={loginClasses.title}>{resetMode ? '重置密码' : '登录或注册'}</h1>
+              <p className={loginClasses.subtitle}>{resetMode ? '使用邮箱验证码设置新密码。' : '使用账号密码或邮箱验证码进入 Mikiko Studio。'}</p>
+            </div>
+          </div>
+
+          <div className={loginClasses.tabs}>
           <button
             type="button"
             className={cn(loginClasses.tab, mode === 'password' && loginClasses.tabActive)}
@@ -147,10 +183,9 @@ export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?:
           >
             免密登录
           </button>
-        </div>
+          </div>
 
-        {/* Form */}
-        <form onSubmit={submit}>
+          <form onSubmit={submit}>
           <div className={loginClasses.field}>
             <label className={loginClasses.label}>邮箱地址</label>
             <input
@@ -239,25 +274,23 @@ export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?:
               {busy ? '正在同步...' : resetMode ? '重置并登录' : '登 录'}
             </span>
           </button>
-        </form>
+          </form>
 
-        {/* Divider */}
-        <div className={loginClasses.divider}>
+          <div className={loginClasses.divider}>
           <span className={loginClasses.dividerText}>第三方极速联登</span>
-        </div>
+          </div>
 
-        {/* Social Login */}
-        <div className={loginClasses.social}>
+          <div className={loginClasses.social}>
           <SocialButton icon={<WeChatIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('微信'))} />
           <SocialButton icon={<DingTalkIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('钉钉'))} />
           <SocialButton icon={<GoogleIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('Google'))} />
-        </div>
+          </div>
 
-        {/* Footer */}
-        <div className={loginClasses.footer}>
+          <div className={loginClasses.footer}>
           还没有账号？ <button type="button" className={loginClasses.link} onClick={() => { setMode('code'); setResetMode(false) }}>立即注册</button>
+          </div>
         </div>
-      </div>
+      </section>
     </main>
   )
 }

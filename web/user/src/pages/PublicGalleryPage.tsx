@@ -28,8 +28,8 @@ const publicGalleryClasses = {
   iconActions: 'mt-3.5 flex flex-wrap justify-end gap-2',
 }
 
-function downloadFilename(image: Pick<ImageResult, 'id' | 'url' | 'download_url'>) {
-  const source = image.download_url ?? image.url ?? ''
+function downloadFilename(image: Pick<ImageResult, 'id' | 'url' | 'asset_url' | 'download_url'>) {
+  const source = image.download_url ?? userApi.preferredImageUrl(image)
   const clean = source.split('?')[0]
   const ext = clean.match(/\.(png|jpe?g|webp|gif)$/i)?.[0] ?? '.png'
   return `${image.id || 'image'}${ext}`
@@ -162,7 +162,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   }, [app, app.session?.token, imageId, rows, selected?.id, busyId])
 
   function downloadImage(image: ImageResult) {
-    const url = image.download_url ?? image.url
+    const url = image.download_url ?? userApi.preferredImageUrl(image)
     if (!url) return
     const link = document.createElement('a')
     link.href = assetUrl(url)
@@ -203,7 +203,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
           return (
             <article key={image.id} className={publicGalleryClasses.card}>
               <button type="button" className={publicGalleryClasses.thumb} onClick={() => void openDetail(image)} disabled={busyId === `detail:${image.id}`}>
-                {image.url ? <img src={assetUrl(image.url)} alt={card.title || image.id} className={publicGalleryClasses.thumbImage} /> : null}
+                {userApi.preferredImageUrl(image) ? <img src={assetUrl(userApi.preferredImageUrl(image))} alt={card.title || image.id} className={publicGalleryClasses.thumbImage} /> : null}
               </button>
               <div className={publicGalleryClasses.info}>
                 <div className={publicGalleryClasses.titleLine}>{card.title}</div>
@@ -217,7 +217,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
                   {publicDetailButton('查看详情', <PublicDetailIcon name="eye" />, () => void openDetail(image), '', busyId === `detail:${image.id}`)}
                   {publicDetailButton(`点赞 ${image.like_count ?? 0}`, <PublicDetailIcon name="heart" active={image.liked_by_viewer} />, () => void toggleReaction(image, 'like'), image.liked_by_viewer ? 'liked' : '', busyId === `like:${image.id}`)}
                   {publicDetailButton(`收藏 ${image.favorite_count ?? 0}`, <PublicDetailIcon name="star" active={image.favorited_by_viewer} />, () => void toggleReaction(image, 'favorite'), image.favorited_by_viewer ? 'favorited' : '', busyId === `favorite:${image.id}`)}
-                  {publicDetailButton('下载', <PublicDetailIcon name="download" />, () => downloadImage(image), '', !image.url)}
+                  {publicDetailButton('下载', <PublicDetailIcon name="download" />, () => downloadImage(image), '', !userApi.preferredImageUrl(image))}
                 </div>
               </div>
             </article>
@@ -228,7 +228,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
       <ImageDetailModal
         title="公开图片详情"
         image={selected}
-        imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
+        imageUrl={selected && userApi.preferredImageUrl(selected) ? assetUrl(userApi.preferredImageUrl(selected)) : undefined}
         onLike={(image) => void toggleReaction(image as ImageResult, 'like')}
         onFavorite={(image) => void toggleReaction(image as ImageResult, 'favorite')}
         onDownload={(image) => downloadImage(image as ImageResult)}

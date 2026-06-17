@@ -13,6 +13,11 @@ export type GenerationSlot =
   | { kind: 'pending'; index: number; label: string }
   | { kind: 'failed'; index: number; title: string; reason: string; code?: string }
 
+export type GenerationOutputVisibility = {
+  showInitialLoading: boolean
+  showSlots: boolean
+}
+
 const qualityLabelMap: Record<string, string> = {
   auto: '自动',
   standard: '标准',
@@ -78,4 +83,15 @@ export function generationSlots(task: ImageTask): GenerationSlot[] {
     slots.push({ kind: 'pending', index, label: '生成中' })
   }
   return slots
+}
+
+export function generationOutputVisibility(task: ImageTask, skeletonPhase: boolean): GenerationOutputVisibility {
+  const hasImages = task.results.length > 0
+  const terminal = ['succeeded', 'partial_failed', 'failed', 'cancelled', 'rejected', 'deleted'].includes(task.status)
+  const hasBackendProgress = Number(task.progress ?? 0) > 0 || Boolean(task.progress_stage || task.progress_message)
+  const showSlots = skeletonPhase || hasImages || terminal || hasBackendProgress
+  return {
+    showInitialLoading: !terminal && !showSlots,
+    showSlots,
+  }
 }

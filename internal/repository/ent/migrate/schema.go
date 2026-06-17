@@ -214,6 +214,7 @@ var (
 		{Name: "task_id", Type: field.TypeUUID},
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "image_role", Type: field.TypeString, Size: 16, Default: "output"},
+		{Name: "storage_config_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
 		{Name: "object_key", Type: field.TypeString, Size: 255},
 		{Name: "mime_type", Type: field.TypeString, Size: 64},
@@ -248,19 +249,24 @@ var (
 				Columns: []*schema.Column{TaskImagesColumns[6]},
 			},
 			{
+				Name:    "imageresult_storage_config_id",
+				Unique:  false,
+				Columns: []*schema.Column{TaskImagesColumns[7]},
+			},
+			{
 				Name:    "imageresult_object_key",
 				Unique:  true,
-				Columns: []*schema.Column{TaskImagesColumns[8]},
+				Columns: []*schema.Column{TaskImagesColumns[9]},
 			},
 			{
 				Name:    "imageresult_sha256",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[13]},
+				Columns: []*schema.Column{TaskImagesColumns[14]},
 			},
 			{
 				Name:    "imageresult_visibility_status",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[15]},
+				Columns: []*schema.Column{TaskImagesColumns[16]},
 			},
 		},
 	}
@@ -1002,6 +1008,7 @@ var (
 		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "upload_source", Type: field.TypeString, Size: 16, Default: "web"},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "uploading"},
+		{Name: "storage_config_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
 		{Name: "object_key", Type: field.TypeString, Size: 255},
 		{Name: "mime_type", Type: field.TypeString, Size: 64},
@@ -1021,7 +1028,12 @@ var (
 			{
 				Name:    "referenceasset_object_key",
 				Unique:  true,
-				Columns: []*schema.Column{ReferenceAssetsColumns[9]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[10]},
+			},
+			{
+				Name:    "referenceasset_storage_config_id",
+				Unique:  false,
+				Columns: []*schema.Column{ReferenceAssetsColumns[8]},
 			},
 			{
 				Name:    "referenceasset_user_id",
@@ -1036,12 +1048,12 @@ var (
 			{
 				Name:    "referenceasset_sha256",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[14]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[15]},
 			},
 			{
 				Name:    "referenceasset_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[16]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[17]},
 			},
 		},
 	}
@@ -1223,6 +1235,138 @@ var (
 				Name:    "secureconfig_config_category_config_key",
 				Unique:  true,
 				Columns: []*schema.Column{SecureConfigsColumns[3], SecureConfigsColumns[4]},
+			},
+		},
+	}
+	// StorageConfigsColumns holds the columns for the "storage_configs" table.
+	StorageConfigsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "code", Type: field.TypeString, Size: 64},
+		{Name: "name", Type: field.TypeString, Size: 100, Default: ""},
+		{Name: "driver", Type: field.TypeString, Size: 16, Default: "s3"},
+		{Name: "endpoint", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "region", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "bucket", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "prefix", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "force_path_style", Type: field.TypeBool, Default: false},
+		{Name: "access_key_id_encrypted", Type: field.TypeString, Default: ""},
+		{Name: "secret_access_key_encrypted", Type: field.TypeString, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
+		{Name: "is_default_write", Type: field.TypeBool, Default: false},
+		{Name: "last_test_status", Type: field.TypeString, Size: 32, Default: "unknown"},
+		{Name: "last_test_error", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "last_tested_at", Type: field.TypeTime, Nullable: true},
+	}
+	// StorageConfigsTable holds the schema information for the "storage_configs" table.
+	StorageConfigsTable = &schema.Table{
+		Name:       "storage_configs",
+		Columns:    StorageConfigsColumns,
+		PrimaryKey: []*schema.Column{StorageConfigsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "storageconfig_code",
+				Unique:  true,
+				Columns: []*schema.Column{StorageConfigsColumns[3]},
+			},
+			{
+				Name:    "storageconfig_driver",
+				Unique:  false,
+				Columns: []*schema.Column{StorageConfigsColumns[5]},
+			},
+			{
+				Name:    "storageconfig_status",
+				Unique:  false,
+				Columns: []*schema.Column{StorageConfigsColumns[13]},
+			},
+			{
+				Name:    "storageconfig_is_default_write",
+				Unique:  false,
+				Columns: []*schema.Column{StorageConfigsColumns[14]},
+			},
+		},
+	}
+	// StorageMigrationItemsColumns holds the columns for the "storage_migration_items" table.
+	StorageMigrationItemsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "job_id", Type: field.TypeUUID},
+		{Name: "object_kind", Type: field.TypeString, Size: 32},
+		{Name: "object_id", Type: field.TypeUUID},
+		{Name: "source_object_key", Type: field.TypeString, Size: 255},
+		{Name: "target_object_key", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
+		{Name: "size_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "error", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "copied_at", Type: field.TypeTime, Nullable: true},
+		{Name: "record_updated_at", Type: field.TypeTime, Nullable: true},
+	}
+	// StorageMigrationItemsTable holds the schema information for the "storage_migration_items" table.
+	StorageMigrationItemsTable = &schema.Table{
+		Name:       "storage_migration_items",
+		Columns:    StorageMigrationItemsColumns,
+		PrimaryKey: []*schema.Column{StorageMigrationItemsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "storagemigrationitem_job_id",
+				Unique:  false,
+				Columns: []*schema.Column{StorageMigrationItemsColumns[3]},
+			},
+			{
+				Name:    "storagemigrationitem_status",
+				Unique:  false,
+				Columns: []*schema.Column{StorageMigrationItemsColumns[8]},
+			},
+			{
+				Name:    "storagemigrationitem_object_kind_object_id",
+				Unique:  false,
+				Columns: []*schema.Column{StorageMigrationItemsColumns[4], StorageMigrationItemsColumns[5]},
+			},
+		},
+	}
+	// StorageMigrationJobsColumns holds the columns for the "storage_migration_jobs" table.
+	StorageMigrationJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "source_storage_config_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "target_storage_config_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_legacy_driver", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "scope", Type: field.TypeJSON, Nullable: true},
+		{Name: "dry_run", Type: field.TypeBool, Default: true},
+		{Name: "update_records", Type: field.TypeBool, Default: true},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
+		{Name: "total_items", Type: field.TypeInt64, Default: 0},
+		{Name: "processed_items", Type: field.TypeInt64, Default: 0},
+		{Name: "failed_items", Type: field.TypeInt64, Default: 0},
+		{Name: "total_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "last_error", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "created_by", Type: field.TypeInt64, Default: 0},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+	}
+	// StorageMigrationJobsTable holds the schema information for the "storage_migration_jobs" table.
+	StorageMigrationJobsTable = &schema.Table{
+		Name:       "storage_migration_jobs",
+		Columns:    StorageMigrationJobsColumns,
+		PrimaryKey: []*schema.Column{StorageMigrationJobsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "storagemigrationjob_status",
+				Unique:  false,
+				Columns: []*schema.Column{StorageMigrationJobsColumns[9]},
+			},
+			{
+				Name:    "storagemigrationjob_source_storage_config_id",
+				Unique:  false,
+				Columns: []*schema.Column{StorageMigrationJobsColumns[3]},
+			},
+			{
+				Name:    "storagemigrationjob_target_storage_config_id",
+				Unique:  false,
+				Columns: []*schema.Column{StorageMigrationJobsColumns[4]},
 			},
 		},
 	}
@@ -1554,6 +1698,9 @@ var (
 		RouteModelPricesTable,
 		RouteModelVisibilityGroupsTable,
 		SecureConfigsTable,
+		StorageConfigsTable,
+		StorageMigrationItemsTable,
+		StorageMigrationJobsTable,
 		SubscriptionPlansTable,
 		UsersTable,
 		UserGroupsTable,
@@ -1606,6 +1753,15 @@ func init() {
 	}
 	RouteModelVisibilityGroupsTable.Annotation = &entsql.Annotation{
 		Table: "route_model_visibility_groups",
+	}
+	StorageConfigsTable.Annotation = &entsql.Annotation{
+		Table: "storage_configs",
+	}
+	StorageMigrationItemsTable.Annotation = &entsql.Annotation{
+		Table: "storage_migration_items",
+	}
+	StorageMigrationJobsTable.Annotation = &entsql.Annotation{
+		Table: "storage_migration_jobs",
 	}
 	UserGroupMembersTable.Annotation = &entsql.Annotation{
 		Table: "user_group_members",

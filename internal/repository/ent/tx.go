@@ -66,6 +66,12 @@ type Tx struct {
 	RouteModelVisibilityGroup *RouteModelVisibilityGroupClient
 	// SecureConfig is the client for interacting with the SecureConfig builders.
 	SecureConfig *SecureConfigClient
+	// StorageConfig is the client for interacting with the StorageConfig builders.
+	StorageConfig *StorageConfigClient
+	// StorageMigrationItem is the client for interacting with the StorageMigrationItem builders.
+	StorageMigrationItem *StorageMigrationItemClient
+	// StorageMigrationJob is the client for interacting with the StorageMigrationJob builders.
+	StorageMigrationJob *StorageMigrationJobClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
 	// User is the client for interacting with the User builders.
@@ -238,6 +244,9 @@ func (tx *Tx) init() {
 	tx.RouteModelPrice = NewRouteModelPriceClient(tx.config)
 	tx.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(tx.config)
 	tx.SecureConfig = NewSecureConfigClient(tx.config)
+	tx.StorageConfig = NewStorageConfigClient(tx.config)
+	tx.StorageMigrationItem = NewStorageMigrationItemClient(tx.config)
+	tx.StorageMigrationJob = NewStorageMigrationJobClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserGroup = NewUserGroupClient(tx.config)

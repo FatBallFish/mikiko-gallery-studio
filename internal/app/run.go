@@ -19,6 +19,7 @@ import (
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	adminstorageservice "github.com/fatballfish/pic-gallery/internal/service/adminstorage"
 	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
@@ -114,8 +115,11 @@ func Run() error {
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	billingSvc.SetAdminConfigResolver(adminSvc)
+	storageAdminSvc := adminstorageservice.NewServiceWithStore(cfg.Storage, entstore.NewStorageStoreWithLegacyConfig(client, cfg.Security.SecureConfigEncryptionKey, cfg.Storage))
 	assetSvc := assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, entstore.NewAssetsStore(client), storageBackend)
+	assetSvc.SetStorageRegistry(storageAdminSvc)
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageBackend)
+	taskSvc.SetStorageRegistry(storageAdminSvc)
 	modelAdminStore := entstore.NewModelAdminStore(client)
 	taskSvc.SetModelRoutingSource(modelAdminStore)
 	apiKeySvc, err := newRuntimeAPIKeyService(cfg, entstore.NewAPIKeyStore(client))
@@ -135,6 +139,7 @@ func Run() error {
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)
+	api.SetStorageAdminService(storageAdminSvc)
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,

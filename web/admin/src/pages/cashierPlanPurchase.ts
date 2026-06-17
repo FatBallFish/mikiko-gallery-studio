@@ -1,4 +1,5 @@
 import type { CashierPlan } from '../../../shared/api-types'
+import { normalizeAdminCurrency } from '../ui/currency'
 
 export type CashierPlanDraftInput = {
   plan_code: string
@@ -47,7 +48,7 @@ export function cashierPlanSavePayload(draft: CashierPlanDraftInput): Partial<Ca
     points: draft.points,
     bonus_points: draft.bonus_points,
     duration_days: Number(draft.duration_days) || 30,
-    currency: draft.currency,
+    currency: normalizeAdminCurrency(draft.currency),
     sort_order: Number(draft.sort_order) || 0,
     description: draft.description,
   }

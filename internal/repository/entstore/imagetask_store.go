@@ -1305,6 +1305,9 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 		SetSha256(shaValue).
 		SetImageGroup(strings.TrimSpace(result.ImageGroup)).
 		SetVisibilityStatus(defaultString(result.VisibilityStatus, "private"))
+	if result.StorageConfigID != nil {
+		builder.SetStorageConfigID(*result.StorageConfigID)
+	}
 	if strings.TrimSpace(result.ReviewReason) != "" {
 		builder.SetReviewReason(strings.TrimSpace(result.ReviewReason))
 	}
@@ -1510,6 +1513,7 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 		Height:           entity.Height,
 		SHA256:           entity.Sha256,
 		ObjectKey:        entity.ObjectKey,
+		StorageConfigID:  entity.StorageConfigID,
 		StorageDriver:    entity.StorageDriver,
 		ImageGroup:       entity.ImageGroup,
 		VisibilityStatus: entity.VisibilityStatus,
@@ -1728,6 +1732,7 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		Height:            item.Height,
 		SHA256:            item.SHA256,
 		ObjectKey:         item.ObjectKey,
+		StorageConfigID:   item.StorageConfigID,
 		StorageDriver:     item.StorageDriver,
 		ImageGroup:        item.ImageGroup,
 		VisibilityStatus:  defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate),

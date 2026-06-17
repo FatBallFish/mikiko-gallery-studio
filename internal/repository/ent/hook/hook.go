@@ -333,6 +333,42 @@ func (f SecureConfigFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SecureConfigMutation", m)
 }
 
+// The StorageConfigFunc type is an adapter to allow the use of ordinary
+// function as StorageConfig mutator.
+type StorageConfigFunc func(context.Context, *ent.StorageConfigMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f StorageConfigFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.StorageConfigMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.StorageConfigMutation", m)
+}
+
+// The StorageMigrationItemFunc type is an adapter to allow the use of ordinary
+// function as StorageMigrationItem mutator.
+type StorageMigrationItemFunc func(context.Context, *ent.StorageMigrationItemMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f StorageMigrationItemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.StorageMigrationItemMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.StorageMigrationItemMutation", m)
+}
+
+// The StorageMigrationJobFunc type is an adapter to allow the use of ordinary
+// function as StorageMigrationJob mutator.
+type StorageMigrationJobFunc func(context.Context, *ent.StorageMigrationJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f StorageMigrationJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.StorageMigrationJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.StorageMigrationJobMutation", m)
+}
+
 // The SubscriptionPlanFunc type is an adapter to allow the use of ordinary
 // function as SubscriptionPlan mutator.
 type SubscriptionPlanFunc func(context.Context, *ent.SubscriptionPlanMutation) (ent.Value, error)

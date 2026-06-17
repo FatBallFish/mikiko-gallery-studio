@@ -100,3 +100,56 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 		t.Fatalf("DeleteProvider: %v", err)
 	}
 }
+
+func TestModelAdminStoreRuntimeSnapshotMapsAccountModelCostToOutputCost(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:modeladminstore-cost?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name:        "OpenAI primary",
+		AdapterType: "openai",
+		AuthType:    "api_key",
+		BaseURL:     "https://api.openai.test",
+		Credentials: map[string]string{"api_key": "cipher"},
+		Status:      domainmodeladmin.ModelAccountStatusEnabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID:    account.ID,
+		ModelCode:    "gpt-image-1",
+		DisplayName:  "GPT Image",
+		TaskTypes:    []string{"text_to_image"},
+		Qualities:    []string{"1k"},
+		CostPerImage: "0.12500",
+		Currency:     "USD",
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccountModel: %v", err)
+	}
+
+	snapshot, err := store.ModelRoutingConfig(ctx)
+	if err != nil {
+		t.Fatalf("ModelRoutingConfig: %v", err)
+	}
+	if len(snapshot.ProviderModels) != 1 {
+		t.Fatalf("expected one provider candidate, got %#v", snapshot.ProviderModels)
+	}
+	candidate := snapshot.ProviderModels[0]
+	if candidate.AccountModelID != model.ID {
+		t.Fatalf("expected account model candidate %d, got %#v", model.ID, candidate)
+	}
+	if candidate.OutputCost != "0.12500" || candidate.Currency != "USD" {
+		t.Fatalf("expected account model cost to populate runtime output cost, got %#v", candidate)
+	}
+}

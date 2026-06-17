@@ -131,6 +131,33 @@ func (_u *ReferenceAssetUpdate) SetNillableStatus(v *string) *ReferenceAssetUpda
 	return _u
 }
 
+// SetStorageConfigID sets the "storage_config_id" field.
+func (_u *ReferenceAssetUpdate) SetStorageConfigID(v int64) *ReferenceAssetUpdate {
+	_u.mutation.ResetStorageConfigID()
+	_u.mutation.SetStorageConfigID(v)
+	return _u
+}
+
+// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdate) SetNillableStorageConfigID(v *int64) *ReferenceAssetUpdate {
+	if v != nil {
+		_u.SetStorageConfigID(*v)
+	}
+	return _u
+}
+
+// AddStorageConfigID adds value to the "storage_config_id" field.
+func (_u *ReferenceAssetUpdate) AddStorageConfigID(v int64) *ReferenceAssetUpdate {
+	_u.mutation.AddStorageConfigID(v)
+	return _u
+}
+
+// ClearStorageConfigID clears the value of the "storage_config_id" field.
+func (_u *ReferenceAssetUpdate) ClearStorageConfigID() *ReferenceAssetUpdate {
+	_u.mutation.ClearStorageConfigID()
+	return _u
+}
+
 // SetStorageDriver sets the "storage_driver" field.
 func (_u *ReferenceAssetUpdate) SetStorageDriver(v string) *ReferenceAssetUpdate {
 	_u.mutation.SetStorageDriver(v)
@@ -414,6 +441,15 @@ func (_u *ReferenceAssetUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(referenceasset.FieldStatus, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.StorageConfigID(); ok {
+		_spec.SetField(referenceasset.FieldStorageConfigID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedStorageConfigID(); ok {
+		_spec.AddField(referenceasset.FieldStorageConfigID, field.TypeInt64, value)
+	}
+	if _u.mutation.StorageConfigIDCleared() {
+		_spec.ClearField(referenceasset.FieldStorageConfigID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.StorageDriver(); ok {
 		_spec.SetField(referenceasset.FieldStorageDriver, field.TypeString, value)
 	}
@@ -578,6 +614,33 @@ func (_u *ReferenceAssetUpdateOne) SetNillableStatus(v *string) *ReferenceAssetU
 	if v != nil {
 		_u.SetStatus(*v)
 	}
+	return _u
+}
+
+// SetStorageConfigID sets the "storage_config_id" field.
+func (_u *ReferenceAssetUpdateOne) SetStorageConfigID(v int64) *ReferenceAssetUpdateOne {
+	_u.mutation.ResetStorageConfigID()
+	_u.mutation.SetStorageConfigID(v)
+	return _u
+}
+
+// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdateOne) SetNillableStorageConfigID(v *int64) *ReferenceAssetUpdateOne {
+	if v != nil {
+		_u.SetStorageConfigID(*v)
+	}
+	return _u
+}
+
+// AddStorageConfigID adds value to the "storage_config_id" field.
+func (_u *ReferenceAssetUpdateOne) AddStorageConfigID(v int64) *ReferenceAssetUpdateOne {
+	_u.mutation.AddStorageConfigID(v)
+	return _u
+}
+
+// ClearStorageConfigID clears the value of the "storage_config_id" field.
+func (_u *ReferenceAssetUpdateOne) ClearStorageConfigID() *ReferenceAssetUpdateOne {
+	_u.mutation.ClearStorageConfigID()
 	return _u
 }
 
@@ -893,6 +956,15 @@ func (_u *ReferenceAssetUpdateOne) sqlSave(ctx context.Context) (_node *Referenc
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(referenceasset.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.StorageConfigID(); ok {
+		_spec.SetField(referenceasset.FieldStorageConfigID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedStorageConfigID(); ok {
+		_spec.AddField(referenceasset.FieldStorageConfigID, field.TypeInt64, value)
+	}
+	if _u.mutation.StorageConfigIDCleared() {
+		_spec.ClearField(referenceasset.FieldStorageConfigID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.StorageDriver(); ok {
 		_spec.SetField(referenceasset.FieldStorageDriver, field.TypeString, value)
