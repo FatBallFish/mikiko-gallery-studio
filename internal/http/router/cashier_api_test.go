@@ -1028,7 +1028,7 @@ func TestCashierEasyPayPopupDisplayIsSignedAndPersisted(t *testing.T) {
 	providerBody := `{"provider_type":"easypay_alipay","name":"易支付支付宝","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":"https://pay.example.com","pid":"10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/payments/easypay/notify","return_url":"https://merchant.example.com/checkout/return","payment_mode":"popup"}}`
 	providerID := createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"12.50000","visible_method":"alipay"}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"12.50000","visible_method":"alipay","client_return_url":"https://client.example.com/#/checkout"}`))
 	createReq.Header.Set("Authorization", "Bearer "+userSession.AccessToken)
 	createReq.Header.Set("Content-Type", "application/json")
 	createRec := httptest.NewRecorder()
@@ -1055,6 +1055,9 @@ func TestCashierEasyPayPopupDisplayIsSignedAndPersisted(t *testing.T) {
 	}
 	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != createResp.Data.OrderNo || query.Get("money") != "12.50000" || query.Get("sign") == "" || query.Get("sign_type") != "MD5" {
 		t.Fatalf("unexpected easypay query params: %s", createResp.Data.PaymentURL)
+	}
+	if query.Get("return_url") != "https://client.example.com/" {
+		t.Fatalf("expected easypay return_url to be origin root, got %q in %s", query.Get("return_url"), createResp.Data.PaymentURL)
 	}
 	if createResp.Data.PaymentDisplay["sign_type"] != "MD5" || createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL {
 		t.Fatalf("expected signed display to mirror payment url, got %#v", createResp.Data.PaymentDisplay)
