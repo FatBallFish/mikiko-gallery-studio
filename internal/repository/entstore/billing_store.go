@@ -266,6 +266,23 @@ func (s *BillingStore) GetOrderByIdempotencyKey(ctx context.Context, userID int6
 	return s.mapPaymentOrder(ctx, order), nil
 }
 
+func (s *BillingStore) GetOrderByOrderNo(ctx context.Context, orderNo string) (domainbilling.PaymentOrder, error) {
+	orderNo = strings.TrimSpace(orderNo)
+	if orderNo == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	order, err := s.client.PaymentOrder.Query().
+		Where(paymentorder.OrderNoEQ(orderNo)).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+		}
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.mapPaymentOrder(ctx, order), nil
+}
+
 func (s *BillingStore) GetOrderForAdmin(ctx context.Context, orderID int64) (domainbilling.PaymentOrder, error) {
 	order, err := s.client.PaymentOrder.Query().
 		Where(paymentorder.IDEQ(int(orderID))).

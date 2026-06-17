@@ -501,6 +501,17 @@ func (s *Service) GetOrderByIdempotencyKey(ctx context.Context, userID int64, id
 	return item, nil
 }
 
+func (s *Service) GetOrderByOrderNo(ctx context.Context, orderNo string) (domainbilling.PaymentOrder, error) {
+	if strings.TrimSpace(orderNo) == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	item, err := s.store.GetOrderByOrderNo(ctx, orderNo)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return item, nil
+}
+
 func (s *Service) GetOrderForAdmin(ctx context.Context, orderID int64) (domainbilling.PaymentOrder, error) {
 	if orderID <= 0 {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("order_id is required")

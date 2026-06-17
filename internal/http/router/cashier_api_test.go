@@ -1255,6 +1255,43 @@ func TestCashierEasyPayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	}
 }
 
+func TestCashierEasyPayProviderTypeGETWebhookCompletesRechargeOrder(t *testing.T) {
+	handler, userToken, _ := setupEasyPayCashierTest(t, "cashier-easypay-get-provider-type-user@example.com")
+	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "12.50000", "easypay-get-trade-success")
+
+	webhookReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/payments/webhooks/easypay_alipay?"+values.Encode(), nil)
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code != http.StatusOK {
+		t.Fatalf("expected easypay provider-type GET webhook 200, got %d body=%s", webhookRec.Code, webhookRec.Body.String())
+	}
+	if strings.TrimSpace(webhookRec.Body.String()) != "success" {
+		t.Fatalf("expected raw easypay GET success response, got body=%s", webhookRec.Body.String())
+	}
+	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != "easypay-get-trade-success" {
+		t.Fatalf("expected completed easypay GET recharge order, got %#v", completed)
+	}
+}
+
+func TestCashierEasyPayWebhookUsesOrderProviderInstanceWhenCallbackPIDDiffers(t *testing.T) {
+	handler, userToken, _ := setupEasyPayCashierTest(t, "cashier-easypay-mismatched-pid-user@example.com")
+	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := easyPayWebhookValuesForTest(order, "upstream-merchant-pid", "merchant-secret", "12.50000", "easypay-mismatched-pid-success")
+
+	webhookReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/payments/webhooks/easypay_alipay?"+values.Encode(), nil)
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code != http.StatusOK {
+		t.Fatalf("expected easypay mismatched-pid GET webhook 200, got %d body=%s", webhookRec.Code, webhookRec.Body.String())
+	}
+	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != "easypay-mismatched-pid-success" {
+		t.Fatalf("expected completed easypay mismatched-pid recharge order, got %#v", completed)
+	}
+}
+
 func TestCashierAlipayWebhookRejectsInvalidSignature(t *testing.T) {
 	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-invalid-sign-user@example.com")
 	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")

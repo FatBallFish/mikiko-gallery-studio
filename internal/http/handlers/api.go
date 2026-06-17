@@ -1583,10 +1583,6 @@ func (a *API) HandleRedeemCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
-		return
-	}
 	providerCode := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/payments/webhooks/"), "/")
 	if providerCode == "" {
 		httpx.WriteError(w, r, errs.BadRequest("provider is required"))
@@ -1596,13 +1592,21 @@ func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "mock payment is disabled in production"))
 		return
 	}
-	if strings.EqualFold(providerCode, "easypay") {
+	if strings.EqualFold(providerCode, "easypay") || strings.HasPrefix(strings.ToLower(providerCode), "easypay_") {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet {
+			httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+			return
+		}
 		_, appErr := a.handleEasyPayWebhook(r)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
 		writePaymentWebhookSuccess(w, providerCode)
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
 	if strings.EqualFold(providerCode, "alipay_direct") || strings.EqualFold(providerCode, "alipay") {
@@ -1666,18 +1670,25 @@ func writePaymentWebhookSuccess(w http.ResponseWriter, providerCode string) {
 }
 
 func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
-	if readErr != nil {
-		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
-	}
-	values, parseErr := url.ParseQuery(string(body))
-	if parseErr != nil {
-		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid easypay webhook body")
+	values := r.URL.Query()
+	if r.Method != http.MethodGet {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
+		}
+		parsed, parseErr := url.ParseQuery(string(body))
+		if parseErr != nil {
+			return domainbilling.PaymentOrder{}, errs.BadRequest("invalid easypay webhook body")
+		}
+		values = parsed
 	}
 	pid := strings.TrimSpace(values.Get("pid"))
 	instance, ok := a.easypayProviderInstanceByPID(r.Context(), pid)
 	if !ok {
-		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		instance, ok = a.easypayProviderInstanceByOrderNo(r.Context(), strings.TrimSpace(values.Get("out_trade_no")))
+		if !ok {
+			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		}
 	}
 	key := strings.TrimSpace(mapStringValue(instance.Config, "key", "pkey", "merchant_key", "merchantKey"))
 	if key == "" {
@@ -1850,6 +1861,33 @@ func (a *API) easypayProviderInstanceByPID(ctx context.Context, pid string) (cas
 			continue
 		}
 		if strings.TrimSpace(mapStringValue(instance.Config, "pid", "merchant_id", "merchantId")) == pid {
+			return instance, true
+		}
+	}
+	return cashierProviderInstance{}, false
+}
+
+func (a *API) easypayProviderInstanceByOrderNo(ctx context.Context, orderNo string) (cashierProviderInstance, bool) {
+	orderNo = strings.TrimSpace(orderNo)
+	if orderNo == "" || a.billing == nil {
+		return cashierProviderInstance{}, false
+	}
+	order, err := a.billing.GetOrderByOrderNo(ctx, orderNo)
+	if err != nil {
+		return cashierProviderInstance{}, false
+	}
+	for _, instance := range a.cashierProviderInstances(ctx) {
+		providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
+		if providerType != "easypay_alipay" && providerType != "easypay_wxpay" {
+			continue
+		}
+		if !instance.Enabled || instance.ConfigStatus != "configured" {
+			continue
+		}
+		if order.ProviderInstanceID > 0 && instance.ID == order.ProviderInstanceID {
+			return instance, true
+		}
+		if order.ProviderInstanceID == 0 && strings.EqualFold(order.ProviderType, instance.ProviderType) {
 			return instance, true
 		}
 	}
