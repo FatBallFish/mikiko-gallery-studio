@@ -5,6 +5,7 @@ import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import { CurrencyInput } from '../ui/CurrencyInput'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashierJeePayWayCodeTemplates'
 import { cashierAdminDateTime, cashierManualCompletionProviderOptions, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel, cashierProviderConfigStatusLabel, cashierProviderSupportedMethodsLabel, cashierWebhookEventTypeLabel, cashierWebhookProviderLabel } from './cashierPaymentDisplay'
@@ -165,7 +166,7 @@ const cashierClasses = {
   jeepayTemplate: 'grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
   templateButtonRow: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2',
   templateButton: 'grid gap-1 rounded-xl border border-[var(--line)] bg-white/5 p-3 text-left text-sm hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/10',
-  textarea: 'min-h-[160px] w-full resize-y rounded-xl border border-[var(--line)] bg-white/5 px-3 py-2 font-mono text-xs outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/50',
+  textarea: 'min-h-[160px] w-full resize-y rounded-xl border border-[var(--line)] bg-white/5 px-3 py-2 font-mono text-sm outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/50',
   detailGrid: 'grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3',
   detailItem: 'grid gap-1 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-3',
   riskGrid: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3',
@@ -1073,7 +1074,7 @@ export function CashierPage({
             <Field label="基础积分"><input value={planDialog.points} onChange={(event) => setPlanDialog({ ...planDialog, points: event.target.value })} inputMode="decimal" placeholder="100.00000" /></Field>
             <Field label="赠送积分"><input value={planDialog.bonus_points} onChange={(event) => setPlanDialog({ ...planDialog, bonus_points: event.target.value })} inputMode="decimal" placeholder="0.00000" /></Field>
             <Field label="有效天数"><input value={planDialog.duration_days} onChange={(event) => setPlanDialog({ ...planDialog, duration_days: event.target.value })} type="number" min="1" /></Field>
-            <Field label="币种"><input value={planDialog.currency} onChange={(event) => setPlanDialog({ ...planDialog, currency: event.target.value })} /></Field>
+            <Field label="币种"><CurrencyInput value={planDialog.currency} onChange={(currency) => setPlanDialog({ ...planDialog, currency })} /></Field>
             <Field label="排序"><input value={planDialog.sort_order} onChange={(event) => setPlanDialog({ ...planDialog, sort_order: event.target.value })} type="number" /></Field>
             <label className={cashierClasses.toggle}>
               <input type="checkbox" checked={planDialog.plan_type !== 'subscription' && planDialog.purchase_enabled} disabled={planDialog.plan_type === 'subscription'} onChange={(event) => setPlanDialog({ ...planDialog, purchase_enabled: event.target.checked })} />

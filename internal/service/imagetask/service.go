@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminstorage "github.com/fatballfish/pic-gallery/internal/domain/adminstorage"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
@@ -44,6 +45,7 @@ type Service struct {
 	billing    BillingManager
 	apiKeys    APIKeyUsageManager
 	backend    storage.Backend
+	registry   storage.Registry
 	httpClient *http.Client
 }
 
@@ -156,6 +158,10 @@ func (s *Service) SetHTTPClient(client *http.Client) {
 		return
 	}
 	s.httpClient = client
+}
+
+func (s *Service) SetStorageRegistry(registry storage.Registry) {
+	s.registry = registry
 }
 
 func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequest) (domainimagetask.Task, error) {
@@ -1013,11 +1019,29 @@ func (s *Service) DownloadImageResult(ctx context.Context, userID int64, imageID
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	backend, readErr := s.resolveReadBackend(ctx, result)
+	if readErr != nil {
+		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	content, readErr := backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
 	return result, content, nil
+}
+
+func (s *Service) GetImageAccessResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return provider.ImageResult{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return provider.ImageResult{}, errs.Internal("failed to load image result")
+	}
+	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
+		return provider.ImageResult{}, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	return result, nil
 }
 
 func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, []byte, error) {
@@ -1031,7 +1055,11 @@ func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID strin
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	backend, readErr := s.resolveReadBackend(ctx, result)
+	if readErr != nil {
+		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	content, readErr := backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
@@ -1054,6 +1082,7 @@ func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string)
 		Height:           image.Height,
 		SHA256:           image.SHA256,
 		ObjectKey:        image.ObjectKey,
+		StorageConfigID:  image.StorageConfigID,
 		StorageDriver:    image.StorageDriver,
 		ImageGroup:       image.ImageGroup,
 		VisibilityStatus: image.VisibilityStatus,
@@ -1063,7 +1092,11 @@ func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string)
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	backend, readErr := s.resolveReadBackend(ctx, result)
+	if readErr != nil {
+		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	content, readErr := backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
@@ -1127,6 +1160,28 @@ func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, re
 	return s.CreateTask(ctx, retryReq)
 }
 
+func (s *Service) resolveWriteBackend(ctx context.Context) (storage.ResolvedBackend, error) {
+	if s.registry != nil {
+		return s.registry.ResolveWriteBackend(ctx)
+	}
+	return storage.ResolvedBackend{Driver: s.backend.Driver(), Backend: s.backend}, nil
+}
+
+func (s *Service) resolveReadBackend(ctx context.Context, result provider.ImageResult) (storage.Backend, error) {
+	if s.registry != nil {
+		resolved, err := s.registry.ResolveReadBackend(ctx, domainadminstorage.ObjectLocation{
+			StorageConfigID: result.StorageConfigID,
+			LegacyDriver:    result.StorageDriver,
+			ObjectKey:       result.ObjectKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return resolved.StorageBackend(), nil
+	}
+	return s.backend, nil
+}
+
 func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID string) error {
 	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
 	if err != nil {
@@ -1136,7 +1191,11 @@ func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID s
 		return errs.Internal("failed to load image result")
 	}
 	if result.StorageDriver != "remote" && strings.TrimSpace(result.ObjectKey) != "" {
-		if err := s.backend.Delete(ctx, result.ObjectKey); err != nil {
+		backend, err := s.resolveReadBackend(ctx, result)
+		if err != nil {
+			return errs.Internal("failed to delete image file")
+		}
+		if err := backend.Delete(ctx, result.ObjectKey); err != nil {
 			return errs.Internal("failed to delete image file")
 		}
 	}
@@ -1342,7 +1401,7 @@ func (s *Service) persistImageResults(ctx context.Context, task domainimagetask.
 			persisted = append(persisted, item)
 			continue
 		}
-		local, err := s.persistBase64ImageResult(task, index, item)
+		local, err := s.persistBase64ImageResult(ctx, task, index, item)
 		if err != nil {
 			return nil, err
 		}
@@ -1384,7 +1443,11 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 		resultID = uuid.NewString()
 	}
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	if err := s.backend.Put(ctx, objectKey, mimeType, content); err != nil {
+	resolved, err := s.resolveWriteBackend(ctx)
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to resolve image storage")
+	}
+	if err := resolved.StorageBackend().Put(ctx, objectKey, mimeType, content); err != nil {
 		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
 	}
 	result.ID = resultID
@@ -1396,14 +1459,15 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 	result.Height = cfg.Height
 	result.SHA256 = sha
 	result.ObjectKey = objectKey
-	result.StorageDriver = s.backend.Driver()
+	result.StorageConfigID = resolved.StorageID()
+	result.StorageDriver = resolved.StorageDriver()
 	result.VisibilityStatus = defaultString(result.VisibilityStatus, "private")
 	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
 	result.URL = result.DownloadURL
 	return result, nil
 }
 
-func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
+func (s *Service) persistBase64ImageResult(ctx context.Context, task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
 	content, err := decodeBase64ImageResult(result.B64JSON)
 	if err != nil {
 		return provider.ImageResult{}, err
@@ -1417,7 +1481,11 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	sha := hex.EncodeToString(hash[:])
 	resultID := uuid.NewString()
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	if err := s.backend.Put(context.Background(), objectKey, mimeType, content); err != nil {
+	resolved, err := s.resolveWriteBackend(ctx)
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to resolve image storage")
+	}
+	if err := resolved.StorageBackend().Put(ctx, objectKey, mimeType, content); err != nil {
 		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
 	}
 	result.ID = resultID
@@ -1429,7 +1497,8 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	result.Height = cfg.Height
 	result.SHA256 = sha
 	result.ObjectKey = objectKey
-	result.StorageDriver = s.backend.Driver()
+	result.StorageConfigID = resolved.StorageID()
+	result.StorageDriver = resolved.StorageDriver()
 	result.VisibilityStatus = defaultString(result.VisibilityStatus, "private")
 	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
 	result.URL = result.DownloadURL

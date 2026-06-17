@@ -397,7 +397,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
         <div className={publicDetailClasses.actions}>
           {onLike ? publicDetailButton(`点赞 ${image.like_count ?? 0}`, <PublicDetailIcon name="heart" active={image.liked_by_viewer} />, () => onLike(image), image.liked_by_viewer ? 'liked' : '') : null}
           {onFavorite ? publicDetailButton(`收藏 ${image.favorite_count ?? 0}`, <PublicDetailIcon name="star" active={image.favorited_by_viewer} />, () => onFavorite(image), image.favorited_by_viewer ? 'favorited' : '') : null}
-          {onDownload ? publicDetailButton('下载图片', <PublicDetailIcon name="download" />, () => onDownload(image), '', !image.url && !image.download_url) : null}
+          {onDownload ? publicDetailButton('下载图片', <PublicDetailIcon name="download" />, () => onDownload(image), '', !image.asset_url && !image.url && !image.download_url) : null}
           {actions.map((action) => (
             <React.Fragment key={action.key}>
               {publicDetailButton(action.label, action.icon, action.onClick, action.tone ?? '', action.disabled)}

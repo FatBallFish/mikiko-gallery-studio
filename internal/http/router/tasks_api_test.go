@@ -17,9 +17,11 @@ import (
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminstorage "github.com/fatballfish/pic-gallery/internal/domain/adminstorage"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	adminstorageservice "github.com/fatballfish/pic-gallery/internal/service/adminstorage"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
@@ -460,6 +462,27 @@ func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
 		t.Fatalf("unexpected local result metadata %#v", result)
 	}
 
+	accessReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/images/"+result.ID+"/access-url", nil)
+	accessReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	accessRec := httptest.NewRecorder()
+	handler.ServeHTTP(accessRec, accessReq)
+	if accessRec.Code != http.StatusOK {
+		t.Fatalf("expected access-url 200, got %d body=%s", accessRec.Code, accessRec.Body.String())
+	}
+	var accessResp struct {
+		Data struct {
+			ImageID      string `json:"image_id"`
+			AssetURL     string `json:"asset_url"`
+			DeliveryMode string `json:"delivery_mode"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(accessRec.Body).Decode(&accessResp); err != nil {
+		t.Fatalf("decode access-url response: %v", err)
+	}
+	if accessResp.Data.ImageID != result.ID || accessResp.Data.AssetURL != result.DownloadURL || accessResp.Data.DeliveryMode != "proxy" {
+		t.Fatalf("unexpected access-url response %#v", accessResp.Data)
+	}
+
 	downloadReq := httptest.NewRequest(http.MethodGet, result.DownloadURL, nil)
 	downloadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	downloadRec := httptest.NewRecorder()
@@ -507,6 +530,100 @@ func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
 	handler.ServeHTTP(deletedDownloadRec, deletedDownloadReq)
 	if deletedDownloadRec.Code != http.StatusNotFound {
 		t.Fatalf("expected deleted task image download 404, got %d body=%s", deletedDownloadRec.Code, deletedDownloadRec.Body.String())
+	}
+}
+
+func TestImageResultAccessURLUsesPresignedStorageConfig(t *testing.T) {
+	imageBytes := tinyPNG(t)
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"images": []map[string]any{{
+						"image_url": map[string]string{
+							"url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageBytes),
+						},
+					}},
+				},
+			}},
+		})
+	}))
+	defer providerServer.Close()
+
+	cfg := taskAPIConfig(providerServer.URL)
+	authSvc, session := loginTestUser(t, "presign-owner@example.com")
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: 1, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	store := imagetaskservice.NewMemoryStore()
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, store, nil, billingSvc)
+	objectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer objectServer.Close()
+	storageStore := adminstorageservice.NewMemoryStore()
+	storageSvc := adminstorageservice.NewServiceWithStore(cfg.Storage, storageStore)
+	created, err := storageSvc.CreateConfig(context.Background(), domainadminstorage.ConfigWriteRequest{
+		Code:            "bfss-primary",
+		Name:            "BFSS Primary",
+		Driver:          "s3",
+		Endpoint:        objectServer.URL,
+		Region:          "us-east-1",
+		Bucket:          "generated-assets",
+		Prefix:          "prod",
+		ForcePathStyle:  true,
+		AccessKeyID:     "access",
+		SecretAccessKey: "secret",
+		Status:          "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+	_, _ = storageStore.UpdateTestResult(context.Background(), created.ID, domainadminstorage.TestResult{Status: domainadminstorage.TestStatusPassed, CheckedAt: time.Now().UTC()})
+	if _, err := storageSvc.SetDefaultWrite(context.Background(), created.ID); err != nil {
+		t.Fatalf("SetDefaultWrite: %v", err)
+	}
+	taskSvc.SetStorageRegistry(storageSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	api.SetStorageAdminService(storageSvc)
+	handler := NewWithAPI(api)
+
+	taskID := createAndProcessAgentTask(t, handler, taskSvc, session.AccessToken)
+	task, err := taskSvc.GetByID(context.Background(), 1, taskID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(task.Results) != 1 || task.Results[0].StorageConfigID == nil || *task.Results[0].StorageConfigID != created.ID {
+		t.Fatalf("expected generated image to persist storage_config_id=%d, got %#v", created.ID, task.Results)
+	}
+	imageID := task.Results[0].ID
+
+	accessReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/images/"+imageID+"/access-url", nil)
+	accessReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	accessRec := httptest.NewRecorder()
+	handler.ServeHTTP(accessRec, accessReq)
+	if accessRec.Code != http.StatusOK {
+		t.Fatalf("expected access-url 200, got %d body=%s", accessRec.Code, accessRec.Body.String())
+	}
+	var accessResp struct {
+		Data struct {
+			ImageID      string `json:"image_id"`
+			AssetURL     string `json:"asset_url"`
+			DeliveryMode string `json:"delivery_mode"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(accessRec.Body).Decode(&accessResp); err != nil {
+		t.Fatalf("decode access-url response: %v", err)
+	}
+	if accessResp.Data.ImageID != imageID || accessResp.Data.DeliveryMode != "presigned" || !strings.HasPrefix(accessResp.Data.AssetURL, objectServer.URL+"/") {
+		t.Fatalf("unexpected access-url response %#v", accessResp.Data)
 	}
 }
 

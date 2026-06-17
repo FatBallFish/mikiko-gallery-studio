@@ -191,6 +191,7 @@ type GalleryImage struct {
 	Height            int                     `json:"height"`
 	SHA256            string                  `json:"sha256,omitempty"`
 	ObjectKey         string                  `json:"object_key,omitempty"`
+	StorageConfigID   *int64                  `json:"storage_config_id,omitempty"`
 	StorageDriver     string                  `json:"storage_driver,omitempty"`
 	ImageGroup        string                  `json:"image_group,omitempty"`
 	VisibilityStatus  string                  `json:"visibility_status"`

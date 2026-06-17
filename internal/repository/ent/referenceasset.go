@@ -32,6 +32,8 @@ type ReferenceAsset struct {
 	UploadSource string `json:"upload_source,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
+	// StorageConfigID holds the value of the "storage_config_id" field.
+	StorageConfigID *int64 `json:"storage_config_id,omitempty"`
 	// StorageDriver holds the value of the "storage_driver" field.
 	StorageDriver string `json:"storage_driver,omitempty"`
 	// ObjectKey holds the value of the "object_key" field.
@@ -60,7 +62,7 @@ func (*ReferenceAsset) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case referenceasset.FieldBoundTaskID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case referenceasset.FieldUserID, referenceasset.FieldAPIKeyID, referenceasset.FieldFileSizeBytes, referenceasset.FieldWidth, referenceasset.FieldHeight:
+		case referenceasset.FieldUserID, referenceasset.FieldAPIKeyID, referenceasset.FieldStorageConfigID, referenceasset.FieldFileSizeBytes, referenceasset.FieldWidth, referenceasset.FieldHeight:
 			values[i] = new(sql.NullInt64)
 		case referenceasset.FieldUploadSource, referenceasset.FieldStatus, referenceasset.FieldStorageDriver, referenceasset.FieldObjectKey, referenceasset.FieldMimeType, referenceasset.FieldSha256:
 			values[i] = new(sql.NullString)
@@ -132,6 +134,13 @@ func (_m *ReferenceAsset) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
 				_m.Status = value.String
+			}
+		case referenceasset.FieldStorageConfigID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field storage_config_id", values[i])
+			} else if value.Valid {
+				_m.StorageConfigID = new(int64)
+				*_m.StorageConfigID = value.Int64
 			}
 		case referenceasset.FieldStorageDriver:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -250,6 +259,11 @@ func (_m *ReferenceAsset) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
+	builder.WriteString(", ")
+	if v := _m.StorageConfigID; v != nil {
+		builder.WriteString("storage_config_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("storage_driver=")
 	builder.WriteString(_m.StorageDriver)

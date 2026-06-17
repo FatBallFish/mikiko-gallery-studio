@@ -4,6 +4,8 @@ import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import { CurrencyInput } from '../ui/CurrencyInput'
+import { normalizeAdminCurrency } from '../ui/currency'
 import { adminDataGrid } from '../ui/dataGrid'
 import { adminTaskTypeOptions } from './adminTaskTypes'
 import {
@@ -143,7 +145,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         task_types: modelDialog.taskTypes,
         qualities: modelDialog.qualities,
         cost_per_image: modelDialog.costPerImage,
-        currency: modelDialog.currency,
+        currency: normalizeAdminCurrency(modelDialog.currency),
         enabled: modelDialog.enabled,
       }
       if (modelDialog.row) await adminApi.updateModelAccountModel(modelDialog.account.id, modelDialog.row.id, payload)
@@ -251,7 +253,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             <Field label="任务类型"><div className={providerModelTaskTypeGridClass}>{adminTaskTypeOptions.map((option) => <label key={option.value} className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.taskTypes.includes(option.value)} onChange={(event) => setModelDialog({ ...modelDialog, taskTypes: event.target.checked ? [...modelDialog.taskTypes, option.value] : modelDialog.taskTypes.filter((item) => item !== option.value) })} /><span>{option.label}</span></label>)}</div></Field>
             <Field label="质量列表"><QualityTagInput draft={modelDialog} onChange={setModelDialog} /></Field>
             <Field label="单图成本"><input value={modelDialog.costPerImage} onChange={(event) => setModelDialog({ ...modelDialog, costPerImage: event.target.value })} /></Field>
-            <Field label="币种"><input value={modelDialog.currency} onChange={(event) => setModelDialog({ ...modelDialog, currency: event.target.value })} /></Field>
+            <Field label="币种"><CurrencyInput value={modelDialog.currency} onChange={(currency) => setModelDialog({ ...modelDialog, currency })} placeholder="USD" /></Field>
             <Field label="状态"><select value={modelDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setModelDialog({ ...modelDialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
           </div>
         </Modal>

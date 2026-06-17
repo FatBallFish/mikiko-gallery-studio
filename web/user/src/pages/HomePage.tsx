@@ -142,7 +142,7 @@ export function HomePage() {
   }, [app, app.session?.token, filter, hasMore, loading, loadingMore, page])
 
   function openImageLightbox(image: ImageResult) {
-    const url = image.url || image.download_url
+    const url = userApi.preferredImageUrl(image)
     if (!url) return
     setImagePreview({
       url: userApi.imageAssetUrl(url, app.session?.token),

@@ -15,19 +15,55 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminstorage "github.com/fatballfish/pic-gallery/internal/domain/adminstorage"
 )
 
 var ErrNotFound = errors.New("storage object not found")
+
+type ObjectMeta struct {
+	ContentType string
+	Size        int64
+}
 
 type Backend interface {
 	Driver() string
 	Put(ctx context.Context, objectKey string, contentType string, content []byte) error
 	Get(ctx context.Context, objectKey string) ([]byte, error)
+	Head(ctx context.Context, objectKey string) (ObjectMeta, error)
 	Delete(ctx context.Context, objectKey string) error
+}
+
+type PresignBackend interface {
+	Backend
+	PresignGet(ctx context.Context, objectKey string, ttl time.Duration) (string, time.Time, error)
+}
+
+type ResolvedBackend struct {
+	StorageConfigID *int64
+	Driver          string
+	Backend         Backend
+}
+
+func (b ResolvedBackend) StorageID() *int64 {
+	if b.StorageConfigID == nil {
+		return nil
+	}
+	id := *b.StorageConfigID
+	return &id
+}
+
+func (b ResolvedBackend) StorageDriver() string { return b.Driver }
+
+func (b ResolvedBackend) StorageBackend() Backend { return b.Backend }
+
+type Registry interface {
+	ResolveWriteBackend(ctx context.Context) (ResolvedBackend, error)
+	ResolveReadBackend(ctx context.Context, loc domainadminstorage.ObjectLocation) (ResolvedBackend, error)
 }
 
 func NewBackend(cfg config.StorageConfig) (Backend, error) {
@@ -78,6 +114,21 @@ func (b *LocalBackend) Get(_ context.Context, objectKey string) ([]byte, error) 
 		return nil, err
 	}
 	return content, nil
+}
+
+func (b *LocalBackend) Head(_ context.Context, objectKey string) (ObjectMeta, error) {
+	fullPath, ok := b.resolvePath(objectKey)
+	if !ok {
+		return ObjectMeta{}, ErrNotFound
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ObjectMeta{}, ErrNotFound
+		}
+		return ObjectMeta{}, err
+	}
+	return ObjectMeta{Size: info.Size()}, nil
 }
 
 func (b *LocalBackend) Delete(_ context.Context, objectKey string) error {
@@ -198,6 +249,27 @@ func (b *S3Backend) Get(ctx context.Context, objectKey string) ([]byte, error) {
 	}
 }
 
+func (b *S3Backend) Head(ctx context.Context, objectKey string) (ObjectMeta, error) {
+	req, err := b.newSignedRequest(ctx, http.MethodHead, objectKey, "", nil)
+	if err != nil {
+		return ObjectMeta{}, err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return ObjectMeta{}, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return ObjectMeta{ContentType: resp.Header.Get("Content-Type"), Size: resp.ContentLength}, nil
+	case http.StatusNotFound:
+		return ObjectMeta{}, ErrNotFound
+	default:
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return ObjectMeta{}, fmt.Errorf("head s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+}
+
 func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
 	req, err := b.newSignedRequest(ctx, http.MethodDelete, objectKey, "", nil)
 	if err != nil {
@@ -216,6 +288,56 @@ func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	return fmt.Errorf("delete s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
+func (b *S3Backend) PresignGet(_ context.Context, objectKey string, ttl time.Duration) (string, time.Time, error) {
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	if ttl > 7*24*time.Hour {
+		ttl = 7 * 24 * time.Hour
+	}
+	key := b.normalizeKey(objectKey)
+	if key == "" {
+		return "", time.Time{}, fmt.Errorf("invalid s3 object key %q", objectKey)
+	}
+	requestURL, host, canonicalURI, err := b.requestTarget(key)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	parsed, err := url.Parse(requestURL)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	now := time.Now().UTC()
+	expiresAt := now.Add(ttl)
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+	credentialScope := dateStamp + "/" + b.region + "/s3/aws4_request"
+	query := parsed.Query()
+	query.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	query.Set("X-Amz-Credential", b.accessKeyID+"/"+credentialScope)
+	query.Set("X-Amz-Date", amzDate)
+	query.Set("X-Amz-Expires", strconv.FormatInt(int64(ttl.Seconds()), 10))
+	query.Set("X-Amz-SignedHeaders", "host")
+	parsed.RawQuery = query.Encode()
+	canonicalRequest := strings.Join([]string{
+		http.MethodGet,
+		canonicalURI,
+		parsed.RawQuery,
+		"host:" + host + "\n",
+		"host",
+		"UNSIGNED-PAYLOAD",
+	}, "\n")
+	stringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		credentialScope,
+		sha256Hex([]byte(canonicalRequest)),
+	}, "\n")
+	query.Set("X-Amz-Signature", hex.EncodeToString(hmacSHA256(b.signingKey(dateStamp), stringToSign)))
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), expiresAt, nil
 }
 
 func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectKey string, contentType string, content []byte) (*http.Request, error) {

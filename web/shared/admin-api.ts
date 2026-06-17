@@ -53,6 +53,13 @@ import type {
   SMTPConfigView,
   SMTPConfigWriteRequest,
   SMTPTestResponse,
+  StorageConfig,
+  StorageConfigPage,
+  StorageConfigWriteRequest,
+  StorageMigrationCreateRequest,
+  StorageMigrationResult,
+  StorageStatsPage,
+  StorageTestResult,
   SystemAdminPasswordResetRequest,
   SystemAdminUser,
   SystemAdminUserCreateRequest,
@@ -109,6 +116,19 @@ export const adminApi = {
   listConfigTabs: async () => (await sharedApiClient.request<{ items: ConfigTab[] }>(API_PATHS.ops.configTabs)).items ?? [],
   updateConfigTab: (tab_key: string, payload: { version: number; items: Array<{ config_category: string; config_key: string; config_value: Record<string, unknown>; scope: string }> }) =>
     sharedApiClient.request<ConfigTab>(API_PATHS.ops.configTabDetail, { method: 'PUT', pathParams: { tab_key }, body: payload }),
+  listStorageConfigs: async (query: Record<string, string | number | undefined> = {}) =>
+    (await sharedApiClient.request<StorageConfigPage>(API_PATHS.ops.storageConfigs, { query })).items ?? [],
+  createStorageConfig: (input: StorageConfigWriteRequest) =>
+    sharedApiClient.request<StorageConfig>(API_PATHS.ops.storageConfigs, { method: 'POST', body: input }),
+  updateStorageConfig: (storage_config_id: string | number, input: StorageConfigWriteRequest) =>
+    sharedApiClient.request<StorageConfig>(API_PATHS.ops.storageConfigDetail, { method: 'PUT', pathParams: { storage_config_id }, body: input }),
+  testStorageConfig: (storage_config_id: string | number) =>
+    sharedApiClient.request<StorageTestResult>(API_PATHS.ops.storageConfigTest, { method: 'POST', pathParams: { storage_config_id } }),
+  setDefaultStorageConfig: (storage_config_id: string | number) =>
+    sharedApiClient.request<StorageConfig>(API_PATHS.ops.storageConfigSetDefault, { method: 'POST', pathParams: { storage_config_id } }),
+  listStorageStats: async () => (await sharedApiClient.request<StorageStatsPage>(API_PATHS.ops.storageStats)).items ?? [],
+  createStorageMigration: (input: StorageMigrationCreateRequest) =>
+    sharedApiClient.request<StorageMigrationResult>(API_PATHS.ops.storageMigrations, { method: 'POST', body: input }),
   listUsers: async (query = '', page = 1, page_size = 20): Promise<AdminUser[]> => {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.users, { query: { query, page, page_size } }))
     return result.items.map(toAdminUser)

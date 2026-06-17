@@ -42,6 +42,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storageconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storagemigrationitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/storagemigrationjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
@@ -110,6 +113,12 @@ type Client struct {
 	RouteModelVisibilityGroup *RouteModelVisibilityGroupClient
 	// SecureConfig is the client for interacting with the SecureConfig builders.
 	SecureConfig *SecureConfigClient
+	// StorageConfig is the client for interacting with the StorageConfig builders.
+	StorageConfig *StorageConfigClient
+	// StorageMigrationItem is the client for interacting with the StorageMigrationItem builders.
+	StorageMigrationItem *StorageMigrationItemClient
+	// StorageMigrationJob is the client for interacting with the StorageMigrationJob builders.
+	StorageMigrationJob *StorageMigrationJobClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
 	// User is the client for interacting with the User builders.
@@ -162,6 +171,9 @@ func (c *Client) init() {
 	c.RouteModelPrice = NewRouteModelPriceClient(c.config)
 	c.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(c.config)
 	c.SecureConfig = NewSecureConfigClient(c.config)
+	c.StorageConfig = NewStorageConfigClient(c.config)
+	c.StorageMigrationItem = NewStorageMigrationItemClient(c.config)
+	c.StorageMigrationJob = NewStorageMigrationJobClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserGroup = NewUserGroupClient(c.config)
@@ -288,6 +300,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		RouteModelPrice:             NewRouteModelPriceClient(cfg),
 		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SecureConfig:                NewSecureConfigClient(cfg),
+		StorageConfig:               NewStorageConfigClient(cfg),
+		StorageMigrationItem:        NewStorageMigrationItemClient(cfg),
+		StorageMigrationJob:         NewStorageMigrationJobClient(cfg),
 		SubscriptionPlan:            NewSubscriptionPlanClient(cfg),
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
@@ -341,6 +356,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		RouteModelPrice:             NewRouteModelPriceClient(cfg),
 		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SecureConfig:                NewSecureConfigClient(cfg),
+		StorageConfig:               NewStorageConfigClient(cfg),
+		StorageMigrationItem:        NewStorageMigrationItemClient(cfg),
+		StorageMigrationJob:         NewStorageMigrationJobClient(cfg),
 		SubscriptionPlan:            NewSubscriptionPlanClient(cfg),
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
@@ -383,7 +401,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
 		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.User,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.StorageConfig,
+		c.StorageMigrationItem, c.StorageMigrationJob, c.SubscriptionPlan, c.User,
 		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
 		c.WalletReservationAllocation,
 	} {
@@ -401,7 +420,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
 		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.User,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.StorageConfig,
+		c.StorageMigrationItem, c.StorageMigrationJob, c.SubscriptionPlan, c.User,
 		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
 		c.WalletReservationAllocation,
 	} {
@@ -466,6 +486,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.RouteModelVisibilityGroup.mutate(ctx, m)
 	case *SecureConfigMutation:
 		return c.SecureConfig.mutate(ctx, m)
+	case *StorageConfigMutation:
+		return c.StorageConfig.mutate(ctx, m)
+	case *StorageMigrationItemMutation:
+		return c.StorageMigrationItem.mutate(ctx, m)
+	case *StorageMigrationJobMutation:
+		return c.StorageMigrationJob.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
 	case *UserMutation:
@@ -4076,6 +4102,405 @@ func (c *SecureConfigClient) mutate(ctx context.Context, m *SecureConfigMutation
 	}
 }
 
+// StorageConfigClient is a client for the StorageConfig schema.
+type StorageConfigClient struct {
+	config
+}
+
+// NewStorageConfigClient returns a client for the StorageConfig from the given config.
+func NewStorageConfigClient(c config) *StorageConfigClient {
+	return &StorageConfigClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `storageconfig.Hooks(f(g(h())))`.
+func (c *StorageConfigClient) Use(hooks ...Hook) {
+	c.hooks.StorageConfig = append(c.hooks.StorageConfig, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `storageconfig.Intercept(f(g(h())))`.
+func (c *StorageConfigClient) Intercept(interceptors ...Interceptor) {
+	c.inters.StorageConfig = append(c.inters.StorageConfig, interceptors...)
+}
+
+// Create returns a builder for creating a StorageConfig entity.
+func (c *StorageConfigClient) Create() *StorageConfigCreate {
+	mutation := newStorageConfigMutation(c.config, OpCreate)
+	return &StorageConfigCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of StorageConfig entities.
+func (c *StorageConfigClient) CreateBulk(builders ...*StorageConfigCreate) *StorageConfigCreateBulk {
+	return &StorageConfigCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *StorageConfigClient) MapCreateBulk(slice any, setFunc func(*StorageConfigCreate, int)) *StorageConfigCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &StorageConfigCreateBulk{err: fmt.Errorf("calling to StorageConfigClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*StorageConfigCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &StorageConfigCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for StorageConfig.
+func (c *StorageConfigClient) Update() *StorageConfigUpdate {
+	mutation := newStorageConfigMutation(c.config, OpUpdate)
+	return &StorageConfigUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *StorageConfigClient) UpdateOne(_m *StorageConfig) *StorageConfigUpdateOne {
+	mutation := newStorageConfigMutation(c.config, OpUpdateOne, withStorageConfig(_m))
+	return &StorageConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *StorageConfigClient) UpdateOneID(id int) *StorageConfigUpdateOne {
+	mutation := newStorageConfigMutation(c.config, OpUpdateOne, withStorageConfigID(id))
+	return &StorageConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for StorageConfig.
+func (c *StorageConfigClient) Delete() *StorageConfigDelete {
+	mutation := newStorageConfigMutation(c.config, OpDelete)
+	return &StorageConfigDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *StorageConfigClient) DeleteOne(_m *StorageConfig) *StorageConfigDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *StorageConfigClient) DeleteOneID(id int) *StorageConfigDeleteOne {
+	builder := c.Delete().Where(storageconfig.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &StorageConfigDeleteOne{builder}
+}
+
+// Query returns a query builder for StorageConfig.
+func (c *StorageConfigClient) Query() *StorageConfigQuery {
+	return &StorageConfigQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeStorageConfig},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a StorageConfig entity by its id.
+func (c *StorageConfigClient) Get(ctx context.Context, id int) (*StorageConfig, error) {
+	return c.Query().Where(storageconfig.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *StorageConfigClient) GetX(ctx context.Context, id int) *StorageConfig {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *StorageConfigClient) Hooks() []Hook {
+	return c.hooks.StorageConfig
+}
+
+// Interceptors returns the client interceptors.
+func (c *StorageConfigClient) Interceptors() []Interceptor {
+	return c.inters.StorageConfig
+}
+
+func (c *StorageConfigClient) mutate(ctx context.Context, m *StorageConfigMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&StorageConfigCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&StorageConfigUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&StorageConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&StorageConfigDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown StorageConfig mutation op: %q", m.Op())
+	}
+}
+
+// StorageMigrationItemClient is a client for the StorageMigrationItem schema.
+type StorageMigrationItemClient struct {
+	config
+}
+
+// NewStorageMigrationItemClient returns a client for the StorageMigrationItem from the given config.
+func NewStorageMigrationItemClient(c config) *StorageMigrationItemClient {
+	return &StorageMigrationItemClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `storagemigrationitem.Hooks(f(g(h())))`.
+func (c *StorageMigrationItemClient) Use(hooks ...Hook) {
+	c.hooks.StorageMigrationItem = append(c.hooks.StorageMigrationItem, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `storagemigrationitem.Intercept(f(g(h())))`.
+func (c *StorageMigrationItemClient) Intercept(interceptors ...Interceptor) {
+	c.inters.StorageMigrationItem = append(c.inters.StorageMigrationItem, interceptors...)
+}
+
+// Create returns a builder for creating a StorageMigrationItem entity.
+func (c *StorageMigrationItemClient) Create() *StorageMigrationItemCreate {
+	mutation := newStorageMigrationItemMutation(c.config, OpCreate)
+	return &StorageMigrationItemCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of StorageMigrationItem entities.
+func (c *StorageMigrationItemClient) CreateBulk(builders ...*StorageMigrationItemCreate) *StorageMigrationItemCreateBulk {
+	return &StorageMigrationItemCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *StorageMigrationItemClient) MapCreateBulk(slice any, setFunc func(*StorageMigrationItemCreate, int)) *StorageMigrationItemCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &StorageMigrationItemCreateBulk{err: fmt.Errorf("calling to StorageMigrationItemClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*StorageMigrationItemCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &StorageMigrationItemCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for StorageMigrationItem.
+func (c *StorageMigrationItemClient) Update() *StorageMigrationItemUpdate {
+	mutation := newStorageMigrationItemMutation(c.config, OpUpdate)
+	return &StorageMigrationItemUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *StorageMigrationItemClient) UpdateOne(_m *StorageMigrationItem) *StorageMigrationItemUpdateOne {
+	mutation := newStorageMigrationItemMutation(c.config, OpUpdateOne, withStorageMigrationItem(_m))
+	return &StorageMigrationItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *StorageMigrationItemClient) UpdateOneID(id int) *StorageMigrationItemUpdateOne {
+	mutation := newStorageMigrationItemMutation(c.config, OpUpdateOne, withStorageMigrationItemID(id))
+	return &StorageMigrationItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for StorageMigrationItem.
+func (c *StorageMigrationItemClient) Delete() *StorageMigrationItemDelete {
+	mutation := newStorageMigrationItemMutation(c.config, OpDelete)
+	return &StorageMigrationItemDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *StorageMigrationItemClient) DeleteOne(_m *StorageMigrationItem) *StorageMigrationItemDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *StorageMigrationItemClient) DeleteOneID(id int) *StorageMigrationItemDeleteOne {
+	builder := c.Delete().Where(storagemigrationitem.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &StorageMigrationItemDeleteOne{builder}
+}
+
+// Query returns a query builder for StorageMigrationItem.
+func (c *StorageMigrationItemClient) Query() *StorageMigrationItemQuery {
+	return &StorageMigrationItemQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeStorageMigrationItem},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a StorageMigrationItem entity by its id.
+func (c *StorageMigrationItemClient) Get(ctx context.Context, id int) (*StorageMigrationItem, error) {
+	return c.Query().Where(storagemigrationitem.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *StorageMigrationItemClient) GetX(ctx context.Context, id int) *StorageMigrationItem {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *StorageMigrationItemClient) Hooks() []Hook {
+	return c.hooks.StorageMigrationItem
+}
+
+// Interceptors returns the client interceptors.
+func (c *StorageMigrationItemClient) Interceptors() []Interceptor {
+	return c.inters.StorageMigrationItem
+}
+
+func (c *StorageMigrationItemClient) mutate(ctx context.Context, m *StorageMigrationItemMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&StorageMigrationItemCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&StorageMigrationItemUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&StorageMigrationItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&StorageMigrationItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown StorageMigrationItem mutation op: %q", m.Op())
+	}
+}
+
+// StorageMigrationJobClient is a client for the StorageMigrationJob schema.
+type StorageMigrationJobClient struct {
+	config
+}
+
+// NewStorageMigrationJobClient returns a client for the StorageMigrationJob from the given config.
+func NewStorageMigrationJobClient(c config) *StorageMigrationJobClient {
+	return &StorageMigrationJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `storagemigrationjob.Hooks(f(g(h())))`.
+func (c *StorageMigrationJobClient) Use(hooks ...Hook) {
+	c.hooks.StorageMigrationJob = append(c.hooks.StorageMigrationJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `storagemigrationjob.Intercept(f(g(h())))`.
+func (c *StorageMigrationJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.StorageMigrationJob = append(c.inters.StorageMigrationJob, interceptors...)
+}
+
+// Create returns a builder for creating a StorageMigrationJob entity.
+func (c *StorageMigrationJobClient) Create() *StorageMigrationJobCreate {
+	mutation := newStorageMigrationJobMutation(c.config, OpCreate)
+	return &StorageMigrationJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of StorageMigrationJob entities.
+func (c *StorageMigrationJobClient) CreateBulk(builders ...*StorageMigrationJobCreate) *StorageMigrationJobCreateBulk {
+	return &StorageMigrationJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *StorageMigrationJobClient) MapCreateBulk(slice any, setFunc func(*StorageMigrationJobCreate, int)) *StorageMigrationJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &StorageMigrationJobCreateBulk{err: fmt.Errorf("calling to StorageMigrationJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*StorageMigrationJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &StorageMigrationJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for StorageMigrationJob.
+func (c *StorageMigrationJobClient) Update() *StorageMigrationJobUpdate {
+	mutation := newStorageMigrationJobMutation(c.config, OpUpdate)
+	return &StorageMigrationJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *StorageMigrationJobClient) UpdateOne(_m *StorageMigrationJob) *StorageMigrationJobUpdateOne {
+	mutation := newStorageMigrationJobMutation(c.config, OpUpdateOne, withStorageMigrationJob(_m))
+	return &StorageMigrationJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *StorageMigrationJobClient) UpdateOneID(id uuid.UUID) *StorageMigrationJobUpdateOne {
+	mutation := newStorageMigrationJobMutation(c.config, OpUpdateOne, withStorageMigrationJobID(id))
+	return &StorageMigrationJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for StorageMigrationJob.
+func (c *StorageMigrationJobClient) Delete() *StorageMigrationJobDelete {
+	mutation := newStorageMigrationJobMutation(c.config, OpDelete)
+	return &StorageMigrationJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *StorageMigrationJobClient) DeleteOne(_m *StorageMigrationJob) *StorageMigrationJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *StorageMigrationJobClient) DeleteOneID(id uuid.UUID) *StorageMigrationJobDeleteOne {
+	builder := c.Delete().Where(storagemigrationjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &StorageMigrationJobDeleteOne{builder}
+}
+
+// Query returns a query builder for StorageMigrationJob.
+func (c *StorageMigrationJobClient) Query() *StorageMigrationJobQuery {
+	return &StorageMigrationJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeStorageMigrationJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a StorageMigrationJob entity by its id.
+func (c *StorageMigrationJobClient) Get(ctx context.Context, id uuid.UUID) (*StorageMigrationJob, error) {
+	return c.Query().Where(storagemigrationjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *StorageMigrationJobClient) GetX(ctx context.Context, id uuid.UUID) *StorageMigrationJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *StorageMigrationJobClient) Hooks() []Hook {
+	return c.hooks.StorageMigrationJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *StorageMigrationJobClient) Interceptors() []Interceptor {
+	return c.inters.StorageMigrationJob
+}
+
+func (c *StorageMigrationJobClient) mutate(ctx context.Context, m *StorageMigrationJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&StorageMigrationJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&StorageMigrationJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&StorageMigrationJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&StorageMigrationJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown StorageMigrationJob mutation op: %q", m.Op())
+	}
+}
+
 // SubscriptionPlanClient is a client for the SubscriptionPlan schema.
 type SubscriptionPlanClient struct {
 	config
@@ -5015,8 +5440,9 @@ type (
 		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
 		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		User, UserGroup, UserGroupMember, UserSubscription, WalletGrant,
+		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, StorageConfig,
+		StorageMigrationItem, StorageMigrationJob, SubscriptionPlan, User, UserGroup,
+		UserGroupMember, UserSubscription, WalletGrant,
 		WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
@@ -5025,8 +5451,9 @@ type (
 		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
 		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		User, UserGroup, UserGroupMember, UserSubscription, WalletGrant,
+		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, StorageConfig,
+		StorageMigrationItem, StorageMigrationJob, SubscriptionPlan, User, UserGroup,
+		UserGroupMember, UserSubscription, WalletGrant,
 		WalletReservationAllocation []ent.Interceptor
 	}
 )

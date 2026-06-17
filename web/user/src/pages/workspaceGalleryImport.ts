@@ -29,7 +29,7 @@ export function filterGalleryImportImages(images: GalleryImage[], filter: Galler
     ].filter(Boolean).join(' ').toLowerCase()
 
     return (
-      Boolean(image.url || image.download_url)
+      Boolean(image.asset_url || image.download_url || image.url)
       && queryTerms.every((term) => haystack.includes(term))
       && (filter.group === 'all' || (image.image_group || '') === filter.group)
       && (filter.publishStatus === 'all' || image.visibility_status === filter.publishStatus)

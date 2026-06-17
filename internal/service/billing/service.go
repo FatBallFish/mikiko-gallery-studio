@@ -146,7 +146,11 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 			if err != nil {
 				return domainbilling.EstimateResult{}, errs.Internal("invalid route model price")
 			}
-			total := charged.Mul(decimal.NewFromInt(int64(count))).Round(5)
+			groupMultiplier, err := resolveBillingGroupMultiplier(req, cfg)
+			if err != nil {
+				return domainbilling.EstimateResult{}, err
+			}
+			total := charged.Mul(groupMultiplier).Mul(decimal.NewFromInt(int64(count))).Round(5)
 			snapshot := domainbilling.PricingSnapshot{
 				RouteModelCode:            model.Code,
 				AbstractModel:             model.Code,
@@ -157,7 +161,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 				RequestedOutputImageCount: count,
 				ReferenceImageCount:       req.ReferenceImageCount,
 				UserGroupCode:             strings.Join(groupCodes, ","),
-				UserGroupMultiplier:       model.EffectiveMultiplier,
+				UserGroupMultiplier:       groupMultiplier.StringFixed(5),
 				BaseUnitPoints:            price.BasePoints,
 				TaskMultiplier:            defaultBillingString(cfg.TaskMultipliers[req.TaskType], "1.00000"),
 				ReferenceExtraMultiplier:  "0.00000",
@@ -168,7 +172,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 				EstimatedPoints:           snapshot.EstimatedPoints,
 				ChargedPoints:             snapshot.EstimatedPoints,
 				DisplayPoints:             total.Round(2).StringFixed(2),
-				UserGroupMultiplier:       model.EffectiveMultiplier,
+				UserGroupMultiplier:       snapshot.UserGroupMultiplier,
 				RequestedOutputImageCount: count,
 				ReferenceImageCount:       req.ReferenceImageCount,
 				PricingSnapshot:           snapshot,
@@ -176,6 +180,37 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 		}
 	}
 	return domainbilling.EstimateResult{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+}
+
+func resolveBillingGroupMultiplier(req domainbilling.EstimateRequest, cfg config.BillingConfig) (decimal.Decimal, error) {
+	groupMul, err := parseServiceDecimalWithFallback(req.UserGroupMultiplier, decimal.Zero, "user group multiplier")
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if !groupMul.IsZero() {
+		return groupMul, nil
+	}
+	groupCodes := append([]string(nil), req.UserGroupCodes...)
+	if len(groupCodes) == 0 && strings.TrimSpace(req.UserGroupCode) != "" {
+		groupCodes = append(groupCodes, req.UserGroupCode)
+	}
+	for _, code := range groupCodes {
+		if value := strings.TrimSpace(cfg.UserGroupMultipliers[strings.ToLower(strings.TrimSpace(code))]); value != "" {
+			return parseServiceDecimalWithFallback(value, decimal.NewFromInt(1), "configured user group multiplier")
+		}
+	}
+	return decimal.NewFromInt(1), nil
+}
+
+func parseServiceDecimalWithFallback(value string, fallback decimal.Decimal, label string) (decimal.Decimal, error) {
+	if strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	parsed, err := decimal.NewFromString(strings.TrimSpace(value))
+	if err != nil {
+		return decimal.Zero, errs.Internal("invalid billing config for " + label)
+	}
+	return parsed, nil
 }
 
 func defaultBillingString(value, fallback string) string {

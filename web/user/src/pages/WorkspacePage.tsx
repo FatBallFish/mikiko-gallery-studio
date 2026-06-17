@@ -12,7 +12,7 @@ import { galleryEditContextKey, parseGalleryEditContext } from './galleryEditCon
 import { displayPoints, publicUnavailableReason, workspaceGenerateReadiness } from './workspaceGenerateReadiness'
 import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
 import { workspaceTaskFailureView } from './workspaceTaskFailure'
-import { generationSlots, workspaceQualityLabel } from './workspaceTaskProgress'
+import { generationOutputVisibility, generationSlots, workspaceQualityLabel } from './workspaceTaskProgress'
 
 type WorkspaceMode = 'reference' | 'text'
 type OutputTab = 'current' | 'history'
@@ -1146,7 +1146,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
           {rows.map((image) => {
             const selected = selectedIds.has(image.id)
             const disabled = !selected && selectedIds.size >= remainingLimit
-            const imageUrl = userApi.imageAssetUrl(image.url || image.download_url || '', accessToken)
+            const imageUrl = userApi.imageAssetUrl(userApi.preferredImageUrl(image), accessToken)
             return (
               <button
                 key={image.id}
@@ -1242,8 +1242,8 @@ function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTask }: 
   const allFailed = isTerminalStatus(task.status) && !task.results.length && task.status !== 'succeeded'
   const partialFailed = task.status === 'partial_failed' || (isTerminalStatus(task.status) && task.results.length > 0 && task.results.length < requested)
   const multi = requested > 1
-  const imageUrl = imageSlot ? userApi.imageAssetUrl(imageSlot.image.url, accessToken) : ''
-  const downloadUrl = imageSlot ? userApi.imageAssetUrl(imageSlot.image.download_url ?? imageSlot.image.url, accessToken) : ''
+  const imageUrl = imageSlot ? userApi.imageAssetUrl(userApi.preferredImageUrl(imageSlot.image), accessToken) : ''
+  const downloadUrl = imageSlot ? userApi.imageAssetUrl(imageSlot.image.download_url ?? userApi.preferredImageUrl(imageSlot.image), accessToken) : ''
   const openPreview = () => {
     if (multi && task.results.length > 1) {
       onOpenTask(task)
@@ -1306,8 +1306,8 @@ function HistoryTaskDialog({ task, accessToken, onClose, onPreviewImage }: {
       <div className="mb-4 text-sm text-[var(--muted)]">{task.prompt || task.title || '未命名创作'}</div>
       <div className={workspaceClasses.historyDialogGrid}>
         {task.results.map((image, index) => {
-          const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-          const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)
+          const imageUrl = userApi.imageAssetUrl(userApi.preferredImageUrl(image), accessToken)
+          const downloadUrl = userApi.imageAssetUrl(image.download_url ?? userApi.preferredImageUrl(image), accessToken)
           return (
             <div className={workspaceClasses.historyDialogTile} key={image.id || `${task.id}-${index}`}>
               <button
@@ -1352,8 +1352,7 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
   const successImages = slots.filter((slot): slot is Extract<typeof slot, { kind: 'image' }> => slot.kind === 'image')
   const primaryImage = successImages[0]?.image ?? null
   const [skeletonPhase, setSkeletonPhase] = useState(false)
-  const showInitialLoading = !isTerminalStatus(task.status) && !skeletonPhase && !successImages.length
-  const showSlots = skeletonPhase || successImages.length > 0 || isTerminalStatus(task.status)
+  const { showInitialLoading, showSlots } = generationOutputVisibility(task, skeletonPhase)
 
   useEffect(() => {
     if (isTerminalStatus(task.status) || successImages.length > 0) {
@@ -1367,7 +1366,7 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
 
   const downloadAll = () => {
     successImages.forEach((slot, index) => {
-      const url = userApi.imageAssetUrl(slot.image.download_url ?? slot.image.url, accessToken)
+      const url = userApi.imageAssetUrl(slot.image.download_url ?? userApi.preferredImageUrl(slot.image), accessToken)
       window.setTimeout(() => window.open(url, '_blank', 'noopener,noreferrer'), index * 120)
     })
   }
@@ -1418,7 +1417,7 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
               if (slot.kind === 'failed') {
                 return <GenerationSlotFailure key={`failed-${slot.index}`} title={slot.title} reason={slot.reason} code={slot.code} />
               }
-              return <GenerationSlotPending key={`pending-${slot.index}`} label={slot.label} skeleton={skeletonPhase} />
+              return <GenerationSlotPending key={`pending-${slot.index}`} label={slot.label} skeleton={showSlots} />
             })}
           </div>
           {successImages.length && primaryImage ? (
@@ -1428,7 +1427,8 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
               <button className={workspaceClasses.generatedAction} type="button" title="复制提示词" onClick={() => void onCopyPrompt()}>提示词</button>
               <div className="mx-1 h-4 w-px bg-[var(--border)]" />
               <button className={workspaceClasses.generatedAction} type="button" title="再次编辑" onClick={() => {
-                if (primaryImage.url) void onUseReference(userApi.imageAssetUrl(primaryImage.url, accessToken))
+                const primaryUrl = userApi.preferredImageUrl(primaryImage)
+                if (primaryUrl) void onUseReference(userApi.imageAssetUrl(primaryUrl, accessToken))
               }}>编辑</button>
             </div>
           ) : null}
@@ -1524,8 +1524,8 @@ function GeneratedImage({ image, alt, fallbackRatio, accessToken, onUseReference
   onUseReference: (url: string) => Promise<void>
   onPreview: (image: ImageLightboxPayload) => void
 }) {
-  const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-  const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)
+  const imageUrl = userApi.imageAssetUrl(userApi.preferredImageUrl(image), accessToken)
+  const downloadUrl = userApi.imageAssetUrl(image.download_url ?? userApi.preferredImageUrl(image), accessToken)
   const aspectRatio = image.width && image.height ? `${image.width} / ${image.height}` : normalizeAspectRatio(fallbackRatio)
   const ratioStyle = aspectRatio ? { '--generated-ratio': aspectRatio } as CSSProperties : undefined
   const sizeClass = fallbackRatio && Number((fallbackRatio.split(':')[0] || '').trim()) > Number((fallbackRatio.split(':')[1] || '').trim())

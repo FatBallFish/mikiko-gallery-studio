@@ -448,6 +448,41 @@ func TestEstimateRouteModelAutoQualityUsesExplicitSize(t *testing.T) {
 	}
 }
 
+func TestEstimateRouteModelUsesBillingMultiplierSeparateFromVisibility(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint:               "0.31250",
+		PointsScale:               5,
+		TaskMultipliers:           map[string]string{"text_to_image": "1.00000"},
+		AutoQualityDefaultByGroup: map[string]string{"plus": "1k"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", Quality: "1k", BasePoints: "8.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}},
+		},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType:                  "text_to_image",
+		RouteModelCode:            "plus",
+		RequestedQuality:          "1k",
+		RequestedOutputImageCount: 2,
+		UserGroupCodes:            []string{"special-price"},
+		UserGroupMultiplier:       "0.50000",
+	})
+	if err != nil {
+		t.Fatalf("Estimate: %v", err)
+	}
+	if result.EstimatedPoints != "8.00000" {
+		t.Fatalf("expected route model estimate to apply explicit user billing multiplier, got %#v", result)
+	}
+	if result.UserGroupMultiplier != "0.50000" || result.PricingSnapshot.UserGroupMultiplier != "0.50000" {
+		t.Fatalf("expected explicit billing multiplier to be snapshotted, got %#v", result)
+	}
+}
+
 func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedQuality(t *testing.T) {
 	svc := NewService(config.BillingConfig{
 		CNYPerPoint:               "0.31250",

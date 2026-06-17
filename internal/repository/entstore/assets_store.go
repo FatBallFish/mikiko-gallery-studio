@@ -55,6 +55,9 @@ func (s *AssetsStore) SaveWithMetadata(ctx context.Context, userID int64, asset 
 		SetHeight(asset.Height).
 		SetSha256(asset.SHA256).
 		SetExpiresAt(asset.CreatedAt.Add(24 * time.Hour))
+	if asset.StorageConfigID != nil {
+		create.SetStorageConfigID(*asset.StorageConfigID)
+	}
 	if metadata.APIKeyID != nil {
 		create.SetAPIKeyID(*metadata.APIKeyID)
 	}
@@ -98,16 +101,17 @@ func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, asset
 
 func mapReferenceAssetEntity(entity *repoent.ReferenceAsset) domainassets.ReferenceAsset {
 	asset := domainassets.ReferenceAsset{
-		ID:            entity.ID.String(),
-		APIKeyID:      entity.APIKeyID,
-		UploadSource:  entity.UploadSource,
-		Status:        entity.Status,
-		StorageDriver: entity.StorageDriver,
-		MimeType:      entity.MimeType,
-		FileSizeBytes: entity.FileSizeBytes,
-		SHA256:        entity.Sha256,
-		ObjectKey:     entity.ObjectKey,
-		CreatedAt:     entity.CreatedAt,
+		ID:              entity.ID.String(),
+		APIKeyID:        entity.APIKeyID,
+		UploadSource:    entity.UploadSource,
+		Status:          entity.Status,
+		StorageConfigID: entity.StorageConfigID,
+		StorageDriver:   entity.StorageDriver,
+		MimeType:        entity.MimeType,
+		FileSizeBytes:   entity.FileSizeBytes,
+		SHA256:          entity.Sha256,
+		ObjectKey:       entity.ObjectKey,
+		CreatedAt:       entity.CreatedAt,
 	}
 	if entity.Width != nil {
 		asset.Width = *entity.Width

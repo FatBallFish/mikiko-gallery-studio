@@ -41,7 +41,7 @@ const dotToneClass = {
 
 const navIconClass = 'size-5 opacity-70 transition-opacity group-hover:opacity-100'
 const stateBlockBase = 'grid min-h-[260px] place-items-center content-center gap-2.5 rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-7 text-center text-white/70'
-const fieldLabelClass = 'flex items-center justify-between gap-2 text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]'
+const fieldLabelClass = 'flex items-center justify-between gap-2 text-[length:var(--admin-label-font-size)] font-extrabold uppercase tracking-[.04em] text-[var(--soft)]'
 const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-2xl border border-[var(--line)] bg-white/[0.02] p-2'
 const checkGridEmptyClass = 'grid-cols-1 text-sm font-bold text-[var(--soft)]'
 const checkOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
@@ -421,7 +421,7 @@ const BellIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" s
 
 export function Field({ label, children, error, hint }: { label: string; children: React.ReactNode; error?: string | null; hint?: string }) {
   return (
-    <label className="grid gap-1.5 text-xs font-extrabold text-[var(--soft)]">
+    <label className="grid gap-1.5 text-[length:var(--admin-helper-font-size)] font-extrabold text-[var(--soft)]">
       <span className={fieldLabelClass}>
         <span>{label}</span>
         {hint ? <FieldHint text={hint} /> : null}
@@ -464,7 +464,7 @@ function FieldHint({ text }: { text: string }) {
     <>
       <span
         ref={anchorRef}
-        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[10px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
+        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[11px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
         tabIndex={0}
         aria-label={text}
         onMouseEnter={() => setOpen(true)}

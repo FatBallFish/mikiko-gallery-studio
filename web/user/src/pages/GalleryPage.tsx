@@ -275,8 +275,8 @@ export function GalleryPage() {
     window.sessionStorage.setItem(galleryEditContextKey, JSON.stringify(createGalleryEditContext({
       prompt: image.prompt ?? '',
       sources,
-      fallbackImageUrl: sources.length ? '' : assetUrl(image.url || image.download_url || ''),
-      task_type: sources.length || image.url || image.download_url ? 'image_edit' : 'text_to_image',
+      fallbackImageUrl: sources.length ? '' : assetUrl(userApi.preferredImageUrl(image)),
+      task_type: sources.length || userApi.preferredImageUrl(image) ? 'image_edit' : 'text_to_image',
       route_model_code: image.route_model_code || image.abstract_model,
       quality: image.quality,
       aspect_ratio: image.aspect_ratio,
@@ -284,8 +284,8 @@ export function GalleryPage() {
     app.navigate('genpic')
   }
 
-  function downloadImage(image?: Pick<GalleryImage, 'url' | 'download_url' | 'id'>) {
-    const url = image?.download_url ?? image?.url
+  function downloadImage(image?: Pick<GalleryImage, 'url' | 'asset_url' | 'download_url' | 'id'>) {
+    const url = image ? image.download_url ?? userApi.preferredImageUrl(image) : ''
     if (!image || !url) return
     const link = document.createElement('a')
     link.href = assetUrl(url)
@@ -307,8 +307,8 @@ export function GalleryPage() {
     app.notify('success', `已开始下载 ${images.length} 张图片`)
   }
 
-  function downloadFilename(image: Pick<GalleryImage, 'id' | 'url' | 'download_url'>) {
-    const source = image.download_url ?? image.url ?? ''
+  function downloadFilename(image: Pick<GalleryImage, 'id' | 'url' | 'asset_url' | 'download_url'>) {
+    const source = image.download_url ?? userApi.preferredImageUrl(image)
     const clean = source.split('?')[0]
     const ext = clean.match(/\.(png|jpe?g|webp|gif)$/i)?.[0] ?? '.png'
     return `${image.id || 'image'}${ext}`
@@ -422,8 +422,8 @@ export function GalleryPage() {
         selectedIds={selectedIds}
         onToggleSelected={toggleSelected}
         onLightbox={(image) => setImagePreview({
-          url: assetUrl(image.url || image.download_url || ''),
-          downloadUrl: assetUrl(image.download_url || image.url || ''),
+          url: assetUrl(userApi.preferredImageUrl(image)),
+          downloadUrl: assetUrl(image.download_url || userApi.preferredImageUrl(image)),
           alt: image.prompt || image.id,
           prompt: image.prompt,
           width: image.width,
@@ -446,7 +446,7 @@ export function GalleryPage() {
       <ImageDetailModal
         title="图片详情"
         image={selected}
-        imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
+        imageUrl={selected && userApi.preferredImageUrl(selected) ? assetUrl(userApi.preferredImageUrl(selected)) : undefined}
         referenceImages={(selected?.reference_assets ?? []).filter((asset) => asset.preview_url).map((asset) => {
           const url = assetUrl(asset.preview_url || '')
           return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图', onPreview: () => setImagePreview({ url, downloadUrl: url, alt: asset.name || '原图', source: '原图引用' }) }
@@ -459,8 +459,8 @@ export function GalleryPage() {
         }}
         actions={selected ? [
           { key: 'edit', label: '继续编辑', icon: <PublicDetailIcon name="edit" />, onClick: () => continueEdit(selected) },
-          { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !selected.url && !selected.download_url },
-          { key: 'public', label: '申请公开', icon: <PublicDetailIcon name="public" />, onClick: () => void publishImage(selected), disabled: !selected.url },
+          { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !userApi.preferredImageUrl(selected) },
+          { key: 'public', label: '申请公开', icon: <PublicDetailIcon name="public" />, onClick: () => void publishImage(selected), disabled: !userApi.preferredImageUrl(selected) },
           { key: 'group', label: '设置分组', icon: <PublicDetailIcon name="group" />, onClick: () => openGroupDialog([selected]) },
           { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
         ] : []}

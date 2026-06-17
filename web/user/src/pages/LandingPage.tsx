@@ -1,8 +1,9 @@
 import { cn } from '../../../shared/classnames'
+import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
 import { userButton } from '../ui/classes'
-import { rdCommon, rdGallery, rdHome, rdShell } from '../ui/redesign-classes'
+import { rdGallery, rdHome, rdShell } from '../ui/redesign-classes'
 
 const landingClasses = {
   page: cn(rdShell.main, 'min-h-screen overflow-x-hidden'),
@@ -12,12 +13,15 @@ const landingClasses = {
   logo: 'landing-logo border-0 bg-transparent text-[var(--accent)] transition-transform hover:scale-105',
   navLinks: 'hidden md:flex gap-10',
   navLink: 'text-[13px] font-bold tracking-wide text-[var(--muted)] no-underline transition hover:text-[var(--accent)]',
-  section: 'section relative py-[clamp(80px,12vw,160px)]',
-  hero: 'hero overflow-hidden pb-10 pt-20 text-center',
-  h1: 'm-0 font-vault-display text-[clamp(3.5rem,10vw,8rem)] font-medium leading-[.88] tracking-[-0.02em]',
+  section: 'section relative py-[clamp(72px,10vw,132px)]',
+  hero: cn(rdHome.hero, 'mx-auto mt-8 min-h-[520px] max-w-[1280px] border border-[var(--border)] p-8 text-left md:p-14 max-[760px]:mt-4 max-[760px]:min-h-[520px] max-[760px]:rounded-[2rem]'),
+  heroImage: rdHome.heroImg,
+  heroOverlay: rdHome.heroOverlay,
+  heroContent: cn(rdHome.heroContent, 'max-w-3xl'),
+  h1: 'm-0 font-vault-display text-[clamp(3rem,7vw,6.4rem)] font-medium leading-[.9]',
   h2: 'h2 m-0 font-vault-display text-[clamp(2.5rem,6vw,5rem)] font-medium leading-[.95] tracking-[-0.01em]',
   lead: 'lead mx-auto mt-8 max-w-[720px] text-lg leading-[1.6] text-[var(--muted)] md:text-xl',
-  heroCta: 'hero-cta mt-12 flex flex-wrap items-center justify-center gap-6 max-[420px]:flex-col max-[420px]:items-stretch',
+  heroCta: 'hero-cta mt-12 flex flex-wrap items-center justify-start gap-4 max-[420px]:flex-col max-[420px]:items-stretch',
   grid3: 'grid-3 grid grid-cols-1 gap-8 md:grid-cols-3',
   featureCard: rdHome.statCard,
   featureIcon: 'feature-icon mb-6 inline-flex size-14 items-center justify-center rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_20px_rgba(var(--accent-rgb),0.1)]',
@@ -96,11 +100,13 @@ export function LandingPage() {
         </div>
       </header>
 
-      <section className={`${landingClasses.section} ${landingClasses.hero}`}>
-        <div className={landingClasses.container}>
+      <section className={landingClasses.hero}>
+        <img src={heroImage} alt="Mikiko Studio hero" className={landingClasses.heroImage} />
+        <div className={landingClasses.heroOverlay} />
+        <div className={landingClasses.heroContent}>
           <div className={cn(rdHome.heroBadge, 'animate-in fade-in slide-in-from-bottom-4 duration-1000')}>Luminous Vault Experience</div>
           <h1 className={cn(landingClasses.h1, 'animate-in fade-in slide-in-from-bottom-6 duration-1000 fill-mode-both')}>文字跃然屏上<br />灵感触手可及</h1>
-          <p className={cn(landingClasses.lead, 'animate-in fade-in slide-in-from-bottom-8 duration-1000 fill-mode-both')}>Mikiko Studio 是为您量身定制的 AI 图片生成工作台。<br className="hidden md:block" />集成全球顶尖模型，为您提供极简、艺术、高效的创作体验。</p>
+          <p className={cn(landingClasses.lead, 'mx-0 animate-in fade-in slide-in-from-bottom-8 duration-1000 fill-mode-both')}>Mikiko Studio 是为您量身定制的 AI 图片生成工作台。集成模型路由、透明计费、历史图库与 API 接入，让创作入口和主应用保持同一套体验。</p>
           <div className={cn(landingClasses.heroCta, 'animate-in fade-in slide-in-from-bottom-10 duration-1000 fill-mode-both')}>
             <button type="button" className={cn(userButton.base, userButton.primary, 'min-h-[56px] px-10 text-base shadow-[0_12px_30px_rgba(var(--accent-rgb),0.3)]')} onClick={() => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })}>立即免费开始</button>
             <button type="button" className={cn(userButton.base, 'min-h-[56px] border-[var(--border)] bg-[var(--surface)]/50 px-10 text-base backdrop-blur-xl hover:bg-[var(--surface)]')} onClick={() => app.navigate('public-gallery')}>浏览画廊</button>
@@ -196,4 +202,3 @@ export function LandingPage() {
     </main>
   )
 }
-

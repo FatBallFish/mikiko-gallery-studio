@@ -76,3 +76,65 @@ func TestAuthStorePersistsUserAndRefreshSession(t *testing.T) {
 		t.Fatalf("expected replay_blocked, got %s", blocked.Status)
 	}
 }
+
+func TestAuthStoreUsesLowestEnabledMembershipMultiplier(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:authstore-groups?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewAuthStore(client)
+	user, err := store.CreateUser(ctx, auth.User{
+		Email:           "special@example.com",
+		Nickname:        "special-user",
+		Status:          "active",
+		GroupCode:       "basic",
+		GroupMultiplier: "1.00000",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	special, err := client.UserGroup.Create().
+		SetGroupCode("special").
+		SetGroupName("Special").
+		SetMultiplier("0.50000").
+		SetStatus("enabled").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create special group: %v", err)
+	}
+	disabled, err := client.UserGroup.Create().
+		SetGroupCode("disabled-special").
+		SetGroupName("Disabled Special").
+		SetMultiplier("0.10000").
+		SetStatus("disabled").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create disabled group: %v", err)
+	}
+	if _, err := client.UserGroupMember.Create().SetUserID(user.ID).SetGroupID(int64(special.ID)).Save(ctx); err != nil {
+		t.Fatalf("create special membership: %v", err)
+	}
+	if _, err := client.UserGroupMember.Create().SetUserID(user.ID).SetGroupID(int64(disabled.ID)).Save(ctx); err != nil {
+		t.Fatalf("create disabled membership: %v", err)
+	}
+
+	loaded, err := store.GetUserByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if loaded.GroupCode != "basic" {
+		t.Fatalf("expected primary group to remain basic, got %#v", loaded)
+	}
+	if loaded.GroupMultiplier != "0.50000" {
+		t.Fatalf("expected lowest enabled group multiplier, got %#v", loaded)
+	}
+	if len(loaded.GroupCodes) != 3 {
+		t.Fatalf("expected all group codes to remain available for visibility, got %#v", loaded.GroupCodes)
+	}
+}

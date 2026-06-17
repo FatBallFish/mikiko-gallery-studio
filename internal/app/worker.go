@@ -13,6 +13,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	adminstorageservice "github.com/fatballfish/pic-gallery/internal/service/adminstorage"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
@@ -52,17 +53,21 @@ func RunWorker() error {
 	}
 
 	assetSvc := entstore.NewAssetsStore(client)
+	storageAdminSvc := adminstorageservice.NewServiceWithStore(cfg.Storage, entstore.NewStorageStoreWithLegacyConfig(client, cfg.Security.SecureConfigEncryptionKey, cfg.Storage))
 	adminCfgSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
 	billingSvc.SetAdminConfigResolver(adminCfgSvc)
+	referenceAssetSvc := assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, assetSvc, storageBackend)
+	referenceAssetSvc.SetStorageRegistry(storageAdminSvc)
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(
 		cfg,
 		nil,
 		entstore.NewImageTaskStore(client),
-		assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, assetSvc, storageBackend),
+		referenceAssetSvc,
 		billingSvc,
 		storageBackend,
 	)
+	taskSvc.SetStorageRegistry(storageAdminSvc)
 	taskSvc.SetModelRoutingSource(entstore.NewModelAdminStore(client))
 	slog.Info("database-backed task store enabled for worker")
 

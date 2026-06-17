@@ -90,6 +90,11 @@ func Status(v string) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldStatus, v))
 }
 
+// StorageConfigID applies equality check predicate on the "storage_config_id" field. It's identical to StorageConfigIDEQ.
+func StorageConfigID(v int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldStorageConfigID, v))
+}
+
 // StorageDriver applies equality check predicate on the "storage_driver" field. It's identical to StorageDriverEQ.
 func StorageDriver(v string) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldStorageDriver, v))
@@ -483,6 +488,56 @@ func StatusEqualFold(v string) predicate.ReferenceAsset {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldContainsFold(FieldStatus, v))
+}
+
+// StorageConfigIDEQ applies the EQ predicate on the "storage_config_id" field.
+func StorageConfigIDEQ(v int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDNEQ applies the NEQ predicate on the "storage_config_id" field.
+func StorageConfigIDNEQ(v int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNEQ(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDIn applies the In predicate on the "storage_config_id" field.
+func StorageConfigIDIn(vs ...int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIn(FieldStorageConfigID, vs...))
+}
+
+// StorageConfigIDNotIn applies the NotIn predicate on the "storage_config_id" field.
+func StorageConfigIDNotIn(vs ...int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotIn(FieldStorageConfigID, vs...))
+}
+
+// StorageConfigIDGT applies the GT predicate on the "storage_config_id" field.
+func StorageConfigIDGT(v int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGT(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDGTE applies the GTE predicate on the "storage_config_id" field.
+func StorageConfigIDGTE(v int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGTE(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDLT applies the LT predicate on the "storage_config_id" field.
+func StorageConfigIDLT(v int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLT(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDLTE applies the LTE predicate on the "storage_config_id" field.
+func StorageConfigIDLTE(v int64) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLTE(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDIsNil applies the IsNil predicate on the "storage_config_id" field.
+func StorageConfigIDIsNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIsNull(FieldStorageConfigID))
+}
+
+// StorageConfigIDNotNil applies the NotNil predicate on the "storage_config_id" field.
+func StorageConfigIDNotNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotNull(FieldStorageConfigID))
 }
 
 // StorageDriverEQ applies the EQ predicate on the "storage_driver" field.
