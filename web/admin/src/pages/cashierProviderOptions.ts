@@ -18,7 +18,6 @@ export const cashierProviderInstanceFieldHints = {
   minAmount: '订单金额低于该金额时不会选择此实例；为空表示不设置最低金额。',
   maxAmount: '订单金额高于该金额时不会选择此实例；为空表示不设置最高金额。',
   dailyLimit: '限制该实例当日累计收款金额；为空则不限制。',
-  configJSON: '填写商户号、网关地址、支付模式和渠道参数；密钥不会回显明文，JeePay 可用上方模板补齐 wayCode 和 channelExtra。',
 } as const
 
 export function cashierProviderLabel(providerType: PaymentProviderType | string) {
@@ -77,7 +76,6 @@ export type CashierJeePayStructuredConfig = {
   key: string
   payment_mode: string
   way_code: string
-  client_ip: string
   channel_extra_text: string
   raw_config_text: string
 }
@@ -110,28 +108,28 @@ const providerConfigGuides: Record<string, CashierProviderConfigGuide> = {
     title: '易支付配置',
     detail: '面向易支付支付宝通道，填写网关、商户 PID 和密钥后可生成跳转支付链接或 API 预下单。',
     requiredFields: ['gateway_url', 'pid', 'key'],
-    optionalFields: ['payment_mode', 'notify_url', 'return_url', 'client_ip'],
+    optionalFields: ['payment_mode', 'notify_url', 'return_url'],
     secretHint: defaultSecretHint,
   },
   easypay_wxpay: {
     title: '易支付配置',
     detail: '面向易支付微信通道，填写网关、商户 PID 和密钥后可生成跳转支付链接或 API 预下单。',
     requiredFields: ['gateway_url', 'pid', 'key'],
-    optionalFields: ['payment_mode', 'notify_url', 'return_url', 'client_ip'],
+    optionalFields: ['payment_mode', 'notify_url', 'return_url'],
     secretHint: defaultSecretHint,
   },
   jeepay_alipay: {
     title: 'JeePay 配置',
     detail: '填写 JeePay 网关、商户号、应用 ID、密钥和 way_code；可用模板补齐常见 wayCode 与 channel_extra。',
     requiredFields: ['gateway_url', 'mch_no', 'app_id', 'key', 'way_code'],
-    optionalFields: ['payment_mode', 'notify_url', 'return_url', 'client_ip', 'channel_extra'],
+    optionalFields: ['payment_mode', 'notify_url', 'return_url', 'channel_extra'],
     secretHint: defaultSecretHint,
   },
   jeepay_wxpay: {
     title: 'JeePay 配置',
     detail: '填写 JeePay 网关、商户号、应用 ID、密钥和 way_code；可用模板补齐常见 wayCode 与 channel_extra。',
     requiredFields: ['gateway_url', 'mch_no', 'app_id', 'key', 'way_code'],
-    optionalFields: ['payment_mode', 'notify_url', 'return_url', 'client_ip', 'channel_extra'],
+    optionalFields: ['payment_mode', 'notify_url', 'return_url', 'channel_extra'],
     secretHint: defaultSecretHint,
   },
 }
@@ -174,8 +172,7 @@ const jeepayStructuredFields: CashierJeePayConfigField[] = [
   { key: 'app_id', label: '应用 ID', hint: 'JeePay 应用 ID；微信小程序或 JSAPI 场景仍在渠道参数中补充用户标识。', placeholder: 'A1234567890' },
   { key: 'key', label: '商户密钥', hint: '保存后不会明文回显；轮换密钥时重新填写。', placeholder: '支付密钥' },
   { key: 'payment_mode', label: '支付模式', hint: 'API 预下单填 api；跳转收银台填 popup 或保持渠道要求。', placeholder: 'api' },
-  { key: 'way_code', label: 'wayCode', hint: 'JeePay 通道编码，例如支付宝 PC、微信扫码、微信 H5 或 JSAPI。', placeholder: 'WX_NATIVE' },
-  { key: 'client_ip', label: '客户端 IP', hint: '部分通道风控要求固定终端 IP；为空时由后端按请求环境兜底。', placeholder: '127.0.0.1' },
+  { key: 'way_code', label: 'wayCode', hint: 'JeePay 通道编码。JeePay 场景模板可在 wayCode 字段旁选择：ALI_PC、ALI_JSAPI、WX_NATIVE、WX_H5、WX_JSAPI 等。', placeholder: 'WX_NATIVE' },
   { key: 'channel_extra_text', label: '渠道参数', hint: '填写 openid、buyerUserId、服务商子商户、分账接收方等通道专属 JSON。', placeholder: '{\n  \"openid\": \"user-openid\"\n}', multiline: true },
 ]
 
@@ -195,8 +192,8 @@ const providerConfigFields: Record<string, CashierProviderConfigField[]> = {
   ],
   alipay_direct: [
     { key: 'gateway_url', label: '网关地址', hint: '支付宝正式或沙箱网关。', placeholder: 'https://openapi-sandbox.dl.alipaydev.com/gateway.do', required: true },
-    { key: 'notify_url', label: '异步回调地址', hint: '支付宝支付结果通知地址；为空时可由部署网关统一配置。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/alipay_direct' },
-    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的浏览器跳转地址。', placeholder: 'https://example.com/checkout/return' },
+    { key: 'notify_url', label: '异步回调地址', hint: '平台内置支付结果通知地址；页面会展示当前部署域名下的推荐地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/alipay_direct' },
+    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的浏览器跳转地址；页面会展示当前用户端域名下的推荐地址。', placeholder: 'https://example.com/checkout/return' },
     { key: 'payment_mode', label: '支付模式', hint: '沙箱验证常用 popup；API 通道按渠道要求选择。', options: paymentModeOptions },
     { key: 'app_id', label: '应用 ID', hint: '支付宝开放平台应用 app_id。', placeholder: '2021000000000000', secret: true, required: true },
     { key: 'app_private_key', label: '应用私钥', hint: '支付宝应用私钥，保存后不回显。', placeholder: '-----BEGIN PRIVATE KEY-----', secret: true, required: true, multiline: true },
@@ -204,10 +201,9 @@ const providerConfigFields: Record<string, CashierProviderConfigField[]> = {
   ],
   wxpay_direct: [
     { key: 'gateway_url', label: '网关地址', hint: '微信支付 API 网关；为空时使用微信官方默认网关。', placeholder: 'https://api.mch.weixin.qq.com' },
-    { key: 'notify_url', label: '异步回调地址', hint: '微信支付结果通知地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/wxpay_direct' },
-    { key: 'return_url', label: '同步返回地址', hint: 'H5 支付完成后的返回地址。', placeholder: 'https://example.com/checkout/return' },
+    { key: 'notify_url', label: '异步回调地址', hint: '平台内置微信支付结果通知地址；页面会展示当前部署域名下的推荐地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/wxpay_direct' },
+    { key: 'return_url', label: '同步返回地址', hint: 'H5 支付完成后的返回地址；页面会展示当前用户端域名下的推荐地址。', placeholder: 'https://example.com/checkout/return' },
     { key: 'payment_mode', label: '支付模式', hint: 'Native 扫码、H5 或 JSAPI。', options: paymentModeOptions },
-    { key: 'client_ip', label: '客户端 IP', hint: 'H5 或部分风控场景需要固定终端 IP。', placeholder: '127.0.0.1' },
     { key: 'openid', label: 'OpenID', hint: 'JSAPI 场景使用的测试用户 OpenID。', placeholder: 'wx-openid-001' },
     { key: 'app_id', label: '应用 ID', hint: '微信支付 appid。', placeholder: 'wx1234567890abcdef', secret: true, required: true },
     { key: 'mch_id', label: '商户号', hint: '微信支付商户号。', placeholder: '1900000001', secret: true, required: true },
@@ -219,29 +215,26 @@ const providerConfigFields: Record<string, CashierProviderConfigField[]> = {
   ],
   easypay_alipay: [
     { key: 'gateway_url', label: '网关地址', hint: '易支付 submit.php 或 API 网关地址。', placeholder: 'https://pay.example.com/submit.php', required: true },
-    { key: 'notify_url', label: '异步回调地址', hint: '易支付异步通知地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/easypay_alipay' },
-    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址。', placeholder: 'https://example.com/checkout/return' },
+    { key: 'notify_url', label: '异步回调地址', hint: '平台内置易支付异步通知地址；页面会展示当前部署域名下的推荐地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/easypay_alipay' },
+    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址；页面会展示当前用户端域名下的推荐地址。', placeholder: 'https://example.com/checkout/return' },
     { key: 'payment_mode', label: '支付模式', hint: 'popup 为跳转支付，api 为接口预下单。', options: paymentModeOptions },
-    { key: 'client_ip', label: '客户端 IP', hint: 'API 预下单时可传递给渠道。', placeholder: '127.0.0.1' },
     { key: 'pid', label: '商户 PID', hint: '易支付商户 PID。', secret: true, required: true },
     { key: 'key', label: '商户密钥', hint: '易支付签名密钥，保存后不回显。', secret: true, required: true },
   ],
   easypay_wxpay: [
     { key: 'gateway_url', label: '网关地址', hint: '易支付 submit.php 或 API 网关地址。', placeholder: 'https://pay.example.com/submit.php', required: true },
-    { key: 'notify_url', label: '异步回调地址', hint: '易支付异步通知地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/easypay_wxpay' },
-    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址。', placeholder: 'https://example.com/checkout/return' },
+    { key: 'notify_url', label: '异步回调地址', hint: '平台内置易支付异步通知地址；页面会展示当前部署域名下的推荐地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/easypay_wxpay' },
+    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址；页面会展示当前用户端域名下的推荐地址。', placeholder: 'https://example.com/checkout/return' },
     { key: 'payment_mode', label: '支付模式', hint: 'popup 为跳转支付，api 为接口预下单。', options: paymentModeOptions },
-    { key: 'client_ip', label: '客户端 IP', hint: 'API 预下单时可传递给渠道。', placeholder: '127.0.0.1' },
     { key: 'pid', label: '商户 PID', hint: '易支付商户 PID。', secret: true, required: true },
     { key: 'key', label: '商户密钥', hint: '易支付签名密钥，保存后不回显。', secret: true, required: true },
   ],
   jeepay_alipay: [
     { key: 'gateway_url', label: '网关地址', hint: 'JeePay 服务网关。', placeholder: 'https://pay.example.com', required: true },
-    { key: 'notify_url', label: '异步回调地址', hint: 'JeePay 支付结果通知地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/jeepay_alipay' },
-    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址。', placeholder: 'https://example.com/checkout/return' },
+    { key: 'notify_url', label: '异步回调地址', hint: '平台内置 JeePay 支付结果通知地址；页面会展示当前部署域名下的推荐地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/jeepay_alipay' },
+    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址；页面会展示当前用户端域名下的推荐地址。', placeholder: 'https://example.com/checkout/return' },
     { key: 'payment_mode', label: '支付模式', hint: 'api 为统一下单接口，popup 为跳转收银台。', options: paymentModeOptions },
-    { key: 'way_code', label: 'wayCode', hint: 'JeePay 通道编码，例如 ALI_PC。', placeholder: 'ALI_PC', required: true },
-    { key: 'client_ip', label: '客户端 IP', hint: '部分通道风控要求固定终端 IP。', placeholder: '127.0.0.1' },
+    { key: 'way_code', label: 'wayCode', hint: 'JeePay 通道编码。JeePay 场景模板：ALI_PC 支付宝 PC、ALI_JSAPI 支付宝 JSAPI、ALI_PC_SUB_MCH 服务商等，可在字段旁一键套用。', placeholder: 'ALI_PC', required: true },
     { key: 'channel_extra', label: '渠道参数 JSON', hint: '服务商、分账或行业参数。', placeholder: '{\n  "buyerUserId": "2088..."\n}', multiline: true },
     { key: 'mch_no', label: '商户号', hint: 'JeePay 商户号。', secret: true, required: true },
     { key: 'app_id', label: '应用 ID', hint: 'JeePay 应用 ID。', secret: true, required: true },
@@ -249,11 +242,10 @@ const providerConfigFields: Record<string, CashierProviderConfigField[]> = {
   ],
   jeepay_wxpay: [
     { key: 'gateway_url', label: '网关地址', hint: 'JeePay 服务网关。', placeholder: 'https://pay.example.com', required: true },
-    { key: 'notify_url', label: '异步回调地址', hint: 'JeePay 支付结果通知地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/jeepay_wxpay' },
-    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址。', placeholder: 'https://example.com/checkout/return' },
+    { key: 'notify_url', label: '异步回调地址', hint: '平台内置 JeePay 支付结果通知地址；页面会展示当前部署域名下的推荐地址。', placeholder: 'https://example.com/api/open/image/v1/payments/webhooks/jeepay_wxpay' },
+    { key: 'return_url', label: '同步返回地址', hint: '用户支付完成后的跳转地址；页面会展示当前用户端域名下的推荐地址。', placeholder: 'https://example.com/checkout/return' },
     { key: 'payment_mode', label: '支付模式', hint: 'api 为统一下单接口，popup 为跳转收银台。', options: paymentModeOptions },
-    { key: 'way_code', label: 'wayCode', hint: 'JeePay 通道编码，例如 WX_NATIVE、WX_H5、WX_JSAPI。', placeholder: 'WX_NATIVE', required: true },
-    { key: 'client_ip', label: '客户端 IP', hint: '部分通道风控要求固定终端 IP。', placeholder: '127.0.0.1' },
+    { key: 'way_code', label: 'wayCode', hint: 'JeePay 通道编码。JeePay 场景模板：WX_NATIVE 微信扫码、WX_H5 微信 H5、WX_JSAPI 微信 JSAPI、WX_LITE 小程序等，可在字段旁一键套用。', placeholder: 'WX_NATIVE', required: true },
     { key: 'channel_extra', label: '渠道参数 JSON', hint: 'openid、服务商子商户或分账参数。', placeholder: '{\n  "openid": "wx-openid-001"\n}', multiline: true },
     { key: 'mch_no', label: '商户号', hint: 'JeePay 商户号。', secret: true, required: true },
     { key: 'app_id', label: '应用 ID', hint: 'JeePay 应用 ID。', secret: true, required: true },
@@ -263,6 +255,11 @@ const providerConfigFields: Record<string, CashierProviderConfigField[]> = {
 
 export function cashierProviderConfigFields(providerType: PaymentProviderType | string): CashierProviderConfigField[] {
   return providerConfigFields[providerType] ?? []
+}
+
+export function defaultCashierProviderConfigText(providerType: PaymentProviderType | string) {
+  if (providerType === 'mock') return JSON.stringify({ mock: true }, null, 2)
+  return '{}'
 }
 
 export function cashierJeePayConfigFields(providerType: PaymentProviderType | string): CashierJeePayConfigField[] {
@@ -279,7 +276,6 @@ export function cashierJeePayStructuredConfig(rawConfig: string): CashierJeePayS
     key: stringFromConfig(config.key),
     payment_mode: stringFromConfig(config.payment_mode),
     way_code: stringFromConfig(config.way_code),
-    client_ip: stringFromConfig(config.client_ip),
     channel_extra_text: stringifyNestedConfig(config.channel_extra),
     raw_config_text: JSON.stringify(config, null, 2),
   }
@@ -287,7 +283,7 @@ export function cashierJeePayStructuredConfig(rawConfig: string): CashierJeePayS
 
 export function updateCashierJeePayStructuredConfig(rawConfig: string, patch: Partial<Omit<CashierJeePayStructuredConfig, 'raw_config_text'>>): string {
   const config = parseConfigText(rawConfig)
-  for (const key of ['gateway_url', 'mch_no', 'app_id', 'key', 'payment_mode', 'way_code', 'client_ip'] as const) {
+  for (const key of ['gateway_url', 'mch_no', 'app_id', 'key', 'payment_mode', 'way_code'] as const) {
     if (!(key in patch)) continue
     const value = (patch[key] ?? '').trim()
     if (value) {

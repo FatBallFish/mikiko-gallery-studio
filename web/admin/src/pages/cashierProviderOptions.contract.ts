@@ -1,4 +1,4 @@
-import { cashierJeePayConfigFields, cashierJeePayStructuredConfig, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderLabels, cashierProviderSupportedMethodOptions, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod, updateCashierJeePayStructuredConfig } from './cashierProviderOptions'
+import { cashierJeePayConfigFields, cashierJeePayStructuredConfig, cashierProviderConfigFields, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderLabels, cashierProviderSupportedMethodOptions, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod, defaultCashierProviderConfigText, updateCashierJeePayStructuredConfig } from './cashierProviderOptions'
 
 type ContainsPlaceholder<T extends string> = T extends `${string}占位${string}` | `${string}placeholder${string}` | `${string}Placeholder${string}` ? true : false
 type AssertNoPlaceholder<T extends false> = T
@@ -35,6 +35,15 @@ if (mockMethodOptions.length !== 1 || mockMethodOptions[0]?.value !== 'mock' || 
   throw new Error(`mock provider should expose an operator-facing supported method option, got ${JSON.stringify(mockMethodOptions)}`)
 }
 
+if (defaultCashierProviderConfigText('mock') !== '{\n  "mock": true\n}') {
+  throw new Error(`mock provider should keep a runnable default config, got ${defaultCashierProviderConfigText('mock')}`)
+}
+for (const providerType of ['alipay_direct', 'wxpay_direct', 'easypay_alipay', 'easypay_wxpay', 'jeepay_alipay', 'jeepay_wxpay'] as const) {
+  if (defaultCashierProviderConfigText(providerType) !== '{}') {
+    throw new Error(`${providerType} default config should be empty to avoid carrying stale fields across provider switches, got ${defaultCashierProviderConfigText(providerType)}`)
+  }
+}
+
 for (const option of [...alipayMethodOptions, ...wxpayMethodOptions, ...mockMethodOptions]) {
   if (/\b(alipay|wxpay|mock)\b/.test(option.label)) {
     throw new Error(`supported method labels should not expose raw method values, got ${JSON.stringify(option)}`)
@@ -61,7 +70,6 @@ const requiredHints = {
   minAmount: ['低于该金额', '不会选择'],
   maxAmount: ['高于该金额', '不会选择'],
   dailyLimit: ['为空则不限制', '当日累计'],
-  configJSON: ['商户号', '密钥不会回显', 'JeePay'],
 } as const
 
 for (const [key, fragments] of Object.entries(requiredHints)) {
@@ -144,10 +152,13 @@ if (/占位|placeholder|后续|暂未|即将|版本/i.test(guideVisibleCopy)) {
 }
 
 const jeepayFields = cashierJeePayConfigFields('jeepay_wxpay')
-for (const expected of ['网关地址', '商户号', '应用 ID', '支付模式', 'wayCode', '客户端 IP', '渠道参数']) {
+for (const expected of ['网关地址', '商户号', '应用 ID', '支付模式', 'wayCode', '渠道参数']) {
   if (!jeepayFields.some((field) => field.label === expected)) {
     throw new Error(`JeePay structured fields should include ${expected}, got ${JSON.stringify(jeepayFields)}`)
   }
+}
+if (jeepayFields.some((field) => String(field.key) === 'client_ip' || field.label === '客户端 IP')) {
+  throw new Error(`JeePay structured fields should not expose client_ip because backend has a safe fallback, got ${JSON.stringify(jeepayFields)}`)
 }
 if (cashierJeePayConfigFields('mock').length !== 0) {
   throw new Error('non-JeePay providers should not show JeePay structured fields')
@@ -171,7 +182,6 @@ if (
   || structured.app_id !== 'A456'
   || structured.payment_mode !== 'api'
   || structured.way_code !== 'WX_NATIVE'
-  || structured.client_ip !== '127.0.0.1'
   || structured.channel_extra_text !== '{\n  "profitSharing": true\n}'
 ) {
   throw new Error(`JeePay structured config should parse known fields, got ${JSON.stringify(structured)}`)
@@ -191,7 +201,6 @@ const updatedConfig = updateCashierJeePayStructuredConfig(JSON.stringify({
 }, null, 2), {
   gateway_url: 'https://new-pay.example.com',
   way_code: 'WX_JSAPI',
-  client_ip: '',
   channel_extra_text: '{\n  "openid": "user-openid"\n}',
 })
 const updated = JSON.parse(updatedConfig)
@@ -215,4 +224,32 @@ if (!invalidChannelExtraFailed) {
 const structuredVisibleCopy = jeepayFields.map((field) => `${field.label} ${field.hint} ${field.placeholder}`).join(' ')
 if (/gateway_url|mch_no|app_id|client_ip|channel_extra|后续|暂未|即将|版本/.test(structuredVisibleCopy)) {
   throw new Error(`JeePay structured field copy should be operator-facing, got ${structuredVisibleCopy}`)
+}
+
+for (const providerType of ['wxpay_direct', 'easypay_alipay', 'easypay_wxpay', 'jeepay_alipay', 'jeepay_wxpay'] as const) {
+  const fields = cashierProviderConfigFields(providerType)
+  if (fields.some((field) => field.key === 'client_ip')) {
+    throw new Error(`${providerType} should not expose client_ip in payment instance form, got ${JSON.stringify(fields)}`)
+  }
+  const guide = cashierProviderConfigGuide(providerType)
+  if (guide.optionalFields.includes('client_ip')) {
+    throw new Error(`${providerType} guide should not ask operators to fill client_ip, got ${JSON.stringify(guide)}`)
+  }
+}
+
+const jeepayWayCode = cashierProviderConfigFields('jeepay_wxpay').find((field) => field.key === 'way_code')
+if (!jeepayWayCode?.hint.includes('JeePay 场景模板') || !jeepayWayCode.hint.includes('WX_NATIVE')) {
+  throw new Error(`JeePay way_code hint should carry scenario template guidance, got ${JSON.stringify(jeepayWayCode)}`)
+}
+
+for (const providerType of ['alipay_direct', 'wxpay_direct', 'easypay_alipay', 'jeepay_wxpay'] as const) {
+  const fields = cashierProviderConfigFields(providerType)
+  const notify = fields.find((field) => field.key === 'notify_url')
+  if (!notify?.hint.includes('平台内置')) {
+    throw new Error(`${providerType} notify_url hint should point to the built-in callback URL, got ${JSON.stringify(notify)}`)
+  }
+  const returned = fields.find((field) => field.key === 'return_url')
+  if (!returned?.hint.includes('页面会展示')) {
+    throw new Error(`${providerType} return_url hint should explain the page-suggested return URL, got ${JSON.stringify(returned)}`)
+  }
 }

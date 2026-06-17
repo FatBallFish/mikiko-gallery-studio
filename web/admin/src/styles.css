@@ -13,6 +13,7 @@
   --shell: oklch(9% 0.01 260);
   --topbar: oklch(9% 0.01 260 / 0.72);
   --surface: oklch(16% 0.02 260);
+  --surface-strong: oklch(20% 0.024 260);
   --text: oklch(95% 0.01 80);
   --soft: oklch(90% 0.01 80 / 0.68);
   --muted: oklch(90% 0.01 80 / 0.58);
@@ -51,6 +52,7 @@
   --shell: oklch(99% 0.004 95);
   --topbar: oklch(99% 0.004 95 / 0.82);
   --surface: oklch(99% 0.004 95);
+  --surface-strong: oklch(100% 0.004 95);
   --text: oklch(19% 0.018 255);
   --soft: oklch(19% 0.018 255 / 0.68);
   --muted: oklch(19% 0.018 255 / 0.58);

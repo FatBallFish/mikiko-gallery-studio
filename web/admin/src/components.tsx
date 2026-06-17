@@ -419,17 +419,35 @@ const SunIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" st
 const MoonIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
 const BellIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
 
-export function Field({ label, children, error, hint }: { label: string; children: React.ReactNode; error?: string | null; hint?: string }) {
+export function Field({ label, children, error, hint, required = false }: { label: string; children: React.ReactNode; error?: string | null; hint?: string; required?: boolean }) {
+  const showRequired = required || fieldChildrenAreRequired(children)
   return (
     <label className="grid gap-1.5 text-[length:var(--admin-helper-font-size)] font-extrabold text-[var(--soft)]">
       <span className={fieldLabelClass}>
-        <span>{label}</span>
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <span>{label}</span>
+          {showRequired ? <span className="text-[var(--red)]" aria-label="必填">*</span> : null}
+        </span>
         {hint ? <FieldHint text={hint} /> : null}
       </span>
       {children}
       {error ? <em className="text-xs not-italic text-[var(--red)]">{error}</em> : null}
     </label>
   )
+}
+
+function fieldChildrenAreRequired(children: React.ReactNode): boolean {
+  let required = false
+  React.Children.forEach(children, (child) => {
+    if (required || !React.isValidElement(child)) return
+    const props = child.props as { required?: boolean; children?: React.ReactNode }
+    if (props.required) {
+      required = true
+      return
+    }
+    if (props.children) required = fieldChildrenAreRequired(props.children)
+  })
+  return required
 }
 
 function FieldHint({ text }: { text: string }) {
@@ -464,7 +482,7 @@ function FieldHint({ text }: { text: string }) {
     <>
       <span
         ref={anchorRef}
-        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[11px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
+        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] bg-[var(--surface-strong)] text-[11px] text-[var(--blue)] shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
         tabIndex={0}
         aria-label={text}
         onMouseEnter={() => setOpen(true)}
@@ -475,7 +493,7 @@ function FieldHint({ text }: { text: string }) {
         i
       </span>
       {open ? createPortal(
-        <span className="fixed z-[200] max-w-[260px] -translate-x-1/2 rounded-lg border border-[var(--line)] bg-[var(--text)] px-3 py-2 text-xs font-medium normal-case tracking-normal text-white shadow-[var(--pg-shadow-lg)]" role="tooltip" data-placement={position.placement} style={{ left: position.left, top: position.top }}>{text}</span>,
+        <span className="pointer-events-none fixed z-[200] max-w-[260px] -translate-x-1/2 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-semibold normal-case tracking-normal text-[var(--text)] shadow-[var(--pg-shadow-lg)]" role="tooltip" data-placement={position.placement} style={{ left: position.left, top: position.top }}>{text}</span>,
         document.body,
       ) : null}
     </>
