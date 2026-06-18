@@ -4433,7 +4433,7 @@ func (a *API) HandleAdminSecuritySMTPTest(w http.ResponseWriter, r *http.Request
 		scene = "smtp_test"
 	}
 	if err := authservice.NewSMTPEmailSender(cfg).SendVerificationCode(recipient, scene, "000000"); err != nil {
-		httpx.WriteError(w, r, errs.Internal("failed to send smtp test email"))
+		httpx.WriteError(w, r, errs.BadRequest("failed to send smtp test email: "+err.Error()))
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"status": "sent", "recipient": recipient})

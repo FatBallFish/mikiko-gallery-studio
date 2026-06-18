@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,9 @@ func TestAdminSecuritySMTPConfigWriteOnlySecret(t *testing.T) {
 	}
 	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
 	secureSvc := secureconfigservice.NewService(secureconfigservice.NewMemoryStore(), "smtp-admin-api-test-key", config.SMTPConfig{}, "test")
+	secureSvc.SetSMTPConnectivityValidator(func(context.Context, config.SMTPConfig) error {
+		return nil
+	})
 	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, nil, nil, adminAuth, nil)
 	api.SetSecureConfigService(secureSvc)
 	handler := NewWithAPI(api)

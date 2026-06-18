@@ -11,6 +11,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainsecureconfig "github.com/fatballfish/pic-gallery/internal/domain/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/service/secretcodec"
+	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -36,20 +37,32 @@ type Store interface {
 	Save(ctx context.Context, record Record) (Record, error)
 }
 
+type SMTPConnectivityValidator func(ctx context.Context, cfg config.SMTPConfig) error
+
 type Service struct {
-	store       Store
-	codec       *secretcodec.Codec
-	fallback    config.SMTPConfig
-	environment string
+	store         Store
+	codec         *secretcodec.Codec
+	fallback      config.SMTPConfig
+	environment   string
+	smtpValidator SMTPConnectivityValidator
 }
 
 func NewService(store Store, encryptionKey string, fallback config.SMTPConfig, environment string) *Service {
 	return &Service{
-		store:       store,
-		codec:       secretcodec.New(encryptionKey),
-		fallback:    fallback,
-		environment: strings.TrimSpace(environment),
+		store:         store,
+		codec:         secretcodec.New(encryptionKey),
+		fallback:      fallback,
+		environment:   strings.TrimSpace(environment),
+		smtpValidator: smtpdelivery.ValidateConnectivity,
 	}
+}
+
+func (s *Service) SetSMTPConnectivityValidator(validator SMTPConnectivityValidator) {
+	if validator == nil {
+		s.smtpValidator = smtpdelivery.ValidateConnectivity
+		return
+	}
+	s.smtpValidator = validator
 }
 
 func (s *Service) GetSMTPConfig(ctx context.Context) (domainsecureconfig.SMTPConfigView, error) {
@@ -82,6 +95,13 @@ func (s *Service) UpdateSMTPConfig(ctx context.Context, req domainsecureconfig.U
 	}
 	if err := validateSMTPWrite(req, secrets); err != nil {
 		return domainsecureconfig.SMTPConfigView{}, err
+	}
+	if req.Enabled {
+		cfg := smtpConfigFromPublic(public)
+		cfg.Password = strings.TrimSpace(fmt.Sprint(secrets["password"]))
+		if err := s.validateSMTPConnectivity(ctx, cfg); err != nil {
+			return domainsecureconfig.SMTPConfigView{}, errs.BadRequest("smtp connectivity validation failed: " + err.Error())
+		}
 	}
 	encrypted, err := s.codec.EncryptJSON(secrets)
 	if err != nil {
@@ -130,6 +150,14 @@ func (s *Service) getSMTPRecord(ctx context.Context) (Record, bool, error) {
 		return Record{}, false, nil
 	}
 	return s.store.Get(ctx, smtpCategory, smtpKey)
+}
+
+func (s *Service) validateSMTPConnectivity(ctx context.Context, cfg config.SMTPConfig) error {
+	validator := smtpdelivery.ValidateConnectivity
+	if s != nil && s.smtpValidator != nil {
+		validator = s.smtpValidator
+	}
+	return validator(ctx, cfg)
 }
 
 func (s *Service) smtpSecretsForWrite(ctx context.Context, current Record, req domainsecureconfig.UpdateSMTPConfigRequest) (map[string]any, error) {

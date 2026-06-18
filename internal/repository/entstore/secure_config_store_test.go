@@ -28,6 +28,9 @@ func TestSecureConfigStorePersistsSMTPSecretEncrypted(t *testing.T) {
 
 	store := entstore.NewSecureConfigStore(client)
 	svc := secureconfigservice.NewService(store, "secure-config-store-test-key", config.SMTPConfig{}, "test")
+	svc.SetSMTPConnectivityValidator(func(context.Context, config.SMTPConfig) error {
+		return nil
+	})
 	if _, err := svc.UpdateSMTPConfig(ctx, secureconfig.UpdateSMTPConfigRequest{
 		Enabled:  true,
 		Host:     "smtp.example.com",
