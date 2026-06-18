@@ -2,6 +2,8 @@ package secureconfig
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -11,6 +13,9 @@ import (
 func TestSMTPConfigStoresSecretsWriteOnlyAndPreservesOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(NewMemoryStore(), "secure-config-test-key", emptySMTPConfig(), "test")
+	svc.SetSMTPConnectivityValidator(func(context.Context, config.SMTPConfig) error {
+		return nil
+	})
 
 	created, err := svc.UpdateSMTPConfig(ctx, domainsecureconfig.UpdateSMTPConfigRequest{
 		Enabled:  true,
@@ -56,6 +61,38 @@ func TestSMTPConfigStoresSecretsWriteOnlyAndPreservesOnUpdate(t *testing.T) {
 	}
 	if view.Host != "smtp2.example.com" || view.SecretStatus.Fingerprint == "" {
 		t.Fatalf("expected public view with secret status, got %#v", view)
+	}
+}
+
+func TestUpdateSMTPConfigValidatesConnectivityBeforeSavingEnabledConfig(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	svc := NewService(store, "secure-config-test-key", emptySMTPConfig(), "test")
+	called := false
+	svc.SetSMTPConnectivityValidator(func(_ context.Context, cfg config.SMTPConfig) error {
+		called = true
+		if cfg.Host != "smtp.example.com" || cfg.Password != "smtp-password" {
+			t.Fatalf("validator received unexpected cfg %#v", cfg)
+		}
+		return errors.New("connection refused")
+	})
+
+	_, err := svc.UpdateSMTPConfig(ctx, domainsecureconfig.UpdateSMTPConfigRequest{
+		Enabled:  true,
+		Host:     "smtp.example.com",
+		Port:     587,
+		Username: "mailer@example.com",
+		From:     "Pic Gallery <noreply@example.com>",
+		Secrets:  map[string]string{"password": "smtp-password"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "smtp connectivity validation failed") {
+		t.Fatalf("expected connectivity validation error, got %v", err)
+	}
+	if !called {
+		t.Fatal("expected smtp connectivity validator to be called")
+	}
+	if _, ok, err := store.Get(ctx, smtpCategory, smtpKey); err != nil || ok {
+		t.Fatalf("expected failed validation to skip save, ok=%v err=%v", ok, err)
 	}
 }
 

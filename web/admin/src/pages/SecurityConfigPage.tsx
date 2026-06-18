@@ -136,7 +136,7 @@ export function SecurityConfigPage({ onFeedback, compact = false, summaryMode = 
               <div className={securityClasses.sectionHead}>
                 <div>
                   <strong>SMTP 发信服务器</strong>
-                  <p className={securityClasses.note}>用于登录、注册、密码重置和测试邮件发送。密码保存后不会明文回显。</p>
+                  <p className={securityClasses.note}>用于登录、注册、密码重置和测试邮件发送。启用后保存会先校验 SMTP 连通性，密码保存后不会明文回显。</p>
                 </div>
                 <div className={securityClasses.actions}>
                   <Badge tone={config.enabled ? 'success' : 'neutral'}>{config.enabled ? '已启用' : '未启用'}</Badge>
@@ -163,7 +163,7 @@ export function SecurityConfigPage({ onFeedback, compact = false, summaryMode = 
                 </Field>
                 <label className={securityClasses.toggle}>
                   <input type="checkbox" checked={draft.starttls} onChange={(event) => setDraft({ ...draft, starttls: event.target.checked })} />
-                  <span>启用 STARTTLS</span>
+                  <span>启用 STARTTLS (587 等明文升级端口使用；465 会自动使用 SSL/TLS)</span>
                 </label>
                 <label className={securityClasses.toggle}>
                   <input type="checkbox" checked={draft.insecure_skip_verify} onChange={(event) => setDraft({ ...draft, insecure_skip_verify: event.target.checked })} />
@@ -202,7 +202,7 @@ export function SecurityConfigPage({ onFeedback, compact = false, summaryMode = 
               <div className={securityClasses.sectionHead}>
                 <div>
                   <strong>发送测试邮件</strong>
-                  <p className={securityClasses.note}>使用当前已保存配置发送测试验证码，不修改用户验证码缓存。</p>
+                  <p className={securityClasses.note}>使用当前已保存配置发送测试验证码；保存配置时已完成轻量连通性校验。</p>
                 </div>
               </div>
               <div className={securityClasses.testRow}>
