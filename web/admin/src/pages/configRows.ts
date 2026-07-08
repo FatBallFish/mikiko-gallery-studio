@@ -5,6 +5,9 @@ export type ConfigFieldType = 'number' | 'boolean' | 'text' | 'map' | 'list'
 export type ConfigFieldMeta = { label: string; hint: string; type?: ConfigFieldType }
 export type ConfigTabMeta = { label: string; detail: string }
 
+export const generalConfigCategories = ['site', 'docs', 'public_gallery'] as const
+export const forbiddenGeneralConfigCategories = ['auth_security', 'generation_limits', 'moderation', 'payments'] as const
+
 const tabMeta: Record<string, ConfigTabMeta> = {
   auth_security: { label: '认证安全', detail: '登录令牌、刷新 Cookie 和会话安全相关配置。' },
   generation_limits: { label: '生成限制', detail: '控制提示词、参考图和单次生成数量的安全上限。' },

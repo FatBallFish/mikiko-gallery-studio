@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AdminDashboardOperations, AdminMetric, AdminUser, AuditLog, ProviderHealth, ReadinessReport } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, MetricGrid } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, MetricGrid, PageHeader } from '../components'
 import { adminButton, adminPage, adminSurface } from '../ui/classes'
 import { overviewReadinessRows, type OverviewReadinessRow } from './overviewReadinessRows'
 import { overviewRecentUserRows } from './overviewRows'
@@ -24,13 +24,13 @@ const overviewClasses = {
   panelHead: 'mb-4 flex flex-wrap items-center justify-between gap-3',
   panelTitle: 'text-sm font-extrabold text-[var(--text)]',
   panelDetail: 'm-0 mt-1 text-sm text-[var(--soft)]',
-  table: 'ds-table w-full border-collapse text-sm',
+  table: 'admin-table min-w-0',
   tableHeadRight: 'text-right',
   tableCellRight: 'text-right',
-  dataGrid: 'grid min-w-[760px] overflow-hidden rounded-3xl border border-[var(--line)] bg-white/[0.01]',
+  dataGrid: 'grid min-w-[760px] overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]',
   readinessGrid: '[grid-template-columns:minmax(180px,1.6fr)_minmax(80px,.7fr)_minmax(300px,2.4fr)_minmax(100px,.8fr)]',
-  dataHead: 'grid border-b border-[var(--line)] bg-white/[0.02] text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--muted-strong)]',
-  dataRow: 'grid border-b border-[var(--line)] last:border-b-0',
+  dataHead: 'grid border-b border-[var(--border)] bg-[var(--surface-solid)] text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--muted-strong)]',
+  dataRow: 'grid border-b border-[var(--border)] last:border-b-0',
   dataCell: 'min-w-0 px-3 py-3',
   keyText: 'm-0 mt-1 font-mono text-xs text-[var(--soft)]',
   detailText: 'min-w-0 px-3 py-3 text-sm text-[var(--soft)] [overflow-wrap:anywhere]',
@@ -39,19 +39,19 @@ const overviewClasses = {
   rankPanel: cn(adminSurface.card, 'p-6'),
   sectionHeader: 'mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4',
   sectionTitle: 'text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)]',
-  distributionBox: 'grid min-h-[240px] content-center gap-4 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] p-5',
+  distributionBox: 'grid min-h-[240px] content-center gap-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-5',
   distributionRow: 'grid gap-2',
   distributionMeta: 'flex justify-between gap-3 text-xs font-bold',
   distributionTrack: 'h-1.5 overflow-hidden rounded-full bg-white/5',
   distributionFill: 'h-full rounded-full bg-[var(--accent)]',
   modelStats: 'mt-6 grid grid-cols-3 gap-4 max-[760px]:grid-cols-1',
-  modelStat: 'rounded-2xl border border-white/5 bg-white/[0.03] p-4',
+  modelStat: 'rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-4',
   modelName: 'mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
   modelValue: 'text-lg font-black text-[var(--text)]',
   modelDetail: 'mt-1 font-mono text-[10px] text-[var(--accent)]',
   rankList: 'grid gap-2',
-  rankItem: 'group flex items-center justify-between gap-3 rounded-2xl border border-transparent p-3 transition-all hover:border-white/5 hover:bg-white/[0.03]',
-  rankAvatar: 'grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-white/10 to-white/5 text-xs font-bold text-[var(--muted-strong)]',
+  rankItem: 'group flex items-center justify-between gap-3 rounded-2xl border border-transparent p-3 transition-all hover:border-[var(--border)] hover:bg-[var(--surface-solid)]',
+  rankAvatar: 'grid size-8 shrink-0 place-items-center rounded-lg bg-[var(--surface-solid)] text-xs font-bold text-[var(--muted-strong)]',
   rankName: 'text-sm font-bold text-[var(--text)] transition-colors group-hover:text-[var(--accent)]',
   rankMeta: 'text-[10px] text-[var(--muted-strong)]',
   rankValue: 'text-sm font-black text-[var(--green)]',
@@ -93,11 +93,12 @@ export function OverviewPage() {
 
   return (
     <section className={overviewClasses.content}>
+      <PageHeader title="运营总览" description="今日生成、积分消耗、待处理风险与关键运营明细。" />
       <MetricGrid metrics={metricRows} />
       <OperationsInsightPanel providers={data.providers} users={data.users} operations={data.operations} />
       <details className={cn(overviewClasses.surface, 'overflow-hidden')}>
         <summary className="cursor-pointer list-none px-5 py-4 text-sm font-extrabold uppercase tracking-[0.15em] text-[var(--muted-strong)]">
-          运营明细 / Operations Detail
+          运营明细
         </summary>
         <div className="grid gap-6 px-5 pb-5">
           <ReadinessRiskPanel report={data.readiness} risks={readinessRisks} />
@@ -159,10 +160,10 @@ function OperationsInsightPanel({
     <section className={overviewClasses.insightGrid}>
       <div className={overviewClasses.chartPanel}>
         <div className={overviewClasses.sectionHeader}>
-          <h3 className={overviewClasses.sectionTitle}>模型调用分布 / Model Distribution</h3>
+          <h3 className={overviewClasses.sectionTitle}>模型调用分布</h3>
         </div>
         <div className={overviewClasses.distributionBox}>
-          {providerRows.map((row) => (
+          {providerRows.length ? providerRows.map((row) => (
             <div key={row.label} className={overviewClasses.distributionRow}>
               <div className={overviewClasses.distributionMeta}>
                 <span className="min-w-0 truncate text-[var(--muted)]">{row.label}</span>
@@ -172,17 +173,17 @@ function OperationsInsightPanel({
                 <div className={overviewClasses.distributionFill} style={{ width: `${row.percent}%` }} />
               </div>
             </div>
-          ))}
+          )) : <EmptyBlock title="暂无模型调用" detail="配置模型账号并产生调用后展示分布。" />}
         </div>
         <div className={overviewClasses.modelStats}>
-          <ModelStat name="Provider Health" value={providerHealthLabel(providers)} detail={`${providers.length} providers tracked`} />
-          <ModelStat name="Preflight Failures" value={String(operations.preflight_failure_count)} detail="generation guardrail blocks" />
-          <ModelStat name="Gallery Views" value={String(operations.public_gallery_list_views)} detail="public gallery scans" />
+          <ModelStat name="上游健康" value={providerHealthLabel(providers)} detail={`${providers.length} 个上游实例`} />
+          <ModelStat name="前置失败" value={String(operations.preflight_failure_count)} detail="生成前校验阻断" />
+          <ModelStat name="广场访问" value={String(operations.public_gallery_list_views)} detail="公开广场浏览" />
         </div>
       </div>
       <div className={overviewClasses.rankPanel}>
         <div className={overviewClasses.sectionHeader}>
-          <h3 className={overviewClasses.sectionTitle}>用户消费榜 / Rankings</h3>
+          <h3 className={overviewClasses.sectionTitle}>用户消费榜</h3>
         </div>
         <div className={overviewClasses.rankList}>
           {topUsers.length ? topUsers.map((user) => <UserRank key={user.id} user={user} />) : <EmptyBlock title="暂无用户排行" detail="用户产生余额或消费后会出现在这里。" />}
@@ -215,7 +216,7 @@ function UserRank({ user }: { user: AdminUser }) {
       </div>
       <div className="shrink-0 text-right">
         <div className={overviewClasses.rankValue}>{Number(user.balance || 0).toFixed(2)}</div>
-        <div className={overviewClasses.rankMeta}>points</div>
+        <div className={overviewClasses.rankMeta}>积分</div>
       </div>
     </div>
   )
@@ -256,7 +257,7 @@ function overviewHeroMetricRows(metrics: AdminMetric[], operations: AdminDashboa
 }
 
 function providerDistributionRows(providers: ProviderHealth[]) {
-  const rows = providers.length ? providers : [{ provider: 'No providers', latency_ms: 0, error_rate: '0', status: 'healthy', note: '' }]
+  const rows = providers
   const total = rows.reduce((sum, row) => sum + providerWeight(row), 0) || 1
   return rows.slice(0, 4).map((row) => {
     const value = providerWeight(row)

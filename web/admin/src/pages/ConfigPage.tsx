@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { type AdminSession, type ConfigItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, PageHeader } from '../components'
+import { AdminTabs, Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, PageHeader } from '../components'
 import { canAdmin } from '../types'
 import { adminButton, adminPage } from '../ui/classes'
 import {
@@ -13,6 +13,7 @@ import {
   configTabMeta,
   configValidateValue,
   extractConfigValue,
+  generalConfigCategories,
   inferConfigFieldType,
   isRecord,
   isSameConfigValue,
@@ -28,11 +29,10 @@ const configClasses = {
   statusCell: 'min-w-0 border-r border-[var(--line)] px-4 py-3 last:border-r-0 max-[620px]:border-r-0 max-[620px]:border-b max-[620px]:last:border-b-0',
   statusLabel: 'block text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]',
   statusValue: 'mt-1 block truncate text-[var(--text)]',
-  statusCard: 'rounded-3xl border border-white/5 bg-white/[0.02] p-5',
-  board: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)_280px] overflow-hidden rounded-3xl border border-white/5 bg-white/[0.01] max-[1260px]:grid-cols-1',
-  rail: 'grid content-start gap-1 border-r border-[var(--line)] bg-white/[0.02] p-3 max-[1260px]:grid-cols-[repeat(4,minmax(0,1fr))] max-[1260px]:border-r-0 max-[1260px]:border-b max-[620px]:grid-cols-1',
-  railButton: 'min-h-[38px] rounded-xl border border-transparent px-3 py-2 text-left text-sm font-extrabold text-[var(--soft)] transition hover:border-[var(--accent)]/25 hover:bg-[var(--accent)]/10 hover:text-[var(--accent)]',
-  railButtonActive: 'border-[var(--accent)]/25 bg-[var(--accent)]/10 text-[var(--accent)]',
+  statusCard: 'rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5',
+  board: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] max-[1260px]:grid-cols-1',
+  boardFull: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)_280px] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] max-[1260px]:grid-cols-1',
+  rail: 'border-r border-[var(--border)] bg-[var(--surface)] p-3 max-[1260px]:border-r-0 max-[1260px]:border-b',
   lane: 'min-w-0 overflow-y-auto border-r border-[var(--line)] px-[18px] py-4 max-[1260px]:border-r-0',
   head: 'mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-3',
   headTitle: 'block text-[var(--text)]',
@@ -40,7 +40,7 @@ const configClasses = {
   permissionNote: 'rounded-xl border border-[rgba(184,135,64,.28)] bg-[rgba(184,135,64,.08)] px-3 py-2 text-sm text-[var(--amber)]',
   formGrid: 'mt-4 grid grid-cols-[repeat(2,minmax(220px,1fr))] items-start gap-3.5 max-[760px]:grid-cols-1',
   formItem: 'grid min-w-0 self-start gap-2',
-  sideRail: 'grid min-w-0 content-start overflow-y-auto bg-white/[0.02]',
+  sideRail: 'grid min-w-0 content-start overflow-y-auto bg-[var(--surface)]',
   sideStrip: 'border-b border-[var(--line)] px-4 py-[15px] last:border-b-0',
   sideLabel: 'block text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]',
   sideStrong: 'mt-2 block text-[var(--text)]',
@@ -73,9 +73,13 @@ export function ConfigPage({
     setError(null)
     try {
       const nextRows = await adminApi.listConfig()
-      setRows(nextRows)
-      setDrafts(Object.fromEntries(nextRows.map((row) => [draftId(row), extractConfigValue(row)])))
-      setActiveTab((current) => current || nextRows[0]?.config_category || nextRows[0]?.tab || '')
+      const generalRows = nextRows.filter(isGeneralConfigRow)
+      setRows(generalRows)
+      setDrafts(Object.fromEntries(generalRows.map((row) => [draftId(row), extractConfigValue(row)])))
+      setActiveTab((current) => {
+        if (current && generalRows.some((row) => (row.config_category || row.tab) === current)) return current
+        return generalRows[0]?.config_category || generalRows[0]?.tab || ''
+      })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '配置载入失败')
     } finally {
@@ -120,10 +124,11 @@ export function ConfigPage({
         })),
       })
       const nextRows = await adminApi.listConfig()
-      setRows(nextRows)
-      setDrafts(Object.fromEntries(nextRows.map((row) => [draftId(row), extractConfigValue(row)])))
+      const generalRows = nextRows.filter(isGeneralConfigRow)
+      setRows(generalRows)
+      setDrafts(Object.fromEntries(generalRows.map((row) => [draftId(row), extractConfigValue(row)])))
       setNotice(`${activeMeta.label}已保存，API 节点将在 1 分钟内读取新配置。`)
-      onFeedback('系统设置已保存', activeMeta.label)
+      onFeedback('通用配置已保存', activeMeta.label)
     } finally {
       setSaving(false)
     }
@@ -137,17 +142,16 @@ export function ConfigPage({
     setNotice(`${activeMeta.label}已恢复为当前生效值。`)
   }
 
-  if (loading) return <LoadingBlock label="载入系统设置" />
+  if (loading) return <LoadingBlock label="载入通用配置" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
-  if (!rows.length) return <EmptyBlock title="暂无配置项" detail="配置中心尚未返回可编辑条目。" />
+  if (!rows.length) return <EmptyBlock title="暂无通用配置项" detail="配置中心尚未返回文档、公开内容等低风险配置。" />
 
   return (
     <section className={adminPage.stack}>
       {!compact ? (
         <PageHeader
-          eyebrow="Settings"
-          title="系统设置"
-          detail="按类目维护配置表单，保存时统一提交当前类目。"
+          title="通用配置"
+          detail="只维护文档、公开内容等低风险配置；认证、支付、审核和生成限制已拆到对应独立页面。"
           actions={
             <>
               <button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
@@ -184,7 +188,7 @@ export function ConfigPage({
       )}
 
       {summaryMode ? (
-        <details className="group rounded-3xl border border-white/5 bg-white/[0.02] p-4">
+        <details className="group rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
           <summary className="cursor-pointer list-none text-sm font-bold text-[var(--accent)]">编辑通用配置</summary>
           <div className="mt-4">
             <ConfigEditor
@@ -204,6 +208,7 @@ export function ConfigPage({
               notice={notice}
               revertActiveTab={revertActiveTab}
               saveActiveTab={saveActiveTab}
+              summaryMode={summaryMode}
             />
           </div>
         </details>
@@ -231,6 +236,11 @@ export function ConfigPage({
   )
 }
 
+function isGeneralConfigRow(row: ConfigItem) {
+  const category = row.config_category || row.tab
+  return generalConfigCategories.includes(category as (typeof generalConfigCategories)[number])
+}
+
 function ConfigEditor({
   activeMeta,
   tabs,
@@ -248,6 +258,7 @@ function ConfigEditor({
   notice,
   revertActiveTab,
   saveActiveTab,
+  summaryMode = false,
 }: {
   activeMeta: ReturnType<typeof configTabMeta>
   tabs: Array<{ key: string; label: string }>
@@ -265,11 +276,18 @@ function ConfigEditor({
   notice: string
   revertActiveTab: () => void
   saveActiveTab: () => Promise<void>
+  summaryMode?: boolean
 }) {
   return (
-    <section className={configClasses.board}>
+    <section className={summaryMode ? configClasses.board : configClasses.boardFull}>
         <aside className={configClasses.rail}>
-          {tabs.map((tab) => <button key={tab.key} className={cn(configClasses.railButton, activeTab === tab.key && configClasses.railButtonActive)} type="button" onClick={() => setActiveTab(tab.key)}>{tab.label}</button>)}
+          <AdminTabs
+            ariaLabel="通用配置类目"
+            orientation="vertical"
+            items={tabs.map((tab) => ({ id: tab.key, label: tab.label }))}
+            value={activeTab}
+            onChange={setActiveTab}
+          />
         </aside>
 
         <section className={configClasses.lane}>
@@ -277,6 +295,7 @@ function ConfigEditor({
             <div>
               <strong className={configClasses.headTitle}>{activeMeta.label}</strong>
               <p className={configClasses.headDetail}>{activeMeta.detail}</p>
+              {summaryMode ? <p className={cn(configClasses.headDetail, 'text-[var(--accent)]')}>{notice}</p> : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? '需修正' : '可保存'}</Badge>
@@ -305,10 +324,12 @@ function ConfigEditor({
           </div>
         </section>
 
-        <aside className={configClasses.sideRail}>
-          <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>保存反馈</label><strong className={configClasses.sideStrong}>{notice}</strong></section>
-          <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>提示</label><p className={configClasses.sideText}>鼠标悬停字段名旁的提示符可查看用途说明；复杂列表以结构化文本编辑，保存后仍按原始接口契约提交。</p></section>
-        </aside>
+        {summaryMode ? null : (
+          <aside className={configClasses.sideRail}>
+            <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>保存反馈</label><strong className={configClasses.sideStrong}>{notice}</strong></section>
+            <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>提示</label><p className={configClasses.sideText}>鼠标悬停字段名旁的提示符可查看用途说明；复杂列表以结构化文本编辑，保存后仍按原始接口契约提交。</p></section>
+          </aside>
+        )}
       </section>
   )
 }

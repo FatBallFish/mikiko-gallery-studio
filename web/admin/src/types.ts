@@ -22,7 +22,7 @@ export type ProtectedAdminRouteId = Exclude<AdminRouteId, 'login'>
 
 export type AdminNavGroup = {
   label: string
-  items: Array<{ id: ProtectedAdminRouteId; label: string; hint: string; badgeKey?: 'review_count' | 'failed_webhook_count' | 'config_drafts' }>
+  items: Array<{ id: ProtectedAdminRouteId; label: string; hint?: string; badgeKey?: 'review_count' | 'failed_webhook_count' | 'config_drafts' }>
 }
 
 export const ROLE_PERMISSION_MAP: Partial<Record<AdminRole, AdminPermission[]>> = {

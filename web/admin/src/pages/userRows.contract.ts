@@ -1,5 +1,6 @@
 import type { AdminUser } from '../../../shared/api-types'
 import {
+  adminUserRowActions,
   adminUserRowView,
   adminUserStatusBadge,
   adminUserStatusFilterOptions,
@@ -90,6 +91,29 @@ if (invalidDateRow.createdAtLabel !== 'not-a-date' || invalidDateRow.lastActiveA
 const missingDateRow = adminUserRowView(user({ created_at: '', updated_at: '', last_seen_at: '' }))
 if (missingDateRow.createdAtLabel !== '-' || missingDateRow.lastActiveAtLabel !== '-') {
   throw new Error(`admin user row should use - for missing dates, got ${JSON.stringify(missingDateRow)}`)
+}
+
+const actions = adminUserRowActions(user({ status: 'active', email: 'danger@example.com' }))
+if (actions.primary.label !== '详情') {
+  throw new Error(`user row primary action should be detail, got ${JSON.stringify(actions.primary)}`)
+}
+
+if (actions.secondary) {
+  throw new Error(`user row should not expose a second permanent action, got ${JSON.stringify(actions.secondary)}`)
+}
+
+const actionLabels = actions.overflow.map((action) => action.label)
+for (const label of ['禁用', '调整分组', '调整积分', '设置限额', '重置密码', '删除']) {
+  if (!actionLabels.includes(label)) {
+    throw new Error(`user row overflow actions should include ${label}, got ${actionLabels.join(',')}`)
+  }
+}
+
+for (const label of ['禁用', '删除']) {
+  const action = actions.overflow.find((item) => item.label === label)
+  if (!action?.confirm || action.confirm.expectedValue !== 'danger@example.com') {
+    throw new Error(`${label} should require email confirmation, got ${JSON.stringify(action)}`)
+  }
 }
 
 function user(patch: Partial<AdminUser>): AdminUser {

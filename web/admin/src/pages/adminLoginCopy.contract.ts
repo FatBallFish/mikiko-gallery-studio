@@ -44,6 +44,12 @@ if (/Soft Grid|Admin Access|Route guard|provider|draft|queue/i.test(visibleCopy)
   throw new Error(`admin login visible copy should not expose internal or mixed-language MVP copy, got ${visibleCopy}`)
 }
 
+for (const forbidden of ['模型健康', '支付配置', '审核队列', '审计留痕']) {
+  if (visibleCopy.includes(forbidden)) {
+    throw new Error(`admin login should show operational facts instead of marketing labels, got ${forbidden}`)
+  }
+}
+
 const unauthorized = adminLoginVisibleError(new Error('401 Unauthorized'))
 if (unauthorized !== '管理员邮箱或密码不正确，请检查后重试。') {
   throw new Error(`admin login should map unauthorized errors to localized action copy, got ${unauthorized}`)
