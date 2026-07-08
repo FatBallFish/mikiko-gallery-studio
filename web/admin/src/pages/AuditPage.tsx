@@ -4,6 +4,8 @@ import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import { FilterBar } from '../ui/dataTable'
+import { FilterIcon } from '../ui/listIcons'
 import {
   auditActionOptions,
   auditExportFilename,
@@ -15,18 +17,17 @@ import {
 
 const auditClasses = {
   timeline: 'grid gap-2',
-  item: 'group flex items-center gap-6 rounded-2xl border border-[var(--line)] bg-white/[0.01] p-5 transition-all hover:border-[var(--line-strong)] hover:bg-white/[0.03] max-[720px]:grid max-[720px]:grid-cols-1',
-  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-xs font-bold text-[var(--muted-strong)]',
+  item: 'group flex items-center gap-6 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)] max-[720px]:grid max-[720px]:grid-cols-1',
+  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--canvas)] text-xs font-bold text-[var(--muted-strong)]',
   itemMain: 'min-w-0 flex-1',
   itemHead: 'mb-1 flex min-w-0 flex-wrap items-center gap-3',
   actionText: 'text-xs font-black tracking-widest text-[var(--accent)]',
   itemTitle: 'min-w-0 truncate text-sm font-bold text-[var(--text)]',
-  dot: 'size-1 rounded-full bg-white/10',
+  dot: 'size-1 rounded-full bg-[var(--border-strong)]',
   itemText: 'm-0 text-xs leading-relaxed text-[var(--muted-strong)]',
   itemSide: 'shrink-0 text-right max-[720px]:text-left',
   itemActor: 'text-xs font-bold text-[var(--soft)]',
   itemDate: 'mt-0.5 text-[10px] text-[var(--muted-strong)]',
-  filterInput: 'min-w-60 max-[620px]:min-w-0 max-[620px]:w-full',
 }
 
 export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -85,15 +86,13 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
         detail="所有关键写操作都会追加审计行，便于回溯配置、价格、路由、审核与用户变更。"
         actions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={exportVisibleRows} disabled={!visibleRows.length}>导出日志</button>}
       />
-      <section className={adminPage.filterBand}>
-        <form className={adminPage.filterRow} onSubmit={(event) => event.preventDefault()}>
-          <input className={auditClasses.filterInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={auditSearchPlaceholder} />
-          <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
-            {actionOptions.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}
-          </select>
-          <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => void load()}>刷新</button>
-        </form>
-      </section>
+      <FilterBar
+        fields={[
+          { key: 'query', label: '搜索', primary: true, control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={auditSearchPlaceholder} /> },
+          { key: 'action', label: '动作', primary: true, control: <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>{actionOptions.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}</select> },
+        ]}
+        actions={<button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small, 'gap-1.5')} onClick={() => void load()}><FilterIcon className="size-4" /><span>刷新</span></button>}
+      />
       <section className={auditClasses.timeline}>
         {!visibleRows.length ? <EmptyBlock title="没有匹配审计" detail="放宽关键词或动作筛选。" /> : visibleRows.map((row) => (
           <AuditTimelineItem key={row.id} row={row} />

@@ -2,29 +2,30 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ProviderHealth, ReadinessReport } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 import { healthProviderRows, healthRefreshTimeLabel, refreshPolicyLabel, taskQueuePressure } from '../healthRows'
 import { adminButton } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
+import { MonitoringIcon } from '../ui/icons'
 import { readinessOverallStatusLabel, readinessRows } from './readinessRows'
 
 const monitoringClasses = {
   sectionHeader: 'flex items-end justify-between gap-4',
   sectionTitle: 'flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
   healthGrid: 'grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3',
-  healthCard: 'flex items-center gap-5 rounded-3xl border border-[var(--line)] bg-white/[0.02] p-6 transition-all hover:border-[var(--line-strong)] hover:bg-white/[0.04]',
-  healthIcon: 'grid size-12 shrink-0 place-items-center rounded-2xl bg-white/5 text-[var(--accent)]',
+  healthCard: 'flex items-center gap-5 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-6 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]',
+  healthIcon: 'grid size-12 shrink-0 place-items-center rounded-lg bg-[var(--canvas)] text-[var(--accent)]',
   healthLabel: 'text-sm font-bold text-[var(--text)]',
   healthValue: 'font-mono text-xs text-[var(--muted-strong)]',
   healthStatus: 'size-2.5 rounded-full shadow-[0_0_10px_currentColor]',
   chartGrid: 'grid grid-cols-1 gap-8 lg:grid-cols-2',
-  panel: 'rounded-3xl border border-[var(--line)] bg-white/[0.02] p-8',
+  panel: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-8',
   panelHeader: 'mb-6 flex items-end justify-between gap-4',
   slaValue: 'text-4xl font-black tracking-tighter text-[var(--green)]',
   slaLabel: 'mt-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
-  metricRow: 'flex items-center justify-between gap-4 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
-  latencyCard: 'rounded-2xl border border-[var(--line)] bg-white/[0.03] p-6',
-  tableTitle: 'border-b border-[var(--line)] bg-white/[0.02] p-6 text-sm font-bold text-[var(--text)]',
+  metricRow: 'flex items-center justify-between gap-4 rounded-lg bg-[var(--canvas)] p-4',
+  latencyCard: 'rounded-lg bg-[var(--canvas)] p-6',
+  tableTitle: 'border-b border-[var(--border)] bg-[var(--surface-solid)] p-6 text-sm font-bold text-[var(--text)]',
 }
 
 export function MonitoringPage() {
@@ -68,9 +69,13 @@ export function MonitoringPage() {
 
   return (
     <section className="grid gap-10">
+      <PageHeader
+        title="系统健康"
+        description="阻断项、探针和任务队列优先展示，便于值班快速定位运行风险。"
+        actions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => void load()}>重新探测</button>}
+      />
       <div className={monitoringClasses.sectionHeader}>
-        <h3 className={monitoringClasses.sectionTitle}>基础信息 / Infrastructure</h3>
-        <button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => void load()}>重新探测</button>
+        <h3 className={monitoringClasses.sectionTitle}>基础信息</h3>
       </div>
 
       <div className={monitoringClasses.healthGrid}>
@@ -85,15 +90,15 @@ export function MonitoringPage() {
       <div className={monitoringClasses.chartGrid}>
         <section className={monitoringClasses.panel}>
           <div className={monitoringClasses.panelHeader}>
-            <h3 className={monitoringClasses.sectionTitle}>SLA 指标 / Metrics</h3>
+            <h3 className={monitoringClasses.sectionTitle}>SLA 指标</h3>
             <div className="flex gap-2">
-              {['1m', '5m', '1h'].map((item) => <span key={item} className={cn('rounded-full px-3 py-1 text-[10px] font-bold', item === '5m' ? 'bg-[var(--accent)] text-white' : 'bg-white/5 text-[var(--muted)]')}>{item}</span>)}
+              {['1m', '5m', '1h'].map((item) => <span key={item} className={cn('rounded-full px-3 py-1 text-[10px] font-bold', item === '5m' ? 'bg-[var(--accent)] text-white' : 'bg-[var(--surface-solid)] text-[var(--muted)]')}>{item}</span>)}
             </div>
           </div>
           <div className="mb-8 flex items-center justify-between gap-4">
             <div>
               <div className={monitoringClasses.slaValue}>{healthScore.toFixed(2)}%</div>
-              <div className={monitoringClasses.slaLabel}>健康总评分 / Health Score</div>
+              <div className={monitoringClasses.slaLabel}>健康总评分</div>
             </div>
             <div className="text-right">
               <div className="text-xl font-bold text-[var(--text)]">{providerFailures}</div>
@@ -109,20 +114,20 @@ export function MonitoringPage() {
 
         <section className={monitoringClasses.panel}>
           <div className={monitoringClasses.panelHeader}>
-            <h3 className={monitoringClasses.sectionTitle}>生图耗时 / Latency</h3>
+            <h3 className={monitoringClasses.sectionTitle}>生图耗时</h3>
           </div>
           <div className="grid grid-cols-2 gap-6">
-            <LatencyCard label="Avg" value={`${averageLatency}ms`} />
-            <LatencyCard label="Max" value={`${Math.max(0, ...providers.map((provider) => Number(provider.latency_ms || 0)))}ms`} />
-            <LatencyCard label="Policy" value={refreshPolicyLabel('30s interval')} />
-            <LatencyCard label="Queue" value={taskQueuePressure(providers)} />
+            <LatencyCard label="平均" value={`${averageLatency}ms`} />
+            <LatencyCard label="最大" value={`${Math.max(0, ...providers.map((provider) => Number(provider.latency_ms || 0)))}ms`} />
+            <LatencyCard label="策略" value={refreshPolicyLabel('30s interval')} />
+            <LatencyCard label="队列" value={taskQueuePressure(providers)} />
           </div>
         </section>
       </div>
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
         <section className={adminDataGrid.root}>
-          <div className={monitoringClasses.tableTitle}>Provider 探针 / Providers</div>
+          <div className={monitoringClasses.tableTitle}>上游探针</div>
           <div className={cn(adminDataGrid.head, adminGridCols.health)}><span>探针</span><span>状态</span><span>延迟</span><span>错误率</span><span>说明</span></div>
           {providerRows.map((row) => (
             <div key={row.key} className={cn(adminDataGrid.row, adminGridCols.health)}>
@@ -136,7 +141,7 @@ export function MonitoringPage() {
         </section>
 
         <section className={adminDataGrid.root}>
-          <div className={monitoringClasses.tableTitle}>上线检查 / Readiness</div>
+          <div className={monitoringClasses.tableTitle}>上线检查</div>
           <div className={cn(adminDataGrid.head, adminGridCols.readiness)}><span>检查项</span><span>状态</span><span>阻塞</span><span>修复入口</span><span>说明</span></div>
           {checkRows.map((check) => (
             <div key={check.key} className={cn(adminDataGrid.row, adminGridCols.readiness)}>
@@ -189,4 +194,4 @@ function LatencyCard({ label, value }: { label: string; value: string }) {
   )
 }
 
-const PulseIcon = () => <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+const PulseIcon = () => <MonitoringIcon className="size-5" />

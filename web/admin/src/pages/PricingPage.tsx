@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ImageTaskType, RouteModel, RouteModelPrice } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
+import { ListPage } from '../ui/dataTable'
+import { ChevronDownIcon, InfoIcon } from '../ui/icons'
 import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
 import {
   pricingEnabledBadge,
@@ -23,29 +25,27 @@ type PriceGroup = { key: string; route: RouteModel | undefined; routeID: string 
 const pricingClasses = {
   header: 'flex items-center justify-between gap-4',
   sectionTitle: 'flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
-  notice: 'rounded-[2rem] border border-[var(--accent)]/10 bg-[var(--accent)]/5 p-8',
+  notice: 'rounded-3xl border border-[var(--accent)]/10 bg-[var(--accent)]/5 p-8',
   noticeInner: 'flex items-start gap-4 max-[720px]:grid',
   noticeIcon: 'grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]',
   noticeTitle: 'mb-2 text-lg font-bold text-[var(--text)]',
   noticeGrid: 'grid grid-cols-1 gap-8 md:grid-cols-2',
   noticeText: 'm-0 text-sm leading-relaxed text-[var(--soft)]',
   formulaCode: 'rounded bg-white/5 px-1.5 py-0.5 font-mono text-[var(--accent)]',
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
-  table: 'w-full min-w-[860px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
-  trActive: 'bg-white/[0.025]',
-  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
+  tableWrap: 'min-w-0 overflow-x-auto',
+  table: 'admin-table min-w-[860px]',
+  tr: 'transition-colors last:border-b-0 hover:bg-[var(--surface-solid)]',
+  trActive: 'bg-[var(--canvas)]',
+  td: 'text-sm text-[var(--muted)]',
   chevron: 'size-4 text-[var(--muted-strong)] transition-transform',
   routeName: 'font-bold text-[var(--text)]',
   routeMeta: 'm-0 mt-1 text-[10px] font-mono text-[var(--muted-strong)]',
-  taskPill: 'w-fit rounded-lg border border-[var(--line)] bg-white/5 px-2 py-1 text-xs font-bold text-[var(--soft)]',
-  qualityPanelCell: 'bg-black/10 p-6 pl-20 max-[720px]:pl-6',
-  qualityPanel: 'overflow-hidden rounded-2xl border border-[var(--line)] bg-white/[0.02]',
+  taskPill: 'w-fit rounded-lg border border-[var(--border)] bg-[var(--canvas)] px-2 py-1 text-xs font-bold text-[var(--soft)]',
+  qualityPanelCell: 'bg-[var(--canvas)] p-6 pl-20 max-[720px]:pl-6',
+  qualityPanel: 'overflow-hidden rounded-lg bg-[var(--surface-solid)]',
   qualityGrid: 'grid gap-2',
-  qualityTable: 'w-full min-w-[760px] border-collapse text-left',
-  qualityTh: 'border-b border-[var(--line)] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  qualityTd: 'px-4 py-3 align-middle text-xs text-[var(--muted)]',
+  qualityTable: 'admin-table min-w-[760px]',
+  qualityTd: 'text-xs text-[var(--muted)]',
 }
 
 export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -105,10 +105,11 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
 
   return (
     <section className={adminPage.stack}>
-      <div className={pricingClasses.header}>
-        <h3 className={pricingClasses.sectionTitle}>积分价格配置 / Price Strategy</h3>
-        <button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => setDialog(newPriceDialog(routes))}>新增配置</button>
-      </div>
+      <PageHeader
+        title="价格策略"
+        description="按路由模型、任务类型和质量维护用户积分价格，并提示缺失价格风险。"
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => setDialog(newPriceDialog(routes))}>新增配置</button>}
+      />
       <section className={pricingClasses.notice}>
         <div className={pricingClasses.noticeInner}>
           <div className={pricingClasses.noticeIcon}><InfoIcon /></div>
@@ -130,17 +131,18 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
       </section>
       {!prices.length ? <EmptyBlock title="暂无价格配置" detail="为每个可用路由模型配置任务类型和质量价格。" /> : null}
       {prices.length ? (
+        <ListPage>
         <div className={pricingClasses.tableWrap}>
-          <table className={pricingClasses.table}>
-            <thead>
-              <tr>
-                <th className="w-10 px-6 py-4"></th>
-                <th className={pricingClasses.th}>路由模型</th>
-                <th className={pricingClasses.th}>任务类型</th>
-                <th className={pricingClasses.th}>已配置质量数</th>
-                <th className={pricingClasses.th}>操作</th>
-              </tr>
-            </thead>
+              <table className={pricingClasses.table}>
+                <thead>
+                  <tr>
+                    <th className="w-10 px-6 py-4"></th>
+                    <th>路由模型</th>
+                    <th>任务类型</th>
+                    <th>已配置质量数</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
             <tbody>
               {priceGroups.map((group) => {
                 const expanded = expandedGroups[group.key] ?? false
@@ -158,6 +160,7 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
             </tbody>
           </table>
         </div>
+        </ListPage>
       ) : null}
       {dialog ? (
         <Modal title={dialog.row ? '调整价格配置' : '新增价格配置'} detail={pricingFieldHints.dialogDetail} onClose={() => setDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={() => setDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !dialog.routeModelId || !dialog.basePoints} onClick={() => void savePricing()}>{saving ? '保存中...' : '保存'}</button></>}>
@@ -180,7 +183,7 @@ function PriceGroupRows({ group, expanded, onToggle, onAdd, onEdit }: { group: P
     <>
       <tr className={cn(pricingClasses.tr, 'group cursor-pointer', expanded && pricingClasses.trActive)} onClick={onToggle}>
         <td className="px-6 py-4">
-          <ChevronIcon className={cn(pricingClasses.chevron, expanded && 'rotate-180')} />
+          <ChevronDownIcon className={cn(pricingClasses.chevron, expanded && 'rotate-180')} />
         </td>
         <td className={pricingClasses.td}>
           <strong className={pricingClasses.routeName}>{group.routeLabel}</strong>
@@ -199,16 +202,16 @@ function PriceGroupRows({ group, expanded, onToggle, onAdd, onEdit }: { group: P
               <table className={pricingClasses.qualityTable}>
                 <thead>
                   <tr>
-                    <th className={pricingClasses.qualityTh}>生成质量 / Quality</th>
-                    <th className={pricingClasses.qualityTh}>基础消耗 / Base</th>
-                    <th className={pricingClasses.qualityTh}>参考图倍率 / Multiplier</th>
-                    <th className={pricingClasses.qualityTh}>状态</th>
-                    <th className={pricingClasses.qualityTh}>操作</th>
+                    <th>生成质量</th>
+                    <th>基础消耗</th>
+                    <th>参考图倍率</th>
+                    <th>状态</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {group.rows.map((row) => (
-                    <tr key={String(row.id)} className="border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.02]">
+                    <tr key={String(row.id)} className="transition-colors hover:bg-[var(--canvas)]">
                       <td className={pricingClasses.qualityTd}><strong className="text-[var(--text)]">{pricingQualityLabel(row.quality)}</strong></td>
                       <td className={pricingClasses.qualityTd}><code className={adminDataGrid.code}>{row.base_points} ◈</code></td>
                       <td className={pricingClasses.qualityTd}><code className={adminDataGrid.code}>x {row.reference_multiplier}</code></td>
@@ -268,6 +271,3 @@ function groupPrices(routes: RouteModel[], prices: RouteModelPrice[]): PriceGrou
     rows: group.rows.slice().sort((left, right) => pricingQualityLabel(left.quality).localeCompare(pricingQualityLabel(right.quality))),
   }))
 }
-
-const InfoIcon = () => <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-const ChevronIcon = ({ className }: { className?: string }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>

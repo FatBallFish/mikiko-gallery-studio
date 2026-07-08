@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ImageTaskType, ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
+import { ListPage } from '../ui/dataTable'
+import { AccessAccountsIcon, ChevronDownIcon } from '../ui/icons'
 import { adminTaskTypeOptions } from './adminTaskTypes'
 import {
   credentialsStatusLabel,
@@ -24,17 +26,17 @@ const blankAccount: AccountDraft = { name: '', adapterType: 'openai_compatible',
 const defaultTestPrompt = 'A small product photo of a ceramic coffee cup on a clean desk'
 const accountTextButtonClass = 'w-full min-w-0 bg-transparent text-left text-[var(--text)] hover:text-[var(--accent)]'
 const accountTableClasses = {
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
+  tableWrap: 'min-w-0 overflow-x-auto',
   toolbar: 'flex flex-wrap items-center justify-between gap-3',
   toolbarActions: 'flex flex-wrap gap-3',
-  searchBox: 'min-h-10 w-64 rounded-xl border border-[var(--line)] bg-white/5 px-4 py-2 text-sm text-[var(--text)] placeholder:text-[var(--soft)] outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/40',
-  table: 'w-full min-w-[1120px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
-  trActive: 'bg-white/[0.025]',
-  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
+  searchBox: 'min-h-10 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-4 py-2 text-sm text-[var(--text)] placeholder:text-[var(--soft)] outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/40',
+  table: 'admin-table min-w-[1120px]',
+  th: '',
+  tr: 'transition-colors last:border-b-0 hover:bg-[var(--surface-solid)]',
+  trActive: 'bg-[var(--canvas)]',
+  td: 'text-sm text-[var(--muted)]',
   identity: 'flex min-w-0 items-center gap-3',
-  icon: 'grid size-9 shrink-0 place-items-center rounded-xl bg-white/5 text-[var(--accent)]',
+  icon: 'grid size-9 shrink-0 place-items-center rounded-xl bg-[var(--canvas)] text-[var(--accent)]',
   title: 'block truncate font-bold text-[var(--text)]',
   detail: 'mt-1 block truncate text-[11px] font-medium text-[var(--soft)]',
   stack: 'grid gap-1',
@@ -43,15 +45,15 @@ const accountTableClasses = {
   expandButton: 'inline-flex items-center gap-2 text-xs font-extrabold text-[var(--accent)] transition hover:text-[var(--text)]',
   actions: 'flex flex-wrap justify-end gap-2',
   actionLink: 'bg-transparent text-xs font-bold text-[var(--accent)] transition hover:text-[var(--text)]',
-  subPanelCell: 'bg-black/10 px-6 py-5',
-  subPanel: 'overflow-hidden rounded-2xl border border-[var(--line)] bg-white/[0.02]',
-  subHeader: 'flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] p-4',
+  subPanelCell: 'bg-[var(--canvas)] px-6 py-5',
+  subPanel: 'overflow-hidden rounded-lg bg-[var(--surface-solid)]',
+  subHeader: 'flex flex-wrap items-center justify-between gap-3 p-4',
   subTitle: 'text-[10px] font-extrabold uppercase tracking-[0.15em] text-[var(--muted-strong)]',
-  subTable: 'w-full min-w-[760px] border-collapse text-left',
-  subTh: 'border-b border-[var(--line)] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  subTd: 'px-4 py-3 align-middle text-xs text-[var(--muted)]',
+  subTable: 'admin-table min-w-[760px]',
+  subTh: '',
+  subTd: 'text-xs text-[var(--muted)]',
   tagList: 'flex flex-wrap gap-1',
-  modelTag: 'rounded-md border border-[var(--line)] bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase text-[var(--muted)]',
+  modelTag: 'rounded-md border border-[var(--border)] bg-[var(--canvas)] px-1.5 py-0.5 text-[9px] font-black uppercase text-[var(--muted)]',
   statusDot: 'size-2 rounded-full',
 }
 const tagInputClasses = {
@@ -178,6 +180,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
 
   return (
     <section className={adminPage.stack}>
+      <PageHeader title="接入账号" description="管理上游模型账号、模型列表、健康测试和密钥轮换入口。" />
       <section className={accountTableClasses.toolbar}>
         <div className={accountTableClasses.toolbarActions}>
           <button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAccountDialog(blankAccount)}>添加账号</button>
@@ -187,6 +190,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
       </section>
       {!accounts.length ? <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" /> : null}
       {accounts.length ? (
+        <ListPage>
         <div className={accountTableClasses.tableWrap}>
           <table className={accountTableClasses.table}>
                 <thead>
@@ -224,6 +228,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
               </tbody>
             </table>
           </div>
+        </ListPage>
       ) : null}
       {accounts.length && !filteredAccounts.length ? <EmptyBlock title="未找到接入账号" detail="换一个账号名称、适配器或 Base URL 关键词再试。" /> : null}
       {accountDialog ? (
@@ -344,7 +349,7 @@ function AccountRow({
         </td>
       </tr>
       {expanded ? (
-        <tr className="border-b border-[var(--line)]/60">
+        <tr>
           <td colSpan={7} className={accountTableClasses.subPanelCell}>
             <div className={accountTableClasses.subPanel}>
               <div className={accountTableClasses.subHeader}>
@@ -365,7 +370,7 @@ function AccountRow({
                   </thead>
                   <tbody>
                     {models.map((model) => (
-                      <tr key={String(model.id)} className="border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.02]">
+                      <tr key={String(model.id)} className="transition-colors last:border-b-0 hover:bg-[var(--canvas)]">
                         <td className={accountTableClasses.subTd}>
                           <span className={accountTableClasses.stack}>
                             <span className="font-bold text-[var(--text)]">{model.display_name || model.model_code}</span>
@@ -400,20 +405,11 @@ function AccountRow({
 }
 
 function CloudIcon() {
-  return (
-    <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M17.5 19h.3a5.2 5.2 0 0 0 .2-10.4A6.6 6.6 0 0 0 5.4 9.8 4.8 4.8 0 0 0 6.1 19h11.4Z" />
-      <path d="m10 13 2 2 4-4" />
-    </svg>
-  )
+  return <AccessAccountsIcon className="size-4" aria-hidden="true" />
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
-  return (
-    <svg className={cn('size-4 transition-transform', expanded && 'rotate-180')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  )
+  return <ChevronDownIcon className={cn('size-4 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
 }
 
 function editAccountDraft(row: ModelAccount): AccountDraft {

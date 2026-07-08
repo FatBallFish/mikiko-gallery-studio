@@ -2,9 +2,11 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import type { AdminUser, AdminUserCreateRequest, AdminUserDetail, ApiKey, BalanceBucket, ImageTask, LedgerEntry, PaymentOrder, UserGroup } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
+import { ColumnDef, DataTable, FilterBar, ListPage, Pager } from '../ui/dataTable'
+import { FilterIcon, XIcon } from '../ui/listIcons'
 import { canSaveUserPointAdjustment, newUserPointAdjustmentKey } from './userPointAdjustment'
 import { userDetailLedgerRows } from './userDetailLedgerRows'
 import {
@@ -13,30 +15,11 @@ import {
   userDetailOrderRow,
   userDetailTaskRow,
 } from './userDetailResourceRows'
-import { adminUserRowView, adminUserStatusBadge, adminUserStatusFilterOptions, adminUserStatusOptions, adminUserSummary } from './userRows'
+import { adminUserRowActions, adminUserRowView, adminUserStatusBadge, adminUserStatusFilterOptions, adminUserStatusOptions, adminUserSummary } from './userRows'
 
-const pageSize = 20
-const userFilterFormClass = 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] items-end gap-3 rounded-3xl border border-white/5 bg-white/[0.02] p-4'
 const inlineControlClass = 'flex items-center gap-2'
-const dangerTextClass = 'text-[var(--red)]'
 const creditAmountClass = 'text-[var(--success)]'
 const debitAmountClass = 'text-[var(--danger)]'
-
-const userClasses = {
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
-  table: 'w-full min-w-[1040px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
-  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
-  userCell: 'flex min-w-0 items-center gap-3',
-  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sm font-black text-[var(--muted-strong)]',
-  userName: 'font-bold text-[var(--text)]',
-  userMeta: 'mt-1 text-[10px] text-[var(--muted-strong)] [overflow-wrap:anywhere]',
-  balance: 'font-mono font-bold text-[var(--text)]',
-  balanceUnit: 'text-[10px] text-[var(--muted-strong)]',
-  actionRow: 'flex flex-wrap items-center gap-2',
-  pager: 'flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] p-4 text-xs text-[var(--muted)]',
-}
 
 type UserAction =
   | { type: 'create'; draft: AdminUserCreateRequest }
@@ -63,6 +46,7 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   const [filters, setFilters] = useState<UserFilters>(initialFilters)
   const [appliedFilters, setAppliedFilters] = useState<UserFilters>(initialFilters)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -73,11 +57,11 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
-  const load = async (nextFilters = appliedFilters, nextPage = page) => {
+  const load = async (nextFilters = appliedFilters, nextPage = page, nextPageize = pageSize) => {
     setLoading(true)
     setError(null)
     try {
-      const userPage = await adminApi.listUsersPage(nextFilters.query.trim(), nextPage, pageSize, userListFilters(nextFilters))
+      const userPage = await adminApi.listUsersPage(nextFilters.query.trim(), nextPage, nextPageize, userListFilters(nextFilters))
       setRows(userPage.items)
       setTotal(userPage.total)
       if (!groups.length) {
@@ -91,8 +75,8 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   }
 
   useEffect(() => {
-    void load(appliedFilters, page)
-  }, [appliedFilters, page])
+    void load(appliedFilters, page, pageSize)
+  }, [appliedFilters, page, pageSize])
 
   const totals = useMemo(() => adminUserSummary(rows), [rows])
 
@@ -135,17 +119,6 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
     }
   }
 
-  const updateStatus = async (user: AdminUser, status: string) => {
-    setSaving(true)
-    try {
-      const updated = await adminApi.updateUserStatus(user.id, status)
-      onFeedback('用户状态已更新', `${updated.display_name} · ${adminUserStatusBadge(updated.status).label}`)
-      await load(appliedFilters, page)
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const openDetail = async (user: AdminUser) => {
     setDetailTarget(user)
     setDetail(null)
@@ -177,68 +150,36 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
         <StatusCell label="禁用" value={totals.disabled} />
         <StatusCell label="权益分组" value={groups.length} />
       </StatusStrip>
-      <section className={adminPage.fullSurface}>
-        <section className={adminPage.mainLane}>
-          <div className={adminPage.toolbar}>
-            <form className={userFilterFormClass} onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedFilters(filters) }}>
-              <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="搜索用户名 / 邮箱" />
-              <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} aria-label="状态筛选">
-                {adminUserStatusFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}
-              </select>
-              <GroupSelect value={filters.group} groups={groups} includeAll onChange={(value) => setFilters({ ...filters, group: value })} />
-              <select value={filters.sortBy} onChange={(event) => setFilters({ ...filters, sortBy: event.target.value as UserFilters['sortBy'] })} aria-label="排序字段">
-                <option value="points">积分</option>
-                <option value="last_seen_at">最后活跃</option>
-                <option value="created_at">创建时间</option>
-              </select>
-              <select value={filters.sortDir} onChange={(event) => setFilters({ ...filters, sortDir: event.target.value as UserFilters['sortDir'] })} aria-label="排序方向">
-                <option value="desc">降序</option>
-                <option value="asc">升序</option>
-              </select>
-              <button className={adminButton.base} type="submit">筛选</button>
-              <button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => { setFilters(initialFilters); setAppliedFilters(initialFilters); setPage(1) }}>清空</button>
-            </form>
-            <span>第 {page} 页 / 共 {total} 条</span>
-          </div>
+      <ListPage
+        filters={(
+          <form onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedFilters(filters) }}>
+            <FilterBar
+              fields={[
+                { key: 'query', label: '关键词', primary: true, control: <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="用户名 / 邮箱" /> },
+                { key: 'status', label: '状态', primary: true, control: <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} aria-label="状态筛选">{adminUserStatusFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select> },
+                { key: 'group', label: '分组', control: <GroupSelect value={filters.group} groups={groups} includeAll onChange={(value) => setFilters({ ...filters, group: value })} /> },
+                { key: 'sortBy', label: '排序字段', control: <select value={filters.sortBy} onChange={(event) => setFilters({ ...filters, sortBy: event.target.value as UserFilters['sortBy'] })} aria-label="排序字段"><option value="points">积分</option><option value="last_seen_at">最后活跃</option><option value="created_at">创建时间</option></select> },
+                { key: 'sortDir', label: '排序方向', control: <select value={filters.sortDir} onChange={(event) => setFilters({ ...filters, sortDir: event.target.value as UserFilters['sortDir'] })} aria-label="排序方向"><option value="desc">降序</option><option value="asc">升序</option></select> },
+              ]}
+              actions={(
+                <>
+                  <button className={cn(adminButton.base, adminButton.primary, adminButton.small, 'gap-1.5')} type="submit" aria-label="筛选" title="筛选"><FilterIcon className="size-4" /><span>筛选</span></button>
+                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'gap-1.5')} type="button" aria-label="清空" title="清空" onClick={() => { setFilters(initialFilters); setAppliedFilters(initialFilters); setPage(1) }}><XIcon className="size-4" /><span>清空</span></button>
+                </>
+              )}
+            />
+          </form>
+        )}
+        pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
+      >
           {!rows.length ? <EmptyBlock title="没有匹配用户" detail="尝试换一个关键词。" /> : (
-            <div className={userClasses.tableWrap}>
-              <table className={userClasses.table}>
-                <thead>
-                  <tr>
-                    <th className={userClasses.th}>用户信息</th>
-                    <th className={userClasses.th}>所属分组</th>
-                    <th className={userClasses.th}>账户余额</th>
-                    <th className={userClasses.th}>最后活跃</th>
-                    <th className={userClasses.th}>状态</th>
-                    <th className={userClasses.th}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((rawRow) => (
-                    <UserTableRow
-                      key={rawRow.id}
-                      row={adminUserRowView(rawRow)}
-                      saving={saving}
-                      groups={groups}
-                      onOpenDetail={openDetail}
-                      onUpdateStatus={updateStatus}
-                      onAction={setAction}
-                    />
-                  ))}
-                </tbody>
-              </table>
-              <div className={userClasses.pager}>
-                <span>显示 {(page - 1) * pageSize + 1} 到 {Math.min(page * pageSize, total)} 共 {total} 条记录</span>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
-                  <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" disabled>{page}</button>
-                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
-                </div>
-              </div>
-            </div>
+            <DataTable
+              columns={userColumns(groups, openDetail, setAction)}
+              rows={rows}
+              rowKey={(row) => row.id}
+            />
           )}
-        </section>
-      </section>
+      </ListPage>
       {action ? (
         <Modal title={actionTitle(action)} detail={actionDetail(action)} onClose={() => setAction(null)} footer={<><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={saving} onClick={() => setAction(null)}>取消</button><button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={saving || !canSave(action)} onClick={() => void saveAction()}>{saving ? '保存中...' : '保存'}</button></>}>
           {renderActionForm(action, groups, setAction)}
@@ -260,55 +201,92 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   )
 }
 
-function UserTableRow({
-  row,
-  groups,
-  saving,
-  onOpenDetail,
-  onUpdateStatus,
-  onAction,
-}: {
-  row: ReturnType<typeof adminUserRowView>
-  groups: UserGroup[]
-  saving: boolean
-  onOpenDetail: (user: AdminUser) => Promise<void>
-  onUpdateStatus: (user: AdminUser, status: string) => Promise<void>
-  onAction: (action: UserAction) => void
-}) {
-  return (
-    <tr className={userClasses.tr}>
-      <td className={userClasses.td}>
-        <div className={userClasses.userCell}>
-          <div className={userClasses.avatar}>{row.name.slice(0, 1).toUpperCase()}</div>
-          <div className="min-w-0">
-            <div className={userClasses.userName}>{row.name}</div>
-            <div className={userClasses.userMeta}>{row.subtitle}</div>
+function userColumns(
+  groups: UserGroup[],
+  onOpenDetail: (user: AdminUser) => Promise<void>,
+  onAction: (action: UserAction) => void,
+): ColumnDef<AdminUser>[] {
+  return [
+    {
+      key: 'user',
+      title: '用户信息',
+      width: 'minmax(240px,2.5fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        return (
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--canvas)] text-sm font-black text-[var(--muted-strong)]">{row.name.slice(0, 1).toUpperCase()}</div>
+            <div className="min-w-0">
+              <div className="font-bold text-[var(--text)]">{row.name}</div>
+              <div className="mt-1 text-[10px] text-[var(--muted-strong)] [overflow-wrap:anywhere]">{row.subtitle}</div>
+            </div>
           </div>
-        </div>
-      </td>
-      <td className={userClasses.td}>{row.groupLabel}</td>
-      <td className={userClasses.td}>
-        <div className="flex items-baseline gap-1">
-          <span className={userClasses.balance}>{row.balanceLabel}</span>
-          <span className={userClasses.balanceUnit}>POINTS</span>
-        </div>
-      </td>
-      <td className={userClasses.td}>{row.lastActiveAtLabel}</td>
-      <td className={userClasses.td}><Badge tone={row.statusTone}>{row.statusLabel}</Badge></td>
-      <td className={userClasses.td}>
-        <div className={userClasses.actionRow}>
-          <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => void onOpenDetail(row.raw)}>详情</button>
-          {row.raw.status === 'active' ? <button className={cn(adminButton.base, adminButton.danger, adminButton.small)} type="button" disabled={saving} onClick={() => void onUpdateStatus(row.raw, 'disabled')}>禁用</button> : null}
-          {row.raw.status === 'disabled' ? <button className={cn(adminButton.base, adminButton.success, adminButton.small)} type="button" disabled={saving} onClick={() => void onUpdateStatus(row.raw, 'active')}>启用</button> : null}
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'group', user: row.raw, groupIds: currentGroupIds(row.raw, groups) })}>分组</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'points', user: row.raw, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(row.raw.id) })}>积分</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'limits', user: row.raw, rpmLimit: String(row.raw.rpm_limit ?? 0), concurrencyLimit: String(row.raw.concurrency_limit ?? 0) })}>限额</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'password', user: row.raw, password: '' })}>密码</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, dangerTextClass)} type="button" onClick={() => onAction({ type: 'delete', user: row.raw, confirmEmail: '' })}>删除</button>
-        </div>
-      </td>
-    </tr>
-  )
+        )
+      },
+    },
+    {
+      key: 'group',
+      title: '所属分组',
+      width: 'minmax(100px,1fr)',
+      render: (rawRow) => adminUserRowView(rawRow).groupLabel,
+    },
+    {
+      key: 'balance',
+      title: '账户余额',
+      width: 'minmax(120px,1fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        return (
+          <div className="flex items-baseline gap-1">
+            <span className="font-mono font-bold text-[var(--text)]">{row.balanceLabel}</span>
+            <span className="text-[10px] text-[var(--muted-strong)]">POINTS</span>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'last_seen',
+      title: '最后活跃',
+      width: 'minmax(120px,1fr)',
+      render: (rawRow) => adminUserRowView(rawRow).lastActiveAtLabel,
+    },
+    {
+      key: 'status',
+      title: '状态',
+      width: 'minmax(90px,0.8fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        return <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
+      },
+    },
+    {
+      key: 'actions',
+      title: '操作',
+      width: 'minmax(180px,1.5fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        const actions = adminUserRowActions(rawRow)
+        const overflowActions = actions.overflow.map((action) => ({
+          ...action,
+          run: () => {
+            if (action.id === 'disable') onAction({ type: 'status', user: rawRow, status: 'disabled' })
+            if (action.id === 'enable') onAction({ type: 'status', user: rawRow, status: 'active' })
+            if (action.id === 'group') onAction({ type: 'group', user: rawRow, groupIds: currentGroupIds(rawRow, groups) })
+            if (action.id === 'points') onAction({ type: 'points', user: rawRow, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(rawRow.id) })
+            if (action.id === 'limits') onAction({ type: 'limits', user: rawRow, rpmLimit: String(rawRow.rpm_limit ?? 0), concurrencyLimit: String(rawRow.concurrency_limit ?? 0) })
+            if (action.id === 'password') onAction({ type: 'password', user: rawRow, password: '' })
+            if (action.id === 'delete') onAction({ type: 'delete', user: rawRow, confirmEmail: rawRow.email })
+          },
+        }))
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => void onOpenDetail(rawRow)}>{actions.primary.label}</button>
+            <ActionMenu actions={overflowActions} />
+          </div>
+        )
+      },
+    },
+  ]
 }
 
 function UserDetailView({ detail }: { detail: AdminUserDetail }) {

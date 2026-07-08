@@ -2,17 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
+import { ListPage } from '../ui/dataTable'
+import { ChevronDownIcon } from '../ui/icons'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
-  routeEnabledBadge,
   routeEnabledOptions,
   routingFieldHints,
   routingFieldLabels,
   routeGroupNames,
+  routeReadinessBadge,
   routeVisibilityBadge,
   routeVisibilityOptions,
 } from './routingRows'
@@ -25,11 +27,11 @@ const routingClasses = {
   surface: adminPage.fullSurface,
   toolbar: 'flex flex-wrap items-end justify-between gap-4',
   toolbarActions: 'flex flex-wrap items-center gap-4',
-  searchInput: 'w-64 max-w-full rounded-xl border border-[var(--line)] bg-white/5 px-4 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--soft)] focus:border-[var(--accent)]/50 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/50',
-  statDetails: 'rounded-2xl border border-[var(--line)] bg-white/[0.015] px-4 py-3',
+  searchInput: 'w-64 max-w-full rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-4 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--soft)] focus:border-[var(--accent)]/50 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/50',
+  statDetails: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-4 py-3',
   statSummary: 'cursor-pointer text-xs font-extrabold uppercase tracking-[.14em] text-[var(--muted-strong)]',
   statGrid: 'mt-3 grid grid-cols-4 gap-3 max-[860px]:grid-cols-2 max-[520px]:grid-cols-1',
-  statCell: 'rounded-xl border border-[var(--line)] bg-white/[0.025] p-3',
+  statCell: 'rounded-xl border border-[var(--border)] bg-[var(--canvas)] p-3',
   statLabel: 'block text-[10px] font-extrabold uppercase tracking-[.12em] text-[var(--soft)]',
   statValue: 'mt-1 block text-xl font-black text-[var(--text)]',
   checkboxCell: 'w-10 px-6 py-4 text-center',
@@ -37,21 +39,19 @@ const routingClasses = {
   stackCell: cn(adminDataGrid.stackCell, 'gap-0.5'),
   paragraph: 'm-0 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',
   textCell: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[var(--soft)]',
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
-  table: 'w-full min-w-[920px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors hover:bg-white/[0.03]',
-  trExpanded: 'bg-white/[0.025]',
-  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
+  tableWrap: 'min-w-0 overflow-x-auto',
+  table: 'admin-table min-w-[920px]',
+  tr: 'transition-colors hover:bg-[var(--surface-solid)]',
+  trExpanded: 'bg-[var(--canvas)]',
+  td: 'text-sm text-[var(--muted)]',
   routeTitle: 'font-bold text-[var(--text)]',
   routeCode: 'font-mono text-[10px] font-bold tracking-tight text-[var(--muted-strong)]',
   candidateButton: 'inline-flex items-center gap-2 text-xs font-extrabold text-[var(--accent)] transition-colors hover:text-[var(--text)]',
   chevron: 'size-4 transition-transform',
-  expandedRow: 'border-b border-[var(--line)]/60 bg-black/[0.08] dark:bg-black/30',
+  expandedRow: 'bg-[var(--canvas)]',
   expandedCell: 'p-6 pl-20',
-  candidatePanel: 'overflow-hidden rounded-2xl border border-[var(--line)] bg-white/[0.02]',
-  candidateTable: 'w-full min-w-[680px] border-collapse text-left',
-  candidateTh: 'border-b border-[var(--line)] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
+  candidatePanel: 'overflow-hidden rounded-lg bg-[var(--surface-solid)]',
+  candidateTable: 'admin-table min-w-[680px]',
   candidateTd: 'px-4 py-3 text-xs text-[var(--muted)]',
   candidateName: 'font-bold text-[var(--text)]',
   candidateCode: 'font-mono text-[var(--soft)]',
@@ -172,13 +172,15 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
 
   return (
     <section className={adminPage.stack}>
-      <div className={routingClasses.toolbar}>
-        <div className={routingClasses.toolbarActions}>
-          <button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setRouteDialog(newRouteDialog(groups))}>新增路由</button>
-          <button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => onFeedback('已选择路由模型', selectedCount ? `${selectedCount} 个` : '请先勾选路由模型')}>批量操作</button>
-          <button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => void load()}>刷新</button>
-        </div>
+      <PageHeader
+        title="路由模型"
+        description="创建用户可见的路由模型，并完成候选模型、可见范围和价格状态配置。"
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setRouteDialog(newRouteDialog(groups))}>新增路由模型</button>}
+        secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => void load()}>刷新</button>}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <input className={routingClasses.searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索路由名称或代码..." aria-label="搜索路由名称或代码" />
+        <button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={!selectedCount} onClick={() => onFeedback('已选择路由模型', selectedCount ? `${selectedCount} 个` : '请先勾选路由模型')}>批量操作</button>
       </div>
       <details className={routingClasses.statDetails}>
         <summary className={routingClasses.statSummary}>路由模型运行摘要 · 候选模型</summary>
@@ -190,9 +192,10 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         </div>
         <p className={routingClasses.paragraph}>{notice}</p>
       </details>
-      {!routes.length ? <EmptyBlock title="暂无路由模型" detail="创建 Basic / Plus / Pro 后配置候选真实模型。" /> : null}
+      {!routes.length ? <EmptyBlock title="暂无路由模型" detail="创建路由模型后继续配置候选真实模型、可见范围和价格。" action={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setRouteDialog(newRouteDialog(groups))}>新增路由模型</button>} /> : null}
       {routes.length && !visibleRoutes.length ? <EmptyBlock title="未找到路由模型" detail="换一个名称、代码或分组关键词再试。" /> : null}
       {visibleRoutes.length ? (
+        <ListPage>
         <div className={routingClasses.tableWrap}>
           <table className={routingClasses.table}>
             <thead>
@@ -200,11 +203,11 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
                 <th className={routingClasses.checkboxCell}>
                   <input className={routingClasses.checkbox} type="checkbox" checked={allVisibleSelected} onChange={(event) => toggleAllVisible(event.target.checked)} aria-label="选择当前路由模型" />
                 </th>
-                <th className={routingClasses.th}>路由模型</th>
-                <th className={routingClasses.th}>可见性</th>
-                <th className={routingClasses.th}>状态</th>
-                <th className={routingClasses.th}>已绑候选账号数</th>
-                <th className={routingClasses.th}>操作</th>
+                <th>路由模型</th>
+                <th>可见性</th>
+                <th>可用状态</th>
+                <th>已绑候选账号数</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -230,9 +233,10 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
             </tbody>
           </table>
         </div>
+        </ListPage>
       ) : null}
       {routeDialog ? (
-        <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="隐藏不会出现在用户工作台；按分组可见需要至少绑定一个分组。" onClose={() => setRouteDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={() => setRouteDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存'}</button></>}>
+        <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="保存后需要继续配置候选真实模型和价格，完成后才会对用户可用。" onClose={() => setRouteDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={() => setRouteDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存并继续配置候选'}</button></>}>
           <div className={adminPage.formGrid}>
             <Field label={routingFieldLabels.code}><input value={routeDialog.code} onChange={(event) => setRouteDialog({ ...routeDialog, code: event.target.value })} placeholder="basic" /></Field>
             <Field label="名称"><input value={routeDialog.name} onChange={(event) => setRouteDialog({ ...routeDialog, name: event.target.value })} /></Field>
@@ -304,6 +308,7 @@ function RouteTableRow({
   onAddCandidate: () => void
   onEditCandidate: (candidate: RouteModelCandidate) => void
 }) {
+  const readiness = routeReadinessBadge({ enabled: row.enabled, candidates })
   return (
     <>
       <tr className={cn(routingClasses.tr, expanded && routingClasses.trExpanded)}>
@@ -323,11 +328,11 @@ function RouteTableRow({
             <span className={routingClasses.textCell}>{routeGroupNames(row.group_ids, groups)}</span>
           </div>
         </td>
-        <td className={routingClasses.td}><RouteBadge badge={routeEnabledBadge(row.enabled)} /></td>
+        <td className={routingClasses.td}><RouteBadge badge={readiness} /></td>
         <td className={routingClasses.td}>
           <button type="button" className={routingClasses.candidateButton} onClick={onToggle}>
             {routeCandidateSummary(candidates)}
-            <ChevronIcon className={cn(routingClasses.chevron, expanded && 'rotate-180')} />
+            <ChevronDownIcon className={cn(routingClasses.chevron, expanded && 'rotate-180')} />
           </button>
         </td>
         <td className={routingClasses.td}>
@@ -373,13 +378,13 @@ function CandidatePanel({
       <table className={routingClasses.candidateTable}>
         <thead>
           <tr>
-            <th className={routingClasses.candidateTh}>真实账号</th>
-            <th className={routingClasses.candidateTh}>底层模型</th>
-            <th className={routingClasses.candidateTh}>{routingFieldLabels.priority}</th>
-            <th className={routingClasses.candidateTh}>{routingFieldLabels.weight}</th>
-            <th className={routingClasses.candidateTh}>{routingFieldLabels.fallbackOrder}</th>
-            <th className={routingClasses.candidateTh}>状态</th>
-            <th className={routingClasses.candidateTh}>操作</th>
+            <th>真实账号</th>
+            <th>底层模型</th>
+            <th>{routingFieldLabels.priority}</th>
+            <th>{routingFieldLabels.weight}</th>
+            <th>{routingFieldLabels.fallbackOrder}</th>
+            <th>状态</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -403,5 +408,3 @@ function CandidatePanel({
     </div>
   )
 }
-
-const ChevronIcon = ({ className }: { className?: string }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>

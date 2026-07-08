@@ -3,12 +3,11 @@ import type { FormEvent } from 'react'
 import type { CallRecord, CallRecordAttempt } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
+import { FilterBar, ListPage, Pager } from '../ui/dataTable'
 import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
-
-const pageSize = 20
 
 type CallRecordFilters = {
   status: string
@@ -29,57 +28,48 @@ const initialFilters: CallRecordFilters = {
 }
 
 const callRecordClasses = {
-  filterShell: 'grid gap-4 rounded-3xl border border-[var(--line)] bg-white/[0.02] p-6 shadow-[var(--pg-shadow-sm)] backdrop-blur-sm',
-  filterHead: 'flex flex-wrap items-center justify-between gap-3',
-  filterTitle: 'text-sm font-extrabold uppercase tracking-widest text-[var(--text)]',
   timePills: 'flex flex-wrap items-center gap-2',
-  timePill: 'min-h-8 rounded-xl border border-[var(--line)] bg-white/5 px-3 py-1.5 text-xs font-extrabold text-[var(--muted)] transition hover:bg-white/10 hover:text-[var(--text)]',
+  timePill: 'min-h-8 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-extrabold text-[var(--muted)] transition hover:bg-[var(--elevated)] hover:text-[var(--text)]',
   timePillActive: 'border-[var(--accent)] bg-[var(--accent)] text-white',
-  filterForm: 'grid gap-3 border-t border-[var(--line)] pt-4',
-  filterPrimaryRow: 'flex flex-wrap items-center gap-4',
-  filterAdvancedRow: 'grid grid-cols-[repeat(3,minmax(180px,1fr))] gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-3 max-[860px]:grid-cols-1',
-  filterControl: 'w-48 max-w-full',
-  filterGrowControl: 'min-w-[220px] flex-1',
-  laneHead: 'mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-3',
   pageActions: 'flex flex-wrap items-center gap-2',
   stackCell: cn(adminDataGrid.stackCell, 'gap-0.5'),
   dangerCell: cn(adminDataGrid.stackCell, 'gap-0.5 text-[var(--red)]'),
   paragraph: 'm-0 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',
   statGrid: 'grid grid-cols-4 gap-3 max-[1100px]:grid-cols-2 max-[620px]:grid-cols-1',
-  statCard: 'rounded-3xl border border-[var(--line)] bg-white/[0.02] px-5 py-7 shadow-[var(--pg-shadow-sm)]',
+  statCard: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-5 py-7',
   statLabel: 'text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--muted-strong)]',
   statValue: 'mt-2 text-3xl font-black tracking-tight text-[var(--text)]',
   distributionGrid: 'grid grid-cols-3 gap-4 max-[1100px]:grid-cols-1',
-  distributionCard: 'rounded-3xl border border-[var(--line)] bg-white/[0.02] p-4 shadow-[var(--pg-shadow-sm)]',
+  distributionCard: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
   distributionTitle: 'mb-4 text-xs font-extrabold uppercase tracking-widest text-[var(--muted-strong)]',
   distributionRows: 'grid gap-4',
-  distributionTrack: 'h-1.5 overflow-hidden rounded-full bg-white/5',
+  distributionTrack: 'h-1.5 overflow-hidden rounded-full bg-[var(--canvas)]',
   distributionFill: 'h-full rounded-full bg-[var(--accent)]',
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
-  tableTop: 'flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] bg-white/[0.01] px-6 py-4',
+  tableWrap: 'min-w-0 overflow-x-auto',
+  tableTop: 'flex flex-wrap items-center justify-between gap-3 px-6 py-4',
   tableTitle: 'text-sm font-bold text-[var(--text)]',
-  table: 'w-full min-w-[1180px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
+  table: 'admin-table min-w-[1180px]',
+  th: '',
+  tr: '',
   trFailed: 'bg-[var(--red)]/5',
   td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
   taskId: 'font-mono text-xs font-bold text-[var(--text)]',
   routeName: 'text-xs font-bold text-[var(--accent)]',
-  promptPill: 'w-fit rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]',
+  promptPill: 'w-fit rounded-md bg-[var(--canvas)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]',
   promptText: 'max-w-[220px] truncate text-xs text-[var(--soft)]',
   points: 'font-bold text-[var(--green)]',
-  detailPanel: 'min-w-[1180px] border-b border-white/[0.03] bg-white/[0.02] px-4 py-4 last:border-b-0',
+  detailPanel: 'min-w-[1180px] bg-[var(--canvas)] px-4 py-4',
   detailGrid: 'grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]',
-  detailBox: 'min-w-0 rounded-3xl border border-white/5 bg-white/[0.02] p-4',
+  detailBox: 'min-w-0 rounded-lg bg-[var(--surface-solid)] p-4',
   detailTitle: 'mb-2 text-xs font-extrabold uppercase tracking-[.12em] text-[var(--soft)]',
   attemptList: 'grid gap-2',
-  attemptItem: 'min-w-0 rounded-2xl border border-white/5 bg-white/[0.02] p-3',
+  attemptItem: 'min-w-0 rounded-lg bg-[var(--surface-solid)] p-3',
   detailMeta: 'mt-1 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',
-  detailCode: 'mt-2 max-h-[220px] overflow-auto rounded-2xl bg-black/25 p-3 font-mono text-xs text-[var(--soft)]',
+  detailCode: 'mt-2 max-h-[220px] overflow-auto rounded-lg bg-[var(--canvas)] p-3 font-mono text-xs text-[var(--soft)]',
   inlineAction: cn(adminButton.base, adminButton.ghost, adminButton.small, 'mt-1 w-fit'),
 }
 
-function callRecordQuery(filters: CallRecordFilters, page: number): Record<string, string | number | undefined> {
+function callRecordQuery(filters: CallRecordFilters, page: number, pageSize: number): Record<string, string | number | undefined> {
   return {
     page,
     page_size: pageSize,
@@ -98,6 +88,7 @@ export function CallRecordsPage() {
   const [appliedFilters, setAppliedFilters] = useState<CallRecordFilters>(initialFilters)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -110,7 +101,7 @@ export function CallRecordsPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await adminApi.listCallRecords(callRecordQuery(appliedFilters, page))
+      const result = await adminApi.listCallRecords(callRecordQuery(appliedFilters, page, pageSize))
       setRows(result.items)
       setTotal(result.total)
     } catch (caught) {
@@ -120,7 +111,7 @@ export function CallRecordsPage() {
     }
   }
 
-  useEffect(() => { void load() }, [page, appliedFilters])
+  useEffect(() => { void load() }, [page, appliedFilters, pageSize])
 
   const submitFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -139,76 +130,39 @@ export function CallRecordsPage() {
 
   return (
     <section className={adminPage.stack}>
-      <section className={callRecordClasses.filterShell}>
-        <div className={callRecordClasses.filterHead}>
-          <h3 className={callRecordClasses.filterTitle}>调用记录查询 / Call Records</h3>
-          <div className={callRecordClasses.timePills} aria-label="快捷时间范围">
-            {['今天', '昨天', '近 7 天', '近 30 天', '自定义区间'].map((label, index) => (
-              <button key={label} type="button" className={cn(callRecordClasses.timePill, index === 0 && callRecordClasses.timePillActive)}>{label}</button>
-            ))}
-          </div>
-        </div>
-        <form className={callRecordClasses.filterForm} onSubmit={submitFilters}>
-          <div className={callRecordClasses.filterPrimaryRow}>
-            <input className={callRecordClasses.filterControl} value={filters.userId} onChange={(event) => setFilters((value) => ({ ...value, userId: event.target.value }))} aria-label={callRecordFilterCopy.userId.label} placeholder={callRecordFilterCopy.userId.placeholder} inputMode="numeric" />
-            <input className={callRecordClasses.filterControl} value={filters.provider} onChange={(event) => setFilters((value) => ({ ...value, provider: event.target.value }))} aria-label={callRecordFilterCopy.provider.label} placeholder={callRecordFilterCopy.provider.placeholder} />
-            <select className={callRecordClasses.filterControl} value={filters.sourceChannel} onChange={(event) => setFilters((value) => ({ ...value, sourceChannel: event.target.value }))} aria-label={callRecordFilterCopy.sourceChannel.label}>
-              {callRecordSourceChannelOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}
-            </select>
-            <select className={callRecordClasses.filterControl} value={filters.status} onChange={(event) => setFilters((value) => ({ ...value, status: event.target.value }))} aria-label="按状态过滤">
-              {callRecordStatusOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}
-            </select>
-            <button className={cn(adminButton.base, adminButton.primary, 'px-8')} type="submit">查询</button>
-            <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}>高级筛选</button>
-            <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => void load()}>刷新</button>
-          </div>
-          {advancedOpen ? (
-            <div className={callRecordClasses.filterAdvancedRow}>
-              <input
-                className={callRecordClasses.filterGrowControl}
-                value={filters.taskId}
-                onChange={(event) => setFilters((value) => ({ ...value, taskId: event.target.value }))}
-                aria-label={callRecordFilterCopy.taskId.label}
-                placeholder={callRecordFilterCopy.taskId.placeholder}
-              />
-              <input
-                className={callRecordClasses.filterGrowControl}
-                value={filters.errorCode}
-                onChange={(event) => setFilters((value) => ({ ...value, errorCode: event.target.value }))}
-                list="call-record-error-codes"
-                aria-label={callRecordFilterCopy.errorCode.label}
-                placeholder={callRecordFilterCopy.errorCode.placeholder}
-              />
+      <PageHeader title="调用记录" description="优先按 request_id / task_id / user / error_code 排查失败调用，统计分布放在日志之后。" />
+      <div className={callRecordClasses.timePills} aria-label="快捷时间范围">
+        {['今天', '昨天', '近 7 天', '近 30 天', '自定义区间'].map((label, index) => (
+          <button key={label} type="button" className={cn(callRecordClasses.timePill, index === 0 && callRecordClasses.timePillActive)}>{label}</button>
+        ))}
+      </div>
+      <form onSubmit={submitFilters}>
+        <FilterBar
+          fields={[
+            { key: 'userId', label: callRecordFilterCopy.userId.label, primary: true, control: <input value={filters.userId} onChange={(event) => setFilters((value) => ({ ...value, userId: event.target.value }))} placeholder={callRecordFilterCopy.userId.placeholder} inputMode="numeric" /> },
+            { key: 'provider', label: callRecordFilterCopy.provider.label, primary: true, control: <input value={filters.provider} onChange={(event) => setFilters((value) => ({ ...value, provider: event.target.value }))} placeholder={callRecordFilterCopy.provider.placeholder} /> },
+            { key: 'sourceChannel', label: callRecordFilterCopy.sourceChannel.label, primary: true, control: <select value={filters.sourceChannel} onChange={(event) => setFilters((value) => ({ ...value, sourceChannel: event.target.value }))}>{callRecordSourceChannelOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select> },
+            { key: 'status', label: '状态', primary: true, control: <select value={filters.status} onChange={(event) => setFilters((value) => ({ ...value, status: event.target.value }))}>{callRecordStatusOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select> },
+            { key: 'taskId', label: callRecordFilterCopy.taskId.label, control: <input value={filters.taskId} onChange={(event) => setFilters((value) => ({ ...value, taskId: event.target.value }))} placeholder={callRecordFilterCopy.taskId.placeholder} /> },
+            { key: 'errorCode', label: callRecordFilterCopy.errorCode.label, control: <input value={filters.errorCode} onChange={(event) => setFilters((value) => ({ ...value, errorCode: event.target.value }))} list="call-record-error-codes" placeholder={callRecordFilterCopy.errorCode.placeholder} /> },
+          ]}
+          actions={(
+            <>
               <datalist id="call-record-error-codes">
                 {callRecordCommonErrorCodes.filter(Boolean).map((code) => <option key={code} value={code} />)}
               </datalist>
-              <button className={cn(adminButton.base, adminButton.primary)} type="submit">查询</button>
+              <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="submit">查询</button>
               <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={resetFilters}>重置</button>
-            </div>
-          ) : null}
-        </form>
-      </section>
-      <div className={callRecordClasses.statGrid}>
-        <StatCard label="区间总任务数" value={stats.tasks} />
-        <StatCard label="区间生图数" value={stats.images} />
-        <StatCard label="区间消耗积分" value={stats.points} />
-        <StatCard label="平均生图耗时" value={stats.averageLatency} />
-      </div>
-      <div className={callRecordClasses.distributionGrid}>
-        <DistributionCard title="路由模型调用量" rows={distributions.routes} />
-        <DistributionCard title="底层账号调用量" rows={distributions.providers} />
-        <DistributionCard title="底层模型调用量" rows={distributions.models} />
-      </div>
+              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => void load()}>刷新</button>
+            </>
+          )}
+        />
+      </form>
       {!rows.length ? <EmptyBlock title="暂无调用记录" detail="生成任务执行后会出现在这里。" /> : (
+        <ListPage
+          pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
+        >
         <div className={callRecordClasses.tableWrap}>
-          <div className={callRecordClasses.tableTop}>
-            <h3 className={callRecordClasses.tableTitle}>调用记录明细 / Detailed Logs</h3>
-            <div className={callRecordClasses.pageActions}>
-              <span className="text-xs text-[var(--muted)]">第 {page} 页 / 共 {total} 条</span>
-              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
-              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
-            </div>
-          </div>
           <table className={callRecordClasses.table}>
             <thead>
               <tr>
@@ -238,7 +192,19 @@ export function CallRecordsPage() {
             </tbody>
           </table>
         </div>
+        </ListPage>
       )}
+      <div className={callRecordClasses.statGrid}>
+        <StatCard label="区间总任务数" value={stats.tasks} />
+        <StatCard label="区间生图数" value={stats.images} />
+        <StatCard label="区间消耗积分" value={stats.points} />
+        <StatCard label="平均生图耗时" value={stats.averageLatency} />
+      </div>
+      <div className={callRecordClasses.distributionGrid}>
+        <DistributionCard title="路由模型调用量" rows={distributions.routes} />
+        <DistributionCard title="底层账号调用量" rows={distributions.providers} />
+        <DistributionCard title="底层模型调用量" rows={distributions.models} />
+      </div>
     </section>
   )
 }
