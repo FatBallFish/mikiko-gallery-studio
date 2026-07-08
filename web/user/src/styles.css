@@ -100,6 +100,10 @@ html[data-theme-mode="dark"] {
   --lightbox-close-text: white;
   --lightbox-close-border: rgb(255 255 255 / 0.2);
   --sidebar-bg: #090a12;
+  --atmosphere-grid: rgba(255, 255, 255, 0.025);
+  --atmosphere-glow:
+    radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 14%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in oklch, var(--bg) 0%, var(--pg-user-dark-canvas) 100%), var(--bg));
 }
 
 html[data-theme-mode="light"] {
@@ -130,6 +134,10 @@ html[data-theme-mode="light"] {
   --lightbox-close-text: #1f2129;
   --lightbox-close-border: rgb(31 33 41 / 0.14);
   --sidebar-bg: #fffaf1;
+  --atmosphere-grid: rgba(31, 33, 41, 0.04);
+  --atmosphere-glow:
+    radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 8%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--pg-user-light-canvas), var(--bg));
 }
 
 html[data-accent-theme="amber"],
@@ -153,6 +161,79 @@ html[data-accent-theme="coral"] {
   --accent-rgb: 203, 124, 77;
 }
 
+/* System preference fallback - applies when data-theme-mode is not set */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme-mode]) {
+    --bg: var(--pg-user-light-bg);
+    --canvas: var(--pg-user-light-canvas);
+    --surface: color-mix(in oklch, var(--pg-user-light-surface) 90%, transparent);
+    --surface-solid: var(--pg-user-light-surface);
+    --elevated: var(--pg-user-light-elevated);
+    --fg: var(--pg-user-text-main-light);
+    --muted: var(--pg-user-text-muted-light);
+    --dim: var(--pg-user-text-dim-light);
+    --border: var(--pg-user-border-light);
+    --canvas-bg: color-mix(in oklch, var(--surface) 72%, var(--pg-user-light-elevated));
+    --image-overlay: linear-gradient(to top, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.15), rgb(255 255 255 / 0.34));
+    --image-overlay-selected: rgb(255 255 255 / 0.45);
+    --image-card-text: #1f2129;
+    --image-card-muted: rgb(31 33 41 / 0.62);
+    --image-action-bg: rgb(255 255 255 / 0.74);
+    --image-action-border: rgb(31 33 41 / 0.12);
+    --image-action-text: rgb(31 33 41 / 0.72);
+    --image-action-hover-bg: rgb(31 33 41 / 0.08);
+    --image-action-hover-text: #1f2129;
+    --image-checkbox-bg: rgb(255 255 255 / 0.82);
+    --image-checkbox-border: rgb(31 33 41 / 0.22);
+    --lightbox-backdrop: rgb(31 33 41 / 0.56);
+    --lightbox-stage-bg: var(--pg-user-light-canvas);
+    --lightbox-close-bg: rgb(255 255 255 / 0.84);
+    --lightbox-close-text: #1f2129;
+    --lightbox-close-border: rgb(31 33 41 / 0.14);
+    --sidebar-bg: #fffaf1;
+    --atmosphere-grid: rgba(31, 33, 41, 0.04);
+    --atmosphere-glow:
+      radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 8%, transparent), transparent 70%),
+      linear-gradient(180deg, var(--pg-user-light-canvas), var(--bg));
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme-mode]) {
+    --bg: var(--pg-user-dark-bg);
+    --canvas: var(--pg-user-dark-canvas);
+    --surface: color-mix(in oklch, var(--pg-user-dark-surface) 92%, transparent);
+    --surface-solid: var(--pg-user-dark-surface);
+    --elevated: var(--pg-user-dark-elevated);
+    --fg: var(--pg-user-text-main-dark);
+    --muted: var(--pg-user-text-muted-dark);
+    --dim: var(--pg-user-text-dim-dark);
+    --border: var(--pg-user-border-dark);
+    --canvas-bg: color-mix(in oklch, var(--surface) 40%, black);
+    --image-overlay: linear-gradient(to top, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.4));
+    --image-overlay-selected: rgb(0 0 0 / 0.4);
+    --image-card-text: white;
+    --image-card-muted: rgb(255 255 255 / 0.62);
+    --image-action-bg: rgb(0 0 0 / 0.45);
+    --image-action-border: rgb(255 255 255 / 0.1);
+    --image-action-text: rgb(255 255 255 / 0.72);
+    --image-action-hover-bg: rgb(255 255 255 / 0.1);
+    --image-action-hover-text: white;
+    --image-checkbox-bg: rgb(0 0 0 / 0.45);
+    --image-checkbox-border: rgb(255 255 255 / 0.3);
+    --lightbox-backdrop: rgb(0 0 0 / 0.9);
+    --lightbox-stage-bg: black;
+    --lightbox-close-bg: rgb(0 0 0 / 0.5);
+    --lightbox-close-text: white;
+    --lightbox-close-border: rgb(255 255 255 / 0.2);
+    --sidebar-bg: #090a12;
+    --atmosphere-grid: rgba(255, 255, 255, 0.025);
+    --atmosphere-glow:
+      radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 14%, transparent), transparent 70%),
+      linear-gradient(180deg, var(--pg-user-dark-canvas), var(--bg));
+  }
+}
+
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
@@ -163,30 +244,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Atmospheric backdrop - pure gradient + single subtle accent glow.
+   No grid lines, no multi-color blobs. Keeps the premium "Luminous Vault"
+   feel without looking like a tiled pattern. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: -1;
-  background:
-    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
-    radial-gradient(circle at 18% 8%, rgba(212,157,94,.18), transparent 28%),
-    radial-gradient(circle at 82% 16%, rgba(131,118,255,.15), transparent 32%),
-    radial-gradient(circle at 68% 84%, rgba(65,185,149,.12), transparent 32%);
-  background-size: 72px 72px, 72px 72px, auto, auto, auto;
+  background: var(--atmosphere-glow);
 }
 
 @layer utilities {
   .bg-vault-atmosphere {
-    background:
-      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
-      radial-gradient(circle at 18% 8%, rgba(212,157,94,.18), transparent 28%),
-      radial-gradient(circle at 82% 16%, rgba(131,118,255,.15), transparent 32%),
-      radial-gradient(circle at 68% 84%, rgba(65,185,149,.12), transparent 32%);
-    background-size: 72px 72px, 72px 72px, auto, auto, auto;
+    background: var(--atmosphere-glow);
   }
 }
 
@@ -258,3 +330,66 @@ html[data-theme-mode="dark"] .pg-date-input {
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+/* Motion vocabulary - aligned with spec section 14 (反馈与节奏, 不用于炫技) */
+@keyframes pg-fade-up {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes pg-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pg-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes pg-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.pg-enter {
+  animation: pg-fade-up 480ms var(--pg-ease-out) both;
+}
+.pg-enter-fade {
+  animation: pg-fade-in 360ms var(--pg-ease-out) both;
+}
+.pg-enter-scale {
+  animation: pg-scale-in 320ms var(--pg-ease-spring) both;
+}
+.pg-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.18), transparent);
+  animation: pg-shimmer 1.6s var(--pg-ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-enter,
+  .pg-enter-fade,
+  .pg-enter-scale {
+    animation: none;
+  }
+  .pg-shimmer::after {
+    animation: none;
+  }
+}
+
+/* Shimmer skeleton for loading states */
+.pg-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--fg) 6%, transparent);
+}
+.pg-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent) 12%, transparent), transparent);
+  animation: pg-shimmer 1.8s var(--pg-ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pg-skeleton::after { animation: none; }
+}

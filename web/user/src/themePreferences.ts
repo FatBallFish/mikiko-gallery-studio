@@ -3,7 +3,7 @@ import type { AccentTheme, ThemeMode, UserProfile, UserThemePreference } from '.
 export const themeStorageKey = 'pic-gallery-user-theme'
 
 export const defaultThemePreference: UserThemePreference = {
-  mode: 'dark',
+  mode: 'light',
   accent: 'amber',
 }
 

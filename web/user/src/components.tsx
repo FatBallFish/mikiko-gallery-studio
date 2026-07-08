@@ -5,8 +5,11 @@ import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
 import { BrandMark, siteBrand } from './brand'
 import { publicEngagementStats } from './publicEngagementModel'
 import type { AppContextValue, RouteId, Toast } from './types'
-import { userButton, userCard, userForm, userPill, userShell, userState, userText } from './ui/classes'
+import { userShell, userButton, userForm, userState, userPill, userCard, userText } from './ui/classes'
 import { rdShell } from './ui/redesign-classes'
+import { Home, Sparkles, LayoutGrid, User, KeyRound, CreditCard, Settings, FileText, Sun, Moon, LogOut, ChevronDown, Eye, Heart, Star, Download, Copy, Edit, Globe, FolderPlus, Trash2 } from './ui/icons'
+import { shellLayoutClasses, type ShellScrollMode } from './shellLayout'
+export { userShell, userButton, userForm, userState, userPill, userCard, userText }
 
 export const AppContext = createContext<AppContextValue | null>(null)
 
@@ -223,26 +226,26 @@ function LightboxInfo({ label, value }: { label: string; value: string }) {
 }
 
 export function PublicDetailIcon({ name, active }: { name: 'eye' | 'heart' | 'star' | 'download' | 'copy' | 'edit' | 'public' | 'group' | 'delete'; active?: boolean }) {
-  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: active && (name === 'heart' || name === 'star') ? 'currentColor' : 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  if (name === 'eye') return <svg {...common}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
-  if (name === 'heart') return <svg {...common}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" /></svg>
-  if (name === 'star') return <svg {...common}><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.3L5.8 21 7 14.2 2 9.3l6.9-1Z" /></svg>
-  if (name === 'download') return <svg {...common}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
-  if (name === 'edit') return <svg {...common}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-  if (name === 'public') return <svg {...common}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20" /><path d="M12 2a15 15 0 0 0 0 20" /></svg>
-  if (name === 'group') return <svg {...common}><path d="M20 12V7a2 2 0 0 0-2-2h-6.2a2 2 0 0 1-1.4-.6L9.6 3.6A2 2 0 0 0 8.2 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /><path d="M16 11h6" /><path d="M19 8v6" /></svg>
-  if (name === 'delete') return <svg {...common}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /></svg>
-  return <svg {...common}><rect x="9" y="9" width="13" height="13" rx="2" /><rect x="2" y="2" width="13" height="13" rx="2" /></svg>
+  const props = { size: 18, strokeWidth: 1.5, fill: active && (name === 'heart' || name === 'star') ? 'currentColor' : 'none' }
+  if (name === 'eye') return <Eye {...props} />
+  if (name === 'heart') return <Heart {...props} />
+  if (name === 'star') return <Star {...props} />
+  if (name === 'download') return <Download {...props} />
+  if (name === 'edit') return <Edit {...props} />
+  if (name === 'public') return <Globe {...props} />
+  if (name === 'group') return <FolderPlus {...props} />
+  if (name === 'delete') return <Trash2 {...props} />
+  return <Copy {...props} />
 }
 
 const publicDetailClasses = {
   root: 'grid grid-cols-[minmax(0,1.15fr)_minmax(300px,.85fr)] items-start gap-6 max-[760px]:grid-cols-1',
   media: 'grid min-w-0 gap-3',
-  references: 'flex items-center gap-2.5 overflow-x-auto rounded-[14px] border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-2.5',
+  references: 'flex items-center gap-2.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-2.5',
   referenceLabel: 'shrink-0 text-xs text-[var(--muted)]',
-  referenceButton: 'size-[72px] shrink-0 cursor-zoom-in overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg)] p-0 disabled:cursor-default disabled:opacity-80',
+  referenceButton: 'size-[72px] shrink-0 cursor-zoom-in overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] p-0 disabled:cursor-default disabled:opacity-80',
   referenceImage: 'block size-full object-cover',
-  imageFrame: 'grid min-h-80 place-items-center overflow-hidden rounded-[18px] border border-[var(--border)] bg-[color-mix(in_oklch,var(--bg)_82%,black_10%)]',
+  imageFrame: 'grid min-h-80 place-items-center overflow-hidden rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--bg)_82%,black_10%)]',
   imageButton: 'min-h-80 size-full cursor-zoom-in border-0 bg-transparent p-0 disabled:cursor-default',
   image: 'block size-full max-h-[66vh] object-contain',
   placeholder: 'grid min-h-80 place-items-center text-[var(--muted)]',
@@ -250,7 +253,7 @@ const publicDetailClasses = {
   prompt: 'grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-[var(--border)] pb-[18px]',
   promptLabel: 'text-[11px] uppercase tracking-[.08em] text-[var(--muted)]',
   promptText: 'm-0 mt-2 leading-[1.7] text-[var(--muted)] [overflow-wrap:anywhere]',
-  meta: 'grid grid-cols-2 gap-2.5 rounded-[14px] border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5 max-[760px]:grid-cols-1',
+  meta: 'grid grid-cols-2 gap-2.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5 max-[760px]:grid-cols-1',
   stats: 'grid grid-cols-3 gap-2.5 max-[760px]:grid-cols-1',
   metaItem: 'grid min-w-0 gap-1 text-xs text-[var(--muted)]',
   metaValue: 'overflow-hidden text-ellipsis whitespace-nowrap text-sm text-[var(--fg)]',
@@ -258,8 +261,8 @@ const publicDetailClasses = {
   statValue: 'overflow-hidden text-ellipsis whitespace-nowrap font-vault-mono text-lg text-[var(--fg)]',
   actions: 'flex justify-end gap-2.5 pt-2',
   iconButton: cn(userButton.icon, 'pg-public-detail-action size-10 min-h-10 cursor-pointer rounded-xl p-0 hover:border-[var(--accent)] hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45'),
-  iconDanger: 'hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)] hover:text-[oklch(78%_.14_35)]',
-  iconLiked: 'border-[color-mix(in_oklch,oklch(68%_.2_25)_72%,var(--border))] bg-[color-mix(in_oklch,oklch(62%_.2_25)_18%,transparent)] text-[oklch(70%_.22_25)] shadow-[0_0_18px_color-mix(in_oklch,oklch(62%_.2_25)_18%,transparent)]',
+  iconDanger: 'hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)] hover:text-[var(--accent-coral)]',
+  iconLiked: 'border-[color-mix(in_oklch,var(--accent-coral)_72%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_18%,transparent)] text-[var(--accent-coral)] shadow-[0_0_18px_color-mix(in_oklch,var(--accent-coral)_18%,transparent)]',
   iconFavorited: 'border-[color-mix(in_oklch,var(--accent)_72%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_18%,transparent)] text-[var(--accent)] shadow-[0_0_18px_color-mix(in_oklch,var(--accent)_18%,transparent)]',
 }
 
@@ -411,49 +414,25 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
 
 export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'checkout', 'api-keys', 'profile', 'docs', 'settings']
 
-function HomeIcon() {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
-}
-function SparklesIcon() {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5" /></svg>
-}
-function GridIcon() {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M15 3v18M3 9h18M3 15h18" /></svg>
-}
-function UserIcon() {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-}
-function KeyIcon() {
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="7.5" cy="15.5" r="5.5" /><path d="M12 12l8-8M17 7l3 3M14 10l3 3" /></svg>
-}
-function CreditCardIcon() {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></svg>
-}
-function SettingsIcon() {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z" /></svg>
-}
-function DocsIcon() {
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></svg>
-}
-function SunIcon() {
-  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>
-}
-function MoonIcon() {
-  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
-}
-function LogoutIcon() {
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><path d="M16 17l5-5-5-5M21 12H9" /></svg>
-}
-function ChevronIcon({ className = '' }: { className?: string }) {
-  return <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-}
+function HomeIcon() { return <Home size={22} strokeWidth={1.5} /> }
+function SparklesIcon() { return <Sparkles size={22} strokeWidth={1.5} /> }
+function GridIcon() { return <LayoutGrid size={22} strokeWidth={1.5} /> }
+function UserIcon() { return <User size={22} strokeWidth={1.5} /> }
+function KeyIcon() { return <KeyRound size={18} strokeWidth={1.5} /> }
+function CreditCardIcon() { return <CreditCard size={22} strokeWidth={1.5} /> }
+function SettingsIcon() { return <Settings size={22} strokeWidth={1.5} /> }
+function DocsIcon() { return <FileText size={18} strokeWidth={1.5} /> }
+function SunIcon() { return <Sun size={20} strokeWidth={1.5} /> }
+function MoonIcon() { return <Moon size={20} strokeWidth={1.5} /> }
+function LogoutIcon() { return <LogOut size={18} strokeWidth={1.5} /> }
+function ChevronIcon({ className = '' }: { className?: string }) { return <ChevronDown size={16} strokeWidth={1.5} className={className} /> }
 
 function avatarMenuIcon(icon: AvatarMenuIcon) {
-  if (icon === 'profile') return <UserIcon />
-  if (icon === 'billing') return <CreditCardIcon />
-  if (icon === 'key') return <KeyIcon />
-  if (icon === 'docs') return <DocsIcon />
-  return <UserIcon />
+  if (icon === 'profile') return <User size={18} strokeWidth={1.5} />
+  if (icon === 'billing') return <CreditCard size={18} strokeWidth={1.5} />
+  if (icon === 'key') return <KeyRound size={18} strokeWidth={1.5} />
+  if (icon === 'docs') return <FileText size={18} strokeWidth={1.5} />
+  return <User size={18} strokeWidth={1.5} />
 }
 
 export const navItems: Array<{ route: RouteId; label: string; icon: React.ReactNode }> = [
@@ -465,12 +444,13 @@ export const navItems: Array<{ route: RouteId; label: string; icon: React.ReactN
   { route: 'settings', label: '设置', icon: <SettingsIcon /> },
 ]
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, scrollMode = 'app' }: { children: React.ReactNode; scrollMode?: ShellScrollMode }) {
   const app = useApp()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const accountMenuItems = avatarMenuItems()
   const isDark = app.themePreference.mode === 'dark'
+  const layout = shellLayoutClasses(scrollMode)
 
   useEffect(() => {
     if (!menuOpen) return undefined
@@ -490,7 +470,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={cn(rdShell.shellWrapper, 'redesign-demo-scope')}>
-      <div className={rdShell.shell}>
+      <div className={layout.shell}>
       <aside className={rdShell.sidebar} aria-label={`${siteBrand.name} 用户导航`}>
         <button className={rdShell.brand} type="button" onClick={() => app.navigate('home')} aria-label={`${siteBrand.name} 首页`}>
           <BrandMark />
@@ -513,7 +493,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
       </aside>
-      <main className={rdShell.main}>
+      <main className={layout.main}>
         <header className={rdShell.topbar}>
           <div className={rdShell.topbarInner}>
           <div className={rdShell.userTools}>
@@ -562,7 +542,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                     </button>
                   ))}
                   <hr className="my-2 h-px border-0 bg-[var(--border)]" />
-                  <button type="button" role="menuitem" className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2 text-left text-sm font-bold text-[oklch(74%_.16_35)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)]" onClick={() => { setMenuOpen(false); void app.logout() }}><LogoutIcon />退出登录</button>
+                  <button type="button" role="menuitem" className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2 text-left text-sm font-bold text-[var(--accent-coral)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)]" onClick={() => { setMenuOpen(false); void app.logout() }}><LogoutIcon />退出登录</button>
                 </div>
               ) : null}
             </div>
@@ -617,7 +597,7 @@ function ToastItem({ toast, onExpire }: { toast: Toast; onExpire: (id: number) =
   }, [onExpire, toast.durationMs, toast.id])
 
   return (
-    <div className={userState.toast} style={{ '--toast-duration': `${toast.durationMs ?? 4200}ms`, '--toast-ring': toast.tone === 'success' ? 'var(--accent-emerald)' : toast.tone === 'error' ? 'oklch(72% .18 32)' : 'var(--accent)' } as React.CSSProperties}>
+    <div className={userState.toast} style={{ '--toast-duration': `${toast.durationMs ?? 4200}ms`, '--toast-ring': toast.tone === 'success' ? 'var(--accent-emerald)' : toast.tone === 'error' ? 'var(--accent-coral)' : 'var(--accent)' } as React.CSSProperties}>
       <span className="grid size-7 place-items-center rounded-full bg-[color-mix(in_oklch,var(--toast-ring)_18%,transparent)] font-black text-[var(--toast-ring)]">{toast.tone === 'success' ? '✓' : toast.tone === 'error' ? '!' : 'i'}</span>
       <p>{toast.message}</p>
     </div>
@@ -675,11 +655,12 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   )
 }
 
-export function EmptyState({ title, detail, action }: { title: string; detail: string; action?: React.ReactNode }) {
+export function EmptyState({ title, detail, action, icon }: { title: string; detail: string; action?: React.ReactNode; icon?: React.ReactNode }) {
   return (
     <div className={userState.empty}>
-      <strong>{title}</strong>
-      <span>{detail}</span>
+      {icon ? <div className={userState.emptyIcon}>{icon}</div> : null}
+      <strong className={userState.emptyTitle}>{title}</strong>
+      <span className={userState.emptyDetail}>{detail}</span>
       {action}
     </div>
   )
@@ -693,7 +674,7 @@ export function Modal({ title, children, onClose }: { title: string; children: R
           <h2 className="m-0 text-xl">{title}</h2>
           <button
             type="button"
-            className="grid size-[38px] place-items-center rounded-full border border-[var(--lightbox-close-border)] bg-[var(--lightbox-close-bg)] text-2xl leading-none text-[var(--lightbox-close-text)] shadow-lg transition hover:scale-105"
+            className="grid size-[38px] place-items-center rounded-full border border-[var(--border)] bg-[var(--bg)] text-base leading-none text-[var(--fg)] shadow-lg transition hover:scale-105"
             onClick={onClose}
             aria-label="关闭"
           >

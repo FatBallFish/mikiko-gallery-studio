@@ -105,7 +105,7 @@ const workspaceClasses = {
   panelSectionFinal: rdWorkspace.actionBar,
   tabs: 'mb-6 grid grid-cols-2 gap-3',
   tab: cn(rdWorkspace.selectItem, 'min-h-11 flex-row text-sm'),
-  tabActive: '!border-[var(--accent)] !bg-[var(--accent)] !text-white shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] ring-1 ring-[var(--accent)]/50 [&_*]:!text-white',
+  tabActive: 'border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] ring-1 ring-[var(--accent)]/50 [&_*]:text-white',
   panelTitle: 'm-0 mb-1.5 text-3xl font-black leading-tight text-[var(--fg)]',
   panelCopy: 'm-0 mb-4 text-sm leading-relaxed text-[var(--muted)]',
   uploadStrip: 'mt-3 grid grid-cols-2 gap-2',
@@ -118,11 +118,11 @@ const workspaceClasses = {
   refTile: rdWorkspace.uploadThumb,
   refImage: rdWorkspace.uploadImg,
   refPlaceholder: 'grid size-full place-items-center px-2 text-center text-[11px] leading-snug text-[var(--muted)]',
-  refRemove: 'absolute right-1 top-1 grid size-6 place-items-center rounded-md border border-[var(--image-action-border)] bg-[var(--image-action-bg)] text-[var(--image-action-text)] opacity-0 backdrop-blur transition hover:bg-[var(--accent-coral)] hover:text-white group-hover:opacity-100',
+  refRemove: 'absolute right-1 top-1 grid size-6 place-items-center rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] text-[var(--image-action-text)] opacity-0 backdrop-blur transition hover:bg-[var(--accent-coral)] hover:text-[var(--fg)] group-hover:opacity-100',
   editSourcePanel: 'my-5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50',
   editSourceTrigger: 'flex w-full cursor-pointer items-center justify-between gap-3 border-0 bg-transparent px-4 py-3 text-left text-[var(--fg)] transition hover:text-[var(--accent)]',
   editSourceTitle: 'flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider',
-  editSourceChevron: 'grid size-6 shrink-0 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition-transform',
+  editSourceChevron: 'grid size-6 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition-transform',
   editSourceBody: 'overflow-hidden px-4 transition-[max-height,padding] duration-300',
   editSourceBodyOpen: 'max-h-[360px] pb-4',
   editSourceBodyClosed: 'max-h-0 pb-0',
@@ -140,20 +140,20 @@ const workspaceClasses = {
   selectGrid: rdWorkspace.grid4,
   selectGridThree: rdWorkspace.grid3,
   selectItem: cn(rdWorkspace.selectItem, 'min-h-14'),
-  selectItemActive: '!border-[var(--accent)] !bg-[var(--accent)] !text-white shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] ring-1 ring-[var(--accent)]/50 hover:!bg-[var(--accent)] [&_*]:!text-white',
+  selectItemActive: 'border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] ring-1 ring-[var(--accent)]/50 hover:bg-[var(--accent)] [&_*]:text-white',
   modelButton: cn(rdWorkspace.modelItem, 'mb-2 text-left'),
-  modelButtonActive: '!border-[var(--accent)] !bg-[var(--accent)] !text-white ring-1 ring-[var(--accent)]/50 shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] [&_*]:!text-white hover:!bg-[var(--accent)]',
+  modelButtonActive: 'border-[var(--accent)] bg-[var(--accent)] text-white ring-1 ring-[var(--accent)]/50 shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] [&_*]:text-white hover:bg-[var(--accent)]',
   modelMeta: cn('num text-xs', rdWorkspace.modelPoints),
-  modelMetaActive: '!bg-white/18 !text-white',
+  modelMetaActive: 'bg-white/18 text-white',
   countInputWrap: 'flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-2',
-  countStepper: 'grid size-10 shrink-0 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-lg font-black text-[var(--fg)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40',
-  countInput: 'h-10 min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-3 text-center font-vault-mono text-base font-black text-[var(--fg)] focus:border-transparent focus:shadow-none',
+  countStepper: 'grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-lg font-black text-[var(--fg)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40',
+  countInput: 'h-10 min-w-0 flex-1 rounded-xl border border-transparent bg-transparent px-3 text-center font-vault-mono text-base font-black text-[var(--fg)] focus:border-transparent focus:shadow-none',
   countHint: 'mt-2 text-[11px] text-[var(--muted)]',
   estimateRow: rdWorkspace.priceRow,
   estimateValue: cn('num', rdWorkspace.priceValue),
-  formError: 'mb-3 text-[13px] text-[oklch(76%_.14_35)]',
+  formError: 'mb-3 text-[13px] text-[var(--accent-coral)]',
   formActions: 'mt-2.5 flex flex-wrap gap-2 max-[420px]:flex-col max-[420px]:items-stretch',
-  generateHint: 'mb-3 rounded-lg border border-[color-mix(in_oklch,var(--accent)_32%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_9%,transparent)] p-3 text-sm text-[var(--accent)]',
+  generateHint: 'mb-3 rounded-xl border border-[color-mix(in_oklch,var(--accent)_32%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_9%,transparent)] p-3 text-sm text-[var(--accent)]',
   createButton: rdWorkspace.generateBtn,
   canvas: rdWorkspace.canvas,
   feed: cn(rdWorkspace.outputPanel, 'gap-5 overflow-y-auto overflow-x-hidden justify-start min-h-0'),
@@ -163,8 +163,6 @@ const workspaceClasses = {
   placeholder: cn(rdWorkspace.outputPanel, 'items-center justify-center text-center'),
   placeholderTitle: 'm-0 mb-2 text-3xl font-black leading-tight text-[var(--fg)]',
   placeholderText: 'm-0',
-  floatingFeedback: 'hidden',
-  feedbackButton: cn(userButton.base, 'size-11 rounded-full p-0'),
   readyIcon: 'mx-auto grid size-14 place-items-center rounded-2xl border border-[var(--border)] bg-[var(--accent)]/10 text-[var(--accent)]',
   record: 'flex min-h-0 w-full flex-1 flex-col justify-start gap-4',
   recordHead: 'mx-auto grid w-full max-w-5xl grid-cols-[38px_minmax(0,1fr)] items-start gap-3.5 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/55 p-4 max-[760px]:grid-cols-1',
@@ -177,23 +175,23 @@ const workspaceClasses = {
   recordParam: 'rounded-full bg-[color-mix(in_oklch,var(--fg)_7%,transparent)] px-2 py-1',
   sourceImages: 'mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2 text-xs text-[var(--muted)]',
   sourceImagesTitle: 'font-bold text-[var(--fg)]',
-  sourceImageButton: 'h-[54px] w-[72px] cursor-zoom-in overflow-hidden rounded-lg border border-[var(--border)] bg-[#05070d] p-0',
+  sourceImageButton: 'h-[54px] w-[72px] cursor-zoom-in overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] p-0',
   recordImages: 'mx-auto grid w-full max-w-5xl grid-cols-[repeat(auto-fit,minmax(220px,1fr))] content-start gap-4',
-  pending: 'mx-auto grid min-h-[360px] w-full max-w-2xl place-items-center content-center gap-2 rounded-[2rem] border border-dashed border-[var(--border)] bg-[var(--bg)]/55 text-center text-[var(--muted)]',
+  pending: 'mx-auto grid min-h-[360px] w-full max-w-2xl place-items-center content-center gap-2 rounded-3xl border border-dashed border-[var(--border)] bg-[var(--bg)]/55 text-center text-[var(--muted)]',
   pendingStrong: 'text-[var(--fg)]',
   pendingFailed: 'border-[color-mix(in_oklch,var(--accent-coral)_62%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_16%,var(--surface))]',
-  pendingFailedTitle: 'text-[color-mix(in_oklch,var(--accent-coral)_88%,white)]',
+  pendingFailedTitle: 'text-[var(--accent-coral)]',
   failureMeta: 'mt-1.5 flex flex-wrap justify-center gap-2',
-  failureMetaItem: 'inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[color-mix(in_oklch,var(--accent-coral)_50%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,var(--surface))] px-2 py-1 text-[11px]',
+  failureMetaItem: 'inline-flex max-w-full items-center gap-1.5 rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_50%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,var(--surface))] px-2 py-1 text-[11px]',
   failureMetaLabel: 'text-[var(--muted)]',
   failureMetaValue: 'm-0 font-mono text-[var(--fg)] [overflow-wrap:anywhere]',
-  recordActions: 'mx-auto flex w-full max-w-5xl flex-wrap justify-center gap-2 [&_.pg-public-detail-action]:size-[34px] [&_.pg-public-detail-action]:min-h-[34px] [&_.pg-public-detail-action]:rounded-lg',
+  recordActions: 'mx-auto flex w-full max-w-5xl flex-wrap justify-center gap-2 [&_.pg-public-detail-action]:size-[34px] [&_.pg-public-detail-action]:min-h-[34px] [&_.pg-public-detail-action]:rounded-xl',
   generatedFigure: 'group relative m-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)] shadow-xl',
   generatedPreview: 'block w-full cursor-zoom-in border-0 bg-transparent p-0 [aspect-ratio:var(--generated-ratio)] max-h-[calc(100vh-430px)]',
   generatedImage: 'block size-full max-h-[calc(100vh-430px)] object-contain transition duration-500 group-hover:scale-[1.04]',
   generatedCaption: 'absolute right-3 top-3 z-10 flex translate-y-1 justify-end gap-1.5 rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] p-1 opacity-0 shadow-2xl backdrop-blur-2xl transition group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100',
   generatedAction: rdWorkspace.outputBtn,
-  generatedIconAction: 'grid size-8 place-items-center rounded-lg text-[var(--image-action-text)] transition hover:bg-[var(--image-action-hover-bg)] hover:text-[var(--image-action-hover-text)] [&_svg]:size-4',
+  generatedIconAction: 'grid size-8 place-items-center rounded-xl text-[var(--image-action-text)] transition hover:bg-[var(--image-action-hover-bg)] hover:text-[var(--image-action-hover-text)] [&_svg]:size-4',
   outputActions: 'absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 translate-y-8 items-center gap-1.5 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/92 px-2 py-1.5 opacity-0 shadow-2xl backdrop-blur-2xl transition duration-300 group-hover:translate-y-0 group-hover:opacity-100',
   outputProgressFoot: 'mt-2 flex w-full items-center justify-between text-[10px] text-[var(--muted)]',
   outputResultWrap: 'relative flex min-h-0 w-full flex-1 flex-col items-center justify-start gap-3 pb-2 pt-2 animate-in fade-in zoom-in-95 duration-500 group',
@@ -201,7 +199,7 @@ const workspaceClasses = {
   outputMetaRow: 'mt-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 border-t border-[var(--border)]/30 pt-4 text-[10px] font-vault-mono text-[var(--muted)]',
   slotState: 'grid min-h-[260px] place-items-center content-center gap-2 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--bg)]/70 p-4 text-center text-[var(--muted)]',
   slotSkeleton: 'grid min-h-[260px] place-items-center rounded-2xl border border-dashed border-[var(--border)] bg-[var(--bg)]/70 p-4',
-  slotSkeletonFrame: 'relative h-full min-h-[220px] w-full overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface)]/80',
+  slotSkeletonFrame: 'relative h-full min-h-[220px] w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/80',
   slotSkeletonGlow: 'absolute inset-0 -translate-x-full bg-[linear-gradient(90deg,transparent_0%,rgba(var(--accent-rgb),0.16)_48%,transparent_100%)] animate-[shimmer_1.8s_linear_infinite]',
   slotSkeletonLoader: 'absolute inset-0 grid place-items-center text-[var(--muted)]',
   slotFailed: 'border-[color-mix(in_oklch,var(--accent-coral)_60%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_16%,var(--surface))]',
@@ -212,7 +210,7 @@ const workspaceClasses = {
   importTile: 'relative cursor-pointer overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] text-left transition hover:border-[var(--accent)]',
   importTileActive: 'border-[var(--accent)] ring-1 ring-[var(--accent)]',
   importThumb: 'aspect-square w-full bg-[var(--bg)] object-cover',
-  importCheck: 'absolute left-2 top-2 grid size-7 place-items-center rounded-lg border border-[var(--image-checkbox-border)] bg-[var(--image-checkbox-bg)] text-sm font-black text-[var(--accent)]',
+  importCheck: 'absolute left-2 top-2 grid size-7 place-items-center rounded-xl border border-[var(--image-checkbox-border)] bg-[var(--image-checkbox-bg)] text-sm font-black text-[var(--accent)]',
   importInfo: 'grid gap-1 p-2 text-xs text-[var(--muted)]',
   importTitle: 'overflow-hidden text-ellipsis whitespace-nowrap text-[var(--fg)]',
   importActions: 'sticky bottom-0 mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface)] pt-4',
@@ -225,7 +223,7 @@ const workspaceClasses = {
   historyImage: 'size-full object-cover transition duration-500 group-hover:scale-105',
   historyState: 'grid size-full place-items-center content-center gap-2 p-3 text-center text-xs text-[var(--muted)]',
   historyFailed: 'border-[color-mix(in_oklch,var(--accent-coral)_55%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_10%,var(--surface))]',
-  historyWarn: 'absolute right-2 top-2 z-10 inline-flex min-h-7 items-center rounded-full border border-[color-mix(in_oklch,var(--accent-coral)_52%,transparent)] bg-[color-mix(in_oklch,var(--accent-coral)_88%,#000)] px-2 text-[10px] font-black tracking-[0.04em] text-white shadow-lg',
+  historyWarn: 'absolute right-2 top-2 z-10 inline-flex min-h-7 items-center rounded-full border border-[color-mix(in_oklch,var(--accent-coral)_52%,transparent)] bg-[color-mix(in_oklch,var(--accent-coral)_22%,var(--canvas))] px-2 text-[10px] font-black tracking-[0.04em] text-[var(--fg)] shadow-lg',
   historyTitle: 'line-clamp-2 min-h-[2.5em] text-sm font-bold leading-snug text-[var(--fg)]',
   historyMeta: 'flex items-center justify-between gap-2 text-[10px] font-vault-mono text-[var(--muted)]',
   historyDialogGrid: 'grid max-h-[65vh] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2',
@@ -943,13 +941,6 @@ export function WorkspacePage() {
           </div>
         )}
 
-        {/* Floating Feedback */}
-        <div className={workspaceClasses.floatingFeedback}>
-          <button type="button" className={workspaceClasses.feedbackButton} title="确认完成">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5" /></svg>
-          </button>
-        </div>
-
         <ImageLightbox image={previewImage} onClose={() => setPreviewImage(null)} />
         {historyTaskDialog ? (
           <HistoryTaskDialog
@@ -1077,7 +1068,7 @@ function AspectRatioIcon({ ratio, active }: { ratio: string; active?: boolean })
   return (
     <span className={cn(rdWorkspace.itemIcon, active && rdWorkspace.itemIconActive)}>
       <span
-        className="block rounded-[3px] border-2 border-current"
+        className="block rounded-xl border-2 border-current"
         style={{ width, height }}
         aria-hidden="true"
       />
@@ -1278,7 +1269,7 @@ function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTask }: 
             </span>
           ) : (
             <span className={workspaceClasses.historyState}>
-              <span className="text-xl font-black text-[oklch(72%_.16_35)]">!</span>
+              <span className="text-xl font-black text-[var(--accent-coral)]">!</span>
               <span>{task.error_message || task.failure_reason || '生成失败'}</span>
             </span>
           )}
@@ -1500,8 +1491,8 @@ function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetr
         </dl>
       ) : null}
       <div className="mt-3 flex flex-wrap justify-center gap-2">
-        <button className={cn(userButton.base, userButton.primary, 'min-h-9 rounded-lg px-3 text-sm')} type="button" onClick={() => void onRetry()}>重试</button>
-        <button className={cn(userButton.base, userButton.ghost, 'min-h-9 rounded-lg px-3 text-sm')} type="button" onClick={() => void onDelete()}>删除</button>
+        <button className={cn(userButton.base, userButton.primary, 'min-h-9 rounded-xl px-3 text-sm')} type="button" onClick={() => void onRetry()}>重试</button>
+        <button className={cn(userButton.base, userButton.ghost, 'min-h-9 rounded-xl px-3 text-sm')} type="button" onClick={() => void onDelete()}>删除</button>
       </div>
     </div>
   )
