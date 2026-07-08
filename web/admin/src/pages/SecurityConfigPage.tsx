@@ -21,19 +21,19 @@ type SMTPDraft = {
 
 const securityClasses = {
   summaryList: 'space-y-4',
-  summaryToggle: 'flex items-center justify-between gap-4 rounded-2xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:bg-white/[0.04]',
+  summaryToggle: 'flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 transition-all hover:bg-[var(--elevated)]',
   summaryTitle: 'text-sm font-bold text-[var(--text)]',
   summaryDetail: 'mt-1 text-xs text-[var(--muted-strong)]',
   switch: 'relative h-6 w-12 rounded-full bg-[var(--accent)]',
-  switchOff: 'bg-white/10',
+  switchOff: 'bg-[var(--surface-solid)]',
   knob: 'absolute top-1 size-4 rounded-full bg-white shadow-lg',
-  section: 'grid gap-4 rounded-3xl border border-white/5 bg-white/[0.02] p-6',
+  section: 'grid gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6',
   sectionHead: 'flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3',
   form: 'grid gap-4',
-  toggle: 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10',
+  toggle: 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg bg-[var(--surface-solid)] p-2 text-sm has-[:checked]:bg-[var(--accent)]/10',
   actions: 'flex flex-wrap items-center justify-end gap-2',
   note: 'm-0 text-sm text-[var(--soft)] [overflow-wrap:anywhere]',
-  secretBox: 'grid gap-3 rounded-3xl border border-white/5 bg-white/[0.02] p-4',
+  secretBox: 'grid gap-3 rounded-lg bg-[var(--surface-solid)] p-4',
   testRow: 'grid grid-cols-[minmax(220px,1fr)_auto] items-end gap-3 max-[620px]:grid-cols-1',
 }
 
@@ -103,7 +103,6 @@ export function SecurityConfigPage({ onFeedback, compact = false, summaryMode = 
     <section className={adminPage.stack}>
       {!compact ? (
         <PageHeader
-          eyebrow="Security Config"
           title="安全配置"
           detail="管理 SMTP 发信服务器等敏感配置；密钥只写不读，后端加密存储。"
           actions={<button type="button" className={adminButton.base} onClick={() => void load()}>刷新</button>}
@@ -128,7 +127,7 @@ export function SecurityConfigPage({ onFeedback, compact = false, summaryMode = 
               <SecuritySummaryToggle title="限制单用户日最大生图数" detail="当前限制来自生成配置类目。" enabled />
             </section>
           ) : null}
-          <details className={summaryMode ? 'group rounded-3xl border border-white/5 bg-white/[0.02] p-4' : ''} open={!summaryMode}>
+          <details className={summaryMode ? 'group rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4' : ''} open={!summaryMode}>
             {summaryMode ? <summary className="cursor-pointer list-none text-sm font-bold text-[var(--accent)]">SMTP 高级配置</summary> : null}
             <section className={summaryMode ? 'mt-4' : adminPage.fullSurface}>
               <section className={summaryMode ? 'grid gap-4' : adminPage.mainLane}>

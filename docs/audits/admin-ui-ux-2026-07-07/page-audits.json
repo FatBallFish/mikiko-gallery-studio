@@ -1,0 +1,1440 @@
+[
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "查看全部",
+      "去配置",
+      "去配置",
+      "去配置",
+      "去配置",
+      "去配置",
+      "查看全部",
+      "管理",
+      "管理"
+    ],
+    "counts": {
+      "buttons": 29,
+      "cards": 60,
+      "inputs": 0,
+      "tables": 1
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [
+      "模型调用分布 / Model Distribution",
+      "用户消费榜 / Rankings"
+    ],
+    "inputs": [],
+    "label": "运营大盘",
+    "overflow": [
+      {
+        "cls": "min-w-0 px-3 py-3",
+        "right": 1331,
+        "tag": "div",
+        "text": "去配置",
+        "width": 100
+      },
+      {
+        "cls": "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-",
+        "right": 1319,
+        "tag": "a",
+        "text": "去配置",
+        "width": 76
+      },
+      {
+        "cls": "min-w-0 px-3 py-3",
+        "right": 1327,
+        "tag": "div",
+        "text": "阻塞",
+        "width": 80
+      },
+      {
+        "cls": "inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-extrabo",
+        "right": 1303,
+        "tag": "span",
+        "text": "阻塞",
+        "width": 44
+      },
+      {
+        "cls": "min-w-0 px-3 py-3 text-sm text-[var(--soft)] [overflow-wrap:anywhere]",
+        "right": 1627,
+        "tag": "span",
+        "text": "0 个可见启用路由模型",
+        "width": 300
+      },
+      {
+        "cls": "min-w-0 px-3 py-3",
+        "right": 1727,
+        "tag": "div",
+        "text": "去配置",
+        "width": 100
+      },
+      {
+        "cls": "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-",
+        "right": 1715,
+        "tag": "a",
+        "text": "去配置",
+        "width": 76
+      }
+    ],
+    "route": "dashboard",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n运营大盘\nCURRENT VIEW\n运营大盘\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n总用户数\n2\n禁用 0 / 注销 0\n今日生图总数\n0\n0.00%\n今日消耗积分\n0.00000\n生成链路正常\n总消耗积分\n0.00000\n最近 0 条\n模型调用分布 / MODEL DISTRIBUTION\nNo providers\n0ms (100%)\nPROVIDER HEALTH\n0 / 0\n0 providers tracked\nPREFLIGHT FAILURES\n0\ngeneration guardrail blocks\nGALLERY VIEWS\n0\npublic gallery scans\n用户消费榜 / RANKINGS\nU\nuser-1\ndebug-settings@example.com\n0.00\npoints\n8\n89\n893721708@qq.com\n0.00\npoints\n运营明细 / OPERATIONS DETAIL",
+    "url": "http://127.0.0.1:8088/admin/#/dashboard",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "重新探测",
+      "去配置",
+      "去配置",
+      "去配置",
+      "去配置",
+      "去配置",
+      "去配置",
+      "去处理",
+      "去配置",
+      "去审核",
+      "去配置"
+    ],
+    "counts": {
+      "buttons": 31,
+      "cards": 52,
+      "inputs": 0,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [
+      "基础信息 / Infrastructure",
+      "SLA 指标 / Metrics",
+      "生图耗时 / Latency"
+    ],
+    "inputs": [],
+    "label": "运维监控",
+    "overflow": [
+      {
+        "cls": "sticky top-0 z-[1] grid items-center gap-3 border-b border-[var(--border)] bg-[v",
+        "right": 1582,
+        "tag": "div",
+        "text": "检查项状态阻塞修复入口说明",
+        "width": 820
+      },
+      {
+        "cls": "",
+        "right": 1574,
+        "tag": "span",
+        "text": "说明",
+        "width": 280
+      },
+      {
+        "cls": "grid min-h-14 items-center gap-3 border-b border-[color-mix(in_oklch,var(--borde",
+        "right": 1582,
+        "tag": "div",
+        "text": "模型接入账号model_accounts阻塞阻塞上线去配置0 个已启用账号",
+        "width": 820
+      },
+      {
+        "cls": "min-w-0 overflow-hidden text-ellipsis",
+        "right": 1574,
+        "tag": "span",
+        "text": "0 个已启用账号",
+        "width": 280
+      },
+      {
+        "cls": "grid min-h-14 items-center gap-3 border-b border-[color-mix(in_oklch,var(--borde",
+        "right": 1582,
+        "tag": "div",
+        "text": "真实模型provider_models阻塞阻塞上线去配置0 个已启用真实模型",
+        "width": 820
+      },
+      {
+        "cls": "min-w-0 overflow-hidden text-ellipsis",
+        "right": 1574,
+        "tag": "span",
+        "text": "0 个已启用真实模型",
+        "width": 280
+      },
+      {
+        "cls": "grid min-h-14 items-center gap-3 border-b border-[color-mix(in_oklch,var(--borde",
+        "right": 1582,
+        "tag": "div",
+        "text": "路由模型route_models阻塞阻塞上线去配置0 个可见启用路由模型",
+        "width": 820
+      },
+      {
+        "cls": "min-w-0 overflow-hidden text-ellipsis",
+        "right": 1574,
+        "tag": "span",
+        "text": "0 个可见启用路由模型",
+        "width": 280
+      }
+    ],
+    "route": "monitoring",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n运维监控\nCURRENT VIEW\n运维监控\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n基础信息 / INFRASTRUCTURE\n重新探测\n任务队列\n正常\n上线检查\n存在阻塞\n刷新时间\n2026/07/06 21:29\nSLA 指标 / METRICS\n1m\n5m\n1h\n10.00%\n健康总评分 / HEALTH SCORE\n0\n异常探针\n通过检查\n1 项\n警告检查\n4 项\n阻塞检查\n5 项\n生图耗时 / LATENCY\nAVG\n0ms\nMAX\n0ms\nPOLICY\n每 30 秒巡检\nQUEUE\n正常\nProvider 探针 / Providers\n探针\n状态\n延迟\n错误率\n说明\n上线检查 / Readiness\n检查项\n状态\n阻塞\n修复入口\n说明\n模型接入账号\n\nmodel_accounts\n\n阻塞\n阻塞上线\n去配置\n0 个已启用账号\n真实模型\n\nprovider_models\n\n阻塞\n阻塞上线\n去配置\n0 个已启用真实模型\n路由模型\n\nroute_models\n\n阻塞\n阻塞上线\n去配置\n0 个可见启用路由模型\n候选模型\n\nroute_candidates\n\n阻塞\n阻塞上线\n去配置\n暂无可见启用路由模型\n价格策略\n\nroute_prices\n\n阻塞\n阻塞上线\n去配置\n0 条已启用价格\n支付配置\n\npayments\n\n警告\n非阻塞\n去配置\n收银台未启用，用户无法在线充值\n退款补偿\n\nrefund_compensation\n\n通过\n非阻塞\n去处理\n暂无待补偿退款失败事件\n注册送体验额度\n\nsignup_trial\n\n警告\n非阻塞\n去配置\n注册送体验额度未启用\n公开广场\n\npublic_gallery\n\n警告\n非阻塞\n去审核\n0 个公开作品，0 个待审核\n开发文档\n\ndocs\n\n警告\n非阻塞\n去配置\n开发文档标题或 base path 未配置",
+    "url": "http://127.0.0.1:8088/admin/#/monitoring",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "新增用户",
+      "筛选",
+      "清空",
+      "详情",
+      "禁用",
+      "分组",
+      "积分",
+      "限额",
+      "密码",
+      "删除",
+      "详情",
+      "禁用",
+      "分组",
+      "积分",
+      "限额",
+      "密码",
+      "删除",
+      "上一页",
+      "1",
+      "下一页"
+    ],
+    "counts": {
+      "buttons": 40,
+      "cards": 64,
+      "inputs": 5,
+      "tables": 1
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "搜索用户名 / 邮箱",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": "created_at"
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": "desc"
+      }
+    ],
+    "label": "用户管理",
+    "overflow": [],
+    "route": "users",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n用户管理\nCURRENT VIEW\n用户管理\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\nUSERS\n用户管理\n\n按用户名、状态和分组定位用户，并支持按积分、最后活跃、创建时间排序。\n\n新增用户\n正常\n2\n待验证\n0\n禁用\n0\n权益分组\n1\n全部状态\n正常\n待验证\n禁用\n已关闭\n全部分组\nbasic\n积分\n最后活跃\n创建时间\n降序\n升序\n筛选\n清空\n第 1 页 / 共 2 条\n用户信息\t所属分组\t账户余额\t最后活跃\t状态\t操作\n\nU\nuser-1\ndebug-settings@example.com · 2\n\tbasic\t\n0.00000\nPOINTS\n\t2026/07/03 04:06\t正常\t\n详情\n禁用\n分组\n积分\n限额\n密码\n删除\n\n\n8\n89\n893721708@qq.com · 1\n\tbasic\t\n0.00000\nPOINTS\n\t2026/07/03 03:33\t正常\t\n详情\n禁用\n分组\n积分\n限额\n密码\n删除\n显示 1 到 2 共 2 条记录\n上一页\n1\n下一页",
+    "url": "http://127.0.0.1:8088/admin/#/users",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "添加用户分组",
+      "配置模型可见性",
+      "编辑"
+    ],
+    "counts": {
+      "buttons": 23,
+      "cards": 39,
+      "inputs": 0,
+      "tables": 1
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [
+      "用户分组 / User Groups"
+    ],
+    "inputs": [],
+    "label": "用户分组",
+    "overflow": [],
+    "route": "user-groups",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n用户分组\nCURRENT VIEW\n用户分组\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n用户分组 / USER GROUPS\n添加用户分组\n分组摘要 / Summary\n分组代码\t分组名称\t描述\t关联路由模型数\t操作\nbasic\tbasic\t无描述 · 倍率 1.00000\t配置模型可见性\t\n配置模型可见性\n编辑",
+    "url": "http://127.0.0.1:8088/admin/#/user-groups",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "今天",
+      "昨天",
+      "近 7 天",
+      "近 30 天",
+      "自定义区间",
+      "查询",
+      "高级筛选",
+      "刷新"
+    ],
+    "counts": {
+      "buttons": 28,
+      "cards": 40,
+      "inputs": 4,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [
+      "调用记录查询 / Call Records",
+      "路由模型调用量",
+      "底层账号调用量",
+      "底层模型调用量"
+    ],
+    "inputs": [
+      {
+        "placeholder": "用户 ID",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "Provider 或账号",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": ""
+      }
+    ],
+    "label": "调用记录",
+    "overflow": [],
+    "route": "call-records",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n调用记录\nCURRENT VIEW\n调用记录\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n调用记录查询 / CALL RECORDS\n今天\n昨天\n近 7 天\n近 30 天\n自定义区间\n全部入口\n用户 Web\nOpen API\nOpenAI 兼容\n全部状态\n排队中\n执行中\n成功\n失败\n已取消\n查询\n高级筛选\n刷新\n区间总任务数\n0\n区间生图数\n0\n区间消耗积分\n0\n平均生图耗时\n-\n路由模型调用量\n\n暂无数据\n\n底层账号调用量\n\n暂无数据\n\n底层模型调用量\n\n暂无数据\n\n暂无调用记录\n\n生成任务执行后会出现在这里。",
+    "url": "http://127.0.0.1:8088/admin/#/call-records",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "导出兑换码",
+      "批量生成",
+      "创建兑换码",
+      "上一页",
+      "下一页"
+    ],
+    "counts": {
+      "buttons": 25,
+      "cards": 43,
+      "inputs": 0,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [],
+    "label": "兑换码",
+    "overflow": [],
+    "route": "redeem",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n兑换码\nCURRENT VIEW\n兑换码\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\nREDEEM\n兑换码管理\n\n创建、停用、批量生成与核销记录全部连接真实后台接口。\n\n导出兑换码\n批量生成\n创建兑换码\n第 1 页 / 共 0 条\n上一页\n下一页\n暂无兑换码\n\n创建一个兑换码后可在用户侧兑换。",
+    "url": "http://127.0.0.1:8088/admin/#/redeem",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "待处理 (0)",
+      "已通过",
+      "已驳回",
+      "已下架",
+      "全部"
+    ],
+    "counts": {
+      "buttons": 25,
+      "cards": 43,
+      "inputs": 0,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [],
+    "label": "审核队列",
+    "overflow": [],
+    "route": "reviews",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n审核队列\nCURRENT VIEW\n审核队列\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n待处理 (0)\n已通过\n已驳回\n已下架\n全部\n没有匹配的审核项\n\n切换筛选或等待用户提交公开申请。",
+    "url": "http://127.0.0.1:8088/admin/#/reviews",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "订单概览",
+      "订单记录",
+      "回调事件"
+    ],
+    "counts": {
+      "buttons": 23,
+      "cards": 38,
+      "inputs": 0,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [
+      "近 30 天营收趋势 / 30-Day Revenue Trend",
+      "支付方式分布 / Payment Methods",
+      "用户消费排行 / Top Spenders"
+    ],
+    "inputs": [],
+    "label": "订单管理",
+    "overflow": [],
+    "route": "orders",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n订单管理\nCURRENT VIEW\n订单管理\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n订单概览\n订单记录\n回调事件\n今日收入\n¥ 0.00\n↑ 0.00% success\nvs yesterday\n今日订单数\n0\n↑ 0 completed\nvs yesterday\n平均订单金额\n¥ 0.00\n↑ 0 pending\nvs yesterday\n总营收\n¥ 0.00\n↑ 0 records\nvs yesterday\n近 30 天营收趋势 / 30-DAY REVENUE TREND\n30 DAYS AGO\nTODAY\n支付方式分布 / PAYMENT METHODS\nMock 测试\n¥ 0.00 (0%)\n用户消费排行 / TOP SPENDERS\nNO\nNo Orders\n0 笔订单\n¥ 0.00",
+    "url": "http://127.0.0.1:8088/admin/#/orders",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "自定义金额",
+      "新增套餐",
+      "编辑",
+      "删除",
+      "编辑",
+      "删除"
+    ],
+    "counts": {
+      "buttons": 26,
+      "cards": 42,
+      "inputs": 0,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [],
+    "label": "套餐管理",
+    "overflow": [],
+    "route": "packages",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n套餐管理\nCURRENT VIEW\n套餐管理\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n套餐配置 / PACKAGE CONFIG\n自定义金额\n新增套餐\nBasic Monthly\n\nBASIC-MONTHLY · 积分包\n\n启用\n100POINTS\n¥ 19.90\n编辑\n删除\nPlus Monthly\n\nPLUS-MONTHLY · 积分包\n\n启用\n300POINTS\n¥ 49.90\n编辑\n删除",
+    "url": "http://127.0.0.1:8088/admin/#/packages",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "概览",
+      "支付方式",
+      "渠道实例",
+      "添加通道",
+      "保存体验额度"
+    ],
+    "counts": {
+      "buttons": 25,
+      "cards": 38,
+      "inputs": 5,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [
+      "支付通道管理 / Payment Providers",
+      "收银台展示设置 / UI Settings",
+      "风控与对账 / Risk & Sync"
+    ],
+    "inputs": [
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      },
+      {
+        "placeholder": "20.00000",
+        "tag": "input",
+        "type": "",
+        "value": "20.00000"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "number",
+        "value": "7"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "number",
+        "value": "2"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      }
+    ],
+    "label": "收银台配置",
+    "overflow": [],
+    "route": "cashier-config",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n收银台配置\nCURRENT VIEW\n收银台配置\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n概览\n支付方式\n渠道实例\n支付通道管理 / PAYMENT PROVIDERS\n添加通道\nMock Payment\nMOCK 测试 · MOCK 测试\n启用\n收银台展示设置 / UI SETTINGS\n允许自定义充值金额\n开启后用户可输入任意金额按比例兑换积分\nMock 支付\nMOCK · MOCK 测试\n风控与对账 / RISK & SYNC\n订单同步频率\nManual\n单日支付上限\n未设置\n异常订单阻断\nEnabled\n注册送体验额度\n\n注册赠送 20.00000 积分，有效期 7 天，提前 2 天提醒，每个用户仅领取一次。\n\n停用\n保存体验额度\n启用注册送体验额度\n赠送积分\n有效天数\n提醒阈值\n每个用户仅领取一次",
+    "url": "http://127.0.0.1:8088/admin/#/cashier-config",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "新增路由",
+      "批量操作",
+      "刷新"
+    ],
+    "counts": {
+      "buttons": 23,
+      "cards": 54,
+      "inputs": 1,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "搜索路由名称或代码...",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      }
+    ],
+    "label": "路由模型",
+    "overflow": [],
+    "route": "routing",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n路由模型\nCURRENT VIEW\n路由模型\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n新增路由\n批量操作\n刷新\n路由模型运行摘要 · 候选模型\n暂无路由模型\n\n创建 Basic / Plus / Pro 后配置候选真实模型。",
+    "url": "http://127.0.0.1:8088/admin/#/routing",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "添加账号",
+      "批量操作"
+    ],
+    "counts": {
+      "buttons": 22,
+      "cards": 40,
+      "inputs": 1,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "搜索账号名称或适配器...",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      }
+    ],
+    "label": "接入账号",
+    "overflow": [],
+    "route": "access-accounts",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n接入账号\nCURRENT VIEW\n接入账号\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n添加账号\n批量操作\n暂无模型接入账号\n\n创建账号后再添加真实上游模型。",
+    "url": "http://127.0.0.1:8088/admin/#/access-accounts",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "新增配置"
+    ],
+    "counts": {
+      "buttons": 21,
+      "cards": 38,
+      "inputs": 0,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [
+      "积分价格配置 / Price Strategy",
+      "计费规则说明"
+    ],
+    "inputs": [],
+    "label": "价格配置",
+    "overflow": [],
+    "route": "pricing",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n价格配置\nCURRENT VIEW\n价格配置\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n积分价格配置 / PRICE STRATEGY\n新增配置\n计费规则说明\n\n1. 扣费公式: 最终积分 = 基础消耗 * (参考图倍率 if 包含参考图)\n\n2. 精度说明: 后端扣费保留 5 位小数，前端展示四舍五入保留 2 位。\n\n3. 兜底逻辑: 若路由模型未配对应任务类型的价格，系统将返回配置错误。\n\n4. 展示规则: 列表按照路由模型和任务类型进行聚合，点击行展开具体质量的价格配置。\n\n暂无价格配置\n\n为每个可用路由模型配置任务类型和质量价格。",
+    "url": "http://127.0.0.1:8088/admin/#/pricing",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "导出日志",
+      "刷新"
+    ],
+    "counts": {
+      "buttons": 22,
+      "cards": 39,
+      "inputs": 2,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "搜索操作人 / 动作 / 对象 / 详情",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": "all"
+      }
+    ],
+    "label": "审计日志",
+    "overflow": [],
+    "route": "audit",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n审计日志\nCURRENT VIEW\n审计日志\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\nAUDIT\n审计日志\n\n所有关键写操作都会追加审计行，便于回溯配置、价格、路由、审核与用户变更。\n\n导出日志\n全部动作\n管理员登录\n管理员退出\n创建用户\n删除用户\n更新用户状态\n更新用户分组\n调整用户积分\n重置用户密码\n更新用户限额\n更新系统配置\n创建兑换码\n更新兑换码状态\n导出兑换码\n创建模型供应商\n更新模型供应商\n创建供应商模型\n更新供应商模型\n更新模型路由\n更新路由模型\n更新价格配置\n通过公开审核\n拒绝公开审核\n下架公开图片\n更新收银台套餐\n确认支付到账\nauth.logout\napi_key.create\n刷新\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:51162 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 26\n\n管理员 1\n2026/07/06 21:28\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:38526 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 25\n\n管理员 1\n2026/07/06 21:21\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:51938 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 24\n\n管理员 1\n2026/07/06 15:27\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:43300 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 23\n\n管理员 1\n2026/07/05 16:12\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:37030 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 22\n\n管理员 1\n2026/07/05 14:51\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:39860 · UA Python-urllib/3.10 · audit_id 21\n\n管理员 1\n2026/07/05 14:41\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:49422 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 20\n\n管理员 1\n2026/07/03 10:42\n用\nauth.logout\n用户 1\n成功\n\nIP 172.18.0.10:53680 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 19\n\n用户 1\n2026/07/03 04:05\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:37822 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 18\n\n管理员 1\n2026/07/03 03:58\n用\nauth.logout\n用户 1\n成功\n\nIP 172.18.0.10:33876 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 17\n\n用户 1\n2026/07/03 03:57\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:45856 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 16\n\n管理员 1\n2026/07/02 19:35\n管\n管理员登录\nadmin_user 1\n成功\n\nIP 172.18.0.10:49658 · UA Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 · audit_id 15\n\n管理员 1\n2026/07/02 19:34\n管\n管理员登录\n",
+    "url": "http://127.0.0.1:8088/admin/#/audit",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "筛选",
+      "创建账户",
+      "重置密码",
+      "编辑",
+      "删除",
+      "上一页",
+      "下一页"
+    ],
+    "counts": {
+      "buttons": 27,
+      "cards": 58,
+      "inputs": 3,
+      "tables": 1
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "邮箱关键词",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": ""
+      }
+    ],
+    "label": "系统账户",
+    "overflow": [],
+    "route": "system-users",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n系统账户\nCURRENT VIEW\n系统账户\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\nSYSTEM ACCESS\n系统账户\n\n管理独立后台管理员账号、角色、状态和密码重置。\n\n账户总数\n1\n当前页启用\n1\n超级管理员\n1\n当前页停用\n0\n搜索\n角色\n全部\n超级管理员\n运营管理员\n状态\n全部\n启用\n停用\n筛选\n创建账户\n用户信息\t角色权限\t最后登录\t状态\t操作\n\nA\nadmin\nadmin@example.com · ID 1\n\t\n超级管理员\nFull console access\n\t2026/7/3 01:28:15\n创建 2026/7/3 01:28:15\n\t启用\t\n当前账户\n重置密码\n编辑\n删除\n第 1 页，共 1 个账户\n上一页\n下一页",
+    "url": "http://127.0.0.1:8088/admin/#/system-users",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "通用配置",
+      "安全策略",
+      "存储配置",
+      "认证安全",
+      "生成限制",
+      "积分计费",
+      "billing_trial",
+      "兼容接口",
+      "公开内容",
+      "内容审核",
+      "runtime",
+      "支付配置",
+      "开发文档",
+      "恢复本类",
+      "保存本类"
+    ],
+    "counts": {
+      "buttons": 35,
+      "cards": 42,
+      "inputs": 6,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "",
+        "value": "600"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "",
+        "value": "pg_refresh_token"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "",
+        "value": "7200"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "number",
+        "value": "600"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "",
+        "value": "pg_refresh_token"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "number",
+        "value": "7200"
+      }
+    ],
+    "label": "系统设置-通用配置",
+    "overflow": [],
+    "route": "system-settings",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n系统设置\nCURRENT VIEW\n系统设置\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n通用配置\n安全策略\n存储配置\n访问令牌有效期\n刷新 COOKIE 名称\n刷新令牌有效期\n编辑通用配置",
+    "url": "http://127.0.0.1:8088/admin/#/system-settings",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "通用配置",
+      "安全策略",
+      "存储配置",
+      "刷新",
+      "保存 SMTP",
+      "发送测试邮件"
+    ],
+    "counts": {
+      "buttons": 26,
+      "cards": 43,
+      "inputs": 10,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      },
+      {
+        "placeholder": "smtp.example.com",
+        "tag": "input",
+        "type": "",
+        "value": "<nil>"
+      },
+      {
+        "placeholder": "587",
+        "tag": "input",
+        "type": "",
+        "value": "587"
+      },
+      {
+        "placeholder": "mailer@example.com",
+        "tag": "input",
+        "type": "",
+        "value": "<nil>"
+      },
+      {
+        "placeholder": "Pic Gallery <noreply@example.com>",
+        "tag": "input",
+        "type": "",
+        "value": "<nil>"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      },
+      {
+        "placeholder": "填写 SMTP 密码",
+        "tag": "input",
+        "type": "password",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      },
+      {
+        "placeholder": "admin@example.com",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      }
+    ],
+    "label": "系统设置-安全策略",
+    "overflow": [],
+    "route": "system-settings/security",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n系统设置\nCURRENT VIEW\n系统设置\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n通用配置\n安全策略\n存储配置\nSMTP 发信服务\n\n尚未配置 SMTP 密码\n\n强制邮箱验证\n\n登录、注册、密码重置邮件走真实配置中心。\n\n启用全站内容审核 (Moderation)\n\n内容策略由系统配置类目控制。\n\n限制单用户日最大生图数\n\n当前限制来自生成配置类目。\n\nSMTP 高级配置",
+    "url": "http://127.0.0.1:8088/admin/#/system-settings",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  {
+    "bodyBackground": "oklch(0.967 0.008 250)",
+    "buttons": [
+      "MMikiko Admin",
+      "运营大盘",
+      "运维监控",
+      "用户管理",
+      "用户分组",
+      "调用记录",
+      "兑换码",
+      "审核队列",
+      "订单管理",
+      "套餐管理",
+      "收银台配置",
+      "路由模型",
+      "接入账号",
+      "价格配置",
+      "审计日志",
+      "系统账户",
+      "系统设置",
+      "退出",
+      "通用配置",
+      "安全策略",
+      "存储配置",
+      "Bootstrap LOCALDefaultbootstrap-local · local/local/var/lib/pic-gallery/storage",
+      "新增存储配置S3 / R2 / Local",
+      "Bootstrap LOCALDefaultbootstrap-local · local/local/var/lib/pic-gallery/storage",
+      "测试连接",
+      "设为只读",
+      "保存"
+    ],
+    "counts": {
+      "buttons": 29,
+      "cards": 50,
+      "inputs": 15,
+      "tables": 0
+    },
+    "document": {
+      "clientWidth": 1280,
+      "scrollHeight": 720,
+      "scrollWidth": 1280
+    },
+    "fontFamilies": [
+      "Manrope, system-ui, sans-serif"
+    ],
+    "headings": [],
+    "inputs": [
+      {
+        "placeholder": "r2-prod",
+        "tag": "input",
+        "type": "",
+        "value": "bootstrap-local"
+      },
+      {
+        "placeholder": "Cloudflare R2 Prod",
+        "tag": "input",
+        "type": "",
+        "value": "Bootstrap LOCAL"
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": "local"
+      },
+      {
+        "placeholder": "",
+        "tag": "select",
+        "type": "",
+        "value": "local"
+      },
+      {
+        "placeholder": "https://account.r2.cloudflarestorage.com",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "auto",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "pic-gallery-prod",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "prod",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "/var/lib/pic-gallery/storage",
+        "tag": "input",
+        "type": "",
+        "value": "/var/lib/pic-gallery/storage"
+      },
+      {
+        "placeholder": "reserved",
+        "tag": "input",
+        "type": "",
+        "value": "http://localhost:8088/files"
+      },
+      {
+        "placeholder": "access key id",
+        "tag": "input",
+        "type": "",
+        "value": ""
+      },
+      {
+        "placeholder": "secret access key",
+        "tag": "input",
+        "type": "password",
+        "value": ""
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      },
+      {
+        "placeholder": "",
+        "tag": "input",
+        "type": "checkbox",
+        "value": "on"
+      }
+    ],
+    "label": "系统设置-存储配置",
+    "overflow": [],
+    "route": "system-settings/storage",
+    "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n系统设置\nCURRENT VIEW\n系统设置\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n通用配置\n安全策略\n存储配置\n默认存储\nbootstrap-local\n驱动\nlocal/local\n配置数\n1\n最近测试\nsuccess\nBootstrap LOCAL\nDefault\nbootstrap-local · local/local\n/var/lib/pic-gallery/storage\n编辑存储配置",
+    "url": "http://127.0.0.1:8088/admin/#/system-settings",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  }
+]

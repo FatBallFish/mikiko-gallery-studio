@@ -4,6 +4,7 @@ import {
   routeCandidateSummary,
   routeEnabledBadge,
   routeEnabledOptions,
+  routeReadinessBadge,
   routingFieldHints,
   routingFieldLabels,
   routeGroupNames,
@@ -90,6 +91,17 @@ if (routeCandidateLabel(candidate({ account_name: 'OpenAI 主账号', model_code
 
 if (routeCandidateLabel(candidate({ account_name: '', model_code: undefined, account_model_id: 88 })) !== '88') {
   throw new Error('candidate label should fall back to account model id when model code is absent')
+}
+
+const ready = routeReadinessBadge({ enabled: true, candidates: [candidate({ enabled: true })], prices: [{ enabled: true }] })
+const missingCandidate = routeReadinessBadge({ enabled: true, candidates: [], prices: [{ enabled: true }] })
+const missingPrice = routeReadinessBadge({ enabled: true, candidates: [candidate({ enabled: true })], prices: [{ enabled: false }] })
+const routeDisabled = routeReadinessBadge({ enabled: false, candidates: [candidate({ enabled: true })], prices: [{ enabled: true }] })
+if (ready.state !== 'ready' || ready.label !== '可被用户使用' || ready.tone !== 'success') {
+  throw new Error(`ready route should show user-availability status, got ${JSON.stringify(ready)}`)
+}
+if (missingCandidate.state !== 'missing_candidate' || missingPrice.state !== 'missing_price' || routeDisabled.state !== 'disabled') {
+  throw new Error(`route readiness should expose concrete blocking states, got ${JSON.stringify({ missingCandidate, missingPrice, routeDisabled })}`)
 }
 
 function group(patch: Partial<UserGroup>): UserGroup {

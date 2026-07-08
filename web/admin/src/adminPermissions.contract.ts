@@ -22,6 +22,14 @@ if (canAdmin(opsAdmin, 'manage:admins')) {
   throw new Error('admin must not receive administrator account management permission')
 }
 
+if (!canAccessAdminRoute(opsAdmin, 'system-settings')) {
+  throw new Error('admin should retain access to system settings')
+}
+
+if ((navGroups.flatMap((group) => group.items.map((item) => item.id)) as readonly string[]).some((id) => ['general-settings', 'security-settings', 'storage-settings'].includes(id))) {
+  throw new Error('split settings routes must not remain in primary navigation')
+}
+
 const explicitlyDeniedOpsAdmin: AdminSession = {
   ...opsAdmin,
   permissions: [],
@@ -59,4 +67,8 @@ const visibleIds = filtered.flatMap((group) => group.items.map((item) => item.id
 
 if (visibleIds.includes('users') || !visibleIds.includes('cashier-config')) {
   throw new Error(`admin navigation should hide unauthorized entries, got ${visibleIds}`)
+}
+
+if (visibleIds.includes('security-settings') || visibleIds.includes('storage-settings') || visibleIds.includes('general-settings')) {
+  throw new Error(`split settings routes should stay hidden because settings are aggregated, got ${visibleIds}`)
 }

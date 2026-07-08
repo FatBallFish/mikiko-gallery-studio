@@ -21,44 +21,44 @@ export const protectedRoutes: ProtectedAdminRouteId[] = [
 
 export const navGroups: AdminNavGroup[] = [
   {
-    label: '概览 / Overview',
+    label: '概览',
     items: [
-      { id: 'dashboard', label: '运营大盘', hint: 'Dashboard' },
-      { id: 'monitoring', label: '运维监控', hint: 'Monitor' },
+      { id: 'dashboard', label: '运营总览' },
+      { id: 'monitoring', label: '系统健康' },
     ],
   },
   {
-    label: '业务管理 / Business',
+    label: '用户与内容',
     items: [
-      { id: 'users', label: '用户管理', hint: 'Users' },
-      { id: 'user-groups', label: '用户分组', hint: 'Groups' },
-      { id: 'call-records', label: '调用记录', hint: 'Calls' },
-      { id: 'redeem', label: '兑换码', hint: 'Coupons' },
-      { id: 'reviews', label: '审核队列', hint: 'Review', badgeKey: 'review_count' },
+      { id: 'users', label: '用户' },
+      { id: 'user-groups', label: '用户分组' },
+      { id: 'reviews', label: '审核队列', badgeKey: 'review_count' },
+      { id: 'redeem', label: '兑换码' },
     ],
   },
   {
-    label: '商业化 / Commercial',
+    label: '交易',
     items: [
-      { id: 'orders', label: '订单管理', hint: 'Orders', badgeKey: 'failed_webhook_count' },
-      { id: 'packages', label: '套餐管理', hint: 'Plans' },
-      { id: 'cashier-config', label: '收银台配置', hint: 'Cashier' },
+      { id: 'orders', label: '订单', badgeKey: 'failed_webhook_count' },
+      { id: 'packages', label: '套餐' },
+      { id: 'cashier-config', label: '支付配置' },
     ],
   },
   {
-    label: '路由与模型 / Models',
+    label: '模型与生成',
     items: [
-      { id: 'routing', label: '路由模型', hint: 'Routes' },
-      { id: 'access-accounts', label: '接入账号', hint: 'Accounts' },
-      { id: 'pricing', label: '价格配置', hint: 'Pricing' },
+      { id: 'access-accounts', label: '接入账号' },
+      { id: 'routing', label: '路由模型' },
+      { id: 'pricing', label: '价格策略' },
+      { id: 'call-records', label: '调用记录' },
     ],
   },
   {
-    label: '系统 / System',
+    label: '系统',
     items: [
-      { id: 'audit', label: '审计日志', hint: 'Trail' },
-      { id: 'system-users', label: '系统账户', hint: 'Admins' },
-      { id: 'system-settings', label: '系统设置', hint: 'Settings', badgeKey: 'config_drafts' },
+      { id: 'system-users', label: '管理员' },
+      { id: 'audit', label: '审计日志' },
+      { id: 'system-settings', label: '系统设置', badgeKey: 'config_drafts' },
     ],
   },
 ]
@@ -69,13 +69,18 @@ const routeAliases: Partial<Record<string, ProtectedAdminRouteId>> = {
   health: 'monitoring',
   cashier: 'cashier-config',
   config: 'system-settings',
+  'general-config': 'system-settings',
+  'general-settings': 'system-settings',
   'security-config': 'system-settings',
+  'security-settings': 'system-settings',
+  'storage-config': 'system-settings',
+  'storage-settings': 'system-settings',
   'provider-models': 'access-accounts',
 }
 
 export const routeTitles: Record<ProtectedAdminRouteId, string> = {
-  dashboard: '运营大盘',
-  monitoring: '运维监控',
+  dashboard: '运营总览',
+  monitoring: '系统健康',
   users: '用户管理',
   'user-groups': '用户分组',
   'call-records': '调用记录',
@@ -86,9 +91,9 @@ export const routeTitles: Record<ProtectedAdminRouteId, string> = {
   'cashier-config': '收银台配置',
   routing: '路由模型',
   'access-accounts': '接入账号',
-  pricing: '价格配置',
+  pricing: '价格策略',
   audit: '审计日志',
-  'system-users': '系统账户',
+  'system-users': '管理员',
   'system-settings': '系统设置',
 }
 

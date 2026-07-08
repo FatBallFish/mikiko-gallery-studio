@@ -3,7 +3,7 @@ export type AdminLoginEnv = Record<string, string | undefined>
 export const adminLoginCopy = {
   brand: 'Pic Gallery 运营后台',
   heroTitle: '登录运营后台',
-  heroDetail: '集中管理模型配置、支付收银台、公开审核、用户积分与审计记录。',
+  heroDetail: '进入低噪声运营控制台，处理配置、审核、交易与审计任务。',
   formEyebrow: '管理员登录',
   idleNotice: '请输入管理员邮箱和密码，未登录访问后台页面会自动回到本页。',
   submitValidationError: '请先修正表单校验错误。',
@@ -13,7 +13,7 @@ export const adminLoginCopy = {
   emailPlaceholder: 'ops@example.com',
   passwordLabel: '密码',
   passwordPlaceholder: '至少 6 位',
-  proofItems: ['模型健康', '支付配置', '审核队列', '审计留痕'],
+  proofItems: ['环境：local', 'API：readyz', '版本：dev', '会话：受保护'],
 } as const
 
 export function adminLoginInitialForm(env: AdminLoginEnv) {

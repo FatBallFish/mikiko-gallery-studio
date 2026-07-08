@@ -5,23 +5,24 @@ import { cn } from '../../../shared/classnames'
 import { Field, InlineFeedback } from '../components'
 import { useAdminTheme } from '../layout/useAdminTheme'
 import { adminButton } from '../ui/classes'
+import { MoonIcon, SunIcon } from '../ui/icons'
 import { adminLoginCopy, adminLoginInitialForm, adminLoginValidation, adminLoginVisibleError } from './adminLoginCopy'
 
 const loginClasses = {
-  screen: 'grid min-h-screen place-items-center bg-[var(--bg)] p-6 text-[var(--text)] selection:bg-[var(--accent)]/30 max-[620px]:p-3',
-  panel: 'grid w-[min(460px,100%)] gap-8 rounded-[2rem] border border-white/5 bg-white/[0.02] p-8 shadow-2xl backdrop-blur-xl max-[620px]:p-5',
+  screen: 'grid min-h-screen place-items-center bg-[var(--bg)] p-6 text-[var(--fg)] selection:bg-[var(--accent)]/30 max-[620px]:p-3',
+  panel: 'grid w-[min(460px,100%)] gap-8 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-8 shadow-[var(--pg-shadow-lg)] backdrop-blur-xl max-[620px]:p-5',
   brand: 'flex items-center gap-3',
-  brandOrb: 'grid size-10 place-items-center rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] text-sm font-black text-white',
+  brandOrb: 'grid size-10 place-items-center rounded-xl bg-[var(--accent)]/12 text-sm font-black text-[var(--accent)]',
   brandText: 'grid gap-0.5',
-  brandName: 'text-lg font-bold tracking-tight text-[var(--text)]',
-  brandMeta: 'text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted-strong)]',
-  hero: 'text-3xl font-black tracking-tight text-[var(--text)]',
+  brandName: 'font-[family-name:var(--font-admin-display)] text-lg font-semibold tracking-tight text-[var(--fg)]',
+  brandMeta: 'text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--dim)]',
+  hero: 'font-[family-name:var(--font-admin-display)] text-3xl font-semibold tracking-tight text-[var(--fg)]',
   detail: 'text-sm leading-6 text-[var(--soft)]',
   proofGrid: 'grid grid-cols-2 gap-2 max-[620px]:grid-cols-1',
-  proofItem: 'rounded-xl border border-white/5 bg-white/5 px-3 py-2.5 text-[0.72rem] font-extrabold uppercase tracking-wider text-[var(--muted)]',
+  proofItem: 'rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2.5 text-[0.72rem] font-extrabold uppercase tracking-wider text-[var(--muted)]',
   form: 'grid gap-4',
-  title: 'm-0 text-lg font-bold text-[var(--text)]',
-  themeButton: 'absolute right-4 top-4 grid size-10 place-items-center rounded-xl border border-[var(--line)] bg-white/5 text-[var(--muted)] transition hover:text-[var(--text)]',
+  title: 'm-0 text-lg font-bold text-[var(--fg)]',
+  themeButton: 'absolute right-4 top-4 grid size-10 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:text-[var(--fg)]',
 }
 
 export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => void }) {
@@ -82,7 +83,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
 
         <form className={loginClasses.form} onSubmit={submit} noValidate>
           <label>{adminLoginCopy.formEyebrow}</label>
-          <h1 className={loginClasses.title}>Administrator Access</h1>
+          <h1 className={loginClasses.title}>管理员登录</h1>
           {error ? <InlineFeedback tone="danger" message={error} /> : <InlineFeedback tone="neutral" message={adminLoginCopy.idleNotice} />}
 
           <Field label={adminLoginCopy.emailLabel} error={emailError}>
@@ -100,6 +101,3 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
     </main>
   )
 }
-
-const SunIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
-const MoonIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>

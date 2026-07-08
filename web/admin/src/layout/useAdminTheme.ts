@@ -6,8 +6,8 @@ export type AdminThemeMode = 'dark' | 'light'
 
 export function useAdminTheme() {
   const [theme, setTheme] = useState<AdminThemeMode>(() => {
-    if (typeof window === 'undefined') return 'dark'
-    return window.localStorage.getItem(adminThemeStorageKey) === 'light' ? 'light' : 'dark'
+    if (typeof window === 'undefined') return 'light'
+    return window.localStorage.getItem(adminThemeStorageKey) === 'dark' ? 'dark' : 'light'
   })
 
   useEffect(() => {
