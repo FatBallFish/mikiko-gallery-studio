@@ -141,6 +141,18 @@ func (f ModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelRouteMutation", m)
 }
 
+// The ObjectStorageConfigFunc type is an adapter to allow the use of ordinary
+// function as ObjectStorageConfig mutator.
+type ObjectStorageConfigFunc func(context.Context, *ent.ObjectStorageConfigMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ObjectStorageConfigFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ObjectStorageConfigMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ObjectStorageConfigMutation", m)
+}
+
 // The PaymentOrderFunc type is an adapter to allow the use of ordinary
 // function as PaymentOrder mutator.
 type PaymentOrderFunc func(context.Context, *ent.PaymentOrderMutation) (ent.Value, error)

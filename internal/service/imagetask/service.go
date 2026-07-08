@@ -44,6 +44,7 @@ type Service struct {
 	billing    BillingManager
 	apiKeys    APIKeyUsageManager
 	backend    storage.Backend
+	router     storage.Router
 	httpClient *http.Client
 }
 
@@ -124,6 +125,19 @@ func NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg config.Config, prov
 	if backend == nil {
 		backend = storage.NewLocalBackend(cfg.Storage.LocalRoot)
 	}
+	return NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, assets, billing, storage.NewStaticRouter(backend))
+}
+
+func NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg config.Config, providers map[string]provider.ImageProvider, store Store, assets AssetLoader, billing BillingManager, router storage.Router) *Service {
+	if store == nil {
+		store = NewMemoryStore()
+	}
+	if providers == nil {
+		providers = defaultProviders(cfg)
+	}
+	if router == nil {
+		router = storage.NewStaticRouter(storage.NewLocalBackend(cfg.Storage.LocalRoot))
+	}
 	return &Service{
 		cfg:        cfg,
 		resolver:   modelhub.NewResolver(cfg),
@@ -131,7 +145,7 @@ func NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg config.Config, prov
 		store:      store,
 		assets:     assets,
 		billing:    billing,
-		backend:    backend,
+		router:     router,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -1013,7 +1027,11 @@ func (s *Service) DownloadImageResult(ctx context.Context, userID int64, imageID
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if err != nil {
+		return provider.ImageResult{}, nil, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
@@ -1031,7 +1049,11 @@ func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID strin
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if err != nil {
+		return provider.ImageResult{}, nil, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
@@ -1053,6 +1075,7 @@ func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string)
 		Width:            image.Width,
 		Height:           image.Height,
 		SHA256:           image.SHA256,
+		StorageConfigID:  image.StorageConfigID,
 		ObjectKey:        image.ObjectKey,
 		StorageDriver:    image.StorageDriver,
 		ImageGroup:       image.ImageGroup,
@@ -1063,7 +1086,11 @@ func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string)
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	content, readErr := s.backend.Get(ctx, result.ObjectKey)
+	backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if err != nil {
+		return provider.ImageResult{}, nil, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
@@ -1136,7 +1163,11 @@ func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID s
 		return errs.Internal("failed to load image result")
 	}
 	if result.StorageDriver != "remote" && strings.TrimSpace(result.ObjectKey) != "" {
-		if err := s.backend.Delete(ctx, result.ObjectKey); err != nil {
+		backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+		if err != nil {
+			return errs.Internal("failed to resolve image storage")
+		}
+		if err := backend.Backend.Delete(ctx, result.ObjectKey); err != nil {
 			return errs.Internal("failed to delete image file")
 		}
 	}
@@ -1384,7 +1415,11 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 		resultID = uuid.NewString()
 	}
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	if err := s.backend.Put(ctx, objectKey, mimeType, content); err != nil {
+	writer, err := s.router.DefaultWriter(ctx)
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
+	}
+	if err := writer.Backend.Put(ctx, objectKey, mimeType, content); err != nil {
 		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
 	}
 	result.ID = resultID
@@ -1396,7 +1431,8 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 	result.Height = cfg.Height
 	result.SHA256 = sha
 	result.ObjectKey = objectKey
-	result.StorageDriver = s.backend.Driver()
+	result.StorageConfigID = writer.ConfigID
+	result.StorageDriver = writer.Driver
 	result.VisibilityStatus = defaultString(result.VisibilityStatus, "private")
 	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
 	result.URL = result.DownloadURL
@@ -1417,7 +1453,11 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	sha := hex.EncodeToString(hash[:])
 	resultID := uuid.NewString()
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	if err := s.backend.Put(context.Background(), objectKey, mimeType, content); err != nil {
+	writer, err := s.router.DefaultWriter(context.Background())
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
+	}
+	if err := writer.Backend.Put(context.Background(), objectKey, mimeType, content); err != nil {
 		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
 	}
 	result.ID = resultID
@@ -1429,7 +1469,8 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	result.Height = cfg.Height
 	result.SHA256 = sha
 	result.ObjectKey = objectKey
-	result.StorageDriver = s.backend.Driver()
+	result.StorageConfigID = writer.ConfigID
+	result.StorageDriver = writer.Driver
 	result.VisibilityStatus = defaultString(result.VisibilityStatus, "private")
 	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
 	result.URL = result.DownloadURL

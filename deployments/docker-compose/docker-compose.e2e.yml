@@ -71,6 +71,7 @@ services:
       CGO_ENABLED: "0"
       PIC_GALLERY_ENV: test
       PIC_GALLERY_ADDR: :8080
+      CORS_ALLOWED_ORIGINS: http://localhost:${USER_WEB_PORT:-5173},http://127.0.0.1:${USER_WEB_PORT:-5173},http://localhost:${ADMIN_WEB_PORT:-5174},http://127.0.0.1:${ADMIN_WEB_PORT:-5174}
       DATABASE_URL: postgres://pic_gallery:pic_gallery_e2e_password@postgres:5432/pic_gallery?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       REDIS_KEY_PREFIX: pic-gallery-e2e
@@ -79,6 +80,8 @@ services:
       STORAGE_PUBLIC_BASE_URL: http://localhost:${API_PORT:-18080}/files
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-e2e-access-token-secret-change-me
+      AUTH_ACCESS_TOKEN_TTL: 10m
+      AUTH_REFRESH_TOKEN_TTL: 168h
       AUTH_FIXED_EMAIL_CODE: "123456"
       AUTH_DEV_EMAIL_CODES: "true"
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-e2e-api-key-signing-secret-encryption-key
@@ -117,6 +120,7 @@ services:
       CGO_ENABLED: "0"
       PIC_GALLERY_ENV: test
       PIC_GALLERY_ADDR: :8080
+      CORS_ALLOWED_ORIGINS: http://localhost:${USER_WEB_PORT:-5173},http://127.0.0.1:${USER_WEB_PORT:-5173},http://localhost:${ADMIN_WEB_PORT:-5174},http://127.0.0.1:${ADMIN_WEB_PORT:-5174}
       DATABASE_URL: postgres://pic_gallery:pic_gallery_e2e_password@postgres:5432/pic_gallery?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       REDIS_KEY_PREFIX: pic-gallery-e2e
@@ -125,6 +129,8 @@ services:
       STORAGE_PUBLIC_BASE_URL: http://localhost:${API_PORT:-18080}/files
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-e2e-access-token-secret-change-me
+      AUTH_ACCESS_TOKEN_TTL: 10m
+      AUTH_REFRESH_TOKEN_TTL: 168h
       AUTH_FIXED_EMAIL_CODE: "123456"
       AUTH_DEV_EMAIL_CODES: "true"
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-e2e-api-key-signing-secret-encryption-key

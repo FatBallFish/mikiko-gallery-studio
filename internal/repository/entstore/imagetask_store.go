@@ -1305,6 +1305,13 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 		SetSha256(shaValue).
 		SetImageGroup(strings.TrimSpace(result.ImageGroup)).
 		SetVisibilityStatus(defaultString(result.VisibilityStatus, "private"))
+	if strings.TrimSpace(result.StorageConfigID) != "" {
+		storageConfigID, parseErr := uuid.Parse(strings.TrimSpace(result.StorageConfigID))
+		if parseErr != nil {
+			return parseErr
+		}
+		builder.SetStorageConfigID(storageConfigID)
+	}
 	if strings.TrimSpace(result.ReviewReason) != "" {
 		builder.SetReviewReason(strings.TrimSpace(result.ReviewReason))
 	}
@@ -1509,6 +1516,7 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 		Width:            entity.Width,
 		Height:           entity.Height,
 		SHA256:           entity.Sha256,
+		StorageConfigID:  "",
 		ObjectKey:        entity.ObjectKey,
 		StorageDriver:    entity.StorageDriver,
 		ImageGroup:       entity.ImageGroup,
@@ -1519,6 +1527,9 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 	if entity.StorageDriver == "remote" {
 		item.URL = entity.ObjectKey
 		return item
+	}
+	if entity.StorageConfigID != nil {
+		item.StorageConfigID = entity.StorageConfigID.String()
 	}
 	if strings.TrimSpace(entity.StorageDriver) != "" {
 		item.DownloadURL = "/api/agent/image/v1/images/" + entity.ID.String()
@@ -1727,6 +1738,7 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		Width:             item.Width,
 		Height:            item.Height,
 		SHA256:            item.SHA256,
+		StorageConfigID:   item.StorageConfigID,
 		ObjectKey:         item.ObjectKey,
 		StorageDriver:     item.StorageDriver,
 		ImageGroup:        item.ImageGroup,

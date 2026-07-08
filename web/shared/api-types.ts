@@ -121,6 +121,12 @@ export const API_PATHS = {
     modelRouteDetail: '/api/ops/admin/v1/model-routes/{route_id}',
     configTabs: '/api/ops/admin/v1/config-tabs',
     configTabDetail: '/api/ops/admin/v1/config-tabs/{tab_key}',
+    storageConfigs: '/api/ops/admin/v1/storage-configs',
+    storageConfigProbe: '/api/ops/admin/v1/storage-configs:probe',
+    storageConfigDetail: '/api/ops/admin/v1/storage-configs/{storage_config_id}',
+    storageConfigDetailProbe: '/api/ops/admin/v1/storage-configs/{storage_config_id}:probe',
+    storageConfigSetDefault: '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-default',
+    storageConfigSetStatus: '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-status',
     imageReviews: '/api/ops/admin/v1/image-reviews',
     imageReviewImage: '/api/ops/admin/v1/image-reviews/{image_id}/image',
     imageReviewApprove: '/api/ops/admin/v1/image-reviews/{image_id}:approve',
@@ -520,6 +526,7 @@ export type ReferenceAsset = {
   width?: number
   height?: number
   sha256?: string
+  storage_config_id?: string
   storage_driver?: string
   object_key?: string
   created_at: string
@@ -531,6 +538,7 @@ export type ImageResult = {
   mime_type?: string
   file_size_bytes?: number
   sha256?: string
+  storage_config_id?: string
   object_key?: string
   storage_driver?: string
   width: number
@@ -732,7 +740,7 @@ export type ModelRoute = {
 }
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
-export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; quality?: string; aspect_ratio?: string; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
+export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; quality?: string; aspect_ratio?: string; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
 export type ReviewItem = { id: string; image_id?: string; title: string; owner: string; task_type: ImageTaskType; image_url: string; status: 'pending' | 'pending_review' | 'approved' | 'rejected' | 'unpublished' | string; reason: string; created_at: string; review_reason?: string; visibility_status?: string }
 export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[]; recent_orders?: PaymentOrder[]; recent_tasks?: ImageTask[]; api_keys?: ApiKey[] }
@@ -911,6 +919,50 @@ export type SecretStatus = { has_secret: boolean; fingerprint?: string; updated_
 export type SMTPConfigView = { enabled: boolean; host: string; port: number; username: string; from: string; starttls: boolean; insecure_skip_verify: boolean; secret_status: SecretStatus; version: number; updated_at?: string }
 export type SMTPConfigWriteRequest = { version?: number; enabled: boolean; host: string; port: number; username: string; from: string; starttls: boolean; insecure_skip_verify: boolean; secrets?: { password?: string }; clear_secrets?: string[] }
 export type SMTPTestResponse = { status: string; recipient: string }
+export type StorageProbeView = { status: 'never' | 'success' | 'failed' | string; checked_at?: string | null; latency_ms?: number; message?: string }
+export type StorageConfigView = {
+  id: string
+  code: string
+  name: string
+  driver: 'local' | 's3' | string
+  provider: 'local' | 'aws_s3' | 'minio' | 'r2' | 'custom_s3' | string
+  status: 'enabled' | 'disabled' | string
+  read_enabled: boolean
+  write_enabled: boolean
+  is_default: boolean
+  endpoint?: string
+  region?: string
+  bucket?: string
+  prefix?: string
+  force_path_style: boolean
+  public_base_url?: string
+  local_root?: string
+  secret_status: SecretStatus
+  last_probe: StorageProbeView
+  version: number
+  updated_by?: number
+  created_at?: string
+  updated_at?: string
+}
+export type StorageConfigWriteRequest = {
+  version?: number
+  code?: string
+  name: string
+  driver: 'local' | 's3' | string
+  provider: 'local' | 'aws_s3' | 'minio' | 'r2' | 'custom_s3' | string
+  status?: 'enabled' | 'disabled' | string
+  read_enabled?: boolean
+  write_enabled?: boolean
+  endpoint?: string
+  region?: string
+  bucket?: string
+  prefix?: string
+  force_path_style?: boolean
+  public_base_url?: string
+  local_root?: string
+  secrets?: { access_key_id?: string; secret_access_key?: string }
+  clear_secrets?: string[]
+}
 export type PaymentWebhookEvent = {
   id: ID
   order_id?: ID

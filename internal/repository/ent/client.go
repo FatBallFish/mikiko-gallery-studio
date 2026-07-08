@@ -26,6 +26,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
@@ -78,6 +79,8 @@ type Client struct {
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// ObjectStorageConfig is the client for interacting with the ObjectStorageConfig builders.
+	ObjectStorageConfig *ObjectStorageConfigClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
 	PaymentOrder *PaymentOrderClient
 	// PaymentProviderInstance is the client for interacting with the PaymentProviderInstance builders.
@@ -146,6 +149,7 @@ func (c *Client) init() {
 	c.ModelAccountModel = NewModelAccountModelClient(c.config)
 	c.ModelProvider = NewModelProviderClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
+	c.ObjectStorageConfig = NewObjectStorageConfigClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
 	c.PaymentWebhookEvent = NewPaymentWebhookEventClient(c.config)
@@ -272,6 +276,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
@@ -325,6 +330,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
@@ -379,10 +385,11 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.ModelProvider, c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger,
+		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
+		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.User,
 		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
 		c.WalletReservationAllocation,
@@ -397,10 +404,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PaymentWebhookEvent, c.PointLedger, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.ModelProvider, c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger,
+		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
+		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.User,
 		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
 		c.WalletReservationAllocation,
@@ -434,6 +442,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelProvider.mutate(ctx, m)
 	case *ModelRouteMutation:
 		return c.ModelRoute.mutate(ctx, m)
+	case *ObjectStorageConfigMutation:
+		return c.ObjectStorageConfig.mutate(ctx, m)
 	case *PaymentOrderMutation:
 		return c.PaymentOrder.mutate(ctx, m)
 	case *PaymentProviderInstanceMutation:
@@ -1945,6 +1955,139 @@ func (c *ModelRouteClient) mutate(ctx context.Context, m *ModelRouteMutation) (V
 		return (&ModelRouteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ModelRoute mutation op: %q", m.Op())
+	}
+}
+
+// ObjectStorageConfigClient is a client for the ObjectStorageConfig schema.
+type ObjectStorageConfigClient struct {
+	config
+}
+
+// NewObjectStorageConfigClient returns a client for the ObjectStorageConfig from the given config.
+func NewObjectStorageConfigClient(c config) *ObjectStorageConfigClient {
+	return &ObjectStorageConfigClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `objectstorageconfig.Hooks(f(g(h())))`.
+func (c *ObjectStorageConfigClient) Use(hooks ...Hook) {
+	c.hooks.ObjectStorageConfig = append(c.hooks.ObjectStorageConfig, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `objectstorageconfig.Intercept(f(g(h())))`.
+func (c *ObjectStorageConfigClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ObjectStorageConfig = append(c.inters.ObjectStorageConfig, interceptors...)
+}
+
+// Create returns a builder for creating a ObjectStorageConfig entity.
+func (c *ObjectStorageConfigClient) Create() *ObjectStorageConfigCreate {
+	mutation := newObjectStorageConfigMutation(c.config, OpCreate)
+	return &ObjectStorageConfigCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ObjectStorageConfig entities.
+func (c *ObjectStorageConfigClient) CreateBulk(builders ...*ObjectStorageConfigCreate) *ObjectStorageConfigCreateBulk {
+	return &ObjectStorageConfigCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ObjectStorageConfigClient) MapCreateBulk(slice any, setFunc func(*ObjectStorageConfigCreate, int)) *ObjectStorageConfigCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ObjectStorageConfigCreateBulk{err: fmt.Errorf("calling to ObjectStorageConfigClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ObjectStorageConfigCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ObjectStorageConfigCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ObjectStorageConfig.
+func (c *ObjectStorageConfigClient) Update() *ObjectStorageConfigUpdate {
+	mutation := newObjectStorageConfigMutation(c.config, OpUpdate)
+	return &ObjectStorageConfigUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ObjectStorageConfigClient) UpdateOne(_m *ObjectStorageConfig) *ObjectStorageConfigUpdateOne {
+	mutation := newObjectStorageConfigMutation(c.config, OpUpdateOne, withObjectStorageConfig(_m))
+	return &ObjectStorageConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ObjectStorageConfigClient) UpdateOneID(id uuid.UUID) *ObjectStorageConfigUpdateOne {
+	mutation := newObjectStorageConfigMutation(c.config, OpUpdateOne, withObjectStorageConfigID(id))
+	return &ObjectStorageConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ObjectStorageConfig.
+func (c *ObjectStorageConfigClient) Delete() *ObjectStorageConfigDelete {
+	mutation := newObjectStorageConfigMutation(c.config, OpDelete)
+	return &ObjectStorageConfigDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ObjectStorageConfigClient) DeleteOne(_m *ObjectStorageConfig) *ObjectStorageConfigDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ObjectStorageConfigClient) DeleteOneID(id uuid.UUID) *ObjectStorageConfigDeleteOne {
+	builder := c.Delete().Where(objectstorageconfig.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ObjectStorageConfigDeleteOne{builder}
+}
+
+// Query returns a query builder for ObjectStorageConfig.
+func (c *ObjectStorageConfigClient) Query() *ObjectStorageConfigQuery {
+	return &ObjectStorageConfigQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeObjectStorageConfig},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ObjectStorageConfig entity by its id.
+func (c *ObjectStorageConfigClient) Get(ctx context.Context, id uuid.UUID) (*ObjectStorageConfig, error) {
+	return c.Query().Where(objectstorageconfig.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ObjectStorageConfigClient) GetX(ctx context.Context, id uuid.UUID) *ObjectStorageConfig {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ObjectStorageConfigClient) Hooks() []Hook {
+	return c.hooks.ObjectStorageConfig
+}
+
+// Interceptors returns the client interceptors.
+func (c *ObjectStorageConfigClient) Interceptors() []Interceptor {
+	return c.inters.ObjectStorageConfig
+}
+
+func (c *ObjectStorageConfigClient) mutate(ctx context.Context, m *ObjectStorageConfigMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ObjectStorageConfigCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ObjectStorageConfigUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ObjectStorageConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ObjectStorageConfigDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ObjectStorageConfig mutation op: %q", m.Op())
 	}
 }
 
@@ -5012,21 +5155,23 @@ type (
 	hooks struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
-		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
-		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
-		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		User, UserGroup, UserGroupMember, UserSubscription, WalletGrant,
+		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
+		PaymentWebhookEvent, PointLedger, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, User, UserGroup,
+		UserGroupMember, UserSubscription, WalletGrant,
 		WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
-		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
-		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
-		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		User, UserGroup, UserGroupMember, UserSubscription, WalletGrant,
+		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
+		PaymentWebhookEvent, PointLedger, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, User, UserGroup,
+		UserGroupMember, UserSubscription, WalletGrant,
 		WalletReservationAllocation []ent.Interceptor
 	}
 )

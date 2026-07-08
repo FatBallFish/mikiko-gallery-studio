@@ -57,6 +57,7 @@ type ImageResult struct {
 	Width            int        `json:"width"`
 	Height           int        `json:"height"`
 	SHA256           string     `json:"sha256,omitempty"`
+	StorageConfigID  string     `json:"storage_config_id,omitempty"`
 	ObjectKey        string     `json:"object_key,omitempty"`
 	StorageDriver    string     `json:"storage_driver,omitempty"`
 	ImageGroup       string     `json:"image_group,omitempty"`

@@ -23,6 +23,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
@@ -117,6 +118,7 @@ func checkColumn(t, c string) error {
 			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
+			objectstorageconfig.Table:         objectstorageconfig.ValidColumn,
 			paymentorder.Table:                paymentorder.ValidColumn,
 			paymentproviderinstance.Table:     paymentproviderinstance.ValidColumn,
 			paymentwebhookevent.Table:         paymentwebhookevent.ValidColumn,
