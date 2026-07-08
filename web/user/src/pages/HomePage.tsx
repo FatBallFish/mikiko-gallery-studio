@@ -6,10 +6,11 @@ import { userApi } from '../../../shared/user-api'
 import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
 import { EmptyState, ImageLightbox, type ImageLightboxPayload, useApp } from '../components'
 import { publicEngagementScore } from '../publicEngagementModel'
-import { userButton } from '../ui/classes'
+import { button as btn } from '../ui/redesign-classes'
 import { rdGallery, rdHome } from '../ui/redesign-classes'
 import { errorMessage } from '../useApiResource'
 import { homeGalleryCardView } from './homeGalleryModel'
+import { Image as ImageIcon, RefreshCw } from '../ui/icons'
 
 type FilterMode = 'latest' | 'hot'
 
@@ -26,7 +27,7 @@ type MasonryCard = {
 
 const homeClasses = {
   content: 'w-full flex-1 p-6 md:p-10',
-  carousel: cn(rdHome.hero, 'mb-16 min-h-[420px] cursor-pointer border border-[var(--border)] p-10 md:p-16 max-[760px]:min-h-[360px] max-[760px]:rounded-[2rem] max-[760px]:p-6'),
+  carousel: cn(rdHome.hero, 'mb-16 min-h-[420px] cursor-pointer border border-[var(--border)] p-10 md:p-16 max-[760px]:min-h-[360px] max-[760px]:p-6'),
   heroImage: rdHome.heroImg,
   carouselOverlay: rdHome.heroOverlay,
   heroTitle: rdHome.heroTitle,
@@ -38,16 +39,20 @@ const homeClasses = {
   sectionDetail: 'mt-1.5 block text-[13px] text-[var(--muted)]',
   filterGroup: 'flex flex-wrap justify-end gap-3',
   masonry: rdGallery.masonry,
-  masonryItem: cn(rdGallery.itemShell, 'mb-8 block w-full break-inside-avoid overflow-hidden border-0 p-1 text-left text-[var(--fg)]'),
+  masonryItem: cn(rdGallery.itemShell, 'mb-8 block w-full break-inside-avoid overflow-hidden border-0 p-1 text-left text-[var(--fg)] active:scale-[0.98]'),
   masonryImage: cn(rdGallery.itemImg, 'h-auto opacity-90 transition duration-700 hover:scale-110 hover:opacity-100'),
   cardBody: 'p-5',
   cardTitle: 'mb-1 block text-sm font-bold',
   cardMeta: 'font-mono text-[11px] uppercase text-[var(--muted)]',
-  placeholder: 'grid min-h-[220px] place-items-center bg-white/[.04] text-[var(--muted)]',
+  placeholder: 'grid min-h-[220px] place-items-center bg-[color-mix(in_oklch,var(--fg)_4%,transparent)] text-[var(--muted)]',
   smallNote: 'm-0 mt-2.5 text-[13px] text-[var(--muted)]',
-  button: cn(userButton.base, 'min-h-0 rounded-[20px] px-4 py-1.5 text-[13px] font-semibold'),
-  buttonActive: cn(userButton.primary, 'font-extrabold'),
-  loadSentinel: 'mt-8 flex min-h-12 items-center justify-center text-sm text-[var(--muted)]',
+  button: cn(btn.base, 'min-h-0 px-4 py-1.5 text-[13px] font-semibold'),
+  buttonActive: cn(btn.primary, 'font-extrabold'),
+  buttonGhost: cn(btn.base, btn.ghost, 'min-h-0 px-4 py-1.5 text-[13px] font-semibold'),
+  loadSentinel: 'mt-8 flex min-h-12 items-center justify-center gap-2 text-sm text-[var(--muted)]',
+  skeletonCard: 'mb-8 break-inside-avoid overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]',
+  skeletonImage: 'pg-skeleton aspect-[4/3] w-full',
+  skeletonBody: 'grid gap-3 p-5',
 }
 
 const HOME_PAGE_SIZE = 16
@@ -172,8 +177,8 @@ export function HomePage() {
         <img src={heroImage} alt="Carousel Banner" className={homeClasses.heroImage} />
         <div className={homeClasses.carouselOverlay} />
         <div className={homeClasses.heroContent}>
-          <h1 className={homeClasses.heroTitle}>Cinematic Product Visualization</h1>
-          <p className={homeClasses.heroText}>探索 AI 创作的无限可能。从精准的工业设计到梦幻的场景构建，Mikiko Studio 为你提供专业级的生图引擎与 API 支持。</p>
+          <h1 className={homeClasses.heroTitle}>高奢视觉生成工坊</h1>
+          <p className={homeClasses.heroText}>用统一模型、清晰参数和可追溯历史，快速完成商品图、概念稿和视觉提案。</p>
           <div className={homeClasses.actionRow}>
             <HomeButton isActive onClick={(event) => navigateFromButton(event, () => app.navigate('genpic'))}>开始创作</HomeButton>
             <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('docs'))}>查看文档</HomeButton>
@@ -186,18 +191,21 @@ export function HomePage() {
           <div>
             <h2 id="inspiration-title" className={homeClasses.sectionTitle}>灵感发现</h2>
             <span className={homeClasses.sectionDetail}>
-              {loading ? '正在刷新公开广场...' : '来自社区最前沿的创意展示'}
+              {loading ? '正在刷新公开广场...' : '查看公开作品的模型、比例与提示词方向。'}
             </span>
           </div>
           <div className={homeClasses.filterGroup} aria-label="灵感筛选">
             <FilterButton active={filter === 'latest'} onClick={() => setFilter('latest')}>最新</FilterButton>
             <FilterButton active={filter === 'hot'} onClick={() => setFilter('hot')}>最热</FilterButton>
-            <HomeButton onClick={() => setReloadKey((current) => current + 1)}>刷新</HomeButton>
+            <button type="button" className={cn(homeClasses.buttonGhost, 'inline-flex items-center gap-1.5')} onClick={() => setReloadKey((current) => current + 1)} aria-label="刷新">
+              <RefreshCw size={14} strokeWidth={1.5} />
+              刷新
+            </button>
           </div>
         </div>
 
-        {loading && !cards.length ? null : cards.length ? (
-          <div className={homeClasses.masonry}>
+        {loading && !cards.length ? <HomeMasonrySkeleton /> : cards.length ? (
+          <div className={cn(homeClasses.masonry, 'pg-enter')}>
             {cards.map((card) => (
               <button type="button" className={homeClasses.masonryItem} key={card.id} onClick={card.onClick}>
                 {card.imageUrl ? <img src={card.imageUrl} alt={card.title} className={homeClasses.masonryImage} /> : <ImagePlaceholder />}
@@ -212,7 +220,12 @@ export function HomePage() {
           <EmptyState title="暂无公开灵感" detail="当前公开广场还没有可展示的作品。" />
         )}
         <div ref={sentinelRef} className={homeClasses.loadSentinel}>
-          {loadingMore ? '正在加载更多灵感...' : hasMore ? '继续下滑加载更多' : cards.length ? '已经到底了' : ''}
+          {loadingMore ? (
+            <div className="grid w-full max-w-sm gap-2">
+              <div className="pg-skeleton h-4 rounded-xl" />
+              <div className="pg-skeleton h-4 w-2/3 rounded-xl" />
+            </div>
+          ) : hasMore ? '继续下滑加载更多' : cards.length ? '已经到底了' : ''}
         </div>
       </section>
       <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} />
@@ -244,11 +257,23 @@ function FilterButton({ children, active, onClick }: { children: React.ReactNode
 function ImagePlaceholder() {
   return (
     <div className={homeClasses.placeholder}>
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <path d="M21 15l-5-5L5 21" />
-      </svg>
+      <ImageIcon size={48} strokeWidth={1} aria-hidden="true" />
+    </div>
+  )
+}
+
+function HomeMasonrySkeleton() {
+  return (
+    <div className={homeClasses.masonry} aria-hidden="true">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div key={index} className={homeClasses.skeletonCard}>
+          <div className={homeClasses.skeletonImage} />
+          <div className={homeClasses.skeletonBody}>
+            <div className="pg-skeleton h-4 rounded-xl" />
+            <div className="pg-skeleton h-3 w-2/3 rounded-xl" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

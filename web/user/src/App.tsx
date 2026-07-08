@@ -277,7 +277,7 @@ export default function App() {
       case 'api-keys':
         return <Shell><ApiKeysPage /></Shell>
       case 'profile':
-        return <Shell><ProfilePage /></Shell>
+        return <Shell scrollMode="document"><ProfilePage /></Shell>
       case 'docs':
         return <Shell><DocsPage /></Shell>
       case 'settings':

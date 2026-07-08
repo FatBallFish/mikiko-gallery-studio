@@ -3,16 +3,13 @@ import type { MouseEvent, ReactNode } from 'react'
 import type { GalleryImage, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { cn } from '../../../shared/classnames'
-import { Button, EmptyState, ImageDetailModal, ImageLightbox, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImageLightboxPayload } from '../components'
+import { Button, EmptyState, ImageDetailModal, ImageLightbox, Modal, PublicDetailIcon, StatusPill, copyText, useApp, type ImageLightboxPayload } from '../components'
 import { errorMessage, useApiResource } from '../useApiResource'
-import { userButton, userForm, userState } from '../ui/classes'
+import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
+import { Copy, Download, Edit, FolderPlus, Globe, Search, Trash2 } from '../ui/icons'
 import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
 import { filterGalleryImages, galleryImageCard } from './galleryRows'
-
-function SearchIcon({ className = '' }: { className?: string }) {
-  return <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
-}
 
 const galleryClasses = {
   content: 'w-full flex-1 p-6 md:p-10',
@@ -48,15 +45,15 @@ const galleryClasses = {
   info: rdGallery.itemFooter,
   titleLine: rdGallery.itemTitle,
   metaLine: rdGallery.itemMeta,
-  groupLabel: rdGallery.itemBadge,
-  iconActions: cn(rdGallery.itemActionGroup, '!gap-1 !rounded-md !p-0.5 opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100'),
-  iconButton: cn(rdGallery.itemActionBtn, '!size-[24px] !min-h-[24px] !rounded !p-0.5 disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:!size-3.5'),
-  iconButtonDanger: 'hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)] hover:text-[oklch(78%_.14_35)]',
+  groupLabel: 'inline-flex items-center rounded-full border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_7%,transparent)] px-2.5 py-1 font-vault-mono text-[10px] text-[var(--muted)]',
+  iconActions: 'flex items-center gap-1 rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] p-0.5 backdrop-blur opacity-0 transition-opacity duration-300 group-hover/card:opacity-100 group-focus-within/card:opacity-100',
+  iconButton: 'grid size-6 place-items-center rounded-xl p-0.5 text-[var(--image-action-text)] transition-colors hover:bg-[var(--image-action-hover-bg)] hover:text-[var(--image-action-hover-text)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:size-3.5',
+  iconButtonDanger: 'hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)] hover:text-[var(--accent-coral)]',
   deleteConfirm: 'grid grid-cols-[42px_minmax(0,1fr)] items-start gap-4',
-  deleteMark: 'grid size-[42px] place-items-center rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)] text-[oklch(78%_.14_35)]',
+  deleteMark: 'grid size-[42px] place-items-center rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)] text-[var(--accent-coral)]',
   deleteTitle: 'm-0 mb-2 text-xl',
   deleteText: 'm-0 leading-[1.65] text-[var(--muted)]',
-  deleteList: 'col-span-full flex flex-wrap gap-2 rounded-[10px] border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3',
+  deleteList: 'col-span-full flex flex-wrap gap-2 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3',
   deleteListItem: 'max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full bg-[color-mix(in_oklch,var(--fg)_7%,transparent)] px-2 py-1 text-xs text-[var(--muted)]',
   deleteActions: 'col-span-full flex justify-end gap-2 max-[420px]:flex-col max-[420px]:items-stretch',
   groupEditor: 'grid gap-4',
@@ -146,21 +143,21 @@ function FilterSelect<T extends string>({ label, value, options, onChange }: {
   )
 }
 
-function Icon({ name }: { name: 'download' | 'public' | 'delete' | 'edit' | 'copy' | 'group' }) {
-  const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  if (name === 'download') return <svg {...common}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
-  if (name === 'public') return <svg {...common}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20" /><path d="M12 2a15 15 0 0 0 0 20" /></svg>
-  if (name === 'delete') return <svg {...common}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /></svg>
-  if (name === 'edit') return <svg {...common}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-  if (name === 'copy') return <svg {...common}><rect x="9" y="9" width="13" height="13" rx="2" /><rect x="2" y="2" width="13" height="13" rx="2" /></svg>
-  return <svg {...common}><path d="M20 12V7a2 2 0 0 0-2-2h-6.2a2 2 0 0 1-1.4-.6L9.6 3.6A2 2 0 0 0 8.2 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /><path d="M16 11h6" /><path d="M19 8v6" /></svg>
+function ActionIcon({ name }: { name: 'download' | 'public' | 'delete' | 'edit' | 'copy' | 'group' }) {
+  const props = { size: 14, strokeWidth: 1.5 } as const
+  if (name === 'download') return <Download {...props} />
+  if (name === 'public') return <Globe {...props} />
+  if (name === 'delete') return <Trash2 {...props} />
+  if (name === 'edit') return <Edit {...props} />
+  if (name === 'copy') return <Copy {...props} />
+  return <FolderPlus {...props} />
 }
 
 function iconButton(label: string, icon: ReactNode, onClick: () => void, disabled?: boolean, busy?: boolean, tone = '') {
   return (
     <button
       type="button"
-      className={cn(userButton.icon, galleryClasses.iconButton, tone === 'danger' && galleryClasses.iconButtonDanger)}
+      className={cn(galleryClasses.iconButton, tone === 'danger' && galleryClasses.iconButtonDanger)}
       title={label}
       aria-label={label}
       disabled={disabled || busy}
@@ -364,7 +361,7 @@ export function GalleryPage() {
         <div className={galleryClasses.searchWrap}>
           <div className={galleryClasses.searchInputWrap}>
             <input className={galleryClasses.searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、提示词或模型" />
-            <SearchIcon className="absolute left-3 top-3.5 size-5 text-[var(--muted)]" />
+            <Search className="absolute left-3 top-3.5 size-5 text-[var(--muted)]" strokeWidth={1.5} />
           </div>
         </div>
       </div>
@@ -388,7 +385,7 @@ export function GalleryPage() {
         <div className="text-xs text-[var(--muted)] whitespace-nowrap">共 {filtered.length} 个结果</div>
       </div>
 
-          {privateGallery.loading ? <LoadingState label="正在读取历史任务..." /> : null}
+          {privateGallery.loading ? <GalleryGridSkeleton /> : null}
           {!privateGallery.loading && !filtered.length ? <EmptyState title="暂无资产" detail="换一个筛选条件，或回工作台创建新任务。" action={<Button onClick={() => app.navigate('genpic')}>继续生成</Button>} /> : null}
 
           {selectedImages.length ? (
@@ -406,11 +403,11 @@ export function GalleryPage() {
                   </span>
                   全选
                 </button>
-                <button className={galleryClasses.batchBtn} type="button" onClick={() => downloadImages(selectedImages)}><Icon name="download" /> 打包下载</button>
-                <button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void publishImages(selectedImages)}><Icon name="public" /> 公开</button>
-                <button className={galleryClasses.batchBtn} type="button" onClick={() => openGroupDialog(selectedImages)}><Icon name="group" /> 设为分组</button>
+                <button className={galleryClasses.batchBtn} type="button" onClick={() => downloadImages(selectedImages)}><ActionIcon name="download" /> 打包下载</button>
+                <button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void publishImages(selectedImages)}><ActionIcon name="public" /> 公开</button>
+                <button className={galleryClasses.batchBtn} type="button" onClick={() => openGroupDialog(selectedImages)}><ActionIcon name="group" /> 设为分组</button>
                 <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-                <button className={cn(galleryClasses.batchBtn, 'text-red-500 hover:bg-red-500/10 hover:text-red-400')} type="button" disabled={busyId === 'batch'} onClick={() => requestDeleteImages(selectedImages)}><Icon name="delete" /> 删除</button>
+                <button className={cn(galleryClasses.batchBtn, 'text-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_10%,transparent)] hover:text-[var(--accent-coral)]')} type="button" disabled={busyId === 'batch'} onClick={() => requestDeleteImages(selectedImages)}><ActionIcon name="delete" /> 删除</button>
               </div>
             </div>
           ) : null}
@@ -470,7 +467,7 @@ export function GalleryPage() {
       {deleteDialog ? (
         <Modal title="永久删除图片" onClose={() => setDeleteDialog(null)}>
           <div className={galleryClasses.deleteConfirm}>
-            <div className={galleryClasses.deleteMark}><Icon name="delete" /></div>
+            <div className={galleryClasses.deleteMark}><ActionIcon name="delete" /></div>
             <div>
               <h3 className={galleryClasses.deleteTitle}>确认删除 {deleteDialog.images.length} 张图片？</h3>
               <p className={galleryClasses.deleteText}>删除后会同步清理图片文件和数据库记录，无法恢复。公开审核中的图片也会从审核队列移除。</p>
@@ -562,17 +559,17 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
                       {selectedIds.has(image.id) ? '✓' : ''}
                     </button>
                     <div className={galleryClasses.iconActions}>
-                      {iconButton('复制提示词', <Icon name="copy" />, () => void onCopyPrompt(image), !card.prompt)}
-                      {iconButton('编辑', <Icon name="edit" />, () => onContinue(image))}
-                      {iconButton('下载', <Icon name="download" />, () => onDownload(image), !card.canDownload)}
-                      {iconButton(card.publishActionLabel, <Icon name="public" />, () => onPublish(image), !card.canPublish, busyId === image.id)}
-                      {iconButton('设置分组', <Icon name="group" />, () => onGroup(image))}
-                      {iconButton('删除', <Icon name="delete" />, () => onDelete(image), false, busyId === image.id, 'danger')}
+                      {iconButton('复制提示词', <ActionIcon name="copy" />, () => void onCopyPrompt(image), !card.prompt)}
+                      {iconButton('编辑', <ActionIcon name="edit" />, () => onContinue(image))}
+                      {iconButton('下载', <ActionIcon name="download" />, () => onDownload(image), !card.canDownload)}
+                      {iconButton(card.publishActionLabel, <ActionIcon name="public" />, () => onPublish(image), !card.canPublish, busyId === image.id)}
+                      {iconButton('设置分组', <ActionIcon name="group" />, () => onGroup(image))}
+                      {iconButton('删除', <ActionIcon name="delete" />, () => onDelete(image), false, busyId === image.id, 'danger')}
                     </div>
                   </div>
                   <div className={galleryClasses.info}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={galleryClasses.status}>{card.publishLabel}</span>
+                      <StatusPill status={image.visibility_status || 'private'} />
                       <span className={galleryClasses.groupLabel}>{card.groupLabel}</span>
                     </div>
                     <div className={galleryClasses.titleLine}>{card.title}</div>
@@ -590,6 +587,23 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
           </article>
         )
       })}
+    </div>
+  )
+}
+
+function GalleryGridSkeleton() {
+  return (
+    <div className={galleryClasses.grid} aria-hidden="true">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div key={index} className="mb-8 break-inside-avoid overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]">
+          <div className="pg-skeleton aspect-[4/3] w-full" />
+          <div className="grid gap-3 p-4">
+            <div className="pg-skeleton h-4 rounded-xl" />
+            <div className="pg-skeleton h-3 w-2/3 rounded-xl" />
+            <div className="pg-skeleton h-3 w-1/2 rounded-xl" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

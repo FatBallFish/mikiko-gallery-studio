@@ -10,15 +10,15 @@ import { createGalleryEditContext, galleryEditContextKey } from './galleryEditCo
 import { publicGalleryCardView, shouldFetchPublicGalleryDetailByID } from './publicGalleryModel'
 
 const publicGalleryClasses = {
-  content: 'mx-auto w-full max-w-[1200px] p-10 max-[760px]:p-5 max-[420px]:p-4',
+  content: 'mx-auto w-full max-w-[1200px] p-10 max-[760px]:px-5 max-[760px]:pb-24 max-[760px]:pt-5 max-[420px]:px-4 max-[420px]:pb-24 max-[420px]:pt-4',
   header: 'mb-10 flex flex-wrap items-end justify-between gap-5',
   title: 'm-0 font-vault-display text-5xl font-medium leading-none text-[var(--fg)] max-[620px]:text-4xl',
-  searchInput: 'w-[280px] max-w-full rounded-lg',
+  searchInput: 'w-[280px] max-w-full rounded-xl',
   filters: 'mb-8 flex flex-wrap gap-3',
-  filterButton: 'rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 font-vault-mono text-sm text-[var(--muted)] transition hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:text-[var(--fg)]',
+  filterButton: 'rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 font-vault-mono text-sm text-[var(--muted)] transition hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:text-[var(--fg)] active:scale-[0.98]',
   filterButtonActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-[var(--accent)]',
   grid: 'grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-6 max-[760px]:grid-cols-1',
-  card: 'overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]',
+  card: 'overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]',
   thumb: 'grid aspect-square w-full place-items-center overflow-hidden bg-[var(--bg)] p-0 disabled:cursor-wait disabled:opacity-70',
   thumbImage: 'h-full w-full object-cover',
   info: 'p-4',
