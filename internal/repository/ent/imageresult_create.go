@@ -89,6 +89,20 @@ func (_c *ImageResultCreate) SetNillableImageRole(v *string) *ImageResultCreate 
 	return _c
 }
 
+// SetStorageConfigID sets the "storage_config_id" field.
+func (_c *ImageResultCreate) SetStorageConfigID(v uuid.UUID) *ImageResultCreate {
+	_c.mutation.SetStorageConfigID(v)
+	return _c
+}
+
+// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
+func (_c *ImageResultCreate) SetNillableStorageConfigID(v *uuid.UUID) *ImageResultCreate {
+	if v != nil {
+		_c.SetStorageConfigID(*v)
+	}
+	return _c
+}
+
 // SetStorageDriver sets the "storage_driver" field.
 func (_c *ImageResultCreate) SetStorageDriver(v string) *ImageResultCreate {
 	_c.mutation.SetStorageDriver(v)
@@ -452,6 +466,10 @@ func (_c *ImageResultCreate) createSpec() (*ImageResult, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ImageRole(); ok {
 		_spec.SetField(imageresult.FieldImageRole, field.TypeString, value)
 		_node.ImageRole = value
+	}
+	if value, ok := _c.mutation.StorageConfigID(); ok {
+		_spec.SetField(imageresult.FieldStorageConfigID, field.TypeUUID, value)
+		_node.StorageConfigID = &value
 	}
 	if value, ok := _c.mutation.StorageDriver(); ok {
 		_spec.SetField(imageresult.FieldStorageDriver, field.TypeString, value)

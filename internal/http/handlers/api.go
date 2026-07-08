@@ -49,6 +49,7 @@ import (
 	domainmodelhub "github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	domainredeem "github.com/fatballfish/pic-gallery/internal/domain/redeem"
 	domainsecureconfig "github.com/fatballfish/pic-gallery/internal/domain/secureconfig"
+	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
@@ -66,31 +67,35 @@ import (
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
+	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
 	"gopkg.in/yaml.v3"
 )
 
 type API struct {
-	auth       *authservice.Service
-	adminAuth  *adminauthservice.Service
-	apiKeys    *apikeyservice.Service
-	billing    *billingservice.Service
-	assets     *assetservice.Service
-	caps       *capserv.Service
-	compat     *compatservice.Service
-	tasks      *imagetaskservice.Service
-	admin      *adminconfigservice.Service
-	cashierCfg *cashierservice.ConfigFacade
-	adminUser  *adminuserservice.Service
-	callRecord *admincallrecordservice.Service
-	modelAdmin *modeladminservice.Service
-	secureCfg  *secureconfigservice.Service
-	redeem     *redeemservice.Service
-	audit      *auditservice.Service
-	adminPerms domainadminauth.PermissionResolver
-	docsReady  DocsReadinessChecker
-	cfg        config.Config
+	auth          *authservice.Service
+	adminAuth     *adminauthservice.Service
+	apiKeys       *apikeyservice.Service
+	billing       *billingservice.Service
+	assets        *assetservice.Service
+	caps          *capserv.Service
+	compat        *compatservice.Service
+	tasks         *imagetaskservice.Service
+	admin         *adminconfigservice.Service
+	cashierCfg    *cashierservice.ConfigFacade
+	adminUser     *adminuserservice.Service
+	callRecord    *admincallrecordservice.Service
+	modelAdmin    *modeladminservice.Service
+	secureCfg     *secureconfigservice.Service
+	storageCfg    *storageconfigservice.Service
+	storageRouter *storage.Registry
+	redeem        *redeemservice.Service
+	audit         *auditservice.Service
+	adminPerms    domainadminauth.PermissionResolver
+	docsReady     DocsReadinessChecker
+	cfg           config.Config
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -239,6 +244,11 @@ func (a *API) SetCashierProviderInstanceStore(store cashierservice.ProviderInsta
 
 func (a *API) SetSecureConfigService(service *secureconfigservice.Service) {
 	a.secureCfg = service
+}
+
+func (a *API) SetStorageConfigService(service *storageconfigservice.Service, router *storage.Registry) {
+	a.storageCfg = service
+	a.storageRouter = router
 }
 
 func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {
@@ -4271,6 +4281,307 @@ func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+func (a *API) HandleAdminStorageConfigs(w http.ResponseWriter, r *http.Request) {
+	if a.storageCfg == nil {
+		httpx.WriteError(w, r, errs.Internal("storage config service is not available"))
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		items, err := a.storageCfg.List(r.Context())
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": items})
+	case http.MethodPost:
+		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		req, ok := decodeStorageConfigWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		req.UpdatedBy = admin.AdminID
+		created, err := a.storageCfg.Create(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.create", "object_storage_config", created.ID, map[string]any{"code": created.Code, "driver": created.Driver, "provider": created.Provider}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminStorageConfigProbe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if a.storageRouter == nil {
+		httpx.WriteError(w, r, errs.Internal("storage router is not available"))
+		return
+	}
+	if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	req, ok := decodeStorageConfigWriteRequest(w, r)
+	if !ok {
+		return
+	}
+	result := a.storageRouter.Probe(r.Context(), storageProbeCandidate(req))
+	status := http.StatusOK
+	if result.Status != domainstorageconfig.ProbeStatusSuccess {
+		status = http.StatusBadRequest
+	}
+	httpx.WriteSuccess(w, r, status, result)
+}
+
+func (a *API) HandleAdminStorageConfigDetail(w http.ResponseWriter, r *http.Request) {
+	if a.storageCfg == nil {
+		httpx.WriteError(w, r, errs.Internal("storage config service is not available"))
+		return
+	}
+	id, action := parseStorageConfigAction(r.URL.Path)
+	if strings.TrimSpace(id) == "" {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "storage config route not found"))
+		return
+	}
+	switch {
+	case r.Method == http.MethodGet && action == "":
+		if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		item, err := a.storageCfg.Get(r.Context(), id)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, item)
+	case r.Method == http.MethodPut && action == "":
+		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		req, ok := decodeStorageConfigWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		req.ID = id
+		req.UpdatedBy = admin.AdminID
+		updated, err := a.storageCfg.Update(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.update", "object_storage_config", updated.ID, map[string]any{"code": updated.Code, "version": updated.Version}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case r.Method == http.MethodPost && action == "probe":
+		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		if a.storageRouter == nil {
+			httpx.WriteError(w, r, errs.Internal("storage router is not available"))
+			return
+		}
+		resolved, err := a.storageCfg.ResolveByID(r.Context(), id)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		result := a.storageRouter.Probe(r.Context(), resolved)
+		updated, updateErr := a.storageCfg.UpdateProbe(r.Context(), id, result, admin.AdminID)
+		if updateErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(updateErr))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.probe", "object_storage_config", updated.ID, map[string]any{"status": result.Status}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		status := http.StatusOK
+		if result.Status != domainstorageconfig.ProbeStatusSuccess {
+			status = http.StatusBadRequest
+		}
+		httpx.WriteSuccess(w, r, status, updated)
+	case r.Method == http.MethodPost && action == "set-default":
+		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		var req struct {
+			Version int64 `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.storageCfg.SetDefault(r.Context(), domainstorageconfig.SetDefaultRequest{ID: id, Version: req.Version, UpdatedBy: admin.AdminID})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.set_default", "object_storage_config", updated.ID, map[string]any{"code": updated.Code}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case r.Method == http.MethodPost && action == "set-status":
+		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		var req struct {
+			Version      int64  `json:"version"`
+			Status       string `json:"status"`
+			ReadEnabled  bool   `json:"read_enabled"`
+			WriteEnabled bool   `json:"write_enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		updated, err := a.storageCfg.SetStatus(r.Context(), domainstorageconfig.StatusRequest{ID: id, Version: req.Version, Status: req.Status, ReadEnabled: req.ReadEnabled, WriteEnabled: req.WriteEnabled, UpdatedBy: admin.AdminID})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.set_status", "object_storage_config", updated.ID, map[string]any{"status": updated.Status, "read_enabled": updated.ReadEnabled, "write_enabled": updated.WriteEnabled}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func decodeStorageConfigWriteRequest(w http.ResponseWriter, r *http.Request) (domainstorageconfig.WriteRequest, bool) {
+	var req struct {
+		Version        int64             `json:"version"`
+		Code           string            `json:"code"`
+		Name           string            `json:"name"`
+		Driver         string            `json:"driver"`
+		Provider       string            `json:"provider"`
+		Status         string            `json:"status"`
+		ReadEnabled    *bool             `json:"read_enabled"`
+		WriteEnabled   *bool             `json:"write_enabled"`
+		Endpoint       string            `json:"endpoint"`
+		Region         string            `json:"region"`
+		Bucket         string            `json:"bucket"`
+		Prefix         string            `json:"prefix"`
+		ForcePathStyle bool              `json:"force_path_style"`
+		PublicBaseURL  string            `json:"public_base_url"`
+		LocalRoot      string            `json:"local_root"`
+		Secrets        map[string]string `json:"secrets,omitempty"`
+		ClearSecrets   []string          `json:"clear_secrets,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainstorageconfig.WriteRequest{}, false
+	}
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		status = domainstorageconfig.StatusEnabled
+	}
+	readEnabled := true
+	if req.ReadEnabled != nil {
+		readEnabled = *req.ReadEnabled
+	}
+	writeEnabled := true
+	if req.WriteEnabled != nil {
+		writeEnabled = *req.WriteEnabled
+	}
+	return domainstorageconfig.WriteRequest{
+		Version:        req.Version,
+		Code:           req.Code,
+		Name:           req.Name,
+		Driver:         req.Driver,
+		Provider:       req.Provider,
+		Status:         status,
+		ReadEnabled:    readEnabled,
+		WriteEnabled:   writeEnabled,
+		Endpoint:       req.Endpoint,
+		Region:         req.Region,
+		Bucket:         req.Bucket,
+		Prefix:         req.Prefix,
+		ForcePathStyle: req.ForcePathStyle,
+		PublicBaseURL:  req.PublicBaseURL,
+		LocalRoot:      req.LocalRoot,
+		Secrets:        req.Secrets,
+		ClearSecrets:   req.ClearSecrets,
+	}, true
+}
+
+func parseStorageConfigAction(requestPath string) (string, string) {
+	trimmed := strings.Trim(strings.TrimPrefix(requestPath, "/api/ops/admin/v1/storage-configs/"), "/")
+	if trimmed == "" {
+		return "", ""
+	}
+	id, action, ok := strings.Cut(trimmed, ":")
+	if !ok {
+		return trimmed, ""
+	}
+	return strings.TrimSpace(id), strings.TrimSpace(action)
+}
+
+func storageProbeCandidate(req domainstorageconfig.WriteRequest) domainstorageconfig.ResolvedConfig {
+	secrets := map[string]any{}
+	for key, value := range req.Secrets {
+		secrets[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	driver := strings.TrimSpace(req.Driver)
+	if driver == "" {
+		driver = domainstorageconfig.DriverLocal
+	}
+	region := strings.TrimSpace(req.Region)
+	if strings.TrimSpace(req.Provider) == domainstorageconfig.ProviderR2 && region == "" {
+		region = "auto"
+	}
+	return domainstorageconfig.ResolvedConfig{
+		ConfigRecord: domainstorageconfig.ConfigRecord{
+			ID:             "probe",
+			Code:           "probe",
+			Name:           "probe",
+			Driver:         driver,
+			Provider:       strings.TrimSpace(req.Provider),
+			Status:         domainstorageconfig.StatusEnabled,
+			ReadEnabled:    true,
+			WriteEnabled:   true,
+			Endpoint:       strings.TrimSpace(req.Endpoint),
+			Region:         region,
+			Bucket:         strings.TrimSpace(req.Bucket),
+			Prefix:         strings.Trim(strings.TrimSpace(req.Prefix), "/"),
+			ForcePathStyle: req.ForcePathStyle,
+			PublicBaseURL:  strings.TrimSpace(req.PublicBaseURL),
+			LocalRoot:      strings.TrimSpace(req.LocalRoot),
+			Version:        1,
+		},
+		Secrets: secrets,
+	}
+}
+
 func (a *API) HandleAdminSecuritySMTP(w http.ResponseWriter, r *http.Request) {
 	if a.secureCfg == nil {
 		httpx.WriteError(w, r, errs.Internal("secure config service is not available"))
@@ -7380,6 +7691,7 @@ func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID s
 				Width:            result.Width,
 				Height:           result.Height,
 				SHA256:           result.SHA256,
+				StorageConfigID:  result.StorageConfigID,
 				ObjectKey:        result.ObjectKey,
 				StorageDriver:    result.StorageDriver,
 				VisibilityStatus: defaultString(result.VisibilityStatus, domainimagetask.VisibilityPrivate),

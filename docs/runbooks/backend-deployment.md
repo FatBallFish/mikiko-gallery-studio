@@ -49,10 +49,11 @@ Runtime bootstrap configuration is injected from `.env.prod`. API and worker no 
 
 4. Complete admin-managed runtime configuration:
 
-   - Configure SMTP at `/admin/#/security-config`.
-   - Configure provider accounts and model routing in the admin console.
-   - Configure billing/pricing, payment site base URL, and payment channels before exposing recharge.
-   - Keep the admin console behind HTTPS/TLS before entering merchant or SMTP credentials.
+- Configure SMTP at `/admin/#/security-config`.
+- Configure provider accounts and model routing in the admin console.
+- Configure object storage at `/admin/#/config` Storage. For Cloudflare R2 or any multi-S3 migration, follow `docs/runbooks/r2-storage-migration.md` before setting a new default writer.
+- Configure billing/pricing, payment site base URL, and payment channels before exposing recharge.
+- Keep the admin console behind HTTPS/TLS before entering merchant or SMTP credentials.
 
 ## Standalone Deployment Directory
 

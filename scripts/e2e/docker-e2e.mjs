@@ -34,6 +34,8 @@ const state = {
     providerModelId: '1',
     providerCode: `e2e-provider-${RUN_ID}`.toLowerCase(),
     groupCode: `e2e-group-${RUN_ID}`.toLowerCase(),
+    storageConfigId: '1',
+    storageConfigVersion: 1,
   },
 }
 
@@ -202,6 +204,14 @@ async function startFakeProvider() {
     hostURL: `http://127.0.0.1:${fakeProviderPort}`,
     containerURL: `http://host.docker.internal:${fakeProviderPort}`,
   }
+}
+
+async function stopFakeProvider() {
+  if (!fakeProviderServer) return
+  const server = fakeProviderServer
+  fakeProviderServer = null
+  fakeProviderPort = 0
+  await new Promise(resolve => server.close(() => resolve()))
 }
 
 async function ensureBasicRouteModel() {
@@ -469,6 +479,35 @@ async function bootstrapAdmin() {
   return { email: 'admin@example.com' }
 }
 
+async function configureSignupTrialCredits() {
+  const tabs = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/config-tabs`, 200, {
+    headers: bearer(state.admin.token),
+  })
+  const trialTab = data(tabs).items?.find(item => item.tab_key === 'trial_credits')
+  const version = Number(trialTab?.version ?? 1)
+  await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/config-tabs/trial_credits`, 200, {
+    headers: bearer(state.admin.token),
+    body: {
+      version,
+      items: [{
+        config_category: 'billing_trial',
+        config_key: 'signup_trial',
+        config_value: {
+          value: {
+            enabled: true,
+            points: '20.00000',
+            valid_days: 7,
+            expiry_reminder_days: 2,
+            grant_once_per_user: true,
+          },
+        },
+        scope: 'global',
+      }],
+    },
+  })
+  return { points: '20.00000', validDays: 7 }
+}
+
 async function seedPoints() {
   const result = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/users/${state.ids.userId}/points-adjustments`, 200, {
     headers: {
@@ -592,6 +631,7 @@ async function happyPathAssetsAndTasks() {
       task_type: 'text_to_image',
       prompt: 'docker e2e prompt',
       abstract_model: 'basic',
+      route_model_code: 'basic',
       requested_quality: 'auto',
       requested_size: '1024x1024',
       requested_output_image_count: 1,
@@ -608,7 +648,7 @@ async function happyPathAssetsAndTasks() {
 }
 
 async function happyPathOpenAPI() {
-  const estimatePath = '/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
+  const estimatePath = '/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&route_model_code=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
   const estimate = await signedRequest('GET', estimatePath)
   if (estimate.status !== 200) fail('Native Open API estimate failed', { status: estimate.status, body: estimate.text })
   await signedOk('GET', '/api/open/image/v1/capabilities')
@@ -629,6 +669,7 @@ async function happyPathOpenAPI() {
     task_type: 'text_to_image',
     prompt: 'docker e2e open api prompt',
     abstract_model: 'basic',
+    route_model_code: 'basic',
     requested_quality: 'auto',
     requested_size: '1024x1024',
     requested_output_image_count: 1,
@@ -665,6 +706,13 @@ async function signedOk(method, pathWithQuery) {
 async function happyPathAdmin() {
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/metrics/dashboard`, 200, { headers: bearer(state.admin.token) })
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/config-tabs`, 200, { headers: bearer(state.admin.token) })
+  const storageConfigs = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/storage-configs`, 200, { headers: bearer(state.admin.token) })
+  const defaultStorageConfig = (data(storageConfigs).items || []).find(item => item.is_default) || data(storageConfigs).items?.[0]
+  if (!defaultStorageConfig?.id) {
+    fail('Admin storage config list did not expose a config id for OpenAPI sweep', { body: storageConfigs.text })
+  }
+  state.ids.storageConfigId = String(defaultStorageConfig.id)
+  state.ids.storageConfigVersion = Number(defaultStorageConfig.version || 1)
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/users?page=1&page_size=20`, 200, { headers: bearer(state.admin.token) })
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/users/${state.ids.userId}`, 200, { headers: bearer(state.admin.token) })
   const manualEmail = `manual-${RUN_ID}@example.com`
@@ -861,6 +909,7 @@ async function openapiRouteSweep(openapi) {
         body: result.text.slice(0, 600),
       })
     }
+    rememberStorageConfigVersion(template, result)
   }
   if (failures.length > 0) {
     fail('OpenAPI route sweep found contract failures', { failures })
@@ -869,6 +918,14 @@ async function openapiRouteSweep(openapi) {
     warn('OpenAPI route sweep hit endpoints with expected missing preconditions', { warnings })
   }
   return { checked, semanticNotFoundWarnings: warnings.length }
+}
+
+function rememberStorageConfigVersion(template, result) {
+  if (!template.includes('/api/ops/admin/v1/storage-configs/{storage_config_id}')) return
+  const version = Number(result.json?.data?.version)
+  if (result.status >= 200 && result.status < 300 && Number.isFinite(version) && version > 0) {
+    state.ids.storageConfigVersion = version
+  }
 }
 
 function isExpectedProviderUnavailable(result) {
@@ -919,6 +976,7 @@ function materializePath(template) {
     .replace('{provider_code}', state.ids.providerCode)
     .replace('{route_id}', state.ids.routeId)
     .replace('{provider_model_id}', state.ids.providerModelId)
+    .replace('{storage_config_id}', state.ids.storageConfigId)
 }
 
 function defaultQuery(template) {
@@ -972,6 +1030,11 @@ function defaultBody(method, template) {
     '/api/ops/admin/v1/redeem-codes': { code: `SWEEP-${RUN_ID}`, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
     '/api/ops/admin/v1/redeem-codes/{code_id}/status': { status: 'disabled' },
     '/api/ops/admin/v1/redeem-codes:batch-create': { count: 1, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
+    '/api/ops/admin/v1/storage-configs': { code: `sweep-local-${RUN_ID}`.toLowerCase(), name: `Sweep Local ${RUN_ID}`, driver: 'local', provider: 'local', local_root: '/var/lib/pic-gallery/storage', read_enabled: true, write_enabled: false },
+    '/api/ops/admin/v1/storage-configs:probe': { name: `Sweep Probe ${RUN_ID}`, driver: 'local', provider: 'local', local_root: '/var/lib/pic-gallery/storage', read_enabled: true, write_enabled: true },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}': { version: state.ids.storageConfigVersion, name: `Sweep Default ${RUN_ID}`, driver: 'local', provider: 'local', local_root: '/var/lib/pic-gallery/storage', read_enabled: true, write_enabled: true },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-default': { version: state.ids.storageConfigVersion },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-status': { version: state.ids.storageConfigVersion, status: 'enabled', read_enabled: true, write_enabled: true },
     '/api/ops/admin/v1/user-groups': { group_code: `sweep-group-${RUN_ID}`.toLowerCase(), group_name: `Sweep ${RUN_ID}`, multiplier: '1.00000', status: 'active' },
     '/api/ops/admin/v1/user-groups/{group_code}': { group_code: state.ids.groupCode, group_name: `Sweep Updated ${RUN_ID}`, multiplier: '1.20000', status: 'active' },
     '/api/ops/admin/v1/users/{user_id}/group': { user_group_code: state.ids.groupCode },
@@ -1036,8 +1099,9 @@ async function main() {
     })
     await step('frontend shared API client unwraps auth tokens', frontendApiClientSmoke)
     await step('CORS preflight sweep for browser origins', async () => corsSweep(openapi))
-    await step('bootstrap user session', bootstrapUser)
     await step('bootstrap admin session', bootstrapAdmin)
+    await step('configure signup trial credits', configureSignupTrialCredits)
+    await step('bootstrap user session', bootstrapUser)
     await step('seed user points through admin API', seedPoints)
     await step('ensure mock cashier payment method is visible', ensureMockCashierVisible)
     await step('agent billing happy path', happyPathAgentBilling)
@@ -1067,6 +1131,8 @@ async function main() {
     console.error(error.message)
     if (error.detail) console.error(JSON.stringify(error.detail, null, 2))
     process.exitCode = 1
+  } finally {
+    await stopFakeProvider()
   }
 }
 

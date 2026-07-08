@@ -53,6 +53,9 @@ import type {
   SMTPConfigView,
   SMTPConfigWriteRequest,
   SMTPTestResponse,
+  StorageConfigView,
+  StorageConfigWriteRequest,
+  StorageProbeView,
   SystemAdminPasswordResetRequest,
   SystemAdminUser,
   SystemAdminUserCreateRequest,
@@ -174,6 +177,17 @@ export const adminApi = {
   getSMTPConfig: () => sharedApiClient.request<SMTPConfigView>(API_PATHS.ops.securitySMTP),
   updateSMTPConfig: (input: SMTPConfigWriteRequest) => sharedApiClient.request<SMTPConfigView>(API_PATHS.ops.securitySMTP, { method: 'PUT', body: input }),
   testSMTPConfig: (email: string, scene = 'smtp_test') => sharedApiClient.request<SMTPTestResponse>(API_PATHS.ops.securitySMTPTest, { method: 'POST', body: { email, scene } }),
+  listStorageConfigs: async () => (await sharedApiClient.request<{ items: StorageConfigView[] }>(API_PATHS.ops.storageConfigs)).items ?? [],
+  createStorageConfig: (input: StorageConfigWriteRequest) => sharedApiClient.request<StorageConfigView>(API_PATHS.ops.storageConfigs, { method: 'POST', body: input }),
+  updateStorageConfig: (storage_config_id: string, input: StorageConfigWriteRequest) =>
+    sharedApiClient.request<StorageConfigView>(API_PATHS.ops.storageConfigDetail, { method: 'PUT', pathParams: { storage_config_id }, body: input }),
+  probeStorageConfig: (storage_config_id: string) =>
+    sharedApiClient.request<StorageConfigView>(API_PATHS.ops.storageConfigDetailProbe, { method: 'POST', pathParams: { storage_config_id } }),
+  probeStorageConfigDraft: (input: StorageConfigWriteRequest) => sharedApiClient.request<StorageProbeView>(API_PATHS.ops.storageConfigProbe, { method: 'POST', body: input }),
+  setDefaultStorageConfig: (storage_config_id: string, version?: number) =>
+    sharedApiClient.request<StorageConfigView>(API_PATHS.ops.storageConfigSetDefault, { method: 'POST', pathParams: { storage_config_id }, body: { version } }),
+  setStorageConfigStatus: (storage_config_id: string, input: { version?: number; status: string; read_enabled: boolean; write_enabled: boolean }) =>
+    sharedApiClient.request<StorageConfigView>(API_PATHS.ops.storageConfigSetStatus, { method: 'POST', pathParams: { storage_config_id }, body: input }),
   listPaymentOrders: async (query: Record<string, string | number | undefined> = {}) => normalizePage<PaymentOrder>(await sharedApiClient.request(API_PATHS.ops.paymentOrders, { query })),
   getPaymentOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.ops.paymentOrderDetail, { pathParams: { order_id } }),
   completePaymentOrder: (order_id: string | number, input: CompletePaymentOrderRequest) =>

@@ -19,6 +19,7 @@ func (ReferenceAsset) Fields() []ent.Field {
 		field.Int64("api_key_id").Optional().Nillable(),
 		field.String("upload_source").MaxLen(16).Default("web"),
 		field.String("status").MaxLen(32).Default("uploading"),
+		field.UUID("storage_config_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("storage_driver").MaxLen(16).Default("local"),
 		field.String("object_key").MaxLen(255).NotEmpty(),
 		field.String("mime_type").MaxLen(64).NotEmpty(),
@@ -31,5 +32,5 @@ func (ReferenceAsset) Fields() []ent.Field {
 	}
 }
 func (ReferenceAsset) Indexes() []ent.Index {
-	return []ent.Index{index.Fields("object_key").Unique(), index.Fields("user_id"), index.Fields("status"), index.Fields("sha256"), index.Fields("expires_at")}
+	return []ent.Index{index.Fields("object_key").Unique(), index.Fields("storage_config_id"), index.Fields("user_id"), index.Fields("status"), index.Fields("sha256"), index.Fields("expires_at")}
 }

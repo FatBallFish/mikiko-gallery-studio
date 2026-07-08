@@ -28,6 +28,8 @@ const (
 	FieldUploadSource = "upload_source"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldStorageConfigID holds the string denoting the storage_config_id field in the database.
+	FieldStorageConfigID = "storage_config_id"
 	// FieldStorageDriver holds the string denoting the storage_driver field in the database.
 	FieldStorageDriver = "storage_driver"
 	// FieldObjectKey holds the string denoting the object_key field in the database.
@@ -60,6 +62,7 @@ var Columns = []string{
 	FieldAPIKeyID,
 	FieldUploadSource,
 	FieldStatus,
+	FieldStorageConfigID,
 	FieldStorageDriver,
 	FieldObjectKey,
 	FieldMimeType,
@@ -155,6 +158,11 @@ func ByUploadSource(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByStorageConfigID orders the results by the storage_config_id field.
+func ByStorageConfigID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStorageConfigID, opts...).ToFunc()
 }
 
 // ByStorageDriver orders the results by the storage_driver field.
