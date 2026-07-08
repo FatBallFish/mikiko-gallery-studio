@@ -2,27 +2,20 @@ import { FormEvent, useEffect, useState } from 'react'
 import type { UserGroup, UserGroupWriteRequest } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal } from '../components'
+import { EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import { ColumnDef, DataTable } from '../ui/dataTable'
 import { userGroupRows, userGroupSummary } from './userGroupRows'
 
 type GroupAction = { row?: UserGroup; draft: UserGroupWriteRequest }
 const groupClasses = {
-  header: 'flex items-center justify-between gap-4',
-  sectionTitle: 'flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
-  table: 'w-full min-w-[860px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
-  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
   code: 'font-mono text-xs font-bold text-[var(--accent)]',
   name: 'font-bold text-[var(--text)]',
   desc: 'max-w-[520px] text-xs leading-relaxed text-[var(--muted-strong)]',
   routeCount: 'text-xs font-bold text-[var(--text)]',
   actionLinks: 'flex flex-wrap items-center gap-3',
   linkButton: 'text-xs font-bold text-[var(--muted)] transition-colors hover:text-[var(--text)]',
-  dangerLink: 'text-xs font-bold text-rose-400 transition-colors hover:text-rose-300',
-  summary: 'rounded-3xl border border-[var(--line)] bg-white/[0.02] px-5 py-4 text-sm text-[var(--muted)]',
+  summary: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-5 py-4 text-sm text-[var(--muted)]',
 }
 
 export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -69,12 +62,13 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
 
   return (
     <section className={adminPage.stack}>
-      <div className={groupClasses.header}>
-        <h3 className={groupClasses.sectionTitle}>用户分组 / User Groups</h3>
-        <button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAction({ draft: blankGroupDraft(groups.length + 1) })}>添加用户分组</button>
-      </div>
+      <PageHeader
+        title="用户分组"
+        description="维护用户权益分组，并查看分组对模型可见性和计费倍率的影响。"
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAction({ draft: blankGroupDraft(groups.length + 1) })}>添加用户分组</button>}
+      />
       <details className={groupClasses.summary}>
-        <summary className="cursor-pointer list-none font-bold text-[var(--text)]">分组摘要 / Summary</summary>
+        <summary className="cursor-pointer list-none font-bold text-[var(--text)]">分组摘要</summary>
         <div className="mt-3 flex flex-wrap gap-4 text-xs">
           <span>分组总数 <strong className="text-[var(--text)]">{summary.total}</strong></span>
           <span>启用 <strong className="text-[var(--text)]">{summary.enabled}</strong></span>
@@ -83,38 +77,11 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
         </div>
       </details>
       {!groups.length ? <EmptyBlock title="暂无分组" detail="新增分组后可用于用户归属和路由模型可见性。" /> : (
-        <div className={groupClasses.tableWrap}>
-          <table className={groupClasses.table}>
-            <thead>
-              <tr>
-                <th className={groupClasses.th}>分组代码</th>
-                <th className={groupClasses.th}>分组名称</th>
-                <th className={groupClasses.th}>描述</th>
-                <th className={groupClasses.th}>关联路由模型数</th>
-                <th className={groupClasses.th}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {userGroupRows(groups).map((row) => (
-                <tr key={row.id} className={groupClasses.tr}>
-                  <td className={groupClasses.td}><span className={groupClasses.code}>{row.code}</span></td>
-                  <td className={groupClasses.td}><span className={groupClasses.name}>{row.name}</span></td>
-                  <td className={groupClasses.td}><span className={groupClasses.desc}>{row.description ? `${row.description} · 倍率 ${row.multiplier}` : `倍率 ${row.multiplier} · ${row.defaultLabel} · ${row.statusLabel}`}</span></td>
-                  <td className={groupClasses.td}><span className={groupClasses.routeCount}>配置模型可见性</span></td>
-                  <td className={groupClasses.td}>
-                    <div className={groupClasses.actionLinks}>
-                      <a className={groupClasses.linkButton} href="#/routing">配置模型可见性</a>
-                      <button className={groupClasses.linkButton} type="button" onClick={() => {
-                        const group = groups.find((item) => String(item.id ?? item.code) === row.id)
-                        if (group) setAction({ row: group, draft: groupToDraft(group) })
-                      }}>编辑</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={groupColumns(groups, setAction)}
+          rows={groups}
+          rowKey={(group) => String(group.id ?? group.code)}
+        />
       )}
       {action ? (
         <Modal
@@ -142,6 +109,52 @@ function GroupForm({ action, onChange }: { action: GroupAction; onChange: (actio
       <Field label="描述"><input value={action.draft.description ?? ''} onChange={(event) => onChange({ ...action, draft: { ...action.draft, description: event.target.value } })} /></Field>
     </form>
   )
+}
+
+function groupColumns(
+  groups: UserGroup[],
+  setAction: (action: GroupAction) => void,
+): ColumnDef<UserGroup>[] {
+  return [
+    {
+      key: 'code',
+      title: '分组代码',
+      width: 'minmax(160px,1.5fr)',
+      render: (group) => <span className={groupClasses.code}>{group.code}</span>,
+    },
+    {
+      key: 'name',
+      title: '分组名称',
+      width: 'minmax(140px,1.2fr)',
+      render: (group) => <span className={groupClasses.name}>{group.name}</span>,
+    },
+    {
+      key: 'desc',
+      title: '描述',
+      width: 'minmax(220px,2fr)',
+      render: (group) => {
+        const row = userGroupRows([group])[0]
+        return <span className={groupClasses.desc}>{row.description ? `${row.description} · 倍率 ${row.multiplier}` : `倍率 ${row.multiplier} · ${row.defaultLabel} · ${row.statusLabel}`}</span>
+      },
+    },
+    {
+      key: 'routes',
+      title: '关联路由模型数',
+      width: 'minmax(100px,0.8fr)',
+      render: () => <span className={groupClasses.routeCount}>配置模型可见性</span>,
+    },
+    {
+      key: 'actions',
+      title: '操作',
+      width: 'minmax(120px,1fr)',
+      render: (group) => (
+        <div className={groupClasses.actionLinks}>
+          <a className={groupClasses.linkButton} href="#/routing">配置模型可见性</a>
+          <button className={groupClasses.linkButton} type="button" onClick={() => setAction({ row: group, draft: groupToDraft(group) })}>编辑</button>
+        </div>
+      ),
+    },
+  ]
 }
 
 function canSave(action: GroupAction) {
