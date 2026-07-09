@@ -161,22 +161,22 @@ html[data-theme-mode="light"] {
 html[data-accent-theme="amber"],
 html:not([data-accent-theme]) {
   --accent: var(--pg-accent-amber);
-  --accent-rgb: 212, 157, 94;
+  --accent-rgb: var(--lv-brand-amber-rgb);
 }
 
 html[data-accent-theme="violet"] {
   --accent: var(--pg-accent-violet);
-  --accent-rgb: 131, 118, 255;
+  --accent-rgb: var(--lv-status-violet-rgb);
 }
 
 html[data-accent-theme="emerald"] {
   --accent: var(--pg-accent-emerald);
-  --accent-rgb: 65, 185, 149;
+  --accent-rgb: var(--lv-status-emerald-rgb);
 }
 
 html[data-accent-theme="coral"] {
   --accent: var(--pg-accent-coral);
-  --accent-rgb: 203, 124, 77;
+  --accent-rgb: var(--lv-status-coral-rgb);
 }
 
 /* System preference fallback - applies when data-theme-mode is not set */

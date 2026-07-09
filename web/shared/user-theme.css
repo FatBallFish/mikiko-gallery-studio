@@ -14,10 +14,15 @@
   --lv-border: rgb(255 255 255 / 0.1);
   --lv-border-strong: rgb(255 255 255 / 0.17);
   --lv-brand-amber: #d7a566;
+  --lv-brand-amber-rgb: 215, 165, 102;
   --lv-status-violet: #9187ff;
+  --lv-status-violet-rgb: 145, 135, 255;
   --lv-status-emerald: #55c6a1;
+  --lv-status-emerald-rgb: 85, 198, 161;
   --lv-status-coral: #df835e;
+  --lv-status-coral-rgb: 223, 131, 94;
   --lv-status-blue: #83b7ff;
+  --lv-status-blue-rgb: 131, 183, 255;
   --lv-image-overlay: linear-gradient(to top, rgb(4 5 8 / 0.94), rgb(4 5 8 / 0.14) 62%, rgb(4 5 8 / 0.36));
   --lv-image-overlay-selected: rgb(4 5 8 / 0.46);
   --lv-image-action: rgb(7 8 13 / 0.66);
@@ -48,10 +53,15 @@ html[data-theme-mode='light'] {
   --lv-border: rgb(29 32 39 / 0.12);
   --lv-border-strong: rgb(29 32 39 / 0.2);
   --lv-brand-amber: #a9651f;
+  --lv-brand-amber-rgb: 169, 101, 31;
   --lv-status-violet: #6557dc;
+  --lv-status-violet-rgb: 101, 87, 220;
   --lv-status-emerald: #177d61;
+  --lv-status-emerald-rgb: 23, 125, 97;
   --lv-status-coral: #b94f34;
+  --lv-status-coral-rgb: 185, 79, 52;
   --lv-status-blue: #286cb8;
+  --lv-status-blue-rgb: 40, 108, 184;
   --lv-image-overlay: linear-gradient(to top, rgb(255 255 255 / 0.94), rgb(255 255 255 / 0.12) 62%, rgb(255 255 255 / 0.32));
   --lv-image-overlay-selected: rgb(255 255 255 / 0.46);
   --lv-image-action: rgb(255 255 255 / 0.8);
@@ -59,6 +69,46 @@ html[data-theme-mode='light'] {
   --lv-shadow-md: 0 16px 44px rgb(29 32 39 / 0.1);
   --lv-shadow-lg: 0 32px 96px rgb(29 32 39 / 0.14);
   --lv-focus-ring: color-mix(in oklch, var(--lv-brand-amber) 78%, black);
+  --lv-motion-fast: var(--pg-duration-fast);
+  --lv-motion-route: var(--pg-duration-base);
+  --lv-motion-slow: var(--pg-duration-slow);
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme-mode]) {
+    color-scheme: light;
+    --lv-bg: #f4f6f8;
+    --lv-canvas: #f9fafb;
+    --lv-surface-1: #ffffff;
+    --lv-surface-2: #eef1f4;
+    --lv-surface-3: #e6eaee;
+    --lv-text-primary: #1d2027;
+    --lv-text-secondary: rgb(29 32 39 / 0.66);
+    --lv-text-tertiary: rgb(29 32 39 / 0.44);
+    --lv-border-subtle: rgb(29 32 39 / 0.07);
+    --lv-border: rgb(29 32 39 / 0.12);
+    --lv-border-strong: rgb(29 32 39 / 0.2);
+    --lv-brand-amber: #a9651f;
+    --lv-brand-amber-rgb: 169, 101, 31;
+    --lv-status-violet: #6557dc;
+    --lv-status-violet-rgb: 101, 87, 220;
+    --lv-status-emerald: #177d61;
+    --lv-status-emerald-rgb: 23, 125, 97;
+    --lv-status-coral: #b94f34;
+    --lv-status-coral-rgb: 185, 79, 52;
+    --lv-status-blue: #286cb8;
+    --lv-status-blue-rgb: 40, 108, 184;
+    --lv-image-overlay: linear-gradient(to top, rgb(255 255 255 / 0.94), rgb(255 255 255 / 0.12) 62%, rgb(255 255 255 / 0.32));
+    --lv-image-overlay-selected: rgb(255 255 255 / 0.46);
+    --lv-image-action: rgb(255 255 255 / 0.8);
+    --lv-shadow-sm: 0 1px 2px rgb(29 32 39 / 0.08);
+    --lv-shadow-md: 0 16px 44px rgb(29 32 39 / 0.1);
+    --lv-shadow-lg: 0 32px 96px rgb(29 32 39 / 0.14);
+    --lv-focus-ring: color-mix(in oklch, var(--lv-brand-amber) 78%, black);
+    --lv-motion-fast: var(--pg-duration-fast);
+    --lv-motion-route: var(--pg-duration-base);
+    --lv-motion-slow: var(--pg-duration-slow);
+  }
 }
 
 .pg-glass-panel {

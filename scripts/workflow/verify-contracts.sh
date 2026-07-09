@@ -9,6 +9,9 @@ if [ ! -d web ]; then
   exit 0
 fi
 
+printf '\n==> contract scripts/workflow/contracts/luminous-vault-css.mjs\n'
+node scripts/workflow/contracts/luminous-vault-css.mjs
+
 mapfile -t CONTRACTS < <(find web/admin/src web/user/src web/shared -name '*.contract.ts' -print 2>/dev/null | sort)
 
 if [ "${#CONTRACTS[@]}" -eq 0 ]; then
