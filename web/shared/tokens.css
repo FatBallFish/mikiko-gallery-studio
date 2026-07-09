@@ -10,10 +10,16 @@
   --pg-space-12: 48px;
 
   /* Radius */
-  --pg-radius-sm: 12px;
-  --pg-radius-md: 18px;
-  --pg-radius-lg: 24px;
+  --pg-radius-sm: 8px;
+  --pg-radius-md: 12px;
+  --pg-radius-lg: 16px;
+  --pg-radius-xl: 24px;
   --pg-radius-full: 9999px;
+
+  /* Legacy admin geometry remains available to the independently themed app. */
+  --pg-admin-radius-sm: 12px;
+  --pg-admin-radius-md: 18px;
+  --pg-admin-radius-lg: 24px;
 
   /* Dimensions */
   --pg-pill-height: 42px;

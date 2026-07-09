@@ -45,7 +45,7 @@ export const rdShell = {
 }
 
 export const rdHome = {
-  hero: 'relative min-h-[500px] flex items-center justify-start overflow-hidden rounded-[2rem] bg-[var(--surface)] p-16 mb-16 group',
+  hero: 'relative min-h-[500px] flex items-center justify-start overflow-hidden rounded-3xl bg-[var(--surface)] p-16 mb-16 group',
   heroImg: 'absolute inset-0 size-full object-cover opacity-60 transition-transform duration-1000 group-hover:scale-105',
   heroOverlay: 'absolute inset-0 bg-gradient-to-r from-[var(--bg)] via-[var(--bg)]/80 to-transparent',
   heroContent: 'relative z-10 max-w-2xl',
@@ -189,7 +189,7 @@ export const rdWorkspace = {
 export const rdCommon = {
   glass: 'backdrop-blur-2xl bg-[var(--bg)]/60 border border-[var(--border)]',
   badge: 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-widest',
-  transition: 'transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]',
+  transition: 'transition-all duration-[var(--motion-route)] ease-[cubic-bezier(0.32,0.72,0,1)]',
 }
 
 // Unified component primitives - replaces old `userButton`/`userForm`/`userState`/`userPill`/`userCard`/`userText`
@@ -235,7 +235,7 @@ export const pill = {
 export const card = {
   base: 'rounded-2xl border border-[var(--border)] bg-[var(--surface)]',
   padded: 'rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6',
-  hero: 'rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]',
+  hero: 'rounded-3xl border border-[var(--border)] bg-[var(--surface)]',
 }
 
 export const text = {
