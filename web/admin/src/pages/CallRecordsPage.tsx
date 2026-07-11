@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { CallRecord, CallRecordAttempt } from '../../../shared/api-types'
+import type { AdminMetric, CallRecord, CallRecordAttempt } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, MetricStrip, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
-import { FilterBar, ListPage, Pager } from '../ui/dataTable'
-import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
+import { FilterToolbar, ListPage, Pager } from '../ui/dataTable'
+import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRepair, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
 
 type CallRecordFilters = {
   status: string
@@ -28,20 +28,12 @@ const initialFilters: CallRecordFilters = {
 }
 
 const callRecordClasses = {
-  timePills: 'flex flex-wrap items-center gap-2',
-  timePill: 'min-h-8 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-extrabold text-[var(--muted)] transition hover:bg-[var(--elevated)] hover:text-[var(--text)]',
-  timePillActive: 'border-[var(--accent)] bg-[var(--accent)] text-white',
-  pageActions: 'flex flex-wrap items-center gap-2',
   stackCell: cn(adminDataGrid.stackCell, 'gap-0.5'),
   dangerCell: cn(adminDataGrid.stackCell, 'gap-0.5 text-[var(--red)]'),
   paragraph: 'm-0 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',
-  statGrid: 'grid grid-cols-4 gap-3 max-[1100px]:grid-cols-2 max-[620px]:grid-cols-1',
-  statCard: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-5 py-7',
-  statLabel: 'text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--muted-strong)]',
-  statValue: 'mt-2 text-3xl font-black tracking-tight text-[var(--text)]',
   distributionGrid: 'grid grid-cols-3 gap-4 max-[1100px]:grid-cols-1',
-  distributionCard: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
-  distributionTitle: 'mb-4 text-xs font-extrabold uppercase tracking-widest text-[var(--muted-strong)]',
+  distributionCard: 'grid gap-3 border-t border-[var(--border)] pt-4',
+  distributionTitle: 'text-sm font-semibold text-[var(--text)]',
   distributionRows: 'grid gap-4',
   distributionTrack: 'h-1.5 overflow-hidden rounded-full bg-[var(--canvas)]',
   distributionFill: 'h-full rounded-full bg-[var(--accent)]',
@@ -61,7 +53,7 @@ const callRecordClasses = {
   detailPanel: 'min-w-[1180px] bg-[var(--canvas)] px-4 py-4',
   detailGrid: 'grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]',
   detailBox: 'min-w-0 rounded-lg bg-[var(--surface-solid)] p-4',
-  detailTitle: 'mb-2 text-xs font-extrabold uppercase tracking-[.12em] text-[var(--soft)]',
+  detailTitle: 'mb-2 text-xs font-semibold text-[var(--soft)]',
   attemptList: 'grid gap-2',
   attemptItem: 'min-w-0 rounded-lg bg-[var(--surface-solid)] p-3',
   detailMeta: 'mt-1 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',
@@ -86,28 +78,42 @@ export function CallRecordsPage() {
   const [rows, setRows] = useState<CallRecord[]>([])
   const [filters, setFilters] = useState<CallRecordFilters>(initialFilters)
   const [appliedFilters, setAppliedFilters] = useState<CallRecordFilters>(initialFilters)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
+  const requestGenerationRef = useRef(0)
   const viewRows = useMemo(() => callRecordRows(rows), [rows])
   const stats = useMemo(() => callRecordStats(rows), [rows])
   const distributions = useMemo(() => callRecordDistributions(rows), [rows])
+  const metrics = useMemo<AdminMetric[]>(() => [
+    { label: '当前页调用', value: String(stats.tasks), trend: `筛选结果共 ${total} 条`, tone: 'neutral' },
+    { label: '成功出图', value: String(stats.images), trend: '当前页成功结果', tone: 'good' },
+    { label: '实际积分', value: String(stats.points), trend: '当前页累计扣费', tone: 'neutral' },
+    { label: '平均耗时', value: String(stats.averageLatency), trend: '已完成调用', tone: 'neutral' },
+  ], [stats, total])
 
   const load = async () => {
-    setLoading(true)
+    const requestGeneration = ++requestGenerationRef.current
+    const initialLoad = !rows.length
+    if (initialLoad) setLoading(true)
+    else setRefreshing(true)
     setError(null)
     try {
       const result = await adminApi.listCallRecords(callRecordQuery(appliedFilters, page, pageSize))
+      if (requestGeneration !== requestGenerationRef.current) return
       setRows(result.items)
       setTotal(result.total)
     } catch (caught) {
+      if (requestGeneration !== requestGenerationRef.current) return
       setError(caught instanceof Error ? caught.message : '调用记录载入失败')
     } finally {
+      if (requestGeneration !== requestGenerationRef.current) return
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -125,19 +131,18 @@ export function CallRecordsPage() {
     setPage(1)
   }
 
-  if (loading) return <LoadingBlock label="载入调用记录" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !rows.length) return <LoadingBlock label="载入调用记录" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader title="调用记录" description="优先按 request_id / task_id / user / error_code 排查失败调用，统计分布放在日志之后。" />
-      <div className={callRecordClasses.timePills} aria-label="快捷时间范围">
-        {['今天', '昨天', '近 7 天', '近 30 天', '自定义区间'].map((label, index) => (
-          <button key={label} type="button" className={cn(callRecordClasses.timePill, index === 0 && callRecordClasses.timePillActive)}>{label}</button>
-        ))}
-      </div>
+      <PageHeader
+        title="调用记录"
+        description="优先按任务、用户、Provider 和错误码排查失败调用，统计分布放在日志之后。"
+        secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={refreshing} onClick={() => void load()}>{refreshing ? '刷新中...' : '刷新'}</button>}
+      />
       <form onSubmit={submitFilters}>
-        <FilterBar
+        <FilterToolbar
           fields={[
             { key: 'userId', label: callRecordFilterCopy.userId.label, primary: true, control: <input value={filters.userId} onChange={(event) => setFilters((value) => ({ ...value, userId: event.target.value }))} placeholder={callRecordFilterCopy.userId.placeholder} inputMode="numeric" /> },
             { key: 'provider', label: callRecordFilterCopy.provider.label, primary: true, control: <input value={filters.provider} onChange={(event) => setFilters((value) => ({ ...value, provider: event.target.value }))} placeholder={callRecordFilterCopy.provider.placeholder} /> },
@@ -153,11 +158,13 @@ export function CallRecordsPage() {
               </datalist>
               <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="submit">查询</button>
               <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={resetFilters}>重置</button>
-              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => void load()}>刷新</button>
             </>
           )}
+          resultSummary={`共 ${total} 条调用 · 当前显示 ${rows.length} 条`}
         />
       </form>
+      {refreshing ? <InlineFeedback tone="neutral" message="正在刷新调用记录，当前数据会保留到新结果返回。" /> : null}
+      {error && rows.length ? <InlineFeedback tone="danger" message={error} /> : null}
       {!rows.length ? <EmptyBlock title="暂无调用记录" detail="生成任务执行后会出现在这里。" /> : (
         <ListPage
           pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
@@ -194,27 +201,13 @@ export function CallRecordsPage() {
         </div>
         </ListPage>
       )}
-      <div className={callRecordClasses.statGrid}>
-        <StatCard label="区间总任务数" value={stats.tasks} />
-        <StatCard label="区间生图数" value={stats.images} />
-        <StatCard label="区间消耗积分" value={stats.points} />
-        <StatCard label="平均生图耗时" value={stats.averageLatency} />
-      </div>
+      <MetricStrip metrics={metrics} />
       <div className={callRecordClasses.distributionGrid}>
         <DistributionCard title="路由模型调用量" rows={distributions.routes} />
         <DistributionCard title="底层账号调用量" rows={distributions.providers} />
         <DistributionCard title="底层模型调用量" rows={distributions.models} />
       </div>
     </section>
-  )
-}
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className={callRecordClasses.statCard}>
-      <div className={callRecordClasses.statLabel}>{label}</div>
-      <div className={callRecordClasses.statValue}>{value}</div>
-    </div>
   )
 }
 
@@ -232,7 +225,7 @@ function DistributionCard({ title, rows }: { title: string; rows: DistributionRo
 function DistributionRow({ row }: { row: DistributionRowModel }) {
   return (
     <div className="grid gap-2">
-      <div className="flex justify-between gap-3 text-[10px] font-extrabold uppercase tracking-wider">
+      <div className="flex justify-between gap-3 text-xs font-semibold">
         <span className="min-w-0 truncate text-[var(--muted)]">{row.label}</span>
         <span className="text-[var(--text)]">{row.value} ({row.percent}%)</span>
       </div>
@@ -254,6 +247,7 @@ function CallRecordTableRows({
   expanded: boolean
   onToggle: () => void
 }) {
+  const repair = callRecordRepair(record?.error_code)
   return (
     <>
       <tr className={cn(callRecordClasses.tr, row.statusTone === 'danger' && callRecordClasses.trFailed)}>
@@ -295,6 +289,7 @@ function CallRecordTableRows({
               <button className={callRecordClasses.inlineAction} type="button" aria-expanded={expanded} onClick={onToggle}>{expanded ? '收起详情' : '查看详情'}</button>
             ) : null}
             {row.statusTone === 'danger' ? <span className="max-w-[160px] truncate text-[10px] text-[var(--red)]">{row.failureLabel}</span> : null}
+            {repair ? <a className={cn(adminButton.base, adminButton.ghost, adminButton.small)} href={repair.href}>{repair.label}</a> : null}
           </div>
         </td>
       </tr>

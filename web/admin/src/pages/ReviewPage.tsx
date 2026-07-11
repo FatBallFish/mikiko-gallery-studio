@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { ReviewItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { AdminTabs, Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { AdminTabs, Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { useAdminPreviewMotion } from '../ui/adminMotion'
 import { ListPage } from '../ui/dataTable'
@@ -13,50 +13,53 @@ type DrawerState = { item: ReviewItem; decision: ReviewDecision } | null
 const primaryReviewTabs = ['pending_review', 'approved', 'rejected'] as const
 const secondaryReviewTabs = ['unpublished', 'all'] as const
 const allReviewTabs = [...primaryReviewTabs, ...secondaryReviewTabs] as const
+const reasonPresets = ['违规内容', '低质量图片', '版权风险'] as const
 const reviewClasses = {
-  cardList: 'grid grid-cols-1 gap-4',
-  card: 'group flex items-center gap-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)] max-[720px]:grid max-[720px]:grid-cols-1',
-  imageWrap: 'relative size-24 shrink-0 overflow-hidden rounded-2xl border border-[var(--line)] bg-white/5',
-  image: 'size-full object-cover transition-transform duration-300 group-hover:scale-105',
-  content: 'min-w-0 flex-1',
-  titleRow: 'mb-1 flex min-w-0 flex-wrap items-center gap-3',
-  title: 'min-w-0 truncate text-lg font-bold text-[var(--text)]',
-  meta: 'flex flex-wrap items-center gap-3 text-xs text-[var(--muted-strong)]',
-  dot: 'size-1 rounded-full bg-white/10',
-  actions: 'flex shrink-0 flex-wrap justify-end gap-3',
-  actionPrimary: 'border-emerald-500 bg-emerald-500 px-6 py-2.5 text-white shadow-lg shadow-emerald-500/20 hover:scale-105',
-  actionDanger: 'border-transparent bg-white/5 px-6 py-2.5 text-[var(--muted)] hover:bg-[var(--red)]/10 hover:text-[var(--red)]',
   workbench: 'grid min-h-[560px] grid-cols-[minmax(240px,.85fr)_minmax(320px,1.35fr)_minmax(240px,.8fr)] overflow-hidden rounded-lg bg-[var(--surface-solid)] max-[1100px]:grid-cols-1',
-  queue: 'min-h-0 overflow-y-auto p-3 max-[1100px]:border-b',
-  queueItem: 'grid w-full gap-2 rounded-lg border border-transparent p-3 text-left hover:bg-[var(--elevated)]',
+  queue: 'min-h-0 overflow-y-auto border-r border-[var(--border)] p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring)] max-[1100px]:border-b max-[1100px]:border-r-0',
+  queueItem: 'grid w-full gap-2 rounded-lg border border-transparent p-3 text-left transition-colors duration-[var(--admin-motion-fast)] hover:bg-[var(--elevated)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]',
   queueItemActive: 'border-[var(--accent)]/30 bg-[var(--accent)]/10',
   preview: 'grid min-h-0 grid-rows-[minmax(0,1fr)_auto]',
   previewImageWrap: 'grid min-h-[320px] place-items-center bg-[var(--canvas)] p-4',
   previewImage: 'max-h-[56vh] max-w-full rounded-lg object-contain',
   previewMeta: 'grid gap-2 border-t border-[var(--border)] p-4',
-  actionPanel: 'grid content-start gap-3 p-4',
+  actionPanel: 'grid min-h-0 content-start gap-3 border-l border-[var(--border)] p-4 max-[1100px]:border-l-0 max-[1100px]:border-t',
+  decisionPanel: 'grid min-h-0 grid-rows-[auto_minmax(0,1fr)] [&_aside]:min-h-0 max-[1100px]:[&_aside]:border-l-0 max-[1100px]:[&_aside]:border-t',
   reasonTemplates: 'flex flex-wrap gap-2',
+  reasonPreset: 'min-h-8 rounded-md border border-[var(--border)] bg-transparent px-2.5 text-xs font-semibold text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]',
+  reasonInput: 'min-h-24 resize-y rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-3 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:outline-none',
 }
 
 export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ReviewItem[]>([])
   const [filter, setFilter] = useState<ReviewItem['status'] | 'all'>('pending_review')
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [drawer, setDrawer] = useState<DrawerState>(null)
   const [reason, setReason] = useState('')
+  const [mutationError, setMutationError] = useState('')
   const [busy, setBusy] = useState(false)
   const [selectedId, setSelectedId] = useState<string>('')
+  const requestGenerationRef = useRef(0)
 
   const load = async () => {
-    setLoading(true)
+    const requestGeneration = ++requestGenerationRef.current
+    const initialLoad = !rows.length
+    if (initialLoad) setLoading(true)
+    else setRefreshing(true)
     setError(null)
     try {
-      setRows(await adminApi.listReviews())
+      const nextRows = await adminApi.listReviews()
+      if (requestGeneration !== requestGenerationRef.current) return
+      setRows(nextRows)
     } catch (caught) {
+      if (requestGeneration !== requestGenerationRef.current) return
       setError(caught instanceof Error ? caught.message : '审核队列载入失败')
     } finally {
+      if (requestGeneration !== requestGenerationRef.current) return
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -71,30 +74,51 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
     if (selectedItem) setSelectedId(String(selectedItem.id))
   }, [selectedItem?.id])
 
-  const openDrawer = (item: ReviewItem, decision: ReviewDecision) => {
+  const selectItem = (item: ReviewItem) => {
+    setSelectedId(String(item.id))
+    setDrawer(null)
+    setMutationError('')
+  }
+
+  const openDrawer = (item: ReviewItem, decision: ReviewDecision, explanation = '') => {
+    if (refreshing) return
+    requestGenerationRef.current += 1
+    setRefreshing(false)
     setDrawer({ item, decision })
-    setReason(reviewDefaultReason(decision))
+    setReason(explanation.trim() || reviewDefaultReason(decision))
+    setMutationError('')
   }
 
   const submitDecision = async () => {
     if (!drawer) return
+    requestGenerationRef.current += 1
+    setRefreshing(false)
     setBusy(true)
+    setMutationError('')
     try {
       const updated = await adminApi.decideReview(drawer.item.image_id ?? drawer.item.id, drawer.decision, reason)
       setRows((current) => current.map((item) => item.id === updated.id ? updated : item))
       onFeedback('审核决策已提交', `${updated.title}: ${reviewStatusLabel(updated.status)}`)
       setDrawer(null)
+    } catch (caught) {
+      setMutationError(caught instanceof Error ? caught.message : '审核决策提交失败')
     } finally {
       setBusy(false)
     }
   }
 
-  if (loading) return <LoadingBlock label="载入审核队列" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !rows.length) return <LoadingBlock label="载入审核队列" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader title="审核队列" description="队列、图片预览和审核动作并排处理，减少高频审核的来回跳转。" />
+      <PageHeader
+        title="审核队列"
+        description="队列、图片预览和审核动作并排处理，减少高频审核的来回跳转。"
+        secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={refreshing || Boolean(drawer) || busy} onClick={() => void load()}>{refreshing ? '刷新中...' : '刷新队列'}</button>}
+      />
+      {refreshing ? <InlineFeedback tone="neutral" message="正在刷新审核队列，当前预览与选择会保留。" /> : null}
+      {error && rows.length ? <InlineFeedback tone="danger" message={error} /> : null}
       <section className="grid min-h-0 gap-5">
         <ListPage
           filters={(
@@ -115,24 +139,19 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
               rows={visibleRows}
               selected={selectedItem}
               accessToken={accessToken}
-              onSelect={(item) => setSelectedId(String(item.id))}
+              drawer={drawer}
+              reason={reason}
+              busy={busy}
+              mutationError={mutationError}
+              interactionLocked={refreshing}
+              onSelect={selectItem}
               onDecision={openDrawer}
+              onReasonChange={setReason}
+              onCancelDecision={() => { setDrawer(null); setMutationError('') }}
+              onConfirmDecision={() => void submitDecision()}
             />
           )}
         </ListPage>
-        {drawer ? (
-          <ConfirmDrawer
-            title={`${drawer.item.title} · ${drawer.decision === 'approve' ? '通过' : drawer.decision === 'reject' ? '驳回' : '下架'}`}
-            detail="原因会显示在审核上下文并进入审计日志。"
-            value={reason}
-            decisionLabel="提交决策"
-            tone={drawer.decision === 'approve' ? 'success' : 'danger'}
-            busy={busy}
-            onChange={setReason}
-            onCancel={() => setDrawer(null)}
-            onConfirm={() => void submitDecision()}
-          />
-        ) : null}
       </section>
     </section>
   )
@@ -142,28 +161,80 @@ function ReviewWorkbench({
   rows,
   selected,
   accessToken,
+  drawer,
+  reason,
+  busy,
+  mutationError,
+  interactionLocked,
   onSelect,
   onDecision,
+  onReasonChange,
+  onCancelDecision,
+  onConfirmDecision,
 }: {
   rows: ReviewItem[]
   selected: ReviewItem | null
   accessToken?: string
+  drawer: DrawerState
+  reason: string
+  busy: boolean
+  mutationError: string
+  interactionLocked: boolean
   onSelect: (item: ReviewItem) => void
-  onDecision: (item: ReviewItem, decision: ReviewDecision) => void
+  onDecision: (item: ReviewItem, decision: ReviewDecision, explanation?: string) => void
+  onReasonChange: (value: string) => void
+  onCancelDecision: () => void
+  onConfirmDecision: () => void
 }) {
   const selectedRow = selected ? reviewRowView(selected) : null
   const previewRef = useRef<HTMLElement | null>(null)
+  const queueRef = useRef<HTMLElement | null>(null)
+  const decisionPanelRef = useRef<HTMLElement | null>(null)
+  const decisionTriggerRef = useRef<HTMLElement | null>(null)
+  const decisionWasOpenRef = useRef(false)
+  const [draftReason, setDraftReason] = useState('')
   useAdminPreviewMotion(previewRef, String(selected?.id ?? 'empty'))
+
+  useEffect(() => {
+    setDraftReason('')
+  }, [selected?.id])
+
+  useEffect(() => {
+    if (drawer) {
+      decisionWasOpenRef.current = true
+      window.requestAnimationFrame(() => decisionPanelRef.current?.querySelector<HTMLElement>('textarea, button')?.focus())
+      return
+    }
+    if (!decisionWasOpenRef.current) return
+    decisionWasOpenRef.current = false
+    if (decisionTriggerRef.current?.isConnected) decisionTriggerRef.current?.focus()
+    else queueRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus()
+  }, [drawer])
+
+  const handleQueueKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    const currentIndex = Math.max(0, rows.findIndex((item) => String(item.id) === String(selected?.id)))
+    const direction = event.key === 'ArrowDown' ? 1 : -1
+    const nextIndex = (currentIndex + direction + rows.length) % rows.length
+    const nextItem = rows[nextIndex]
+    if (!nextItem) return
+    onSelect(nextItem)
+    window.requestAnimationFrame(() => {
+      queueRef.current?.querySelectorAll<HTMLButtonElement>('[data-review-queue-item]')[nextIndex]?.focus()
+    })
+  }
+
   return (
     <section className={reviewClasses.workbench}>
-      <aside className={reviewClasses.queue} aria-label="审核队列">
+      <aside ref={queueRef} className={reviewClasses.queue} data-review-region="queue" aria-label="审核队列" role="listbox" onKeyDown={handleQueueKeyDown}>
         <div className="mb-3 text-xs font-bold text-[var(--muted)]">{rows.length} 个审核项</div>
         <div className="grid gap-1">
           {rows.map((item) => {
             const row = reviewRowView(item)
             const active = selected?.id === item.id
             return (
-              <button key={item.id} type="button" className={cn(reviewClasses.queueItem, active && reviewClasses.queueItemActive)} onClick={() => onSelect(item)}>
+              <button key={item.id} id={`review-queue-item-${item.id}`} data-review-queue-item type="button" role="option" aria-selected={active} tabIndex={active ? 0 : -1} className={cn(reviewClasses.queueItem, active && reviewClasses.queueItemActive)} onClick={() => onSelect(item)}>
                 <strong className="truncate">{row.title}</strong>
                 <span className="text-xs text-[var(--muted)]">{row.owner} · {row.createdAtLabel}</span>
                 <span><Badge tone={row.statusTone}>{row.statusLabel}</Badge></span>
@@ -172,7 +243,7 @@ function ReviewWorkbench({
           })}
         </div>
       </aside>
-      <section ref={previewRef} className={reviewClasses.preview} aria-label="审核预览">
+      <section ref={previewRef} className={reviewClasses.preview} data-review-region="preview" aria-label="审核预览">
         {selectedRow ? (
           <>
             <div className={reviewClasses.previewImageWrap}>
@@ -188,23 +259,48 @@ function ReviewWorkbench({
           </>
         ) : <EmptyBlock title="请选择审核项" detail="从左侧队列选择图片后预览和处理。" />}
       </section>
-      <aside className={reviewClasses.actionPanel} aria-label="审核动作">
-        {selectedRow ? (
-          <>
-            <strong>审核动作</strong>
-            <p className="text-sm text-[var(--muted)]">拒绝原因可在提交前调整，结果会进入审计日志。</p>
-            <div className={reviewClasses.reasonTemplates}>
-              {['违规内容', '低质量图片', '版权风险'].map((reason) => <span key={reason} className="rounded-lg border border-[var(--border)] px-2 py-1 text-xs text-[var(--muted)]">{reason}</span>)}
-            </div>
-            <div className="grid gap-2">
-              {selectedRow.actions.map((action) => (
-                <button key={action.decision} type="button" className={cn(adminButton.base, action.tone === 'primary' ? adminButton.primary : adminButton.danger)} onClick={() => onDecision(selectedRow.raw, action.decision)}>{action.label}</button>
-              ))}
-              {!selectedRow.actions.length ? <span className={adminPage.mutedAction}>{selectedRow.terminalActionLabel}</span> : null}
-            </div>
-          </>
-        ) : null}
-      </aside>
+      {drawer ? (
+        <section ref={decisionPanelRef} className={reviewClasses.decisionPanel} data-review-region="action" aria-label="审核决策确认">
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
+          <ConfirmDrawer
+            title={`${drawer.item.title} · ${drawer.decision === 'approve' ? '通过' : drawer.decision === 'reject' ? '驳回' : '下架'}`}
+            detail="原因会显示在审核上下文并进入审计日志。"
+            value={reason}
+            decisionLabel="提交决策"
+            tone={drawer.decision === 'approve' ? 'success' : 'danger'}
+            busy={busy}
+            onChange={onReasonChange}
+            onCancel={onCancelDecision}
+            onConfirm={onConfirmDecision}
+          />
+        </section>
+      ) : (
+        <aside className={reviewClasses.actionPanel} data-review-region="action" aria-label="审核动作">
+          {selectedRow ? (
+            <>
+              <strong>审核动作</strong>
+              <p className="text-sm text-[var(--muted)]">选择驳回原因或补充说明，结果会进入审计日志。</p>
+              {selectedRow.actions.some((action) => action.decision === 'reject') ? (
+                <>
+                  <div className={reviewClasses.reasonTemplates} aria-label="驳回原因预设">
+                    {reasonPresets.map((preset) => <button key={preset} type="button" className={reviewClasses.reasonPreset} aria-pressed={draftReason === preset} onClick={() => setDraftReason(preset)}>{preset}</button>)}
+                  </div>
+                  <label className="grid gap-1.5 text-xs font-semibold text-[var(--muted)]">
+                    <span>补充说明（可选）</span>
+                    <textarea className={reviewClasses.reasonInput} value={draftReason} onChange={(event) => setDraftReason(event.target.value)} rows={4} placeholder="输入更具体的驳回说明" />
+                  </label>
+                </>
+              ) : null}
+              <div className="grid gap-2">
+                {selectedRow.actions.map((action) => (
+                  <button key={action.decision} type="button" disabled={interactionLocked} className={cn(adminButton.base, action.tone === 'primary' ? adminButton.primary : adminButton.danger)} onClick={(event) => { decisionTriggerRef.current = event.currentTarget; onDecision(selectedRow.raw, action.decision, action.decision === 'reject' ? draftReason : '') }}>{action.label}</button>
+                ))}
+                {!selectedRow.actions.length ? <span className={adminPage.mutedAction}>{selectedRow.terminalActionLabel}</span> : null}
+              </div>
+            </>
+          ) : null}
+        </aside>
+      )}
     </section>
   )
 }

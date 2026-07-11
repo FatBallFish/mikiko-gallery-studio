@@ -69,8 +69,16 @@ export const callRecordCommonErrorCodes = [
   'ROUTE_MODEL_PRICE_MISSING',
   'MODEL_ROUTE_NOT_VISIBLE',
   'BILLING_INSUFFICIENT_POINTS',
-  'PROVIDER_UNAVAILABLE',
+  'UPSTREAM_UNAVAILABLE',
 ] as const
+
+export function callRecordRepair(errorCode?: string | null): { label: string; href: string } | null {
+  if (errorCode === 'ROUTE_MODEL_PRICE_MISSING') return { label: '配置价格', href: '#/pricing' }
+  if (errorCode === 'MODEL_ROUTE_NO_CANDIDATE' || errorCode === 'MODEL_ROUTE_NOT_FOUND' || errorCode === 'MODEL_ROUTE_NOT_VISIBLE') return { label: '检查路由', href: '#/routing' }
+  if (errorCode === 'BILLING_INSUFFICIENT_POINTS') return { label: '查看用户', href: '#/users' }
+  if (errorCode === 'UPSTREAM_UNAVAILABLE') return { label: '检查接入账号', href: '#/access-accounts' }
+  return null
+}
 
 export function callRecordRows(records: CallRecord[]): CallRecordRowModel[] {
   return records.map((record) => ({
@@ -159,6 +167,6 @@ function errorCodeHint(code: string) {
   if (code === 'ROUTE_MODEL_PRICE_MISSING') return '缺少该模型/任务类型/质量的价格配置。'
   if (code === 'MODEL_ROUTE_NOT_VISIBLE') return '当前用户分组不可见或模型已隐藏。'
   if (code === 'BILLING_INSUFFICIENT_POINTS') return '用户余额不足，需充值或后台调整额度。'
-  if (code === 'PROVIDER_UNAVAILABLE') return '底层 Provider 不可用或返回失败。'
+  if (code === 'UPSTREAM_UNAVAILABLE') return '底层 Provider 不可用或返回失败。'
   return '查看任务详情、路由配置或 Provider 日志继续定位。'
 }
