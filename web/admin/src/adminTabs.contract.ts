@@ -1,5 +1,9 @@
 import { createElement } from 'react'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
 import { AdminTabs } from './components'
+
+const componentsSource = readFileSync(new URL('./components.tsx', import.meta.url), 'utf8')
 
 type SettingsTab = 'general' | 'security' | 'storage'
 
@@ -18,6 +22,12 @@ createElement(AdminTabs<SettingsTab>, {
     if (!items.some((item) => item.id === value)) throw new Error('tab value must come from configured items')
   },
 })
+
+for (const keyboardContract of ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'", 'tabRefs']) {
+  if (!componentsSource.includes(keyboardContract)) {
+    throw new Error(`AdminTabs must support keyboard navigation via ${keyboardContract}`)
+  }
+}
 
 createElement(AdminTabs<SettingsTab>, {
   ariaLabel: '通用配置类目',

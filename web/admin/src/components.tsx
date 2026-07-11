@@ -6,7 +6,7 @@ import { navGroups, normalizeRoute, protectedRoutes, routeHref, routeTitles } fr
 import { useAdminTheme } from './layout/useAdminTheme'
 import { filterAdminNavGroups } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId, ToastMessage, ToastTone } from './types'
-import { adminButton, adminPill, adminShell, adminState, adminType } from './ui/classes'
+import { adminButton, adminFeedback, adminMetric, adminPill, adminShell, adminState, adminType } from './ui/classes'
 import {
   AccessAccountsIcon,
   AlertIcon,
@@ -89,6 +89,49 @@ const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]
 
 function focusableElements(root: HTMLElement) {
   return Array.from(root.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+}
+
+function useDialogFocus(onClose: () => void, dialogRef: React.RefObject<HTMLElement | null>) {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return undefined
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    ;(focusableElements(dialog)[0] ?? dialog).focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = focusableElements(dialog)
+      if (!focusable.length) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.body.style.overflow = previousOverflow
+      previousFocus?.focus()
+    }
+  }, [dialogRef])
 }
 
 export function useHashRoute() {
@@ -508,6 +551,23 @@ export function AdminTabs<T extends string>({
   className?: string
 }) {
   const vertical = orientation === 'vertical'
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const moveFocus = (currentIndex: number, key: string) => {
+    const enabledIndexes = items.flatMap((item, index) => item.disabled ? [] : [index])
+    if (!enabledIndexes.length) return false
+    const enabledPosition = enabledIndexes.indexOf(currentIndex)
+    let nextIndex: number | undefined
+    if (key === 'Home') nextIndex = enabledIndexes[0]
+    if (key === 'End') nextIndex = enabledIndexes[enabledIndexes.length - 1]
+    if (key === 'ArrowRight' || key === 'ArrowDown') nextIndex = enabledIndexes[(enabledPosition + 1) % enabledIndexes.length]
+    if (key === 'ArrowLeft' || key === 'ArrowUp') nextIndex = enabledIndexes[(enabledPosition - 1 + enabledIndexes.length) % enabledIndexes.length]
+    if (nextIndex === undefined) return false
+    tabRefs.current[nextIndex]?.focus()
+    onChange(items[nextIndex].id)
+    return true
+  }
+
   return (
     <div
       role="tablist"
@@ -519,15 +579,17 @@ export function AdminTabs<T extends string>({
         className,
       )}
     >
-      {items.map((item) => {
+      {items.map((item, index) => {
         const active = value === item.id
         return (
           <button
+            ref={(node) => { tabRefs.current[index] = node }}
             key={item.id}
             type="button"
             role="tab"
             aria-selected={active}
             aria-disabled={item.disabled || undefined}
+            tabIndex={active ? 0 : -1}
             disabled={item.disabled}
             className={cn(
               'min-h-9 rounded-md px-3 py-2 text-sm font-bold text-[var(--muted)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklch,var(--accent)_28%,transparent)] disabled:cursor-not-allowed disabled:opacity-45',
@@ -536,6 +598,9 @@ export function AdminTabs<T extends string>({
               active && 'bg-[var(--elevated)] text-[var(--fg)] shadow-[var(--pg-shadow-sm)]',
             )}
             onClick={() => onChange(item.id)}
+            onKeyDown={(event) => {
+              if (moveFocus(index, event.key)) event.preventDefault()
+            }}
           >
             <span className="min-w-0 truncate">{item.label}</span>
             {item.badge ? <span className="shrink-0">{item.badge}</span> : null}
@@ -777,6 +842,7 @@ export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
       setTheme(button.closest('[data-theme]')?.getAttribute('data-theme') ?? undefined)
     }
     updatePosition()
+    window.requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
     window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', updatePosition, true)
     return () => {
@@ -817,9 +883,35 @@ export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
     setOpen(false)
   }
 
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement)
+    let nextIndex: number | undefined
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % items.length
+    if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + items.length) % items.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = items.length - 1
+    if (nextIndex === undefined || !items.length) return
+    event.preventDefault()
+    items[nextIndex]?.focus()
+  }
+
   return (
     <span className="relative inline-flex">
-      <Button ref={buttonRef} variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>更多</Button>
+      <Button
+        ref={buttonRef}
+        variant="ghost"
+        size="sm"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >更多</Button>
       {open ? createPortal(
         <span
           ref={menuRef}
@@ -827,6 +919,7 @@ export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
           data-theme={theme}
           role="menu"
           style={menuStyle ?? undefined}
+          onKeyDown={handleMenuKeyDown}
         >
           {actions.map((action) => (
             <button
@@ -888,7 +981,7 @@ export function Badge({ tone = 'neutral', children }: { tone?: ToastTone | 'succ
 }
 
 export function InlineFeedback({ tone, message }: { tone: ToastTone; message: string }) {
-  return <div className={cn('rounded-xl border px-3 py-2 text-sm', feedbackToneClass[tone])}>{message}</div>
+  return <div className={cn(adminFeedback.inline, feedbackToneClass[tone])} role={tone === 'danger' ? 'alert' : 'status'}>{message}</div>
 }
 
 export function GroupOptionGrid({
@@ -940,17 +1033,12 @@ export function Modal({
   footer: React.ReactNode
   onClose: () => void
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  const dialogRef = useRef<HTMLElement | null>(null)
+  useDialogFocus(onClose, dialogRef)
 
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-6 backdrop-blur-md" role="presentation" onMouseDown={onClose}>
-      <section className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-3xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.28)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} tabIndex={-1} className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.28)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <strong className="font-[family-name:var(--font-admin-display)] text-lg font-semibold">{title}</strong>
@@ -978,17 +1066,14 @@ export function Drawer({
   footer?: React.ReactNode
   onClose: () => void
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  const dialogRef = useRef<HTMLElement | null>(null)
+  useDialogFocus(onClose, dialogRef)
 
   return (
     <div className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm" role="presentation" onMouseDown={onClose}>
       <aside
+        ref={dialogRef}
+        tabIndex={-1}
         className="ml-auto grid h-full w-[min(760px,100vw)] grid-rows-[auto_minmax(0,1fr)_auto] border-l border-[var(--border)] bg-[var(--surface-solid)] shadow-[0_24px_90px_rgba(0,0,0,.34)]"
         role="dialog"
         aria-modal="true"
@@ -1133,22 +1218,22 @@ export function ConfirmDrawer({
   )
 }
 
-export function MetricGrid({ metrics }: { metrics: AdminMetric[] }) {
+export function MetricStrip({ metrics }: { metrics: AdminMetric[] }) {
   return (
-    <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <section className={adminMetric.strip} aria-label="关键运营指标">
       {metrics.map((metric) => (
-        <div key={metric.label} className={cn('relative grid min-h-[120px] content-center gap-2 overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]', metricToneClass[metric.tone])}>
-          <div>
-            <label className="m-0 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[var(--dim)]">{metric.label}</label>
-          </div>
-          <div>
-            <strong className="my-1 block text-3xl font-black tracking-tighter text-[var(--fg)]">{metric.value}</strong>
-            <span className="text-xs font-extrabold text-[var(--soft)]">{metric.trend}</span>
-          </div>
+        <div key={metric.label} className={cn(adminMetric.item, 'transition-colors duration-[var(--admin-motion-base)] hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]', metricToneClass[metric.tone])}>
+          <span className={adminType.label}>{metric.label}</span>
+          <strong className={adminMetric.value}>{metric.value}</strong>
+          <span className={adminType.support}>{metric.trend}</span>
         </div>
       ))}
     </section>
   )
+}
+
+export function MetricGrid({ metrics }: { metrics: AdminMetric[] }) {
+  return <MetricStrip metrics={metrics} />
 }
 
 export function useFilteredTabs<T extends { tab?: string }>(rows: T[]) {
