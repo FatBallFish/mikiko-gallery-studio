@@ -1,4 +1,6 @@
 import type { AdminUser } from '../../../shared/api-types'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
 import {
   adminUserRowActions,
   adminUserRowView,
@@ -7,6 +9,54 @@ import {
   adminUserStatusOptions,
   adminUserSummary,
 } from './userRows'
+
+const usersPageSource = readFileSync(new URL('./UsersPage.tsx', import.meta.url), 'utf8')
+
+for (const requiredPrimitive of ['MetricStrip', 'FilterToolbar', 'Drawer']) {
+  if (!usersPageSource.includes(requiredPrimitive)) {
+    throw new Error(`user management should use the shared ${requiredPrimitive} primitive`)
+  }
+}
+
+if (/detailTarget\s*\?\s*\(\s*<Modal/.test(usersPageSource)) {
+  throw new Error('user detail should use a Drawer instead of a Modal')
+}
+
+if (!usersPageSource.includes('data-admin-user-section={dataSection}')) {
+  throw new Error('user detail sections should expose stable rendered section markers')
+}
+
+for (const section of ['profile', 'ledger', 'resources', 'limits', 'danger']) {
+  if (!usersPageSource.includes(`dataSection="${section}"`)) {
+    throw new Error(`user detail drawer should expose the ${section} section`)
+  }
+}
+
+if (!usersPageSource.includes('resultSummary=')) {
+  throw new Error('user filter toolbar should keep the result count in the same operational surface')
+}
+
+if (!usersPageSource.includes('const hasResources =')) {
+  throw new Error('user resource detail should render an intentional empty state when every resource collection is empty')
+}
+
+if (!usersPageSource.includes('message={actionError}')) {
+  throw new Error('user mutations should keep failure feedback local to the active operation')
+}
+
+if (!usersPageSource.includes('detailTarget && !action ? (')) {
+  throw new Error('user detail Drawer must unmount while a nested action Modal owns focus')
+}
+
+for (const unsafeConfirmation of ['confirmEmail: rawRow.email', 'confirmEmail: user.email']) {
+  if (usersPageSource.includes(unsafeConfirmation)) {
+    throw new Error('destructive user actions must require the operator to type the confirmation email')
+  }
+}
+
+if (!usersPageSource.includes('操作已完成，但详情刷新失败')) {
+  throw new Error('detail refresh failures must distinguish a successful mutation from a failed refresh')
+}
 
 const active = adminUserStatusBadge('active')
 const pending = adminUserStatusBadge('pending')
