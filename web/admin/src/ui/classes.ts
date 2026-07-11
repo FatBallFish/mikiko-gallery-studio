@@ -45,7 +45,7 @@ export const adminShell = {
   navLink: 'group flex w-full max-w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium text-[var(--muted)] no-underline transition-all duration-[var(--admin-motion-base)] hover:bg-[var(--surface)] hover:text-[var(--fg)]',
   navLinkActive: 'admin-nav-active text-[var(--fg)] hover:text-[var(--fg)]',
   navIcon: 'grid size-5 place-items-center',
-  navBadge: 'ml-auto rounded-full bg-[var(--surface)] px-2 py-0.5 text-[10px] font-bold not-italic text-[var(--muted)]',
+  navBadge: 'ml-auto rounded-full bg-[var(--surface)] px-2 py-0.5 text-[length:var(--admin-type-label)] font-semibold not-italic text-[var(--muted)]',
   sideNote: 'm-5 mt-auto grid gap-3 border-t border-[var(--border)] pt-5',
   sideNoteIdentity: 'flex min-w-0 items-center gap-3',
   main: 'flex min-w-0 flex-1 flex-col overflow-hidden',

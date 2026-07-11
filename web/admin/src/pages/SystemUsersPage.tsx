@@ -1,21 +1,22 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import type { AdminRole, AdminSession, SystemAdminUser } from '../../../shared/api-types'
+import type { AdminMetric, AdminRole, AdminSession, SystemAdminUser } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
-import { ColumnDef, DataTable, FilterBar, ListPage, Pager } from '../ui/dataTable'
+import type { ColumnDef } from '../ui/dataTable'
+import { DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import { FilterIcon, XIcon } from '../ui/listIcons'
 
 const systemUserClasses = {
   identity: 'flex min-w-0 items-center gap-3',
-  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--canvas)] text-sm font-black text-[var(--muted-strong)]',
-  title: 'block truncate font-bold text-[var(--text)]',
-  detail: 'mt-1 block truncate text-[11px] font-medium text-[var(--soft)]',
+  avatar: 'grid size-9 shrink-0 place-items-center rounded-lg bg-[var(--canvas)] text-sm font-semibold text-[var(--muted)]',
+  title: 'block truncate font-semibold text-[var(--fg)]',
+  detail: 'mt-1 block truncate text-xs text-[var(--soft)]',
   role: 'grid gap-1',
-  roleName: 'font-bold text-[var(--text)]',
-  roleHint: 'text-[11px] text-[var(--soft)]',
-  time: 'font-mono text-xs tracking-tight text-[var(--soft)]',
+  roleName: 'font-semibold text-[var(--fg)]',
+  roleHint: 'text-xs text-[var(--soft)]',
+  time: 'font-[family-name:var(--admin-font-mono)] text-xs text-[var(--soft)]',
   actions: 'flex flex-wrap items-center justify-end gap-2',
 }
 
@@ -44,6 +45,7 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<DialogState | null>(null)
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   const load = async (nextFilters = appliedFilters, nextPage = page, nextPageize = pageSize) => {
     setLoading(true)
@@ -69,6 +71,12 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
     superAdmins: rows.filter((row) => row.role === 'super_admin').length,
     disabled: rows.filter((row) => row.status === 'disabled').length,
   }), [rows, total])
+  const metrics = useMemo<AdminMetric[]>(() => [
+    { label: '账户总数', value: String(summary.total), trend: `当前页 ${rows.length} 个账户`, tone: 'neutral' },
+    { label: '当前页启用', value: String(summary.active), trend: '可登录后台', tone: 'good' },
+    { label: '超级管理员', value: String(summary.superAdmins), trend: '当前页完整权限账户', tone: 'neutral' },
+    { label: '当前页停用', value: String(summary.disabled), trend: summary.disabled ? '无法继续登录' : '无停用账户', tone: summary.disabled ? 'warn' : 'good' },
+  ], [rows.length, summary])
 
   const applyFilters = (event: FormEvent) => {
     event.preventDefault()
@@ -76,9 +84,26 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
     setAppliedFilters(filters)
   }
 
+  const clearFilters = () => {
+    setFilters(initialFilters)
+    setAppliedFilters(initialFilters)
+    setPage(1)
+  }
+
+  const openDialog = (next: DialogState) => {
+    setMutationError(null)
+    setDialog(next)
+  }
+
+  const closeDialog = () => {
+    setMutationError(null)
+    setDialog(null)
+  }
+
   const saveDialog = async () => {
     if (!dialog) return
     setSaving(true)
+    setMutationError(null)
     try {
       if (dialog.type === 'create') {
         const created = await adminApi.systemAdmins.create({ email: dialog.email.trim(), password: dialog.password, role: dialog.role, status: dialog.status })
@@ -89,12 +114,14 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
       } else if (dialog.type === 'password') {
         await adminApi.systemAdmins.resetPassword(dialog.user.id, dialog.password)
         onFeedback('密码已重置', dialog.user.email)
-      } else if (dialog.type === 'delete') {
+      } else {
         await adminApi.systemAdmins.delete(dialog.user.id)
         onFeedback('系统账户已删除', dialog.user.email)
       }
       setDialog(null)
       await load(appliedFilters, page)
+    } catch (caught) {
+      setMutationError(caught instanceof Error ? caught.message : '系统账户操作失败')
     } finally {
       setSaving(false)
     }
@@ -112,58 +139,47 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
 
   return (
     <section className={adminPage.stack}>
-      <PageHeader title="系统账户" detail="管理独立后台管理员账号、角色、状态和密码重置。" />
-      <div className="rounded-xl border border-[rgba(184,135,64,.28)] bg-[rgba(184,135,64,.08)] px-4 py-3 text-sm text-[var(--amber)]">
-        敏感操作会写入审计日志；停用、删除和密码重置前请确认目标账户。
-      </div>
-      <StatusStrip>
-        <StatusCell label="账户总数" value={String(summary.total)} />
-        <StatusCell label="当前页启用" value={String(summary.active)} />
-        <StatusCell label="超级管理员" value={String(summary.superAdmins)} />
-        <StatusCell label="当前页停用" value={String(summary.disabled)} />
-      </StatusStrip>
-
+      <PageHeader
+        title="系统账户"
+        detail="管理独立后台管理员账号、角色、状态和密码重置。"
+        primaryAction={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => openDialog({ type: 'create', email: '', password: '', role: 'admin', status: 'active' })}>创建账户</button>}
+      />
+      <InlineFeedback tone="warning" message="敏感操作会写入审计日志；停用、删除和密码重置前请确认目标账户。" />
+      <MetricStrip metrics={metrics} />
       <form onSubmit={applyFilters}>
-        <FilterBar
+        <FilterToolbar
           fields={[
-            { key: 'query', label: '搜索', primary: true, control: <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="邮箱关键词" /> },
-            { key: 'role', label: '角色', primary: true, control: <select value={filters.role} onChange={(event) => setFilters({ ...filters, role: event.target.value as Filters['role'] })}><option value="">全部</option><option value="super_admin">超级管理员</option><option value="admin">运营管理员</option></select> },
-            { key: 'status', label: '状态', control: <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value as Filters['status'] })}><option value="">全部</option><option value="active">启用</option><option value="disabled">停用</option></select> },
+            { key: 'query', label: '搜索', primary: true, minWidth: '220px', maxWidth: '420px', control: <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="邮箱关键词" /> },
+            { key: 'role', label: '角色', primary: true, control: <select value={filters.role} onChange={(event) => setFilters({ ...filters, role: event.target.value as Filters['role'] })}><option value="">全部角色</option><option value="super_admin">超级管理员</option><option value="admin">运营管理员</option></select> },
+            { key: 'status', label: '状态', control: <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value as Filters['status'] })}><option value="">全部状态</option><option value="active">启用</option><option value="disabled">停用</option></select> },
           ]}
           actions={(
             <>
-              <button type="submit" className={cn(adminButton.base, adminButton.primary, adminButton.small, 'gap-1.5')}><FilterIcon className="size-4" /><span>筛选</span></button>
-              <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'gap-1.5')} onClick={() => { setFilters(initialFilters); setAppliedFilters(initialFilters); setPage(1) }}><XIcon className="size-4" /><span>清空</span></button>
+              <button type="submit" className={cn(adminButton.base, adminButton.primary, adminButton.small)}><FilterIcon className="size-4" /><span>筛选</span></button>
+              <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={clearFilters}><XIcon className="size-4" /><span>清空</span></button>
             </>
           )}
+          resultSummary={`共 ${total} 个系统账户 · 当前显示 ${rows.length} 个`}
         />
       </form>
-
       {loading ? <LoadingBlock label="正在载入系统账户" /> : error ? <ErrorBlock message={error} onRetry={() => void load()} /> : (
-        <ListPage
-          actions={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => setDialog({ type: 'create', email: '', password: '', role: 'admin', status: 'active' })}>创建账户</button>}
-          pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
-        >
-          {!rows.length ? <EmptyBlock title="暂无系统账户" detail="调整筛选条件，或创建新的后台管理员账户。" /> : (
-            <DataTable
-              columns={systemUserColumns(session, setDialog)}
-              rows={rows}
-              rowKey={(user) => String(user.id)}
-            />
-          )}
+        <ListPage pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}>
+          <DataTable
+            columns={systemUserColumns(session, openDialog)}
+            rows={rows}
+            rowKey={(user) => String(user.id)}
+            empty={<EmptyBlock title="暂无系统账户" detail="调整筛选条件，或创建新的后台管理员账户。" />}
+          />
         </ListPage>
       )}
-
       {dialog ? (
         <Modal
           title={dialogTitle(dialog)}
           detail={dialogDetail(dialog)}
-          onClose={() => setDialog(null)}
-          footer={<>
-            <button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => setDialog(null)}>取消</button>
-            <button type="button" className={cn(adminButton.base, dialog.type === 'delete' ? adminButton.danger : adminButton.primary)} disabled={saving || !canSave} onClick={() => void saveDialog()}>{saving ? '保存中' : '确认'}</button>
-          </>}
+          onClose={closeDialog}
+          footer={<><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={saving} onClick={closeDialog}>取消</button><button type="button" className={cn(adminButton.base, dialog.type === 'delete' ? adminButton.danger : adminButton.primary)} disabled={saving || !canSave} onClick={() => void saveDialog()}>{saving ? '保存中...' : '确认'}</button></>}
         >
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
           <DialogForm dialog={dialog} setDialog={setDialog} />
         </Modal>
       ) : null}
@@ -173,113 +189,41 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
 
 function DialogForm({ dialog, setDialog }: { dialog: DialogState; setDialog: (next: DialogState) => void }) {
   if (dialog.type === 'create') {
-    return (
-      <div className={adminPage.formGrid}>
-        <Field label="邮箱"><input value={dialog.email} onChange={(event) => setDialog({ ...dialog, email: event.target.value })} /></Field>
-        <Field label="初始密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} /></Field>
-        <RoleField value={dialog.role} onChange={(role) => setDialog({ ...dialog, role })} />
-        <StatusField value={dialog.status} onChange={(status) => setDialog({ ...dialog, status })} />
-      </div>
-    )
+    return <div className={adminPage.formGrid}><Field label="邮箱"><input value={dialog.email} onChange={(event) => setDialog({ ...dialog, email: event.target.value })} /></Field><Field label="初始密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} /></Field><RoleField value={dialog.role} onChange={(role) => setDialog({ ...dialog, role })} /><StatusField value={dialog.status} onChange={(status) => setDialog({ ...dialog, status })} /></div>
   }
   if (dialog.type === 'edit') {
-    return (
-      <div className={adminPage.formGrid}>
-        <RoleField value={dialog.role} onChange={(role) => setDialog({ ...dialog, role })} />
-        <StatusField value={dialog.status} onChange={(status) => setDialog({ ...dialog, status })} />
-      </div>
-    )
+    return <div className={adminPage.formGrid}><RoleField value={dialog.role} onChange={(role) => setDialog({ ...dialog, role })} /><StatusField value={dialog.status} onChange={(status) => setDialog({ ...dialog, status })} /></div>
   }
-  if (dialog.type === 'password') {
-    return <Field label="新密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} /></Field>
-  }
+  if (dialog.type === 'password') return <Field label="新密码" hint="至少 6 位"><input type="password" value={dialog.password} onChange={(event) => setDialog({ ...dialog, password: event.target.value })} /></Field>
   return <Field label="输入邮箱确认删除"><input value={dialog.confirmEmail} onChange={(event) => setDialog({ ...dialog, confirmEmail: event.target.value })} placeholder={dialog.user.email} /></Field>
 }
 
 function RoleField({ value, onChange }: { value: AdminRole; onChange: (role: AdminRole) => void }) {
-  return (
-    <Field label="角色">
-      <select value={value} onChange={(event) => onChange(event.target.value as AdminRole)}>
-        <option value="admin">运营管理员</option>
-        <option value="super_admin">超级管理员</option>
-      </select>
-    </Field>
-  )
+  return <Field label="角色"><select value={value} onChange={(event) => onChange(event.target.value as AdminRole)}><option value="admin">运营管理员</option><option value="super_admin">超级管理员</option></select></Field>
 }
 
 function StatusField({ value, onChange }: { value: 'active' | 'disabled'; onChange: (status: 'active' | 'disabled') => void }) {
-  return (
-    <Field label="状态">
-      <select value={value} onChange={(event) => onChange(event.target.value as 'active' | 'disabled')}>
-        <option value="active">启用</option>
-        <option value="disabled">停用</option>
-      </select>
-    </Field>
-  )
+  return <Field label="状态"><select value={value} onChange={(event) => onChange(event.target.value as 'active' | 'disabled')}><option value="active">启用</option><option value="disabled">停用</option></select></Field>
 }
 
-function systemUserColumns(
-  session: AdminSession,
-  setDialog: (dialog: DialogState) => void,
-): ColumnDef<SystemAdminUser>[] {
+function systemUserColumns(session: AdminSession, openDialog: (dialog: DialogState) => void): ColumnDef<SystemAdminUser>[] {
   return [
     {
-      key: 'user',
-      title: '用户信息',
-      width: 'minmax(220px,2fr)',
-      render: (user) => (
-        <div className={systemUserClasses.identity}>
-          <span className={systemUserClasses.avatar}>{user.email.slice(0, 1).toUpperCase()}</span>
-          <span className="min-w-0">
-            <span className={systemUserClasses.title}>{displayAdminName(user)}</span>
-            <span className={systemUserClasses.detail}>{user.email} · ID {user.id}</span>
-          </span>
-        </div>
-      ),
+      key: 'user', title: '账户', width: 'minmax(240px,2fr)', render: (user) => <span className={systemUserClasses.identity}><span className={systemUserClasses.avatar}>{user.email.slice(0, 1).toUpperCase()}</span><span className="min-w-0"><span className={systemUserClasses.title}>{displayAdminName(user)}</span><span className={systemUserClasses.detail}>{user.email} · ID {user.id}</span></span></span>,
     },
     {
-      key: 'role',
-      title: '角色权限',
-      width: 'minmax(120px,1fr)',
-      render: (user) => (
-        <span className={systemUserClasses.role}>
-          <span className={systemUserClasses.roleName}>{roleLabel(user.role)}</span>
-          <span className={systemUserClasses.roleHint}>{rolePermissionHint(user.role)}</span>
-        </span>
-      ),
+      key: 'role', title: '角色权限', width: 'minmax(150px,1.2fr)', render: (user) => <span className={systemUserClasses.role}><span className={systemUserClasses.roleName}>{roleLabel(user.role)}</span><span className={systemUserClasses.roleHint}>{rolePermissionHint(user.role)}</span></span>,
     },
     {
-      key: 'last_login',
-      title: '最后登录',
-      width: 'minmax(140px,1fr)',
-      render: (user) => (
-        <span className="flex flex-col gap-1">
-          <span className={systemUserClasses.time}>{formatDateTime(user.updated_at)}</span>
-          <span className={systemUserClasses.detail}>创建 {formatDateTime(user.created_at)}</span>
-        </span>
-      ),
+      key: 'last_login', title: '最近活动', width: 'minmax(170px,1.2fr)', render: (user) => <span className="grid gap-1"><span className={systemUserClasses.time}>{formatDateTime(user.updated_at)}</span><span className={systemUserClasses.detail}>创建 {formatDateTime(user.created_at)}</span></span>,
     },
     {
-      key: 'status',
-      title: '状态',
-      width: 'minmax(80px,0.7fr)',
-      render: (user) => <Badge tone={user.status === 'active' ? 'success' : 'warning'}>{statusLabel(user.status)}</Badge>,
+      key: 'status', title: '状态', width: 'minmax(90px,.7fr)', render: (user) => <Badge tone={user.status === 'active' ? 'success' : user.status === 'disabled' ? 'warning' : 'neutral'}>{statusLabel(user.status)}</Badge>,
     },
     {
-      key: 'actions',
-      title: '操作',
-      width: 'minmax(180px,1.5fr)',
-      align: 'right',
-      render: (user) => {
+      key: 'actions', title: '操作', width: 'minmax(190px,1.3fr)', align: 'right', render: (user) => {
         const isSelf = String(user.id) === String(session.admin_id)
-        return (
-          <div className={systemUserClasses.actions}>
-            {isSelf ? <Badge>当前账户</Badge> : null}
-            <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => setDialog({ type: 'password', user, password: '' })}>重置密码</button>
-            <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => setDialog({ type: 'edit', user, role: normalizeRole(user.role), status: normalizeStatus(user.status) })}>编辑</button>
-            <button type="button" className={cn(adminButton.base, adminButton.danger, adminButton.small)} disabled={isSelf} onClick={() => setDialog({ type: 'delete', user, confirmEmail: '' })}>删除</button>
-          </div>
-        )
+        return <span className={systemUserClasses.actions}>{isSelf ? <Badge>当前账户</Badge> : null}<button type="button" className={cn(adminButton.base, adminButton.secondary, adminButton.small)} onClick={() => openDialog({ type: 'edit', user, role: normalizeRole(user.role), status: normalizeStatus(user.status) })}>编辑</button><ActionMenu actions={[{ id: `password-${user.id}`, label: '重置密码', run: () => openDialog({ type: 'password', user, password: '' }) }, ...(!isSelf ? [{ id: `delete-${user.id}`, label: '删除账户', tone: 'danger' as const, run: () => openDialog({ type: 'delete', user, confirmEmail: '' }) }] : [])]} /></span>
       },
     },
   ]
@@ -294,8 +238,7 @@ function rolePermissionHint(role: string) {
 }
 
 function displayAdminName(user: SystemAdminUser) {
-  const name = user.email.split('@')[0]?.trim()
-  return name || user.email
+  return user.email.split('@')[0]?.trim() || user.email
 }
 
 function statusLabel(status: string) {

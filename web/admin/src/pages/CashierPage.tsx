@@ -3,7 +3,7 @@ import type { FormEvent, ReactNode } from 'react'
 import type { CashierCustomAmountConfig, CashierOverview, CashierPlan, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderInstanceWriteRequest, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
+import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { FilterBar, ListPage, Pager } from '../ui/dataTable'
@@ -117,64 +117,64 @@ const cashierTabs: Array<{ id: CashierTabId; label: string; detail: string }> = 
 const cashierAdminPageSize = 10
 const emptyOrderFilters: OrderFilters = { order_no: '', user_id: '', status: '', visible_method: '', purchase_type: '' }
 const cashierClasses = {
-  page: 'grid gap-8',
-  overviewGrid: 'grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4',
-  overviewCard: 'relative grid min-h-[130px] gap-2 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-6 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]',
-  overviewLabel: 'text-xs font-medium uppercase tracking-wider text-[var(--muted-strong)]',
-  overviewValue: 'text-3xl font-black tracking-tighter text-[var(--text)]',
-  overviewTrend: 'flex items-center gap-1 text-xs font-bold text-emerald-400',
-  chartContainer: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-8',
-  sectionTitle: 'mb-6 flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
-  revenueBars: 'flex h-[300px] w-full items-end gap-1 px-4',
+  page: 'grid gap-6',
+  overviewGrid: 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4',
+  overviewCard: 'relative grid min-h-[108px] gap-1.5 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4 transition-[border-color,background-color,transform] duration-[var(--admin-motion-base)] hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]',
+  overviewLabel: 'text-xs font-semibold text-[var(--muted-strong)]',
+  overviewValue: 'text-2xl font-bold text-[var(--text)]',
+  overviewTrend: 'flex items-center gap-1 text-xs font-semibold text-[var(--green)]',
+  chartContainer: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5',
+  sectionTitle: 'mb-4 text-base font-semibold text-[var(--text)]',
+  revenueBars: 'flex h-[220px] w-full items-end gap-1 px-2',
   revenueBar: 'group relative flex-1 rounded-t-sm bg-[var(--accent)]/20 transition-all hover:bg-[var(--accent)]',
-  chartAxis: 'mt-4 flex justify-between px-4 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
-  splitCharts: 'grid grid-cols-1 gap-8 xl:grid-cols-2',
+  chartAxis: 'mt-3 flex justify-between px-2 text-xs font-medium text-[var(--muted-strong)]',
+  splitCharts: 'grid grid-cols-1 gap-4 xl:grid-cols-2',
   distributionRow: 'grid gap-2',
   distributionMeta: 'flex justify-between gap-3 text-xs font-bold',
   distributionTrack: 'h-1.5 w-full overflow-hidden rounded-full bg-[var(--canvas)]',
   spenderRow: 'flex items-center justify-between gap-3 rounded-lg p-3 transition-all hover:bg-[var(--canvas)]',
   spenderAvatar: 'grid size-8 place-items-center rounded-lg bg-[var(--canvas)] text-xs font-bold text-[var(--muted-strong)]',
   configForm: 'grid gap-4',
-  configPanelGrid: 'grid grid-cols-2 gap-8 max-[1100px]:grid-cols-1',
-  configPanel: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-6 shadow-[var(--pg-shadow-sm)]',
-  configPanelHead: 'mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4',
-  configPanelTitle: 'text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)]',
-  providerList: 'grid gap-4',
-  providerItem: 'group flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-4 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]',
-  providerDot: 'size-2 rounded-full',
-  providerName: 'font-bold text-[var(--text)]',
-  providerType: 'mt-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
-  toggleSetting: 'flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
+  configPanelGrid: 'grid grid-cols-2 gap-4 max-[1100px]:grid-cols-1',
+  configPanel: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5',
+  configPanelHead: 'mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-3',
+  configPanelTitle: 'text-base font-semibold text-[var(--text)]',
+  providerList: 'divide-y divide-[var(--border)]',
+  providerItem: 'group flex items-center justify-between gap-4 px-2 py-3 transition-colors duration-[var(--admin-motion-base)] hover:bg-[var(--elevated)]',
+  providerDot: 'size-2 rounded-full bg-[var(--muted)]',
+  providerName: 'font-semibold text-[var(--text)]',
+  providerType: 'mt-1 text-xs text-[var(--muted-strong)]',
+  toggleSetting: 'flex items-center justify-between gap-4 px-2 py-3 transition-colors duration-[var(--admin-motion-base)] hover:bg-[var(--elevated)]',
   toggleSwitch: 'relative h-5 w-10 rounded-full transition-all',
-  toggleKnob: 'absolute top-1 size-3 rounded-full bg-white transition-all',
-  riskPanel: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-6 shadow-[var(--pg-shadow-sm)]',
-  riskMetricGrid: 'grid grid-cols-3 gap-4 max-[760px]:grid-cols-1',
-  riskMetric: 'rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-4',
-  riskLabel: 'mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
-  riskValue: 'text-lg font-black text-[var(--text)]',
+  toggleKnob: 'absolute top-1 size-3 rounded-full bg-[var(--surface-solid)] transition-all',
+  riskPanel: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5',
+  riskMetricGrid: 'grid grid-cols-3 divide-x divide-[var(--border)] max-[760px]:grid-cols-1 max-[760px]:divide-x-0 max-[760px]:divide-y',
+  riskMetric: 'px-4 py-2 first:pl-0 last:pr-0 max-[760px]:px-0 max-[760px]:py-3',
+  riskLabel: 'mb-1 text-xs font-semibold text-[var(--muted-strong)]',
+  riskValue: 'text-lg font-bold text-[var(--text)]',
   toggle: 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--canvas)] p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10',
   amountGrid: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3',
   toolbar: 'flex flex-wrap items-start justify-between gap-3',
   actions: 'flex flex-wrap items-center justify-end gap-2',
   orderFilter: 'flex flex-wrap items-center justify-between gap-4',
   orderFilterFields: 'grid flex-1 grid-cols-[minmax(180px,1fr)_minmax(120px,.5fr)_minmax(120px,.5fr)_minmax(120px,.5fr)_minmax(120px,.5fr)] gap-3 max-[1100px]:grid-cols-2 max-[620px]:grid-cols-1',
-  webhookInspector: 'grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--canvas)] p-4 text-[var(--fg)]',
-  webhookPre: 'max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg bg-black/25 p-3 font-mono text-xs',
-  jeepayTemplate: 'grid gap-3 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-4',
+  webhookInspector: 'grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-4 text-[var(--fg)]',
+  webhookPre: 'max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--canvas)] p-3 font-mono text-xs',
+  jeepayTemplate: 'grid gap-3 rounded-lg border border-[var(--line)] bg-[var(--canvas)] p-4',
   templateButtonRow: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2',
-  templateButton: 'grid gap-1 rounded-xl border border-[var(--line)] bg-white/5 p-3 text-left text-sm hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/10',
-  textarea: 'min-h-[160px] w-full resize-y rounded-xl border border-[var(--line)] bg-white/5 px-3 py-2 font-mono text-xs outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/50',
+  templateButton: 'grid gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-solid)] p-3 text-left text-sm transition-colors duration-[var(--admin-motion-base)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/10',
+  textarea: 'min-h-[160px] w-full resize-y rounded-lg border border-[var(--line)] bg-[var(--surface-solid)] px-3 py-2 font-mono text-xs outline-none focus:border-[var(--accent)]/50 focus:ring-1 focus:ring-[var(--accent)]/50',
   detailGrid: 'grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3',
-  detailItem: 'grid gap-1 rounded-2xl border border-[var(--line)] bg-white/[0.02] p-3',
+  detailItem: 'grid gap-1 rounded-lg border border-[var(--line)] bg-[var(--canvas)] p-3',
   riskGrid: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3',
-  riskItem: 'grid gap-1 rounded-xl border p-3',
+  riskItem: 'grid gap-1 rounded-lg border p-3',
   riskTone: {
-    neutral: 'border-[var(--line)] bg-white/[0.02]',
-    success: 'border-[rgba(90,149,114,.24)] bg-[rgba(90,149,114,.08)]',
-    warning: 'border-[rgba(184,135,64,.28)] bg-[rgba(184,135,64,.08)]',
-    danger: 'border-[rgba(184,95,84,.28)] bg-[rgba(184,95,84,.08)]',
+    neutral: 'border-[var(--line)] bg-[var(--canvas)]',
+    success: 'border-[var(--green)]/30 bg-[var(--green)]/10',
+    warning: 'border-[var(--amber)]/30 bg-[var(--amber)]/10',
+    danger: 'border-[var(--red)]/30 bg-[var(--red)]/10',
   },
-  section: 'grid gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-6',
+  section: 'grid gap-4 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5',
   sectionHead: 'flex flex-wrap items-center justify-between gap-2',
   pager: 'flex flex-wrap items-center justify-between gap-3 pt-3',
   providerGuide: 'col-span-full grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
@@ -661,7 +661,7 @@ export function CashierPage({
   }, [safeInitialTab])
 
   if (loading) return <LoadingBlock label="读取收银台配置" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (error && !data) return <ErrorBlock message={error} onRetry={load} />
   if (!data) return <EmptyBlock title="暂无收银台数据" detail="后台尚未返回收银台配置。" />
 
   const isOrdersPage = visibleTabs.some((tab) => tab.id === 'orders')
@@ -687,6 +687,8 @@ export function CashierPage({
           onChange={setActiveTab}
         />
       ) : null}
+
+      {error ? <InlineFeedback tone="danger" message={error} /> : null}
 
       {activeTab === 'overview' && isOrdersPage ? <OrderOverviewPanel data={data} /> : null}
 
@@ -766,24 +768,26 @@ export function CashierPage({
                 <p>{cashierPlanSectionCopy.toolbarDetail}</p>
               </div>
             ) : null}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {data.plans.items.map((plan) => {
                 const active = plan.status === 'active' && Boolean(plan.purchase_enabled)
+                const planStatus = cashierPlanStatusBadge(plan.status)
+                const purchaseStatus = cashierPlanPurchaseBadge(plan)
                 return (
-                  <div key={plan.id} className={cn('group rounded-3xl border p-8 transition-all hover:scale-[1.01]', active ? 'border-[var(--border-strong)] bg-[var(--elevated)] shadow-[var(--pg-shadow-lg)]' : 'border-[var(--border)] bg-[var(--surface)] opacity-50')}>
-                    <div className="mb-8 flex items-start justify-between gap-3">
+                  <div key={plan.id} className={cn('group rounded-lg border p-5 transition-[border-color,background-color,transform] duration-[var(--admin-motion-base)] hover:-translate-y-0.5', active ? 'border-[var(--border-strong)] bg-[var(--elevated)]' : 'border-[var(--border)] bg-[var(--surface)] opacity-60')}>
+                    <div className="mb-5 flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h4 className="truncate text-xl font-bold text-[var(--text)] transition-colors group-hover:text-[var(--accent)]">{plan.plan_name}</h4>
-                        <p className="mt-1 text-xs uppercase tracking-widest text-[var(--muted-strong)]">{plan.plan_code} · {cashierPlanTypeLabel(plan.plan_type)}</p>
+                        <h4 className="truncate text-base font-semibold text-[var(--text)] transition-colors group-hover:text-[var(--accent)]">{plan.plan_name}</h4>
+                        <p className="mt-1 font-mono text-xs text-[var(--muted-strong)]">{plan.plan_code} · {cashierPlanTypeLabel(plan.plan_type)}</p>
                       </div>
-                      {active ? <StatusBadge badge={cashierPlanStatusBadge(plan.status)} /> : null}
+                      <span className="flex flex-wrap justify-end gap-1.5"><StatusBadge badge={planStatus} /><StatusBadge badge={purchaseStatus} /></span>
                     </div>
-                    <div className="mb-10 grid gap-2">
-                      <div className="text-4xl font-black tracking-tighter text-[var(--text)]">
+                    <div className="mb-5 grid gap-1.5">
+                      <div className="text-2xl font-bold text-[var(--text)]">
                         {Number(plan.points).toFixed(0)}
-                        <span className="ml-1 text-sm font-normal text-[var(--muted-strong)]">POINTS</span>
+                        <span className="ml-1 text-xs font-normal text-[var(--muted-strong)]">积分</span>
                       </div>
-                      <div className="font-mono text-xl text-[var(--accent)]">¥ {Number(plan.price_cny).toFixed(2)}</div>
+                      <div className="font-mono text-base font-semibold text-[var(--accent)]">¥ {Number(plan.price_cny).toFixed(2)}</div>
                     </div>
                     <div className="flex gap-3">
                       <button type="button" className={cn(adminButton.base, adminButton.ghost, 'flex-1')} onClick={() => setPlanDialog(editPlanDraft(plan))}>编辑</button>
@@ -1043,6 +1047,7 @@ export function CashierPage({
           onClose={() => setPlanDialog(null)}
           footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={savingPlan} onClick={() => setPlanDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={savingPlan || !planDialog.plan_code || !planDialog.plan_name || !planDialog.price_cny || !planDialog.points} onClick={() => void savePlan()}>{savingPlan ? '保存中...' : '保存'}</button></>}
         >
+          {error ? <InlineFeedback tone="danger" message={error} /> : null}
           <div className={adminPage.formGrid}>
             <Field label="套餐代码"><input value={planDialog.plan_code} disabled={Boolean(planDialog.row)} onChange={(event) => setPlanDialog({ ...planDialog, plan_code: event.target.value })} placeholder="points-100" /></Field>
             <Field label="套餐名称"><input value={planDialog.plan_name} onChange={(event) => setPlanDialog({ ...planDialog, plan_name: event.target.value })} placeholder="100 积分包" /></Field>
@@ -1073,6 +1078,7 @@ export function CashierPage({
           onClose={() => setInstanceDialog(null)}
           footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={savingInstance} onClick={() => setInstanceDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={savingInstance || !instanceDialog.name || !instanceDialog.provider_type} onClick={() => void saveInstance()}>{savingInstance ? '保存中...' : '保存'}</button></>}
         >
+          {error ? <InlineFeedback tone="danger" message={error} /> : null}
           <div className="mb-4 grid grid-cols-5 gap-2 text-xs font-bold text-[var(--muted)] max-[720px]:grid-cols-1">
             {['基础信息', '金额限制', '结构化字段', '密钥字段', '高级 JSON'].map((step, index) => (
               <span key={step} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">{index + 1}. {step}</span>
@@ -1232,6 +1238,7 @@ export function CashierPage({
           onClose={() => setCompleteDialog(null)}
           footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={completingOrder} onClick={() => setCompleteDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={completingOrder || !completeDialog.trade_no.trim()} onClick={() => void completeOrderManually()}>{completingOrder ? '处理中...' : '确认到账'}</button></>}
         >
+          {error ? <InlineFeedback tone="danger" message={error} /> : null}
           <div className={adminPage.formGrid}>
             <Field label="支付渠道">
               <select value={completeDialog.provider} onChange={(event) => setCompleteDialog({ ...completeDialog, provider: event.target.value })}>
@@ -1254,6 +1261,7 @@ export function CashierPage({
           onClose={() => setRefundDialog(null)}
           footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={refundingOrder} onClick={() => setRefundDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={refundingOrder || !refundDialog.refund_trade_no.trim()} onClick={() => void refundPaymentOrder()}>{refundingOrder ? '处理中...' : '确认退款'}</button></>}
         >
+          {error ? <InlineFeedback tone="danger" message={error} /> : null}
           <div className={adminPage.formGrid}>
             <Field label="退款交易号">
               <input value={refundDialog.refund_trade_no} onChange={(event) => setRefundDialog({ ...refundDialog, refund_trade_no: event.target.value })} placeholder="REFUND-TRADE-001" />
@@ -1274,6 +1282,7 @@ export function CashierPage({
           onClose={() => setChargebackDialog(null)}
           footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={chargingBackOrder} onClick={() => setChargebackDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={chargingBackOrder || !chargebackDialog.charge_points.trim() || !chargebackDialog.reason.trim() || !chargebackDialog.idempotency_key.trim()} onClick={() => void chargebackPaymentOrder()}>{chargingBackOrder ? '处理中...' : '确认追扣'}</button></>}
         >
+          {error ? <InlineFeedback tone="danger" message={error} /> : null}
           <div className={adminPage.formGrid}>
             <Field label="追扣积分">
               <input value={chargebackDialog.charge_points} onChange={(event) => setChargebackDialog({ ...chargebackDialog, charge_points: event.target.value })} inputMode="decimal" placeholder="5.00000" />
@@ -1304,12 +1313,12 @@ function OrderOverviewPanel({ data }: { data: CashierData }) {
   const spenderRows = topSpenderRows(data.orders.items)
 
   return (
-    <div className="grid gap-10">
+    <div className="grid gap-6">
       <div className={cashierClasses.overviewGrid}>
-        <FinancialStatCard label="今日收入" value={`¥ ${todayAmount.toFixed(2)}`} trend={`${data.overview.success_rate} success`} />
-        <FinancialStatCard label="今日订单数" value={String(data.overview.today_order_count)} trend={`${data.overview.today_completed_count} completed`} />
-        <FinancialStatCard label="平均订单金额" value={`¥ ${averageAmount.toFixed(2)}`} trend={`${data.overview.pending_count} pending`} />
-        <FinancialStatCard label="总营收" value={`¥ ${totalRevenue.toFixed(2)}`} trend={`${data.orders.total ?? data.orders.items.length} records`} />
+        <FinancialStatCard label="今日收入" value={`¥ ${todayAmount.toFixed(2)}`} trend={`支付成功率 ${data.overview.success_rate}`} />
+        <FinancialStatCard label="今日订单数" value={String(data.overview.today_order_count)} trend={`已完成 ${data.overview.today_completed_count} 笔`} />
+        <FinancialStatCard label="平均订单金额" value={`¥ ${averageAmount.toFixed(2)}`} trend={`待支付 ${data.overview.pending_count} 笔`} />
+        <FinancialStatCard label="当前页营收" value={`¥ ${totalRevenue.toFixed(2)}`} trend={`共 ${data.orders.total ?? data.orders.items.length} 条记录`} />
       </div>
 
       <div className={cashierClasses.chartContainer}>
@@ -1357,7 +1366,7 @@ function CashierConfigOverview({ data, onAddInstance }: { data: CashierData; onA
   ]
 
   return (
-    <div className="grid gap-8">
+    <div className="grid gap-6">
       <div className={cashierClasses.configPanelGrid}>
         <section className={cashierClasses.configPanel}>
           <div className={cashierClasses.configPanelHead}>
@@ -1393,14 +1402,11 @@ function CashierConfigOverview({ data, onAddInstance }: { data: CashierData; onA
 }
 
 function ProviderItem({ provider }: { provider: PaymentProviderInstance }) {
-  const statusClass = provider.enabled
-    ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.45)]'
-    : 'bg-white/20'
   const warning = provider.enabled && provider.config_status !== 'configured'
   return (
     <div className={cashierClasses.providerItem}>
       <div className="flex min-w-0 items-center gap-4">
-        <div className={cn(cashierClasses.providerDot, warning ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.45)]' : statusClass)} />
+        <div className={cn(cashierClasses.providerDot, warning ? 'bg-[var(--amber)]' : provider.enabled ? 'bg-[var(--green)]' : 'bg-[var(--muted)]')} />
         <div className="min-w-0">
           <div className={cashierClasses.providerName}>{provider.name}</div>
           <div className={cashierClasses.providerType}>{cashierProviderLabel(provider.provider_type)} · {cashierProviderSupportedMethodsLabel(provider.supported_methods)}</div>
@@ -1420,7 +1426,7 @@ function ToggleSetting({ title, detail, enabled }: { title: string; detail: stri
         <div className={cashierClasses.providerName}>{title}</div>
         <div className={cashierClasses.providerType}>{detail}</div>
       </div>
-      <div className={cn(cashierClasses.toggleSwitch, enabled ? 'bg-[var(--accent)]' : 'bg-white/10')} aria-hidden="true">
+      <div className={cn(cashierClasses.toggleSwitch, enabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]')} aria-hidden="true">
         <div className={cn(cashierClasses.toggleKnob, enabled ? 'right-1' : 'left-1')} />
       </div>
     </div>
@@ -1452,7 +1458,7 @@ function FinancialStatCard({ label, value, trend }: { label: string; value: stri
     <div className={cashierClasses.overviewCard}>
       <span className={cashierClasses.overviewLabel}>{label}</span>
       <strong className={cashierClasses.overviewValue}>{value}</strong>
-      <span className={cashierClasses.overviewTrend}>↑ {trend}<em className="ml-1 font-normal not-italic text-[var(--muted-strong)]">较昨日</em></span>
+      <span className={cashierClasses.overviewTrend}>{trend}</span>
     </div>
   )
 }
@@ -1478,10 +1484,10 @@ function UserSpendingRow({ user, amount, orders }: { user: string; amount: strin
         <div className={cashierClasses.spenderAvatar}>{user.slice(0, 2).toUpperCase()}</div>
         <div className="min-w-0">
           <strong className="block truncate text-sm">{user}</strong>
-          <span className="text-[10px] text-[var(--muted-strong)]">{orders} 笔订单</span>
+          <span className="text-xs text-[var(--muted-strong)]">{orders} 笔订单</span>
         </div>
       </div>
-      <strong className="text-sm font-black text-emerald-400">{amount}</strong>
+      <strong className="text-sm font-semibold text-[var(--green)]">{amount}</strong>
     </div>
   )
 }
@@ -1504,7 +1510,7 @@ function paymentDistributionRows(orders: PaymentOrder[], enabledMethods: string[
     if (!totals.has(method)) totals.set(method, 0)
   })
   const total = Array.from(totals.values()).reduce((sum, item) => sum + item, 0)
-  const tones = ['bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500']
+  const tones = ['bg-[var(--accent)]', 'bg-[var(--green)]', 'bg-[var(--amber)]', 'bg-[var(--muted)]']
   const entries = Array.from(totals.entries()).slice(0, 4)
   if (!entries.length) entries.push(['暂无支付方式', 0])
   return entries.map(([method, amount], index) => ({

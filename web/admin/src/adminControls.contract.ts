@@ -46,6 +46,7 @@ for (const interaction of [
   "event.key === 'ArrowUp'",
   'previousFocus?.focus()',
   'focusableElements(dialog)',
+  'setOpen(false)\n    buttonRef.current?.focus()\n    await action.run()',
 ]) {
   if (!componentsSource.includes(interaction)) throw new Error(`admin menus and overlays must support ${interaction}`)
 }

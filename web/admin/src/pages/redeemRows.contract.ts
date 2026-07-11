@@ -11,6 +11,10 @@ import {
   redeemStatusOptions,
   redeemStatusTone,
 } from './redeemRows'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
+
+const redeemPageSource = readFileSync(new URL('./RedeemPage.tsx', import.meta.url), 'utf8')
 
 const sample = (override: Partial<RedeemCode>): RedeemCode => ({
   id: 1,
@@ -207,5 +211,38 @@ function ledger(patch: Partial<LedgerEntry>): LedgerEntry {
     source_id: patch.source_id,
     reason: patch.reason,
     created_at: patch.created_at,
+  }
+}
+
+for (const primitive of ['PageHeader', 'FilterToolbar', 'DataTable', 'Badge', 'InlineFeedback', 'ActionMenu', 'Modal', 'Pager']) {
+  if (!redeemPageSource.includes(`<${primitive}`)) {
+    throw new Error(`redeem operations must use the shared ${primitive} primitive`)
+  }
+}
+
+for (const apiContract of [
+  'adminApi.listRedeemCodes',
+  'adminApi.createRedeemCode',
+  'adminApi.batchCreateRedeemCodes',
+  'adminApi.exportRedeemCodes',
+  'adminApi.updateRedeemCodeStatus',
+  'adminApi.listRedeemCodeRedemptions',
+]) {
+  if (!redeemPageSource.includes(apiContract)) {
+    throw new Error(`redeem redesign must preserve ${apiContract}`)
+  }
+}
+
+if (!redeemPageSource.includes("redeemPrimaryActionLabel = '查看核销'")) {
+  throw new Error('redeem rows must expose one persistent primary action')
+}
+
+if (!redeemPageSource.includes("id: 'change-status'")) {
+  throw new Error('redeem status mutation must move into the row ActionMenu')
+}
+
+for (const drift of ['adminDataGrid', 'adminGridCols', 'uppercase', 'tracking-[', 'text-[var(--green)]', 'rounded-2xl', 'rounded-3xl']) {
+  if (redeemPageSource.includes(drift)) {
+    throw new Error(`redeem page must remove visual drift: ${drift}`)
   }
 }

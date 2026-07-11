@@ -5,6 +5,9 @@ import { adminButton, adminSurface, adminTokens } from './classes'
 const stylesSource = readFileSync(new URL('../styles.css', import.meta.url), 'utf8')
 const mainSource = readFileSync(new URL('../main.tsx', import.meta.url), 'utf8')
 const classesSource = readFileSync(new URL('./classes.ts', import.meta.url), 'utf8')
+const componentsSource = readFileSync(new URL('../components.tsx', import.meta.url), 'utf8')
+const dataTableSource = readFileSync(new URL('./dataTable.tsx', import.meta.url), 'utf8')
+const loginSource = readFileSync(new URL('../pages/LoginPage.tsx', import.meta.url), 'utf8')
 const packageSource = readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
 
 if (adminTokens.radius.xs !== '6px' || adminTokens.radius.sm !== '8px' || adminTokens.radius.md !== '12px' || adminTokens.radius.lg !== '12px') {
@@ -48,8 +51,20 @@ for (const token of [
   if (!stylesSource.includes(token)) throw new Error(`admin design tokens must define ${token}`)
 }
 
-for (const forbiddenClass of ['rounded-2xl', 'rounded-3xl', 'tracking-tight', 'tracking-tighter']) {
+for (const forbiddenClass of ['rounded-2xl', 'rounded-3xl', 'tracking-tight', 'tracking-tighter', 'text-[10px]']) {
   if (classesSource.includes(forbiddenClass)) {
     throw new Error(`shared admin primitives must not use ${forbiddenClass}`)
+  }
+}
+
+for (const [name, source] of [
+  ['shared components', componentsSource],
+  ['data table', dataTableSource],
+  ['login page', loginSource],
+] as const) {
+  for (const forbiddenClass of ['rounded-2xl', 'rounded-3xl', 'uppercase', 'tracking-tight', 'tracking-tighter', 'tracking-wide', 'tracking-wider', 'tracking-widest', 'tracking-[', 'text-[10px]']) {
+    if (source.includes(forbiddenClass)) {
+      throw new Error(`${name} must use the shared radius and typography roles instead of ${forbiddenClass}`)
+    }
   }
 }

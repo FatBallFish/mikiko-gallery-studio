@@ -1,29 +1,35 @@
-import { FormEvent, useEffect, useState } from 'react'
-import type { UserGroup, UserGroupWriteRequest } from '../../../shared/api-types'
-import { cn } from '../../../shared/classnames'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+import type { AdminMetric, UserGroup, UserGroupWriteRequest } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
+import { cn } from '../../../shared/classnames'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
-import { ColumnDef, DataTable } from '../ui/dataTable'
-import { userGroupRows, userGroupSummary } from './userGroupRows'
+import type { ColumnDef } from '../ui/dataTable'
+import { DataTable, FilterToolbar, ListPage } from '../ui/dataTable'
+import { XIcon } from '../ui/listIcons'
+import { userGroupRows, userGroupStatusTone, userGroupSummary } from './userGroupRows'
 
 type GroupAction = { row?: UserGroup; draft: UserGroupWriteRequest }
+type GroupFilters = { query: string; status: string }
+
+const initialFilters: GroupFilters = { query: '', status: '' }
 const groupClasses = {
-  code: 'font-mono text-xs font-bold text-[var(--accent)]',
-  name: 'font-bold text-[var(--text)]',
-  desc: 'max-w-[520px] text-xs leading-relaxed text-[var(--muted-strong)]',
-  routeCount: 'text-xs font-bold text-[var(--text)]',
-  actionLinks: 'flex flex-wrap items-center gap-3',
-  linkButton: 'text-xs font-bold text-[var(--muted)] transition-colors hover:text-[var(--text)]',
-  summary: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-5 py-4 text-sm text-[var(--muted)]',
+  identity: 'grid min-w-0 gap-1',
+  code: 'font-[family-name:var(--admin-font-mono)] text-xs font-semibold text-[var(--accent)]',
+  name: 'truncate font-semibold text-[var(--fg)]',
+  desc: 'max-w-[480px] text-xs leading-5 text-[var(--muted)] [overflow-wrap:anywhere]',
+  number: 'font-[family-name:var(--admin-font-mono)] text-sm font-semibold tabular-nums text-[var(--fg)]',
+  actions: 'flex flex-wrap items-center justify-end gap-2',
 }
 
 export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [groups, setGroups] = useState<UserGroup[]>([])
+  const [filters, setFilters] = useState<GroupFilters>(initialFilters)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [action, setAction] = useState<GroupAction | null>(null)
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -41,9 +47,36 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
     void load()
   }, [])
 
+  const summary = useMemo(() => userGroupSummary(groups), [groups])
+  const metrics = useMemo<AdminMetric[]>(() => [
+    { label: '分组总数', value: String(summary.total), trend: `${summary.enabled} 个启用`, tone: 'neutral' },
+    { label: '默认分组', value: summary.defaultName, trend: '新用户默认权益', tone: 'good' },
+    { label: '最高倍率', value: `${summary.highestMultiplier}x`, trend: '当前配置上限', tone: 'neutral' },
+    { label: '停用分组', value: String(Math.max(0, summary.total - summary.enabled)), trend: '不参与新权益分配', tone: summary.total > summary.enabled ? 'warn' : 'good' },
+  ], [summary])
+  const visibleGroups = useMemo(() => {
+    const keyword = filters.query.trim().toLowerCase()
+    return groups.filter((group) => {
+      const matchesStatus = !filters.status || group.status === filters.status || (filters.status === 'enabled' && group.status === 'active')
+      const matchesQuery = !keyword || [group.code, group.name, group.description].some((value) => String(value ?? '').toLowerCase().includes(keyword))
+      return matchesStatus && matchesQuery
+    })
+  }, [filters, groups])
+
+  const openAction = (next: GroupAction) => {
+    setMutationError(null)
+    setAction(next)
+  }
+
+  const closeAction = () => {
+    setMutationError(null)
+    setAction(null)
+  }
+
   const save = async () => {
     if (!action) return
     setSaving(true)
+    setMutationError(null)
     try {
       const saved = action.row
         ? await adminApi.updateUserGroup(action.row.code, action.draft)
@@ -51,45 +84,63 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
       onFeedback('权益分组已保存', `${saved.name} · ${saved.multiplier}x`)
       setAction(null)
       await load()
+    } catch (caught) {
+      setMutationError(caught instanceof Error ? caught.message : '权益分组保存失败')
     } finally {
       setSaving(false)
     }
   }
 
+  const deleteGroup = async (group: UserGroup) => {
+    setMutationError(null)
+    try {
+      await adminApi.deleteUserGroup(group.code)
+      onFeedback('权益分组已删除', group.name)
+      await load()
+    } catch (caught) {
+      setMutationError(caught instanceof Error ? caught.message : '权益分组删除失败')
+    }
+  }
+
   if (loading) return <LoadingBlock label="载入分组列表" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
-  const summary = userGroupSummary(groups)
 
   return (
     <section className={adminPage.stack}>
       <PageHeader
         title="用户分组"
         description="维护用户权益分组，并查看分组对模型可见性和计费倍率的影响。"
-        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAction({ draft: blankGroupDraft(groups.length + 1) })}>添加用户分组</button>}
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openAction({ draft: blankGroupDraft(groups.length + 1) })}>添加用户分组</button>}
       />
-      <details className={groupClasses.summary}>
-        <summary className="cursor-pointer list-none font-bold text-[var(--text)]">分组摘要</summary>
-        <div className="mt-3 flex flex-wrap gap-4 text-xs">
-          <span>分组总数 <strong className="text-[var(--text)]">{summary.total}</strong></span>
-          <span>启用 <strong className="text-[var(--text)]">{summary.enabled}</strong></span>
-          <span>默认 <strong className="text-[var(--text)]">{summary.defaultName}</strong></span>
-          <span>最高倍率 <strong className="text-[var(--text)]">{summary.highestMultiplier}x</strong></span>
-        </div>
-      </details>
-      {!groups.length ? <EmptyBlock title="暂无分组" detail="新增分组后可用于用户归属和路由模型可见性。" /> : (
+      <MetricStrip metrics={metrics} />
+      {mutationError && !action ? <InlineFeedback tone="danger" message={mutationError} /> : null}
+      <ListPage
+        filters={(
+          <FilterToolbar
+            fields={[
+              { key: 'query', label: '搜索分组', primary: true, minWidth: '220px', maxWidth: '420px', control: <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="代码、名称或描述" /> },
+              { key: 'status', label: '状态', primary: true, control: <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select> },
+            ]}
+            actions={<button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => setFilters(initialFilters)}><XIcon className="size-4" /><span>清空</span></button>}
+            resultSummary={`共 ${groups.length} 个分组 · 当前显示 ${visibleGroups.length} 个`}
+          />
+        )}
+      >
         <DataTable
-          columns={groupColumns(groups, setAction)}
-          rows={groups}
+          columns={groupColumns(openAction, deleteGroup)}
+          rows={visibleGroups}
           rowKey={(group) => String(group.id ?? group.code)}
+          empty={<EmptyBlock title="没有匹配的用户分组" detail="清空筛选，或新增一个权益分组。" />}
         />
-      )}
+      </ListPage>
       {action ? (
         <Modal
           title={action.row ? '编辑权益分组' : '新增权益分组'}
           detail="权益分组可用于路由模型可见性和倍率择优。"
-          onClose={() => setAction(null)}
-          footer={<><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={saving} onClick={() => setAction(null)}>取消</button><button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={saving || !canSave(action)} onClick={() => void save()}>{saving ? '保存中...' : '保存'}</button></>}
+          onClose={closeAction}
+          footer={<><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={saving} onClick={closeAction}>取消</button><button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={saving || !canSave(action)} onClick={() => void save()}>{saving ? '保存中...' : '保存'}</button></>}
         >
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
           <GroupForm action={action} onChange={setAction} />
         </Modal>
       ) : null}
@@ -111,48 +162,28 @@ function GroupForm({ action, onChange }: { action: GroupAction; onChange: (actio
   )
 }
 
-function groupColumns(
-  groups: UserGroup[],
-  setAction: (action: GroupAction) => void,
-): ColumnDef<UserGroup>[] {
+function groupColumns(openAction: (action: GroupAction) => void, deleteGroup: (group: UserGroup) => Promise<void>): ColumnDef<UserGroup>[] {
   return [
     {
-      key: 'code',
-      title: '分组代码',
-      width: 'minmax(160px,1.5fr)',
-      render: (group) => <span className={groupClasses.code}>{group.code}</span>,
+      key: 'group', title: '分组', width: 'minmax(210px,1.6fr)', render: (group) => <span className={groupClasses.identity}><span className={groupClasses.name}>{group.name}</span><code className={groupClasses.code}>{group.code}</code></span>,
     },
     {
-      key: 'name',
-      title: '分组名称',
-      width: 'minmax(140px,1.2fr)',
-      render: (group) => <span className={groupClasses.name}>{group.name}</span>,
+      key: 'description', title: '描述', width: 'minmax(240px,2fr)', render: (group) => <span className={groupClasses.desc}>{userGroupRows([group])[0]?.description}</span>,
     },
     {
-      key: 'desc',
-      title: '描述',
-      width: 'minmax(220px,2fr)',
-      render: (group) => {
+      key: 'multiplier', title: '计费倍率', width: 'minmax(110px,.8fr)', align: 'right', kind: 'number', render: (group) => <span className={groupClasses.number}>{group.multiplier}x</span>,
+    },
+    {
+      key: 'status', title: '状态', width: 'minmax(150px,1fr)', render: (group) => {
         const row = userGroupRows([group])[0]
-        return <span className={groupClasses.desc}>{row.description ? `${row.description} · 倍率 ${row.multiplier}` : `倍率 ${row.multiplier} · ${row.defaultLabel} · ${row.statusLabel}`}</span>
+        return <span className="flex flex-wrap gap-1.5"><Badge tone={userGroupStatusTone(group.status)}>{row?.statusLabel}</Badge><Badge tone={row?.defaultTone}>{row?.defaultLabel}</Badge></span>
       },
     },
     {
-      key: 'routes',
-      title: '关联路由模型数',
-      width: 'minmax(100px,0.8fr)',
-      render: () => <span className={groupClasses.routeCount}>配置模型可见性</span>,
+      key: 'sort', title: '排序', width: 'minmax(80px,.6fr)', align: 'right', kind: 'number', render: (group) => String(group.sort_order ?? 0),
     },
     {
-      key: 'actions',
-      title: '操作',
-      width: 'minmax(120px,1fr)',
-      render: (group) => (
-        <div className={groupClasses.actionLinks}>
-          <a className={groupClasses.linkButton} href="#/routing">配置模型可见性</a>
-          <button className={groupClasses.linkButton} type="button" onClick={() => setAction({ row: group, draft: groupToDraft(group) })}>编辑</button>
-        </div>
-      ),
+      key: 'actions', title: '操作', width: 'minmax(180px,1.2fr)', align: 'right', render: (group) => <span className={groupClasses.actions}><button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" onClick={() => openAction({ row: group, draft: groupToDraft(group) })}>编辑</button><ActionMenu actions={[{ id: `routing-${group.code}`, label: '配置模型可见性', run: () => { window.location.hash = '/routing' } }, { id: `delete-${group.code}`, label: '删除分组', tone: 'danger', confirm: { title: `确认删除分组 ${group.name}？` }, run: () => deleteGroup(group) }]} /></span>,
     },
   ]
 }
