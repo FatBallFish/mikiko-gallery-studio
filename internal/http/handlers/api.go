@@ -134,6 +134,18 @@ type adminDashboardOperations struct {
 	GeneratedAt                    time.Time      `json:"generated_at"`
 }
 
+type adminMonitoringProvider struct {
+	ProviderCode string `json:"provider_code"`
+	ProviderType string `json:"provider_type"`
+	Status       string `json:"status"`
+	Enabled      bool   `json:"enabled"`
+}
+
+type adminMonitoringSnapshot struct {
+	observability.RuntimeSnapshot
+	Providers []adminMonitoringProvider `json:"providers"`
+}
+
 type adminCashierOrderSyncResult = cashierservice.QueryOrderStatusResult
 
 type adminCashierOrderSyncResponse struct {
@@ -3352,6 +3364,84 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 		"audit": audits.Items,
 	})
+}
+
+func (a *API) HandleAdminMonitoringSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+
+	window, ok := monitoringWindow(r.URL.Query().Get("window"))
+	if !ok {
+		httpx.WriteError(w, r, errs.BadRequest("window must be one of 5m, 15m, 30m, or 60m"))
+		return
+	}
+	snapshot, err := observability.DefaultMetrics().Runtime().Snapshot(window)
+	if err != nil {
+		httpx.WriteError(w, r, errs.Internal("monitoring snapshot unavailable"))
+		return
+	}
+	providerPage, err := a.modelAdmin.ListProviders(r.Context(), domainmodeladmin.ProviderListRequest{Page: 1, PageSize: 100})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	providers := make([]adminMonitoringProvider, 0, len(providerPage.Items))
+	for _, provider := range providerPage.Items {
+		status := strings.ToLower(strings.TrimSpace(provider.HealthStatus))
+		providers = append(providers, adminMonitoringProvider{
+			ProviderCode: provider.ProviderCode,
+			ProviderType: provider.ProviderType,
+			Status:       status,
+			Enabled:      provider.Enabled,
+		})
+		if !provider.Enabled {
+			continue
+		}
+		switch status {
+		case "down", "error", "unhealthy", "unavailable":
+			snapshot.State = observability.RuntimeStateCritical
+			snapshot.StateReasons = appendMonitoringReason(snapshot.StateReasons, "provider_unavailable")
+		case "degraded":
+			if snapshot.State == observability.RuntimeStateHealthy {
+				snapshot.State = observability.RuntimeStatePressured
+			}
+			snapshot.StateReasons = appendMonitoringReason(snapshot.StateReasons, "provider_degraded")
+		}
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, adminMonitoringSnapshot{
+		RuntimeSnapshot: snapshot,
+		Providers:       providers,
+	})
+}
+
+func monitoringWindow(value string) (observability.Window, bool) {
+	switch strings.TrimSpace(value) {
+	case "", string(observability.Window15m):
+		return observability.Window15m, true
+	case string(observability.Window5m):
+		return observability.Window5m, true
+	case string(observability.Window30m):
+		return observability.Window30m, true
+	case string(observability.Window60m):
+		return observability.Window60m, true
+	default:
+		return "", false
+	}
+}
+
+func appendMonitoringReason(reasons []string, reason string) []string {
+	for _, existing := range reasons {
+		if existing == reason {
+			return reasons
+		}
+	}
+	return append(reasons, reason)
 }
 
 func (a *API) HandleAdminReadiness(w http.ResponseWriter, r *http.Request) {
