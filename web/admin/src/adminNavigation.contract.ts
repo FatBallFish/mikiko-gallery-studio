@@ -32,6 +32,10 @@ if (!(protectedRoutes as readonly string[]).includes('system-settings')) {
   throw new Error('system-settings should be the single navigable protected settings route')
 }
 
+if (navGroups.length !== 5 || navGroups.some((group) => group.items.length === 0)) {
+  throw new Error('admin navigation must keep five populated operational groups')
+}
+
 const aliasCases = new Map([
   ['#/system-settings', 'system-settings'],
   ['#/config', 'system-settings'],

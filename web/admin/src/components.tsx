@@ -19,6 +19,8 @@ import {
   EmptyIcon,
   ImageEmptyIcon,
   LoaderIcon,
+  LogOutIcon,
+  MenuIcon,
   MonitoringIcon,
   MoonIcon,
   OrdersIcon,
@@ -31,7 +33,9 @@ import {
   SystemSettingsIcon,
   SystemUsersIcon,
   UserGroupsIcon,
+  UserMenuIcon,
   UsersIcon,
+  XIcon,
 } from './ui/icons'
 
 export { navGroups, normalizeRoute, protectedRoutes, routeHref } from './layout/admin-navigation'
@@ -79,6 +83,12 @@ const metricToneClass: Record<string, string> = {
   warn: '[&_span]:text-[var(--amber)]',
   bad: '[&_span]:text-[var(--red)]',
   danger: '[&_span]:text-[var(--red)]',
+}
+
+const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+function focusableElements(root: HTMLElement) {
+  return Array.from(root.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
 }
 
 export function useHashRoute() {
@@ -141,12 +151,82 @@ export function AdminLayout({
   const visibleNavGroups = filterAdminNavGroups(navGroups, session)
   const { theme, setTheme } = useAdminTheme()
   const [navOpen, setNavOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const navTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const mobileDrawerRef = useRef<HTMLElement | null>(null)
+  const accountButtonRef = useRef<HTMLButtonElement | null>(null)
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const navBadges = {
     review_count: reviewCount > 0 ? String(reviewCount) : '',
     failed_webhook_count: '',
     config_drafts: configDrafts > 0 ? String(configDrafts) : '',
   }
   const currentTitle = routeTitles[route]
+
+  useEffect(() => {
+    if (!navOpen) return undefined
+    const drawer = mobileDrawerRef.current
+    if (!drawer) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    ;(focusableElements(drawer)[0] ?? drawer).focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setNavOpen(false)
+        return
+      }
+      if (event.key === 'Tab') {
+        const focusable = focusableElements(drawer)
+        if (!focusable.length) {
+          event.preventDefault()
+          drawer.focus()
+          return
+        }
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.body.style.overflow = previousOverflow
+      navTriggerRef.current?.focus()
+    }
+  }, [navOpen])
+
+  useEffect(() => {
+    if (!accountOpen) return undefined
+    const menu = accountMenuRef.current
+    window.requestAnimationFrame(() => menu?.querySelector<HTMLElement>('[role="menuitem"]')?.focus())
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (accountButtonRef.current?.contains(target) || menu?.contains(target)) return
+      setAccountOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setAccountOpen(false)
+        accountButtonRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [accountOpen])
+
   const renderNav = (onItemClick?: (route: ProtectedAdminRouteId) => void) => (
     <nav className={adminShell.nav} aria-label="后台主导航">
       {visibleNavGroups.map((group) => (
@@ -180,13 +260,14 @@ export function AdminLayout({
     <main className={adminShell.root} data-theme={theme}>
       <header className={adminShell.mobileTopbar}>
         <button
+          ref={navTriggerRef}
           className={adminShell.iconButton}
           type="button"
           aria-label="打开导航"
           title="打开导航"
           onClick={() => setNavOpen(true)}
         >
-          ☰
+          <MenuIcon className="size-5" />
         </button>
         <strong className={adminShell.mobileTitle}>{currentTitle}</strong>
         <button
@@ -203,15 +284,15 @@ export function AdminLayout({
       {navOpen ? (
         <>
           <button className={adminShell.mobileDrawerBackdrop} type="button" aria-label="关闭导航" onClick={() => setNavOpen(false)} />
-          <aside className={adminShell.mobileDrawer} aria-label="移动端后台导航">
+          <aside ref={mobileDrawerRef} tabIndex={-1} className={adminShell.mobileDrawer} aria-label="移动端后台导航">
             <header className={adminShell.mobileDrawerHead}>
               <span className={adminShell.brandOrb}>M</span>
               <strong className={adminShell.brandText}>Mikiko Admin</strong>
-              <button className={adminShell.iconButton} type="button" aria-label="关闭导航" title="关闭导航" onClick={() => setNavOpen(false)}>×</button>
+              <button className={adminShell.iconButton} type="button" aria-label="关闭导航" title="关闭导航" onClick={() => setNavOpen(false)}><XIcon className="size-5" /></button>
             </header>
             {renderNav(() => setNavOpen(false))}
             <div className={adminShell.sideNote}>
-              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}>退出</button>
+              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}><LogOutIcon className="size-4" />退出</button>
             </div>
           </aside>
         </>
@@ -233,7 +314,7 @@ export function AdminLayout({
               <span className="truncate text-[10px] text-[var(--muted-strong)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
             </div>
           </div>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}>退出</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}><LogOutIcon className="size-4" />退出</button>
         </div>
       </aside>
 
@@ -263,11 +344,32 @@ export function AdminLayout({
               <BellIcon />
             </button>
             <div className={adminShell.avatarWidget}>
-              <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 1).toUpperCase()}</span>
-              <div className="grid text-right">
-                <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
-                <span className="text-xs text-[var(--dim)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
-              </div>
+              <button
+                ref={accountButtonRef}
+                type="button"
+                className="flex min-h-10 items-center gap-2 rounded-lg border border-transparent px-2 text-left transition-colors hover:border-[var(--border)] hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25"
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                onClick={() => setAccountOpen((current) => !current)}
+              >
+                <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 1).toUpperCase()}</span>
+                <span className="grid text-right">
+                  <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
+                  <span className="text-xs text-[var(--dim)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
+                </span>
+                <UserMenuIcon className="size-4 text-[var(--dim)]" />
+              </button>
+              {accountOpen ? (
+                <div ref={accountMenuRef} className="absolute right-0 top-[calc(100%+8px)] z-[70] grid min-w-52 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-1.5 shadow-[var(--pg-shadow-lg)]" role="menu" aria-label="管理员账户菜单">
+                  <div className="grid gap-0.5 border-b border-[var(--border)] px-3 py-2">
+                    <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
+                    <span className="text-xs text-[var(--dim)]">{session.email}</span>
+                  </div>
+                  <button className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25" type="button" role="menuitem" onClick={onLogout}>
+                    <LogOutIcon className="size-4" />退出后台
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
