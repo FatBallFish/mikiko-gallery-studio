@@ -16,3 +16,18 @@ for (const forbidden of ['No providers', 'Model Distribution', 'Rankings', 'Oper
 if (!source.includes('暂无模型调用')) {
   throw new Error('overview page should render an empty state instead of a fake provider progress bar')
 }
+
+for (const overviewContract of [
+  'MetricStrip',
+  'grid-flow-dense grid-cols-12',
+  'lg:col-span-8',
+  'lg:col-span-4',
+  'function OperationalAlertRail',
+  '生成成功率',
+]) {
+  if (!source.includes(overviewContract)) throw new Error(`overview must implement ${overviewContract}`)
+}
+
+for (const forbidden of ['<details', 'rounded-2xl', 'rounded-3xl', '.trend?.match']) {
+  if (source.includes(forbidden)) throw new Error(`overview must remove ${forbidden}`)
+}
