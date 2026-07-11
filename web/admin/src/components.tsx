@@ -7,6 +7,7 @@ import { useAdminTheme } from './layout/useAdminTheme'
 import { filterAdminNavGroups } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId, ToastMessage, ToastTone } from './types'
 import { adminButton, adminFeedback, adminMetric, adminPill, adminShell, adminState, adminType } from './ui/classes'
+import { useAdminLayerMotion } from './ui/adminMotion'
 import {
   AccessAccountsIcon,
   AlertIcon,
@@ -1034,11 +1035,13 @@ export function Modal({
   onClose: () => void
 }) {
   const dialogRef = useRef<HTMLElement | null>(null)
+  const layerRef = useRef<HTMLDivElement | null>(null)
   useDialogFocus(onClose, dialogRef)
+  useAdminLayerMotion(layerRef)
 
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-6 backdrop-blur-md" role="presentation" onMouseDown={onClose}>
-      <section ref={dialogRef} tabIndex={-1} className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.28)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+    <div ref={layerRef} className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-6 backdrop-blur-md" role="presentation" onMouseDown={onClose}>
+      <section ref={dialogRef} tabIndex={-1} data-admin-motion-panel className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.28)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <strong className="font-[family-name:var(--font-admin-display)] text-lg font-semibold">{title}</strong>
@@ -1067,13 +1070,16 @@ export function Drawer({
   onClose: () => void
 }) {
   const dialogRef = useRef<HTMLElement | null>(null)
+  const layerRef = useRef<HTMLDivElement | null>(null)
   useDialogFocus(onClose, dialogRef)
+  useAdminLayerMotion(layerRef)
 
   return (
-    <div className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm" role="presentation" onMouseDown={onClose}>
+    <div ref={layerRef} className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm" role="presentation" onMouseDown={onClose}>
       <aside
         ref={dialogRef}
         tabIndex={-1}
+        data-admin-motion-panel
         className="ml-auto grid h-full w-[min(760px,100vw)] grid-rows-[auto_minmax(0,1fr)_auto] border-l border-[var(--border)] bg-[var(--surface-solid)] shadow-[0_24px_90px_rgba(0,0,0,.34)]"
         role="dialog"
         aria-modal="true"
