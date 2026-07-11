@@ -75,7 +75,7 @@ services:
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-dev-secret
       AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-10m}
-      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-2h}
+      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-30m}
       AUTH_ISSUER: ${AUTH_ISSUER:-pic-gallery}
       AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:-pg_refresh_token}
       AUTH_FIXED_EMAIL_CODE: ${AUTH_FIXED_EMAIL_CODE:-123456}
@@ -123,7 +123,7 @@ services:
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-dev-secret
       AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-10m}
-      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-2h}
+      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-30m}
       AUTH_ISSUER: ${AUTH_ISSUER:-pic-gallery}
       AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:-pg_refresh_token}
       AUTH_FIXED_EMAIL_CODE: ${AUTH_FIXED_EMAIL_CODE:-123456}
@@ -147,9 +147,25 @@ services:
         VITE_BASE_PATH: /
     image: pic-gallery-user-web:${IMAGE_TAG:-dev}
     restart: unless-stopped
+    environment:
+      PIC_GALLERY_DOCS_URL: ${PIC_GALLERY_DOCS_URL:-/developer-docs/}
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  docs-web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.docs-web
+      args:
+        VITE_BASE_PATH: /developer-docs/
+    image: pic-gallery-docs-web:${IMAGE_TAG:-dev}
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 15s
@@ -185,6 +201,9 @@ services:
         condition: service_healthy
         restart: true
       admin-web:
+        condition: service_healthy
+        restart: true
+      docs-web:
         condition: service_healthy
         restart: true
     ports:

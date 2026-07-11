@@ -33,16 +33,19 @@ type ImageInput struct {
 }
 
 type ImageRequest struct {
-	Model            string
-	TaskType         TaskType
-	Prompt           string
-	Size             string
-	Quality          string
-	OutputImageCount int
-	ResponseFormat   ResponseFormat
-	ReferenceImages  []ImageInput
-	Mask             *ImageInput
-	User             string
+	Model             string
+	TaskType          TaskType
+	Prompt            string
+	Size              string
+	Quality           string
+	OutputFormat      string
+	OutputCompression int
+	Moderation        string
+	OutputImageCount  int
+	ResponseFormat    ResponseFormat
+	ReferenceImages   []ImageInput
+	Mask              *ImageInput
+	User              string
 }
 
 type ImageResult struct {

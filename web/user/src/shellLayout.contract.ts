@@ -1,8 +1,49 @@
-import { shellLayoutClasses } from './shellLayout'
+import { resetShellScroll, shellActiveNavIndex, shellChromeClasses, shellLayoutClasses } from './shellLayout'
 
 const appLayout = shellLayoutClasses('app')
 if (!appLayout.shell.includes('h-screen') || !appLayout.main.includes('overflow-y-auto')) {
   throw new Error(`app shell mode should preserve fixed-height scrolling, got ${JSON.stringify(appLayout)}`)
+}
+
+if (!shellChromeClasses.sidebar.includes('w-[108px]')) {
+  throw new Error(`user sidebar must use the canonical 108px width, got ${shellChromeClasses.sidebar}`)
+}
+
+if (!shellChromeClasses.topbar.includes('h-[76px]')) {
+  throw new Error(`user topbar must use the canonical 76px height, got ${shellChromeClasses.topbar}`)
+}
+
+if (!shellChromeClasses.mobileNav.includes('fixed') || !shellChromeClasses.mobileNav.includes('bottom-0')) {
+  throw new Error(`mobile navigation must remain reachable at the bottom, got ${shellChromeClasses.mobileNav}`)
+}
+
+if (appLayout.content !== 'pg-route-enter') {
+  throw new Error(`only route content should receive the canonical transition, got ${appLayout.content}`)
+}
+
+const reducedLayout = shellLayoutClasses('app', true)
+if (reducedLayout.content !== '') {
+  throw new Error(`route content must disable motion when requested, got ${reducedLayout.content}`)
+}
+
+const primaryNavigation = [
+  { route: 'home' as const },
+  { route: 'genpic' as const },
+  { route: 'gallery' as const },
+]
+if (shellActiveNavIndex('genpic', primaryNavigation) !== 1) {
+  throw new Error('primary navigation routes should resolve to their real indicator position')
+}
+for (const route of ['profile', 'public-gallery', 'docs'] as const) {
+  if (shellActiveNavIndex(route, primaryNavigation) !== -1) {
+    throw new Error(`${route} must not display a false primary-navigation indicator`)
+  }
+}
+
+const scrollTarget = { scrollTop: 384 }
+resetShellScroll(scrollTarget)
+if (scrollTarget.scrollTop !== 0) {
+  throw new Error(`route changes must reset persistent main scroll, got ${scrollTarget.scrollTop}`)
 }
 
 const documentLayout = shellLayoutClasses('document')

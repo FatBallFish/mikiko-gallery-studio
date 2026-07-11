@@ -756,7 +756,13 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
-		RequestedQuality:          r.URL.Query().Get("requested_quality"),
+		SizeMode:                  r.URL.Query().Get("size_mode"),
+		AspectRatio:               r.URL.Query().Get("aspect_ratio"),
+		BaseResolution:            r.URL.Query().Get("base_resolution"),
+		Quality:                   r.URL.Query().Get("quality"),
+		OutputFormat:              r.URL.Query().Get("output_format"),
+		OutputCompression:         parseOptionalIntQueryValue(r.URL.Query().Get("output_compression")),
+		Moderation:                r.URL.Query().Get("moderation"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
 		RequestedOutputImageCount: outputCount,
 		ReferenceImageCount:       refCount,
@@ -1240,7 +1246,13 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
-		RequestedQuality:          r.URL.Query().Get("requested_quality"),
+		SizeMode:                  r.URL.Query().Get("size_mode"),
+		AspectRatio:               r.URL.Query().Get("aspect_ratio"),
+		BaseResolution:            r.URL.Query().Get("base_resolution"),
+		Quality:                   r.URL.Query().Get("quality"),
+		OutputFormat:              r.URL.Query().Get("output_format"),
+		OutputCompression:         parseOptionalIntQueryValue(r.URL.Query().Get("output_compression")),
+		Moderation:                r.URL.Query().Get("moderation"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
 		RequestedOutputImageCount: outputCount,
 		ReferenceImageCount:       refCount,
@@ -2458,12 +2470,12 @@ func taskProgressView(task domainimagetask.Task) (string, string) {
 			}
 		}
 		if task.RouteModelCode != "" {
-			return "routing", fmt.Sprintf("已匹配模型 %s，正在生成图片", task.RouteModelCode)
+			return domainimagetask.ProgressStageProvider, fmt.Sprintf("正在调用 %s 生成图片", task.RouteModelCode)
 		}
 		if task.AbstractModel != "" {
-			return "routing", fmt.Sprintf("已匹配模型 %s，正在生成图片", task.AbstractModel)
+			return domainimagetask.ProgressStageProvider, fmt.Sprintf("正在调用 %s 生成图片", task.AbstractModel)
 		}
-		return "running", "任务正在生成中"
+		return domainimagetask.ProgressStageProvider, "正在调用模型生成图片"
 	case domainimagetask.StatusSucceeded:
 		return "completed", "生成完成，结果已同步到资产"
 	case domainimagetask.StatusPartialFailed:
@@ -2758,7 +2770,39 @@ func (a *API) HandleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
+	a.setAdminRefreshCookie(w, session)
 	a.recordAudit(r, "admin", fmt.Sprintf("%d", session.AdminID), "admin.login", "admin_user", fmt.Sprintf("%d", session.AdminID), nil)
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"access_token":       session.AccessToken,
+		"expires_in_seconds": int(time.Until(session.AccessTokenExpiresAt).Seconds()),
+		"admin_id":           session.AdminID,
+		"email":              session.Email,
+		"role":               session.Role,
+		"permissions": a.adminPermissionsForPrincipal(domainadminauth.AdminPrincipal{
+			ID:     session.AdminID,
+			Email:  session.Email,
+			Role:   session.Role,
+			Status: session.Status,
+		}),
+	})
+}
+
+func (a *API) HandleAdminRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	cookie, err := r.Cookie(a.adminRefreshCookieName())
+	if err != nil {
+		httpx.WriteError(w, r, errs.New(http.StatusUnauthorized, errs.CodeAuthRefreshExpired, "admin refresh token expired"))
+		return
+	}
+	session, refreshErr := a.adminAuth.Refresh(r.Context(), cookie.Value)
+	if refreshErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(refreshErr))
+		return
+	}
+	a.setAdminRefreshCookie(w, session)
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
 		"access_token":       session.AccessToken,
 		"expires_in_seconds": int(time.Until(session.AccessTokenExpiresAt).Seconds()),
@@ -2855,6 +2899,7 @@ type publicGalleryListImage struct {
 	RouteModelCode    string     `json:"route_model_code,omitempty"`
 	TaskType          string     `json:"task_type,omitempty"`
 	TaskStatus        string     `json:"task_status,omitempty"`
+	BaseResolution    string     `json:"base_resolution,omitempty"`
 	Quality           string     `json:"quality,omitempty"`
 	AspectRatio       string     `json:"aspect_ratio,omitempty"`
 	URL               string     `json:"url,omitempty"`
@@ -2885,6 +2930,7 @@ func publicGalleryListItems(items []domainimagetask.GalleryImage) []publicGaller
 			RouteModelCode:    item.RouteModelCode,
 			TaskType:          item.TaskType,
 			TaskStatus:        item.TaskStatus,
+			BaseResolution:    item.BaseResolution,
 			Quality:           item.Quality,
 			AspectRatio:       item.AspectRatio,
 			URL:               item.URL,
@@ -2917,6 +2963,7 @@ func publicGalleryDetailItem(item domainimagetask.GalleryImage) publicGalleryLis
 		RouteModelCode:    item.RouteModelCode,
 		TaskType:          item.TaskType,
 		TaskStatus:        item.TaskStatus,
+		BaseResolution:    item.BaseResolution,
 		Quality:           item.Quality,
 		AspectRatio:       item.AspectRatio,
 		URL:               item.URL,
@@ -4679,6 +4726,10 @@ func (a *API) HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	if cookie, err := r.Cookie(a.adminRefreshCookieName()); err == nil {
+		a.adminAuth.LogoutRefresh(cookie.Value)
+	}
+	a.clearAdminRefreshCookie(w)
 	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "admin.logout", "admin_user", fmt.Sprintf("%d", admin.AdminID), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -5683,29 +5734,50 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		return
 	}
 	candidate := domainmodelhub.ProviderCandidate{
-		AccountModelID:     model.ID,
-		ModelAccountID:     account.ID,
-		Provider:           account.AdapterType,
-		AdapterType:        account.AdapterType,
-		AuthType:           account.AuthType,
-		BaseURL:            account.BaseURL,
-		Credentials:        account.CredentialsEncrypted,
-		ModelCode:          model.ModelCode,
-		SupportedTaskTypes: append([]string(nil), model.TaskTypes...),
-		SupportedQualities: append([]string(nil), model.Qualities...),
-		HealthStatus:       account.Status,
-		InputCost:          model.CostPerImage,
-		OutputCost:         model.CostPerImage,
-		Currency:           model.Currency,
-		AccountExtra:       cloneMapAny(account.Extra),
-		ModelExtra:         cloneMapAny(model.Extra),
+		AccountModelID:          model.ID,
+		ModelAccountID:          account.ID,
+		Provider:                account.AdapterType,
+		AdapterType:             account.AdapterType,
+		AuthType:                account.AuthType,
+		BaseURL:                 account.BaseURL,
+		Credentials:             account.CredentialsEncrypted,
+		ModelCode:               model.ModelCode,
+		SupportedTaskTypes:      append([]string(nil), model.TaskTypes...),
+		SupportedBaseResolution: append([]string(nil), model.BaseResolution...),
+		Quality:                 append([]string(nil), model.Quality...),
+		SizeModes:               append([]string(nil), model.SizeModes...),
+		SupportedAspectRatios: append([]string(nil),
+			model.SupportedRatios...),
+		SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
+		MaxImageCount:             model.MaxImageCount,
+		MaxReferenceImageCount:    model.MaxReferenceImageCount,
+		SupportsImageInput:        model.MaxReferenceImageCount > 0,
+		OutputFormat:              append([]string(nil), model.OutputFormat...),
+		OutputCompression:         model.OutputCompression,
+		SupportsOutputCompression: model.SupportsOutputCompression,
+		Moderation:                append([]string(nil), model.Moderation...),
+		HealthStatus:              account.Status,
+		TimeoutMS:                 account.TimeoutMS,
+		InputCost:                 model.CostPerImage,
+		OutputCost:                model.CostPerImage,
+		Currency:                  model.Currency,
+		AccountExtra:              cloneMapAny(account.Extra),
+		ModelExtra:                cloneMapAny(model.Extra),
 	}
 	result, testErr := a.tasks.TestModelAccount(r.Context(), domainimagetask.TestModelAccountRequest{
-		AccountID:  accountID,
-		ModelID:    model.ID,
-		ModelCode:  model.ModelCode,
-		Prompt:     req.Prompt,
-		SourceMode: req.SourceMode,
+		AccountID:         accountID,
+		ModelID:           model.ID,
+		ModelCode:         model.ModelCode,
+		Prompt:            req.Prompt,
+		SourceMode:        req.SourceMode,
+		SizeMode:          req.SizeMode,
+		RequestedSize:     req.RequestedSize,
+		BaseResolution:    req.BaseResolution,
+		Quality:           req.Quality,
+		OutputFormat:      req.OutputFormat,
+		OutputCompression: req.OutputCompression,
+		Moderation:        req.Moderation,
+		AspectRatio:       req.AspectRatio,
 	}, candidate)
 	if testErr != nil {
 		httpx.WriteError(w, r, normalizeAppError(testErr))
@@ -5925,7 +5997,7 @@ func (a *API) HandleAdminRouteModelPrices(w http.ResponseWriter, r *http.Request
 		page, _ := parsePositiveIntQuery(r, "page", 1)
 		pageSize, _ := parsePositiveIntQuery(r, "page_size", 20)
 		routeModelID, _ := parseOptionalInt64Query(r, "route_model_id")
-		result, err := a.modelAdmin.ListRouteModelPrices(r.Context(), domainmodeladmin.RouteModelPriceListRequest{Page: page, PageSize: pageSize, RouteModelID: routeModelID, TaskType: r.URL.Query().Get("task_type"), Quality: r.URL.Query().Get("quality")})
+		result, err := a.modelAdmin.ListRouteModelPrices(r.Context(), domainmodeladmin.RouteModelPriceListRequest{Page: page, PageSize: pageSize, RouteModelID: routeModelID, TaskType: r.URL.Query().Get("task_type"), BaseResolution: r.URL.Query().Get("base_resolution")})
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
@@ -5941,7 +6013,7 @@ func (a *API) HandleAdminRouteModelPrices(w http.ResponseWriter, r *http.Request
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_price.create", "route_model_price", fmt.Sprintf("%d", created.ID), map[string]any{"route_model_id": created.RouteModelID, "task_type": created.TaskType, "quality": created.Quality})
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_price.create", "route_model_price", fmt.Sprintf("%d", created.ID), map[string]any{"route_model_id": created.RouteModelID, "task_type": created.TaskType, "base_resolution": created.BaseResolution})
 		httpx.WriteSuccess(w, r, http.StatusCreated, created)
 	default:
 		writeMethodNotAllowed(w, r)
@@ -6344,7 +6416,7 @@ curl -G "https://api.example.com/api/open/image/v1/estimate" \
   -H "X-Signature: ${SIGNATURE}" \
   --data-urlencode "task_type=text_to_image" \
   --data-urlencode "route_model_code=basic" \
-  --data-urlencode "requested_quality=1k" \
+  --data-urlencode "base_resolution=1k" \
   --data-urlencode "requested_size=1:1" \
   --data-urlencode "requested_output_image_count=1"`),
 		},
@@ -6363,7 +6435,7 @@ curl -X POST "https://api.example.com/api/open/image/v1/tasks" \
     "task_type": "text_to_image",
     "route_model_code": "basic",
     "prompt": "A clean product poster",
-    "requested_quality": "1k",
+    "base_resolution": "1k",
     "requested_size": "1:1",
     "requested_output_image_count": 1,
     "response_mode": "async"
@@ -6504,7 +6576,8 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
 		AbstractModel:             a.compatAbstractModel(req.Model),
-		RequestedQuality:          compatQuality(req.Quality),
+		BaseResolution:            "auto",
+		Quality:                   req.Quality,
 		RequestedSize:             req.Size,
 		RequestedOutputImageCount: req.N,
 		UserGroupCode:             identity.GroupCode,
@@ -6591,7 +6664,8 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeImageEdit),
 		AbstractModel:             a.compatAbstractModel(r.FormValue("model")),
-		RequestedQuality:          compatQuality(r.FormValue("quality")),
+		BaseResolution:            "auto",
+		Quality:                   r.FormValue("quality"),
 		RequestedSize:             r.FormValue("size"),
 		RequestedOutputImageCount: count,
 		ReferenceImageCount:       len(images),
@@ -6684,7 +6758,13 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
 		RouteModelCode            string   `json:"route_model_code"`
-		RequestedQuality          string   `json:"requested_quality"`
+		SizeMode                  string   `json:"size_mode"`
+		AspectRatio               string   `json:"aspect_ratio"`
+		BaseResolution            string   `json:"base_resolution"`
+		Quality                   string   `json:"quality"`
+		OutputFormat              string   `json:"output_format"`
+		OutputCompression         int      `json:"output_compression"`
+		Moderation                string   `json:"moderation"`
 		RequestedSize             string   `json:"requested_size"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
@@ -6706,8 +6786,14 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
+		SizeMode:            req.SizeMode,
+		AspectRatio:         req.AspectRatio,
 		RequestedSize:       req.RequestedSize,
-		RequestedQuality:    req.RequestedQuality,
+		BaseResolution:      req.BaseResolution,
+		Quality:             req.Quality,
+		OutputFormat:        req.OutputFormat,
+		OutputCompression:   req.OutputCompression,
+		Moderation:          req.Moderation,
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
@@ -6737,7 +6823,13 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
 		RouteModelCode            string   `json:"route_model_code"`
-		RequestedQuality          string   `json:"requested_quality"`
+		SizeMode                  string   `json:"size_mode"`
+		AspectRatio               string   `json:"aspect_ratio"`
+		BaseResolution            string   `json:"base_resolution"`
+		Quality                   string   `json:"quality"`
+		OutputFormat              string   `json:"output_format"`
+		OutputCompression         int      `json:"output_compression"`
+		Moderation                string   `json:"moderation"`
 		RequestedSize             string   `json:"requested_size"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
@@ -6760,7 +6852,13 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
 		RouteModelCode:            req.RouteModelCode,
-		RequestedQuality:          req.RequestedQuality,
+		SizeMode:                  req.SizeMode,
+		AspectRatio:               req.AspectRatio,
+		BaseResolution:            req.BaseResolution,
+		Quality:                   req.Quality,
+		OutputFormat:              req.OutputFormat,
+		OutputCompression:         req.OutputCompression,
+		Moderation:                req.Moderation,
 		RequestedSize:             req.RequestedSize,
 		RequestedOutputImageCount: req.RequestedOutputImageCount,
 		ReferenceImageCount:       len(req.ReferenceAssetIDs),
@@ -6785,8 +6883,14 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
+		SizeMode:            req.SizeMode,
+		AspectRatio:         req.AspectRatio,
 		RequestedSize:       req.RequestedSize,
-		RequestedQuality:    req.RequestedQuality,
+		BaseResolution:      req.BaseResolution,
+		Quality:             req.Quality,
+		OutputFormat:        req.OutputFormat,
+		OutputCompression:   req.OutputCompression,
+		Moderation:          req.Moderation,
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
@@ -7684,6 +7788,8 @@ func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID s
 				Prompt:           task.Prompt,
 				AbstractModel:    task.AbstractModel,
 				TaskType:         task.TaskType,
+				BaseResolution:   task.BaseResolution,
+				Quality:          task.Quality,
 				URL:              result.URL,
 				DownloadURL:      result.DownloadURL,
 				MimeType:         result.MimeType,
@@ -7773,22 +7879,22 @@ func decodeAdminModelProviderRequest(w http.ResponseWriter, r *http.Request) (do
 
 func decodeAdminProviderModelRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.ProviderModelWriteRequest, bool) {
 	var req struct {
-		ProviderCode           string   `json:"provider_code"`
-		ModelCode              string   `json:"model_code"`
-		CompatMode             string   `json:"compat_mode"`
-		SupportsImageInput     bool     `json:"supports_image_input"`
-		SupportsMask           bool     `json:"supports_mask"`
-		SupportedQualities     []string `json:"supported_qualities"`
-		SupportedRatios        []string `json:"supported_ratios"`
-		MaxImageCount          int      `json:"max_image_count"`
-		MaxReferenceImageCount int      `json:"max_reference_image_count"`
-		TimeoutMS              int      `json:"timeout_ms"`
-		InputCost              string   `json:"input_cost"`
-		OutputCost             string   `json:"output_cost"`
-		Currency               string   `json:"currency"`
-		HealthStatus           string   `json:"health_status"`
-		LastHealthCheckedAt    string   `json:"last_health_checked_at"`
-		Enabled                bool     `json:"enabled"`
+		ProviderCode            string   `json:"provider_code"`
+		ModelCode               string   `json:"model_code"`
+		CompatMode              string   `json:"compat_mode"`
+		SupportsImageInput      bool     `json:"supports_image_input"`
+		SupportsMask            bool     `json:"supports_mask"`
+		SupportedBaseResolution []string `json:"supported_base_resolution"`
+		SupportedRatios         []string `json:"supported_ratios"`
+		MaxImageCount           int      `json:"max_image_count"`
+		MaxReferenceImageCount  int      `json:"max_reference_image_count"`
+		TimeoutMS               int      `json:"timeout_ms"`
+		InputCost               string   `json:"input_cost"`
+		OutputCost              string   `json:"output_cost"`
+		Currency                string   `json:"currency"`
+		HealthStatus            string   `json:"health_status"`
+		LastHealthCheckedAt     string   `json:"last_health_checked_at"`
+		Enabled                 bool     `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -7804,22 +7910,22 @@ func decodeAdminProviderModelRequest(w http.ResponseWriter, r *http.Request) (do
 		checkedAt = &lastHealthCheckedAt
 	}
 	return domainmodeladmin.ProviderModelWriteRequest{
-		ProviderCode:           req.ProviderCode,
-		ModelCode:              req.ModelCode,
-		CompatMode:             req.CompatMode,
-		SupportsImageInput:     req.SupportsImageInput,
-		SupportsMask:           req.SupportsMask,
-		SupportedQualities:     append([]string(nil), req.SupportedQualities...),
-		SupportedRatios:        append([]string(nil), req.SupportedRatios...),
-		MaxImageCount:          req.MaxImageCount,
-		MaxReferenceImageCount: req.MaxReferenceImageCount,
-		TimeoutMS:              req.TimeoutMS,
-		InputCost:              req.InputCost,
-		OutputCost:             req.OutputCost,
-		Currency:               req.Currency,
-		HealthStatus:           req.HealthStatus,
-		LastHealthCheckedAt:    checkedAt,
-		Enabled:                req.Enabled,
+		ProviderCode:            req.ProviderCode,
+		ModelCode:               req.ModelCode,
+		CompatMode:              req.CompatMode,
+		SupportsImageInput:      req.SupportsImageInput,
+		SupportsMask:            req.SupportsMask,
+		SupportedBaseResolution: append([]string(nil), req.SupportedBaseResolution...),
+		SupportedRatios:         append([]string(nil), req.SupportedRatios...),
+		MaxImageCount:           req.MaxImageCount,
+		MaxReferenceImageCount:  req.MaxReferenceImageCount,
+		TimeoutMS:               req.TimeoutMS,
+		InputCost:               req.InputCost,
+		OutputCost:              req.OutputCost,
+		Currency:                req.Currency,
+		HealthStatus:            req.HealthStatus,
+		LastHealthCheckedAt:     checkedAt,
+		Enabled:                 req.Enabled,
 	}, true
 }
 
@@ -7846,38 +7952,76 @@ func decodeModelAccountWriteRequest(w http.ResponseWriter, r *http.Request) (dom
 
 func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request, accountID int64) (domainmodeladmin.ModelAccountModelWriteRequest, bool) {
 	var req struct {
-		ModelCode    string         `json:"model_code"`
-		DisplayName  string         `json:"display_name"`
-		TaskTypes    []string       `json:"task_types"`
-		Qualities    []string       `json:"qualities"`
-		CostPerImage string         `json:"cost_per_image"`
-		Currency     string         `json:"currency"`
-		Enabled      bool           `json:"enabled"`
-		Extra        map[string]any `json:"extra"`
+		ModelCode                 string         `json:"model_code"`
+		DisplayName               string         `json:"display_name"`
+		TaskTypes                 []string       `json:"task_types"`
+		BaseResolution            []string       `json:"base_resolution"`
+		Quality                   []string       `json:"quality"`
+		MaxReferenceImageCount    *int           `json:"max_reference_image_count"`
+		MaxImageCount             *int           `json:"max_image_count"`
+		SizeModes                 []string       `json:"size_modes"`
+		SupportedRatios           []string       `json:"supported_ratios"`
+		SupportedPixelSizes       []string       `json:"supported_pixel_sizes"`
+		OutputFormat              []string       `json:"output_format"`
+		OutputCompression         *int           `json:"output_compression"`
+		SupportsOutputCompression bool           `json:"supports_output_compression"`
+		Moderation                []string       `json:"moderation"`
+		CostPerImage              string         `json:"cost_per_image"`
+		Currency                  string         `json:"currency"`
+		Enabled                   bool           `json:"enabled"`
+		Extra                     map[string]any `json:"extra"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.ModelAccountModelWriteRequest{}, false
 	}
-	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, Qualities: req.Qualities, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
+	maxReferenceCount := 5
+	if req.MaxReferenceImageCount != nil {
+		maxReferenceCount = *req.MaxReferenceImageCount
+	}
+	maxImageCount := 1
+	if req.MaxImageCount != nil {
+		maxImageCount = *req.MaxImageCount
+	}
+	outputCompression := 100
+	if req.OutputCompression != nil {
+		outputCompression = *req.OutputCompression
+	}
+	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
 }
 
 func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) (domainimagetask.TestModelAccountRequest, bool) {
 	var req struct {
-		ModelID    int64  `json:"model_id"`
-		ModelCode  string `json:"model_code"`
-		Prompt     string `json:"prompt"`
-		SourceMode string `json:"source_mode"`
+		ModelID           int64  `json:"model_id"`
+		ModelCode         string `json:"model_code"`
+		Prompt            string `json:"prompt"`
+		SourceMode        string `json:"source_mode"`
+		SizeMode          string `json:"size_mode"`
+		RequestedSize     string `json:"requested_size"`
+		BaseResolution    string `json:"base_resolution"`
+		Quality           string `json:"quality"`
+		OutputFormat      string `json:"output_format"`
+		OutputCompression int    `json:"output_compression"`
+		Moderation        string `json:"moderation"`
+		AspectRatio       string `json:"aspect_ratio"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainimagetask.TestModelAccountRequest{}, false
 	}
 	return domainimagetask.TestModelAccountRequest{
-		ModelID:    req.ModelID,
-		ModelCode:  req.ModelCode,
-		Prompt:     req.Prompt,
-		SourceMode: req.SourceMode,
+		ModelID:           req.ModelID,
+		ModelCode:         req.ModelCode,
+		Prompt:            req.Prompt,
+		SourceMode:        req.SourceMode,
+		SizeMode:          req.SizeMode,
+		RequestedSize:     req.RequestedSize,
+		BaseResolution:    req.BaseResolution,
+		Quality:           req.Quality,
+		OutputFormat:      req.OutputFormat,
+		OutputCompression: req.OutputCompression,
+		Moderation:        req.Moderation,
+		AspectRatio:       req.AspectRatio,
 	}, true
 }
 
@@ -7917,7 +8061,7 @@ func decodeRouteModelPriceWriteRequest(w http.ResponseWriter, r *http.Request) (
 	var req struct {
 		RouteModelID        int64  `json:"route_model_id"`
 		TaskType            string `json:"task_type"`
-		Quality             string `json:"quality"`
+		BaseResolution      string `json:"base_resolution"`
 		BasePoints          string `json:"base_points"`
 		ReferenceMultiplier string `json:"reference_multiplier"`
 		Enabled             bool   `json:"enabled"`
@@ -7926,7 +8070,7 @@ func decodeRouteModelPriceWriteRequest(w http.ResponseWriter, r *http.Request) (
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.RouteModelPriceWriteRequest{}, false
 	}
-	return domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: req.RouteModelID, TaskType: req.TaskType, Quality: req.Quality, BasePoints: req.BasePoints, ReferenceMultiplier: req.ReferenceMultiplier, Enabled: req.Enabled}, true
+	return domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: req.RouteModelID, TaskType: req.TaskType, BaseResolution: req.BaseResolution, BasePoints: req.BasePoints, ReferenceMultiplier: req.ReferenceMultiplier, Enabled: req.Enabled}, true
 }
 
 func decodeAdminModelRouteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteWriteRequest, bool) {
@@ -9098,7 +9242,36 @@ func normalizeAppError(err error) *errs.Error {
 	if appErr, ok := err.(*errs.Error); ok {
 		return appErr
 	}
+	if upstream, ok := provider.AsUpstreamError(err); ok {
+		return mapUpstreamError(upstream)
+	}
 	return errs.Internal("internal server error")
+}
+
+func mapUpstreamError(upstream *provider.UpstreamError) *errs.Error {
+	if upstream == nil {
+		return errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "upstream provider unavailable")
+	}
+	message := firstNonEmptyString(upstream.Message, "upstream provider unavailable")
+	switch upstream.Family {
+	case provider.UpstreamErrorFamilyBadRequest:
+		return errs.New(http.StatusBadRequest, errs.CodeUpstreamBadRequest, message)
+	case provider.UpstreamErrorFamilyBlocked:
+		return errs.New(http.StatusBadRequest, errs.CodeContentBlocked, message)
+	case provider.UpstreamErrorFamilyRateLimited:
+		return errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, message)
+	default:
+		return errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, message)
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func methodNotAllowedError() *errs.Error {
@@ -9118,6 +9291,28 @@ func (a *API) setRefreshCookie(w http.ResponseWriter, session domainauth.Session
 		SameSite: http.SameSiteLaxMode,
 		Expires:  session.RefreshTokenExpiresAt,
 	})
+}
+
+func (a *API) setAdminRefreshCookie(w http.ResponseWriter, session domainadminauth.Session) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     a.adminRefreshCookieName(),
+		Value:    session.RefreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  session.RefreshTokenExpiresAt,
+	})
+}
+
+func (a *API) clearAdminRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: a.adminRefreshCookieName(), Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+}
+
+func (a *API) adminRefreshCookieName() string {
+	if strings.TrimSpace(a.cfg.Auth.AdminRefreshCookieName) != "" {
+		return a.cfg.Auth.AdminRefreshCookieName
+	}
+	return "pg_admin_refresh_token"
 }
 
 func (a *API) requireCompatBearer(r *http.Request) *errs.Error {
@@ -9245,6 +9440,18 @@ func parseOptionalInt64Query(r *http.Request, key string) (int64, *errs.Error) {
 	return parsed, nil
 }
 
+func parseOptionalIntQueryValue(raw string) int {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(trimmed)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
+}
+
 func splitAdminSuffix(path, prefix string) []string {
 	suffix := strings.Trim(strings.TrimPrefix(path, prefix), "/")
 	if suffix == "" {
@@ -9311,25 +9518,10 @@ func (a *API) compatAbstractModel(model string) string {
 	if value := strings.ToLower(strings.TrimSpace(a.cfg.Routing.OpenAICompatModelMap[model])); value != "" {
 		return value
 	}
-	if _, ok := a.cfg.Billing.QualityPointsByModel[model]; ok {
+	if _, ok := a.cfg.Billing.BaseResolutionPointsByModel[model]; ok {
 		return model
 	}
 	return ""
-}
-
-func compatQuality(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "low":
-		return "1k"
-	case "medium":
-		return "2k"
-	case "high":
-		return "4k"
-	case "1k", "2k", "4k":
-		return strings.ToLower(strings.TrimSpace(value))
-	default:
-		return "auto"
-	}
 }
 
 func taskProviderPreference(cfg config.Config) []string {

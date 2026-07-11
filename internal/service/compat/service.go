@@ -92,7 +92,8 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (provider.I
 		TaskType:            string(provider.TaskTypeTextToImage),
 		Prompt:              req.Prompt,
 		RequestedSize:       defaultString(req.Size, "auto"),
-		RequestedQuality:    normalizeCompatQuality(req.Quality),
+		BaseResolution:      "auto",
+		Quality:             req.Quality,
 		OutputImageCount:    req.N,
 		ResponseFormat:      string(normalizeResponseFormat(req.ResponseFormat)),
 		User:                req.User,
@@ -122,7 +123,8 @@ func (s *Service) Edit(ctx context.Context, req EditRequest) (provider.ImageResp
 		TaskType:            string(provider.TaskTypeImageEdit),
 		Prompt:              req.Prompt,
 		RequestedSize:       defaultString(req.Size, "auto"),
-		RequestedQuality:    normalizeCompatQuality(req.Quality),
+		BaseResolution:      "auto",
+		Quality:             req.Quality,
 		OutputImageCount:    req.N,
 		ResponseFormat:      string(normalizeResponseFormat(req.ResponseFormat)),
 		ReferenceImages:     append([]provider.ImageInput(nil), req.Images...),
@@ -181,25 +183,10 @@ func (s *Service) resolveAbstractModel(model string) string {
 	if value := strings.ToLower(strings.TrimSpace(s.cfg.Routing.OpenAICompatModelMap[model])); value != "" {
 		return value
 	}
-	if _, ok := s.cfg.Billing.QualityPointsByModel[model]; ok {
+	if _, ok := s.cfg.Billing.BaseResolutionPointsByModel[model]; ok {
 		return model
 	}
 	return ""
-}
-
-func normalizeCompatQuality(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "low":
-		return "1k"
-	case "medium":
-		return "2k"
-	case "high":
-		return "4k"
-	case "1k", "2k", "4k":
-		return strings.ToLower(strings.TrimSpace(value))
-	default:
-		return "auto"
-	}
 }
 
 func normalizeResponseFormat(value string) provider.ResponseFormat {

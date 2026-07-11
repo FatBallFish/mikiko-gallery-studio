@@ -2,8 +2,8 @@ import type { RouteModel, RouteModelPrice } from '../../../shared/api-types'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
-  pricingQualityLabel,
-  pricingQualityOptions,
+  pricingBaseResolutionLabel,
+  pricingBaseResolutionOptions,
   pricingRouteLabel,
   pricingRouteSecondaryLabel,
   pricingStatusOptions,
@@ -32,16 +32,16 @@ if (enabled.label !== '启用' || enabled.tone !== 'success' || disabled.label !
   throw new Error(`pricing enabled badge should be localized, got ${JSON.stringify({ enabled, disabled })}`)
 }
 
-if (pricingQualityLabel('1K') !== '1K 标准' || pricingQualityLabel('2K') !== '2K 高清' || pricingQualityLabel('4K') !== '4K 超清') {
+if (pricingBaseResolutionLabel('1K') !== '1K 标准' || pricingBaseResolutionLabel('2K') !== '2K 高清' || pricingBaseResolutionLabel('4K') !== '4K 超清') {
   throw new Error('pricing quality labels should be operator-facing')
 }
 
-if (pricingQualityLabel('auto') !== '自动档位' || pricingQualityLabel('8K') !== '8K' || pricingQualityLabel('') !== '未知质量') {
+if (pricingBaseResolutionLabel('auto') !== '自动档位' || pricingBaseResolutionLabel('8K') !== '8K' || pricingBaseResolutionLabel('') !== '未知基础分辨率') {
   throw new Error('pricing quality labels should preserve unknown values for troubleshooting')
 }
 
 for (const rawValue of ['1K', '2K', '4K']) {
-  if (!pricingQualityOptions.some((option) => option.value === rawValue)) {
+  if (!pricingBaseResolutionOptions.some((option) => option.value === rawValue)) {
     throw new Error(`quality options must preserve raw value ${rawValue}`)
   }
 }
@@ -109,7 +109,7 @@ function price(patch: Partial<RouteModelPrice>): RouteModelPrice {
     route_model_code: patch.route_model_code,
     route_model_name: patch.route_model_name,
     task_type: patch.task_type ?? 'text_to_image',
-    quality: patch.quality ?? '1K',
+    base_resolution: patch.base_resolution ?? '1K',
     base_points: patch.base_points ?? '8.00000',
     reference_multiplier: patch.reference_multiplier ?? '1.00000',
     enabled: patch.enabled ?? true,

@@ -32,10 +32,18 @@ type ProviderModel struct {
 	SupportsImageInput bool `json:"supports_image_input,omitempty"`
 	// SupportsMask holds the value of the "supports_mask" field.
 	SupportsMask bool `json:"supports_mask,omitempty"`
-	// SupportedQualities holds the value of the "supported_qualities" field.
-	SupportedQualities []string `json:"supported_qualities,omitempty"`
+	// SupportedBaseResolution holds the value of the "supported_base_resolution" field.
+	SupportedBaseResolution []string `json:"supported_base_resolution,omitempty"`
+	// Quality holds the value of the "quality" field.
+	Quality []string `json:"quality,omitempty"`
 	// SupportedRatios holds the value of the "supported_ratios" field.
 	SupportedRatios []string `json:"supported_ratios,omitempty"`
+	// OutputFormat holds the value of the "output_format" field.
+	OutputFormat []string `json:"output_format,omitempty"`
+	// OutputCompression holds the value of the "output_compression" field.
+	OutputCompression int `json:"output_compression,omitempty"`
+	// Moderation holds the value of the "moderation" field.
+	Moderation []string `json:"moderation,omitempty"`
 	// MaxImageCount holds the value of the "max_image_count" field.
 	MaxImageCount int `json:"max_image_count,omitempty"`
 	// MaxReferenceImageCount holds the value of the "max_reference_image_count" field.
@@ -62,11 +70,11 @@ func (*ProviderModel) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case providermodel.FieldSupportedQualities, providermodel.FieldSupportedRatios:
+		case providermodel.FieldSupportedBaseResolution, providermodel.FieldQuality, providermodel.FieldSupportedRatios, providermodel.FieldOutputFormat, providermodel.FieldModeration:
 			values[i] = new([]byte)
 		case providermodel.FieldSupportsImageInput, providermodel.FieldSupportsMask, providermodel.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case providermodel.FieldID, providermodel.FieldProviderID, providermodel.FieldMaxImageCount, providermodel.FieldMaxReferenceImageCount, providermodel.FieldTimeoutMs:
+		case providermodel.FieldID, providermodel.FieldProviderID, providermodel.FieldOutputCompression, providermodel.FieldMaxImageCount, providermodel.FieldMaxReferenceImageCount, providermodel.FieldTimeoutMs:
 			values[i] = new(sql.NullInt64)
 		case providermodel.FieldModelCode, providermodel.FieldCompatMode, providermodel.FieldInputCost, providermodel.FieldOutputCost, providermodel.FieldCurrency, providermodel.FieldHealthStatus:
 			values[i] = new(sql.NullString)
@@ -135,12 +143,20 @@ func (_m *ProviderModel) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SupportsMask = value.Bool
 			}
-		case providermodel.FieldSupportedQualities:
+		case providermodel.FieldSupportedBaseResolution:
 			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field supported_qualities", values[i])
+				return fmt.Errorf("unexpected type %T for field supported_base_resolution", values[i])
 			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.SupportedQualities); err != nil {
-					return fmt.Errorf("unmarshal field supported_qualities: %w", err)
+				if err := json.Unmarshal(*value, &_m.SupportedBaseResolution); err != nil {
+					return fmt.Errorf("unmarshal field supported_base_resolution: %w", err)
+				}
+			}
+		case providermodel.FieldQuality:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field quality", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Quality); err != nil {
+					return fmt.Errorf("unmarshal field quality: %w", err)
 				}
 			}
 		case providermodel.FieldSupportedRatios:
@@ -149,6 +165,28 @@ func (_m *ProviderModel) assignValues(columns []string, values []any) error {
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &_m.SupportedRatios); err != nil {
 					return fmt.Errorf("unmarshal field supported_ratios: %w", err)
+				}
+			}
+		case providermodel.FieldOutputFormat:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field output_format", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.OutputFormat); err != nil {
+					return fmt.Errorf("unmarshal field output_format: %w", err)
+				}
+			}
+		case providermodel.FieldOutputCompression:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field output_compression", values[i])
+			} else if value.Valid {
+				_m.OutputCompression = int(value.Int64)
+			}
+		case providermodel.FieldModeration:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field moderation", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Moderation); err != nil {
+					return fmt.Errorf("unmarshal field moderation: %w", err)
 				}
 			}
 		case providermodel.FieldMaxImageCount:
@@ -263,11 +301,23 @@ func (_m *ProviderModel) String() string {
 	builder.WriteString("supports_mask=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SupportsMask))
 	builder.WriteString(", ")
-	builder.WriteString("supported_qualities=")
-	builder.WriteString(fmt.Sprintf("%v", _m.SupportedQualities))
+	builder.WriteString("supported_base_resolution=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportedBaseResolution))
+	builder.WriteString(", ")
+	builder.WriteString("quality=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Quality))
 	builder.WriteString(", ")
 	builder.WriteString("supported_ratios=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SupportedRatios))
+	builder.WriteString(", ")
+	builder.WriteString("output_format=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OutputFormat))
+	builder.WriteString(", ")
+	builder.WriteString("output_compression=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OutputCompression))
+	builder.WriteString(", ")
+	builder.WriteString("moderation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Moderation))
 	builder.WriteString(", ")
 	builder.WriteString("max_image_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.MaxImageCount))

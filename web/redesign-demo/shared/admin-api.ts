@@ -372,7 +372,7 @@ function toModelAccountModel(raw: any, accountId?: string | number): ModelAccoun
     model_code: raw.model_code ?? '',
     display_name: raw.display_name ?? raw.name ?? raw.model_code ?? '',
     task_types: raw.task_types ?? ['text_to_image'],
-    qualities: raw.qualities ?? raw.supported_qualities ?? ['auto'],
+    base_resolution: raw.base_resolution ?? raw.supported_base_resolution ?? ['auto'],
     cost_per_image: String(raw.cost_per_image ?? raw.output_cost ?? '0.00000'),
     currency: raw.currency ?? 'USD',
     enabled: Boolean(raw.enabled ?? true),

@@ -1103,7 +1103,7 @@ STORAGE_LOCAL_ROOT=$STORAGE_ROOT
 STORAGE_PUBLIC_BASE_URL=$BASE_URL/files
 STORAGE_SHARED_VOLUME=true
 AUTH_ACCESS_TOKEN_TTL=10m
-AUTH_REFRESH_TOKEN_TTL=2h
+AUTH_REFRESH_TOKEN_TTL=30m
 AUTH_ISSUER=pic-gallery-local
 AUTH_ACCESS_TOKEN_SECRET=$ACCESS_TOKEN_SECRET
 AUTH_REFRESH_COOKIE_NAME=pg_refresh_token
@@ -1400,7 +1400,7 @@ with sqlite3.connect(db_path) as conn:
     )
 PY
 
-estimate_body="$(request "$BASE_URL/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0" \
+estimate_body="$(request "$BASE_URL/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$estimate_body" "data.estimated_points")" == "2.00000" ]]
 
@@ -1411,7 +1411,7 @@ key_body="$(request -X POST "$BASE_URL/api/agent/account/v1/api-keys" \
 ACCESS_KEY="$(assert_json_field "$key_body" "data.access_key")"
 API_SECRET="$(assert_json_field "$key_body" "data.secret")"
 
-open_estimate_path="/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0"
+open_estimate_path="/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0"
 open_estimate_body="$(signed_request GET "$open_estimate_path")"
 [[ "$(assert_json_field "$open_estimate_body" "data.estimated_points")" == "2.00000" ]]
 
@@ -1505,14 +1505,14 @@ model_account_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-ac
     "model_code":"openai/gpt-image-1",
     "display_name":"Smoke GPT Image",
     "task_types":["text_to_image"],
-    "qualities":["1k"],
+    "base_resolution":["1k"],
     "cost_per_image":"0.00000",
     "currency":"USD",
     "enabled":true
   }')"
 assert_json_field "$model_account_model_body" "data.id" >/dev/null
 
-open_task_body='{"task_type":"text_to_image","prompt":"smoke prompt","abstract_model":"basic","requested_quality":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}'
+open_task_body='{"task_type":"text_to_image","prompt":"smoke prompt","abstract_model":"basic","base_resolution":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}'
 open_task_path="/api/open/image/v1/tasks"
 open_task_body_hash="$(body_sha256 "$open_task_body")"
 open_task_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -2231,7 +2231,7 @@ with sqlite3.connect(db_path) as conn:
         """
         INSERT INTO image_tasks (
             id, user_id, source_channel, task_type, status, prompt,
-            abstract_model, requested_quality, resolved_quality_bucket,
+            abstract_model, base_resolution, base_resolution,
             requested_size, resolved_width, resolved_height, aspect_ratio,
             requested_output_image_count, success_output_image_count,
             reference_image_count, mask_present, response_mode, save_policy,
@@ -2329,7 +2329,7 @@ print(json.dumps({
     "task_type": "text_to_image",
     "prompt": "smoke route preflight failure",
     "route_model_code": os.environ["MISSING_ROUTE_CODE"],
-    "requested_quality": "auto",
+    "base_resolution": "auto",
     "requested_size": "1024x1024",
     "requested_output_image_count": 1,
     "response_mode": "async",

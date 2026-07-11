@@ -11,15 +11,15 @@ import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
-  pricingQualityLabel,
-  pricingQualityOptions,
+  pricingBaseResolutionLabel,
+  pricingBaseResolutionOptions,
   pricingRouteLabel,
   pricingRouteSecondaryLabel,
   pricingStatusOptions,
   pricingSummary,
 } from './pricingRows'
 
-type PricingDialog = { row?: RouteModelPrice; routeModelId: string; taskType: ImageTaskType; quality: string; basePoints: string; referenceMultiplier: string; enabled: boolean }
+type PricingDialog = { row?: RouteModelPrice; routeModelId: string; taskType: ImageTaskType; baseResolution: string; basePoints: string; referenceMultiplier: string; enabled: boolean }
 type PriceGroup = { key: string; route: RouteModel | undefined; routeID: string | number; routeLabel: string; routeSecondary: string; taskType: ImageTaskType; rows: RouteModelPrice[] }
 
 const pricingClasses = {
@@ -41,11 +41,11 @@ const pricingClasses = {
   routeName: 'font-bold text-[var(--text)]',
   routeMeta: 'm-0 mt-1 text-[10px] font-mono text-[var(--muted-strong)]',
   taskPill: 'w-fit rounded-lg border border-[var(--border)] bg-[var(--canvas)] px-2 py-1 text-xs font-bold text-[var(--soft)]',
-  qualityPanelCell: 'bg-[var(--canvas)] p-6 pl-20 max-[720px]:pl-6',
-  qualityPanel: 'overflow-hidden rounded-lg bg-[var(--surface-solid)]',
-  qualityGrid: 'grid gap-2',
-  qualityTable: 'admin-table min-w-[760px]',
-  qualityTd: 'text-xs text-[var(--muted)]',
+  baseResolutionPanelCell: 'bg-[var(--canvas)] p-6 pl-20 max-[720px]:pl-6',
+  baseResolutionPanel: 'overflow-hidden rounded-lg bg-[var(--surface-solid)]',
+  baseResolutionGrid: 'grid gap-2',
+  baseResolutionTable: 'admin-table min-w-[760px]',
+  baseResolutionTd: 'text-xs text-[var(--muted)]',
 }
 
 export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -86,14 +86,14 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
       const payload = {
         route_model_id: Number(dialog.routeModelId),
         task_type: dialog.taskType,
-        quality: dialog.quality,
+        base_resolution: dialog.baseResolution,
         base_points: dialog.basePoints,
         reference_multiplier: dialog.referenceMultiplier,
         enabled: dialog.enabled,
       }
       const saved = dialog.row ? await adminApi.updateRouteModelPrice(dialog.row.id, payload) : await adminApi.createRouteModelPrice(payload)
       setDialog(null)
-      onFeedback('价格配置已更新', `${adminTaskTypeLabel(saved.task_type)} · ${pricingQualityLabel(saved.quality)}`)
+      onFeedback('价格配置已更新', `${adminTaskTypeLabel(saved.task_type)} · ${pricingBaseResolutionLabel(saved.base_resolution)}`)
       await load()
     } finally {
       setSaving(false)
@@ -107,7 +107,7 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     <section className={adminPage.stack}>
       <PageHeader
         title="价格策略"
-        description="按路由模型、任务类型和质量维护用户积分价格，并提示缺失价格风险。"
+        description="按路由模型、任务类型和基础分辨率维护用户积分价格，并提示缺失价格风险。"
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => setDialog(newPriceDialog(routes))}>新增配置</button>}
       />
       <section className={pricingClasses.notice}>
@@ -122,14 +122,14 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
               </div>
               <div className="grid gap-2">
                 <p className={pricingClasses.noticeText}>3. <strong>兜底逻辑</strong>: 若路由模型未配对应任务类型的价格，系统将返回配置错误。</p>
-                <p className={pricingClasses.noticeText}>4. <strong>展示规则</strong>: 列表按照路由模型和任务类型进行聚合，点击行展开具体质量的价格配置。</p>
+                <p className={pricingClasses.noticeText}>4. <strong>展示规则</strong>: 列表按照路由模型和任务类型进行聚合，点击行展开具体基础分辨率的价格配置。</p>
                 {stats.missingEnabledRoutes ? <p className={cn(pricingClasses.noticeText, 'font-bold text-[var(--red)]')}>当前有 {stats.missingEnabledRoutes} 个启用路由缺少价格配置。</p> : null}
               </div>
             </div>
           </div>
         </div>
       </section>
-      {!prices.length ? <EmptyBlock title="暂无价格配置" detail="为每个可用路由模型配置任务类型和质量价格。" /> : null}
+      {!prices.length ? <EmptyBlock title="暂无价格配置" detail="为每个可用路由模型配置任务类型和基础分辨率价格。" /> : null}
       {prices.length ? (
         <ListPage>
         <div className={pricingClasses.tableWrap}>
@@ -139,7 +139,7 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
                     <th className="w-10 px-6 py-4"></th>
                     <th>路由模型</th>
                     <th>任务类型</th>
-                    <th>已配置质量数</th>
+                    <th>已配置基础分辨率数</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -167,7 +167,7 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
           <div className={adminPage.formGrid}>
             <Field label="路由模型"><select value={dialog.routeModelId} onChange={(event) => setDialog({ ...dialog, routeModelId: event.target.value })}>{routes.map((route) => <option key={String(route.id)} value={String(route.id)}>{route.name} ({route.code})</option>)}</select></Field>
             <Field label="任务类型"><select value={dialog.taskType} onChange={(event) => setDialog({ ...dialog, taskType: event.target.value as ImageTaskType })}>{adminTaskTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
-            <Field label="质量" hint="auto 不可直接配置价格；后端会按尺寸动态映射到 1K、2K 或 4K 档位。"><select value={dialog.quality} onChange={(event) => setDialog({ ...dialog, quality: event.target.value })}>{pricingQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+            <Field label="基础分辨率" hint="auto 不可直接配置价格；后端会按尺寸动态映射到 1K、2K 或 4K 档位。"><select value={dialog.baseResolution} onChange={(event) => setDialog({ ...dialog, baseResolution: event.target.value })}>{pricingBaseResolutionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
             <Field label="基础积分" hint={pricingFieldHints.basePoints}><input value={dialog.basePoints} onChange={(event) => setDialog({ ...dialog, basePoints: event.target.value })} placeholder="8.00000" /></Field>
             <Field label="参考图倍率" hint={pricingFieldHints.referenceMultiplier}><input value={dialog.referenceMultiplier} onChange={(event) => setDialog({ ...dialog, referenceMultiplier: event.target.value })} placeholder="1.25000" /></Field>
             <Field label="状态"><select value={dialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setDialog({ ...dialog, enabled: event.target.value === 'enabled' })}>{pricingStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
@@ -190,19 +190,19 @@ function PriceGroupRows({ group, expanded, onToggle, onAdd, onEdit }: { group: P
           <p className={pricingClasses.routeMeta}>{group.routeSecondary}</p>
         </td>
         <td className={pricingClasses.td}><span className={pricingClasses.taskPill}>{adminTaskTypeLabel(group.taskType)}</span></td>
-        <td className={pricingClasses.td}><span className="text-xs font-bold text-[var(--soft)]">{group.rows.length} 个质量配置</span></td>
+        <td className={pricingClasses.td}><span className="text-xs font-bold text-[var(--soft)]">{group.rows.length} 个基础分辨率配置</span></td>
         <td className={cn(pricingClasses.td, 'text-right')}>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={(event) => { event.stopPropagation(); onAdd() }}>快速添加质量</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={(event) => { event.stopPropagation(); onAdd() }}>快速添加基础分辨率</button>
         </td>
       </tr>
       {expanded ? (
         <tr className="border-b border-[var(--line)]/60">
-          <td colSpan={5} className={pricingClasses.qualityPanelCell}>
-            <div className={pricingClasses.qualityPanel}>
-              <table className={pricingClasses.qualityTable}>
+          <td colSpan={5} className={pricingClasses.baseResolutionPanelCell}>
+            <div className={pricingClasses.baseResolutionPanel}>
+              <table className={pricingClasses.baseResolutionTable}>
                 <thead>
                   <tr>
-                    <th>生成质量</th>
+                    <th>基础分辨率</th>
                     <th>基础消耗</th>
                     <th>参考图倍率</th>
                     <th>状态</th>
@@ -212,11 +212,11 @@ function PriceGroupRows({ group, expanded, onToggle, onAdd, onEdit }: { group: P
                 <tbody>
                   {group.rows.map((row) => (
                     <tr key={String(row.id)} className="transition-colors hover:bg-[var(--canvas)]">
-                      <td className={pricingClasses.qualityTd}><strong className="text-[var(--text)]">{pricingQualityLabel(row.quality)}</strong></td>
-                      <td className={pricingClasses.qualityTd}><code className={adminDataGrid.code}>{row.base_points} ◈</code></td>
-                      <td className={pricingClasses.qualityTd}><code className={adminDataGrid.code}>x {row.reference_multiplier}</code></td>
-                      <td className={pricingClasses.qualityTd}><PricingBadge enabled={row.enabled} /></td>
-                      <td className={pricingClasses.qualityTd}><button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onEdit(row)}>调整</button></td>
+                      <td className={pricingClasses.baseResolutionTd}><strong className="text-[var(--text)]">{pricingBaseResolutionLabel(row.base_resolution)}</strong></td>
+                      <td className={pricingClasses.baseResolutionTd}><code className={adminDataGrid.code}>{row.base_points} ◈</code></td>
+                      <td className={pricingClasses.baseResolutionTd}><code className={adminDataGrid.code}>x {row.reference_multiplier}</code></td>
+                      <td className={pricingClasses.baseResolutionTd}><PricingBadge enabled={row.enabled} /></td>
+                      <td className={pricingClasses.baseResolutionTd}><button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onEdit(row)}>调整</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -230,15 +230,15 @@ function PriceGroupRows({ group, expanded, onToggle, onAdd, onEdit }: { group: P
 }
 
 function newPriceDialog(routes: RouteModel[]): PricingDialog {
-  return { routeModelId: String(routes[0]?.id ?? ''), taskType: 'text_to_image', quality: '1K', basePoints: '8.00000', referenceMultiplier: '1.00000', enabled: true }
+  return { routeModelId: String(routes[0]?.id ?? ''), taskType: 'text_to_image', baseResolution: '1K', basePoints: '8.00000', referenceMultiplier: '1.00000', enabled: true }
 }
 
 function newPriceDialogForGroup(group: PriceGroup): PricingDialog {
-  return { routeModelId: String(group.routeID), taskType: group.taskType, quality: '1K', basePoints: '8.00000', referenceMultiplier: '1.00000', enabled: true }
+  return { routeModelId: String(group.routeID), taskType: group.taskType, baseResolution: '1K', basePoints: '8.00000', referenceMultiplier: '1.00000', enabled: true }
 }
 
 function editPriceDialog(row: RouteModelPrice): PricingDialog {
-  return { row, routeModelId: String(row.route_model_id), taskType: row.task_type, quality: row.quality, basePoints: row.base_points, referenceMultiplier: row.reference_multiplier, enabled: row.enabled }
+  return { row, routeModelId: String(row.route_model_id), taskType: row.task_type, baseResolution: row.base_resolution, basePoints: row.base_points, referenceMultiplier: row.reference_multiplier, enabled: row.enabled }
 }
 
 function PricingBadge({ enabled }: { enabled: boolean }) {
@@ -268,6 +268,6 @@ function groupPrices(routes: RouteModel[], prices: RouteModelPrice[]): PriceGrou
   })
   return Array.from(groups.values()).map((group) => ({
     ...group,
-    rows: group.rows.slice().sort((left, right) => pricingQualityLabel(left.quality).localeCompare(pricingQualityLabel(right.quality))),
+    rows: group.rows.slice().sort((left, right) => pricingBaseResolutionLabel(left.base_resolution).localeCompare(pricingBaseResolutionLabel(right.base_resolution))),
   }))
 }

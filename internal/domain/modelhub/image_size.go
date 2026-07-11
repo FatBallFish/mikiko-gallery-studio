@@ -8,13 +8,13 @@ import (
 )
 
 const (
-	imageSizeMultiple   = 16
-	imageMaxEdge        = 3840
-	imageMaxAspectRatio = 3.0
-	imageMinPixels      = 655360
-	imageMaxPixels      = 8294400
-	imageMaxRatioError  = 0.01
-	imageDefaultQuality = "1k"
+	imageSizeMultiple          = 16
+	imageMaxEdge               = 3840
+	imageMaxAspectRatio        = 3.0
+	imageMinPixels             = 655360
+	imageMaxPixels             = 8294400
+	imageMaxRatioError         = 0.01
+	imageDefaultBaseResolution = "1k"
 )
 
 var imageTierPixelBudget = map[string]int{
@@ -56,8 +56,8 @@ var commonImageSizePresets = map[string]map[string]string{
 	},
 }
 
-func CalculateImageSize(qualityBucket, aspectRatio string) (string, error) {
-	quality := normalizeSizeQuality(qualityBucket)
+func CalculateImageSize(baseResolution, aspectRatio string) (string, error) {
+	resolution := normalizeSizeBaseResolution(baseResolution)
 	ratioW, ratioH, ok := parseRatio(aspectRatio)
 	if !ok {
 		return "", fmt.Errorf("invalid aspect ratio")
@@ -67,15 +67,15 @@ func CalculateImageSize(qualityBucket, aspectRatio string) (string, error) {
 	}
 
 	rawRatioKey := fmt.Sprintf("%d:%d", ratioW, ratioH)
-	if preset := commonImageSizePresets[quality][rawRatioKey]; preset != "" {
+	if preset := commonImageSizePresets[resolution][rawRatioKey]; preset != "" {
 		return preset, nil
 	}
-	if preset := commonImageSizePresets[quality][simplifiedRatioKey(ratioW, ratioH)]; preset != "" {
+	if preset := commonImageSizePresets[resolution][simplifiedRatioKey(ratioW, ratioH)]; preset != "" {
 		return preset, nil
 	}
 
 	targetRatio := float64(ratioW) / float64(ratioH)
-	pixelBudget := imageTierPixelBudget[quality]
+	pixelBudget := imageTierPixelBudget[resolution]
 	bestWidth, bestHeight, bestPixels := 0, 0, 0
 	for width := imageSizeMultiple; width <= imageMaxEdge; width += imageSizeMultiple {
 		idealHeight := float64(width) / targetRatio
@@ -127,12 +127,12 @@ func ParseImageSize(size string) (int, int, bool) {
 	return width, height, true
 }
 
-func normalizeSizeQuality(quality string) string {
-	normalized := strings.ToLower(strings.TrimSpace(quality))
+func normalizeSizeBaseResolution(baseResolution string) string {
+	normalized := strings.ToLower(strings.TrimSpace(baseResolution))
 	if _, ok := imageTierPixelBudget[normalized]; ok {
 		return normalized
 	}
-	return imageDefaultQuality
+	return imageDefaultBaseResolution
 }
 
 func parseRatio(value string) (int, int, bool) {

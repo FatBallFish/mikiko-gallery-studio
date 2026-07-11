@@ -16,6 +16,7 @@ import (
 type Store interface {
 	Save(ctx context.Context, task domainimagetask.Task) error
 	SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error
+	UpdateProgressIfOwned(ctx context.Context, taskID, owner, stage, message string, now time.Time) error
 	SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error
 	GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error)
 	GetImageResultByID(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error)
@@ -110,7 +111,28 @@ func (s *MemoryStore) SaveIfOwned(_ context.Context, task domainimagetask.Task, 
 	return nil
 }
 
-func (s *MemoryStore) SaveTerminalState(_ context.Context, task domainimagetask.Task, _ string, _ time.Time) error {
+func (s *MemoryStore) UpdateProgressIfOwned(_ context.Context, taskID, owner, stage, message string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.tasksByID[taskID]
+	if !ok {
+		return repoerr.ErrNotFound
+	}
+	if current.Status != domainimagetask.StatusRunning || current.LeaseOwner != owner {
+		return repoerr.ErrConflict
+	}
+	if current.LeaseExpiresAt != nil && current.LeaseExpiresAt.Before(now) {
+		return repoerr.ErrConflict
+	}
+	current.ProgressStage = stage
+	current.ProgressMessage = message
+	current.UpdatedAt = now.UTC()
+	s.tasksByID[taskID] = cloneTask(current)
+	return nil
+}
+
+func (s *MemoryStore) SaveTerminalState(_ context.Context, task domainimagetask.Task, owner string, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -118,7 +140,7 @@ func (s *MemoryStore) SaveTerminalState(_ context.Context, task domainimagetask.
 	if !ok {
 		return repoerr.ErrNotFound
 	}
-	if current.Status != domainimagetask.StatusRunning {
+	if current.Status != domainimagetask.StatusRunning || current.LeaseOwner != owner {
 		return repoerr.ErrConflict
 	}
 	if task.Status == domainimagetask.StatusRunning {
@@ -131,7 +153,7 @@ func (s *MemoryStore) SaveTerminalState(_ context.Context, task domainimagetask.
 		}
 	}
 	task.CreatedAt = current.CreatedAt
-	task.UpdatedAt = time.Now().UTC()
+	task.UpdatedAt = now.UTC()
 
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
@@ -563,6 +585,8 @@ func (s *MemoryStore) AcquireNextQueuedTask(_ context.Context, owner string, now
 			continue
 		}
 		task.Status = domainimagetask.StatusRunning
+		task.ProgressStage = domainimagetask.ProgressStageProvider
+		task.ProgressMessage = "正在调用模型生成图片"
 		task.LeaseOwner = owner
 		expiresAt := now.Add(leaseTTL)
 		task.LeaseExpiresAt = &expiresAt
@@ -617,7 +641,8 @@ func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.Image
 		RouteModelCode:    task.RouteModelCode,
 		TaskType:          task.TaskType,
 		TaskStatus:        task.Status,
-		Quality:           task.ResolvedQualityBucket,
+		BaseResolution:    task.BaseResolution,
+		Quality:           task.Quality,
 		AspectRatio:       task.AspectRatio,
 		ActualPoints:      task.ActualPoints,
 		ReferenceAssetIDs: append([]string(nil), task.ReferenceAssetIDs...),

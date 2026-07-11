@@ -100,6 +100,33 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecPlacesProgressOnImageTask(t *testing.T) {
+	content, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schemas: %v", err)
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal common schemas: %v", err)
+	}
+	imageTask := doc.Components.Schemas["ImageTask"]
+	for _, field := range []string{"progress_stage", "progress_message"} {
+		if _, ok := imageTask.Properties[field]; !ok {
+			t.Fatalf("ImageTask must document %s", field)
+		}
+	}
+	referenceAsset := doc.Components.Schemas["ReferenceAsset"]
+	if _, ok := referenceAsset.Properties["progress_stage"]; ok {
+		t.Fatal("ReferenceAsset must not contain image task progress fields")
+	}
+}
+
 func TestOpenAPISpecDocumentsPublicGalleryPromptBoundaryContract(t *testing.T) {
 	content, err := os.ReadFile("openapi.yaml")
 	if err != nil {

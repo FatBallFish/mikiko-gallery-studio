@@ -50,9 +50,17 @@ export function workspaceTaskCardView(task: ImageTask): WorkspaceTaskCardView {
 }
 
 export function workspaceTaskPendingView(task: ImageTask): WorkspaceTaskPendingView {
+  const stage = task.progress_stage?.trim().toLowerCase()
+  const stageTitle = stage === 'provider' || stage === 'routing' || stage === 'running'
+    ? '正在生成图片'
+    : stage === 'persisting'
+      ? '正在保存结果'
+      : stage === 'settling'
+        ? '正在结算积分'
+        : null
   return {
-    title: task.status === 'queued' ? '排队中' : task.status === 'running' ? '生成中' : '等待结果',
-    detail: '任务状态会通过实时连接自动更新，完成后图片会出现在这里。',
+    title: task.status === 'queued' ? '排队中' : task.status === 'running' ? stageTitle ?? '生成中' : '等待结果',
+    detail: task.progress_message?.trim() || '任务状态会通过实时连接自动更新，完成后图片会出现在这里。',
   }
 }
 

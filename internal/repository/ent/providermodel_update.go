@@ -112,21 +112,39 @@ func (_u *ProviderModelUpdate) SetNillableSupportsMask(v *bool) *ProviderModelUp
 	return _u
 }
 
-// SetSupportedQualities sets the "supported_qualities" field.
-func (_u *ProviderModelUpdate) SetSupportedQualities(v []string) *ProviderModelUpdate {
-	_u.mutation.SetSupportedQualities(v)
+// SetSupportedBaseResolution sets the "supported_base_resolution" field.
+func (_u *ProviderModelUpdate) SetSupportedBaseResolution(v []string) *ProviderModelUpdate {
+	_u.mutation.SetSupportedBaseResolution(v)
 	return _u
 }
 
-// AppendSupportedQualities appends value to the "supported_qualities" field.
-func (_u *ProviderModelUpdate) AppendSupportedQualities(v []string) *ProviderModelUpdate {
-	_u.mutation.AppendSupportedQualities(v)
+// AppendSupportedBaseResolution appends value to the "supported_base_resolution" field.
+func (_u *ProviderModelUpdate) AppendSupportedBaseResolution(v []string) *ProviderModelUpdate {
+	_u.mutation.AppendSupportedBaseResolution(v)
 	return _u
 }
 
-// ClearSupportedQualities clears the value of the "supported_qualities" field.
-func (_u *ProviderModelUpdate) ClearSupportedQualities() *ProviderModelUpdate {
-	_u.mutation.ClearSupportedQualities()
+// ClearSupportedBaseResolution clears the value of the "supported_base_resolution" field.
+func (_u *ProviderModelUpdate) ClearSupportedBaseResolution() *ProviderModelUpdate {
+	_u.mutation.ClearSupportedBaseResolution()
+	return _u
+}
+
+// SetQuality sets the "quality" field.
+func (_u *ProviderModelUpdate) SetQuality(v []string) *ProviderModelUpdate {
+	_u.mutation.SetQuality(v)
+	return _u
+}
+
+// AppendQuality appends value to the "quality" field.
+func (_u *ProviderModelUpdate) AppendQuality(v []string) *ProviderModelUpdate {
+	_u.mutation.AppendQuality(v)
+	return _u
+}
+
+// ClearQuality clears the value of the "quality" field.
+func (_u *ProviderModelUpdate) ClearQuality() *ProviderModelUpdate {
+	_u.mutation.ClearQuality()
 	return _u
 }
 
@@ -145,6 +163,63 @@ func (_u *ProviderModelUpdate) AppendSupportedRatios(v []string) *ProviderModelU
 // ClearSupportedRatios clears the value of the "supported_ratios" field.
 func (_u *ProviderModelUpdate) ClearSupportedRatios() *ProviderModelUpdate {
 	_u.mutation.ClearSupportedRatios()
+	return _u
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (_u *ProviderModelUpdate) SetOutputFormat(v []string) *ProviderModelUpdate {
+	_u.mutation.SetOutputFormat(v)
+	return _u
+}
+
+// AppendOutputFormat appends value to the "output_format" field.
+func (_u *ProviderModelUpdate) AppendOutputFormat(v []string) *ProviderModelUpdate {
+	_u.mutation.AppendOutputFormat(v)
+	return _u
+}
+
+// ClearOutputFormat clears the value of the "output_format" field.
+func (_u *ProviderModelUpdate) ClearOutputFormat() *ProviderModelUpdate {
+	_u.mutation.ClearOutputFormat()
+	return _u
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (_u *ProviderModelUpdate) SetOutputCompression(v int) *ProviderModelUpdate {
+	_u.mutation.ResetOutputCompression()
+	_u.mutation.SetOutputCompression(v)
+	return _u
+}
+
+// SetNillableOutputCompression sets the "output_compression" field if the given value is not nil.
+func (_u *ProviderModelUpdate) SetNillableOutputCompression(v *int) *ProviderModelUpdate {
+	if v != nil {
+		_u.SetOutputCompression(*v)
+	}
+	return _u
+}
+
+// AddOutputCompression adds value to the "output_compression" field.
+func (_u *ProviderModelUpdate) AddOutputCompression(v int) *ProviderModelUpdate {
+	_u.mutation.AddOutputCompression(v)
+	return _u
+}
+
+// SetModeration sets the "moderation" field.
+func (_u *ProviderModelUpdate) SetModeration(v []string) *ProviderModelUpdate {
+	_u.mutation.SetModeration(v)
+	return _u
+}
+
+// AppendModeration appends value to the "moderation" field.
+func (_u *ProviderModelUpdate) AppendModeration(v []string) *ProviderModelUpdate {
+	_u.mutation.AppendModeration(v)
+	return _u
+}
+
+// ClearModeration clears the value of the "moderation" field.
+func (_u *ProviderModelUpdate) ClearModeration() *ProviderModelUpdate {
+	_u.mutation.ClearModeration()
 	return _u
 }
 
@@ -410,16 +485,27 @@ func (_u *ProviderModelUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	if value, ok := _u.mutation.SupportsMask(); ok {
 		_spec.SetField(providermodel.FieldSupportsMask, field.TypeBool, value)
 	}
-	if value, ok := _u.mutation.SupportedQualities(); ok {
-		_spec.SetField(providermodel.FieldSupportedQualities, field.TypeJSON, value)
+	if value, ok := _u.mutation.SupportedBaseResolution(); ok {
+		_spec.SetField(providermodel.FieldSupportedBaseResolution, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.AppendedSupportedQualities(); ok {
+	if value, ok := _u.mutation.AppendedSupportedBaseResolution(); ok {
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, providermodel.FieldSupportedQualities, value)
+			sqljson.Append(u, providermodel.FieldSupportedBaseResolution, value)
 		})
 	}
-	if _u.mutation.SupportedQualitiesCleared() {
-		_spec.ClearField(providermodel.FieldSupportedQualities, field.TypeJSON)
+	if _u.mutation.SupportedBaseResolutionCleared() {
+		_spec.ClearField(providermodel.FieldSupportedBaseResolution, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.Quality(); ok {
+		_spec.SetField(providermodel.FieldQuality, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedQuality(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, providermodel.FieldQuality, value)
+		})
+	}
+	if _u.mutation.QualityCleared() {
+		_spec.ClearField(providermodel.FieldQuality, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.SupportedRatios(); ok {
 		_spec.SetField(providermodel.FieldSupportedRatios, field.TypeJSON, value)
@@ -431,6 +517,34 @@ func (_u *ProviderModelUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	}
 	if _u.mutation.SupportedRatiosCleared() {
 		_spec.ClearField(providermodel.FieldSupportedRatios, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputFormat(); ok {
+		_spec.SetField(providermodel.FieldOutputFormat, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedOutputFormat(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, providermodel.FieldOutputFormat, value)
+		})
+	}
+	if _u.mutation.OutputFormatCleared() {
+		_spec.ClearField(providermodel.FieldOutputFormat, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputCompression(); ok {
+		_spec.SetField(providermodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedOutputCompression(); ok {
+		_spec.AddField(providermodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.Moderation(); ok {
+		_spec.SetField(providermodel.FieldModeration, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedModeration(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, providermodel.FieldModeration, value)
+		})
+	}
+	if _u.mutation.ModerationCleared() {
+		_spec.ClearField(providermodel.FieldModeration, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.MaxImageCount(); ok {
 		_spec.SetField(providermodel.FieldMaxImageCount, field.TypeInt, value)
@@ -574,21 +688,39 @@ func (_u *ProviderModelUpdateOne) SetNillableSupportsMask(v *bool) *ProviderMode
 	return _u
 }
 
-// SetSupportedQualities sets the "supported_qualities" field.
-func (_u *ProviderModelUpdateOne) SetSupportedQualities(v []string) *ProviderModelUpdateOne {
-	_u.mutation.SetSupportedQualities(v)
+// SetSupportedBaseResolution sets the "supported_base_resolution" field.
+func (_u *ProviderModelUpdateOne) SetSupportedBaseResolution(v []string) *ProviderModelUpdateOne {
+	_u.mutation.SetSupportedBaseResolution(v)
 	return _u
 }
 
-// AppendSupportedQualities appends value to the "supported_qualities" field.
-func (_u *ProviderModelUpdateOne) AppendSupportedQualities(v []string) *ProviderModelUpdateOne {
-	_u.mutation.AppendSupportedQualities(v)
+// AppendSupportedBaseResolution appends value to the "supported_base_resolution" field.
+func (_u *ProviderModelUpdateOne) AppendSupportedBaseResolution(v []string) *ProviderModelUpdateOne {
+	_u.mutation.AppendSupportedBaseResolution(v)
 	return _u
 }
 
-// ClearSupportedQualities clears the value of the "supported_qualities" field.
-func (_u *ProviderModelUpdateOne) ClearSupportedQualities() *ProviderModelUpdateOne {
-	_u.mutation.ClearSupportedQualities()
+// ClearSupportedBaseResolution clears the value of the "supported_base_resolution" field.
+func (_u *ProviderModelUpdateOne) ClearSupportedBaseResolution() *ProviderModelUpdateOne {
+	_u.mutation.ClearSupportedBaseResolution()
+	return _u
+}
+
+// SetQuality sets the "quality" field.
+func (_u *ProviderModelUpdateOne) SetQuality(v []string) *ProviderModelUpdateOne {
+	_u.mutation.SetQuality(v)
+	return _u
+}
+
+// AppendQuality appends value to the "quality" field.
+func (_u *ProviderModelUpdateOne) AppendQuality(v []string) *ProviderModelUpdateOne {
+	_u.mutation.AppendQuality(v)
+	return _u
+}
+
+// ClearQuality clears the value of the "quality" field.
+func (_u *ProviderModelUpdateOne) ClearQuality() *ProviderModelUpdateOne {
+	_u.mutation.ClearQuality()
 	return _u
 }
 
@@ -607,6 +739,63 @@ func (_u *ProviderModelUpdateOne) AppendSupportedRatios(v []string) *ProviderMod
 // ClearSupportedRatios clears the value of the "supported_ratios" field.
 func (_u *ProviderModelUpdateOne) ClearSupportedRatios() *ProviderModelUpdateOne {
 	_u.mutation.ClearSupportedRatios()
+	return _u
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (_u *ProviderModelUpdateOne) SetOutputFormat(v []string) *ProviderModelUpdateOne {
+	_u.mutation.SetOutputFormat(v)
+	return _u
+}
+
+// AppendOutputFormat appends value to the "output_format" field.
+func (_u *ProviderModelUpdateOne) AppendOutputFormat(v []string) *ProviderModelUpdateOne {
+	_u.mutation.AppendOutputFormat(v)
+	return _u
+}
+
+// ClearOutputFormat clears the value of the "output_format" field.
+func (_u *ProviderModelUpdateOne) ClearOutputFormat() *ProviderModelUpdateOne {
+	_u.mutation.ClearOutputFormat()
+	return _u
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (_u *ProviderModelUpdateOne) SetOutputCompression(v int) *ProviderModelUpdateOne {
+	_u.mutation.ResetOutputCompression()
+	_u.mutation.SetOutputCompression(v)
+	return _u
+}
+
+// SetNillableOutputCompression sets the "output_compression" field if the given value is not nil.
+func (_u *ProviderModelUpdateOne) SetNillableOutputCompression(v *int) *ProviderModelUpdateOne {
+	if v != nil {
+		_u.SetOutputCompression(*v)
+	}
+	return _u
+}
+
+// AddOutputCompression adds value to the "output_compression" field.
+func (_u *ProviderModelUpdateOne) AddOutputCompression(v int) *ProviderModelUpdateOne {
+	_u.mutation.AddOutputCompression(v)
+	return _u
+}
+
+// SetModeration sets the "moderation" field.
+func (_u *ProviderModelUpdateOne) SetModeration(v []string) *ProviderModelUpdateOne {
+	_u.mutation.SetModeration(v)
+	return _u
+}
+
+// AppendModeration appends value to the "moderation" field.
+func (_u *ProviderModelUpdateOne) AppendModeration(v []string) *ProviderModelUpdateOne {
+	_u.mutation.AppendModeration(v)
+	return _u
+}
+
+// ClearModeration clears the value of the "moderation" field.
+func (_u *ProviderModelUpdateOne) ClearModeration() *ProviderModelUpdateOne {
+	_u.mutation.ClearModeration()
 	return _u
 }
 
@@ -902,16 +1091,27 @@ func (_u *ProviderModelUpdateOne) sqlSave(ctx context.Context) (_node *ProviderM
 	if value, ok := _u.mutation.SupportsMask(); ok {
 		_spec.SetField(providermodel.FieldSupportsMask, field.TypeBool, value)
 	}
-	if value, ok := _u.mutation.SupportedQualities(); ok {
-		_spec.SetField(providermodel.FieldSupportedQualities, field.TypeJSON, value)
+	if value, ok := _u.mutation.SupportedBaseResolution(); ok {
+		_spec.SetField(providermodel.FieldSupportedBaseResolution, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.AppendedSupportedQualities(); ok {
+	if value, ok := _u.mutation.AppendedSupportedBaseResolution(); ok {
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, providermodel.FieldSupportedQualities, value)
+			sqljson.Append(u, providermodel.FieldSupportedBaseResolution, value)
 		})
 	}
-	if _u.mutation.SupportedQualitiesCleared() {
-		_spec.ClearField(providermodel.FieldSupportedQualities, field.TypeJSON)
+	if _u.mutation.SupportedBaseResolutionCleared() {
+		_spec.ClearField(providermodel.FieldSupportedBaseResolution, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.Quality(); ok {
+		_spec.SetField(providermodel.FieldQuality, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedQuality(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, providermodel.FieldQuality, value)
+		})
+	}
+	if _u.mutation.QualityCleared() {
+		_spec.ClearField(providermodel.FieldQuality, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.SupportedRatios(); ok {
 		_spec.SetField(providermodel.FieldSupportedRatios, field.TypeJSON, value)
@@ -923,6 +1123,34 @@ func (_u *ProviderModelUpdateOne) sqlSave(ctx context.Context) (_node *ProviderM
 	}
 	if _u.mutation.SupportedRatiosCleared() {
 		_spec.ClearField(providermodel.FieldSupportedRatios, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputFormat(); ok {
+		_spec.SetField(providermodel.FieldOutputFormat, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedOutputFormat(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, providermodel.FieldOutputFormat, value)
+		})
+	}
+	if _u.mutation.OutputFormatCleared() {
+		_spec.ClearField(providermodel.FieldOutputFormat, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputCompression(); ok {
+		_spec.SetField(providermodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedOutputCompression(); ok {
+		_spec.AddField(providermodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.Moderation(); ok {
+		_spec.SetField(providermodel.FieldModeration, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedModeration(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, providermodel.FieldModeration, value)
+		})
+	}
+	if _u.mutation.ModerationCleared() {
+		_spec.ClearField(providermodel.FieldModeration, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.MaxImageCount(); ok {
 		_spec.SetField(providermodel.FieldMaxImageCount, field.TypeInt, value)

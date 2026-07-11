@@ -75,6 +75,15 @@ func (c *Client) buildPayload(req provider.ImageRequest) map[string]any {
 	if req.Quality != "" {
 		payload["quality"] = req.Quality
 	}
+	if req.OutputFormat != "" {
+		payload["output_format"] = req.OutputFormat
+	}
+	if req.OutputCompression > 0 && (strings.EqualFold(req.OutputFormat, "jpeg") || strings.EqualFold(req.OutputFormat, "webp")) {
+		payload["output_compression"] = req.OutputCompression
+	}
+	if req.Moderation != "" {
+		payload["moderation"] = req.Moderation
+	}
 	return payload
 }
 
@@ -93,7 +102,7 @@ func (c *Client) doJSON(ctx context.Context, payload any) (provider.ImageRespons
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return provider.ImageResponse{}, err
+		return provider.ImageResponse{}, provider.NewTransportError(provider.ProviderTypeOpenRouter, err)
 	}
 	defer resp.Body.Close()
 
@@ -113,7 +122,7 @@ func (c *Client) doJSON(ctx context.Context, payload any) (provider.ImageRespons
 		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payloadResp); err != nil {
-		return provider.ImageResponse{}, err
+		return provider.ImageResponse{}, provider.NewInvalidResponseError(provider.ProviderTypeOpenRouter, err)
 	}
 
 	result := provider.ImageResponse{Created: time.Now().Unix(), ProviderRequestID: resp.Header.Get("x-request-id")}

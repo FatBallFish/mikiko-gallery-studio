@@ -29,6 +29,7 @@ type Record struct {
 	ModelAccountID            *int64         `json:"model_account_id,omitempty"`
 	UpstreamModelCode         string         `json:"upstream_model_code,omitempty"`
 	AbstractModel             string         `json:"abstract_model"`
+	BaseResolution            string         `json:"base_resolution"`
 	Quality                   string         `json:"quality"`
 	RequestedOutputImageCount int            `json:"requested_output_image_count"`
 	SuccessOutputImageCount   int            `json:"success_output_image_count"`

@@ -89,6 +89,11 @@ func SupportsMask(v bool) predicate.ProviderModel {
 	return predicate.ProviderModel(sql.FieldEQ(FieldSupportsMask, v))
 }
 
+// OutputCompression applies equality check predicate on the "output_compression" field. It's identical to OutputCompressionEQ.
+func OutputCompression(v int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldEQ(FieldOutputCompression, v))
+}
+
 // MaxImageCount applies equality check predicate on the "max_image_count" field. It's identical to MaxImageCountEQ.
 func MaxImageCount(v int) predicate.ProviderModel {
 	return predicate.ProviderModel(sql.FieldEQ(FieldMaxImageCount, v))
@@ -404,14 +409,24 @@ func SupportsMaskNEQ(v bool) predicate.ProviderModel {
 	return predicate.ProviderModel(sql.FieldNEQ(FieldSupportsMask, v))
 }
 
-// SupportedQualitiesIsNil applies the IsNil predicate on the "supported_qualities" field.
-func SupportedQualitiesIsNil() predicate.ProviderModel {
-	return predicate.ProviderModel(sql.FieldIsNull(FieldSupportedQualities))
+// SupportedBaseResolutionIsNil applies the IsNil predicate on the "supported_base_resolution" field.
+func SupportedBaseResolutionIsNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldIsNull(FieldSupportedBaseResolution))
 }
 
-// SupportedQualitiesNotNil applies the NotNil predicate on the "supported_qualities" field.
-func SupportedQualitiesNotNil() predicate.ProviderModel {
-	return predicate.ProviderModel(sql.FieldNotNull(FieldSupportedQualities))
+// SupportedBaseResolutionNotNil applies the NotNil predicate on the "supported_base_resolution" field.
+func SupportedBaseResolutionNotNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldNotNull(FieldSupportedBaseResolution))
+}
+
+// QualityIsNil applies the IsNil predicate on the "quality" field.
+func QualityIsNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldIsNull(FieldQuality))
+}
+
+// QualityNotNil applies the NotNil predicate on the "quality" field.
+func QualityNotNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldNotNull(FieldQuality))
 }
 
 // SupportedRatiosIsNil applies the IsNil predicate on the "supported_ratios" field.
@@ -422,6 +437,66 @@ func SupportedRatiosIsNil() predicate.ProviderModel {
 // SupportedRatiosNotNil applies the NotNil predicate on the "supported_ratios" field.
 func SupportedRatiosNotNil() predicate.ProviderModel {
 	return predicate.ProviderModel(sql.FieldNotNull(FieldSupportedRatios))
+}
+
+// OutputFormatIsNil applies the IsNil predicate on the "output_format" field.
+func OutputFormatIsNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldIsNull(FieldOutputFormat))
+}
+
+// OutputFormatNotNil applies the NotNil predicate on the "output_format" field.
+func OutputFormatNotNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldNotNull(FieldOutputFormat))
+}
+
+// OutputCompressionEQ applies the EQ predicate on the "output_compression" field.
+func OutputCompressionEQ(v int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldEQ(FieldOutputCompression, v))
+}
+
+// OutputCompressionNEQ applies the NEQ predicate on the "output_compression" field.
+func OutputCompressionNEQ(v int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldNEQ(FieldOutputCompression, v))
+}
+
+// OutputCompressionIn applies the In predicate on the "output_compression" field.
+func OutputCompressionIn(vs ...int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldIn(FieldOutputCompression, vs...))
+}
+
+// OutputCompressionNotIn applies the NotIn predicate on the "output_compression" field.
+func OutputCompressionNotIn(vs ...int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldNotIn(FieldOutputCompression, vs...))
+}
+
+// OutputCompressionGT applies the GT predicate on the "output_compression" field.
+func OutputCompressionGT(v int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldGT(FieldOutputCompression, v))
+}
+
+// OutputCompressionGTE applies the GTE predicate on the "output_compression" field.
+func OutputCompressionGTE(v int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldGTE(FieldOutputCompression, v))
+}
+
+// OutputCompressionLT applies the LT predicate on the "output_compression" field.
+func OutputCompressionLT(v int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldLT(FieldOutputCompression, v))
+}
+
+// OutputCompressionLTE applies the LTE predicate on the "output_compression" field.
+func OutputCompressionLTE(v int) predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldLTE(FieldOutputCompression, v))
+}
+
+// ModerationIsNil applies the IsNil predicate on the "moderation" field.
+func ModerationIsNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldIsNull(FieldModeration))
+}
+
+// ModerationNotNil applies the NotNil predicate on the "moderation" field.
+func ModerationNotNil() predicate.ProviderModel {
+	return predicate.ProviderModel(sql.FieldNotNull(FieldModeration))
 }
 
 // MaxImageCountEQ applies the EQ predicate on the "max_image_count" field.

@@ -94,15 +94,15 @@ export const rdGallery = {
 }
 
 export const rdBilling = {
-  layout: 'grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-12',
-  card: 'rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-10',
-  planGrid: 'grid grid-cols-1 md:grid-cols-2 gap-4',
-  planItem: 'relative flex flex-col gap-6 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-8 transition-all hover:border-[var(--accent)] group',
+  layout: 'grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]',
+  card: 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6',
+  planGrid: 'grid grid-cols-1 gap-3 md:grid-cols-2',
+  planItem: 'group relative flex flex-col gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-5 transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
   planActive: 'border-[var(--accent)] bg-[var(--accent)]/[0.03] ring-1 ring-[var(--accent)]',
   planPrice: 'text-4xl font-black text-[var(--fg)] group-hover:text-[var(--accent)] transition-colors',
   planPoints: 'text-sm text-[var(--muted)] font-vault-mono',
 
-  orderPanel: 'sticky top-32 flex flex-col gap-8 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-10 shadow-2xl shadow-black/20',
+  orderPanel: 'flex flex-col gap-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--pg-shadow-md)] sm:p-6 xl:sticky xl:top-24',
   orderTitle: 'text-2xl font-black',
   orderRow: 'flex justify-between items-center py-4 border-b border-[var(--border)] last:border-0',
   orderTotal: 'text-3xl font-black text-[var(--accent)]',
@@ -123,7 +123,7 @@ export const rdWorkspace = {
   grid3: 'grid grid-cols-3 gap-2',
   grid4: 'grid grid-cols-4 gap-2',
   selectItem: 'group relative flex flex-col items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-3 transition-all duration-200 hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/5 hover:shadow-[0_0_15px_rgba(var(--accent-rgb),0.05)] active:scale-95 cursor-pointer',
-  selectItemActive: 'border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_0_20px_rgba(var(--accent-rgb),0.2)] ring-1 ring-[var(--accent)]/50 scale-[1.02] [&_*]:text-white',
+  selectItemActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_18%,var(--surface))] text-[var(--lv-accent-contrast)] shadow-[0_0_20px_rgba(var(--accent-rgb),0.2)] ring-1 ring-[var(--accent)]/50 scale-[1.02] [&_*]:text-[var(--lv-accent-contrast)]',
   itemLabel: 'text-sm font-bold text-[var(--fg)] group-hover:text-[var(--accent)] transition-colors',
   itemSub: 'text-[10px] font-vault-mono text-[var(--muted)] uppercase tracking-tight',
   itemIcon: 'size-5 flex items-center justify-center text-[var(--muted)] group-hover:text-[var(--accent)] transition-colors',
@@ -131,9 +131,9 @@ export const rdWorkspace = {
   
   // Restored Model Select size
   modelItem: 'group flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-3.5 transition-all duration-200 hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/5 hover:shadow-[0_0_15px_rgba(var(--accent-rgb),0.05)] active:scale-[0.98] cursor-pointer',
-  modelItemActive: 'border-[var(--accent)] bg-[var(--accent)] text-white ring-1 ring-[var(--accent)]/50 shadow-[0_0_20px_rgba(var(--accent-rgb),0.2)] [&_*]:text-white',
+  modelItemActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_18%,var(--surface))] text-[var(--lv-accent-contrast)] ring-1 ring-[var(--accent)]/50 shadow-[0_0_20px_rgba(var(--accent-rgb),0.2)] [&_*]:text-[var(--lv-accent-contrast)]',
   modelInfo: 'flex flex-col items-start gap-0.5',
-  modelPoints: 'rounded-full bg-[var(--accent)]/10 px-2.5 py-1 text-[10px] font-bold text-[var(--accent)] group-hover:bg-[var(--accent)] group-hover:text-white transition-all',
+  modelPoints: 'rounded-full bg-[var(--accent)]/10 px-2.5 py-1 text-[10px] font-bold text-[var(--accent)] group-hover:bg-[color-mix(in_oklch,var(--accent)_18%,var(--surface))] group-hover:text-[var(--lv-accent-contrast)] transition-all',
   
   // Restored Upload Section size
   uploadSection: 'overflow-hidden transition-all duration-300',
@@ -156,7 +156,7 @@ export const rdWorkspace = {
   priceValue: 'flex items-center gap-1.5 text-lg font-black text-[var(--accent)]',
   
   generateBtn: 'group relative w-full h-14 rounded-xl bg-[var(--accent)] overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_5px_15px_rgba(var(--accent-rgb),0.3)] disabled:opacity-50 disabled:grayscale',
-  btnGlow: 'absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_2s_infinite]',
+  btnGlow: 'absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_2s_infinite] motion-reduce:animate-none',
   btnText: 'relative z-10 flex items-center justify-center gap-2 text-base font-bold text-white',
 
   canvas: 'flex min-h-0 flex-1 flex-col w-full min-w-0',
@@ -165,15 +165,15 @@ export const rdWorkspace = {
   outputPanel: 'w-full flex-1 flex min-h-0 max-h-[calc(100vh-140px)] flex-col justify-start rounded-3xl border border-[var(--border)] bg-[var(--canvas-bg)] shadow-2xl overflow-hidden relative p-6 md:p-10 min-h-[600px]',
   outputLoading: 'flex flex-col items-center justify-center w-full max-w-lg mx-auto',
   outputRing: 'relative size-20 mb-6',
-  outputRingInner1: 'absolute inset-0 rounded-full border-2 border-[var(--accent)]/30 animate-ping',
-  outputRingInner2: 'absolute inset-2 rounded-full border border-[var(--accent)]/50 animate-pulse',
+  outputRingInner1: 'absolute inset-0 rounded-full border-2 border-[var(--accent)]/30 animate-ping motion-reduce:animate-none',
+  outputRingInner2: 'absolute inset-2 rounded-full border border-[var(--accent)]/50 animate-pulse motion-reduce:animate-none',
   outputRingCore: 'absolute inset-4 rounded-full bg-[var(--accent)]/20 flex items-center justify-center border border-[var(--border)]',
   outputStage: 'text-sm font-semibold text-[var(--fg)] mb-2',
   outputStageText: 'text-[11px] font-vault-mono text-[var(--muted)] mb-5 h-4',
   outputProgressWrap: 'w-full bg-[var(--bg)] rounded-full h-1.5 overflow-hidden border border-[var(--border)]',
   outputProgressBar: 'bg-gradient-to-r from-[var(--accent)] to-[var(--accent-purple)] h-full transition-all duration-300 ease-out',
   
-  outputImageWrap: 'relative w-full h-full flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-500 group',
+  outputImageWrap: 'relative w-full h-full flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none group',
   
   // Grid layout for multi-image
   outputGridSingle: 'max-h-[65vh] w-auto rounded-xl object-contain shadow-2xl border border-[var(--border)]',
@@ -210,7 +210,7 @@ export const form = {
 }
 
 export const state = {
-  spinner: 'size-3.5 animate-spin rounded-full border-2 border-current border-r-transparent',
+  spinner: 'size-3.5 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none',
   stateLine: 'grid gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 text-[var(--muted)]',
   empty: 'grid place-items-center gap-3 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-12 text-center',
   emptyIcon: 'grid size-14 place-items-center rounded-2xl bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] text-[var(--accent)]',

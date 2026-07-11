@@ -70,12 +70,20 @@ function normalizeGroupIds(ids: Array<string | number>) {
   return ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
 }
 
+function toAdminSession(result: AdminLoginResult): AdminSession {
+  const permissions = (result as AdminLoginResult & { permissions?: AdminPermission[] }).permissions
+  return { token: result.access_token, admin_name: result.email || `Admin ${result.admin_id}`, role: result.role, email: result.email, admin_id: result.admin_id, permissions }
+}
+
 export const adminApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
   login: async (email: string, password: string): Promise<AdminSession> => {
     const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.login, { method: 'POST', body: { email, password }, auth: false })
-    const permissions = (result as AdminLoginResult & { permissions?: AdminPermission[] }).permissions
-    return { token: result.access_token, admin_name: result.email || `Admin ${result.admin_id}`, role: result.role, email: result.email, admin_id: result.admin_id, permissions }
+    return toAdminSession(result)
+  },
+  refreshSession: async (): Promise<AdminSession> => {
+    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.refreshSession, { method: 'POST', auth: false, retryUnauthorized: false })
+    return toAdminSession(result)
   },
   logout: () => sharedApiClient.request<void>(API_PATHS.ops.logout, { method: 'POST' }),
   systemAdmins: {
@@ -418,7 +426,16 @@ function toModelAccountModel(raw: any, accountId?: string | number): ModelAccoun
     model_code: raw.model_code ?? '',
     display_name: raw.display_name ?? raw.name ?? raw.model_code ?? '',
     task_types: raw.task_types ?? ['text_to_image'],
-    qualities: raw.qualities ?? raw.supported_qualities ?? ['auto'],
+    base_resolution: raw.base_resolution ?? raw.supported_base_resolution ?? ['auto'],
+    quality: raw.quality ?? ['auto'],
+    max_reference_image_count: Number(raw.max_reference_image_count ?? 5),
+    max_image_count: Number(raw.max_image_count ?? 1),
+    size_modes: raw.size_modes ?? ['ratio'],
+    supported_ratios: raw.supported_ratios ?? ['1:1', '16:9', '9:16', '4:3', '3:4'],
+    supported_pixel_sizes: raw.supported_pixel_sizes ?? ['1024x1024'],
+    output_format: raw.output_format ?? ['png'],
+    output_compression: Number(raw.output_compression ?? 100),
+    moderation: raw.moderation ?? ['auto'],
     cost_per_image: String(raw.cost_per_image ?? raw.output_cost ?? '0.00000'),
     currency: raw.currency ?? 'USD',
     enabled: Boolean(raw.enabled ?? true),
@@ -474,7 +491,7 @@ function toRouteModelPrice(raw: any): RouteModelPrice {
     route_model_code: raw.route_model_code ?? raw.route_model?.code,
     route_model_name: raw.route_model_name ?? raw.route_model?.name,
     task_type: raw.task_type ?? 'text_to_image',
-    quality: raw.quality ?? 'auto',
+    base_resolution: raw.base_resolution ?? 'auto',
     base_points: String(raw.base_points ?? '0.00000'),
     reference_multiplier: String(raw.reference_multiplier ?? '1.00000'),
     enabled: Boolean(raw.enabled ?? true),

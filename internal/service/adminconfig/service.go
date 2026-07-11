@@ -73,9 +73,11 @@ func (s *Service) GetTab(ctx context.Context, tabKey string) (domainadminconfig.
 	}
 	for _, override := range overrides {
 		key := itemKey(override.ConfigKey, defaultString(override.Scope, "global"))
-		if _, ok := definedKeys[key]; !ok {
+		defined, ok := itemsByKey[key]
+		if !ok {
 			continue
 		}
+		override.ConfigCategory = defaultString(defined.ConfigCategory, override.ConfigCategory)
 		itemsByKey[key] = cloneItem(override)
 		if override.Version > tab.Version {
 			tab.Version = override.Version
@@ -184,7 +186,7 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			Name: "Billing & Pricing",
 			Items: []domainadminconfig.Item{
 				valueItem("billing_pricing", "cny_per_point", cfg.Billing.CNYPerPoint),
-				valueItem("billing_pricing", "auto_quality_default_by_group", cloneMap(cfg.Billing.AutoQualityDefaultByGroup)),
+				valueItem("billing_pricing", "auto_base_resolution_default_by_group", cloneMap(cfg.Billing.AutoBaseResolutionDefaultByGroup)),
 				valueItem("billing_pricing", "task_multipliers", cloneMap(cfg.Billing.TaskMultipliers)),
 				valueItem("billing_pricing", "reference_image_extra", map[string]any{
 					"first":      cfg.Billing.ReferenceImageExtra.First,

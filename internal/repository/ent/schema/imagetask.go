@@ -19,15 +19,21 @@ func (ImageTask) Fields() []ent.Field {
 		field.String("source_channel").MaxLen(16).Default("web"),
 		field.String("task_type").MaxLen(32).NotEmpty(),
 		field.String("status").MaxLen(32).Default("queued"),
+		field.String("progress_stage").MaxLen(32).Default(""),
+		field.Text("progress_message").Default(""),
 		field.Text("prompt"),
 		field.Text("negative_prompt").Optional().Nillable(),
 		field.String("abstract_model").MaxLen(64).NotEmpty(),
-		field.String("requested_quality").MaxLen(16).Default("auto"),
-		field.String("resolved_quality_bucket").MaxLen(16).Default("1k"),
+		field.String("size_mode").MaxLen(16).Default("ratio"),
+		field.String("base_resolution").MaxLen(16).Default("auto"),
+		field.String("quality").MaxLen(16).Default("auto"),
 		field.String("requested_size").MaxLen(32).Optional().Nillable(),
 		field.Int("resolved_width").Optional().Nillable(),
 		field.Int("resolved_height").Optional().Nillable(),
 		field.String("aspect_ratio").MaxLen(16).Default("1:1"),
+		field.String("output_format").MaxLen(16).Default("png"),
+		field.Int("output_compression").Default(100),
+		field.String("moderation").MaxLen(16).Default("auto"),
 		field.Int("requested_output_image_count").Default(1),
 		field.Int("success_output_image_count").Default(0),
 		field.Int("reference_image_count").Default(0),
@@ -65,7 +71,7 @@ func (ImageTask) Fields() []ent.Field {
 func (ImageTask) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),
-		index.Fields("status"), index.Fields("abstract_model"), index.Fields("route_model_code"), index.Fields("resolved_quality_bucket"), index.Fields("provider_model_id"), index.Fields("account_model_id"), index.Fields("model_account_id"), index.Fields("lease_owner"),
+		index.Fields("status"), index.Fields("abstract_model"), index.Fields("route_model_code"), index.Fields("base_resolution"), index.Fields("provider_model_id"), index.Fields("account_model_id"), index.Fields("model_account_id"), index.Fields("lease_owner"),
 		index.Fields("lease_expires_at"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("deleted_at"),
 	}
 }

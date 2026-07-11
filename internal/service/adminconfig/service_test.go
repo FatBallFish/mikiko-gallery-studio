@@ -51,7 +51,7 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 	}
 	assertTabMissing(t, tabs, "routing_models")
 	assertTabKeys(t, tabs, "billing_pricing", []string{
-		"auto_quality_default_by_group",
+		"auto_base_resolution_default_by_group",
 		"cny_per_point",
 		"reference_image_extra",
 		"task_multipliers",
@@ -114,6 +114,46 @@ func TestUpdateTabOverridesConfigAndBumpsVersion(t *testing.T) {
 	}
 }
 
+func TestUpdateTabPreservesDefinedItemCategoryAcrossOverrides(t *testing.T) {
+	svc := adminconfig.NewServiceWithStore(testConfig(), adminconfig.NewMemoryStore())
+
+	req := domainadminconfig.UpdateTabRequest{
+		TabKey:  "trial_credits",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "billing_trial",
+			ConfigKey:      "signup_trial",
+			ConfigValue: map[string]any{"value": map[string]any{
+				"enabled":              true,
+				"points":               "20.00000",
+				"valid_days":           7,
+				"expiry_reminder_days": 2,
+				"grant_once_per_user":  true,
+			}},
+			Scope: "global",
+		}},
+	}
+	updated, err := svc.UpdateTab(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first UpdateTab: %v", err)
+	}
+	if got := updated.Items[0].ConfigCategory; got != "billing_trial" {
+		t.Fatalf("expected defined category after first update, got %q", got)
+	}
+
+	req.Version = updated.Version
+	req.Items[0].ConfigValue = map[string]any{"value": map[string]any{
+		"enabled":              true,
+		"points":               "30.00000",
+		"valid_days":           7,
+		"expiry_reminder_days": 2,
+		"grant_once_per_user":  true,
+	}}
+	if _, err := svc.UpdateTab(context.Background(), req); err != nil {
+		t.Fatalf("second UpdateTab should accept defined item category: %v", err)
+	}
+}
+
 func TestUpdateTabRejectsVersionConflict(t *testing.T) {
 	svc := adminconfig.NewServiceWithStore(testConfig(), adminconfig.NewMemoryStore())
 
@@ -152,11 +192,28 @@ func TestAdminConfigIgnoresStaleOverridesAndRejectsUnknownItems(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected stale billing key to be rejected")
 	}
+	if _, err := svc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "billing_pricing",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "billing_pricing",
+			ConfigKey:      "auto_quality_default_by_group",
+			ConfigValue:    map[string]any{"value": map[string]any{"basic": "1k"}},
+			Scope:          "global",
+		}},
+	}); err == nil {
+		t.Fatal("expected stale auto quality key to be rejected")
+	}
 
 	if err := store.SaveByCategory(context.Background(), "billing_pricing", 2, 0, []domainadminconfig.Item{{
 		ConfigCategory: "billing_pricing",
 		ConfigKey:      "quality_points_by_model",
 		ConfigValue:    map[string]any{"value": map[string]any{"basic": map[string]any{"1k": "1.00000"}}},
+		Scope:          "global",
+	}, {
+		ConfigCategory: "billing_pricing",
+		ConfigKey:      "auto_quality_default_by_group",
+		ConfigValue:    map[string]any{"value": map[string]any{"basic": "1k"}},
 		Scope:          "global",
 	}}); err != nil {
 		t.Fatalf("SaveByCategory stale override: %v", err)
@@ -167,7 +224,7 @@ func TestAdminConfigIgnoresStaleOverridesAndRejectsUnknownItems(t *testing.T) {
 		t.Fatalf("GetTab: %v", err)
 	}
 	for _, item := range tab.Items {
-		if item.ConfigKey == "quality_points_by_model" || item.ConfigKey == "user_group_multipliers" {
+		if item.ConfigKey == "quality_points_by_model" || item.ConfigKey == "auto_quality_default_by_group" || item.ConfigKey == "user_group_multipliers" {
 			t.Fatalf("stale config key leaked into system settings: %#v", item)
 		}
 	}
@@ -214,13 +271,13 @@ func testConfig() config.Config {
 		},
 		Billing: config.BillingConfig{
 			CNYPerPoint: "0.3125",
-			QualityPointsByModel: map[string]map[string]string{
+			BaseResolutionPointsByModel: map[string]map[string]string{
 				"basic": {"1k": "2.00000", "2k": "4.00000", "4k": "8.00000"},
 			},
-			AutoQualityDefaultByGroup: map[string]string{"basic": "1k"},
-			UserGroupMultipliers:      map[string]string{"basic": "1.00000"},
-			TaskMultipliers:           map[string]string{"text_to_image": "1.00000"},
-			ReferenceImageExtra:       config.ReferenceExtra{First: "0.10000", Additional: "0.05000"},
+			AutoBaseResolutionDefaultByGroup: map[string]string{"basic": "1k"},
+			UserGroupMultipliers:             map[string]string{"basic": "1.00000"},
+			TaskMultipliers:                  map[string]string{"text_to_image": "1.00000"},
+			ReferenceImageExtra:              config.ReferenceExtra{First: "0.10000", Additional: "0.05000"},
 		},
 		GenerationLimits: config.GenerationLimitsConfig{
 			MaxImageCount:          5,

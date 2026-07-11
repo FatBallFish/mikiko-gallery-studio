@@ -82,6 +82,7 @@ func LoadEnv(path string) (Config, error) {
 	cfg.Auth.Issuer = envString(fileEnv, "AUTH_ISSUER", "")
 	cfg.Auth.AccessTokenSecret = envString(fileEnv, "AUTH_ACCESS_TOKEN_SECRET", "")
 	cfg.Auth.RefreshCookieName = envString(fileEnv, "AUTH_REFRESH_COOKIE_NAME", "")
+	cfg.Auth.AdminRefreshCookieName = envString(fileEnv, "AUTH_ADMIN_REFRESH_COOKIE_NAME", "")
 	cfg.Auth.FixedEmailCode = envString(fileEnv, "AUTH_FIXED_EMAIL_CODE", "")
 	cfg.Auth.DevEmailCodes = envBool(fileEnv, "AUTH_DEV_EMAIL_CODES", false)
 
@@ -147,8 +148,17 @@ func applyDefaults(cfg *Config) {
 	if cfg.Auth.AccessTokenSecret == "" {
 		cfg.Auth.AccessTokenSecret = "local-dev-secret"
 	}
+	if cfg.Auth.AccessTokenTTL <= 0 {
+		cfg.Auth.AccessTokenTTL = 10 * time.Minute
+	}
+	if cfg.Auth.RefreshTokenTTL <= 0 {
+		cfg.Auth.RefreshTokenTTL = 30 * time.Minute
+	}
 	if cfg.Auth.RefreshCookieName == "" {
 		cfg.Auth.RefreshCookieName = "pg_refresh_token"
+	}
+	if cfg.Auth.AdminRefreshCookieName == "" {
+		cfg.Auth.AdminRefreshCookieName = "pg_admin_refresh_token"
 	}
 	if len(cfg.HTTP.CORSAllowedOrigins) == 0 {
 		cfg.HTTP.CORSAllowedOrigins = []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"}
@@ -185,11 +195,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.Worker.MaxConcurrentTasks > 64 {
 		cfg.Worker.MaxConcurrentTasks = 64
 	}
-	if len(cfg.Billing.AutoQualityDefaultByGroup) == 0 {
-		cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
+	if len(cfg.Billing.AutoBaseResolutionDefaultByGroup) == 0 {
+		cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
 	}
-	if len(cfg.Billing.QualityPointsByModel) == 0 {
-		cfg.Billing.QualityPointsByModel = map[string]map[string]string{
+	if len(cfg.Billing.BaseResolutionPointsByModel) == 0 {
+		cfg.Billing.BaseResolutionPointsByModel = map[string]map[string]string{
 			"basic": {"1k": "2.00000", "2k": "4.00000", "4k": "8.00000"},
 			"plus":  {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 			"pro":   {"1k": "8.00000", "2k": "12.00000", "4k": "20.00000"},
@@ -226,11 +236,23 @@ func applyDefaults(cfg *Config) {
 		if len(capability.SupportedTaskTypes) == 0 {
 			capability.SupportedTaskTypes = []string{"text_to_image", "image_edit", "reference_generate"}
 		}
-		if len(capability.SupportedQualities) == 0 {
-			capability.SupportedQualities = []string{"1k", "2k", "4k"}
+		if len(capability.SupportedBaseResolution) == 0 {
+			capability.SupportedBaseResolution = []string{"1k", "2k", "4k"}
+		}
+		if len(capability.Quality) == 0 {
+			capability.Quality = []string{"auto", "low", "medium", "high"}
 		}
 		if len(capability.SupportedAspectRatios) == 0 {
 			capability.SupportedAspectRatios = []string{"1:1", "4:3", "16:9"}
+		}
+		if len(capability.OutputFormat) == 0 {
+			capability.OutputFormat = []string{"png"}
+		}
+		if capability.OutputCompression == 0 {
+			capability.OutputCompression = 100
+		}
+		if len(capability.Moderation) == 0 {
+			capability.Moderation = []string{"auto"}
 		}
 		if capability.MaxImageCount == 0 {
 			capability.MaxImageCount = cfg.GenerationLimits.MaxImageCount
@@ -257,15 +279,19 @@ func applyDefaults(cfg *Config) {
 
 func defaultProviderCapability(cfg *Config, models []string, supportsImageInput bool, supportsMask bool, priority int) ProviderCapabilityConfig {
 	return ProviderCapabilityConfig{
-		SupportedModels:        models,
-		SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
-		SupportedQualities:     []string{"1k", "2k", "4k"},
-		SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
-		MaxImageCount:          cfg.GenerationLimits.MaxImageCount,
-		MaxReferenceImageCount: cfg.GenerationLimits.ReferenceImageMaxCount,
-		SupportsImageInput:     supportsImageInput,
-		SupportsMask:           supportsMask,
-		Priority:               priority,
+		SupportedModels:         models,
+		SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+		SupportedBaseResolution: []string{"1k", "2k", "4k"},
+		Quality:                 []string{"auto", "low", "medium", "high"},
+		SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
+		OutputFormat:            []string{"png"},
+		OutputCompression:       100,
+		Moderation:              []string{"auto"},
+		MaxImageCount:           cfg.GenerationLimits.MaxImageCount,
+		MaxReferenceImageCount:  cfg.GenerationLimits.ReferenceImageMaxCount,
+		SupportsImageInput:      supportsImageInput,
+		SupportsMask:            supportsMask,
+		Priority:                priority,
 	}
 }
 

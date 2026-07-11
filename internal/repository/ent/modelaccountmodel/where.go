@@ -84,6 +84,26 @@ func DisplayName(v string) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldEQ(FieldDisplayName, v))
 }
 
+// MaxReferenceImageCount applies equality check predicate on the "max_reference_image_count" field. It's identical to MaxReferenceImageCountEQ.
+func MaxReferenceImageCount(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxReferenceImageCount, v))
+}
+
+// MaxImageCount applies equality check predicate on the "max_image_count" field. It's identical to MaxImageCountEQ.
+func MaxImageCount(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxImageCount, v))
+}
+
+// OutputCompression applies equality check predicate on the "output_compression" field. It's identical to OutputCompressionEQ.
+func OutputCompression(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldOutputCompression, v))
+}
+
+// SupportsOutputCompression applies equality check predicate on the "supports_output_compression" field. It's identical to SupportsOutputCompressionEQ.
+func SupportsOutputCompression(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsOutputCompression, v))
+}
+
 // CostPerImage applies equality check predicate on the "cost_per_image" field. It's identical to CostPerImageEQ.
 func CostPerImage(v string) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldEQ(FieldCostPerImage, v))
@@ -409,14 +429,204 @@ func TaskTypesNotNil() predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldNotNull(FieldTaskTypes))
 }
 
-// QualitiesIsNil applies the IsNil predicate on the "qualities" field.
-func QualitiesIsNil() predicate.ModelAccountModel {
-	return predicate.ModelAccountModel(sql.FieldIsNull(FieldQualities))
+// BaseResolutionIsNil applies the IsNil predicate on the "base_resolution" field.
+func BaseResolutionIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldBaseResolution))
 }
 
-// QualitiesNotNil applies the NotNil predicate on the "qualities" field.
-func QualitiesNotNil() predicate.ModelAccountModel {
-	return predicate.ModelAccountModel(sql.FieldNotNull(FieldQualities))
+// BaseResolutionNotNil applies the NotNil predicate on the "base_resolution" field.
+func BaseResolutionNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldBaseResolution))
+}
+
+// QualityIsNil applies the IsNil predicate on the "quality" field.
+func QualityIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldQuality))
+}
+
+// QualityNotNil applies the NotNil predicate on the "quality" field.
+func QualityNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldQuality))
+}
+
+// MaxReferenceImageCountEQ applies the EQ predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxReferenceImageCount, v))
+}
+
+// MaxReferenceImageCountNEQ applies the NEQ predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountNEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldMaxReferenceImageCount, v))
+}
+
+// MaxReferenceImageCountIn applies the In predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIn(FieldMaxReferenceImageCount, vs...))
+}
+
+// MaxReferenceImageCountNotIn applies the NotIn predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountNotIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotIn(FieldMaxReferenceImageCount, vs...))
+}
+
+// MaxReferenceImageCountGT applies the GT predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountGT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGT(FieldMaxReferenceImageCount, v))
+}
+
+// MaxReferenceImageCountGTE applies the GTE predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountGTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGTE(FieldMaxReferenceImageCount, v))
+}
+
+// MaxReferenceImageCountLT applies the LT predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountLT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLT(FieldMaxReferenceImageCount, v))
+}
+
+// MaxReferenceImageCountLTE applies the LTE predicate on the "max_reference_image_count" field.
+func MaxReferenceImageCountLTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLTE(FieldMaxReferenceImageCount, v))
+}
+
+// MaxImageCountEQ applies the EQ predicate on the "max_image_count" field.
+func MaxImageCountEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxImageCount, v))
+}
+
+// MaxImageCountNEQ applies the NEQ predicate on the "max_image_count" field.
+func MaxImageCountNEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldMaxImageCount, v))
+}
+
+// MaxImageCountIn applies the In predicate on the "max_image_count" field.
+func MaxImageCountIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIn(FieldMaxImageCount, vs...))
+}
+
+// MaxImageCountNotIn applies the NotIn predicate on the "max_image_count" field.
+func MaxImageCountNotIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotIn(FieldMaxImageCount, vs...))
+}
+
+// MaxImageCountGT applies the GT predicate on the "max_image_count" field.
+func MaxImageCountGT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGT(FieldMaxImageCount, v))
+}
+
+// MaxImageCountGTE applies the GTE predicate on the "max_image_count" field.
+func MaxImageCountGTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGTE(FieldMaxImageCount, v))
+}
+
+// MaxImageCountLT applies the LT predicate on the "max_image_count" field.
+func MaxImageCountLT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLT(FieldMaxImageCount, v))
+}
+
+// MaxImageCountLTE applies the LTE predicate on the "max_image_count" field.
+func MaxImageCountLTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLTE(FieldMaxImageCount, v))
+}
+
+// SizeModesIsNil applies the IsNil predicate on the "size_modes" field.
+func SizeModesIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldSizeModes))
+}
+
+// SizeModesNotNil applies the NotNil predicate on the "size_modes" field.
+func SizeModesNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldSizeModes))
+}
+
+// SupportedRatiosIsNil applies the IsNil predicate on the "supported_ratios" field.
+func SupportedRatiosIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldSupportedRatios))
+}
+
+// SupportedRatiosNotNil applies the NotNil predicate on the "supported_ratios" field.
+func SupportedRatiosNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldSupportedRatios))
+}
+
+// SupportedPixelSizesIsNil applies the IsNil predicate on the "supported_pixel_sizes" field.
+func SupportedPixelSizesIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldSupportedPixelSizes))
+}
+
+// SupportedPixelSizesNotNil applies the NotNil predicate on the "supported_pixel_sizes" field.
+func SupportedPixelSizesNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldSupportedPixelSizes))
+}
+
+// OutputFormatIsNil applies the IsNil predicate on the "output_format" field.
+func OutputFormatIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldOutputFormat))
+}
+
+// OutputFormatNotNil applies the NotNil predicate on the "output_format" field.
+func OutputFormatNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldOutputFormat))
+}
+
+// OutputCompressionEQ applies the EQ predicate on the "output_compression" field.
+func OutputCompressionEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldOutputCompression, v))
+}
+
+// OutputCompressionNEQ applies the NEQ predicate on the "output_compression" field.
+func OutputCompressionNEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldOutputCompression, v))
+}
+
+// OutputCompressionIn applies the In predicate on the "output_compression" field.
+func OutputCompressionIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIn(FieldOutputCompression, vs...))
+}
+
+// OutputCompressionNotIn applies the NotIn predicate on the "output_compression" field.
+func OutputCompressionNotIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotIn(FieldOutputCompression, vs...))
+}
+
+// OutputCompressionGT applies the GT predicate on the "output_compression" field.
+func OutputCompressionGT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGT(FieldOutputCompression, v))
+}
+
+// OutputCompressionGTE applies the GTE predicate on the "output_compression" field.
+func OutputCompressionGTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGTE(FieldOutputCompression, v))
+}
+
+// OutputCompressionLT applies the LT predicate on the "output_compression" field.
+func OutputCompressionLT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLT(FieldOutputCompression, v))
+}
+
+// OutputCompressionLTE applies the LTE predicate on the "output_compression" field.
+func OutputCompressionLTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLTE(FieldOutputCompression, v))
+}
+
+// SupportsOutputCompressionEQ applies the EQ predicate on the "supports_output_compression" field.
+func SupportsOutputCompressionEQ(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsOutputCompression, v))
+}
+
+// SupportsOutputCompressionNEQ applies the NEQ predicate on the "supports_output_compression" field.
+func SupportsOutputCompressionNEQ(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldSupportsOutputCompression, v))
+}
+
+// ModerationIsNil applies the IsNil predicate on the "moderation" field.
+func ModerationIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldModeration))
+}
+
+// ModerationNotNil applies the NotNil predicate on the "moderation" field.
+func ModerationNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldModeration))
 }
 
 // CostPerImageEQ applies the EQ predicate on the "cost_per_image" field.

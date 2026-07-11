@@ -11,7 +11,13 @@ type EstimateRequest struct {
 	TaskType                  string
 	AbstractModel             string
 	RouteModelCode            string
-	RequestedQuality          string
+	SizeMode                  string
+	AspectRatio               string
+	BaseResolution            string
+	Quality                   string
+	OutputFormat              string
+	OutputCompression         int
+	Moderation                string
 	RequestedSize             string
 	RequestedOutputImageCount int
 	ReferenceImageCount       int
@@ -21,7 +27,7 @@ type EstimateRequest struct {
 }
 
 type EstimateResult struct {
-	ResolvedQualityBucket     string          `json:"resolved_quality_bucket"`
+	BaseResolution            string          `json:"base_resolution"`
 	EstimatedPoints           string          `json:"estimated_points"`
 	ChargedPoints             string          `json:"charged_points,omitempty"`
 	DisplayPoints             string          `json:"display_points,omitempty"`
@@ -38,9 +44,14 @@ type PricingSnapshot struct {
 	AbstractModel             string `json:"abstract_model"`
 	RouteModelCode            string `json:"route_model_code,omitempty"`
 	TaskType                  string `json:"task_type"`
-	RequestedQuality          string `json:"requested_quality"`
+	SizeMode                  string `json:"size_mode,omitempty"`
+	AspectRatio               string `json:"aspect_ratio,omitempty"`
+	BaseResolution            string `json:"base_resolution"`
+	Quality                   string `json:"quality,omitempty"`
+	OutputFormat              string `json:"output_format,omitempty"`
+	OutputCompression         int    `json:"output_compression,omitempty"`
+	Moderation                string `json:"moderation,omitempty"`
 	RequestedSize             string `json:"requested_size,omitempty"`
-	ResolvedQualityBucket     string `json:"resolved_quality_bucket"`
 	RequestedOutputImageCount int    `json:"requested_output_image_count"`
 	ReferenceImageCount       int    `json:"reference_image_count"`
 	UserGroupCode             string `json:"user_group_code,omitempty"`

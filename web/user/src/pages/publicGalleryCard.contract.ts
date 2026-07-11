@@ -10,7 +10,8 @@ const guestImage: ImageResult = {
   prompt: 'This full prompt must stay hidden from list cards and search',
   prompt_excerpt: 'A cinematic poster…',
   route_model_code: 'plus',
-  quality: '2K',
+  base_resolution: '2K',
+  quality: 'auto',
   aspect_ratio: '16:9',
   created_at: '2026-06-05T13:45:30Z',
 }
@@ -25,8 +26,8 @@ if (view.title.includes('full prompt')) {
   throw new Error('public gallery list card must not expose full prompt even if it is present on the object')
 }
 
-if (view.model !== 'plus' || view.quality !== '2K' || view.aspectRatio !== '16:9') {
-  throw new Error('public gallery card should expose model, quality and aspect ratio')
+if (view.model !== 'plus' || view.baseResolution !== '2K' || view.aspectRatio !== '16:9') {
+  throw new Error('public gallery card should expose model, base resolution and aspect ratio')
 }
 
 if (view.date !== '2026/06/05') {

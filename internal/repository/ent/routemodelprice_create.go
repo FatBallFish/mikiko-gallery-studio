@@ -31,9 +31,9 @@ func (_c *RouteModelPriceCreate) SetTaskType(v string) *RouteModelPriceCreate {
 	return _c
 }
 
-// SetQuality sets the "quality" field.
-func (_c *RouteModelPriceCreate) SetQuality(v string) *RouteModelPriceCreate {
-	_c.mutation.SetQuality(v)
+// SetBaseResolution sets the "base_resolution" field.
+func (_c *RouteModelPriceCreate) SetBaseResolution(v string) *RouteModelPriceCreate {
+	_c.mutation.SetBaseResolution(v)
 	return _c
 }
 
@@ -141,12 +141,12 @@ func (_c *RouteModelPriceCreate) check() error {
 			return &ValidationError{Name: "task_type", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.task_type": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.Quality(); !ok {
-		return &ValidationError{Name: "quality", err: errors.New(`ent: missing required field "RouteModelPrice.quality"`)}
+	if _, ok := _c.mutation.BaseResolution(); !ok {
+		return &ValidationError{Name: "base_resolution", err: errors.New(`ent: missing required field "RouteModelPrice.base_resolution"`)}
 	}
-	if v, ok := _c.mutation.Quality(); ok {
-		if err := routemodelprice.QualityValidator(v); err != nil {
-			return &ValidationError{Name: "quality", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.quality": %w`, err)}
+	if v, ok := _c.mutation.BaseResolution(); ok {
+		if err := routemodelprice.BaseResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "base_resolution", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.base_resolution": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.BasePoints(); !ok {
@@ -192,9 +192,9 @@ func (_c *RouteModelPriceCreate) createSpec() (*RouteModelPrice, *sqlgraph.Creat
 		_spec.SetField(routemodelprice.FieldTaskType, field.TypeString, value)
 		_node.TaskType = value
 	}
-	if value, ok := _c.mutation.Quality(); ok {
-		_spec.SetField(routemodelprice.FieldQuality, field.TypeString, value)
-		_node.Quality = value
+	if value, ok := _c.mutation.BaseResolution(); ok {
+		_spec.SetField(routemodelprice.FieldBaseResolution, field.TypeString, value)
+		_node.BaseResolution = value
 	}
 	if value, ok := _c.mutation.BasePoints(); ok {
 		_spec.SetField(routemodelprice.FieldBasePoints, field.TypeString, value)

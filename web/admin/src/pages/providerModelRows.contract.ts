@@ -46,7 +46,7 @@ assertEqual(modelEnabledTone(false), 'warning', 'disabled model tone')
 assertEqual(
   modelCapabilitySummary({
     task_types: ['text_to_image', 'reference_to_image', 'image_edit'],
-    qualities: ['auto', '1K', '2K'],
+    base_resolution: ['auto', '1K', '2K'],
     cost_per_image: '0.12000',
     currency: 'USD',
   }),
@@ -57,11 +57,11 @@ assertEqual(
 assertEqual(
   modelCapabilitySummary({
     task_types: [],
-    qualities: [],
+    base_resolution: [],
     cost_per_image: '0.00000',
     currency: 'USD',
   }),
-  '未配置任务类型 · 未配置质量 · 0.00000 USD',
+  '未配置任务类型 · 未配置基础分辨率 · 0.00000 USD',
   'empty capability summary',
 )
 

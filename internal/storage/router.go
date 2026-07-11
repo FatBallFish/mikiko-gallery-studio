@@ -18,6 +18,11 @@ var (
 	ErrStorageUnreadable = errors.New("storage config is not readable")
 )
 
+const (
+	storageProbeTimeout        = 10 * time.Second
+	storageProbeCleanupTimeout = 5 * time.Second
+)
+
 type BackendRef struct {
 	ConfigID string
 	Driver   string
@@ -124,26 +129,43 @@ func (r *Registry) Probe(ctx context.Context, resolved domainstorageconfig.Resol
 	if err != nil {
 		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), Message: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, storageProbeTimeout)
 	defer cancel()
 	key := ".pic-gallery-probe/" + start.UTC().Format("20060102150405.000000000") + ".txt"
+	return r.probeBackend(ctx, backend, key, start)
+}
+
+func (r *Registry) probeBackend(ctx context.Context, backend Backend, key string, start time.Time) domainstorageconfig.ProbeResult {
 	content := []byte("pic-gallery-storage-probe")
 	if err := backend.Put(ctx, key, "text/plain", content); err != nil {
 		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: err.Error()}
 	}
+	cleanup := func() string {
+		if err := cleanupProbeObject(backend, key); err != nil {
+			return "; cleanup failed: " + err.Error()
+		}
+		return ""
+	}
 	got, err := backend.Get(ctx, key)
 	if err != nil {
-		_ = backend.Delete(context.Background(), key)
-		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: err.Error()}
+		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: err.Error() + cleanup()}
 	}
 	if !bytes.Equal(got, content) {
-		_ = backend.Delete(context.Background(), key)
-		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: "probe object content mismatch"}
+		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: "probe object content mismatch" + cleanup()}
 	}
-	if err := backend.Delete(ctx, key); err != nil && !errors.Is(err, ErrNotFound) {
+	if err := cleanupProbeObject(backend, key); err != nil {
 		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: err.Error()}
 	}
 	return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusSuccess, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: "put/get/delete probe object succeeded"}
+}
+
+func cleanupProbeObject(backend Backend, key string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), storageProbeCleanupTimeout)
+	defer cancel()
+	if err := backend.Delete(cleanupCtx, key); err != nil && !errors.Is(err, ErrNotFound) {
+		return fmt.Errorf("delete probe object %q: %w", key, err)
+	}
+	return nil
 }
 
 func (r *Registry) backendForResolved(resolved domainstorageconfig.ResolvedConfig) (BackendRef, error) {

@@ -25,8 +25,8 @@ export type AppContextValue = {
   themePreference: UserThemePreference
   setThemePreference: (patch: Partial<UserThemePreference>) => Promise<void>
   refreshAccount: () => Promise<void>
-  navigate: (route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null }) => void
-  login: (session: SessionState, returnTo?: RouteId, options?: { imageId?: string | null }) => Promise<void>
+  navigate: (route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null; taskId?: string | null }) => void
+  login: (session: SessionState, returnTo?: RouteId, options?: { imageId?: string | null; taskId?: string | null }) => Promise<void>
   logout: () => Promise<void>
   notify: (tone: ToastTone, message: string) => void
 }

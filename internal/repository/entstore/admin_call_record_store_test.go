@@ -16,6 +16,7 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -43,26 +44,27 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	firstFinished := firstStarted.Add(2 * time.Second)
 	seedTasks := []domainimagetask.Task{
 		{
-			UserID:                42,
-			APIKeyID:              99,
-			SourceChannel:         "openapi",
-			ID:                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-			Status:                domainimagetask.StatusFailed,
-			Provider:              "openrouter",
-			AccountModelID:        1201,
-			ModelAccountID:        2201,
-			UpstreamModelCode:     "google/gemini-2.5-flash-image",
-			AbstractModel:         "plus",
-			TaskType:              string(provider.TaskTypeTextToImage),
-			Prompt:                "failed",
-			RequestedQuality:      "auto",
-			ResolvedQualityBucket: "2k",
-			OutputImageCount:      3,
-			ReferenceImageCount:   1,
-			EstimatedPoints:       "12.00000",
-			ActualPoints:          "4.00000",
-			ErrorCode:             "provider_error",
-			ErrorMessage:          "upstream failed",
+			UserID:            42,
+			APIKeyID:          99,
+			SourceChannel:     "openapi",
+			ID:                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			Status:            domainimagetask.StatusFailed,
+			Provider:          "openrouter",
+			AccountModelID:    1201,
+			ModelAccountID:    2201,
+			UpstreamModelCode: "google/gemini-2.5-flash-image",
+			AbstractModel:     "plus",
+			TaskType:          string(provider.TaskTypeTextToImage),
+			Prompt:            "failed",
+
+			BaseResolution:      "2k",
+			Quality:             "auto",
+			OutputImageCount:    3,
+			ReferenceImageCount: 1,
+			EstimatedPoints:     "12.00000",
+			ActualPoints:        "4.00000",
+			ErrorCode:           "provider_error",
+			ErrorMessage:        "upstream failed",
 			Attempts: []domainimagetask.Attempt{
 				{
 					Provider:       "openai",
@@ -91,40 +93,40 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 			},
 		},
 		{
-			UserID:                42,
-			APIKeyID:              100,
-			SourceChannel:         "web",
-			ID:                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-			Status:                domainimagetask.StatusSucceeded,
-			Provider:              "openai",
-			AbstractModel:         "basic",
-			TaskType:              string(provider.TaskTypeTextToImage),
-			Prompt:                "succeeded",
-			RequestedQuality:      "auto",
-			ResolvedQualityBucket: "1k",
-			OutputImageCount:      1,
-			ReferenceImageCount:   0,
-			EstimatedPoints:       "2.00000",
-			ActualPoints:          "2.00000",
+			UserID:        42,
+			APIKeyID:      100,
+			SourceChannel: "web",
+			ID:            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Status:        domainimagetask.StatusSucceeded,
+			Provider:      "openai",
+			AbstractModel: "basic",
+			TaskType:      string(provider.TaskTypeTextToImage),
+			Prompt:        "succeeded",
+
+			BaseResolution:      "1k",
+			OutputImageCount:    1,
+			ReferenceImageCount: 0,
+			EstimatedPoints:     "2.00000",
+			ActualPoints:        "2.00000",
 		},
 		{
-			UserID:                42,
-			APIKeyID:              101,
-			SourceChannel:         "openapi",
-			ID:                    "dddddddd-dddd-dddd-dddd-dddddddddddd",
-			Status:                domainimagetask.StatusFailed,
-			Provider:              "openrouter",
-			AbstractModel:         "plus",
-			TaskType:              string(provider.TaskTypeTextToImage),
-			Prompt:                "failed with another code",
-			RequestedQuality:      "auto",
-			ResolvedQualityBucket: "2k",
-			OutputImageCount:      3,
-			ReferenceImageCount:   1,
-			EstimatedPoints:       "12.00000",
-			ActualPoints:          "0.00000",
-			ErrorCode:             "another_error",
-			ErrorMessage:          "another failure",
+			UserID:        42,
+			APIKeyID:      101,
+			SourceChannel: "openapi",
+			ID:            "dddddddd-dddd-dddd-dddd-dddddddddddd",
+			Status:        domainimagetask.StatusFailed,
+			Provider:      "openrouter",
+			AbstractModel: "plus",
+			TaskType:      string(provider.TaskTypeTextToImage),
+			Prompt:        "failed with another code",
+
+			BaseResolution:      "2k",
+			OutputImageCount:    3,
+			ReferenceImageCount: 1,
+			EstimatedPoints:     "12.00000",
+			ActualPoints:        "0.00000",
+			ErrorCode:           "another_error",
+			ErrorMessage:        "another failure",
 		},
 	}
 	for _, task := range seedTasks {
@@ -169,7 +171,7 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	if record.SourceChannel != "openapi" || record.TaskType != string(provider.TaskTypeTextToImage) || record.Status != domainimagetask.StatusFailed {
 		t.Fatalf("unexpected classification fields %#v", record)
 	}
-	if record.Provider != "openrouter" || record.AbstractModel != "plus" || record.Quality != "2k" {
+	if record.Provider != "openrouter" || record.AbstractModel != "plus" || record.BaseResolution != "2k" || record.Quality != "auto" {
 		t.Fatalf("unexpected model fields %#v", record)
 	}
 	if record.AccountModelID == nil || *record.AccountModelID != 1201 || record.ModelAccountID == nil || *record.ModelAccountID != 2201 || record.UpstreamModelCode != "google/gemini-2.5-flash-image" {
@@ -242,13 +244,13 @@ func TestAdminCallRecordStoreListsCreateTaskRoutePreflightFailures(t *testing.T)
 			routeCode: "plus",
 			snapshot: modelhub.ModelRoutingSnapshot{
 				RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
-				Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: string(provider.TaskTypeTextToImage), Quality: "2k", BasePoints: "4.00000", Enabled: true}},
+				Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: string(provider.TaskTypeTextToImage), BaseResolution: "2k", BasePoints: "4.00000", Enabled: true}},
 				ProviderModels: []modelhub.ProviderCandidate{
-					{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{string(provider.TaskTypeTextToImage)}, SupportedQualities: []string{"1k"}},
+					{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{string(provider.TaskTypeTextToImage)}, SupportedBaseResolution: []string{"1k"}},
 				},
 				Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
 			},
-			expectedCode:  "MODEL_ROUTE_NO_CANDIDATE",
+			expectedCode:  errs.CodeImageCapabilityMismatch,
 			expectedModel: "plus",
 		},
 		{
@@ -258,7 +260,7 @@ func TestAdminCallRecordStoreListsCreateTaskRoutePreflightFailures(t *testing.T)
 			snapshot: modelhub.ModelRoutingSnapshot{
 				RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
 				ProviderModels: []modelhub.ProviderCandidate{
-					{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{string(provider.TaskTypeTextToImage)}, SupportedQualities: []string{"2k"}},
+					{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{string(provider.TaskTypeTextToImage)}, SupportedBaseResolution: []string{"2k"}},
 				},
 				Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
 			},
@@ -291,7 +293,7 @@ func TestAdminCallRecordStoreListsCreateTaskRoutePreflightFailures(t *testing.T)
 				TaskType:         string(provider.TaskTypeTextToImage),
 				Prompt:           "preflight failure should be visible to ops",
 				RequestedSize:    "auto",
-				RequestedQuality: "auto",
+				BaseResolution:   "auto",
 				OutputImageCount: 1,
 			})
 			if err == nil {
@@ -327,7 +329,7 @@ func TestAdminCallRecordStoreListsCreateTaskRoutePreflightFailures(t *testing.T)
 
 func routePreflightTaskConfig() config.Config {
 	cfg := config.Config{}
-	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"plus": "2k"}
+	cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"plus": "2k"}
 	cfg.GenerationLimits.MaxImageCount = 5
 	cfg.GenerationLimits.ReferenceImageMaxCount = 4
 	return cfg

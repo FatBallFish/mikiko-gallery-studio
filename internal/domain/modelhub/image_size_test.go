@@ -4,23 +4,23 @@ import "testing"
 
 func TestCalculateImageSizeUsesPresetDimensions(t *testing.T) {
 	cases := []struct {
-		quality string
-		ratio   string
-		want    string
+		baseResolution string
+		ratio          string
+		want           string
 	}{
-		{quality: "1K", ratio: "1:1", want: "1024x1024"},
-		{quality: "2k", ratio: "16:9", want: "2560x1440"},
-		{quality: "4K", ratio: "1:1", want: "2880x2880"},
-		{quality: "4K", ratio: "21:9", want: "3840x1600"},
+		{baseResolution: "1K", ratio: "1:1", want: "1024x1024"},
+		{baseResolution: "2k", ratio: "16:9", want: "2560x1440"},
+		{baseResolution: "4K", ratio: "1:1", want: "2880x2880"},
+		{baseResolution: "4K", ratio: "21:9", want: "3840x1600"},
 	}
 
 	for _, tc := range cases {
-		got, err := CalculateImageSize(tc.quality, tc.ratio)
+		got, err := CalculateImageSize(tc.baseResolution, tc.ratio)
 		if err != nil {
-			t.Fatalf("CalculateImageSize(%q, %q): %v", tc.quality, tc.ratio, err)
+			t.Fatalf("CalculateImageSize(%q, %q): %v", tc.baseResolution, tc.ratio, err)
 		}
 		if got != tc.want {
-			t.Fatalf("CalculateImageSize(%q, %q) = %q, want %q", tc.quality, tc.ratio, got, tc.want)
+			t.Fatalf("CalculateImageSize(%q, %q) = %q, want %q", tc.baseResolution, tc.ratio, got, tc.want)
 		}
 	}
 }

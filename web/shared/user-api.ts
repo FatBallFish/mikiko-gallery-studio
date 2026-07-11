@@ -24,7 +24,6 @@ import type {
 } from './api-types'
 import { API_PATHS } from './api-types'
 import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
-import { calculateImageSizeForQuality } from './image-size'
 
 function initials(input: string) {
   return input.trim().slice(0, 2).toUpperCase() || 'PG'
@@ -43,7 +42,7 @@ export function toUserProfile(raw: any): UserProfile {
     signature: raw.bio ?? raw.signature ?? '',
     preferences: {
       model_group: raw.preferences?.model_group ?? 'plus-image',
-      quality: raw.preferences?.quality ?? 'auto',
+      base_resolution: raw.preferences?.base_resolution ?? 'auto',
       aspect_ratio: raw.preferences?.aspect_ratio ?? '16:9',
       image_count: raw.preferences?.image_count ?? 1,
       theme_mode: raw.preferences?.theme_mode,
@@ -101,6 +100,8 @@ export function toImageResult(raw: any): ImageResult {
     url: raw.url ?? raw.download_url ?? '',
     width: Number(raw.width ?? 0),
     height: Number(raw.height ?? 0),
+    base_resolution: raw.base_resolution ?? 'auto',
+    quality: raw.quality ?? 'auto',
     publish_status: raw.publish_status ?? raw.visibility_status ?? 'private',
     like_count: Number(raw.like_count ?? 0),
     favorite_count: Number(raw.favorite_count ?? 0),
@@ -112,7 +113,8 @@ export function toImageResult(raw: any): ImageResult {
 export function toTask(raw: any): ImageTask {
   const results = (raw.results ?? raw.images ?? raw.image_results ?? []).map(toImageResult)
   const taskType = normalizeTaskType(raw.task_type ?? 'text_to_image')
-  const quality = raw.quality ?? raw.requested_quality ?? raw.resolved_quality_bucket ?? 'auto'
+  const baseResolution = raw.base_resolution ?? 'auto'
+  const quality = raw.quality ?? 'auto'
   return {
     ...raw,
     id: String(raw.id ?? ''),
@@ -125,11 +127,12 @@ export function toTask(raw: any): ImageTask {
     route_model_code: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
     route_model_name: raw.route_model_name,
     model_group: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
+    base_resolution: baseResolution,
     quality,
     aspect_ratio: raw.aspect_ratio ?? raw.requested_size ?? '1:1',
     image_count: Number(raw.image_count ?? raw.requested_output_image_count ?? results.length ?? 1),
     estimate_points: raw.estimate_points ?? raw.estimated_points ?? raw.actual_points ?? '0.00000',
-    progress: Number(raw.progress ?? (raw.status === 'succeeded' || raw.status === 'partial_failed' ? 100 : 0)),
+    progress: raw.progress == null ? undefined : Number(raw.progress),
     provider: raw.provider ?? raw.provider_code ?? '',
     route: raw.route ?? raw.route_policy ?? '',
     created_at: raw.created_at ?? '',
@@ -144,23 +147,37 @@ export function toTask(raw: any): ImageTask {
 }
 
 function toEstimateQuery(req: EstimateRequest) {
+  const sizeMode = req.size_mode === 'pixel' ? 'pixel' : 'ratio'
   return {
     task_type: toBackendTaskType(req.task_type),
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
-    requested_size: calculateImageSizeForQuality(req.quality, req.aspect_ratio),
+    size_mode: sizeMode,
+    aspect_ratio: sizeMode === 'ratio' ? req.aspect_ratio : undefined,
+    base_resolution: sizeMode === 'ratio' ? req.base_resolution : 'auto',
+    quality: req.quality ?? 'auto',
+    output_format: req.output_format ?? 'png',
+    output_compression: req.output_compression ?? 100,
+    moderation: req.moderation ?? 'auto',
+    requested_size: sizeMode === 'pixel' ? req.pixel_size : 'auto',
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,
   }
 }
 
 function toBackendTask(req: CreateTaskRequest) {
+  const sizeMode = req.size_mode === 'pixel' ? 'pixel' : 'ratio'
   return {
     task_type: toBackendTaskType(req.task_type),
     prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
-    requested_size: calculateImageSizeForQuality(req.quality, req.aspect_ratio),
+    size_mode: sizeMode,
+    aspect_ratio: sizeMode === 'ratio' ? req.aspect_ratio : undefined,
+    base_resolution: sizeMode === 'ratio' ? req.base_resolution : 'auto',
+    quality: req.quality ?? 'auto',
+    output_format: req.output_format ?? 'png',
+    output_compression: req.output_compression ?? 100,
+    moderation: req.moderation ?? 'auto',
+    requested_size: sizeMode === 'pixel' ? req.pixel_size : 'auto',
     requested_output_image_count: req.image_count,
     reference_asset_ids: req.reference_asset_ids ?? [],
     response_mode: req.response_mode ?? 'async',
@@ -175,8 +192,8 @@ function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
     points,
     charged_points: raw.charged_points ?? raw.estimated_points ?? raw.points,
     display_points: raw.display_points ?? points,
-    formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${req?.quality ?? raw.resolved_quality_bucket ?? ''}`,
-    resolved_quality: raw.resolved_quality_bucket ?? raw.resolved_quality ?? req?.quality ?? 'auto',
+    formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${req?.base_resolution ?? raw.base_resolution ?? ''}`,
+    base_resolution: raw.base_resolution ?? req?.base_resolution ?? 'auto',
     sufficient: Boolean(raw.sufficient),
     insufficient_points: raw.insufficient_points ?? '0.00000',
     balance: raw.balance ? toBalance(raw.balance) : undefined,
@@ -198,6 +215,8 @@ function toGalleryImage(raw: any): GalleryImage {
     width: Number(raw.width ?? 0),
     height: Number(raw.height ?? 0),
     image_group: raw.image_group ?? raw.group ?? '',
+    base_resolution: raw.base_resolution ?? 'auto',
+    quality: raw.quality ?? 'auto',
     visibility_status: raw.visibility_status ?? raw.publish_status ?? 'private',
     like_count: Number(raw.like_count ?? 0),
     favorite_count: Number(raw.favorite_count ?? 0),
@@ -205,6 +224,64 @@ function toGalleryImage(raw: any): GalleryImage {
     favorited_by_viewer: Boolean(raw.favorited_by_viewer),
     created_at: raw.created_at ?? '',
   }
+}
+
+export function normalizeCapabilities(raw: any): Capability {
+  const models = raw.model_groups ?? raw.abstract_models ?? raw.models ?? []
+  const normalizedModels = models.flatMap((item: any) => {
+    const taskTypes = pick<string[]>(item, 'task_types', 'TaskTypes') ?? ['text_to_image']
+    const normalizedTaskTypes = taskTypes.map(normalizeTaskType)
+    const base_resolution = pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution')
+      ?? pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution')
+      ?? ['auto']
+    const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => ({
+      task_type: normalizeTaskType(pick<string>(price, 'task_type', 'TaskType') ?? 'text_to_image'),
+      base_resolution: pick<string>(price, 'base_resolution', 'BaseResolution') ?? 'auto',
+      base_points: String(pick(price, 'base_points', 'BasePoints') ?? '0.00000'),
+      charged_points: String(pick(price, 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00000'),
+      display_points: String(pick(price, 'display_points', 'DisplayPoints', 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00'),
+      reference_multiplier: pick(price, 'reference_multiplier', 'ReferenceMultiplier'),
+    }))
+    const code = pick(item, 'code', 'Code', 'route_model_code', 'RouteModelCode', 'group_code', 'GroupCode', 'model_code', 'ModelCode', 'id', 'ID')
+    const normalizedCode = String(code ?? '').trim()
+    if (!normalizedCode || normalizedCode === 'undefined') return []
+    const maxReference = Number(pick(item, 'max_reference_image_count', 'MaxReferenceImageCount', 'max_reference_count', 'MaxReferenceCount') ?? 0)
+    const sizeModes = pick<string[]>(item, 'size_modes', 'SizeModes') ?? ['ratio']
+    const pixelSizes = pick<string[]>(item, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? []
+    return [{
+      id: normalizedCode,
+      code: normalizedCode,
+      name: pick(item, 'name', 'Name', 'group_name', 'GroupName', 'model_code', 'ModelCode') ?? normalizedCode,
+      description: pick<string>(item, 'description', 'Description') ?? '',
+      task_types: normalizedTaskTypes,
+      base_resolution,
+      quality: pick<string[]>(item, 'quality', 'Quality') ?? ['auto'],
+      size_modes: sizeModes,
+      aspect_ratios: pick(item, 'aspect_ratios', 'AspectRatios') ?? pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios'),
+      pixel_sizes: pixelSizes,
+      output_format: pick<string[]>(item, 'output_format', 'OutputFormat') ?? ['png'],
+      supports_output_compression: Boolean(pick(item, 'supports_output_compression', 'SupportsOutputCompression') ?? false),
+      moderation: pick<string[]>(item, 'moderation', 'Moderation') ?? ['auto'],
+      max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
+      max_reference_image_count: maxReference,
+      effective_multiplier: pick(item, 'effective_multiplier', 'EffectiveMultiplier'),
+      prices,
+      supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.some((type) => type === 'reference_to_image' || type === 'image_edit'))),
+      display_points: pick(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
+    }]
+  })
+  return {
+    raw,
+    unavailable_reason: raw.unavailable_reason ?? null,
+    model_groups: normalizedModels,
+    base_resolution: pick(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? ['auto', '1K', '2K', '4K'],
+    aspect_ratios: pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? ['1:1', '16:9', '9:16', '4:3'],
+    pixel_sizes: pick(raw, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? normalizedModels[0]?.pixel_sizes ?? [],
+    max_image_count: pick(raw, 'max_image_count', 'MaxImageCount') ?? 4,
+    reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,
+    reference_image_max_bytes: Number(pick(raw, 'reference_image_max_bytes', 'ReferenceImageMaxBytes') ?? 0) || undefined,
+    task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? ['text_to_image', 'reference_to_image', 'image_edit']).map(normalizeTaskType),
+  } satisfies Capability
 }
 
 export const userApi = {
@@ -268,52 +345,7 @@ export const userApi = {
   redeemCode: (code: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request(API_PATHS.agent.redeemCode, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { code } }),
   getCapabilities: async (): Promise<Capability> => {
     const raw: any = await sharedApiClient.request(API_PATHS.agent.capabilities)
-    const models = raw.model_groups ?? raw.abstract_models ?? raw.models ?? []
-    const normalizedModels = models.flatMap((item: any) => {
-      const taskTypes = pick<string[]>(item, 'task_types', 'TaskTypes') ?? ['text_to_image']
-      const normalizedTaskTypes = taskTypes.map(normalizeTaskType)
-      const qualities = pick<string[]>(item, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
-        ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
-        ?? ['auto']
-      const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => ({
-        task_type: normalizeTaskType(pick<string>(price, 'task_type', 'TaskType') ?? 'text_to_image'),
-        quality: pick<string>(price, 'quality', 'Quality') ?? 'auto',
-        base_points: String(pick(price, 'base_points', 'BasePoints') ?? '0.00000'),
-        charged_points: String(pick(price, 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00000'),
-        display_points: String(pick(price, 'display_points', 'DisplayPoints', 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00'),
-        reference_multiplier: pick(price, 'reference_multiplier', 'ReferenceMultiplier'),
-      }))
-      const code = pick(item, 'code', 'Code', 'route_model_code', 'RouteModelCode', 'group_code', 'GroupCode', 'model_code', 'ModelCode', 'id', 'ID')
-      const normalizedCode = String(code ?? '').trim()
-      if (!normalizedCode || normalizedCode === 'undefined') return []
-      const maxReference = Number(pick(item, 'max_reference_image_count', 'MaxReferenceImageCount', 'max_reference_count', 'MaxReferenceCount') ?? 0)
-      return [{
-        id: normalizedCode,
-        code: normalizedCode,
-        name: pick(item, 'name', 'Name', 'group_name', 'GroupName', 'model_code', 'ModelCode') ?? normalizedCode,
-        description: pick<string>(item, 'description', 'Description') ?? '',
-        task_types: normalizedTaskTypes,
-        qualities,
-        aspect_ratios: pick(item, 'aspect_ratios', 'AspectRatios') ?? pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios'),
-        max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
-        max_reference_image_count: maxReference,
-        effective_multiplier: pick(item, 'effective_multiplier', 'EffectiveMultiplier'),
-        prices,
-        supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.some((type) => type === 'reference_to_image' || type === 'image_edit'))),
-        display_points: pick(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
-      }]
-    })
-    return {
-      raw,
-      unavailable_reason: raw.unavailable_reason ?? null,
-      model_groups: normalizedModels,
-      qualities: pick(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K'],
-      aspect_ratios: pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? ['1:1', '16:9', '9:16', '4:3'],
-      max_image_count: pick(raw, 'max_image_count', 'MaxImageCount') ?? 4,
-      reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,
-      reference_image_max_bytes: Number(pick(raw, 'reference_image_max_bytes', 'ReferenceImageMaxBytes') ?? 0) || undefined,
-      task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? ['text_to_image', 'reference_to_image', 'image_edit']).map(normalizeTaskType),
-    } satisfies Capability
+    return normalizeCapabilities(raw)
   },
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: toEstimateQuery(req) }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {

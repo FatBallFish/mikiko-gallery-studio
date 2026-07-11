@@ -148,14 +148,14 @@ func TestAdminReadinessCountsEnabledModelAccountModelsAsRealModels(t *testing.T)
 		t.Fatalf("CreateModelAccount: %v", err)
 	}
 	if _, err := modelAdminSvc.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
-		AccountID:    account.ID,
-		ModelCode:    "gpt-image-1",
-		DisplayName:  "GPT Image 1",
-		TaskTypes:    []string{"text_to_image"},
-		Qualities:    []string{"auto", "1K"},
-		CostPerImage: "0.04000",
-		Currency:     "USD",
-		Enabled:      true,
+		AccountID:      account.ID,
+		ModelCode:      "gpt-image-1",
+		DisplayName:    "GPT Image 1",
+		TaskTypes:      []string{"text_to_image"},
+		BaseResolution: []string{"auto", "1K"},
+		CostPerImage:   "0.04000",
+		Currency:       "USD",
+		Enabled:        true,
 	}); err != nil {
 		t.Fatalf("CreateModelAccountModel: %v", err)
 	}

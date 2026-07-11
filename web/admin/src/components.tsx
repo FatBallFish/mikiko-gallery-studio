@@ -560,18 +560,20 @@ export function PageSection({
   )
 }
 
-export function Button({
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'text'
+  size?: 'sm' | 'md'
+  icon?: React.ReactNode
+}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   variant = 'secondary',
   size = 'md',
   icon,
   children,
   className,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'text'
-  size?: 'sm' | 'md'
-  icon?: React.ReactNode
-}) {
+}, ref) {
   const variantClass = {
     primary: adminButton.primary,
     secondary: adminButton.secondary,
@@ -580,12 +582,12 @@ export function Button({
     text: adminButton.text,
   }[variant]
   return (
-    <button className={cn(adminButton.base, variantClass, size === 'sm' && adminButton.small, className)} type="button" {...props}>
+    <button ref={ref} className={cn(adminButton.base, variantClass, size === 'sm' && adminButton.small, className)} type="button" {...props}>
       {icon}
       {children}
     </button>
   )
-}
+})
 
 export function IconButton({
   label,
@@ -648,6 +650,61 @@ export type ActionMenuItem = {
 
 export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
   const [open, setOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLSpanElement | null>(null)
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null)
+  const [theme, setTheme] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!open) return
+    const updatePosition = () => {
+      const button = buttonRef.current
+      if (!button) return
+      const rect = button.getBoundingClientRect()
+      const menuWidth = Math.max(menuRef.current?.offsetWidth ?? 144, 144)
+      const viewportPadding = 12
+      const left = Math.min(
+        Math.max(viewportPadding, rect.right - menuWidth),
+        window.innerWidth - menuWidth - viewportPadding,
+      )
+      const preferredTop = rect.bottom + 6
+      const menuHeight = menuRef.current?.offsetHeight ?? 0
+      const top = preferredTop + menuHeight > window.innerHeight - viewportPadding
+        ? Math.max(viewportPadding, rect.top - menuHeight - 6)
+        : preferredTop
+      setMenuStyle({ left, top })
+      setTheme(button.closest('[data-theme]')?.getAttribute('data-theme') ?? undefined)
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        buttonRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
   const runAction = async (action: ActionMenuItem) => {
     if (action.confirm) {
       const ok = action.confirm.expectedValue
@@ -661,9 +718,15 @@ export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
 
   return (
     <span className="relative inline-flex">
-      <Button variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>更多</Button>
-      {open ? (
-        <span className="absolute right-0 top-[calc(100%+6px)] z-30 grid min-w-36 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-1 shadow-[var(--pg-shadow-sm)]" role="menu">
+      <Button ref={buttonRef} variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>更多</Button>
+      {open ? createPortal(
+        <span
+          ref={menuRef}
+          className="fixed z-[120] grid min-w-36 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-1 shadow-[var(--pg-shadow-sm)]"
+          data-theme={theme}
+          role="menu"
+          style={menuStyle ?? undefined}
+        >
           {actions.map((action) => (
             <button
               key={action.id}
@@ -675,7 +738,8 @@ export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
               {action.label}
             </button>
           ))}
-        </span>
+        </span>,
+        document.body,
       ) : null}
     </span>
   )

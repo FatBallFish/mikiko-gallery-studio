@@ -426,14 +426,14 @@ export type LedgerEntry = {
 export type CapabilityItem = {
   route_model_code: string
   task_types: ImageTaskType[]
-  qualities: string[]
+  base_resolution: string[]
   aspect_ratios: string[]
   max_output_image_count: number
   max_reference_image_count: number
 }
 export type RouteModelPriceQuote = {
   task_type: ImageTaskType
-  quality: string
+  base_resolution: string
   base_points: string
   charged_points: string
   display_points: string
@@ -445,7 +445,7 @@ export type CapabilityModelGroup = {
   name: string
   description?: string
   task_types: ImageTaskType[]
-  qualities: string[]
+  base_resolution: string[]
   aspect_ratios?: string[]
   max_output_image_count?: number
   max_reference_image_count?: number
@@ -459,17 +459,17 @@ export type Capability = {
   raw?: unknown
   unavailable_reason?: { code: string; message: string } | null
   model_groups: CapabilityModelGroup[]
-  qualities: string[]
+  base_resolution: string[]
   aspect_ratios: string[]
   max_image_count: number
   reference_image_max_mb?: number
   reference_image_max_bytes?: number
   task_types: ImageTaskType[]
 }
-export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; quality: string; aspect_ratio: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
-export type BackendEstimateRequest = { task_type: ImageTaskType; route_model_code: string; requested_quality: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
+export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; base_resolution: string; quality?: string; aspect_ratio: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
+export type BackendEstimateRequest = { task_type: ImageTaskType; route_model_code: string; base_resolution: string; quality?: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
 export type EstimateResult = {
-  resolved_quality_bucket?: string
+  base_resolution?: string
   estimated_points?: string
   charged_points?: string
   display_points?: string
@@ -480,7 +480,6 @@ export type EstimateResult = {
   insufficient_points?: string
   points: string
   formula: string
-  resolved_quality: string
   sufficient: boolean
 }
 
@@ -540,8 +539,7 @@ export type ImageTask = {
   route_model_code?: string
   route_model_name?: string
   model_group: string
-  requested_quality?: string
-  resolved_quality_bucket?: string
+  base_resolution?: string
   quality: string
   requested_size?: string
   aspect_ratio: string
@@ -672,7 +670,7 @@ export type ProviderModel = {
   compat_mode: string
   supports_image_input: boolean
   supports_mask: boolean
-  supported_qualities: string[]
+  supported_base_resolution: string[]
   supported_ratios: string[]
   max_image_count: number
   max_reference_image_count: number
@@ -740,7 +738,7 @@ export type ModelAccountModel = {
   model_code: string
   display_name: string
   task_types: ImageTaskType[]
-  qualities: string[]
+  base_resolution: string[]
   cost_per_image: string
   currency: string
   enabled: boolean
@@ -748,7 +746,7 @@ export type ModelAccountModel = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; qualities: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; cost_per_image: string; currency: string; enabled: boolean }
 export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string }
 export type ModelAccountTestImageResult = {
   status: string

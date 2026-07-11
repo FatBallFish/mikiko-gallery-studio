@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1.7
+ARG NODE_VERSION=22-alpine
+
+FROM node:${NODE_VERSION} AS build
+WORKDIR /src
+COPY web/docs/package.json web/docs/package-lock.json ./web/docs/
+WORKDIR /src/web/docs
+RUN npm ci
+WORKDIR /src
+COPY api/openapi ./api/openapi
+COPY web/docs ./web/docs
+WORKDIR /src/web/docs
+ARG VITE_BASE_PATH=/developer-docs/
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY deployments/devops/nginx-docs-web.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /src/web/docs/dist /usr/share/nginx/html
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1

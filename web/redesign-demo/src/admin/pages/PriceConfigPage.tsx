@@ -64,7 +64,7 @@ export const PriceConfigPage: React.FC = () => {
             <AggregatedPriceRow 
               route="Flux Pro" 
               type="文生图 (T2I)" 
-              qualities={[
+              base_resolution={[
                 { quality: "Auto", base: "1.25000", multiplier: "1.0", status: "enabled" },
                 { quality: "1K", base: "2.00000", multiplier: "1.0", status: "enabled" }
               ]}
@@ -73,7 +73,7 @@ export const PriceConfigPage: React.FC = () => {
             <AggregatedPriceRow 
               route="Flux Pro" 
               type="参考生图 (R2I)" 
-              qualities={[
+              base_resolution={[
                 { quality: "Auto", base: "1.25000", multiplier: "1.5", status: "enabled" }
               ]}
               onEdit={handleEdit}
@@ -81,7 +81,7 @@ export const PriceConfigPage: React.FC = () => {
             <AggregatedPriceRow 
               route="Midjourney v6" 
               type="文生图 (T2I)" 
-              qualities={[
+              base_resolution={[
                 { quality: "Standard", base: "1.50000", multiplier: "1.0", status: "enabled" },
                 { quality: "High", base: "2.50000", multiplier: "1.0", status: "enabled" },
                 { quality: "Ultra", base: "4.00000", multiplier: "1.0", status: "disabled" }
@@ -91,7 +91,7 @@ export const PriceConfigPage: React.FC = () => {
             <AggregatedPriceRow 
               route="Midjourney v6" 
               type="图片编辑 (Edit)" 
-              qualities={[
+              base_resolution={[
                 { quality: "Auto", base: "1.00000", multiplier: "1.0", status: "enabled" }
               ]}
               onEdit={handleEdit}
@@ -147,7 +147,7 @@ export const PriceConfigPage: React.FC = () => {
   )
 }
 
-const AggregatedPriceRow = ({ route, type, qualities, onEdit }: any) => {
+const AggregatedPriceRow = ({ route, type, base_resolution, onEdit }: any) => {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -161,7 +161,7 @@ const AggregatedPriceRow = ({ route, type, qualities, onEdit }: any) => {
           <span className="inline-flex px-2 py-1 rounded bg-white/5 border border-white/5 text-xs text-white/80 font-bold">{type}</span>
         </td>
         <td className={rdAdmin.td}>
-          <span className="text-xs font-bold text-white/60">{qualities.length} 个质量配置</span>
+          <span className="text-xs font-bold text-white/60">{base_resolution.length} 个质量配置</span>
         </td>
         <td className={rdAdmin.td}>
           <button className="text-[var(--accent)] hover:underline text-xs font-bold" onClick={(e) => e.stopPropagation()}>快速添加质量</button>
@@ -182,7 +182,7 @@ const AggregatedPriceRow = ({ route, type, qualities, onEdit }: any) => {
                    </tr>
                  </thead>
                  <tbody>
-                   {qualities.map((q: any, i: number) => (
+                   {base_resolution.map((q: any, i: number) => (
                      <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                        <td className="px-4 py-3 text-xs font-bold text-white/80">{q.quality}</td>
                        <td className="px-4 py-3">

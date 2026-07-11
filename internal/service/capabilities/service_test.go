@@ -1,19 +1,43 @@
 package capabilities
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 )
+
+func TestVisibleRouteModelJSONUsesSnakeCaseCapabilityFields(t *testing.T) {
+	payload, err := json.Marshal(modelhub.VisibleRouteModel{
+		Code:                      "plus",
+		OutputFormat:              []string{"webp"},
+		SupportsOutputCompression: true,
+		Prices:                    []modelhub.VisibleRouteModelPrice{{TaskType: "text_to_image", BaseResolution: "1k"}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	encoded := string(payload)
+	for _, expected := range []string{`"output_format"`, `"supports_output_compression"`, `"task_type"`, `"base_resolution"`} {
+		if !strings.Contains(encoded, expected) {
+			t.Fatalf("expected snake-case field %s in %s", expected, encoded)
+		}
+	}
+	if strings.Contains(encoded, `"SupportsOutputCompression"`) || strings.Contains(encoded, `"OutputFormat"`) {
+		t.Fatalf("capability response must not expose Go field names: %s", encoded)
+	}
+}
 
 func TestCapabilitiesExposeConfiguredModelGroups(t *testing.T) {
 	svc := NewService(config.Config{
 		Billing: config.BillingConfig{
-			QualityPointsByModel: map[string]map[string]string{
+			BaseResolutionPointsByModel: map[string]map[string]string{
 				"basic": {"1k": "2.00000", "2k": "4.00000", "4k": "8.00000"},
 				"plus":  {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 			},
-			AutoQualityDefaultByGroup: map[string]string{"basic": "1k", "plus": "2k"},
+			AutoBaseResolutionDefaultByGroup: map[string]string{"basic": "1k", "plus": "2k"},
 		},
 		GenerationLimits: config.GenerationLimitsConfig{
 			MaxImageCount:          5,
@@ -27,14 +51,14 @@ func TestCapabilitiesExposeConfiguredModelGroups(t *testing.T) {
 			DefaultProvider: "openai",
 			ProviderCapabilities: map[string]config.ProviderCapabilityConfig{
 				"openai": {
-					SupportedModels:        []string{"basic", "plus"},
-					SupportedTaskTypes:     []string{"text_to_image", "image_edit"},
-					SupportedQualities:     []string{"1k", "2k", "4k"},
-					SupportedAspectRatios:  []string{"1:1", "16:9"},
-					MaxImageCount:          5,
-					MaxReferenceImageCount: 4,
-					SupportsImageInput:     true,
-					SupportsMask:           true,
+					SupportedModels:         []string{"basic", "plus"},
+					SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
+					SupportedBaseResolution: []string{"1k", "2k", "4k"},
+					SupportedAspectRatios:   []string{"1:1", "16:9"},
+					MaxImageCount:           5,
+					MaxReferenceImageCount:  4,
+					SupportsImageInput:      true,
+					SupportsMask:            true,
 				},
 			},
 		},

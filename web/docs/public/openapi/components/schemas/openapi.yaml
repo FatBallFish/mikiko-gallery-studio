@@ -1,0 +1,33 @@
+components:
+  schemas:
+    UploadSessionRequest:
+      type: object
+      required: [filename, mime_type, content_base64]
+      properties:
+        filename:
+          type: string
+        mime_type:
+          type: string
+          examples: [image/png, image/jpeg]
+        content_base64:
+          type: string
+          description: Base64-encoded image bytes for the local inline upload mode.
+    UploadSessionResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            asset_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+            upload_mode:
+              type: string
+              enum: [inline_base64]
+            asset:
+              $ref: ./common.yaml#/components/schemas/ReferenceAsset
+            expires_at:
+              type: string
+              format: date-time

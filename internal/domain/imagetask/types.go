@@ -18,6 +18,15 @@ const (
 )
 
 const (
+	ProgressStageQueued     = "queued"
+	ProgressStageProvider   = "provider"
+	ProgressStagePersisting = "persisting"
+	ProgressStageSettling   = "settling"
+	ProgressStageCompleted  = "completed"
+	ProgressStageFailed     = "failed"
+)
+
+const (
 	VisibilityPrivate       = "private"
 	VisibilityPendingReview = "pending_review"
 	VisibilityApproved      = "approved"
@@ -37,8 +46,14 @@ type ExecuteRequest struct {
 	RouteModelCode      string
 	TaskType            string
 	Prompt              string
+	SizeMode            string
 	RequestedSize       string
-	RequestedQuality    string
+	BaseResolution      string
+	Quality             string
+	OutputFormat        string
+	OutputCompression   int
+	Moderation          string
+	AspectRatio         string
 	OutputImageCount    int
 	ResponseFormat      string
 	ReferenceImages     []provider.ImageInput
@@ -57,8 +72,13 @@ type CreateRequest struct {
 	TaskType            string
 	Prompt              string
 	NegativePrompt      string
+	SizeMode            string
 	RequestedSize       string
-	RequestedQuality    string
+	BaseResolution      string
+	Quality             string
+	OutputFormat        string
+	OutputCompression   int
+	Moderation          string
 	AspectRatio         string
 	OutputImageCount    int
 	ReferenceImageCount int
@@ -80,11 +100,19 @@ type RetryRequest struct {
 }
 
 type TestModelAccountRequest struct {
-	AccountID  int64
-	ModelID    int64
-	ModelCode  string
-	Prompt     string
-	SourceMode string
+	AccountID         int64
+	ModelID           int64
+	ModelCode         string
+	Prompt            string
+	SourceMode        string
+	SizeMode          string
+	RequestedSize     string
+	BaseResolution    string
+	Quality           string
+	OutputFormat      string
+	OutputCompression int
+	Moderation        string
+	AspectRatio       string
 }
 
 type TestModelAccountResult struct {
@@ -115,52 +143,56 @@ type Attempt struct {
 }
 
 type Task struct {
-	UserID                int64                         `json:"-"`
-	APIKeyID              int64                         `json:"-"`
-	SourceChannel         string                        `json:"-"`
-	ID                    string                        `json:"id"`
-	Status                string                        `json:"status"`
-	ProgressStage         string                        `json:"progress_stage,omitempty"`
-	ProgressMessage       string                        `json:"progress_message,omitempty"`
-	Provider              string                        `json:"provider,omitempty"`
-	ProviderModelID       int64                         `json:"provider_model_id,omitempty"`
-	ProviderCost          string                        `json:"provider_cost,omitempty"`
-	GrossMargin           string                        `json:"gross_margin,omitempty"`
-	FallbackCount         int                           `json:"fallback_count,omitempty"`
-	RouteSnapshotVersion  string                        `json:"route_snapshot_version,omitempty"`
-	AbstractModel         string                        `json:"abstract_model"`
-	RouteModelCode        string                        `json:"route_model_code,omitempty"`
-	RouteModelID          int64                         `json:"route_model_id,omitempty"`
-	AccountModelID        int64                         `json:"account_model_id,omitempty"`
-	ModelAccountID        int64                         `json:"model_account_id,omitempty"`
-	UpstreamModelCode     string                        `json:"upstream_model_code,omitempty"`
-	EffectiveMultiplier   string                        `json:"effective_multiplier,omitempty"`
-	ChargedPoints         string                        `json:"charged_points,omitempty"`
-	TaskType              string                        `json:"task_type"`
-	Prompt                string                        `json:"prompt,omitempty"`
-	NegativePrompt        string                        `json:"negative_prompt,omitempty"`
-	AspectRatio           string                        `json:"aspect_ratio,omitempty"`
-	RequestedSize         string                        `json:"requested_size,omitempty"`
-	RequestedQuality      string                        `json:"requested_quality"`
-	ResolvedQualityBucket string                        `json:"resolved_quality_bucket"`
-	ResponseMode          string                        `json:"response_mode,omitempty"`
-	SavePolicy            string                        `json:"save_policy,omitempty"`
-	OutputImageCount      int                           `json:"requested_output_image_count"`
-	ReferenceImageCount   int                           `json:"reference_image_count"`
-	ReferenceAssetIDs     []string                      `json:"reference_asset_ids,omitempty"`
-	ReferenceStrength     int                           `json:"reference_strength,omitempty"`
-	Seed                  *int64                        `json:"seed,omitempty"`
-	EstimatedPoints       string                        `json:"estimated_points,omitempty"`
-	ActualPoints          string                        `json:"actual_points,omitempty"`
-	LeaseOwner            string                        `json:"lease_owner,omitempty"`
-	LeaseExpiresAt        *time.Time                    `json:"lease_expires_at,omitempty"`
-	ErrorCode             string                        `json:"error_code,omitempty"`
-	Attempts              []Attempt                     `json:"attempts,omitempty"`
-	ErrorMessage          string                        `json:"error_message,omitempty"`
-	Results               []provider.ImageResult        `json:"results,omitempty"`
-	PricingSnapshot       domainbilling.PricingSnapshot `json:"-"`
-	CreatedAt             time.Time                     `json:"created_at"`
-	UpdatedAt             time.Time                     `json:"updated_at"`
+	UserID               int64                         `json:"-"`
+	APIKeyID             int64                         `json:"-"`
+	SourceChannel        string                        `json:"-"`
+	ID                   string                        `json:"id"`
+	Status               string                        `json:"status"`
+	ProgressStage        string                        `json:"progress_stage,omitempty"`
+	ProgressMessage      string                        `json:"progress_message,omitempty"`
+	Provider             string                        `json:"provider,omitempty"`
+	ProviderModelID      int64                         `json:"provider_model_id,omitempty"`
+	ProviderCost         string                        `json:"provider_cost,omitempty"`
+	GrossMargin          string                        `json:"gross_margin,omitempty"`
+	FallbackCount        int                           `json:"fallback_count,omitempty"`
+	RouteSnapshotVersion string                        `json:"route_snapshot_version,omitempty"`
+	AbstractModel        string                        `json:"abstract_model"`
+	RouteModelCode       string                        `json:"route_model_code,omitempty"`
+	RouteModelID         int64                         `json:"route_model_id,omitempty"`
+	AccountModelID       int64                         `json:"account_model_id,omitempty"`
+	ModelAccountID       int64                         `json:"model_account_id,omitempty"`
+	UpstreamModelCode    string                        `json:"upstream_model_code,omitempty"`
+	EffectiveMultiplier  string                        `json:"effective_multiplier,omitempty"`
+	ChargedPoints        string                        `json:"charged_points,omitempty"`
+	TaskType             string                        `json:"task_type"`
+	Prompt               string                        `json:"prompt,omitempty"`
+	NegativePrompt       string                        `json:"negative_prompt,omitempty"`
+	SizeMode             string                        `json:"size_mode,omitempty"`
+	AspectRatio          string                        `json:"aspect_ratio,omitempty"`
+	RequestedSize        string                        `json:"requested_size,omitempty"`
+	BaseResolution       string                        `json:"base_resolution"`
+	Quality              string                        `json:"quality"`
+	OutputFormat         string                        `json:"output_format,omitempty"`
+	OutputCompression    int                           `json:"output_compression,omitempty"`
+	Moderation           string                        `json:"moderation,omitempty"`
+	ResponseMode         string                        `json:"response_mode,omitempty"`
+	SavePolicy           string                        `json:"save_policy,omitempty"`
+	OutputImageCount     int                           `json:"requested_output_image_count"`
+	ReferenceImageCount  int                           `json:"reference_image_count"`
+	ReferenceAssetIDs    []string                      `json:"reference_asset_ids,omitempty"`
+	ReferenceStrength    int                           `json:"reference_strength,omitempty"`
+	Seed                 *int64                        `json:"seed,omitempty"`
+	EstimatedPoints      string                        `json:"estimated_points,omitempty"`
+	ActualPoints         string                        `json:"actual_points,omitempty"`
+	LeaseOwner           string                        `json:"lease_owner,omitempty"`
+	LeaseExpiresAt       *time.Time                    `json:"lease_expires_at,omitempty"`
+	ErrorCode            string                        `json:"error_code,omitempty"`
+	Attempts             []Attempt                     `json:"attempts,omitempty"`
+	ErrorMessage         string                        `json:"error_message,omitempty"`
+	Results              []provider.ImageResult        `json:"results,omitempty"`
+	PricingSnapshot      domainbilling.PricingSnapshot `json:"-"`
+	CreatedAt            time.Time                     `json:"created_at"`
+	UpdatedAt            time.Time                     `json:"updated_at"`
 }
 
 type ExecuteResult struct {
@@ -178,6 +210,7 @@ type GalleryImage struct {
 	RouteModelCode    string                  `json:"route_model_code,omitempty"`
 	TaskType          string                  `json:"task_type,omitempty"`
 	TaskStatus        string                  `json:"task_status,omitempty"`
+	BaseResolution    string                  `json:"base_resolution,omitempty"`
 	Quality           string                  `json:"quality,omitempty"`
 	AspectRatio       string                  `json:"aspect_ratio,omitempty"`
 	ActualPoints      string                  `json:"actual_points,omitempty"`

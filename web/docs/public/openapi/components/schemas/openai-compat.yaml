@@ -1,0 +1,92 @@
+components:
+  schemas:
+    OpenAIImageGenerationRequest:
+      type: object
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+          example: gpt-image-2
+        prompt:
+          type: string
+        size:
+          type: string
+          example: auto
+        n:
+          type: integer
+          minimum: 1
+          maximum: 5
+        quality:
+          type: string
+          example: auto
+        response_format:
+          type: string
+          enum: [url, b64_json]
+        user:
+          type: string
+    OpenAIImageEditRequest:
+      type: object
+      required: [model, image, prompt]
+      properties:
+        model:
+          type: string
+        image:
+          oneOf:
+            - type: string
+              format: binary
+            - type: array
+              items:
+                type: string
+                format: binary
+        mask:
+          type: string
+          format: binary
+        prompt:
+          type: string
+        size:
+          type: string
+        n:
+          type: integer
+          minimum: 1
+          maximum: 5
+        quality:
+          type: string
+        response_format:
+          type: string
+          enum: [url, b64_json]
+    OpenAIImageDatum:
+      type: object
+      properties:
+        url:
+          type: string
+        b64_json:
+          type: string
+        revised_prompt:
+          type: string
+    OpenAIImageResponse:
+      type: object
+      properties:
+        created:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenAIImageDatum'
+    OpenAIModel:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        owned_by:
+          type: string
+    OpenAIModelListResponse:
+      type: object
+      properties:
+        object:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenAIModel'

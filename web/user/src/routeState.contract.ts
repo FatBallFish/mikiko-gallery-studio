@@ -20,6 +20,26 @@ if (detailHash !== '/public-gallery?image_id=img_999') {
   throw new Error(`public gallery hash should include image_id, got ${detailHash}`)
 }
 
+const workspaceTask = parseUserHashState('#/genpic?task_id=task_failed_123')
+if (workspaceTask.route !== 'genpic' || workspaceTask.taskId !== 'task_failed_123') {
+  throw new Error(`workspace deep link should preserve task_id, got ${JSON.stringify(workspaceTask)}`)
+}
+
+const workspaceHash = userHashForRoute('genpic', { taskId: ' task_running_456 ' })
+if (workspaceHash !== '/genpic?task_id=task_running_456') {
+  throw new Error(`workspace hash should include a trimmed task_id, got ${workspaceHash}`)
+}
+
+const loginTaskReturn = userHashForRoute('login', { returnTo: 'genpic', taskId: 'task_retry_789' })
+if (loginTaskReturn !== '/login?returnTo=genpic&task_id=task_retry_789') {
+  throw new Error(`login hash should preserve the workspace task return context, got ${loginTaskReturn}`)
+}
+
+const combinedContext = parseUserHashState('#/login?returnTo=public-gallery&image_id=img_keep&task_id=task_keep')
+if (combinedContext.imageId !== 'img_keep' || combinedContext.taskId !== 'task_keep') {
+  throw new Error(`route parsing must preserve public image and workspace task params independently, got ${JSON.stringify(combinedContext)}`)
+}
+
 const settings = parseUserHashState('#/settings')
 if (settings.route !== 'settings') {
   throw new Error(`settings route should be parseable, got ${JSON.stringify(settings)}`)

@@ -176,7 +176,17 @@ func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domai
 		SetModelCode(req.ModelCode).
 		SetDisplayName(req.DisplayName).
 		SetTaskTypes(req.TaskTypes).
-		SetQualities(req.Qualities).
+		SetBaseResolution(req.BaseResolution).
+		SetQuality(req.Quality).
+		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
+		SetMaxImageCount(req.MaxImageCount).
+		SetSizeModes(req.SizeModes).
+		SetSupportedRatios(req.SupportedRatios).
+		SetSupportedPixelSizes(req.SupportedPixelSizes).
+		SetOutputFormat(req.OutputFormat).
+		SetOutputCompression(req.OutputCompression).
+		SetSupportsOutputCompression(req.SupportsOutputCompression).
+		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
 		SetEnabled(req.Enabled).
@@ -197,7 +207,17 @@ func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountMo
 		SetModelCode(req.ModelCode).
 		SetDisplayName(req.DisplayName).
 		SetTaskTypes(req.TaskTypes).
-		SetQualities(req.Qualities).
+		SetBaseResolution(req.BaseResolution).
+		SetQuality(req.Quality).
+		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
+		SetMaxImageCount(req.MaxImageCount).
+		SetSizeModes(req.SizeModes).
+		SetSupportedRatios(req.SupportedRatios).
+		SetSupportedPixelSizes(req.SupportedPixelSizes).
+		SetOutputFormat(req.OutputFormat).
+		SetOutputCompression(req.OutputCompression).
+		SetSupportsOutputCompression(req.SupportsOutputCompression).
+		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
 		SetEnabled(req.Enabled).
@@ -393,8 +413,8 @@ func (s *ModelAdminStore) ListRouteModelPrices(ctx context.Context, req domainmo
 	if req.TaskType != "" {
 		query = query.Where(routemodelprice.TaskTypeEQ(req.TaskType))
 	}
-	if req.Quality != "" {
-		query = query.Where(routemodelprice.QualityEQ(req.Quality))
+	if req.BaseResolution != "" {
+		query = query.Where(routemodelprice.BaseResolutionEQ(req.BaseResolution))
 	}
 	if req.Enabled != nil {
 		query = query.Where(routemodelprice.EnabledEQ(*req.Enabled))
@@ -403,7 +423,7 @@ func (s *ModelAdminStore) ListRouteModelPrices(ctx context.Context, req domainmo
 	if err != nil {
 		return domainmodeladmin.RouteModelPriceListPage{}, err
 	}
-	entities, err := query.Order(repoent.Asc(routemodelprice.FieldRouteModelID), repoent.Asc(routemodelprice.FieldTaskType), repoent.Asc(routemodelprice.FieldQuality)).Offset((page - 1) * pageSize).Limit(pageSize).All(ctx)
+	entities, err := query.Order(repoent.Asc(routemodelprice.FieldRouteModelID), repoent.Asc(routemodelprice.FieldTaskType), repoent.Asc(routemodelprice.FieldBaseResolution)).Offset((page - 1) * pageSize).Limit(pageSize).All(ctx)
 	if err != nil {
 		return domainmodeladmin.RouteModelPriceListPage{}, err
 	}
@@ -415,7 +435,7 @@ func (s *ModelAdminStore) ListRouteModelPrices(ctx context.Context, req domainmo
 }
 
 func (s *ModelAdminStore) CreateRouteModelPrice(ctx context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
-	entity, err := s.client.RouteModelPrice.Create().SetRouteModelID(req.RouteModelID).SetTaskType(req.TaskType).SetQuality(req.Quality).SetBasePoints(req.BasePoints).SetReferenceMultiplier(req.ReferenceMultiplier).SetEnabled(req.Enabled).Save(ctx)
+	entity, err := s.client.RouteModelPrice.Create().SetRouteModelID(req.RouteModelID).SetTaskType(req.TaskType).SetBaseResolution(req.BaseResolution).SetBasePoints(req.BasePoints).SetReferenceMultiplier(req.ReferenceMultiplier).SetEnabled(req.Enabled).Save(ctx)
 	if err != nil {
 		if repoent.IsConstraintError(err) {
 			return domainmodeladmin.RouteModelPrice{}, repoerr.ErrConflict
@@ -426,7 +446,7 @@ func (s *ModelAdminStore) CreateRouteModelPrice(ctx context.Context, req domainm
 }
 
 func (s *ModelAdminStore) UpdateRouteModelPrice(ctx context.Context, priceID int64, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
-	entity, err := s.client.RouteModelPrice.UpdateOneID(int(priceID)).SetRouteModelID(req.RouteModelID).SetTaskType(req.TaskType).SetQuality(req.Quality).SetBasePoints(req.BasePoints).SetReferenceMultiplier(req.ReferenceMultiplier).SetEnabled(req.Enabled).Save(ctx)
+	entity, err := s.client.RouteModelPrice.UpdateOneID(int(priceID)).SetRouteModelID(req.RouteModelID).SetTaskType(req.TaskType).SetBaseResolution(req.BaseResolution).SetBasePoints(req.BasePoints).SetReferenceMultiplier(req.ReferenceMultiplier).SetEnabled(req.Enabled).Save(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainmodeladmin.RouteModelPrice{}, repoerr.ErrNotFound
@@ -642,8 +662,12 @@ func (s *ModelAdminStore) CreateProviderModel(ctx context.Context, req domainmod
 		SetCompatMode(req.CompatMode).
 		SetSupportsImageInput(req.SupportsImageInput).
 		SetSupportsMask(req.SupportsMask).
-		SetSupportedQualities(req.SupportedQualities).
+		SetSupportedBaseResolution(req.SupportedBaseResolution).
+		SetQuality(req.Quality).
 		SetSupportedRatios(req.SupportedRatios).
+		SetOutputFormat(req.OutputFormat).
+		SetOutputCompression(req.OutputCompression).
+		SetModeration(req.Moderation).
 		SetMaxImageCount(req.MaxImageCount).
 		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
 		SetTimeoutMs(req.TimeoutMS).
@@ -683,8 +707,12 @@ func (s *ModelAdminStore) UpdateProviderModel(ctx context.Context, providerModel
 		SetCompatMode(req.CompatMode).
 		SetSupportsImageInput(req.SupportsImageInput).
 		SetSupportsMask(req.SupportsMask).
-		SetSupportedQualities(req.SupportedQualities).
+		SetSupportedBaseResolution(req.SupportedBaseResolution).
+		SetQuality(req.Quality).
 		SetSupportedRatios(req.SupportedRatios).
+		SetOutputFormat(req.OutputFormat).
+		SetOutputCompression(req.OutputCompression).
+		SetModeration(req.Moderation).
 		SetMaxImageCount(req.MaxImageCount).
 		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
 		SetTimeoutMs(req.TimeoutMS).
@@ -895,21 +923,21 @@ func (s *ModelAdminStore) ModelRoutingConfig(ctx context.Context) (modelhub.Mode
 			providerCode = providerEntity.ProviderCode
 		}
 		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{
-			ProviderModelID:        int64(providerModel.ID),
-			Provider:               providerCode,
-			ModelCode:              providerModel.ModelCode,
-			CompatMode:             providerModel.CompatMode,
-			SupportedTaskTypes:     nil,
-			SupportedQualities:     append([]string(nil), providerModel.SupportedQualities...),
-			SupportedAspectRatios:  append([]string(nil), providerModel.SupportedRatios...),
-			MaxImageCount:          providerModel.MaxImageCount,
-			MaxReferenceImageCount: providerModel.MaxReferenceImageCount,
-			SupportsImageInput:     providerModel.SupportsImageInput,
-			SupportsMask:           providerModel.SupportsMask,
-			InputCost:              providerModel.InputCost,
-			OutputCost:             providerModel.OutputCost,
-			Currency:               providerModel.Currency,
-			HealthStatus:           providerModel.HealthStatus,
+			ProviderModelID:         int64(providerModel.ID),
+			Provider:                providerCode,
+			ModelCode:               providerModel.ModelCode,
+			CompatMode:              providerModel.CompatMode,
+			SupportedTaskTypes:      nil,
+			SupportedBaseResolution: append([]string(nil), providerModel.SupportedBaseResolution...),
+			SupportedAspectRatios:   append([]string(nil), providerModel.SupportedRatios...),
+			MaxImageCount:           providerModel.MaxImageCount,
+			MaxReferenceImageCount:  providerModel.MaxReferenceImageCount,
+			SupportsImageInput:      providerModel.SupportsImageInput,
+			SupportsMask:            providerModel.SupportsMask,
+			InputCost:               providerModel.InputCost,
+			OutputCost:              providerModel.OutputCost,
+			Currency:                providerModel.Currency,
+			HealthStatus:            providerModel.HealthStatus,
 		})
 	}
 	for _, route := range routes {
@@ -991,23 +1019,33 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			latestVersionAt = model.UpdatedAt
 		}
 		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{
-			AccountModelID:         int64(model.ID),
-			ModelAccountID:         model.AccountID,
-			Provider:               account.AdapterType,
-			AdapterType:            account.AdapterType,
-			AuthType:               account.AuthType,
-			BaseURL:                account.BaseURL,
-			Credentials:            account.CredentialsEncrypted,
-			ModelCode:              model.ModelCode,
-			SupportedTaskTypes:     append([]string(nil), model.TaskTypes...),
-			SupportedQualities:     append([]string(nil), model.Qualities...),
-			MaxImageCount:          0,
-			MaxReferenceImageCount: 0,
-			HealthStatus:           account.Status,
-			InputCost:              model.CostPerImage,
-			Currency:               model.Currency,
-			AccountExtra:           cloneModelAdminExtra(account.Extra),
-			ModelExtra:             cloneModelAdminExtra(model.Extra),
+			AccountModelID:            int64(model.ID),
+			ModelAccountID:            model.AccountID,
+			Provider:                  account.AdapterType,
+			AdapterType:               account.AdapterType,
+			AuthType:                  account.AuthType,
+			BaseURL:                   account.BaseURL,
+			Credentials:               account.CredentialsEncrypted,
+			ModelCode:                 model.ModelCode,
+			SupportedTaskTypes:        append([]string(nil), model.TaskTypes...),
+			SupportedBaseResolution:   append([]string(nil), model.BaseResolution...),
+			Quality:                   append([]string(nil), model.Quality...),
+			SizeModes:                 append([]string(nil), model.SizeModes...),
+			SupportedAspectRatios:     append([]string(nil), model.SupportedRatios...),
+			SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
+			MaxImageCount:             model.MaxImageCount,
+			MaxReferenceImageCount:    model.MaxReferenceImageCount,
+			SupportsImageInput:        model.MaxReferenceImageCount > 0,
+			OutputFormat:              append([]string(nil), model.OutputFormat...),
+			OutputCompression:         model.OutputCompression,
+			SupportsOutputCompression: model.SupportsOutputCompression,
+			Moderation:                append([]string(nil), model.Moderation...),
+			HealthStatus:              account.Status,
+			TimeoutMS:                 account.TimeoutMs,
+			InputCost:                 model.CostPerImage,
+			Currency:                  model.Currency,
+			AccountExtra:              cloneModelAdminExtra(account.Extra),
+			ModelExtra:                cloneModelAdminExtra(model.Extra),
 		})
 	}
 	for _, model := range routeModels {
@@ -1020,7 +1058,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 		snapshot.Candidates = append(snapshot.Candidates, modelhub.RouteCandidateConfig{ID: int64(candidate.ID), RouteModelID: candidate.RouteModelID, AccountModelID: candidate.AccountModelID, Priority: candidate.Priority, Weight: candidate.Weight, FallbackOrder: candidate.FallbackOrder, Enabled: candidate.Enabled})
 	}
 	for _, price := range prices {
-		snapshot.Prices = append(snapshot.Prices, modelhub.RoutePriceConfig{ID: int64(price.ID), RouteModelID: price.RouteModelID, TaskType: price.TaskType, Quality: price.Quality, BasePoints: price.BasePoints, ReferenceMultiplier: price.ReferenceMultiplier, Enabled: price.Enabled})
+		snapshot.Prices = append(snapshot.Prices, modelhub.RoutePriceConfig{ID: int64(price.ID), RouteModelID: price.RouteModelID, TaskType: price.TaskType, BaseResolution: price.BaseResolution, BasePoints: price.BasePoints, ReferenceMultiplier: price.ReferenceMultiplier, Enabled: price.Enabled})
 	}
 	for _, group := range groups {
 		snapshot.Groups = append(snapshot.Groups, modelhub.UserGroupConfig{ID: int64(group.ID), Code: group.GroupCode, Name: group.GroupName, Multiplier: group.Multiplier, Status: group.Status})
@@ -1191,19 +1229,29 @@ func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repo
 		accountName = account.Name
 	}
 	return domainmodeladmin.ModelAccountModel{
-		ID:           int64(entity.ID),
-		AccountID:    entity.AccountID,
-		AccountName:  accountName,
-		ModelCode:    entity.ModelCode,
-		DisplayName:  entity.DisplayName,
-		TaskTypes:    append([]string(nil), entity.TaskTypes...),
-		Qualities:    append([]string(nil), entity.Qualities...),
-		CostPerImage: entity.CostPerImage,
-		Currency:     entity.Currency,
-		Enabled:      entity.Enabled,
-		Extra:        entity.Extra,
-		CreatedAt:    entity.CreatedAt,
-		UpdatedAt:    entity.UpdatedAt,
+		ID:                        int64(entity.ID),
+		AccountID:                 entity.AccountID,
+		AccountName:               accountName,
+		ModelCode:                 entity.ModelCode,
+		DisplayName:               entity.DisplayName,
+		TaskTypes:                 append([]string(nil), entity.TaskTypes...),
+		BaseResolution:            append([]string(nil), entity.BaseResolution...),
+		Quality:                   append([]string(nil), entity.Quality...),
+		MaxReferenceImageCount:    entity.MaxReferenceImageCount,
+		MaxImageCount:             entity.MaxImageCount,
+		SizeModes:                 append([]string(nil), entity.SizeModes...),
+		SupportedRatios:           append([]string(nil), entity.SupportedRatios...),
+		SupportedPixelSizes:       append([]string(nil), entity.SupportedPixelSizes...),
+		OutputFormat:              append([]string(nil), entity.OutputFormat...),
+		OutputCompression:         entity.OutputCompression,
+		SupportsOutputCompression: entity.SupportsOutputCompression,
+		Moderation:                append([]string(nil), entity.Moderation...),
+		CostPerImage:              entity.CostPerImage,
+		Currency:                  entity.Currency,
+		Enabled:                   entity.Enabled,
+		Extra:                     entity.Extra,
+		CreatedAt:                 entity.CreatedAt,
+		UpdatedAt:                 entity.UpdatedAt,
 	}
 }
 
@@ -1235,7 +1283,7 @@ func (s *ModelAdminStore) mapRouteModelCandidate(ctx context.Context, entity *re
 }
 
 func (s *ModelAdminStore) mapRouteModelPrice(ctx context.Context, entity *repoent.RouteModelPrice) domainmodeladmin.RouteModelPrice {
-	item := domainmodeladmin.RouteModelPrice{ID: int64(entity.ID), RouteModelID: entity.RouteModelID, TaskType: entity.TaskType, Quality: entity.Quality, BasePoints: entity.BasePoints, ReferenceMultiplier: entity.ReferenceMultiplier, Enabled: entity.Enabled}
+	item := domainmodeladmin.RouteModelPrice{ID: int64(entity.ID), RouteModelID: entity.RouteModelID, TaskType: entity.TaskType, BaseResolution: entity.BaseResolution, BasePoints: entity.BasePoints, ReferenceMultiplier: entity.ReferenceMultiplier, Enabled: entity.Enabled}
 	if routeModel, err := s.client.RouteModel.Get(ctx, int(entity.RouteModelID)); err == nil {
 		item.RouteModelCode = routeModel.Code
 	}
@@ -1260,26 +1308,30 @@ func mapModelRoute(entity *repoent.ModelRoute, providerCode string) domainmodela
 
 func mapProviderModel(entity *repoent.ProviderModel, providerCode string) domainmodeladmin.ProviderModel {
 	return domainmodeladmin.ProviderModel{
-		ID:                     int64(entity.ID),
-		ProviderID:             entity.ProviderID,
-		ProviderCode:           providerCode,
-		ModelCode:              entity.ModelCode,
-		CompatMode:             entity.CompatMode,
-		SupportsImageInput:     entity.SupportsImageInput,
-		SupportsMask:           entity.SupportsMask,
-		SupportedQualities:     append([]string(nil), entity.SupportedQualities...),
-		SupportedRatios:        append([]string(nil), entity.SupportedRatios...),
-		MaxImageCount:          entity.MaxImageCount,
-		MaxReferenceImageCount: entity.MaxReferenceImageCount,
-		TimeoutMS:              entity.TimeoutMs,
-		InputCost:              entity.InputCost,
-		OutputCost:             entity.OutputCost,
-		Currency:               entity.Currency,
-		HealthStatus:           entity.HealthStatus,
-		LastHealthCheckedAt:    entity.LastHealthCheckedAt,
-		Enabled:                entity.Enabled,
-		CreatedAt:              entity.CreatedAt,
-		UpdatedAt:              entity.UpdatedAt,
+		ID:                      int64(entity.ID),
+		ProviderID:              entity.ProviderID,
+		ProviderCode:            providerCode,
+		ModelCode:               entity.ModelCode,
+		CompatMode:              entity.CompatMode,
+		SupportsImageInput:      entity.SupportsImageInput,
+		SupportsMask:            entity.SupportsMask,
+		SupportedBaseResolution: append([]string(nil), entity.SupportedBaseResolution...),
+		Quality:                 append([]string(nil), entity.Quality...),
+		SupportedRatios:         append([]string(nil), entity.SupportedRatios...),
+		OutputFormat:            append([]string(nil), entity.OutputFormat...),
+		OutputCompression:       entity.OutputCompression,
+		Moderation:              append([]string(nil), entity.Moderation...),
+		MaxImageCount:           entity.MaxImageCount,
+		MaxReferenceImageCount:  entity.MaxReferenceImageCount,
+		TimeoutMS:               entity.TimeoutMs,
+		InputCost:               entity.InputCost,
+		OutputCost:              entity.OutputCost,
+		Currency:                entity.Currency,
+		HealthStatus:            entity.HealthStatus,
+		LastHealthCheckedAt:     entity.LastHealthCheckedAt,
+		Enabled:                 entity.Enabled,
+		CreatedAt:               entity.CreatedAt,
+		UpdatedAt:               entity.UpdatedAt,
 	}
 }
 

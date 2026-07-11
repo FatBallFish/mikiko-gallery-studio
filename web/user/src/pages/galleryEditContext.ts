@@ -8,7 +8,7 @@ export type GalleryEditContext = {
   fallbackImageUrl?: string
   task_type?: ImageTaskType
   route_model_code?: string
-  quality?: string
+  base_resolution?: string
   aspect_ratio?: string
 }
 
@@ -20,7 +20,8 @@ type GalleryEditContextInput = {
   task_type?: ImageTaskType | null
   routeModelCode?: string | null
   route_model_code?: string | null
-  quality?: string | null
+  baseResolution?: string | null
+  base_resolution?: string | null
   aspectRatio?: string | null
   aspect_ratio?: string | null
 }
@@ -37,7 +38,7 @@ export function createGalleryEditContext(input: GalleryEditContextInput): Galler
     fallbackImageUrl: clean(input.fallbackImageUrl),
     task_type: input.task_type ?? input.taskType ?? undefined,
     route_model_code: clean(input.route_model_code ?? input.routeModelCode),
-    quality: clean(input.quality),
+    base_resolution: clean(input.base_resolution ?? input.baseResolution),
     aspect_ratio: clean(input.aspect_ratio ?? input.aspectRatio),
   }
 }

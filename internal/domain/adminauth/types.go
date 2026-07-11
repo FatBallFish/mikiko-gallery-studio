@@ -59,11 +59,14 @@ type LoginRequest struct {
 }
 
 type Session struct {
-	AccessToken          string
-	AccessTokenExpiresAt time.Time
-	SessionID            string
-	AdminID              int64
-	Email                string
-	Role                 string
-	Status               string
+	AccessToken           string
+	AccessTokenExpiresAt  time.Time
+	RefreshToken          string
+	RefreshTokenExpiresAt time.Time
+	SessionID             string
+	SessionFamilyID       string
+	AdminID               int64
+	Email                 string
+	Role                  string
+	Status                string
 }

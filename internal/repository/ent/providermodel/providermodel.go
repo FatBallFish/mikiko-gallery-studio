@@ -27,10 +27,18 @@ const (
 	FieldSupportsImageInput = "supports_image_input"
 	// FieldSupportsMask holds the string denoting the supports_mask field in the database.
 	FieldSupportsMask = "supports_mask"
-	// FieldSupportedQualities holds the string denoting the supported_qualities field in the database.
-	FieldSupportedQualities = "supported_qualities"
+	// FieldSupportedBaseResolution holds the string denoting the supported_base_resolution field in the database.
+	FieldSupportedBaseResolution = "supported_base_resolution"
+	// FieldQuality holds the string denoting the quality field in the database.
+	FieldQuality = "quality"
 	// FieldSupportedRatios holds the string denoting the supported_ratios field in the database.
 	FieldSupportedRatios = "supported_ratios"
+	// FieldOutputFormat holds the string denoting the output_format field in the database.
+	FieldOutputFormat = "output_format"
+	// FieldOutputCompression holds the string denoting the output_compression field in the database.
+	FieldOutputCompression = "output_compression"
+	// FieldModeration holds the string denoting the moderation field in the database.
+	FieldModeration = "moderation"
 	// FieldMaxImageCount holds the string denoting the max_image_count field in the database.
 	FieldMaxImageCount = "max_image_count"
 	// FieldMaxReferenceImageCount holds the string denoting the max_reference_image_count field in the database.
@@ -63,8 +71,12 @@ var Columns = []string{
 	FieldCompatMode,
 	FieldSupportsImageInput,
 	FieldSupportsMask,
-	FieldSupportedQualities,
+	FieldSupportedBaseResolution,
+	FieldQuality,
 	FieldSupportedRatios,
+	FieldOutputFormat,
+	FieldOutputCompression,
+	FieldModeration,
 	FieldMaxImageCount,
 	FieldMaxReferenceImageCount,
 	FieldTimeoutMs,
@@ -103,6 +115,8 @@ var (
 	DefaultSupportsImageInput bool
 	// DefaultSupportsMask holds the default value on creation for the "supports_mask" field.
 	DefaultSupportsMask bool
+	// DefaultOutputCompression holds the default value on creation for the "output_compression" field.
+	DefaultOutputCompression int
 	// DefaultMaxImageCount holds the default value on creation for the "max_image_count" field.
 	DefaultMaxImageCount int
 	// DefaultMaxReferenceImageCount holds the default value on creation for the "max_reference_image_count" field.
@@ -170,6 +184,11 @@ func BySupportsImageInput(opts ...sql.OrderTermOption) OrderOption {
 // BySupportsMask orders the results by the supports_mask field.
 func BySupportsMask(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSupportsMask, opts...).ToFunc()
+}
+
+// ByOutputCompression orders the results by the output_compression field.
+func ByOutputCompression(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOutputCompression, opts...).ToFunc()
 }
 
 // ByMaxImageCount orders the results by the max_image_count field.

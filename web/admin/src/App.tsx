@@ -37,15 +37,23 @@ export default function App() {
       onError: (error) => {
         pushToast({ tone: 'danger', title: '接口调用失败', detail: error.message })
       },
-      onUnauthorized: () => {
-        if (sessionRef.current) {
-          window.sessionStorage.removeItem(sessionKey)
-          sessionRef.current = null
-          setSession(null)
-          setRoute('login')
-          pushToast({ tone: 'danger', title: '登录已过期', detail: '请重新登录后继续操作。' })
+      onUnauthorized: async () => {
+        try {
+          const refreshed = await adminApi.refreshSession()
+          sessionRef.current = refreshed
+          setSession(refreshed)
+          window.sessionStorage.setItem(sessionKey, JSON.stringify(refreshed))
+          return refreshed.token
+        } catch {
+          if (sessionRef.current) {
+            window.sessionStorage.removeItem(sessionKey)
+            sessionRef.current = null
+            setSession(null)
+            setRoute('login')
+            pushToast({ tone: 'danger', title: '登录已过期', detail: '请重新登录后继续操作。' })
+          }
+          return undefined
         }
-        return undefined
       },
     })
   }, [session, pushToast, setRoute])

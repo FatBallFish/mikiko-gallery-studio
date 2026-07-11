@@ -170,7 +170,7 @@ func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimage
 		}
 		return err
 	}
-	if entity.Status != domainimagetask.StatusRunning {
+	if entity.Status != domainimagetask.StatusRunning || entity.LeaseOwner == nil || *entity.LeaseOwner != owner {
 		return repoerr.ErrConflict
 	}
 
@@ -192,6 +192,32 @@ func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimage
 	}
 
 	return tx.Commit()
+}
+
+func (s *ImageTaskStore) UpdateProgressIfOwned(ctx context.Context, taskID, owner, stage, message string, now time.Time) error {
+	taskUUID, err := uuid.Parse(taskID)
+	if err != nil {
+		return err
+	}
+	affected, err := s.client.ImageTask.Update().
+		Where(
+			imagetask.IDEQ(taskUUID),
+			imagetask.DeletedAtIsNil(),
+			imagetask.StatusEQ(domainimagetask.StatusRunning),
+			imagetask.LeaseOwnerEQ(owner),
+			imagetask.Or(imagetask.LeaseExpiresAtIsNil(), imagetask.LeaseExpiresAtGTE(now)),
+		).
+		SetProgressStage(stage).
+		SetProgressMessage(message).
+		SetUpdatedAt(now).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return repoerr.ErrConflict
+	}
+	return nil
 }
 
 func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
@@ -734,6 +760,8 @@ func (s *ImageTaskStore) AcquireNextQueuedTask(ctx context.Context, owner string
 	update := tx.ImageTask.Update().
 		Where(imagetask.IDEQ(entity.ID), imagetask.DeletedAtIsNil(), acquireEligiblePredicate(now)).
 		SetStatus(domainimagetask.StatusRunning).
+		SetProgressStage(domainimagetask.ProgressStageProvider).
+		SetProgressMessage("正在调用模型生成图片").
 		SetLeaseOwner(owner).
 		SetLeaseExpiresAt(expiresAt)
 	if entity.StartedAt == nil {
@@ -838,13 +866,18 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetSourceChannel(defaultString(task.SourceChannel, "web")).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, "ratio")).
 		SetAspectRatio(defaultString(task.AspectRatio, "1:1")).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, "auto")).
+		SetOutputFormat(defaultString(task.OutputFormat, "png")).
+		SetOutputCompression(defaultPositive(task.OutputCompression, 100)).
+		SetModeration(defaultString(task.Moderation, "auto")).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
-		SetAspectRatio("1:1").
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
@@ -925,11 +958,17 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
 		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, entity.Quality)).
+		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
+		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
+		SetModeration(defaultString(task.Moderation, entity.Moderation)).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
@@ -1061,11 +1100,17 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
 		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, entity.Quality)).
+		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
+		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
+		SetModeration(defaultString(task.Moderation, entity.Moderation)).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
@@ -1166,7 +1211,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 	return builder.Save(ctx)
 }
 
-func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, _ string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {
+func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, owner string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {
 	pricingSnapshot, err := buildPricingSnapshot(task)
 	if err != nil {
 		return 0, err
@@ -1176,16 +1221,23 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 			imagetask.IDEQ(entity.ID),
 			imagetask.DeletedAtIsNil(),
 			imagetask.StatusEQ(domainimagetask.StatusRunning),
+			imagetask.LeaseOwnerEQ(owner),
 		).
 		SetUserID(task.UserID).
 		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
 		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, entity.Quality)).
+		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
+		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
+		SetModeration(defaultString(task.Moderation, entity.Moderation)).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
@@ -1330,45 +1382,51 @@ func imageResultUUID(value string) (uuid.UUID, error) {
 
 func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.ImageResult) (domainimagetask.Task, error) {
 	task := domainimagetask.Task{
-		UserID:                entity.UserID,
-		SourceChannel:         entity.SourceChannel,
-		ID:                    entity.ID.String(),
-		Status:                entity.Status,
-		AbstractModel:         entity.AbstractModel,
-		RouteModelCode:        entity.RouteModelCode,
-		RouteModelID:          nullableInt64(entity.RouteModelID),
-		AccountModelID:        nullableInt64(entity.AccountModelID),
-		ModelAccountID:        nullableInt64(entity.ModelAccountID),
-		UpstreamModelCode:     entity.UpstreamModelCode,
-		EffectiveMultiplier:   entity.EffectiveMultiplier,
-		ChargedPoints:         entity.ChargedPoints,
-		TaskType:              entity.TaskType,
-		Prompt:                entity.Prompt,
-		NegativePrompt:        nullableString(entity.NegativePrompt),
-		AspectRatio:           entity.AspectRatio,
-		RequestedSize:         nullableString(entity.RequestedSize),
-		RequestedQuality:      entity.RequestedQuality,
-		ResolvedQualityBucket: entity.ResolvedQualityBucket,
-		ResponseMode:          entity.ResponseMode,
-		SavePolicy:            entity.SavePolicy,
-		OutputImageCount:      entity.RequestedOutputImageCount,
-		ReferenceImageCount:   entity.ReferenceImageCount,
-		ReferenceAssetIDs:     decodeReferenceAssetIDs(entity.RoutingSnapshot),
-		ReferenceStrength:     nullableInt(entity.ReferenceStrength),
-		Seed:                  entity.Seed,
-		EstimatedPoints:       entity.EstimatedPoints,
-		ActualPoints:          entity.ActualPoints,
-		ProviderModelID:       nullableInt64(entity.ProviderModelID),
-		ProviderCost:          entity.ProviderCost,
-		GrossMargin:           entity.GrossMargin,
-		FallbackCount:         entity.FallbackCount,
-		RouteSnapshotVersion:  entity.RouteSnapshotVersion,
-		LeaseOwner:            nullableString(entity.LeaseOwner),
-		LeaseExpiresAt:        entity.LeaseExpiresAt,
-		ErrorCode:             nullableString(entity.ErrorCode),
-		ErrorMessage:          nullableString(entity.ErrorMessage),
-		CreatedAt:             entity.CreatedAt,
-		UpdatedAt:             entity.UpdatedAt,
+		UserID:               entity.UserID,
+		SourceChannel:        entity.SourceChannel,
+		ID:                   entity.ID.String(),
+		Status:               entity.Status,
+		ProgressStage:        entity.ProgressStage,
+		ProgressMessage:      entity.ProgressMessage,
+		AbstractModel:        entity.AbstractModel,
+		RouteModelCode:       entity.RouteModelCode,
+		RouteModelID:         nullableInt64(entity.RouteModelID),
+		AccountModelID:       nullableInt64(entity.AccountModelID),
+		ModelAccountID:       nullableInt64(entity.ModelAccountID),
+		UpstreamModelCode:    entity.UpstreamModelCode,
+		EffectiveMultiplier:  entity.EffectiveMultiplier,
+		ChargedPoints:        entity.ChargedPoints,
+		TaskType:             entity.TaskType,
+		Prompt:               entity.Prompt,
+		NegativePrompt:       nullableString(entity.NegativePrompt),
+		SizeMode:             entity.SizeMode,
+		AspectRatio:          entity.AspectRatio,
+		RequestedSize:        nullableString(entity.RequestedSize),
+		BaseResolution:       entity.BaseResolution,
+		Quality:              entity.Quality,
+		OutputFormat:         entity.OutputFormat,
+		OutputCompression:    entity.OutputCompression,
+		Moderation:           entity.Moderation,
+		ResponseMode:         entity.ResponseMode,
+		SavePolicy:           entity.SavePolicy,
+		OutputImageCount:     entity.RequestedOutputImageCount,
+		ReferenceImageCount:  entity.ReferenceImageCount,
+		ReferenceAssetIDs:    decodeReferenceAssetIDs(entity.RoutingSnapshot),
+		ReferenceStrength:    nullableInt(entity.ReferenceStrength),
+		Seed:                 entity.Seed,
+		EstimatedPoints:      entity.EstimatedPoints,
+		ActualPoints:         entity.ActualPoints,
+		ProviderModelID:      nullableInt64(entity.ProviderModelID),
+		ProviderCost:         entity.ProviderCost,
+		GrossMargin:          entity.GrossMargin,
+		FallbackCount:        entity.FallbackCount,
+		RouteSnapshotVersion: entity.RouteSnapshotVersion,
+		LeaseOwner:           nullableString(entity.LeaseOwner),
+		LeaseExpiresAt:       entity.LeaseExpiresAt,
+		ErrorCode:            nullableString(entity.ErrorCode),
+		ErrorMessage:         nullableString(entity.ErrorMessage),
+		CreatedAt:            entity.CreatedAt,
+		UpdatedAt:            entity.UpdatedAt,
 	}
 	if entity.APIKeyID != nil {
 		task.APIKeyID = *entity.APIKeyID
@@ -1726,7 +1784,8 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		RouteModelCode:    taskEntity.RouteModelCode,
 		TaskType:          taskEntity.TaskType,
 		TaskStatus:        taskEntity.Status,
-		Quality:           taskEntity.ResolvedQualityBucket,
+		BaseResolution:    taskEntity.BaseResolution,
+		Quality:           taskEntity.Quality,
 		AspectRatio:       taskEntity.AspectRatio,
 		ActualPoints:      taskEntity.ActualPoints,
 		ReferenceAssetIDs: decodeReferenceAssetIDs(taskEntity.RoutingSnapshot),

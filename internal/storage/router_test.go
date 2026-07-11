@@ -2,8 +2,10 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 )
@@ -52,6 +54,36 @@ func TestRegistryRoutesDefaultAndLegacyLocalBackends(t *testing.T) {
 	}
 }
 
+func TestRegistryProbeDeletesProbeObjectOnSuccess(t *testing.T) {
+	root := t.TempDir()
+	registry := NewRegistry(nil, 0)
+	result := registry.probeBackend(context.Background(), NewLocalBackend(root), ".pic-gallery-probe/success.txt", time.Now())
+	if result.Status != domainstorageconfig.ProbeStatusSuccess {
+		t.Fatalf("expected successful probe, got %#v", result)
+	}
+	if _, err := NewLocalBackend(root).Get(context.Background(), ".pic-gallery-probe/success.txt"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected probe object to be deleted, got %v", err)
+	}
+}
+
+func TestRegistryProbeCleanupIgnoresCanceledProbeContext(t *testing.T) {
+	backend := &cancelSensitiveBackend{content: map[string][]byte{}}
+	registry := NewRegistry(nil, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := registry.probeBackend(ctx, backend, ".pic-gallery-probe/canceled.txt", time.Now())
+	if result.Status != domainstorageconfig.ProbeStatusFailed {
+		t.Fatalf("expected failed probe after canceled get, got %#v", result)
+	}
+	if !backend.deleted {
+		t.Fatal("expected cleanup to delete probe object with an independent context")
+	}
+	if _, exists := backend.content[".pic-gallery-probe/canceled.txt"]; exists {
+		t.Fatal("expected probe object to be removed from backend")
+	}
+}
+
 type fakeConfigSource struct {
 	defaultConfig domainstorageconfig.ResolvedConfig
 	legacyConfig  domainstorageconfig.ResolvedConfig
@@ -70,4 +102,36 @@ func (s fakeConfigSource) ResolveByID(_ context.Context, id string) (domainstora
 
 func (s fakeConfigSource) ResolveLegacyByDriver(context.Context, string) (domainstorageconfig.ResolvedConfig, error) {
 	return s.legacyConfig, nil
+}
+
+type cancelSensitiveBackend struct {
+	content map[string][]byte
+	deleted bool
+}
+
+func (b *cancelSensitiveBackend) Driver() string { return "test" }
+
+func (b *cancelSensitiveBackend) Put(_ context.Context, key string, _ string, content []byte) error {
+	b.content[key] = append([]byte{}, content...)
+	return nil
+}
+
+func (b *cancelSensitiveBackend) Get(ctx context.Context, key string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	content, ok := b.content[key]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return append([]byte{}, content...), nil
+}
+
+func (b *cancelSensitiveBackend) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	b.deleted = true
+	delete(b.content, key)
+	return nil
 }
