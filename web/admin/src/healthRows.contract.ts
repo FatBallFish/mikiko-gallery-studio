@@ -5,9 +5,9 @@ import { healthProviderRows, healthReadinessRows, healthRefreshTimeLabel, health
 
 const monitoringPageSource = readFileSync(new URL('./pages/MonitoringPage.tsx', import.meta.url), 'utf8')
 
-for (const requiredPrimitive of ['MetricStrip', 'DataTable', 'Badge', 'InlineFeedback']) {
+for (const requiredPrimitive of ['MetricStrip', 'DataTable', 'Badge', 'InlineFeedback', 'TimeSeriesChart', 'SegmentedControl']) {
   if (!monitoringPageSource.includes(requiredPrimitive)) {
-    throw new Error(`monitoring workbench should use the shared ${requiredPrimitive} primitive`)
+    throw new Error(`runtime monitoring workbench should use the shared ${requiredPrimitive} primitive`)
   }
 }
 
@@ -15,23 +15,25 @@ for (const refreshContract of [
   'const [initialLoading',
   'const [refreshing',
   'const [refreshError',
-  "load('refresh')",
-  '当前仍显示上一次诊断结果',
+  "load('refresh'",
+  '当前仍显示上一次成功数据',
+  'visibilitychange',
+  'autoRefresh',
 ]) {
   if (!monitoringPageSource.includes(refreshContract)) {
-    throw new Error(`monitoring refresh should preserve stale diagnostics with ${refreshContract}`)
+    throw new Error(`runtime monitoring refresh should preserve stale data with ${refreshContract}`)
   }
 }
 
-for (const diagnosticContract of ['blockingRows', 'sortReadinessRows', 'data-admin-monitoring-blockers', 'actionHref', 'actionLabel']) {
+for (const diagnosticContract of ['monitoringDiagnostics', '依赖与诊断', 'actionHref', 'actionLabel']) {
   if (!monitoringPageSource.includes(diagnosticContract)) {
-    throw new Error(`monitoring workbench should prioritize blocking diagnostics with ${diagnosticContract}`)
+    throw new Error(`runtime monitoring workbench should retain actionable diagnostics with ${diagnosticContract}`)
   }
 }
 
-for (const forbiddenPattern of ['setLoading(true)', "'1m'", "'5m'", "'1h'", 'healthScore', 'averageLatency >', 'rounded-2xl', 'rounded-3xl', 'tracking-[', 'uppercase']) {
+for (const forbiddenPattern of ['setLoading(true)', "'1m'", "'1h'", 'healthScore', 'averageLatency >', 'rounded-2xl', 'rounded-3xl', 'tracking-[', 'uppercase', '完整上线检查', '上游探针']) {
   if (monitoringPageSource.includes(forbiddenPattern)) {
-    throw new Error(`monitoring workbench should remove stale or decorative pattern ${forbiddenPattern}`)
+    throw new Error(`runtime monitoring workbench should remove stale or decorative pattern ${forbiddenPattern}`)
   }
 }
 
