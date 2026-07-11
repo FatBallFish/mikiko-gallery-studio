@@ -174,7 +174,7 @@ function OperationsInsightPanel({
                 <div className={overviewClasses.distributionFill} style={{ width: `${row.percent}%` }} />
               </div>
             </div>
-          )) : <EmptyBlock title="暂无模型调用" detail="配置模型账号并产生调用后展示分布。" />}
+          )) : <EmptyBlock variant="inline" title="暂无模型调用" detail="配置模型账号并产生调用后展示分布。" />}
         </div>
         <div className={overviewClasses.modelStats}>
           <ModelStat name="上游健康" value={providerHealthLabel(providers)} detail={`${providers.length} 个上游实例`} />
@@ -205,11 +205,11 @@ function OperationalAlertRail({ queue, risks, topUsers }: { queue: Array<{ item:
             <Badge tone={risk.statusTone}>{risk.status}</Badge>
           </a>
         ))}
-        {!pending.length && !risks.length ? <EmptyBlock title="暂无待处理事项" detail="当前队列和上线检查没有需要立即处理的项目。" /> : null}
+        {!pending.length && !risks.length ? <EmptyBlock variant="inline" title="暂无待处理事项" detail="当前队列和上线检查没有需要立即处理的项目。" /> : null}
       </div>
       <div className="mb-3 mt-5 border-t border-[var(--border)] pt-4"><h3 className={overviewClasses.sectionTitle}>用户消费榜</h3></div>
       <div className={overviewClasses.rankList}>
-        {topUsers.length ? topUsers.map((user) => <UserRank key={user.id} user={user} />) : <EmptyBlock title="暂无用户排行" detail="用户产生余额或消费后会出现在这里。" />}
+        {topUsers.length ? topUsers.map((user) => <UserRank key={user.id} user={user} />) : <EmptyBlock variant="inline" title="暂无用户排行" detail="用户产生余额或消费后会出现在这里。" />}
       </div>
     </aside>
   )
@@ -320,7 +320,7 @@ function ReadinessRiskPanel({ report, risks }: { report: ReadinessReport; risks:
           <a className={adminButton.base} href="#/monitoring">查看全部</a>
         </div>
         {risks.length === 0 ? (
-          <EmptyBlock title="暂无上线风险" detail="当前关键配置检查均已通过。" />
+          <EmptyBlock variant="inline" title="暂无上线风险" detail="当前关键配置检查均已通过。" />
         ) : (
           <div className={cn(overviewClasses.dataGrid, overviewClasses.readinessGrid)}>
             <div className={cn(overviewClasses.dataHead, overviewClasses.readinessGrid)}><span className={overviewClasses.dataCell}>检查项</span><span className={overviewClasses.dataCell}>状态</span><span className={overviewClasses.dataCell}>说明</span><span className={overviewClasses.dataCell}>入口</span></div>

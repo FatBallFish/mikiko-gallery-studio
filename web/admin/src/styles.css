@@ -107,6 +107,7 @@ body {
   font-size: var(--admin-type-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overflow-wrap: anywhere;
 }
 
 .admin-card {
@@ -140,6 +141,12 @@ textarea {
     color var(--admin-motion-fast) ease,
     transform var(--admin-motion-fast) ease,
     opacity var(--admin-motion-fast) ease;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--accent) 72%, white 28%);
+  outline-offset: 2px;
 }
 
 input,
@@ -285,5 +292,26 @@ code,
 @media (max-width: 920px) {
   body {
     overflow: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .admin-primary-action {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  * {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
