@@ -164,12 +164,36 @@ func TestMetricsResponseWriterReaderFromCommitsSuccess(t *testing.T) {
 	}
 }
 
+func TestMetricsResponseWriterReaderFromErrorKeepsStatusWritable(t *testing.T) {
+	underlying := &allCapabilityWriter{header: make(http.Header)}
+	tracker := &metricsResponseWriter{ResponseWriter: underlying}
+	wrapped := wrapMetricsCapabilities(tracker, underlying)
+
+	_, readErr := wrapped.(io.ReaderFrom).ReadFrom(zeroByteErrorReader{})
+	if readErr == nil {
+		t.Fatal("expected reader error")
+	}
+	wrapped.WriteHeader(http.StatusInternalServerError)
+	if tracker.status != http.StatusInternalServerError {
+		t.Fatalf("tracked status after zero-byte error = %d, want 500", tracker.status)
+	}
+	if len(underlying.statuses) != 1 || underlying.statuses[0] != http.StatusInternalServerError {
+		t.Fatalf("underlying statuses = %v, want only 500", underlying.statuses)
+	}
+}
+
 type allCapabilityWriter struct {
 	header   http.Header
 	body     strings.Builder
 	status   int
 	statuses []int
 	flushed  bool
+}
+
+type zeroByteErrorReader struct{}
+
+func (zeroByteErrorReader) Read([]byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
 }
 
 func (w *allCapabilityWriter) Header() http.Header {
