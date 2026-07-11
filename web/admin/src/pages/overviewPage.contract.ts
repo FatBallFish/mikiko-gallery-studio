@@ -25,6 +25,8 @@ for (const inlineEmpty of ['暂无模型调用', '暂无待处理事项', '暂�
 
 for (const overviewContract of [
   'MetricStrip',
+  'DataTable',
+  'function overviewReadinessColumns',
   'grid-flow-dense grid-cols-12',
   'lg:col-span-8',
   'lg:col-span-4',
@@ -36,4 +38,10 @@ for (const overviewContract of [
 
 for (const forbidden of ['<details', 'rounded-2xl', 'rounded-3xl', '.trend?.match']) {
   if (source.includes(forbidden)) throw new Error(`overview must remove ${forbidden}`)
+}
+
+for (const brokenReadinessGrid of ['readinessGrid:', 'overviewClasses.readinessGrid', 'overviewClasses.dataGrid']) {
+  if (source.includes(brokenReadinessGrid)) {
+    throw new Error(`overview readiness risks must not reuse nested grid contract ${brokenReadinessGrid}`)
+  }
 }
