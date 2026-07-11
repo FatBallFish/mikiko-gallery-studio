@@ -15,6 +15,7 @@ export type TimeSeriesDefinition = {
   key: string
   label: string
   color: string
+  axis?: 'left' | 'right'
   format?: (value: number) => string
 }
 
@@ -22,7 +23,7 @@ type Extent = { min: number; max: number }
 
 const chartWidth = 640
 const chartHeight = 220
-const chartPadding = { top: 18, right: 18, bottom: 30, left: 42 }
+const chartPadding = { top: 18, right: 42, bottom: 30, left: 42 }
 
 export function timeSeriesExtent(values: TimeSeriesValue[]): Extent {
   const finite = values
@@ -77,9 +78,9 @@ export function TimeSeriesChart({
 }) {
   const [keyboardIndex, setKeyboardIndex] = useState(() => clampChartIndex(data.length - 1, data.length))
   const [pointerIndex, setPointerIndex] = useState<number | null>(null)
-  const extent = useMemo(() => timeSeriesExtent(
-    data.flatMap((point) => series.map((definition) => ({ at: point.at, value: point.values[definition.key] ?? null }))),
-  ), [data, series])
+  const leftExtent = useMemo(() => chartExtentForAxis(data, series, 'left'), [data, series])
+  const rightExtent = useMemo(() => chartExtentForAxis(data, series, 'right'), [data, series])
+  const hasRightAxis = series.some((definition) => definition.axis === 'right')
   const activeIndex = pointerIndex ?? clampChartIndex(keyboardIndex, data.length)
   const active = activeIndex >= 0 ? data[activeIndex] : null
   const firstTime = data[0]?.at
@@ -150,17 +151,22 @@ export function TimeSeriesChart({
       >
         {[0, 0.5, 1].map((ratio) => {
           const y = chartPadding.top + ratio * (chartHeight - chartPadding.top - chartPadding.bottom)
-          const value = extent.max - ratio * (extent.max - extent.min)
+          const value = leftExtent.max - ratio * (leftExtent.max - leftExtent.min)
           return (
             <g key={ratio}>
               <line x1={chartPadding.left} x2={chartWidth - chartPadding.right} y1={y} y2={y} stroke="var(--border)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
               <text x={chartPadding.left - 8} y={y + 4} textAnchor="end" fill="var(--dim)" fontSize="10">{compactAxisValue(value)}</text>
+              {hasRightAxis ? (
+                <text x={chartWidth - chartPadding.right + 8} y={y + 4} fill="var(--dim)" fontSize="10">
+                  {compactAxisValue(rightExtent.max - ratio * (rightExtent.max - rightExtent.min))}
+                </text>
+              ) : null}
             </g>
           )
         })}
         {series.map((definition) => {
           const values = data.map((point) => ({ at: point.at, value: point.values[definition.key] ?? null }))
-          const path = buildTimeSeriesPath(values, chartWidth, chartHeight, extent)
+          const path = buildTimeSeriesPath(values, chartWidth, chartHeight, definition.axis === 'right' ? rightExtent : leftExtent)
           return path ? (
             <path
               key={definition.key}
@@ -220,6 +226,17 @@ export function TimeSeriesChart({
 function chartX(index: number, length: number) {
   const innerWidth = chartWidth - chartPadding.left - chartPadding.right
   return chartPadding.left + (index / Math.max(1, length - 1)) * innerWidth
+}
+
+function chartExtentForAxis(
+  data: TimeSeriesDatum[],
+  series: TimeSeriesDefinition[],
+  axis: 'left' | 'right',
+) {
+  const definitions = series.filter((definition) => (definition.axis ?? 'left') === axis)
+  return timeSeriesExtent(
+    data.flatMap((point) => definitions.map((definition) => ({ at: point.at, value: point.values[definition.key] ?? null }))),
+  )
 }
 
 function formatSeriesValue(definition: TimeSeriesDefinition, value: number | null | undefined) {

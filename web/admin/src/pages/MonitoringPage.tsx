@@ -1,199 +1,430 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { ProviderHealth, ReadinessReport } from '../../../shared/api-types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
+import type {
+  AdminMonitoringSnapshot,
+  MonitoringWindow,
+  ReadinessReport,
+} from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, MetricStrip, PageHeader } from '../components'
-import { healthProviderRows, healthRefreshTimeLabel, taskQueuePressure } from '../healthRows'
-import type { HealthProviderRow } from '../healthRows'
-import { adminButton, adminPage, adminType } from '../ui/classes'
+import {
+  Badge,
+  EmptyBlock,
+  ErrorBlock,
+  InlineFeedback,
+  LoadingBlock,
+  MetricStrip,
+  PageHeader,
+  SegmentedControl,
+} from '../components'
+import { healthRefreshTimeLabel } from '../healthRows'
+import { adminButton, adminPage, adminSurface, adminType } from '../ui/classes'
 import type { ColumnDef } from '../ui/dataTable'
 import { DataTable } from '../ui/dataTable'
-import { MonitoringIcon } from '../ui/icons'
-import type { ReadinessRowModel } from './readinessRows'
-import { readinessOverallStatusLabel, readinessRows } from './readinessRows'
+import { TimeSeriesChart, type TimeSeriesDatum } from '../ui/timeSeriesChart'
+import {
+  formatMonitoringBytes,
+  formatMonitoringDuration,
+  formatMonitoringPercent,
+  formatMonitoringQPS,
+  monitoringDiagnostics,
+  monitoringMetricRows,
+  monitoringRouteRows,
+  monitoringStateView,
+  monitoringWindows,
+  type MonitoringDiagnosticRow,
+  type MonitoringRouteRow,
+} from './monitoringRows'
 
-type LoadMode = 'initial' | 'refresh'
+type LoadMode = 'initial' | 'refresh' | 'poll'
+
+const windowOptions: Array<{ value: MonitoringWindow; label: string }> = monitoringWindows.map((value) => ({ value, label: value }))
 
 const monitoringClasses = {
-  contextBar: 'flex flex-wrap items-center gap-x-6 gap-y-2 border-y border-[var(--border)] py-3 text-xs text-[var(--soft)]',
-  contextItem: 'inline-flex items-center gap-2',
-  contextValue: 'font-[family-name:var(--admin-font-mono)] font-semibold text-[var(--fg)]',
-  section: 'grid min-w-0 gap-3',
-  sectionHead: 'flex flex-wrap items-end justify-between gap-3',
-  sectionDescription: 'mt-1 text-xs leading-5 text-[var(--soft)]',
-  workbench: 'grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2',
-  blockerBand: 'grid min-w-0 gap-3 border-b border-[var(--border)] pb-5',
-  tableSurface: 'min-w-0 overflow-hidden border border-[var(--border)] bg-[var(--surface-solid)]',
+  controlBar: 'flex flex-wrap items-center justify-between gap-3 border-y border-[var(--border)] py-3',
+  controlGroup: 'flex min-w-0 flex-wrap items-center gap-3',
+  context: 'flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-[var(--soft)]',
+  contextValue: 'font-[family-name:var(--admin-font-mono)] font-semibold tabular-nums text-[var(--fg)]',
+  toggle: 'inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-3 text-xs font-semibold text-[var(--muted)] transition-colors hover:border-[var(--border-strong)]',
+  toggleTrack: 'relative h-4 w-7 rounded-full bg-[var(--border-strong)] transition-colors peer-checked:bg-[var(--accent)]',
+  toggleThumb: 'absolute left-0.5 top-0.5 size-3 rounded-full bg-white transition-transform peer-checked:translate-x-3',
+  chartGrid: 'grid min-w-0 grid-cols-12 gap-4 max-[1024px]:grid-cols-1',
+  chartWide: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-7'),
+  chartNarrow: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-5'),
+  chartFull: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-12'),
+  panelHead: 'mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] pb-3',
+  panelTitle: cn('m-0', adminType.sectionTitle),
+  panelDetail: 'm-0 mt-1 text-xs leading-5 text-[var(--soft)]',
+  legend: 'flex flex-wrap items-center gap-3 text-xs text-[var(--soft)]',
+  legendItem: 'inline-flex items-center gap-1.5',
+  legendDot: 'size-1.5 rounded-full',
+  diagnosisGrid: 'grid min-w-0 grid-cols-12 gap-4 max-[1024px]:grid-cols-1',
+  routes: cn(adminSurface.card, 'min-w-0 overflow-hidden p-0 lg:col-span-8'),
+  side: 'grid min-w-0 content-start gap-4 lg:col-span-4',
+  sidePanel: cn(adminSurface.card, 'min-w-0 p-5'),
+  tableHead: 'flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4',
+  tableSurface: 'min-w-0 overflow-hidden',
+  distribution: 'grid gap-3',
+  distributionRow: 'grid gap-1.5',
+  distributionMeta: 'flex items-center justify-between gap-3 text-xs font-semibold',
+  distributionTrack: 'h-1.5 overflow-hidden rounded-full bg-[var(--border)]',
+  distributionFill: 'h-full rounded-full transition-[width] duration-[var(--admin-motion-base)]',
 }
 
 export function MonitoringPage() {
-  const [providers, setProviders] = useState<ProviderHealth[]>([])
+  const [snapshot, setSnapshot] = useState<AdminMonitoringSnapshot | null>(null)
   const [readiness, setReadiness] = useState<ReadinessReport | null>(null)
+  const [selectedWindow, setSelectedWindow] = useState<MonitoringWindow>('15m')
+  const [autoRefresh, setAutoRefresh] = useState(true)
   const [initialLoading, setInitialLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [lastSuccessfulAt, setLastSuccessfulAt] = useState<string | null>(null)
+  const requestSequence = useRef(0)
 
-  async function load(mode: LoadMode) {
+  const load = useCallback(async (mode: LoadMode, targetWindow: MonitoringWindow, includeReadiness = false) => {
+    const requestID = ++requestSequence.current
     if (mode === 'initial') {
       setInitialLoading(true)
       setError(null)
-    } else {
+    } else if (mode === 'refresh') {
       setRefreshing(true)
       setRefreshError(null)
     }
     try {
-      const [dashboard, report] = await Promise.all([adminApi.dashboard(), adminApi.getReadiness()])
-      setProviders(dashboard.providers)
-      setReadiness(report)
+      const [nextSnapshot, nextReadiness] = await Promise.all([
+        adminApi.getMonitoringSnapshot(targetWindow),
+        includeReadiness ? adminApi.getReadiness() : Promise.resolve(null),
+      ])
+      if (requestID !== requestSequence.current) return
+      setSnapshot(nextSnapshot)
+      if (nextReadiness) setReadiness(nextReadiness)
+      setLastSuccessfulAt(new Date().toISOString())
+      setRefreshError(null)
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : '运维监控载入失败'
+      if (requestID !== requestSequence.current) return
+      const message = caught instanceof Error ? caught.message : '系统健康数据载入失败'
       if (mode === 'initial') setError(message)
       else setRefreshError(message)
     } finally {
+      if (requestID !== requestSequence.current) return
       if (mode === 'initial') setInitialLoading(false)
-      else setRefreshing(false)
+      if (mode === 'refresh') setRefreshing(false)
     }
+  }, [])
+
+  useEffect(() => {
+    void load('initial', '15m', true)
+  }, [load])
+
+  useEffect(() => {
+    if (!autoRefresh) return
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void load('poll', selectedWindow)
+      }
+    }
+    const interval = window.setInterval(refreshWhenVisible, 5000)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [autoRefresh, load, selectedWindow])
+
+  const metrics = useMemo(() => snapshot ? monitoringMetricRows(snapshot) : [], [snapshot])
+  const routes = useMemo(() => snapshot ? monitoringRouteRows(snapshot.routes) : [], [snapshot])
+  const diagnostics = useMemo(
+    () => monitoringDiagnostics(snapshot?.providers ?? [], readiness?.checks ?? []),
+    [readiness, snapshot],
+  )
+  const chartData = useMemo(() => snapshot ? monitoringChartData(snapshot) : [], [snapshot])
+
+  if (initialLoading) return <LoadingBlock label="载入系统运行指标" />
+  if (error) return <ErrorBlock message={error} onRetry={() => void load('initial', selectedWindow, true)} />
+  if (!snapshot) return <EmptyBlock title="暂无运行指标" detail="监控接口尚未返回有效快照。" />
+
+  const state = monitoringStateView(snapshot.state)
+  const snapshotWindowStale = snapshot.window !== selectedWindow
+
+  function handleWindowChange(window: MonitoringWindow) {
+    setSelectedWindow(window)
+    void load('refresh', window)
   }
 
-  useEffect(() => { void load('initial') }, [])
-
-  const providerRows = useMemo(() => healthProviderRows(providers), [providers])
-  const checkRows = useMemo(() => sortReadinessRows(readinessRows(readiness?.checks ?? [])), [readiness])
-  const blockingRows = checkRows.filter((row) => row.rawStatus === 'fail' && row.blockingTone === 'danger')
-  const summary = useMemo(() => ({
-    pass: readiness?.summary?.pass ?? readiness?.checks.filter((item) => item.status === 'pass').length ?? 0,
-    warn: readiness?.summary?.warn ?? readiness?.checks.filter((item) => item.status === 'warn').length ?? 0,
-    fail: readiness?.summary?.fail ?? readiness?.checks.filter((item) => item.status === 'fail').length ?? 0,
-  }), [readiness])
-  const providerFailures = providerRows.filter((row) => row.statusTone !== 'success').length
-  const averageLatency = providerRows.length
-    ? Math.round(providers.reduce((total, provider) => total + Number(provider.latency_ms || 0), 0) / providerRows.length)
-    : 0
-  const maxLatency = Math.max(0, ...providers.map((provider) => Number(provider.latency_ms || 0)))
-  const metrics = [
-    { label: '上线阻断', value: String(blockingRows.length), trend: blockingRows.length ? '需要优先修复' : '当前无阻断项', tone: blockingRows.length ? 'bad' as const : 'good' as const },
-    { label: '检查警告', value: String(summary.warn), trend: `通过 ${summary.pass} · 失败 ${summary.fail}`, tone: summary.warn ? 'warn' as const : 'good' as const },
-    { label: '异常探针', value: String(providerFailures), trend: `共 ${providerRows.length} 个上游探针`, tone: providerFailures ? 'bad' as const : 'good' as const },
-    { label: '平均延迟', value: `${averageLatency}ms`, trend: `最大 ${maxLatency}ms`, tone: 'neutral' as const },
-  ]
-
-  if (initialLoading) return <LoadingBlock label="载入运维监控" />
-  if (error) return <ErrorBlock message={error} onRetry={() => void load('initial')} />
-
   return (
-    <section className={adminPage.stack}>
+    <section className={adminPage.stack} data-admin-monitoring-runtime>
       <PageHeader
         title="系统健康"
-        description="阻断项、上线检查和真实上游探针保持在同一诊断工作台，便于值班直接定位并修复。"
+        description="实时观察应用请求、响应质量与 API 进程压力，并在异常出现时直接定位热点接口。"
         primaryAction={(
-          <button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={refreshing} onClick={() => void load('refresh')}>
-            <MonitoringIcon className={cn('size-4', refreshing && 'animate-pulse')} />
-            <span>{refreshing ? '探测中...' : '重新探测'}</span>
+          <button
+            type="button"
+            className={cn(adminButton.base, adminButton.primary)}
+            disabled={refreshing}
+            onClick={() => void load('refresh', selectedWindow, true)}
+          >
+            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} aria-hidden="true" />
+            <span>{refreshing ? '刷新中...' : '立即刷新'}</span>
           </button>
         )}
       />
-      <MetricStrip metrics={metrics} />
 
-      {refreshing ? <InlineFeedback tone="neutral" message="正在刷新监控数据，当前仍显示上一次诊断结果。" /> : null}
-      {refreshError ? <InlineFeedback tone="danger" message={`刷新失败：${refreshError}。当前仍显示上一次诊断结果。`} /> : null}
-
-      <div className={monitoringClasses.contextBar} aria-label="监控上下文">
-        <span className={monitoringClasses.contextItem}>上线检查 <strong className={monitoringClasses.contextValue}>{readiness ? readinessOverallStatusLabel(readiness.status) : '未返回'}</strong></span>
-        <span className={monitoringClasses.contextItem}>任务队列 <strong className={monitoringClasses.contextValue}>{taskQueuePressure(providers)}</strong></span>
-        <span className={monitoringClasses.contextItem}>最近检查 <strong className={monitoringClasses.contextValue}>{healthRefreshTimeLabel(readiness?.generated_at)}</strong></span>
+      <div className={monitoringClasses.controlBar}>
+        <div className={monitoringClasses.controlGroup}>
+          <Badge tone={state.tone}>{state.label}</Badge>
+          <div className={monitoringClasses.context} aria-label="运行监控上下文">
+            <span>运行时长 <strong className={monitoringClasses.contextValue}>{formatUptimeContext(snapshot.uptime_seconds)}</strong></span>
+            <span>数据窗口 <strong className={monitoringClasses.contextValue}>{snapshot.window}</strong></span>
+            <span>最后更新 <strong className={monitoringClasses.contextValue}>{healthRefreshTimeLabel(lastSuccessfulAt)}</strong></span>
+          </div>
+        </div>
+        <div className={monitoringClasses.controlGroup}>
+          <SegmentedControl value={selectedWindow} options={windowOptions} onChange={handleWindowChange} />
+          <label className={monitoringClasses.toggle}>
+            <input
+              type="checkbox"
+              className="peer sr-only"
+              checked={autoRefresh}
+              onChange={(event) => setAutoRefresh(event.target.checked)}
+            />
+            <span className={monitoringClasses.toggleTrack} aria-hidden="true">
+              <span className={monitoringClasses.toggleThumb} />
+            </span>
+            <span>自动刷新</span>
+          </label>
+        </div>
       </div>
 
-      <section data-admin-monitoring-blockers className={monitoringClasses.blockerBand}>
-        <header className={monitoringClasses.sectionHead}>
-          <div>
-            <h2 className={cn('m-0', adminType.sectionTitle)}>优先处理</h2>
-            <p className={monitoringClasses.sectionDescription}>阻塞上线的失败检查排在最前，并保留服务端返回的直接修复入口。</p>
-          </div>
-          <Badge tone={blockingRows.length ? 'danger' : 'success'}>{blockingRows.length ? `${blockingRows.length} 项阻断` : '无阻断'}</Badge>
-        </header>
-        {blockingRows.length ? (
-          <div className={monitoringClasses.tableSurface}>
-            <DataTable columns={readinessColumns()} rows={blockingRows} rowKey={(row) => row.key} />
-          </div>
-        ) : (
-          <InlineFeedback tone="success" message="当前没有阻塞上线的检查项。" />
-        )}
+      {refreshing ? <InlineFeedback tone="neutral" message="正在刷新运行指标，当前仍显示上一次成功数据。" /> : null}
+      {refreshError ? (
+        <InlineFeedback
+          tone="danger"
+          message={`刷新失败：${refreshError}。当前仍显示上一次成功数据${snapshotWindowStale ? `（${snapshot.window} 窗口）` : ''}。`}
+        />
+      ) : null}
+      {!autoRefresh ? <InlineFeedback tone="warning" message="自动刷新已暂停，当前数据不会继续更新。" /> : null}
+
+      <MetricStrip metrics={metrics} />
+
+      {snapshot.collecting ? (
+        <InlineFeedback tone="neutral" message="运行指标正在采集中，完成首个 5 秒采样周期后将显示趋势。" />
+      ) : null}
+
+      <section className={monitoringClasses.chartGrid} aria-label="运行趋势">
+        <TrendPanel
+          className={monitoringClasses.chartWide}
+          title="请求负载"
+          detail="业务请求速率与同一采样周期内的并发峰值。"
+          legend={[['QPS', 'var(--accent)'], ['并发', 'var(--green)']]}
+        >
+          <TimeSeriesChart
+            ariaLabel="请求负载趋势"
+            data={chartData}
+            series={[
+              { key: 'qps', label: 'QPS', color: 'var(--accent)', format: formatMonitoringQPS },
+              { key: 'inflight', label: '并发', color: 'var(--green)', axis: 'right', format: (value) => String(Math.round(value)) },
+            ]}
+          />
+        </TrendPanel>
+        <TrendPanel
+          className={monitoringClasses.chartNarrow}
+          title="响应质量"
+          detail="延迟分位数与服务端错误率，便于识别长尾退化。"
+          legend={[['P50', 'var(--green)'], ['P95', 'var(--amber)'], ['P99', 'var(--red)'], ['5xx', 'var(--accent-coral)']]}
+        >
+          <TimeSeriesChart
+            ariaLabel="响应质量趋势"
+            data={chartData}
+            series={[
+              { key: 'p50', label: 'P50', color: 'var(--green)', format: formatMonitoringDuration },
+              { key: 'p95', label: 'P95', color: 'var(--amber)', format: formatMonitoringDuration },
+              { key: 'p99', label: 'P99', color: 'var(--red)', format: formatMonitoringDuration },
+              { key: 'errorRate', label: '5xx', color: 'var(--accent-coral)', axis: 'right', format: formatMonitoringPercent },
+            ]}
+          />
+        </TrendPanel>
+        <TrendPanel
+          className={monitoringClasses.chartFull}
+          title="资源压力"
+          detail="API 进程 CPU、Go Heap 与 Goroutine 变化；指标不代表整台宿主机。"
+          legend={[['CPU', 'var(--accent-coral)'], ['Heap MB', 'var(--accent)'], ['Goroutine', 'var(--green)']]}
+        >
+          <TimeSeriesChart
+            ariaLabel="API 进程资源压力趋势"
+            data={chartData}
+            series={[
+              { key: 'cpu', label: 'CPU', color: 'var(--accent-coral)', format: formatMonitoringPercent },
+              { key: 'heap', label: 'Heap MB', color: 'var(--accent)', axis: 'right', format: (value) => `${value.toFixed(1)} MB` },
+              { key: 'goroutines', label: 'Goroutine', color: 'var(--green)', format: (value) => String(Math.round(value)) },
+            ]}
+          />
+        </TrendPanel>
       </section>
 
-      <div className={monitoringClasses.workbench}>
-        <section className={monitoringClasses.section}>
-          <header className={monitoringClasses.sectionHead}>
+      <section className={monitoringClasses.diagnosisGrid} aria-label="运行诊断">
+        <section className={monitoringClasses.routes}>
+          <header className={monitoringClasses.tableHead}>
             <div>
-              <h2 className={cn('m-0', adminType.sectionTitle)}>上游探针</h2>
-              <p className={monitoringClasses.sectionDescription}>展示每个 Provider 的真实状态、延迟、错误率和诊断说明。</p>
+              <h2 className={monitoringClasses.panelTitle}>热点接口</h2>
+              <p className={monitoringClasses.panelDetail}>按窗口请求量排序，路由使用服务端标准化 Pattern。</p>
             </div>
-            <Badge tone={providerFailures ? 'warning' : 'success'}>{providerFailures ? `${providerFailures} 个异常` : '全部正常'}</Badge>
+            <Badge tone={routes.some((row) => row.statusTone === 'danger') ? 'danger' : routes.some((row) => row.statusTone === 'warning') ? 'warning' : 'success'}>
+              {routes.length} 条路由
+            </Badge>
           </header>
           <div className={monitoringClasses.tableSurface}>
             <DataTable
-              columns={providerColumns()}
-              rows={providerRows}
-              rowKey={(row) => row.key}
-              empty={<EmptyBlock title="暂无上游探针" detail="Dashboard API 尚未返回 Provider 探针数据。" />}
+              columns={routeColumns()}
+              rows={routes}
+              rowKey={(row) => row.route}
+              empty={<EmptyBlock variant="inline" title="暂无业务请求" detail="当前窗口内还没有可聚合的 API 请求。" />}
             />
           </div>
         </section>
 
-        <section className={monitoringClasses.section}>
-          <header className={monitoringClasses.sectionHead}>
-            <div>
-              <h2 className={cn('m-0', adminType.sectionTitle)}>完整上线检查</h2>
-              <p className={monitoringClasses.sectionDescription}>阻断、失败和警告优先排序，仍展示全部检查上下文。</p>
+        <aside className={monitoringClasses.side}>
+          <StatusDistribution snapshot={snapshot} />
+          <section className={monitoringClasses.sidePanel}>
+            <div className={monitoringClasses.panelHead}>
+              <div>
+                <h2 className={monitoringClasses.panelTitle}>依赖与诊断</h2>
+                <p className={monitoringClasses.panelDetail}>只展示异常 Provider 与需要处理的配置项。</p>
+              </div>
+              <Badge tone={diagnostics.some((row) => row.statusTone === 'danger') ? 'danger' : diagnostics.length ? 'warning' : 'success'}>
+                {diagnostics.length ? `${diagnostics.length} 项` : '无异常'}
+              </Badge>
             </div>
-            <Badge tone={summary.fail ? 'danger' : summary.warn ? 'warning' : 'success'}>{readiness ? readinessOverallStatusLabel(readiness.status) : '未返回'}</Badge>
-          </header>
-          <div className={monitoringClasses.tableSurface}>
-            <DataTable
-              columns={readinessColumns()}
-              rows={checkRows}
-              rowKey={(row) => row.key}
-              empty={<EmptyBlock title="暂无上线检查" detail="Readiness API 尚未返回诊断检查。" />}
-            />
+            {diagnostics.length ? (
+              <div className="-mx-5 -mb-5">
+                <DataTable columns={diagnosticColumns()} rows={diagnostics} rowKey={(row) => row.key} />
+              </div>
+            ) : (
+              <EmptyBlock variant="inline" title="依赖状态正常" detail="当前没有异常 Provider 或配置诊断。" />
+            )}
+          </section>
+        </aside>
+      </section>
+    </section>
+  )
+}
+
+function TrendPanel({
+  className,
+  title,
+  detail,
+  legend,
+  children,
+}: {
+  className: string
+  title: string
+  detail: string
+  legend: Array<[string, string]>
+  children: React.ReactNode
+}) {
+  return (
+    <section className={className}>
+      <header className={monitoringClasses.panelHead}>
+        <div>
+          <h2 className={monitoringClasses.panelTitle}>{title}</h2>
+          <p className={monitoringClasses.panelDetail}>{detail}</p>
+        </div>
+        <div className={monitoringClasses.legend} aria-label={`${title}图例`}>
+          {legend.map(([label, color]) => (
+            <span key={label} className={monitoringClasses.legendItem}>
+              <span className={monitoringClasses.legendDot} style={{ backgroundColor: color }} />
+              {label}
+            </span>
+          ))}
+        </div>
+      </header>
+      {children}
+    </section>
+  )
+}
+
+function StatusDistribution({ snapshot }: { snapshot: AdminMonitoringSnapshot }) {
+  const rows = [
+    { label: '2xx', value: snapshot.statuses.success, color: 'bg-[var(--green)]' },
+    { label: '3xx', value: snapshot.statuses.redirect, color: 'bg-[var(--accent)]' },
+    { label: '4xx', value: snapshot.statuses.client_error, color: 'bg-[var(--amber)]' },
+    { label: '5xx', value: snapshot.statuses.server_error, color: 'bg-[var(--red)]' },
+  ]
+  const total = Math.max(1, snapshot.statuses.total)
+  return (
+    <section className={monitoringClasses.sidePanel}>
+      <div className={monitoringClasses.panelHead}>
+        <div>
+          <h2 className={monitoringClasses.panelTitle}>状态码分布</h2>
+          <p className={monitoringClasses.panelDetail}>所选窗口共 {snapshot.statuses.total.toLocaleString('en-US')} 次请求。</p>
+        </div>
+      </div>
+      <div className={monitoringClasses.distribution}>
+        {rows.map((row) => (
+          <div key={row.label} className={monitoringClasses.distributionRow}>
+            <div className={monitoringClasses.distributionMeta}>
+              <span className="text-[var(--soft)]">{row.label}</span>
+              <span className="font-[family-name:var(--admin-font-mono)] tabular-nums text-[var(--fg)]">
+                {row.value.toLocaleString('en-US')} · {formatMonitoringPercent((row.value / total) * 100)}
+              </span>
+            </div>
+            <div className={monitoringClasses.distributionTrack}>
+              <div className={cn(monitoringClasses.distributionFill, row.color)} style={{ width: `${(row.value / total) * 100}%` }} />
+            </div>
           </div>
-        </section>
+        ))}
       </div>
     </section>
   )
 }
 
-function providerColumns(): ColumnDef<HealthProviderRow>[] {
+function monitoringChartData(snapshot: AdminMonitoringSnapshot): TimeSeriesDatum[] {
+  return snapshot.series.map((point) => ({
+    at: point.at,
+    values: {
+      qps: point.qps,
+      inflight: point.peak_inflight,
+      p50: point.p50_ms,
+      p95: point.p95_ms,
+      p99: point.p99_ms,
+      errorRate: point.server_error_rate,
+      cpu: point.cpu_percent,
+      heap: point.heap_bytes / (1024 * 1024),
+      goroutines: point.goroutines,
+    },
+  }))
+}
+
+function routeColumns(): ColumnDef<MonitoringRouteRow>[] {
   return [
-    { key: 'provider', title: '探针', width: 'minmax(150px,1.4fr)', render: (row) => <strong className="text-[var(--fg)]">{row.name}</strong> },
-    { key: 'status', title: '状态', width: 'minmax(90px,.8fr)', render: (row) => <Badge tone={row.statusTone}>{row.statusLabel}</Badge> },
-    { key: 'latency', title: '延迟', width: 'minmax(90px,.8fr)', align: 'right', kind: 'number', render: (row) => row.latencyLabel },
-    { key: 'errorRate', title: '错误率', width: 'minmax(90px,.8fr)', align: 'right', kind: 'number', render: (row) => row.errorRate },
-    { key: 'note', title: '说明', width: 'minmax(180px,2fr)', render: (row) => <span className="[overflow-wrap:anywhere]">{row.note}</span> },
+    { key: 'route', title: '标准化路由', width: 'minmax(250px,2.2fr)', kind: 'code', render: (row) => <strong className="text-[var(--fg)]">{row.route}</strong> },
+    { key: 'requests', title: '请求数', width: 'minmax(90px,.7fr)', align: 'right', kind: 'number', render: (row) => row.requestsLabel },
+    { key: 'qps', title: 'QPS', width: 'minmax(80px,.65fr)', align: 'right', kind: 'number', render: (row) => row.qpsLabel },
+    { key: 'p95', title: 'P95', width: 'minmax(90px,.7fr)', align: 'right', kind: 'number', render: (row) => row.p95Label },
+    { key: 'errors', title: '5xx', width: 'minmax(80px,.65fr)', align: 'right', kind: 'number', render: (row) => row.serverErrorLabel },
+    { key: 'state', title: '状态', width: 'minmax(90px,.7fr)', render: (row) => <Badge tone={row.statusTone}>{row.statusLabel}</Badge> },
   ]
 }
 
-function readinessColumns(): ColumnDef<ReadinessRowModel>[] {
+function diagnosticColumns(): ColumnDef<MonitoringDiagnosticRow>[] {
   return [
     {
-      key: 'check',
-      title: '检查项',
-      width: 'minmax(180px,1.5fr)',
-      render: (row) => <div className="min-w-0"><strong className="text-[var(--fg)]">{row.label}</strong><div className="mt-1 font-[family-name:var(--admin-font-mono)] text-xs text-[var(--soft)]">{row.key}</div></div>,
+      key: 'item',
+      title: '异常项',
+      width: 'minmax(160px,1.2fr)',
+      render: (row) => <div className="min-w-0"><strong className="text-[var(--fg)]">{row.label}</strong><p className="m-0 mt-1 text-xs text-[var(--soft)]">{row.detail}</p></div>,
     },
-    { key: 'status', title: '状态', width: 'minmax(90px,.7fr)', render: (row) => <Badge tone={row.statusTone}>{row.status}</Badge> },
-    { key: 'impact', title: '上线影响', width: 'minmax(100px,.9fr)', render: (row) => <Badge tone={row.blockingTone}>{row.blockingLabel}</Badge> },
-    { key: 'detail', title: '诊断说明', width: 'minmax(220px,2.2fr)', render: (row) => <span className="[overflow-wrap:anywhere]">{row.detail}</span> },
-    { key: 'action', title: '修复入口', width: 'minmax(120px,1fr)', align: 'right', render: (row) => <a className={cn(adminButton.base, adminButton.secondary, adminButton.small)} href={row.actionHref}>{row.actionLabel}</a> },
+    { key: 'status', title: '状态', width: 'minmax(80px,.6fr)', render: (row) => <Badge tone={row.statusTone}>{row.statusLabel}</Badge> },
+    { key: 'action', title: '处理', width: 'minmax(96px,.6fr)', align: 'right', render: (row) => <a className={cn(adminButton.base, adminButton.small)} href={row.actionHref}>{row.actionLabel}</a> },
   ]
 }
 
-function sortReadinessRows(rows: ReadinessRowModel[]) {
-  return rows.slice().sort((left, right) => readinessPriority(left) - readinessPriority(right))
-}
-
-function readinessPriority(row: ReadinessRowModel) {
-  if (row.rawStatus === 'fail' && row.blockingTone === 'danger') return 0
-  if (row.rawStatus === 'fail') return 1
-  if (row.rawStatus === 'warn') return 2
-  return 3
+function formatUptimeContext(seconds: number) {
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
 }
