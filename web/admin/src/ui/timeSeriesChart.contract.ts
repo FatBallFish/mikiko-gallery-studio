@@ -32,6 +32,7 @@ const source = readFileSync(new URL('./timeSeriesChart.tsx', import.meta.url), '
 for (const contract of [
   'viewBox="0 0 640 220"',
   'tabIndex={0}',
+  'keyboardInspectionRef',
   "event.key === 'ArrowLeft'",
   "event.key === 'ArrowRight'",
   "event.key === 'Home'",
@@ -41,12 +42,13 @@ for (const contract of [
   'latest',
   'minimum',
   'maximum',
+  'focus-visible:ring-[var(--accent)]',
 ]) {
   if (!source.includes(contract)) {
     throw new Error(`time-series chart should preserve interaction/accessibility contract ${contract}`)
   }
 }
-for (const forbidden of ['animateMotion', 'fakePoint', 'Math.random', 'rounded-2xl', 'rounded-3xl']) {
+for (const forbidden of ['animateMotion', 'fakePoint', 'Math.random', 'rounded-2xl', 'rounded-3xl', 'var(--focus)']) {
   if (source.includes(forbidden)) {
     throw new Error(`time-series chart should not include ${forbidden}`)
   }

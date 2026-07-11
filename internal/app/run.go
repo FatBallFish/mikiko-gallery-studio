@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/app/observability"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
@@ -80,6 +81,9 @@ func Run() error {
 	if err := validateSecureConfigEncryptionKey(cfg); err != nil {
 		return err
 	}
+	metricsContext, stopMetrics := context.WithCancel(context.Background())
+	defer stopMetrics()
+	observability.DefaultMetrics().Runtime().Start(metricsContext)
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	client, err := db.Open(cfg.Database.URL)
