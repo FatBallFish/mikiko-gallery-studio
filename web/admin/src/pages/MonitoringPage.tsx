@@ -2,196 +2,198 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ProviderHealth, ReadinessReport } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
-import { healthProviderRows, healthRefreshTimeLabel, refreshPolicyLabel, taskQueuePressure } from '../healthRows'
-import { adminButton } from '../ui/classes'
-import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, MetricStrip, PageHeader } from '../components'
+import { healthProviderRows, healthRefreshTimeLabel, taskQueuePressure } from '../healthRows'
+import type { HealthProviderRow } from '../healthRows'
+import { adminButton, adminPage, adminType } from '../ui/classes'
+import type { ColumnDef } from '../ui/dataTable'
+import { DataTable } from '../ui/dataTable'
 import { MonitoringIcon } from '../ui/icons'
+import type { ReadinessRowModel } from './readinessRows'
 import { readinessOverallStatusLabel, readinessRows } from './readinessRows'
 
+type LoadMode = 'initial' | 'refresh'
+
 const monitoringClasses = {
-  sectionHeader: 'flex items-end justify-between gap-4',
-  sectionTitle: 'flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
-  healthGrid: 'grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3',
-  healthCard: 'flex items-center gap-5 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-6 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]',
-  healthIcon: 'grid size-12 shrink-0 place-items-center rounded-lg bg-[var(--canvas)] text-[var(--accent)]',
-  healthLabel: 'text-sm font-bold text-[var(--text)]',
-  healthValue: 'font-mono text-xs text-[var(--muted-strong)]',
-  healthStatus: 'size-2.5 rounded-full shadow-[0_0_10px_currentColor]',
-  chartGrid: 'grid grid-cols-1 gap-8 lg:grid-cols-2',
-  panel: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-8',
-  panelHeader: 'mb-6 flex items-end justify-between gap-4',
-  slaValue: 'text-4xl font-black tracking-tighter text-[var(--green)]',
-  slaLabel: 'mt-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]',
-  metricRow: 'flex items-center justify-between gap-4 rounded-lg bg-[var(--canvas)] p-4',
-  latencyCard: 'rounded-lg bg-[var(--canvas)] p-6',
-  tableTitle: 'border-b border-[var(--border)] bg-[var(--surface-solid)] p-6 text-sm font-bold text-[var(--text)]',
+  contextBar: 'flex flex-wrap items-center gap-x-6 gap-y-2 border-y border-[var(--border)] py-3 text-xs text-[var(--soft)]',
+  contextItem: 'inline-flex items-center gap-2',
+  contextValue: 'font-[family-name:var(--admin-font-mono)] font-semibold text-[var(--fg)]',
+  section: 'grid min-w-0 gap-3',
+  sectionHead: 'flex flex-wrap items-end justify-between gap-3',
+  sectionDescription: 'mt-1 text-xs leading-5 text-[var(--soft)]',
+  workbench: 'grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2',
+  blockerBand: 'grid min-w-0 gap-3 border-b border-[var(--border)] pb-5',
+  tableSurface: 'min-w-0 overflow-hidden border border-[var(--border)] bg-[var(--surface-solid)]',
 }
 
 export function MonitoringPage() {
   const [providers, setProviders] = useState<ProviderHealth[]>([])
   const [readiness, setReadiness] = useState<ReadinessReport | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true)
-    setError(null)
+  async function load(mode: LoadMode) {
+    if (mode === 'initial') {
+      setInitialLoading(true)
+      setError(null)
+    } else {
+      setRefreshing(true)
+      setRefreshError(null)
+    }
     try {
       const [dashboard, report] = await Promise.all([adminApi.dashboard(), adminApi.getReadiness()])
       setProviders(dashboard.providers)
       setReadiness(report)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '运维监控载入失败')
+      const message = caught instanceof Error ? caught.message : '运维监控载入失败'
+      if (mode === 'initial') setError(message)
+      else setRefreshError(message)
     } finally {
-      setLoading(false)
+      if (mode === 'initial') setInitialLoading(false)
+      else setRefreshing(false)
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void load('initial') }, [])
 
   const providerRows = useMemo(() => healthProviderRows(providers), [providers])
-  const checkRows = useMemo(() => readinessRows(readiness?.checks ?? []), [readiness])
+  const checkRows = useMemo(() => sortReadinessRows(readinessRows(readiness?.checks ?? [])), [readiness])
+  const blockingRows = checkRows.filter((row) => row.rawStatus === 'fail' && row.blockingTone === 'danger')
   const summary = useMemo(() => ({
     pass: readiness?.summary?.pass ?? readiness?.checks.filter((item) => item.status === 'pass').length ?? 0,
     warn: readiness?.summary?.warn ?? readiness?.checks.filter((item) => item.status === 'warn').length ?? 0,
     fail: readiness?.summary?.fail ?? readiness?.checks.filter((item) => item.status === 'fail').length ?? 0,
   }), [readiness])
   const providerFailures = providerRows.filter((row) => row.statusTone !== 'success').length
-  const healthScore = readiness ? Math.max(0, Math.round((summary.pass / Math.max(readiness.checks.length, 1)) * 10000) / 100) : 100
   const averageLatency = providerRows.length
     ? Math.round(providers.reduce((total, provider) => total + Number(provider.latency_ms || 0), 0) / providerRows.length)
     : 0
+  const maxLatency = Math.max(0, ...providers.map((provider) => Number(provider.latency_ms || 0)))
+  const metrics = [
+    { label: '上线阻断', value: String(blockingRows.length), trend: blockingRows.length ? '需要优先修复' : '当前无阻断项', tone: blockingRows.length ? 'bad' as const : 'good' as const },
+    { label: '检查警告', value: String(summary.warn), trend: `通过 ${summary.pass} · 失败 ${summary.fail}`, tone: summary.warn ? 'warn' as const : 'good' as const },
+    { label: '异常探针', value: String(providerFailures), trend: `共 ${providerRows.length} 个上游探针`, tone: providerFailures ? 'bad' as const : 'good' as const },
+    { label: '平均延迟', value: `${averageLatency}ms`, trend: `最大 ${maxLatency}ms`, tone: 'neutral' as const },
+  ]
 
-  if (loading) return <LoadingBlock label="载入运维监控" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
-  if (!providerRows.length && !checkRows.length) return <EmptyBlock title="暂无监控数据" detail="Provider 探针与上线检查均未返回结果。" />
+  if (initialLoading) return <LoadingBlock label="载入运维监控" />
+  if (error) return <ErrorBlock message={error} onRetry={() => void load('initial')} />
 
   return (
-    <section className="grid gap-10">
+    <section className={adminPage.stack}>
       <PageHeader
         title="系统健康"
-        description="阻断项、探针和任务队列优先展示，便于值班快速定位运行风险。"
-        actions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => void load()}>重新探测</button>}
+        description="阻断项、上线检查和真实上游探针保持在同一诊断工作台，便于值班直接定位并修复。"
+        primaryAction={(
+          <button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={refreshing} onClick={() => void load('refresh')}>
+            <MonitoringIcon className={cn('size-4', refreshing && 'animate-pulse')} />
+            <span>{refreshing ? '探测中...' : '重新探测'}</span>
+          </button>
+        )}
       />
-      <div className={monitoringClasses.sectionHeader}>
-        <h3 className={monitoringClasses.sectionTitle}>基础信息</h3>
+      <MetricStrip metrics={metrics} />
+
+      {refreshing ? <InlineFeedback tone="neutral" message="正在刷新监控数据，当前仍显示上一次诊断结果。" /> : null}
+      {refreshError ? <InlineFeedback tone="danger" message={`刷新失败：${refreshError}。当前仍显示上一次诊断结果。`} /> : null}
+
+      <div className={monitoringClasses.contextBar} aria-label="监控上下文">
+        <span className={monitoringClasses.contextItem}>上线检查 <strong className={monitoringClasses.contextValue}>{readiness ? readinessOverallStatusLabel(readiness.status) : '未返回'}</strong></span>
+        <span className={monitoringClasses.contextItem}>任务队列 <strong className={monitoringClasses.contextValue}>{taskQueuePressure(providers)}</strong></span>
+        <span className={monitoringClasses.contextItem}>最近检查 <strong className={monitoringClasses.contextValue}>{healthRefreshTimeLabel(readiness?.generated_at)}</strong></span>
       </div>
 
-      <div className={monitoringClasses.healthGrid}>
-        {providerRows.map((row) => (
-          <HealthCard key={row.key} label={row.name} value={`${row.latencyLabel} · ${row.errorRate}`} tone={row.statusTone} />
-        ))}
-        <HealthCard label="任务队列" value={taskQueuePressure(providers)} tone={providerFailures ? 'warning' : 'success'} />
-        <HealthCard label="上线检查" value={readiness ? readinessOverallStatusLabel(readiness.status) : '未返回'} tone={summary.fail ? 'danger' : summary.warn ? 'warning' : 'success'} />
-        <HealthCard label="刷新时间" value={healthRefreshTimeLabel(readiness?.generated_at)} tone="neutral" />
-      </div>
-
-      <div className={monitoringClasses.chartGrid}>
-        <section className={monitoringClasses.panel}>
-          <div className={monitoringClasses.panelHeader}>
-            <h3 className={monitoringClasses.sectionTitle}>SLA 指标</h3>
-            <div className="flex gap-2">
-              {['1m', '5m', '1h'].map((item) => <span key={item} className={cn('rounded-full px-3 py-1 text-[10px] font-bold', item === '5m' ? 'bg-[var(--accent)] text-white' : 'bg-[var(--surface-solid)] text-[var(--muted)]')}>{item}</span>)}
-            </div>
+      <section data-admin-monitoring-blockers className={monitoringClasses.blockerBand}>
+        <header className={monitoringClasses.sectionHead}>
+          <div>
+            <h2 className={cn('m-0', adminType.sectionTitle)}>优先处理</h2>
+            <p className={monitoringClasses.sectionDescription}>阻塞上线的失败检查排在最前，并保留服务端返回的直接修复入口。</p>
           </div>
-          <div className="mb-8 flex items-center justify-between gap-4">
+          <Badge tone={blockingRows.length ? 'danger' : 'success'}>{blockingRows.length ? `${blockingRows.length} 项阻断` : '无阻断'}</Badge>
+        </header>
+        {blockingRows.length ? (
+          <div className={monitoringClasses.tableSurface}>
+            <DataTable columns={readinessColumns()} rows={blockingRows} rowKey={(row) => row.key} />
+          </div>
+        ) : (
+          <InlineFeedback tone="success" message="当前没有阻塞上线的检查项。" />
+        )}
+      </section>
+
+      <div className={monitoringClasses.workbench}>
+        <section className={monitoringClasses.section}>
+          <header className={monitoringClasses.sectionHead}>
             <div>
-              <div className={monitoringClasses.slaValue}>{healthScore.toFixed(2)}%</div>
-              <div className={monitoringClasses.slaLabel}>健康总评分</div>
+              <h2 className={cn('m-0', adminType.sectionTitle)}>上游探针</h2>
+              <p className={monitoringClasses.sectionDescription}>展示每个 Provider 的真实状态、延迟、错误率和诊断说明。</p>
             </div>
-            <div className="text-right">
-              <div className="text-xl font-bold text-[var(--text)]">{providerFailures}</div>
-              <div className={monitoringClasses.slaLabel}>异常探针</div>
-            </div>
-          </div>
-          <div className="grid gap-4">
-            <MetricRow label="通过检查" value={`${summary.pass} 项`} tone="success" />
-            <MetricRow label="警告检查" value={`${summary.warn} 项`} tone={summary.warn ? 'warning' : 'success'} />
-            <MetricRow label="阻塞检查" value={`${summary.fail} 项`} tone={summary.fail ? 'danger' : 'success'} />
+            <Badge tone={providerFailures ? 'warning' : 'success'}>{providerFailures ? `${providerFailures} 个异常` : '全部正常'}</Badge>
+          </header>
+          <div className={monitoringClasses.tableSurface}>
+            <DataTable
+              columns={providerColumns()}
+              rows={providerRows}
+              rowKey={(row) => row.key}
+              empty={<EmptyBlock title="暂无上游探针" detail="Dashboard API 尚未返回 Provider 探针数据。" />}
+            />
           </div>
         </section>
 
-        <section className={monitoringClasses.panel}>
-          <div className={monitoringClasses.panelHeader}>
-            <h3 className={monitoringClasses.sectionTitle}>生图耗时</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-6">
-            <LatencyCard label="平均" value={`${averageLatency}ms`} />
-            <LatencyCard label="最大" value={`${Math.max(0, ...providers.map((provider) => Number(provider.latency_ms || 0)))}ms`} />
-            <LatencyCard label="策略" value={refreshPolicyLabel('30s interval')} />
-            <LatencyCard label="队列" value={taskQueuePressure(providers)} />
-          </div>
-        </section>
-      </div>
-
-      <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
-        <section className={adminDataGrid.root}>
-          <div className={monitoringClasses.tableTitle}>上游探针</div>
-          <div className={cn(adminDataGrid.head, adminGridCols.health)}><span>探针</span><span>状态</span><span>延迟</span><span>错误率</span><span>说明</span></div>
-          {providerRows.map((row) => (
-            <div key={row.key} className={cn(adminDataGrid.row, adminGridCols.health)}>
-              <strong>{row.name}</strong>
-              <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
-              <code className={adminDataGrid.code}>{row.latencyLabel}</code>
-              <code className={adminDataGrid.code}>{row.errorRate}</code>
-              <span className={adminDataGrid.cell}>{row.note}</span>
+        <section className={monitoringClasses.section}>
+          <header className={monitoringClasses.sectionHead}>
+            <div>
+              <h2 className={cn('m-0', adminType.sectionTitle)}>完整上线检查</h2>
+              <p className={monitoringClasses.sectionDescription}>阻断、失败和警告优先排序，仍展示全部检查上下文。</p>
             </div>
-          ))}
-        </section>
-
-        <section className={adminDataGrid.root}>
-          <div className={monitoringClasses.tableTitle}>上线检查</div>
-          <div className={cn(adminDataGrid.head, adminGridCols.readiness)}><span>检查项</span><span>状态</span><span>阻塞</span><span>修复入口</span><span>说明</span></div>
-          {checkRows.map((check) => (
-            <div key={check.key} className={cn(adminDataGrid.row, adminGridCols.readiness)}>
-              <div className={adminDataGrid.stackCell}>
-                <strong>{check.label}</strong>
-                <p className={adminDataGrid.detail}>{check.key}</p>
-              </div>
-              <Badge tone={check.statusTone}>{check.status}</Badge>
-              <Badge tone={check.blockingTone}>{check.blockingLabel}</Badge>
-              <a className={cn(adminButton.base, adminButton.small)} href={check.actionHref}>{check.actionLabel}</a>
-              <span className={adminDataGrid.cell}>{check.detail}</span>
-            </div>
-          ))}
+            <Badge tone={summary.fail ? 'danger' : summary.warn ? 'warning' : 'success'}>{readiness ? readinessOverallStatusLabel(readiness.status) : '未返回'}</Badge>
+          </header>
+          <div className={monitoringClasses.tableSurface}>
+            <DataTable
+              columns={readinessColumns()}
+              rows={checkRows}
+              rowKey={(row) => row.key}
+              empty={<EmptyBlock title="暂无上线检查" detail="Readiness API 尚未返回诊断检查。" />}
+            />
+          </div>
         </section>
       </div>
     </section>
   )
 }
 
-function HealthCard({ label, value, tone }: { label: string; value: string; tone: 'success' | 'warning' | 'danger' | 'neutral' }) {
-  const color = tone === 'success' ? 'text-emerald-500' : tone === 'warning' ? 'text-amber-500' : tone === 'danger' ? 'text-rose-500' : 'text-[var(--accent)]'
-  return (
-    <div className={monitoringClasses.healthCard}>
-      <div className={monitoringClasses.healthIcon}><PulseIcon /></div>
-      <div className="min-w-0 flex-1">
-        <div className={monitoringClasses.healthLabel}>{label}</div>
-        <div className={monitoringClasses.healthValue}>{value}</div>
-      </div>
-      <span className={cn(monitoringClasses.healthStatus, color)} />
-    </div>
-  )
+function providerColumns(): ColumnDef<HealthProviderRow>[] {
+  return [
+    { key: 'provider', title: '探针', width: 'minmax(150px,1.4fr)', render: (row) => <strong className="text-[var(--fg)]">{row.name}</strong> },
+    { key: 'status', title: '状态', width: 'minmax(90px,.8fr)', render: (row) => <Badge tone={row.statusTone}>{row.statusLabel}</Badge> },
+    { key: 'latency', title: '延迟', width: 'minmax(90px,.8fr)', align: 'right', kind: 'number', render: (row) => row.latencyLabel },
+    { key: 'errorRate', title: '错误率', width: 'minmax(90px,.8fr)', align: 'right', kind: 'number', render: (row) => row.errorRate },
+    { key: 'note', title: '说明', width: 'minmax(180px,2fr)', render: (row) => <span className="[overflow-wrap:anywhere]">{row.note}</span> },
+  ]
 }
 
-function MetricRow({ label, value, tone }: { label: string; value: string; tone: 'success' | 'warning' | 'danger' }) {
-  const color = tone === 'success' ? 'text-emerald-400' : tone === 'warning' ? 'text-amber-400' : 'text-rose-400'
-  return (
-    <div className={monitoringClasses.metricRow}>
-      <span className="text-xs font-medium text-[var(--muted)]">{label}</span>
-      <span className={cn('text-sm font-bold', color)}>{value}</span>
-    </div>
-  )
+function readinessColumns(): ColumnDef<ReadinessRowModel>[] {
+  return [
+    {
+      key: 'check',
+      title: '检查项',
+      width: 'minmax(180px,1.5fr)',
+      render: (row) => <div className="min-w-0"><strong className="text-[var(--fg)]">{row.label}</strong><div className="mt-1 font-[family-name:var(--admin-font-mono)] text-xs text-[var(--soft)]">{row.key}</div></div>,
+    },
+    { key: 'status', title: '状态', width: 'minmax(90px,.7fr)', render: (row) => <Badge tone={row.statusTone}>{row.status}</Badge> },
+    { key: 'impact', title: '上线影响', width: 'minmax(100px,.9fr)', render: (row) => <Badge tone={row.blockingTone}>{row.blockingLabel}</Badge> },
+    { key: 'detail', title: '诊断说明', width: 'minmax(220px,2.2fr)', render: (row) => <span className="[overflow-wrap:anywhere]">{row.detail}</span> },
+    { key: 'action', title: '修复入口', width: 'minmax(120px,1fr)', align: 'right', render: (row) => <a className={cn(adminButton.base, adminButton.secondary, adminButton.small)} href={row.actionHref}>{row.actionLabel}</a> },
+  ]
 }
 
-function LatencyCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={monitoringClasses.latencyCard}>
-      <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]">{label}</div>
-      <div className="text-2xl font-black text-[var(--text)]">{value}</div>
-    </div>
-  )
+function sortReadinessRows(rows: ReadinessRowModel[]) {
+  return rows.slice().sort((left, right) => readinessPriority(left) - readinessPriority(right))
 }
 
-const PulseIcon = () => <MonitoringIcon className="size-5" />
+function readinessPriority(row: ReadinessRowModel) {
+  if (row.rawStatus === 'fail' && row.blockingTone === 'danger') return 0
+  if (row.rawStatus === 'fail') return 1
+  if (row.rawStatus === 'warn') return 2
+  return 3
+}

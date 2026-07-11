@@ -1,5 +1,39 @@
 import type { ProviderHealth } from '../../shared/api-types'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
 import { healthProviderRows, healthReadinessRows, healthRefreshTimeLabel, healthStatusLabel, healthStatusTone, providerHealthValue, providerHealthWarn, refreshPolicyLabel, taskQueuePressure } from './healthRows'
+
+const monitoringPageSource = readFileSync(new URL('./pages/MonitoringPage.tsx', import.meta.url), 'utf8')
+
+for (const requiredPrimitive of ['MetricStrip', 'DataTable', 'Badge', 'InlineFeedback']) {
+  if (!monitoringPageSource.includes(requiredPrimitive)) {
+    throw new Error(`monitoring workbench should use the shared ${requiredPrimitive} primitive`)
+  }
+}
+
+for (const refreshContract of [
+  'const [initialLoading',
+  'const [refreshing',
+  'const [refreshError',
+  "load('refresh')",
+  '当前仍显示上一次诊断结果',
+]) {
+  if (!monitoringPageSource.includes(refreshContract)) {
+    throw new Error(`monitoring refresh should preserve stale diagnostics with ${refreshContract}`)
+  }
+}
+
+for (const diagnosticContract of ['blockingRows', 'sortReadinessRows', 'data-admin-monitoring-blockers', 'actionHref', 'actionLabel']) {
+  if (!monitoringPageSource.includes(diagnosticContract)) {
+    throw new Error(`monitoring workbench should prioritize blocking diagnostics with ${diagnosticContract}`)
+  }
+}
+
+for (const forbiddenPattern of ['setLoading(true)', "'1m'", "'5m'", "'1h'", 'healthScore', 'averageLatency >', 'rounded-2xl', 'rounded-3xl', 'tracking-[', 'uppercase']) {
+  if (monitoringPageSource.includes(forbiddenPattern)) {
+    throw new Error(`monitoring workbench should remove stale or decorative pattern ${forbiddenPattern}`)
+  }
+}
 
 assertEqual(healthStatusLabel('healthy'), '健康', 'healthy status label')
 assertEqual(healthStatusTone('healthy'), 'success', 'healthy status tone')
