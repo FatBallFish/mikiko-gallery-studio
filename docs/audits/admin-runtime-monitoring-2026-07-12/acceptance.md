@@ -14,7 +14,7 @@ Environment: Docker development stack at `http://127.0.0.1:8088/admin/`
 ## Interaction and accessibility
 
 - The automatic-refresh control exposes `role="switch"` and `aria-checked`; the previous hidden-checkbox page overflow is absent.
-- With automatic refresh disabled, no monitoring snapshot request occurred during a 6.2-second interval. Re-enabling it triggered an immediate successful snapshot request.
+- With automatic refresh disabled, no monitoring snapshot request occurred during a 6.2-second interval. Re-enabling it restored successful snapshot polling.
 - While the monitoring tab was hidden for 6.2 seconds, no snapshot request occurred. Returning to the tab triggered an immediate refresh.
 - The request-load chart accepted `Home`, `End`, `ArrowLeft`, and `ArrowRight`; keyboard focus showed a 2px solid outline.
 - `prefers-reduced-motion: reduce` was detected by the page during acceptance.
