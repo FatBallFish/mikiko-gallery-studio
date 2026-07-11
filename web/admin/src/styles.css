@@ -1,16 +1,23 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
 @import 'tailwindcss';
 @import '../../shared/base.css';
 
 @theme {
-  --font-admin-display: 'Fraunces', ui-serif, Georgia, serif;
-  --font-admin-body: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-admin-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-admin-display: var(--admin-font-ui);
+  --font-admin-body: var(--admin-font-ui);
+  --font-admin-mono: var(--admin-font-mono);
 }
 
 :root {
+  --admin-font-ui: 'Geist Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --admin-font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --admin-type-label: 11px;
+  --admin-type-support: 12px;
+  --admin-type-body: 14px;
+  --admin-type-section: 16px;
+  --admin-type-page: 24px;
+  --admin-motion-fast: 120ms;
+  --admin-motion-base: 180ms;
+  --admin-motion-slow: 240ms;
   --bg: oklch(96.7% 0.008 250);
   --canvas: oklch(98.6% 0.004 250);
   --shell: oklch(94.9% 0.01 250);
@@ -49,11 +56,11 @@
   --pg-admin-color-danger: var(--red);
   --pg-radius-xs: 6px;
   --pg-radius-sm: 8px;
-  --pg-radius-md: 10px;
-  --pg-radius-lg: 14px;
+  --pg-radius-md: 12px;
+  --pg-radius-lg: 12px;
   --pg-admin-card-border-alpha: 0.10;
   --pg-admin-glow-alpha: 0.10;
-  --pg-topbar-height: 76px;
+  --pg-topbar-height: 64px;
   --pg-sidebar-admin-width: 216px;
 }
 
@@ -96,7 +103,9 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--font-admin-body);
+  font-family: var(--admin-font-ui);
+  font-size: var(--admin-type-body);
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -115,10 +124,8 @@ body::before {
   pointer-events: none;
   background:
     linear-gradient(color-mix(in oklch, var(--border) 48%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklch, var(--border) 48%, transparent) 1px, transparent 1px),
-    radial-gradient(circle at 18% 10%, color-mix(in oklch, var(--accent) 16%, transparent), transparent 30%),
-    radial-gradient(circle at 82% 12%, color-mix(in oklch, var(--accent-emerald) 14%, transparent), transparent 34%);
-  background-size: 64px 64px, 64px 64px, auto, auto;
+    linear-gradient(90deg, color-mix(in oklch, var(--border) 48%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
 }
 
 button,
@@ -128,11 +135,11 @@ select,
 textarea {
   font: inherit;
   transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    color 160ms ease,
-    transform 160ms ease,
-    opacity 160ms ease;
+    border-color var(--admin-motion-base) ease,
+    background var(--admin-motion-base) ease,
+    color var(--admin-motion-fast) ease,
+    transform var(--admin-motion-fast) ease,
+    opacity var(--admin-motion-fast) ease;
 }
 
 input,
@@ -167,10 +174,9 @@ textarea {
 label {
   margin: 0;
   color: var(--dim);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: var(--admin-type-label);
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 p {
@@ -184,9 +190,9 @@ strong {
 
 code,
 .num {
-  font-family: var(--font-admin-mono);
+  font-family: var(--admin-font-mono);
   color: var(--accent);
-  font-size: 0.82rem;
+  font-size: var(--admin-type-support);
 }
 
 .admin-nav-active {
@@ -235,16 +241,16 @@ code,
   padding: 0.875rem 1.5rem;
   color: var(--dim);
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .admin-table td {
   border-bottom: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
-  padding: 0.95rem 1.5rem;
+  height: 50px;
+  padding: 0.75rem 1.25rem;
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: var(--admin-type-body);
   vertical-align: middle;
 }
 

@@ -6,7 +6,7 @@ import { navGroups, normalizeRoute, protectedRoutes, routeHref, routeTitles } fr
 import { useAdminTheme } from './layout/useAdminTheme'
 import { filterAdminNavGroups } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId, ToastMessage, ToastTone } from './types'
-import { adminButton, adminPill, adminShell, adminState } from './ui/classes'
+import { adminButton, adminPill, adminShell, adminState, adminType } from './ui/classes'
 import {
   AccessAccountsIcon,
   AlertIcon,
@@ -266,7 +266,7 @@ export function AdminLayout({
               <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 1).toUpperCase()}</span>
               <div className="grid text-right">
                 <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
-                <span className="text-[10px] text-[var(--dim)]">{currentTitle}</span>
+                <span className="text-xs text-[var(--dim)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
               </div>
             </div>
           </div>
@@ -334,7 +334,6 @@ export function ToastRail({ toasts, onDismiss }: { toasts: ToastMessage[]; onDis
 }
 
 export function PageHeader({
-  eyebrow,
   title,
   description,
   detail,
@@ -363,10 +362,10 @@ export function PageHeader({
   )
 
   return (
-    <header className="flex items-end justify-between gap-4 max-[920px]:flex-col max-[920px]:items-start">
-      <div>
-        <h1 className="m-0 mt-1 text-2xl font-semibold tracking-normal text-[var(--fg)]">{title}</h1>
-        {resolvedDescription ? <p className="mt-1 max-w-[76ch] text-sm text-[var(--soft)]">{resolvedDescription}</p> : null}
+    <header className="flex min-h-16 w-full max-w-none items-end justify-between gap-4 max-[920px]:min-h-0 max-[920px]:flex-col max-[920px]:items-start">
+      <div className="min-w-0">
+        <h1 className={cn('m-0', adminType.pageTitle)}>{title}</h1>
+        {resolvedDescription ? <p className={cn('mt-1 max-w-[76ch]', adminType.pageDescription)}>{resolvedDescription}</p> : null}
         {meta ? <div className="mt-2">{meta}</div> : null}
       </div>
       {resolvedActions ? <div className="flex flex-wrap items-center gap-2">{resolvedActions}</div> : null}
