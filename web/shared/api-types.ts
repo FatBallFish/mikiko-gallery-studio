@@ -681,6 +681,69 @@ export type AdminSession = { token: string; access_token?: string; expires_in_se
 export type AdminLoginResult = { access_token: string; expires_in_seconds: number; admin_id: number; email: string; role: string; permissions?: AdminPermission[] }
 export type AdminMetric = { key?: string; label: string; value: string; trend: string; detail?: string; tone: 'good' | 'warn' | 'bad' | 'danger' | 'neutral' }
 export type ProviderHealth = { provider: string; provider_code?: string; provider_type?: string; status: 'healthy' | 'degraded' | 'down' | string; health_status?: string; latency_ms: number; error_rate: string; note: string; enabled?: boolean }
+export type MonitoringWindow = '5m' | '15m' | '30m' | '60m'
+export type AdminMonitoringCurrent = {
+  inflight: number
+  peak_inflight: number
+  qps: number
+  p50_ms: number
+  p95_ms: number
+  p99_ms: number
+  server_error_rate: number
+  cpu_percent: number | null
+  heap_bytes: number
+  sys_bytes: number
+  goroutines: number
+  gc_pause_ms: number
+}
+export type AdminMonitoringPoint = {
+  at: string
+  qps: number
+  peak_inflight: number
+  p50_ms: number
+  p95_ms: number
+  p99_ms: number
+  server_error_rate: number
+  cpu_percent: number | null
+  heap_bytes: number
+  sys_bytes: number
+  goroutines: number
+}
+export type AdminMonitoringStatuses = {
+  total: number
+  success: number
+  redirect: number
+  client_error: number
+  server_error: number
+}
+export type AdminMonitoringRoute = {
+  route: string
+  requests: number
+  qps: number
+  p95_ms: number
+  client_error_rate: number
+  server_error_rate: number
+}
+export type AdminMonitoringProvider = {
+  provider_code: string
+  provider_type: string
+  status: string
+  enabled: boolean
+}
+export type AdminMonitoringSnapshot = {
+  generated_at: string
+  window: MonitoringWindow
+  sample_interval_seconds: number
+  collecting: boolean
+  uptime_seconds: number
+  state: 'collecting' | 'healthy' | 'pressured' | 'critical' | string
+  state_reasons: string[]
+  current: AdminMonitoringCurrent
+  series: AdminMonitoringPoint[]
+  statuses: AdminMonitoringStatuses
+  routes: AdminMonitoringRoute[]
+  providers: AdminMonitoringProvider[]
+}
 export type AdminDashboardOperations = {
   today_order_count: number
   payment_success_rate: string
