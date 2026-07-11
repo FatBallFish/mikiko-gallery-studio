@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ImageTaskType, RouteModel, RouteModelPrice } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, Modal, PageHeader } from '../components'
-import { adminButton, adminPage } from '../ui/classes'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
+import { adminButton, adminPage, adminType } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
-import { ListPage } from '../ui/dataTable'
+import type { ColumnDef } from '../ui/dataTable'
+import { DataTable, FilterToolbar, ListPage } from '../ui/dataTable'
 import { ChevronDownIcon, InfoIcon } from '../ui/icons'
+import { FilterIcon, XIcon } from '../ui/listIcons'
 import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
+import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
@@ -21,31 +24,21 @@ import {
 
 type PricingDialog = { row?: RouteModelPrice; routeModelId: string; taskType: ImageTaskType; baseResolution: string; basePoints: string; referenceMultiplier: string; enabled: boolean }
 type PriceGroup = { key: string; route: RouteModel | undefined; routeID: string | number; routeLabel: string; routeSecondary: string; taskType: ImageTaskType; rows: RouteModelPrice[] }
+type PricingFilters = { routeID: string; taskType: string; status: string }
+
+const initialFilters: PricingFilters = { routeID: '', taskType: '', status: '' }
 
 const pricingClasses = {
-  header: 'flex items-center justify-between gap-4',
-  sectionTitle: 'flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]',
-  notice: 'rounded-3xl border border-[var(--accent)]/10 bg-[var(--accent)]/5 p-8',
-  noticeInner: 'flex items-start gap-4 max-[720px]:grid',
-  noticeIcon: 'grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]',
-  noticeTitle: 'mb-2 text-lg font-bold text-[var(--text)]',
-  noticeGrid: 'grid grid-cols-1 gap-8 md:grid-cols-2',
-  noticeText: 'm-0 text-sm leading-relaxed text-[var(--soft)]',
-  formulaCode: 'rounded bg-white/5 px-1.5 py-0.5 font-mono text-[var(--accent)]',
-  tableWrap: 'min-w-0 overflow-x-auto',
-  table: 'admin-table min-w-[860px]',
-  tr: 'transition-colors last:border-b-0 hover:bg-[var(--surface-solid)]',
-  trActive: 'bg-[var(--canvas)]',
-  td: 'text-sm text-[var(--muted)]',
-  chevron: 'size-4 text-[var(--muted-strong)] transition-transform',
-  routeName: 'font-bold text-[var(--text)]',
-  routeMeta: 'm-0 mt-1 text-[10px] font-mono text-[var(--muted-strong)]',
-  taskPill: 'w-fit rounded-lg border border-[var(--border)] bg-[var(--canvas)] px-2 py-1 text-xs font-bold text-[var(--soft)]',
-  baseResolutionPanelCell: 'bg-[var(--canvas)] p-6 pl-20 max-[720px]:pl-6',
-  baseResolutionPanel: 'overflow-hidden rounded-lg bg-[var(--surface-solid)]',
-  baseResolutionGrid: 'grid gap-2',
-  baseResolutionTable: 'admin-table min-w-[760px]',
-  baseResolutionTd: 'text-xs text-[var(--muted)]',
+  help: 'flex items-start gap-3 border-y border-[var(--border)] py-3 text-sm text-[var(--soft)]',
+  helpIcon: 'mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]',
+  riskList: 'grid gap-2 border-b border-[var(--border)] pb-4',
+  riskRow: 'flex flex-wrap items-center justify-between gap-3 border-l-2 border-[var(--amber)] py-2 pl-3',
+  routeName: 'font-semibold text-[var(--fg)]',
+  routeMeta: 'mt-1 font-[family-name:var(--admin-font-mono)] text-xs text-[var(--soft)]',
+  actionRow: 'flex flex-wrap items-center justify-end gap-2',
+  expandedStack: 'grid gap-5 border-t border-[var(--border)] pt-4',
+  expandedSection: 'grid min-w-0 gap-3',
+  expandedHeader: 'flex flex-wrap items-center justify-between gap-3',
 }
 
 export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -55,6 +48,8 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<PricingDialog | null>(null)
   const [saving, setSaving] = useState(false)
+  const [mutationError, setMutationError] = useState<string | null>(null)
+  const [filters, setFilters] = useState<PricingFilters>(initialFilters)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
 
   const load = async () => {
@@ -63,7 +58,7 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     try {
       const [nextRoutes, nextPrices] = await Promise.all([
         adminApi.listRouteModels({ page_size: 100 }),
-        adminApi.listRouteModelPrices({ page_size: 200 }),
+        loadAllRouteModelPrices((priceQuery) => adminApi.listRouteModelPrices(priceQuery)),
       ])
       setRoutes(nextRoutes)
       setPrices(nextPrices)
@@ -77,11 +72,37 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
   useEffect(() => { void load() }, [])
 
   const stats = useMemo(() => pricingSummary(routes, prices), [routes, prices])
+  const missingEnabledRoutes = useMemo(
+    () => routes.filter((route) => route.enabled && route.visibility !== 'hidden' && (route.visibility !== 'groups' || Boolean(route.group_ids?.length)) && !prices.some((price) => String(price.route_model_id) === String(route.id) && price.enabled)),
+    [prices, routes],
+  )
   const priceGroups = useMemo(() => groupPrices(routes, prices), [routes, prices])
+  const visibleGroups = useMemo(() => priceGroups.filter((group) => {
+    if (filters.routeID && String(group.routeID) !== filters.routeID) return false
+    if (filters.taskType && group.taskType !== filters.taskType) return false
+    if (filters.status === 'enabled' && !group.rows.some((row) => row.enabled)) return false
+    if (filters.status === 'disabled' && !group.rows.some((row) => !row.enabled)) return false
+    return true
+  }), [filters, priceGroups])
+  const expandedVisibleGroups = visibleGroups.filter((group) => expandedGroups[group.key])
+  const hasActiveFilters = Boolean(filters.routeID || filters.taskType || filters.status)
+
+  const metrics = [
+    { label: '启用路由', value: String(stats.enabledRoutes), trend: `共 ${stats.totalRoutes} 个路由`, tone: 'neutral' as const },
+    { label: '有效价格项', value: String(stats.enabledPrices), trend: `共 ${stats.totalPrices} 个配置`, tone: 'good' as const },
+    { label: '任务价格组', value: String(priceGroups.length), trend: '按路由与任务类型聚合', tone: 'neutral' as const },
+    { label: '缺价风险', value: String(missingEnabledRoutes.length), trend: missingEnabledRoutes.length ? '启用路由当前不可计费' : '所有启用路由均有价格', tone: missingEnabledRoutes.length ? 'bad' as const : 'good' as const },
+  ]
+
+  function openDialog(nextDialog: PricingDialog) {
+    setMutationError(null)
+    setDialog(nextDialog)
+  }
 
   async function savePricing() {
     if (!dialog) return
     setSaving(true)
+    setMutationError(null)
     try {
       const payload = {
         route_model_id: Number(dialog.routeModelId),
@@ -95,6 +116,8 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
       setDialog(null)
       onFeedback('价格配置已更新', `${adminTaskTypeLabel(saved.task_type)} · ${pricingBaseResolutionLabel(saved.base_resolution)}`)
       await load()
+    } catch (caught) {
+      setMutationError(caught instanceof Error ? caught.message : '价格配置保存失败')
     } finally {
       setSaving(false)
     }
@@ -107,63 +130,89 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     <section className={adminPage.stack}>
       <PageHeader
         title="价格策略"
-        description="按路由模型、任务类型和基础分辨率维护用户积分价格，并提示缺失价格风险。"
-        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => setDialog(newPriceDialog(routes))}>新增配置</button>}
+        description="按路由模型、任务类型和基础分辨率维护用户积分价格，并直接处理启用路由的缺价风险。"
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => openDialog(newPriceDialog(routes))}>新增配置</button>}
       />
-      <section className={pricingClasses.notice}>
-        <div className={pricingClasses.noticeInner}>
-          <div className={pricingClasses.noticeIcon}><InfoIcon /></div>
-          <div className="min-w-0 flex-1">
-            <h3 className={pricingClasses.noticeTitle}>计费规则说明</h3>
-            <div className={pricingClasses.noticeGrid}>
-              <div className="grid gap-2">
-                <p className={pricingClasses.noticeText}>1. <strong>扣费公式</strong>: <code className={pricingClasses.formulaCode}>最终积分 = 基础消耗 * (参考图倍率 if 包含参考图)</code></p>
-                <p className={pricingClasses.noticeText}>2. <strong>精度说明</strong>: 后端扣费保留 5 位小数，前端展示四舍五入保留 2 位。</p>
+      <MetricStrip metrics={metrics} />
+
+      <section data-admin-pricing-risk className={pricingClasses.riskList} aria-label="缺价风险">
+        {missingEnabledRoutes.length ? (
+          <>
+            <InlineFeedback tone="warning" message={`发现 ${missingEnabledRoutes.length} 个启用路由缺少有效价格，相关生成请求会被阻断。`} />
+            {missingEnabledRoutes.map((route) => (
+              <div key={String(route.id)} className={pricingClasses.riskRow}>
+                <div className="min-w-0">
+                  <strong className={pricingClasses.routeName}>{route.name}</strong>
+                  <div className={pricingClasses.routeMeta}>{route.code}</div>
+                </div>
+                <button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" onClick={() => openDialog(newPriceDialogForRoute(route))}>补齐价格</button>
               </div>
-              <div className="grid gap-2">
-                <p className={pricingClasses.noticeText}>3. <strong>兜底逻辑</strong>: 若路由模型未配对应任务类型的价格，系统将返回配置错误。</p>
-                <p className={pricingClasses.noticeText}>4. <strong>展示规则</strong>: 列表按照路由模型和任务类型进行聚合，点击行展开具体基础分辨率的价格配置。</p>
-                {stats.missingEnabledRoutes ? <p className={cn(pricingClasses.noticeText, 'font-bold text-[var(--red)]')}>当前有 {stats.missingEnabledRoutes} 个启用路由缺少价格配置。</p> : null}
-              </div>
-            </div>
-          </div>
-        </div>
+            ))}
+          </>
+        ) : (
+          <InlineFeedback tone="success" message="所有启用路由均已配置有效价格。" />
+        )}
       </section>
-      {!prices.length ? <EmptyBlock title="暂无价格配置" detail="为每个可用路由模型配置任务类型和基础分辨率价格。" /> : null}
-      {prices.length ? (
-        <ListPage>
-        <div className={pricingClasses.tableWrap}>
-              <table className={pricingClasses.table}>
-                <thead>
-                  <tr>
-                    <th className="w-10 px-6 py-4"></th>
-                    <th>路由模型</th>
-                    <th>任务类型</th>
-                    <th>已配置基础分辨率数</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-            <tbody>
-              {priceGroups.map((group) => {
-                const expanded = expandedGroups[group.key] ?? false
-                return (
-                  <PriceGroupRows
-                    key={group.key}
-                    group={group}
-                    expanded={expanded}
-                    onToggle={() => setExpandedGroups((current) => ({ ...current, [group.key]: !expanded }))}
-                    onAdd={() => setDialog(newPriceDialogForGroup(group))}
-                    onEdit={(row) => setDialog(editPriceDialog(row))}
-                  />
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+
+      <div className={pricingClasses.help}>
+        <span className={pricingClasses.helpIcon}><InfoIcon /></span>
+        <p className="m-0 min-w-0 leading-5">最终积分按基础消耗计算；包含参考图时再应用参考图倍率。后端保留 5 位小数，这里维护的是用户积分，不是 Provider 成本。</p>
+      </div>
+
+      {!routes.length ? (
+        <EmptyBlock
+          title="请先创建路由模型"
+          detail="价格项必须绑定路由模型。创建并启用路由后再配置任务价格。"
+          action={<a className={cn(adminButton.base, adminButton.primary)} href="#/routing">配置路由模型</a>}
+        />
+      ) : (
+        <ListPage
+          filters={(
+            <FilterToolbar
+              fields={[
+                { key: 'route', label: '路由模型', primary: true, control: <select aria-label="路由模型筛选" value={filters.routeID} onChange={(event) => setFilters({ ...filters, routeID: event.target.value })}><option value="">全部路由</option>{routes.map((route) => <option key={String(route.id)} value={String(route.id)}>{route.name} ({route.code})</option>)}</select> },
+                { key: 'taskType', label: '任务类型', primary: true, control: <select aria-label="任务类型筛选" value={filters.taskType} onChange={(event) => setFilters({ ...filters, taskType: event.target.value })}><option value="">全部任务</option>{adminTaskTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> },
+                { key: 'status', label: '价格状态', control: <select aria-label="价格状态筛选" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">全部状态</option>{pricingStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> },
+              ]}
+              actions={(
+                <>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--soft)]"><FilterIcon className="size-4" />{hasActiveFilters ? '已应用筛选' : '全部价格组'}</span>
+                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => setFilters(initialFilters)}><XIcon className="size-4" /><span>清空</span></button>
+                </>
+              )}
+              resultSummary={`共 ${visibleGroups.length} 个价格组 · ${prices.length} 个基础分辨率配置`}
+            />
+          )}
+        >
+          <DataTable
+            columns={priceGroupColumns(expandedGroups, (key) => setExpandedGroups((current) => ({ ...current, [key]: !current[key] })), openDialog)}
+            rows={visibleGroups}
+            rowKey={(group) => group.key}
+            empty={<EmptyBlock title="没有匹配的价格组" detail="清空筛选或为当前路由新增价格配置。" action={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openDialog(newPriceDialog(routes))}>新增配置</button>} />}
+          />
+
+          {expandedVisibleGroups.length ? (
+            <div className={pricingClasses.expandedStack} aria-label="已展开价格明细">
+              {expandedVisibleGroups.map((group) => (
+                <section key={group.key} className={pricingClasses.expandedSection}>
+                  <header className={pricingClasses.expandedHeader}>
+                    <div>
+                      <h2 className={cn('m-0', adminType.sectionTitle)}>{group.routeLabel}</h2>
+                      <p className={cn('mt-1', adminType.support)}>{adminTaskTypeLabel(group.taskType)} · {group.rows.length} 个基础分辨率配置</p>
+                    </div>
+                    <button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" onClick={() => openDialog(newPriceDialogForGroup(group))}>新增分辨率</button>
+                  </header>
+                  <DataTable columns={priceDetailColumns(openDialog)} rows={group.rows} rowKey={(row) => row.id} />
+                </section>
+              ))}
+            </div>
+          ) : null}
         </ListPage>
-      ) : null}
+      )}
+
       {dialog ? (
         <Modal title={dialog.row ? '调整价格配置' : '新增价格配置'} detail={pricingFieldHints.dialogDetail} onClose={() => setDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={() => setDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !dialog.routeModelId || !dialog.basePoints} onClick={() => void savePricing()}>{saving ? '保存中...' : '保存'}</button></>}>
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
           <div className={adminPage.formGrid}>
             <Field label="路由模型"><select value={dialog.routeModelId} onChange={(event) => setDialog({ ...dialog, routeModelId: event.target.value })}>{routes.map((route) => <option key={String(route.id)} value={String(route.id)}>{route.name} ({route.code})</option>)}</select></Field>
             <Field label="任务类型"><select value={dialog.taskType} onChange={(event) => setDialog({ ...dialog, taskType: event.target.value as ImageTaskType })}>{adminTaskTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
@@ -178,59 +227,70 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
   )
 }
 
-function PriceGroupRows({ group, expanded, onToggle, onAdd, onEdit }: { group: PriceGroup; expanded: boolean; onToggle: () => void; onAdd: () => void; onEdit: (row: RouteModelPrice) => void }) {
-  return (
-    <>
-      <tr className={cn(pricingClasses.tr, 'group cursor-pointer', expanded && pricingClasses.trActive)} onClick={onToggle}>
-        <td className="px-6 py-4">
-          <ChevronDownIcon className={cn(pricingClasses.chevron, expanded && 'rotate-180')} />
-        </td>
-        <td className={pricingClasses.td}>
-          <strong className={pricingClasses.routeName}>{group.routeLabel}</strong>
-          <p className={pricingClasses.routeMeta}>{group.routeSecondary}</p>
-        </td>
-        <td className={pricingClasses.td}><span className={pricingClasses.taskPill}>{adminTaskTypeLabel(group.taskType)}</span></td>
-        <td className={pricingClasses.td}><span className="text-xs font-bold text-[var(--soft)]">{group.rows.length} 个基础分辨率配置</span></td>
-        <td className={cn(pricingClasses.td, 'text-right')}>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={(event) => { event.stopPropagation(); onAdd() }}>快速添加基础分辨率</button>
-        </td>
-      </tr>
-      {expanded ? (
-        <tr className="border-b border-[var(--line)]/60">
-          <td colSpan={5} className={pricingClasses.baseResolutionPanelCell}>
-            <div className={pricingClasses.baseResolutionPanel}>
-              <table className={pricingClasses.baseResolutionTable}>
-                <thead>
-                  <tr>
-                    <th>基础分辨率</th>
-                    <th>基础消耗</th>
-                    <th>参考图倍率</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.rows.map((row) => (
-                    <tr key={String(row.id)} className="transition-colors hover:bg-[var(--canvas)]">
-                      <td className={pricingClasses.baseResolutionTd}><strong className="text-[var(--text)]">{pricingBaseResolutionLabel(row.base_resolution)}</strong></td>
-                      <td className={pricingClasses.baseResolutionTd}><code className={adminDataGrid.code}>{row.base_points} ◈</code></td>
-                      <td className={pricingClasses.baseResolutionTd}><code className={adminDataGrid.code}>x {row.reference_multiplier}</code></td>
-                      <td className={pricingClasses.baseResolutionTd}><PricingBadge enabled={row.enabled} /></td>
-                      <td className={pricingClasses.baseResolutionTd}><button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onEdit(row)}>调整</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </td>
-        </tr>
-      ) : null}
-    </>
-  )
+function priceGroupColumns(expandedGroups: Record<string, boolean>, onToggle: (key: string) => void, onOpenDialog: (dialog: PricingDialog) => void): ColumnDef<PriceGroup>[] {
+  return [
+    {
+      key: 'route',
+      title: '路由模型',
+      width: 'minmax(220px,2fr)',
+      render: (group) => <div className="min-w-0"><strong className={pricingClasses.routeName}>{group.routeLabel}</strong><div className={pricingClasses.routeMeta}>{group.routeSecondary}</div></div>,
+    },
+    {
+      key: 'taskType',
+      title: '任务类型',
+      width: 'minmax(140px,1.2fr)',
+      render: (group) => <Badge tone="neutral">{adminTaskTypeLabel(group.taskType)}</Badge>,
+    },
+    {
+      key: 'resolutions',
+      title: '基础分辨率',
+      width: 'minmax(130px,1fr)',
+      align: 'right',
+      kind: 'number',
+      render: (group) => `${group.rows.length} 项`,
+    },
+    {
+      key: 'status',
+      title: '有效配置',
+      width: 'minmax(120px,1fr)',
+      align: 'right',
+      kind: 'number',
+      render: (group) => `${group.rows.filter((row) => row.enabled).length} / ${group.rows.length}`,
+    },
+    {
+      key: 'actions',
+      title: '操作',
+      width: 'minmax(180px,1.3fr)',
+      align: 'right',
+      render: (group) => (
+        <div className={pricingClasses.actionRow}>
+          <button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" aria-expanded={Boolean(expandedGroups[group.key])} onClick={() => onToggle(group.key)}>
+            <ChevronDownIcon className={cn('size-4 transition-transform', expandedGroups[group.key] && 'rotate-180')} />
+            <span>{expandedGroups[group.key] ? '收起' : '展开'}</span>
+          </button>
+          <ActionMenu actions={[{ id: `add-${group.key}`, label: '新增分辨率价格', run: () => onOpenDialog(newPriceDialogForGroup(group)) }]} />
+        </div>
+      ),
+    },
+  ]
+}
+
+function priceDetailColumns(onOpenDialog: (dialog: PricingDialog) => void): ColumnDef<RouteModelPrice>[] {
+  return [
+    { key: 'resolution', title: '基础分辨率', width: 'minmax(140px,1.2fr)', render: (row) => <strong className="text-[var(--fg)]">{pricingBaseResolutionLabel(row.base_resolution)}</strong> },
+    { key: 'points', title: '基础消耗', width: 'minmax(130px,1fr)', align: 'right', kind: 'number', render: (row) => <code className={adminDataGrid.code}>{row.base_points} ◈</code> },
+    { key: 'multiplier', title: '参考图倍率', width: 'minmax(130px,1fr)', align: 'right', kind: 'number', render: (row) => <code className={adminDataGrid.code}>x {row.reference_multiplier}</code> },
+    { key: 'status', title: '状态', width: 'minmax(100px,.8fr)', render: (row) => <PricingBadge enabled={row.enabled} /> },
+    { key: 'actions', title: '操作', width: 'minmax(100px,.8fr)', align: 'right', render: (row) => <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onOpenDialog(editPriceDialog(row))}>调整</button> },
+  ]
 }
 
 function newPriceDialog(routes: RouteModel[]): PricingDialog {
   return { routeModelId: String(routes[0]?.id ?? ''), taskType: 'text_to_image', baseResolution: '1K', basePoints: '8.00000', referenceMultiplier: '1.00000', enabled: true }
+}
+
+function newPriceDialogForRoute(route: RouteModel): PricingDialog {
+  return { routeModelId: String(route.id), taskType: 'text_to_image', baseResolution: '1K', basePoints: '8.00000', referenceMultiplier: '1.00000', enabled: true }
 }
 
 function newPriceDialogForGroup(group: PriceGroup): PricingDialog {

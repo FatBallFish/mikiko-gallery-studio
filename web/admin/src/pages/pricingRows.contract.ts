@@ -1,4 +1,7 @@
 import type { RouteModel, RouteModelPrice } from '../../../shared/api-types'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
+import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
@@ -9,6 +12,64 @@ import {
   pricingStatusOptions,
   pricingSummary,
 } from './pricingRows'
+
+const pricingPageSource = readFileSync(new URL('./PricingPage.tsx', import.meta.url), 'utf8')
+
+const requestedPages: number[] = []
+const allPricePages = await loadAllRouteModelPrices(async ({ page }) => {
+  requestedPages.push(page)
+  return page === 1 ? [price({ id: 1 }), price({ id: 2 })] : page === 2 ? [price({ id: 3 })] : []
+}, 2)
+if (allPricePages.length !== 3 || requestedPages.join(',') !== '1,2') {
+  throw new Error(`price completeness must consume every API page, got ${JSON.stringify({ allPricePages, requestedPages })}`)
+}
+
+const serverCappedPages: number[] = []
+const serverCappedPrices = await loadAllRouteModelPrices(async ({ page }) => {
+  serverCappedPages.push(page)
+  return page === 1 ? Array.from({ length: 100 }, (_, index) => price({ id: index + 1 })) : [price({ id: 101 })]
+})
+if (serverCappedPrices.length !== 101 || serverCappedPages.join(',') !== '1,2') {
+  throw new Error(`price pagination must honor the backend 100-item page-size cap, got ${JSON.stringify({ length: serverCappedPrices.length, serverCappedPages })}`)
+}
+
+for (const requiredPrimitive of ['MetricStrip', 'FilterToolbar', 'DataTable', 'ActionMenu', 'InlineFeedback']) {
+  if (!pricingPageSource.includes(requiredPrimitive)) {
+    throw new Error(`pricing workspace should use the shared ${requiredPrimitive} primitive`)
+  }
+}
+
+for (const riskContract of ['data-admin-pricing-risk', 'missingEnabledRoutes', '补齐价格', 'newPriceDialogForRoute']) {
+  if (!pricingPageSource.includes(riskContract)) {
+    throw new Error(`pricing workspace should expose missing-price repair context with ${riskContract}`)
+  }
+}
+
+if (!pricingPageSource.includes("route.visibility !== 'hidden'")) {
+  throw new Error('hidden routes must not be reported as user-facing missing-price risks')
+}
+
+if (!pricingPageSource.includes("route.visibility !== 'groups' || Boolean(route.group_ids?.length)")) {
+  throw new Error('group-scoped routes without a bound group must not be reported as user-facing missing-price risks')
+}
+
+for (const groupingContract of ['expandedGroups', 'adminTaskTypeLabel(group.taskType)', 'pricingBaseResolutionLabel(row.base_resolution)']) {
+  if (!pricingPageSource.includes(groupingContract)) {
+    throw new Error(`pricing workspace should preserve grouped expansion context with ${groupingContract}`)
+  }
+}
+
+for (const filterStateContract of ['hasActiveFilters', "hasActiveFilters ? '已应用筛选' : '全部价格组'"]) {
+  if (!pricingPageSource.includes(filterStateContract)) {
+    throw new Error(`pricing filter toolbar should expose truthful filter state with ${filterStateContract}`)
+  }
+}
+
+for (const forbiddenPattern of ['rounded-3xl', 'tracking-[', 'uppercase', 'noticeGrid']) {
+  if (pricingPageSource.includes(forbiddenPattern)) {
+    throw new Error(`pricing workspace should remove legacy decorative styling ${forbiddenPattern}`)
+  }
+}
 
 const routes: RouteModel[] = [
   route({ id: 1, code: 'basic', name: '基础模型', enabled: true }),
