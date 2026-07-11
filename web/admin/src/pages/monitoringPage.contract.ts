@@ -13,6 +13,7 @@ for (const contract of [
   'window.setInterval',
   '5000',
   'autoRefresh',
+  'role="switch"',
   'initialLoading || refreshing',
   'pollInFlight',
   'lastSuccessfulAt',
@@ -38,7 +39,7 @@ for (const primitive of ['MetricStrip', 'DataTable', 'Badge', 'InlineFeedback', 
   }
 }
 
-for (const obsolete of ['完整上线检查', '上游探针', 'data-admin-monitoring-blockers', 'healthScore', 'Math.random']) {
+for (const obsolete of ['完整上线检查', '上游探针', 'data-admin-monitoring-blockers', 'healthScore', 'Math.random', 'peer sr-only']) {
   if (source.includes(obsolete)) {
     throw new Error(`runtime monitoring page should remove obsolete pattern ${obsolete}`)
   }

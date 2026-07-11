@@ -146,8 +146,8 @@ func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 	}
 
 	handler := middleware.Recovery(mux)
-	handler = middleware.RequestID(handler)
 	handler = middleware.Metrics(handler)
+	handler = middleware.RequestID(handler)
 	handler = middleware.CORSWithAllowedOrigins(corsAllowedOrigins, handler)
 	handler = observability.RequestLogger(handler)
 	return handler

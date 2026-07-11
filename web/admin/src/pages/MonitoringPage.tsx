@@ -46,8 +46,8 @@ const monitoringClasses = {
   context: 'flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-[var(--soft)]',
   contextValue: 'font-[family-name:var(--admin-font-mono)] font-semibold tabular-nums text-[var(--fg)]',
   toggle: 'inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-3 text-xs font-semibold text-[var(--muted)] transition-colors hover:border-[var(--border-strong)]',
-  toggleTrack: 'relative h-4 w-7 rounded-full bg-[var(--border-strong)] transition-colors peer-checked:bg-[var(--accent)]',
-  toggleThumb: 'absolute left-0.5 top-0.5 size-3 rounded-full bg-white transition-transform peer-checked:translate-x-3',
+  toggleTrack: 'relative h-4 w-7 rounded-full bg-[var(--border-strong)] transition-colors',
+  toggleThumb: 'absolute left-0.5 top-0.5 size-3 rounded-full bg-white transition-transform',
   chartGrid: 'grid min-w-0 grid-cols-12 gap-4 max-[1024px]:grid-cols-1',
   chartWide: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-7'),
   chartNarrow: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-5'),
@@ -196,18 +196,18 @@ export function MonitoringPage() {
         </div>
         <div className={monitoringClasses.controlGroup}>
           <SegmentedControl value={selectedWindow} options={windowOptions} onChange={handleWindowChange} />
-          <label className={monitoringClasses.toggle}>
-            <input
-              type="checkbox"
-              className="peer sr-only"
-              checked={autoRefresh}
-              onChange={(event) => setAutoRefresh(event.target.checked)}
-            />
-            <span className={monitoringClasses.toggleTrack} aria-hidden="true">
-              <span className={monitoringClasses.toggleThumb} />
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoRefresh}
+            className={monitoringClasses.toggle}
+            onClick={() => setAutoRefresh((current) => !current)}
+          >
+            <span className={cn(monitoringClasses.toggleTrack, autoRefresh && 'bg-[var(--accent)]')} aria-hidden="true">
+              <span className={cn(monitoringClasses.toggleThumb, autoRefresh && 'translate-x-3')} />
             </span>
             <span>自动刷新</span>
-          </label>
+          </button>
         </div>
       </div>
 

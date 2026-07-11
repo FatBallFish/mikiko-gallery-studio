@@ -29,7 +29,7 @@ func TestMetricsRecordsCompletedRequestsByPattern(t *testing.T) {
 	mux.HandleFunc("GET /api/fail", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	})
-	handler := metricsWithRuntime(runtimeMetrics, mux)
+	handler := RequestID(metricsWithRuntime(runtimeMetrics, mux))
 
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/api/users/42", nil),
