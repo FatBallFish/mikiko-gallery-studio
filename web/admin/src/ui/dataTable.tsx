@@ -144,7 +144,7 @@ export function DataTable<T>({
             <div
               key={col.key}
               className={cn(
-                'sticky top-0 z-[1] border-b border-[var(--border)] bg-[var(--surface-solid)] px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-[var(--dim)]',
+                'sticky top-0 z-[1] border-b border-[var(--border)] bg-[var(--surface-solid)] px-4 py-3 text-[11px] font-semibold text-[var(--dim)]',
                 col.align === 'right' && 'text-right',
                 col.align === 'center' && 'text-center',
               )}

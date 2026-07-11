@@ -53,7 +53,7 @@ const overviewClasses = {
   rankItem: 'group flex items-center justify-between gap-3 rounded-lg border border-transparent p-3 transition-all hover:border-[var(--border)] hover:bg-[var(--surface-solid)]',
   rankAvatar: 'grid size-8 shrink-0 place-items-center rounded-lg bg-[var(--surface-solid)] text-xs font-bold text-[var(--muted-strong)]',
   rankName: 'text-sm font-bold text-[var(--text)] transition-colors group-hover:text-[var(--accent)]',
-  rankMeta: 'text-[10px] text-[var(--muted-strong)]',
+  rankMeta: 'text-xs text-[var(--muted-strong)]',
   rankValue: 'font-[family-name:var(--admin-font-mono)] text-sm font-semibold tabular-nums text-[var(--green)]',
   alertList: 'grid gap-2',
   alertItem: 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--canvas)] px-3 py-2.5',

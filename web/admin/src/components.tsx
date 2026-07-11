@@ -73,8 +73,8 @@ const dotToneClass = {
 const navIconClass = 'size-5 opacity-70 transition-opacity group-hover:opacity-100'
 const stateBlockBase = adminState.block
 const stateBlockIcon = adminState.iconWrap
-const fieldLabelClass = 'flex items-center justify-between gap-2 text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]'
-const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-2'
+const fieldLabelClass = 'flex items-center justify-between gap-2 text-[11px] font-semibold text-[var(--soft)]'
+const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-2'
 const checkGridEmptyClass = 'grid-cols-1 text-sm font-bold text-[var(--soft)]'
 const checkOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
 const checkOptionNameClass = 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap'
@@ -355,7 +355,7 @@ export function AdminLayout({
             <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 2).toUpperCase()}</span>
             <div className="grid min-w-0 flex-1 gap-0.5">
               <strong className="truncate text-sm text-[var(--text)]">{session.admin_name}</strong>
-              <span className="truncate text-[10px] text-[var(--muted-strong)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
+              <span className="truncate text-xs text-[var(--muted-strong)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
             </div>
           </div>
           <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}><LogOutIcon className="size-4" />退出</button>
@@ -447,9 +447,9 @@ export function StatusChip({ tone, label, value }: { tone: ToastTone | 'primary'
 
 export function StatusCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="relative grid min-h-[112px] content-center gap-2 overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]">
-      <label className="m-0 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[var(--dim)]">{label}</label>
-      <strong className="block truncate text-[1.75rem] font-black tracking-tight text-[var(--fg)]">{value}</strong>
+    <div className="relative grid min-h-[112px] content-center gap-2 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5 transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]">
+      <label className="m-0 text-[11px] font-semibold text-[var(--dim)]">{label}</label>
+      <strong className="block truncate text-[1.75rem] font-black text-[var(--fg)]">{value}</strong>
     </div>
   )
 }
@@ -880,8 +880,9 @@ export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
         : window.confirm(action.confirm.title)
       if (!ok) return
     }
-    await action.run()
     setOpen(false)
+    buttonRef.current?.focus()
+    await action.run()
   }
 
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>) => {
@@ -1167,7 +1168,7 @@ function FieldHint({ text }: { text: string }) {
     <>
       <span
         ref={anchorRef}
-        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[10px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
+        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[11px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
         tabIndex={0}
         aria-label={text}
         onMouseEnter={() => setOpen(true)}

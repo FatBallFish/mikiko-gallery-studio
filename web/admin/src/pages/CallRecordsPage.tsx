@@ -47,7 +47,7 @@ const callRecordClasses = {
   td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
   taskId: 'font-mono text-xs font-bold text-[var(--text)]',
   routeName: 'text-xs font-bold text-[var(--accent)]',
-  promptPill: 'w-fit rounded-md bg-[var(--canvas)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]',
+  promptPill: 'w-fit rounded-md bg-[var(--canvas)] px-1.5 py-0.5 font-mono text-xs text-[var(--muted)]',
   promptText: 'max-w-[220px] truncate text-xs text-[var(--soft)]',
   points: 'font-bold text-[var(--green)]',
   detailPanel: 'min-w-[1180px] bg-[var(--canvas)] px-4 py-4',
@@ -254,19 +254,19 @@ function CallRecordTableRows({
         <td className={callRecordClasses.td}>
           <div className="flex flex-col gap-1" title={row.fullTaskId}>
             <span className={callRecordClasses.taskId}>{row.taskLabel}</span>
-            <span className="text-[10px] text-[var(--muted-strong)]">{row.createdAt}</span>
+            <span className="text-xs text-[var(--muted-strong)]">{row.createdAt}</span>
           </div>
         </td>
         <td className={callRecordClasses.td}>
           <div className="flex flex-col gap-1">
             <span className="font-bold text-[var(--text)]">{row.userLabel}</span>
-            <span className="text-[10px] text-[var(--soft)]">{row.userDetail}</span>
+            <span className="text-xs text-[var(--soft)]">{row.userDetail}</span>
           </div>
         </td>
         <td className={callRecordClasses.td}>
           <div className="flex flex-col gap-1">
             <span className={callRecordClasses.routeName}>{row.routeLabel}</span>
-            <span className="text-[10px] text-[var(--soft)]">↳ {row.providerLabel} / {row.providerDetail}</span>
+            <span className="text-xs text-[var(--soft)]">↳ {row.providerLabel} / {row.providerDetail}</span>
           </div>
         </td>
         <td className={callRecordClasses.td}>
@@ -278,7 +278,7 @@ function CallRecordTableRows({
         <td className={callRecordClasses.td}>
           <div className="flex flex-col gap-1">
             <span className={row.statusTone === 'danger' ? 'text-[var(--muted-strong)]' : callRecordClasses.points}>{row.amountLabel}</span>
-            <span className="text-[10px] text-[var(--soft)]">成本 {row.costLabel}</span>
+            <span className="text-xs text-[var(--soft)]">成本 {row.costLabel}</span>
           </div>
         </td>
         <td className={callRecordClasses.td}><span className="font-mono text-xs text-[var(--muted)]">{latencyLabel(record)}</span></td>
@@ -288,7 +288,7 @@ function CallRecordTableRows({
             {record && hasCallRecordDetails(record) ? (
               <button className={callRecordClasses.inlineAction} type="button" aria-expanded={expanded} onClick={onToggle}>{expanded ? '收起详情' : '查看详情'}</button>
             ) : null}
-            {row.statusTone === 'danger' ? <span className="max-w-[160px] truncate text-[10px] text-[var(--red)]">{row.failureLabel}</span> : null}
+            {row.statusTone === 'danger' ? <span className="max-w-[160px] truncate text-xs text-[var(--red)]">{row.failureLabel}</span> : null}
             {repair ? <a className={cn(adminButton.base, adminButton.ghost, adminButton.small)} href={repair.href}>{repair.label}</a> : null}
           </div>
         </td>

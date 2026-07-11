@@ -256,7 +256,7 @@ function userColumns(
             <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--canvas)] text-sm font-black text-[var(--muted-strong)]">{row.name.slice(0, 1).toUpperCase()}</div>
             <div className="min-w-0">
               <div className="font-bold text-[var(--text)]">{row.name}</div>
-              <div className="mt-1 text-[10px] text-[var(--muted-strong)] [overflow-wrap:anywhere]">{row.subtitle}</div>
+              <div className="mt-1 text-xs text-[var(--muted-strong)] [overflow-wrap:anywhere]">{row.subtitle}</div>
             </div>
           </div>
         )
@@ -277,7 +277,7 @@ function userColumns(
         return (
           <div className="flex items-baseline gap-1">
             <span className="font-mono font-bold text-[var(--text)]">{row.balanceLabel}</span>
-            <span className="text-[10px] text-[var(--muted-strong)]">POINTS</span>
+            <span className="text-xs text-[var(--muted-strong)]">积分</span>
           </div>
         )
       },

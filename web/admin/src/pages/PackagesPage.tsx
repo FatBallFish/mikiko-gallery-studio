@@ -3,7 +3,8 @@ import type { CashierPlan } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
-import { adminButton, adminPage, adminSurface } from '../ui/classes'
+import { adminButton, adminPage } from '../ui/classes'
+import { DataTable, FilterToolbar, ListPage, type ColumnDef } from '../ui/dataTable'
 import { cashierPlanEmptyState, cashierPlanPurchaseBadge } from './cashierPlanPurchase'
 import { cashierPlanStatusBadge, cashierPlanTypeLabel } from './cashierStatusRows'
 
@@ -40,44 +41,74 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
         primaryAction={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => onFeedback('套餐编辑入口', '新增/编辑表单将在侧栏中完成。')}>新增套餐</button>}
         secondaryActions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => void load()}>刷新</button>}
       />
-      {!rows.length ? <EmptyBlock title={cashierPlanEmptyState.title} detail={cashierPlanEmptyState.detail} /> : (
-        <section className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-          {rows.map((plan) => {
-            const status = cashierPlanStatusBadge(plan.status)
-            const purchase = cashierPlanPurchaseBadge(plan)
-            return (
-              <article key={plan.id} className={cn(adminSurface.card, 'grid gap-4 p-4')}>
-                <header className="grid gap-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <strong className="text-base">{plan.plan_name}</strong>
-                    <Badge tone={status.tone}>{status.label}</Badge>
-                  </div>
-                  <p className="text-xs">{plan.plan_code} · {cashierPlanTypeLabel(plan.plan_type)}</p>
-                </header>
-                <div className="grid grid-cols-2 gap-3">
-                  <PlanMetric label="价格" value={`¥ ${plan.price_cny}`} />
-                  <PlanMetric label="积分" value={plan.points} />
-                  <PlanMetric label="赠送" value={plan.bonus_points || '0'} />
-                  <PlanMetric label="排序" value={String(plan.sort_order ?? 0)} />
-                </div>
-                <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
-                  <Badge tone={purchase.tone}>{purchase.label}</Badge>
-                  <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={() => onFeedback('套餐编辑入口', plan.plan_name)}>编辑</button>
-                </footer>
-              </article>
-            )
-          })}
-        </section>
-      )}
+      <ListPage
+        filters={<FilterToolbar fields={[]} resultSummary={`共 ${rows.length} 个套餐`} />}
+      >
+        <DataTable
+          columns={packageColumns(onFeedback)}
+          rows={rows}
+          rowKey={(plan) => plan.id}
+          empty={<EmptyBlock title={cashierPlanEmptyState.title} detail={cashierPlanEmptyState.detail} />}
+        />
+      </ListPage>
     </section>
   )
 }
 
-function PlanMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-1">
-      <span className="text-[10px] font-bold text-[var(--muted)]">{label}</span>
-      <strong className="font-mono text-sm">{value}</strong>
-    </div>
-  )
+function packageColumns(onFeedback: (title: string, detail?: string) => void): ColumnDef<CashierPlan>[] {
+  return [
+    {
+      key: 'plan',
+      title: '套餐',
+      width: 'minmax(220px,2fr)',
+      render: (plan) => <span className="grid min-w-0 gap-1"><strong className="truncate text-[var(--text)]">{plan.plan_name}</strong><code className="truncate text-xs text-[var(--soft)]">{plan.plan_code}</code></span>,
+    },
+    {
+      key: 'type',
+      title: '类型',
+      width: 'minmax(110px,1fr)',
+      render: (plan) => cashierPlanTypeLabel(plan.plan_type),
+    },
+    {
+      key: 'price',
+      title: '价格',
+      width: 'minmax(100px,.8fr)',
+      kind: 'number',
+      align: 'right',
+      render: (plan) => <code className="font-semibold text-[var(--text)]">¥ {plan.price_cny}</code>,
+    },
+    {
+      key: 'points',
+      title: '积分 / 赠送',
+      width: 'minmax(130px,1fr)',
+      kind: 'number',
+      align: 'right',
+      render: (plan) => <span className="grid gap-1 text-right"><code className="font-semibold text-[var(--text)]">{plan.points}</code><span className="text-xs text-[var(--soft)]">赠送 {plan.bonus_points || '0'}</span></span>,
+    },
+    {
+      key: 'order',
+      title: '排序',
+      width: 'minmax(70px,.6fr)',
+      kind: 'number',
+      align: 'right',
+      render: (plan) => <code>{plan.sort_order ?? 0}</code>,
+    },
+    {
+      key: 'status',
+      title: '状态',
+      width: 'minmax(150px,1.2fr)',
+      render: (plan) => {
+        const status = cashierPlanStatusBadge(plan.status)
+        const purchase = cashierPlanPurchaseBadge(plan)
+        return <span className="flex flex-wrap gap-1.5"><Badge tone={status.tone}>{status.label}</Badge><Badge tone={purchase.tone}>{purchase.label}</Badge></span>
+      },
+    },
+    {
+      key: 'actions',
+      title: '操作',
+      width: 'minmax(90px,.7fr)',
+      align: 'right',
+      render: (plan) => <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} onClick={() => onFeedback('套餐编辑入口', plan.plan_name)}>编辑</button>,
+    },
+  ]
 }

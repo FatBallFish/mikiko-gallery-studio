@@ -228,7 +228,7 @@ export function ConfigPage({
             const label = configFieldMeta(key, row.description).label || key
             return (
               <div key={`${draftId(row)}:summary`} className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-strong)]">{label}</label>
+                <label className="text-[11px] font-semibold text-[var(--muted-strong)]">{label}</label>
                 <div className="relative">
                   <input readOnly value={summaryValue(value)} className="w-full" />
                   {index === 1 ? <span className="absolute right-4 top-1/2 size-2 -translate-y-1/2 rounded-full bg-emerald-500" /> : null}

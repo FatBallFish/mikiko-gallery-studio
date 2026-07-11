@@ -4,8 +4,9 @@ import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
-import { FilterBar } from '../ui/dataTable'
-import { FilterIcon } from '../ui/listIcons'
+import type { ColumnDef } from '../ui/dataTable'
+import { DataTable, FilterToolbar, ListPage } from '../ui/dataTable'
+import { FilterIcon, XIcon } from '../ui/listIcons'
 import {
   auditActionOptions,
   auditExportFilename,
@@ -16,18 +17,12 @@ import {
 } from './auditRows'
 
 const auditClasses = {
-  timeline: 'grid gap-2',
-  item: 'group flex items-center gap-6 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--elevated)] max-[720px]:grid max-[720px]:grid-cols-1',
-  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--canvas)] text-xs font-bold text-[var(--muted-strong)]',
-  itemMain: 'min-w-0 flex-1',
-  itemHead: 'mb-1 flex min-w-0 flex-wrap items-center gap-3',
-  actionText: 'text-xs font-black tracking-widest text-[var(--accent)]',
-  itemTitle: 'min-w-0 truncate text-sm font-bold text-[var(--text)]',
-  dot: 'size-1 rounded-full bg-[var(--border-strong)]',
-  itemText: 'm-0 text-xs leading-relaxed text-[var(--muted-strong)]',
-  itemSide: 'shrink-0 text-right max-[720px]:text-left',
-  itemActor: 'text-xs font-bold text-[var(--soft)]',
-  itemDate: 'mt-0.5 text-[10px] text-[var(--muted-strong)]',
+  identity: 'flex min-w-0 items-center gap-3',
+  avatar: 'grid size-9 shrink-0 place-items-center rounded-lg bg-[var(--canvas)] text-xs font-semibold text-[var(--muted)]',
+  stack: 'grid min-w-0 gap-1',
+  title: 'truncate font-semibold text-[var(--fg)]',
+  secondary: 'truncate text-xs text-[var(--soft)]',
+  detail: 'max-w-[520px] text-xs leading-5 text-[var(--muted)] [overflow-wrap:anywhere]',
 }
 
 export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
@@ -57,8 +52,13 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
   const visibleRows = useMemo(() => rows.filter((row) => {
     const matchesAction = actionFilter === 'all' || row.action === actionFilter
     const haystack = auditSearchText(row)
-    return matchesAction && (!query || haystack.includes(query.toLowerCase()))
+    return matchesAction && (!query.trim() || haystack.includes(query.trim().toLowerCase()))
   }), [actionFilter, query, rows])
+
+  const clearFilters = () => {
+    setQuery('')
+    setActionFilter('all')
+  }
 
   const exportVisibleRows = () => {
     if (!visibleRows.length) {
@@ -83,43 +83,78 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
       <PageHeader
         eyebrow="Audit"
         title="审计日志"
-        detail="所有关键写操作都会追加审计行，便于回溯配置、价格、路由、审核与用户变更。"
-        actions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={exportVisibleRows} disabled={!visibleRows.length}>导出日志</button>}
+        detail="查询关键写操作及其操作人、目标、结果与来源信息。"
+        actions={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={exportVisibleRows} disabled={!visibleRows.length}>导出日志</button>}
       />
-      <FilterBar
-        fields={[
-          { key: 'query', label: '搜索', primary: true, control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={auditSearchPlaceholder} /> },
-          { key: 'action', label: '动作', primary: true, control: <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>{actionOptions.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}</select> },
-        ]}
-        actions={<button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small, 'gap-1.5')} onClick={() => void load()}><FilterIcon className="size-4" /><span>刷新</span></button>}
-      />
-      <section className={auditClasses.timeline}>
-        {!visibleRows.length ? <EmptyBlock title="没有匹配审计" detail="放宽关键词或动作筛选。" /> : visibleRows.map((row) => (
-          <AuditTimelineItem key={row.id} row={row} />
-        ))}
-      </section>
+      <ListPage
+        filters={(
+          <FilterToolbar
+            fields={[
+              { key: 'query', label: '搜索', primary: true, minWidth: '240px', maxWidth: '420px', control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={auditSearchPlaceholder} /> },
+              { key: 'action', label: '动作', primary: true, control: <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>{actionOptions.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}</select> },
+            ]}
+            actions={(
+              <>
+                <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={clearFilters}><XIcon className="size-4" /><span>清空</span></button>
+                <button type="button" className={cn(adminButton.base, adminButton.secondary, adminButton.small)} onClick={() => void load()}><FilterIcon className="size-4" /><span>刷新</span></button>
+              </>
+            )}
+            resultSummary={`共载入 ${rows.length} 条审计 · 当前显示 ${visibleRows.length} 条`}
+          />
+        )}
+      >
+        <DataTable
+          columns={auditColumns()}
+          rows={visibleRows}
+          rowKey={(row) => row.id}
+          empty={<EmptyBlock title="没有匹配审计" detail="放宽关键词或动作筛选。" />}
+        />
+      </ListPage>
     </section>
   )
 }
 
-function AuditTimelineItem({ row }: { row: AuditLog }) {
-  const item = auditTimelineRow(row)
-  return (
-    <article className={auditClasses.item}>
-      <div className={auditClasses.avatar}>{item.actorLabel.slice(0, 1).toUpperCase()}</div>
-      <div className={auditClasses.itemMain}>
-        <div className={auditClasses.itemHead}>
-          <span className={auditClasses.actionText}>{item.actionLabel}</span>
-          <span className={auditClasses.dot} />
-          <strong className={auditClasses.itemTitle}>{item.targetLabel}</strong>
-          <Badge tone={item.result.tone}>{item.result.label}</Badge>
-        </div>
-        <p className={auditClasses.itemText}>{item.detailText} · audit_id {item.raw.id}</p>
-      </div>
-      <div className={auditClasses.itemSide}>
-        <div className={auditClasses.itemActor}>{item.actorLabel}</div>
-        <div className={auditClasses.itemDate}>{item.createdAtLabel}</div>
-      </div>
-    </article>
-  )
+function auditColumns(): ColumnDef<AuditLog>[] {
+  return [
+    {
+      key: 'action',
+      title: '动作与对象',
+      width: 'minmax(230px,1.7fr)',
+      render: (row) => {
+        const item = auditTimelineRow(row)
+        return <span className={auditClasses.stack}><span className={auditClasses.title}>{item.actionLabel}</span><span className={auditClasses.secondary}>{item.targetLabel} · audit_id {row.id}</span></span>
+      },
+    },
+    {
+      key: 'actor',
+      title: '操作人',
+      width: 'minmax(180px,1.2fr)',
+      render: (row) => {
+        const item = auditTimelineRow(row)
+        return <span className={auditClasses.identity}><span className={auditClasses.avatar}>{item.actorLabel.slice(0, 1).toUpperCase()}</span><span className={auditClasses.stack}><span className={auditClasses.title}>{item.actorLabel}</span><span className={auditClasses.secondary}>{row.ip_addr || '未记录 IP'}</span></span></span>
+      },
+    },
+    {
+      key: 'detail',
+      title: '操作详情',
+      width: 'minmax(280px,2.4fr)',
+      render: (row) => <span className={auditClasses.detail}>{auditTimelineRow(row).detailText}</span>,
+    },
+    {
+      key: 'result',
+      title: '结果',
+      width: 'minmax(90px,.7fr)',
+      render: (row) => {
+        const result = auditTimelineRow(row).result
+        return <Badge tone={result.tone}>{result.label}</Badge>
+      },
+    },
+    {
+      key: 'time',
+      title: '发生时间',
+      width: 'minmax(150px,1fr)',
+      kind: 'code',
+      render: (row) => auditTimelineRow(row).createdAtLabel,
+    },
+  ]
 }

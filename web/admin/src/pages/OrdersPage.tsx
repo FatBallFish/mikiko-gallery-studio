@@ -4,7 +4,7 @@ import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
-import { ColumnDef, DataTable, FilterBar, ListPage, Pager } from '../ui/dataTable'
+import { ColumnDef, DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import { FilterIcon } from '../ui/listIcons'
 import { cashierAdminDateTime, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel } from './cashierPaymentDisplay'
 import { cashierOrderStatusBadge } from './cashierStatusRows'
@@ -118,12 +118,13 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
       <ListPage
         filters={(
           <form onSubmit={(event: FormEvent) => { event.preventDefault(); void load(1) }}>
-            <FilterBar
+            <FilterToolbar
               fields={[
                 { key: 'query', label: '关键词', primary: true, control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="订单号 / 用户 / 渠道流水号" /> },
                 { key: 'status', label: '状态', primary: true, control: <select value={status} onChange={(event) => setStatus(event.target.value)}>{quickFilters.map((filter) => <option key={filter.value || 'all'} value={filter.value}>{filter.label}</option>)}</select> },
               ]}
               actions={<button type="submit" className={cn(adminButton.base, adminButton.primary, adminButton.small, 'gap-1.5')} aria-label="查询" title="查询"><FilterIcon className="size-4" /><span>查询</span></button>}
+              resultSummary={`共 ${total} 条订单 · 当前显示 ${rows.length} 条`}
             />
           </form>
         )}

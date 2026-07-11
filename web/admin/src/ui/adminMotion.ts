@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import { useGSAP } from '@gsap/react'
-import gsap from 'gsap'
+import { gsap } from 'gsap'
 
 gsap.registerPlugin(useGSAP)
 
