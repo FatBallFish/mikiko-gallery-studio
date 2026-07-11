@@ -134,6 +134,7 @@ export const API_PATHS = {
     imageReviewReject: '/api/ops/admin/v1/image-reviews/{image_id}:reject',
     imageReviewUnpublish: '/api/ops/admin/v1/image-reviews/{image_id}:unpublish',
     dashboard: '/api/ops/admin/v1/metrics/dashboard',
+    monitoringSnapshot: '/api/ops/admin/v1/monitoring/snapshot',
     readiness: '/api/ops/admin/v1/readiness',
     cashierOverview: '/api/ops/admin/v1/cashier/overview',
     cashierPlans: '/api/ops/admin/v1/cashier/plans',
