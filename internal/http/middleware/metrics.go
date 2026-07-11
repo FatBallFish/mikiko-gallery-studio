@@ -93,23 +93,19 @@ func (w trackedFlusher) Flush() {
 
 type trackedReaderFrom struct {
 	tracker *metricsResponseWriter
-	target  io.ReaderFrom
 }
 
 func (w trackedReaderFrom) ReadFrom(reader io.Reader) (int64, error) {
-	if w.tracker.status == 0 {
-		w.tracker.WriteHeader(http.StatusOK)
-	}
-	return w.target.ReadFrom(reader)
+	return io.Copy(w.tracker, reader)
 }
 
 func wrapMetricsCapabilities(tracker *metricsResponseWriter, original http.ResponseWriter) http.ResponseWriter {
 	rawFlusher, hasFlusher := original.(http.Flusher)
 	hijacker, hasHijacker := original.(http.Hijacker)
 	pusher, hasPusher := original.(http.Pusher)
-	rawReaderFrom, hasReaderFrom := original.(io.ReaderFrom)
+	_, hasReaderFrom := original.(io.ReaderFrom)
 	flusher := trackedFlusher{tracker: tracker, target: rawFlusher}
-	readerFrom := trackedReaderFrom{tracker: tracker, target: rawReaderFrom}
+	readerFrom := trackedReaderFrom{tracker: tracker}
 
 	mask := 0
 	if hasFlusher {
