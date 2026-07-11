@@ -52,6 +52,9 @@ const monitoringClasses = {
   chartWide: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-7'),
   chartNarrow: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-5'),
   chartFull: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-12'),
+  resourceGrid: 'grid min-w-0 grid-cols-3 divide-x divide-[var(--border)] max-[900px]:grid-cols-1 max-[900px]:divide-x-0 max-[900px]:divide-y',
+  resourceItem: 'min-w-0 px-4 first:pl-0 last:pr-0 max-[900px]:px-0 max-[900px]:py-4 max-[900px]:first:pt-0 max-[900px]:last:pb-0',
+  resourceTitle: 'mb-2 text-xs font-semibold text-[var(--soft)]',
   panelHead: 'mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] pb-3',
   panelTitle: cn('m-0', adminType.sectionTitle),
   panelDetail: 'm-0 mt-1 text-xs leading-5 text-[var(--soft)]',
@@ -81,6 +84,7 @@ export function MonitoringPage() {
   const [error, setError] = useState<string | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [lastSuccessfulAt, setLastSuccessfulAt] = useState<string | null>(null)
+  const [lastDiagnosticsAt, setLastDiagnosticsAt] = useState<string | null>(null)
   const requestSequence = useRef(0)
 
   const load = useCallback(async (mode: LoadMode, targetWindow: MonitoringWindow, includeReadiness = false) => {
@@ -99,8 +103,12 @@ export function MonitoringPage() {
       ])
       if (requestID !== requestSequence.current) return
       setSnapshot(nextSnapshot)
-      if (nextReadiness) setReadiness(nextReadiness)
-      setLastSuccessfulAt(new Date().toISOString())
+      const completedAt = new Date().toISOString()
+      if (nextReadiness) {
+        setReadiness(nextReadiness)
+        setLastDiagnosticsAt(completedAt)
+      }
+      setLastSuccessfulAt(completedAt)
       setRefreshError(null)
     } catch (caught) {
       if (requestID !== requestSequence.current) return
@@ -119,19 +127,25 @@ export function MonitoringPage() {
   }, [load])
 
   useEffect(() => {
-    if (!autoRefresh) return
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void load('poll', selectedWindow)
+    if (!autoRefresh || initialLoading || refreshing) return
+    let pollInFlight = false
+    const refreshWhenVisible = async () => {
+      if (document.visibilityState !== 'visible' || pollInFlight) return
+      pollInFlight = true
+      try {
+        await load('poll', selectedWindow)
+      } finally {
+        pollInFlight = false
       }
     }
-    const interval = window.setInterval(refreshWhenVisible, 5000)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
+    const interval = window.setInterval(() => { void refreshWhenVisible() }, 5000)
+    const handleVisibilityChange = () => { void refreshWhenVisible() }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       window.clearInterval(interval)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [autoRefresh, load, selectedWindow])
+  }, [autoRefresh, initialLoading, load, refreshing, selectedWindow])
 
   const metrics = useMemo(() => snapshot ? monitoringMetricRows(snapshot) : [], [snapshot])
   const routes = useMemo(() => snapshot ? monitoringRouteRows(snapshot.routes) : [], [snapshot])
@@ -177,7 +191,7 @@ export function MonitoringPage() {
           <div className={monitoringClasses.context} aria-label="运行监控上下文">
             <span>运行时长 <strong className={monitoringClasses.contextValue}>{formatUptimeContext(snapshot.uptime_seconds)}</strong></span>
             <span>数据窗口 <strong className={monitoringClasses.contextValue}>{snapshot.window}</strong></span>
-            <span>最后更新 <strong className={monitoringClasses.contextValue}>{healthRefreshTimeLabel(lastSuccessfulAt)}</strong></span>
+            <span>运行指标 <strong className={monitoringClasses.contextValue}>{healthRefreshTimeLabel(lastSuccessfulAt)}</strong></span>
           </div>
         </div>
         <div className={monitoringClasses.controlGroup}>
@@ -251,15 +265,26 @@ export function MonitoringPage() {
           detail="API 进程 CPU、Go Heap 与 Goroutine 变化；指标不代表整台宿主机。"
           legend={[['CPU', 'var(--accent-coral)'], ['Heap MB', 'var(--accent)'], ['Goroutine', 'var(--green)']]}
         >
-          <TimeSeriesChart
-            ariaLabel="API 进程资源压力趋势"
-            data={chartData}
-            series={[
-              { key: 'cpu', label: 'CPU', color: 'var(--accent-coral)', format: formatMonitoringPercent },
-              { key: 'heap', label: 'Heap MB', color: 'var(--accent)', axis: 'right', format: (value) => `${value.toFixed(1)} MB` },
-              { key: 'goroutines', label: 'Goroutine', color: 'var(--green)', format: (value) => String(Math.round(value)) },
-            ]}
-          />
+          <div className={monitoringClasses.resourceGrid}>
+            <ResourceTrend
+              title="CPU 容量"
+              ariaLabel="API 进程 CPU 趋势"
+              data={chartData}
+              series={{ key: 'cpu', label: 'CPU', color: 'var(--accent-coral)', format: formatMonitoringPercent }}
+            />
+            <ResourceTrend
+              title="Go Heap"
+              ariaLabel="Go Heap 内存趋势"
+              data={chartData}
+              series={{ key: 'heap', label: 'Heap MB', color: 'var(--accent)', format: (value) => `${value.toFixed(1)} MB` }}
+            />
+            <ResourceTrend
+              title="Goroutine"
+              ariaLabel="Goroutine 数量趋势"
+              data={chartData}
+              series={{ key: 'goroutines', label: 'Goroutine', color: 'var(--green)', format: (value) => String(Math.round(value)) }}
+            />
+          </div>
         </TrendPanel>
       </section>
 
@@ -290,7 +315,7 @@ export function MonitoringPage() {
             <div className={monitoringClasses.panelHead}>
               <div>
                 <h2 className={monitoringClasses.panelTitle}>依赖与诊断</h2>
-                <p className={monitoringClasses.panelDetail}>只展示异常 Provider 与需要处理的配置项。</p>
+                <p className={monitoringClasses.panelDetail}>只展示异常 Provider 与需要处理的配置项。诊断更新 {healthRefreshTimeLabel(lastDiagnosticsAt)}</p>
               </div>
               <Badge tone={diagnostics.some((row) => row.statusTone === 'danger') ? 'danger' : diagnostics.length ? 'warning' : 'success'}>
                 {diagnostics.length ? `${diagnostics.length} 项` : '无异常'}
@@ -306,6 +331,25 @@ export function MonitoringPage() {
           </section>
         </aside>
       </section>
+    </section>
+  )
+}
+
+function ResourceTrend({
+  title,
+  ariaLabel,
+  data,
+  series,
+}: {
+  title: string
+  ariaLabel: string
+  data: TimeSeriesDatum[]
+  series: Parameters<typeof TimeSeriesChart>[0]['series'][number]
+}) {
+  return (
+    <section className={monitoringClasses.resourceItem}>
+      <h3 className={monitoringClasses.resourceTitle}>{title}</h3>
+      <TimeSeriesChart ariaLabel={ariaLabel} data={data} series={[series]} />
     </section>
   )
 }

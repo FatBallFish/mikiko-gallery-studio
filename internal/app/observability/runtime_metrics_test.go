@@ -1,7 +1,9 @@
 package observability
 
 import (
+	"context"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -157,6 +159,71 @@ func TestRuntimeMetricsClassifiesPressureWithReasons(t *testing.T) {
 	}
 }
 
+func TestRuntimeMetricsUsesElapsedWindowForSparseQPS(t *testing.T) {
+	now := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
+	metrics := NewRuntimeMetrics(RuntimeMetricsOptions{
+		Now:     func() time.Time { return now },
+		Sampler: func() RuntimeSample { return RuntimeSample{} },
+	})
+	finish := metrics.BeginRequest("GET")
+	finish("/api/tasks", http.StatusOK, 25*time.Millisecond)
+	now = now.Add(time.Minute)
+	metrics.RecordRuntimeSample(RuntimeSample{})
+
+	snapshot := mustSnapshot(t, metrics, Window5m)
+	if snapshot.Current.QPS != 1.0/60.0 {
+		t.Fatalf("sparse qps = %v, want one request over 60 seconds", snapshot.Current.QPS)
+	}
+	if snapshot.Routes[0].QPS != 1.0/60.0 {
+		t.Fatalf("sparse route qps = %v, want one request over 60 seconds", snapshot.Routes[0].QPS)
+	}
+}
+
+func TestRuntimeMetricsCarriesInflightAcrossSampleBuckets(t *testing.T) {
+	now := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
+	metrics := NewRuntimeMetrics(RuntimeMetricsOptions{
+		Now:     func() time.Time { return now },
+		Sampler: func() RuntimeSample { return RuntimeSample{} },
+	})
+	finish := metrics.BeginRequest("GET")
+	now = now.Add(sampleInterval)
+	metrics.RecordRuntimeSample(RuntimeSample{})
+	now = now.Add(sampleInterval)
+	finish("/api/slow", http.StatusOK, 10*time.Second)
+	metrics.RecordRuntimeSample(RuntimeSample{})
+
+	snapshot := mustSnapshot(t, metrics, Window5m)
+	if len(snapshot.Series) < 2 || snapshot.Series[1].PeakInflight != 1 {
+		t.Fatalf("long request should remain visible across buckets, got %+v", snapshot.Series)
+	}
+}
+
+func TestRuntimeMetricsStartSamplesAcrossBucketsUntilCancelled(t *testing.T) {
+	start := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
+	var nowNanos atomic.Int64
+	nowNanos.Store(start.UnixNano())
+	sampled := make(chan struct{}, 4)
+	metrics := NewRuntimeMetrics(RuntimeMetricsOptions{
+		Now: func() time.Time { return time.Unix(0, nowNanos.Load()).UTC() },
+		Sampler: func() RuntimeSample {
+			sampled <- struct{}{}
+			return RuntimeSample{HeapBytes: 32 << 20}
+		},
+		TickInterval: time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	metrics.Start(ctx)
+	waitForRuntimeSample(t, sampled)
+
+	nowNanos.Store(start.Add(sampleInterval).UnixNano())
+	waitForRuntimeSample(t, sampled)
+	snapshot := mustSnapshot(t, metrics, Window5m)
+	if len(snapshot.Series) != 1 || snapshot.Series[0].HeapBytes != 32<<20 {
+		t.Fatalf("background sampler did not retain completed bucket: %+v", snapshot.Series)
+	}
+}
+
 func mustSnapshot(t *testing.T, metrics *RuntimeMetrics, window Window) RuntimeSnapshot {
 	t.Helper()
 	snapshot, err := metrics.Snapshot(window)
@@ -177,4 +244,13 @@ func contains(values []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func waitForRuntimeSample(t *testing.T, sampled <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-sampled:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime sample")
+	}
 }

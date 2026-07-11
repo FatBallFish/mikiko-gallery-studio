@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '../../../shared/classnames'
 
 export type TimeSeriesValue = {
@@ -78,6 +78,7 @@ export function TimeSeriesChart({
 }) {
   const [keyboardIndex, setKeyboardIndex] = useState(() => clampChartIndex(data.length - 1, data.length))
   const [pointerIndex, setPointerIndex] = useState<number | null>(null)
+  const keyboardInspectionRef = useRef(false)
   const leftExtent = useMemo(() => chartExtentForAxis(data, series, 'left'), [data, series])
   const rightExtent = useMemo(() => chartExtentForAxis(data, series, 'right'), [data, series])
   const hasRightAxis = series.some((definition) => definition.axis === 'right')
@@ -85,6 +86,12 @@ export function TimeSeriesChart({
   const active = activeIndex >= 0 ? data[activeIndex] : null
   const firstTime = data[0]?.at
   const lastTime = data[data.length - 1]?.at
+
+  useEffect(() => {
+    setKeyboardIndex((current) => keyboardInspectionRef.current
+      ? clampChartIndex(current, data.length)
+      : clampChartIndex(data.length - 1, data.length))
+  }, [data.length])
 
   const summaries = series.map((definition) => {
     const finite = data
@@ -119,26 +126,34 @@ export function TimeSeriesChart({
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
+      keyboardInspectionRef.current = true
       setKeyboardIndex((current) => clampChartIndex((current < 0 ? data.length : current) - 1, data.length))
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
+      keyboardInspectionRef.current = true
       setKeyboardIndex((current) => clampChartIndex(current + 1, data.length))
     } else if (event.key === 'Home') {
       event.preventDefault()
+      keyboardInspectionRef.current = true
       setKeyboardIndex(clampChartIndex(0, data.length))
     } else if (event.key === 'End') {
       event.preventDefault()
+      keyboardInspectionRef.current = true
       setKeyboardIndex(clampChartIndex(data.length - 1, data.length))
     }
   }
 
   return (
     <div
-      className={cn('relative min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-solid)]', className)}
+      className={cn('relative min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-solid)]', className)}
       role="group"
       aria-label={ariaLabel}
       tabIndex={0}
       onFocus={() => setKeyboardIndex((current) => clampChartIndex(current < 0 ? data.length - 1 : current, data.length))}
+      onBlur={() => {
+        keyboardInspectionRef.current = false
+        setKeyboardIndex(clampChartIndex(data.length - 1, data.length))
+      }}
       onKeyDown={handleKeyDown}
     >
       <svg
@@ -197,7 +212,7 @@ export function TimeSeriesChart({
       </svg>
 
       <div className="pointer-events-none absolute right-3 top-3 min-w-[132px] border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface-solid)_94%,transparent)] px-3 py-2 shadow-[var(--pg-shadow-sm)] backdrop-blur-sm">
-        <div className="mb-1 font-[family-name:var(--admin-font-mono)] text-[10px] font-semibold text-[var(--dim)]">
+        <div className="mb-1 font-[family-name:var(--admin-font-mono)] text-[length:var(--admin-type-label)] font-semibold text-[var(--dim)]">
           {formatChartTime(active?.at)}
         </div>
         <div className="grid gap-1">

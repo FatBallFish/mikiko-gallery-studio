@@ -52,6 +52,10 @@ type metricsResponseWriter struct {
 }
 
 func (w *metricsResponseWriter) WriteHeader(status int) {
+	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(status)
+		return
+	}
 	if w.status != 0 {
 		return
 	}
@@ -75,11 +79,37 @@ func newMetricsResponseWriter(w http.ResponseWriter) http.ResponseWriter {
 	return wrapMetricsCapabilities(tracker, w)
 }
 
+type trackedFlusher struct {
+	tracker *metricsResponseWriter
+	target  http.Flusher
+}
+
+func (w trackedFlusher) Flush() {
+	if w.tracker.status == 0 {
+		w.tracker.WriteHeader(http.StatusOK)
+	}
+	w.target.Flush()
+}
+
+type trackedReaderFrom struct {
+	tracker *metricsResponseWriter
+	target  io.ReaderFrom
+}
+
+func (w trackedReaderFrom) ReadFrom(reader io.Reader) (int64, error) {
+	if w.tracker.status == 0 {
+		w.tracker.WriteHeader(http.StatusOK)
+	}
+	return w.target.ReadFrom(reader)
+}
+
 func wrapMetricsCapabilities(tracker *metricsResponseWriter, original http.ResponseWriter) http.ResponseWriter {
-	flusher, hasFlusher := original.(http.Flusher)
+	rawFlusher, hasFlusher := original.(http.Flusher)
 	hijacker, hasHijacker := original.(http.Hijacker)
 	pusher, hasPusher := original.(http.Pusher)
-	readerFrom, hasReaderFrom := original.(io.ReaderFrom)
+	rawReaderFrom, hasReaderFrom := original.(io.ReaderFrom)
+	flusher := trackedFlusher{tracker: tracker, target: rawFlusher}
+	readerFrom := trackedReaderFrom{tracker: tracker, target: rawReaderFrom}
 
 	mask := 0
 	if hasFlusher {

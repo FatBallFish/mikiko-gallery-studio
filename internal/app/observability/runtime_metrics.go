@@ -1,7 +1,9 @@
 package observability
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"math"
 	runtimelib "runtime"
 	runtimemetrics "runtime/metrics"
@@ -44,8 +46,9 @@ const (
 )
 
 type RuntimeMetricsOptions struct {
-	Now     func() time.Time
-	Sampler func() RuntimeSample
+	Now          func() time.Time
+	Sampler      func() RuntimeSample
+	TickInterval time.Duration
 }
 
 type RuntimeSample struct {
@@ -124,6 +127,8 @@ type RuntimeMetrics struct {
 	buckets          [runtimeRingSize]runtimeBucket
 	inflight         atomic.Int64
 	lastSampleBucket time.Time
+	tickInterval     time.Duration
+	startOnce        sync.Once
 }
 
 type runtimeBucket struct {
@@ -151,11 +156,39 @@ func NewRuntimeMetrics(options RuntimeMetricsOptions) *RuntimeMetrics {
 	if sampler == nil {
 		sampler = sampleGoRuntime
 	}
-	return &RuntimeMetrics{
-		now:       now,
-		sampler:   sampler,
-		startedAt: now(),
+	tickInterval := options.TickInterval
+	if tickInterval <= 0 {
+		tickInterval = sampleInterval
 	}
+	return &RuntimeMetrics{
+		now:          now,
+		sampler:      sampler,
+		startedAt:    now(),
+		tickInterval: tickInterval,
+	}
+}
+
+func (m *RuntimeMetrics) Start(ctx context.Context) {
+	m.startOnce.Do(func() {
+		m.sampleIfDue(m.now())
+		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					slog.Error("runtime metrics sampler stopped after panic", "panic", recovered)
+				}
+			}()
+			ticker := time.NewTicker(m.tickInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					m.sampleIfDue(m.now())
+				}
+			}
+		}()
+	})
 }
 
 func (m *RuntimeMetrics) BeginRequest(method string) func(pattern string, status int, duration time.Duration) {
@@ -186,6 +219,9 @@ func (m *RuntimeMetrics) RecordRuntimeSample(sample RuntimeSample) {
 	bucket := m.bucketLocked(now)
 	bucket.runtime = cloneRuntimeSample(sample)
 	bucket.hasRuntime = true
+	if inflight := m.inflight.Load(); inflight > bucket.peakInflight {
+		bucket.peakInflight = inflight
+	}
 	m.lastSampleBucket = now.Truncate(sampleInterval)
 }
 
@@ -267,6 +303,9 @@ func (m *RuntimeMetrics) sampleIfDue(now time.Time) {
 	bucket := m.bucketLocked(now)
 	bucket.runtime = cloneRuntimeSample(sample)
 	bucket.hasRuntime = true
+	if inflight := m.inflight.Load(); inflight > bucket.peakInflight {
+		bucket.peakInflight = inflight
+	}
 	m.mu.Unlock()
 }
 
@@ -315,7 +354,7 @@ func aggregateRuntimeSnapshot(now, startedAt time.Time, window Window, buckets [
 		snapshot.Series = append(snapshot.Series, runtimePointFromBucket(bucket))
 	}
 
-	elapsedSeconds := float64(len(buckets)) * sampleInterval.Seconds()
+	elapsedSeconds := observedWindowSeconds(now, startedAt, window)
 	if elapsedSeconds > 0 {
 		snapshot.Current.QPS = float64(snapshot.Statuses.Total) / elapsedSeconds
 	}
@@ -331,6 +370,19 @@ func aggregateRuntimeSnapshot(now, startedAt time.Time, window Window, buckets [
 	snapshot.Routes = aggregateRoutes(routeTotals, elapsedSeconds)
 	snapshot.State, snapshot.StateReasons = runtimeState(snapshot.Collecting, snapshot.Current)
 	return snapshot
+}
+
+func observedWindowSeconds(now, startedAt time.Time, window Window) float64 {
+	duration, _ := windowDuration(window)
+	end := now.Truncate(sampleInterval)
+	start := startedAt
+	if cutoff := end.Add(-duration); start.Before(cutoff) {
+		start = cutoff
+	}
+	if !start.Before(end) {
+		return 0
+	}
+	return end.Sub(start).Seconds()
 }
 
 func runtimePointFromBucket(bucket runtimeBucket) RuntimePoint {

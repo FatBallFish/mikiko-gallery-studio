@@ -121,11 +121,55 @@ func TestMetricsResponseWriterDoesNotAdvertiseUnsupportedInterfaces(t *testing.T
 	}
 }
 
+func TestMetricsResponseWriterTracksFinalStatusAfterEarlyHints(t *testing.T) {
+	underlying := &allCapabilityWriter{header: make(http.Header)}
+	tracker := &metricsResponseWriter{ResponseWriter: underlying}
+	wrapped := wrapMetricsCapabilities(tracker, underlying)
+
+	wrapped.WriteHeader(http.StatusEarlyHints)
+	wrapped.WriteHeader(http.StatusServiceUnavailable)
+
+	if tracker.status != http.StatusServiceUnavailable {
+		t.Fatalf("tracked status = %d, want final 503", tracker.status)
+	}
+	if got := underlying.statuses; len(got) != 2 || got[0] != http.StatusEarlyHints || got[1] != http.StatusServiceUnavailable {
+		t.Fatalf("underlying statuses = %v, want 103 then 503", got)
+	}
+}
+
+func TestMetricsResponseWriterFlushCommitsSuccess(t *testing.T) {
+	underlying := &allCapabilityWriter{header: make(http.Header)}
+	tracker := &metricsResponseWriter{ResponseWriter: underlying}
+	wrapped := wrapMetricsCapabilities(tracker, underlying)
+
+	wrapped.(http.Flusher).Flush()
+	wrapped.WriteHeader(http.StatusInternalServerError)
+
+	if tracker.status != http.StatusOK {
+		t.Fatalf("tracked status after flush = %d, want 200", tracker.status)
+	}
+	if len(underlying.statuses) != 1 || underlying.statuses[0] != http.StatusOK {
+		t.Fatalf("underlying statuses = %v, want only committed 200", underlying.statuses)
+	}
+}
+
+func TestMetricsResponseWriterReaderFromCommitsSuccess(t *testing.T) {
+	underlying := &allCapabilityWriter{header: make(http.Header)}
+	tracker := &metricsResponseWriter{ResponseWriter: underlying}
+	wrapped := wrapMetricsCapabilities(tracker, underlying)
+
+	_, _ = wrapped.(io.ReaderFrom).ReadFrom(strings.NewReader("stream"))
+	if tracker.status != http.StatusOK {
+		t.Fatalf("tracked status after ReadFrom = %d, want 200", tracker.status)
+	}
+}
+
 type allCapabilityWriter struct {
-	header  http.Header
-	body    strings.Builder
-	status  int
-	flushed bool
+	header   http.Header
+	body     strings.Builder
+	status   int
+	statuses []int
+	flushed  bool
 }
 
 func (w *allCapabilityWriter) Header() http.Header {
@@ -138,6 +182,7 @@ func (w *allCapabilityWriter) Write(body []byte) (int, error) {
 
 func (w *allCapabilityWriter) WriteHeader(status int) {
 	w.status = status
+	w.statuses = append(w.statuses, status)
 }
 
 func (w *allCapabilityWriter) Flush() {
