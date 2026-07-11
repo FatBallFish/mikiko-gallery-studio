@@ -426,6 +426,9 @@ func normalizedRoute(method, pattern string) string {
 	if pattern == "" {
 		pattern = "unknown"
 	}
+	if fields := strings.Fields(pattern); len(fields) > 1 && strings.EqualFold(fields[0], method) {
+		return method + " " + strings.Join(fields[1:], " ")
+	}
 	return method + " " + pattern
 }
 
