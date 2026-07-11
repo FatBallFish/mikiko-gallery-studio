@@ -14,3 +14,4 @@ target/
 .workflow/
 .review/
 .playwright-mcp/
+.worktrees/
