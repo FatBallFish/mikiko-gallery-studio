@@ -1,11 +1,11 @@
 export const adminDataGrid = {
-  root: 'min-w-0 overflow-x-auto rounded-lg bg-[var(--surface-solid)]',
-  head: 'sticky top-0 z-[1] grid items-center gap-3 border-b border-[var(--border)] bg-[var(--surface-solid)] px-6 py-4 text-[11px] font-bold uppercase tracking-wider text-[var(--dim)] [&>*]:min-w-0 [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap',
-  row: 'grid min-h-14 items-center gap-3 border-b border-[color-mix(in_oklch,var(--border)_72%,transparent)] px-6 py-4 text-sm text-[var(--muted)] transition-colors last:border-b-0 hover:bg-[color-mix(in_oklch,var(--surface-solid)_94%,var(--accent)_6%)] [&>*]:min-w-0',
+  root: 'min-w-0 overflow-x-auto overscroll-x-contain rounded-lg bg-[var(--surface-solid)]',
+  head: 'sticky top-0 z-[1] grid items-center gap-3 border-b border-[var(--border)] bg-[var(--surface-solid)] px-5 py-3 text-[length:var(--admin-type-label)] font-semibold text-[var(--dim)] [&>*]:min-w-0 [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap',
+  row: 'grid min-h-[50px] items-center gap-3 border-b border-[color-mix(in_oklch,var(--border)_72%,transparent)] px-5 py-2 text-sm text-[var(--muted)] transition-colors duration-[var(--admin-motion-fast)] last:border-b-0 hover:bg-[color-mix(in_oklch,var(--surface-solid)_94%,var(--accent)_6%)] [&>*]:min-w-0',
   cell: 'min-w-0 overflow-hidden text-ellipsis',
   stackCell: 'flex min-w-0 flex-col justify-center',
   detail: 'm-0 mt-1 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',
-  code: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono',
+  code: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-[family-name:var(--admin-font-mono)] text-xs',
   actions: 'flex flex-wrap items-center justify-end gap-2',
 }
 

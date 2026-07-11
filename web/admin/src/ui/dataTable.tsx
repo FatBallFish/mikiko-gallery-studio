@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { cn } from '../../../shared/classnames'
-import { adminButton } from './classes'
+import { adminButton, adminFeedback } from './classes'
 import {
   ChevronUpIcon,
   FilterIcon,
@@ -34,6 +34,7 @@ export type ColumnDef<T> = {
   /** 可选列宽，CSS grid-template-columns 片段 */
   width?: string
   align?: 'left' | 'right' | 'center'
+  kind?: 'text' | 'number' | 'code'
   /** 单元格渲染 */
   render: (row: T) => React.ReactNode
 }
@@ -95,6 +96,18 @@ export function FilterBar({
   )
 }
 
+export function FilterToolbar({
+  resultSummary,
+  ...props
+}: React.ComponentProps<typeof FilterBar> & { resultSummary?: React.ReactNode }) {
+  return (
+    <div className="grid gap-2 rounded-lg bg-[var(--surface-solid)] p-3">
+      <FilterBar {...props} />
+      {resultSummary ? <div className="text-xs font-medium text-[var(--soft)]" aria-live="polite">{resultSummary}</div> : null}
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ *
  * 通用数据表格
  * ------------------------------------------------------------------ */
@@ -123,7 +136,7 @@ export function DataTable<T>({
   }
 
   return (
-    <div className={cn('min-w-0 overflow-x-auto', className)}>
+    <div className={cn('min-w-0 overflow-x-auto overscroll-x-contain', className)}>
       <div className="min-w-full" style={{ display: 'grid', gridTemplateColumns: gridTemplate }}>
         {/* 表头 */}
         <div className="contents">
@@ -153,20 +166,29 @@ export function DataTable<T>({
 
 function RowFragment<T>({ columns, row }: { columns: ColumnDef<T>[]; row: T }) {
   return (
-    <>
+    <div className="group contents" role="row">
       {columns.map((col) => (
         <div
           key={col.key}
           className={cn(
-            'flex min-h-14 items-center border-b border-[color-mix(in_oklch,var(--border)_72%,transparent)] px-4 py-3 text-sm text-[var(--muted)] transition-colors last:border-b-0 hover:bg-[color-mix(in_oklch,var(--surface-solid)_94%,var(--accent)_6%)]',
-            col.align === 'right' && 'justify-end text-right',
+            'flex min-h-[50px] items-center border-b border-[color-mix(in_oklch,var(--border)_72%,transparent)] px-4 py-2 text-sm text-[var(--muted)] transition-colors duration-[var(--admin-motion-fast)] last:border-b-0 group-hover:bg-[color-mix(in_oklch,var(--surface-solid)_94%,var(--accent)_6%)]',
+            col.align === 'right' && 'justify-end text-right font-[family-name:var(--admin-font-mono)] tabular-nums',
             col.align === 'center' && 'justify-center text-center',
+            col.kind === 'code' && 'font-[family-name:var(--admin-font-mono)] text-xs',
           )}
         >
           {col.render(row)}
         </div>
       ))}
-    </>
+    </div>
+  )
+}
+
+export function SkeletonRows({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="grid gap-px" role="status" aria-label="正在加载列表数据">
+      {Array.from({ length: rows }, (_, index) => <div key={index} className={adminFeedback.skeletonRow} />)}
+    </div>
   )
 }
 
