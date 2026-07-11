@@ -64,10 +64,14 @@ export function routeCandidateLabel(candidate: Pick<RouteModelCandidate, 'accoun
 
 export function routeReadinessBadge(input: {
   enabled: boolean
+  visibility?: RouteModelVisibility
+  groupCount?: number
   candidates: Pick<RouteModelCandidate, 'enabled'>[]
   prices?: Pick<RouteModelPrice, 'enabled'>[]
 }): RoutingBadge & { state: RouteReadiness } {
   if (!input.enabled) return { state: 'disabled', label: '不可用 · 已停用', tone: 'warning' }
+  if (input.visibility === 'hidden') return { state: 'disabled', label: '不可用 · 已隐藏', tone: 'warning' }
+  if (input.visibility === 'groups' && !input.groupCount) return { state: 'disabled', label: '不可用 · 未绑定分组', tone: 'warning' }
   if (!input.candidates.some((candidate) => candidate.enabled)) return { state: 'missing_candidate', label: '不可用 · 缺候选', tone: 'danger' }
   if (input.prices && !input.prices.some((price) => price.enabled)) return { state: 'missing_price', label: '不可用 · 缺价格', tone: 'warning' }
   return { state: 'ready', label: '可被用户使用', tone: 'success' }
