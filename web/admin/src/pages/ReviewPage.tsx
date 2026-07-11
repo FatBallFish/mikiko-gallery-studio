@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReviewItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { AdminTabs, Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import { useAdminPreviewMotion } from '../ui/adminMotion'
 import { ListPage } from '../ui/dataTable'
 import { reviewDefaultReason, reviewRowView, reviewStatusLabel } from './reviewRows'
 import type { ReviewDecision } from './reviewRows'
@@ -151,6 +152,8 @@ function ReviewWorkbench({
   onDecision: (item: ReviewItem, decision: ReviewDecision) => void
 }) {
   const selectedRow = selected ? reviewRowView(selected) : null
+  const previewRef = useRef<HTMLElement | null>(null)
+  useAdminPreviewMotion(previewRef, String(selected?.id ?? 'empty'))
   return (
     <section className={reviewClasses.workbench}>
       <aside className={reviewClasses.queue} aria-label="审核队列">
@@ -169,7 +172,7 @@ function ReviewWorkbench({
           })}
         </div>
       </aside>
-      <section className={reviewClasses.preview} aria-label="审核预览">
+      <section ref={previewRef} className={reviewClasses.preview} aria-label="审核预览">
         {selectedRow ? (
           <>
             <div className={reviewClasses.previewImageWrap}>

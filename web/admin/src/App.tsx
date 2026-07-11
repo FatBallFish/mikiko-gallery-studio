@@ -6,6 +6,7 @@ import { AdminLayout, normalizeRoute, protectedRoutes, routeHref } from './layou
 import { AuditPage, CallRecordsPage, CashierPage, LoginPage, MonitoringPage, OrdersPage, OverviewPage, PackagesPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, SystemSettingsPage, SystemUsersPage, UserGroupsPage, UsersPage } from './pages/index'
 import { canAccessAdminRoute, firstAccessibleAdminRoute } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId } from './types'
+import { useAdminPageMotion } from './ui/adminMotion'
 
 const sessionKey = 'pic_gallery_admin_session'
 const returnKey = 'pic_gallery_admin_return'
@@ -184,9 +185,15 @@ export default function App() {
         }}
         onLogout={handleLogout}
       >
-        {page}
+        <AdminRouteContent routeKey={protectedRoute}>{page}</AdminRouteContent>
       </AdminLayout>
       <ToastRail toasts={toasts} onDismiss={dismissToast} />
     </>
   )
+}
+
+function AdminRouteContent({ routeKey, children }: { routeKey: string; children: React.ReactNode }) {
+  const motionRef = useRef<HTMLDivElement | null>(null)
+  useAdminPageMotion(motionRef, routeKey)
+  return <div ref={motionRef} className="min-h-full" data-admin-motion-root><div data-admin-motion-item>{children}</div></div>
 }
