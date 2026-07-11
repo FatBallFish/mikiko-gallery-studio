@@ -17,6 +17,12 @@ if (!source.includes('暂无模型调用')) {
   throw new Error('overview page should render an empty state instead of a fake provider progress bar')
 }
 
+for (const inlineEmpty of ['暂无模型调用', '暂无待处理事项', '暂无用户排行', '暂无上线风险']) {
+  if (!source.includes(`<EmptyBlock variant="inline" title="${inlineEmpty}"`)) {
+    throw new Error(`nested overview empty state must use the unframed inline variant: ${inlineEmpty}`)
+  }
+}
+
 for (const overviewContract of [
   'MetricStrip',
   'grid-flow-dense grid-cols-12',

@@ -67,7 +67,7 @@ export const adminShell = {
 
 export const adminButton = {
   base: 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-semibold transition duration-[var(--admin-motion-fast)] active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklch,var(--accent)_28%,transparent)] disabled:pointer-events-none disabled:opacity-50',
-  primary: 'border-[var(--accent)] bg-[var(--accent)] text-white hover:bg-[color-mix(in_oklch,var(--accent)_88%,black_12%)]',
+  primary: 'admin-primary-action border-[var(--accent)] bg-[var(--accent)] text-white hover:bg-[color-mix(in_oklch,var(--accent)_88%,black_12%)]',
   secondary: 'bg-[var(--surface-solid)] text-[var(--fg)] hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]',
   ghost: 'bg-[var(--surface)] text-[var(--fg)] hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]',
   danger: 'border-[color-mix(in_oklch,var(--red)_24%,transparent)] bg-[color-mix(in_oklch,var(--red)_10%,transparent)] text-[var(--red)]',

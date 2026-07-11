@@ -967,9 +967,9 @@ export function ErrorBlock({ message, onRetry }: { message: string; onRetry: () 
   )
 }
 
-export function EmptyBlock({ title, detail, action, icon = <EmptyIcon className="size-6" /> }: { title: string; detail: string; action?: React.ReactNode; icon?: React.ReactNode }) {
+export function EmptyBlock({ title, detail, action, icon = <EmptyIcon className="size-6" />, variant = 'framed' }: { title: string; detail: string; action?: React.ReactNode; icon?: React.ReactNode; variant?: 'framed' | 'inline' }) {
   return (
-    <section className={stateBlockBase}>
+    <section className={variant === 'inline' ? 'grid min-h-[140px] place-items-center content-center gap-3 p-5 text-center' : stateBlockBase}>
       <span className={stateBlockIcon}>{icon}</span>
       <strong className={adminState.title}>{title}</strong>
       <p className={adminState.detail}>{detail}</p>

@@ -37,6 +37,7 @@ for (const primitive of [
   'export function Modal',
   'export function EmptyBlock',
   'export function LoadingBlock',
+  "variant?: 'framed' | 'inline'",
 ]) {
   if (!componentsSource.includes(primitive)) throw new Error(`admin controls must expose ${primitive}`)
 }
