@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { type AdminSession, type ConfigItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { AdminTabs, Badge, EmptyBlock, ErrorBlock, Field, LoadingBlock, PageHeader } from '../components'
+import { AdminTabs, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, PageHeader } from '../components'
 import { canAdmin } from '../types'
 import { adminButton, adminPage } from '../ui/classes'
 import {
@@ -23,11 +23,12 @@ import {
 } from './configRows'
 
 type DraftMap = Record<string, ConfigValue>
+type ConfigEditorState = 'pristine' | 'dirty' | 'validating' | 'saving' | 'saved' | 'failed'
 
 const configClasses = {
   statusStrip: 'grid grid-cols-4 gap-4 max-[920px]:grid-cols-2 max-[620px]:grid-cols-1',
   statusCell: 'min-w-0 border-r border-[var(--line)] px-4 py-3 last:border-r-0 max-[620px]:border-r-0 max-[620px]:border-b max-[620px]:last:border-b-0',
-  statusLabel: 'block text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]',
+  statusLabel: 'block text-[11px] font-semibold text-[var(--soft)]',
   statusValue: 'mt-1 block truncate text-[var(--text)]',
   statusCard: 'rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5',
   board: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] max-[1260px]:grid-cols-1',
@@ -40,9 +41,9 @@ const configClasses = {
   permissionNote: 'rounded-xl border border-[rgba(184,135,64,.28)] bg-[rgba(184,135,64,.08)] px-3 py-2 text-sm text-[var(--amber)]',
   formGrid: 'mt-4 grid grid-cols-[repeat(2,minmax(220px,1fr))] items-start gap-3.5 max-[760px]:grid-cols-1',
   formItem: 'grid min-w-0 self-start gap-2',
-  sideRail: 'grid min-w-0 content-start overflow-y-auto bg-[var(--surface)]',
+  sideRail: 'sticky top-[84px] grid min-w-0 content-start self-start overflow-y-auto bg-[var(--surface)] max-[1260px]:static',
   sideStrip: 'border-b border-[var(--line)] px-4 py-[15px] last:border-b-0',
-  sideLabel: 'block text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]',
+  sideLabel: 'block text-[11px] font-semibold text-[var(--soft)]',
   sideStrong: 'mt-2 block text-[var(--text)]',
   sideText: 'm-0 mt-2 text-sm text-[var(--soft)]',
   kvList: 'grid gap-2',
@@ -54,11 +55,15 @@ export function ConfigPage({
   onFeedback,
   compact = false,
   summaryMode = false,
+  onDirtyChange,
+  onBusyChange,
 }: {
   session: AdminSession
   onFeedback: (title: string, detail?: string) => void
   compact?: boolean
   summaryMode?: boolean
+  onDirtyChange?: (dirty: boolean) => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const [rows, setRows] = useState<ConfigItem[]>([])
   const [drafts, setDrafts] = useState<DraftMap>({})
@@ -67,6 +72,8 @@ export function ConfigPage({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('配置中心已连接真实 API。')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [editorState, setEditorState] = useState<ConfigEditorState>('pristine')
 
   const load = async () => {
     setLoading(true)
@@ -98,6 +105,7 @@ export function ConfigPage({
   const activeRows = rows.filter((row) => (row.config_category || row.tab) === activeTab)
   const dirtyKeys = rows.filter((row) => !isSameConfigValue(drafts[draftId(row)], extractConfigValue(row))).map(draftId)
   const activeDirty = activeRows.some((row) => dirtyKeys.includes(draftId(row)))
+  const dirty = dirtyKeys.length > 0
   const conflicts = activeRows.flatMap((row) => {
     const key = draftId(row)
     const message = configValidateValue(row.config_key ?? row.key, drafts[key])
@@ -109,9 +117,37 @@ export function ConfigPage({
   const lockedDetail = configLockedDetail(requiredPermission)
   const sampleFields = activeRows.slice(0, 4)
 
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => {
+    onBusyChange?.(saving)
+  }, [onBusyChange, saving])
+
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange])
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [dirty])
+
+  useEffect(() => {
+    if (saving || editorState === 'failed') return
+    setEditorState(dirty ? 'dirty' : editorState === 'saved' ? 'saved' : 'pristine')
+  }, [dirty, editorState, saving])
+
   const saveActiveTab = async () => {
     if (!activeRows.length || conflicts.length || !canEditActiveTab) return
+    setEditorState('validating')
     setSaving(true)
+    setEditorState('saving')
+    setSaveError(null)
     try {
       const version = Math.max(...activeRows.map((row) => row.version || 1))
       await adminApi.updateConfigTab(activeTab, {
@@ -128,7 +164,12 @@ export function ConfigPage({
       setRows(generalRows)
       setDrafts(Object.fromEntries(generalRows.map((row) => [draftId(row), extractConfigValue(row)])))
       setNotice(`${activeMeta.label}已保存，API 节点将在 1 分钟内读取新配置。`)
+      setEditorState('saved')
       onFeedback('通用配置已保存', activeMeta.label)
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : '通用配置保存失败'
+      setSaveError(message)
+      setEditorState('failed')
     } finally {
       setSaving(false)
     }
@@ -140,6 +181,23 @@ export function ConfigPage({
       ...Object.fromEntries(activeRows.map((row) => [draftId(row), extractConfigValue(row)])),
     }))
     setNotice(`${activeMeta.label}已恢复为当前生效值。`)
+    setSaveError(null)
+    setEditorState('pristine')
+  }
+
+  const switchConfigTab = (tab: string) => {
+    if (saving) return
+    if (tab === activeTab) return
+    if (activeDirty) {
+      if (!window.confirm('当前类目存在未保存修改，放弃并切换吗？')) return
+      setDrafts((current) => ({
+        ...current,
+        ...Object.fromEntries(activeRows.map((row) => [draftId(row), extractConfigValue(row)])),
+      }))
+    }
+    setSaveError(null)
+    setEditorState('pristine')
+    setActiveTab(tab)
   }
 
   if (loading) return <LoadingBlock label="载入通用配置" />
@@ -152,12 +210,6 @@ export function ConfigPage({
         <PageHeader
           title="通用配置"
           detail="只维护文档、公开内容等低风险配置；认证、支付、审核和生成限制已拆到对应独立页面。"
-          actions={
-            <>
-              <button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
-              <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
-            </>
-          }
         />
       ) : null}
 
@@ -195,7 +247,7 @@ export function ConfigPage({
               activeMeta={activeMeta}
               tabs={tabs}
               activeTab={activeTab}
-              setActiveTab={setActiveTab}
+              setActiveTab={switchConfigTab}
               activeRows={activeRows}
               drafts={drafts}
               setDrafts={setDrafts}
@@ -206,6 +258,8 @@ export function ConfigPage({
               activeDirty={activeDirty}
               compact={compact}
               notice={notice}
+              editorState={editorState}
+              saveError={saveError}
               revertActiveTab={revertActiveTab}
               saveActiveTab={saveActiveTab}
               summaryMode={summaryMode}
@@ -217,7 +271,7 @@ export function ConfigPage({
           activeMeta={activeMeta}
           tabs={tabs}
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={switchConfigTab}
           activeRows={activeRows}
           drafts={drafts}
           setDrafts={setDrafts}
@@ -228,6 +282,8 @@ export function ConfigPage({
           activeDirty={activeDirty}
           compact={compact}
           notice={notice}
+          editorState={editorState}
+          saveError={saveError}
           revertActiveTab={revertActiveTab}
           saveActiveTab={saveActiveTab}
         />
@@ -256,6 +312,8 @@ function ConfigEditor({
   activeDirty,
   compact,
   notice,
+  editorState,
+  saveError,
   revertActiveTab,
   saveActiveTab,
   summaryMode = false,
@@ -274,6 +332,8 @@ function ConfigEditor({
   activeDirty: boolean
   compact: boolean
   notice: string
+  editorState: ConfigEditorState
+  saveError: string | null
   revertActiveTab: () => void
   saveActiveTab: () => Promise<void>
   summaryMode?: boolean
@@ -284,7 +344,7 @@ function ConfigEditor({
           <AdminTabs
             ariaLabel="通用配置类目"
             orientation="vertical"
-            items={tabs.map((tab) => ({ id: tab.key, label: tab.label }))}
+            items={tabs.map((tab) => ({ id: tab.key, label: tab.label, disabled: saving }))}
             value={activeTab}
             onChange={setActiveTab}
           />
@@ -299,12 +359,7 @@ function ConfigEditor({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? '需修正' : '可保存'}</Badge>
-              {compact ? (
-                <>
-                  <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
-                  <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
-                </>
-              ) : null}
+              <Badge tone={!canEditActiveTab || conflicts.length || editorState === 'failed' ? 'warning' : editorState === 'saved' ? 'success' : 'neutral'}>{configEditorStateLabel(editorState, conflicts.length)}</Badge>
             </div>
           </div>
           {!canEditActiveTab ? <div className={configClasses.permissionNote}>{lockedDetail}</div> : null}
@@ -317,7 +372,7 @@ function ConfigEditor({
               const conflict = configValidateValue(key, drafts[rowDraftId])
               return (
                 <div key={rowDraftId} className={configClasses.formItem}>
-                  {renderConfigField(row, meta, drafts[rowDraftId], (value) => setDrafts((current) => ({ ...current, [rowDraftId]: value })), conflict, !canEditActiveTab)}
+                  {renderConfigField(row, meta, drafts[rowDraftId], (value) => setDrafts((current) => ({ ...current, [rowDraftId]: value })), conflict, saving || !canEditActiveTab)}
                 </div>
               )
             })}
@@ -325,13 +380,34 @@ function ConfigEditor({
         </section>
 
         {summaryMode ? null : (
-          <aside className={configClasses.sideRail}>
-            <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>保存反馈</label><strong className={configClasses.sideStrong}>{notice}</strong></section>
+          <aside className={configClasses.sideRail} data-admin-config-save-rail>
+            <section className={configClasses.sideStrip}>
+              <label className={configClasses.sideLabel}>保存状态</label>
+              <strong className={configClasses.sideStrong}>{configEditorStateLabel(editorState, conflicts.length)}</strong>
+              <p className={configClasses.sideText}>{notice}</p>
+              {saveError ? <InlineFeedback tone="danger" message={saveError} /> : null}
+            </section>
+            <section className={configClasses.sideStrip}>
+              <div className="grid gap-2">
+                <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
+                <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
+              </div>
+            </section>
             <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>提示</label><p className={configClasses.sideText}>鼠标悬停字段名旁的提示符可查看用途说明；复杂列表以结构化文本编辑，保存后仍按原始接口契约提交。</p></section>
           </aside>
         )}
       </section>
   )
+}
+
+function configEditorStateLabel(state: ConfigEditorState, conflictCount: number) {
+  if (conflictCount) return `${conflictCount} 项校验未通过`
+  if (state === 'dirty') return '有未保存修改'
+  if (state === 'validating') return '正在校验'
+  if (state === 'saving') return '正在保存'
+  if (state === 'saved') return '已保存'
+  if (state === 'failed') return '保存失败'
+  return '未修改'
 }
 
 function summaryValue(value: ConfigValue) {
