@@ -1,5 +1,7 @@
 import { API_PATHS } from '../../../shared/api-types'
 import type { StorageConfigView } from '../../../shared/api-types'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
 import {
   activateSavedStorageConfig,
   storageActivationLabel,
@@ -7,7 +9,65 @@ import {
   storageConfigNeedsProbe,
   storageDraftIsDirty,
 } from './storageActivation'
-import { StorageConfigPage } from './StorageConfigPage'
+const storagePageSource = readFileSync(new URL('./StorageConfigPage.tsx', import.meta.url), 'utf8')
+
+for (const editorContract of ['InlineFeedback', 'data-admin-storage-editor', 'data-storage-section=', 'sticky bottom-0', 'editorState', 'const editorLocked = saving || probing || refreshing || activationPhase', 'disabled={editorLocked}', 'aria-busy={editorLocked}']) {
+  if (!storagePageSource.includes(editorContract)) {
+    throw new Error(`storage configuration should implement grouped editor state with ${editorContract}`)
+  }
+}
+
+for (const state of ['pristine', 'dirty', 'validating', 'saving', 'saved', 'failed']) {
+  if (!storagePageSource.includes(`'${state}'`)) {
+    throw new Error(`storage editor should expose ${state} state`)
+  }
+}
+
+for (const leaveContract of ['onDirtyChange?: (dirty: boolean) => void', 'onBusyChange?: (busy: boolean) => void', 'onBusyChange?.(editorLocked)', "addEventListener('beforeunload'", 'window.confirm']) {
+  if (!storagePageSource.includes(leaveContract)) {
+    throw new Error(`storage editor should protect dirty navigation with ${leaveContract}`)
+  }
+}
+
+for (const operationLabel of ['测试草稿连接', '探测已保存配置', '设为默认']) {
+  if (!storagePageSource.includes(operationLabel)) {
+    throw new Error(`storage actions should remain semantically distinct with ${operationLabel}`)
+  }
+}
+
+for (const concurrencyContract of [
+  'saving || probing || refreshing || activationPhase',
+  'saving || probing || refreshing || isDirty || activationPhase',
+  '正在刷新配置列表与已保存基线',
+]) {
+  if (!storagePageSource.includes(concurrencyContract)) {
+    throw new Error(`storage mutations must stay mutually exclusive with ${concurrencyContract}`)
+  }
+}
+
+if (storagePageSource.includes('当前编辑内容保持不变')) {
+  throw new Error('storage refresh feedback must not claim a draft is preserved when load rebuilds the saved baseline')
+}
+
+if (!storagePageSource.includes('当前配置有未保存修改，请先保存后再设为只读。')) {
+  throw new Error('persisted read-only mutation must not discard a dirty storage draft')
+}
+
+if (!storagePageSource.includes("selectedID ? items.find((item) => item.id === selectedID) ?? null : null")) {
+  throw new Error('a new storage draft must not inherit secret or status context from the first saved config')
+}
+
+for (const listStateContract of ['last_probe', 'is_default', 'item.status', 'dirty={']) {
+  if (!storagePageSource.includes(listStateContract)) {
+    throw new Error(`storage object list should expose operational state with ${listStateContract}`)
+  }
+}
+
+for (const forbiddenPattern of ['<details', 'rounded-2xl', 'rounded-3xl', 'tracking-[', 'uppercase']) {
+  if (storagePageSource.includes(forbiddenPattern)) {
+    throw new Error(`storage configuration should remove legacy visual drift ${forbiddenPattern}`)
+  }
+}
 
 if (API_PATHS.ops.storageConfigs !== '/api/ops/admin/v1/storage-configs') {
   throw new Error(`storage configs API path should be stable, got ${API_PATHS.ops.storageConfigs}`)
@@ -21,7 +81,7 @@ if (API_PATHS.ops.storageConfigSetDefault !== '/api/ops/admin/v1/storage-configs
   throw new Error(`storage config set-default API path should be stable, got ${API_PATHS.ops.storageConfigSetDefault}`)
 }
 
-if (typeof StorageConfigPage !== 'function') {
+if (!storagePageSource.includes('export function StorageConfigPage')) {
   throw new Error('StorageConfigPage should be exported as a React page component')
 }
 

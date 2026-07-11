@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AdminSession } from '../../../shared/api-types'
 import { AdminTabs, EmptyBlock, PageHeader } from '../components'
 import { canAdmin } from '../types'
@@ -6,8 +6,9 @@ import { adminPage } from '../ui/classes'
 import { ConfigPage } from './ConfigPage'
 import { SecurityConfigPage } from './SecurityConfigPage'
 import { StorageConfigPage } from './StorageConfigPage'
+import { isSystemSettingsHash, systemSettingsTabFromHash, type SystemSettingsTab } from './systemSettingsTabs'
 
-type SystemSettingsTab = 'general' | 'security' | 'storage'
+export { isSystemSettingsHash, systemSettingsTabFromHash } from './systemSettingsTabs'
 
 const tabItems = [
   { id: 'general', label: '通用配置', description: '文档、公开内容和低风险运行参数' },
@@ -23,22 +24,64 @@ export function SystemSettingsPage({
   onFeedback: (title: string, detail?: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(() => systemSettingsTabFromHash(window.location.hash))
+  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false })
+  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false })
+  const activeTabRef = useRef(activeTab)
+  const dirtyTabsRef = useRef(dirtyTabs)
+  const busyTabsRef = useRef(busyTabs)
   const canManageDangerous = canAdmin(session, 'manage:dangerous_config')
   const items = tabItems.map((item) => ({
     ...item,
-    disabled: item.id !== 'general' && !canManageDangerous,
+    disabled: (item.id !== 'general' && !canManageDangerous) || (busyTabs[activeTab] && item.id !== activeTab),
   }))
 
+  useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+  useEffect(() => { dirtyTabsRef.current = dirtyTabs }, [dirtyTabs])
+  useEffect(() => { busyTabsRef.current = busyTabs }, [busyTabs])
+
   useEffect(() => {
-    const onHashChange = () => setActiveTab(systemSettingsTabFromHash(window.location.hash))
+    const onHashChange = () => {
+      const staysInSystemSettings = isSystemSettingsHash(window.location.hash)
+      const nextTab = systemSettingsTabFromHash(window.location.hash)
+      const currentTab = activeTabRef.current
+      const isLeavingCurrentTab = !staysInSystemSettings || nextTab !== currentTab
+      if (isLeavingCurrentTab && busyTabsRef.current[currentTab]) {
+        window.history.replaceState(null, '', `#/system-settings?tab=${currentTab}`)
+        window.dispatchEvent(new HashChangeEvent('hashchange'))
+        return
+      }
+      if (isLeavingCurrentTab && dirtyTabsRef.current[currentTab] && !window.confirm('当前分区存在未保存修改，确定离开吗？')) {
+        window.history.replaceState(null, '', `#/system-settings?tab=${currentTab}`)
+        window.dispatchEvent(new HashChangeEvent('hashchange'))
+        return
+      }
+      if (staysInSystemSettings) setActiveTab(nextTab)
+    }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
   const switchTab = (tab: SystemSettingsTab) => {
+    if (busyTabs[activeTab]) return
+    if (tab === activeTab) return
+    if (dirtyTabs[activeTab] && !window.confirm('当前分区存在未保存修改，确定离开吗？')) return
+    activeTabRef.current = tab
     setActiveTab(tab)
     window.location.hash = `/system-settings?tab=${tab}`
   }
+
+  const updateDirtyTab = useCallback((tab: SystemSettingsTab, dirty: boolean) => {
+    setDirtyTabs((current) => current[tab] === dirty ? current : { ...current, [tab]: dirty })
+  }, [])
+  const updateBusyTab = useCallback((tab: SystemSettingsTab, busy: boolean) => {
+    setBusyTabs((current) => current[tab] === busy ? current : { ...current, [tab]: busy })
+  }, [])
+  const onGeneralDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('general', dirty), [updateDirtyTab])
+  const onSecurityDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('security', dirty), [updateDirtyTab])
+  const onStorageDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('storage', dirty), [updateDirtyTab])
+  const onGeneralBusyChange = useCallback((busy: boolean) => updateBusyTab('general', busy), [updateBusyTab])
+  const onSecurityBusyChange = useCallback((busy: boolean) => updateBusyTab('security', busy), [updateBusyTab])
+  const onStorageBusyChange = useCallback((busy: boolean) => updateBusyTab('storage', busy), [updateBusyTab])
 
   return (
     <section className={adminPage.stack}>
@@ -53,23 +96,12 @@ export function SystemSettingsPage({
         value={activeTab}
         onChange={switchTab}
       />
-      {activeTab === 'general' ? <ConfigPage session={session} onFeedback={onFeedback} compact /> : null}
-      {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage onFeedback={onFeedback} compact /> : null}
-      {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage onFeedback={onFeedback} compact /> : null}
+      {activeTab === 'general' ? <ConfigPage session={session} onFeedback={onFeedback} onDirtyChange={onGeneralDirtyChange} onBusyChange={onGeneralBusyChange} compact /> : null}
+      {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
+      {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
       {activeTab !== 'general' && !canManageDangerous ? (
         <EmptyBlock title="暂无敏感配置权限" detail="安全配置和存储配置需要 manage:dangerous_config 权限，请联系超级管理员处理。" />
       ) : null}
     </section>
   )
-}
-
-export function systemSettingsTabFromHash(hash: string): SystemSettingsTab {
-  const path = hash.replace(/^#\/?/, '').split('?')[0].replace(/^\/+|\/+$/g, '')
-  if (path === 'security-settings' || path === 'security-config') return 'security'
-  if (path === 'storage-settings' || path === 'storage-config') return 'storage'
-
-  const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
-  const tab = new URLSearchParams(query).get('tab')
-  if (tab === 'security' || tab === 'storage') return tab
-  return 'general'
 }
