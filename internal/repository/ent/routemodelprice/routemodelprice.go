@@ -15,8 +15,8 @@ const (
 	FieldRouteModelID = "route_model_id"
 	// FieldTaskType holds the string denoting the task_type field in the database.
 	FieldTaskType = "task_type"
-	// FieldQuality holds the string denoting the quality field in the database.
-	FieldQuality = "quality"
+	// FieldBaseResolution holds the string denoting the base_resolution field in the database.
+	FieldBaseResolution = "base_resolution"
 	// FieldBasePoints holds the string denoting the base_points field in the database.
 	FieldBasePoints = "base_points"
 	// FieldReferenceMultiplier holds the string denoting the reference_multiplier field in the database.
@@ -32,7 +32,7 @@ var Columns = []string{
 	FieldID,
 	FieldRouteModelID,
 	FieldTaskType,
-	FieldQuality,
+	FieldBaseResolution,
 	FieldBasePoints,
 	FieldReferenceMultiplier,
 	FieldEnabled,
@@ -51,8 +51,8 @@ func ValidColumn(column string) bool {
 var (
 	// TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.
 	TaskTypeValidator func(string) error
-	// QualityValidator is a validator for the "quality" field. It is called by the builders before save.
-	QualityValidator func(string) error
+	// BaseResolutionValidator is a validator for the "base_resolution" field. It is called by the builders before save.
+	BaseResolutionValidator func(string) error
 	// DefaultBasePoints holds the default value on creation for the "base_points" field.
 	DefaultBasePoints string
 	// DefaultReferenceMultiplier holds the default value on creation for the "reference_multiplier" field.
@@ -79,9 +79,9 @@ func ByTaskType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTaskType, opts...).ToFunc()
 }
 
-// ByQuality orders the results by the quality field.
-func ByQuality(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldQuality, opts...).ToFunc()
+// ByBaseResolution orders the results by the base_resolution field.
+func ByBaseResolution(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBaseResolution, opts...).ToFunc()
 }
 
 // ByBasePoints orders the results by the base_points field.

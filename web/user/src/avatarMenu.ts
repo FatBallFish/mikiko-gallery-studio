@@ -8,6 +8,7 @@ export type AvatarMenuItem = {
   route: RouteId
   icon: AvatarMenuIcon
   permission: string
+  external?: boolean
 }
 
 export function avatarMenuItems(): AvatarMenuItem[] {
@@ -15,6 +16,6 @@ export function avatarMenuItems(): AvatarMenuItem[] {
     { key: 'profile', label: '个人中心', route: 'profile', icon: 'profile', permission: 'account.profile.view' },
     { key: 'checkout', label: '积分充值', route: 'checkout', icon: 'billing', permission: 'billing.checkout.view' },
     { key: 'api-keys', label: 'API 密钥', route: 'api-keys', icon: 'key', permission: 'developer.api_keys.view' },
-    { key: 'docs', label: '开发文档', route: 'docs', icon: 'docs', permission: 'developer.docs.view' },
+    { key: 'docs', label: '开发文档', route: 'docs', icon: 'docs', permission: 'developer.docs.view', external: true },
   ]
 }

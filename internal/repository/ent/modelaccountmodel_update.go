@@ -122,21 +122,206 @@ func (_u *ModelAccountModelUpdate) ClearTaskTypes() *ModelAccountModelUpdate {
 	return _u
 }
 
-// SetQualities sets the "qualities" field.
-func (_u *ModelAccountModelUpdate) SetQualities(v []string) *ModelAccountModelUpdate {
-	_u.mutation.SetQualities(v)
+// SetBaseResolution sets the "base_resolution" field.
+func (_u *ModelAccountModelUpdate) SetBaseResolution(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetBaseResolution(v)
 	return _u
 }
 
-// AppendQualities appends value to the "qualities" field.
-func (_u *ModelAccountModelUpdate) AppendQualities(v []string) *ModelAccountModelUpdate {
-	_u.mutation.AppendQualities(v)
+// AppendBaseResolution appends value to the "base_resolution" field.
+func (_u *ModelAccountModelUpdate) AppendBaseResolution(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendBaseResolution(v)
 	return _u
 }
 
-// ClearQualities clears the value of the "qualities" field.
-func (_u *ModelAccountModelUpdate) ClearQualities() *ModelAccountModelUpdate {
-	_u.mutation.ClearQualities()
+// ClearBaseResolution clears the value of the "base_resolution" field.
+func (_u *ModelAccountModelUpdate) ClearBaseResolution() *ModelAccountModelUpdate {
+	_u.mutation.ClearBaseResolution()
+	return _u
+}
+
+// SetQuality sets the "quality" field.
+func (_u *ModelAccountModelUpdate) SetQuality(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetQuality(v)
+	return _u
+}
+
+// AppendQuality appends value to the "quality" field.
+func (_u *ModelAccountModelUpdate) AppendQuality(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendQuality(v)
+	return _u
+}
+
+// ClearQuality clears the value of the "quality" field.
+func (_u *ModelAccountModelUpdate) ClearQuality() *ModelAccountModelUpdate {
+	_u.mutation.ClearQuality()
+	return _u
+}
+
+// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdate) SetMaxReferenceImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMaxReferenceImageCount()
+	_u.mutation.SetMaxReferenceImageCount(v)
+	return _u
+}
+
+// SetNillableMaxReferenceImageCount sets the "max_reference_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMaxReferenceImageCount(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMaxReferenceImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxReferenceImageCount adds value to the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdate) AddMaxReferenceImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMaxReferenceImageCount(v)
+	return _u
+}
+
+// SetMaxImageCount sets the "max_image_count" field.
+func (_u *ModelAccountModelUpdate) SetMaxImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMaxImageCount()
+	_u.mutation.SetMaxImageCount(v)
+	return _u
+}
+
+// SetNillableMaxImageCount sets the "max_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMaxImageCount(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMaxImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxImageCount adds value to the "max_image_count" field.
+func (_u *ModelAccountModelUpdate) AddMaxImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMaxImageCount(v)
+	return _u
+}
+
+// SetSizeModes sets the "size_modes" field.
+func (_u *ModelAccountModelUpdate) SetSizeModes(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetSizeModes(v)
+	return _u
+}
+
+// AppendSizeModes appends value to the "size_modes" field.
+func (_u *ModelAccountModelUpdate) AppendSizeModes(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendSizeModes(v)
+	return _u
+}
+
+// ClearSizeModes clears the value of the "size_modes" field.
+func (_u *ModelAccountModelUpdate) ClearSizeModes() *ModelAccountModelUpdate {
+	_u.mutation.ClearSizeModes()
+	return _u
+}
+
+// SetSupportedRatios sets the "supported_ratios" field.
+func (_u *ModelAccountModelUpdate) SetSupportedRatios(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetSupportedRatios(v)
+	return _u
+}
+
+// AppendSupportedRatios appends value to the "supported_ratios" field.
+func (_u *ModelAccountModelUpdate) AppendSupportedRatios(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendSupportedRatios(v)
+	return _u
+}
+
+// ClearSupportedRatios clears the value of the "supported_ratios" field.
+func (_u *ModelAccountModelUpdate) ClearSupportedRatios() *ModelAccountModelUpdate {
+	_u.mutation.ClearSupportedRatios()
+	return _u
+}
+
+// SetSupportedPixelSizes sets the "supported_pixel_sizes" field.
+func (_u *ModelAccountModelUpdate) SetSupportedPixelSizes(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetSupportedPixelSizes(v)
+	return _u
+}
+
+// AppendSupportedPixelSizes appends value to the "supported_pixel_sizes" field.
+func (_u *ModelAccountModelUpdate) AppendSupportedPixelSizes(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendSupportedPixelSizes(v)
+	return _u
+}
+
+// ClearSupportedPixelSizes clears the value of the "supported_pixel_sizes" field.
+func (_u *ModelAccountModelUpdate) ClearSupportedPixelSizes() *ModelAccountModelUpdate {
+	_u.mutation.ClearSupportedPixelSizes()
+	return _u
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (_u *ModelAccountModelUpdate) SetOutputFormat(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetOutputFormat(v)
+	return _u
+}
+
+// AppendOutputFormat appends value to the "output_format" field.
+func (_u *ModelAccountModelUpdate) AppendOutputFormat(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendOutputFormat(v)
+	return _u
+}
+
+// ClearOutputFormat clears the value of the "output_format" field.
+func (_u *ModelAccountModelUpdate) ClearOutputFormat() *ModelAccountModelUpdate {
+	_u.mutation.ClearOutputFormat()
+	return _u
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (_u *ModelAccountModelUpdate) SetOutputCompression(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetOutputCompression()
+	_u.mutation.SetOutputCompression(v)
+	return _u
+}
+
+// SetNillableOutputCompression sets the "output_compression" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableOutputCompression(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetOutputCompression(*v)
+	}
+	return _u
+}
+
+// AddOutputCompression adds value to the "output_compression" field.
+func (_u *ModelAccountModelUpdate) AddOutputCompression(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddOutputCompression(v)
+	return _u
+}
+
+// SetSupportsOutputCompression sets the "supports_output_compression" field.
+func (_u *ModelAccountModelUpdate) SetSupportsOutputCompression(v bool) *ModelAccountModelUpdate {
+	_u.mutation.SetSupportsOutputCompression(v)
+	return _u
+}
+
+// SetNillableSupportsOutputCompression sets the "supports_output_compression" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableSupportsOutputCompression(v *bool) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetSupportsOutputCompression(*v)
+	}
+	return _u
+}
+
+// SetModeration sets the "moderation" field.
+func (_u *ModelAccountModelUpdate) SetModeration(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetModeration(v)
+	return _u
+}
+
+// AppendModeration appends value to the "moderation" field.
+func (_u *ModelAccountModelUpdate) AppendModeration(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendModeration(v)
+	return _u
+}
+
+// ClearModeration clears the value of the "moderation" field.
+func (_u *ModelAccountModelUpdate) ClearModeration() *ModelAccountModelUpdate {
+	_u.mutation.ClearModeration()
 	return _u
 }
 
@@ -299,16 +484,103 @@ func (_u *ModelAccountModelUpdate) sqlSave(ctx context.Context) (_node int, err 
 	if _u.mutation.TaskTypesCleared() {
 		_spec.ClearField(modelaccountmodel.FieldTaskTypes, field.TypeJSON)
 	}
-	if value, ok := _u.mutation.Qualities(); ok {
-		_spec.SetField(modelaccountmodel.FieldQualities, field.TypeJSON, value)
+	if value, ok := _u.mutation.BaseResolution(); ok {
+		_spec.SetField(modelaccountmodel.FieldBaseResolution, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.AppendedQualities(); ok {
+	if value, ok := _u.mutation.AppendedBaseResolution(); ok {
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, modelaccountmodel.FieldQualities, value)
+			sqljson.Append(u, modelaccountmodel.FieldBaseResolution, value)
 		})
 	}
-	if _u.mutation.QualitiesCleared() {
-		_spec.ClearField(modelaccountmodel.FieldQualities, field.TypeJSON)
+	if _u.mutation.BaseResolutionCleared() {
+		_spec.ClearField(modelaccountmodel.FieldBaseResolution, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.Quality(); ok {
+		_spec.SetField(modelaccountmodel.FieldQuality, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedQuality(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldQuality, value)
+		})
+	}
+	if _u.mutation.QualityCleared() {
+		_spec.ClearField(modelaccountmodel.FieldQuality, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.MaxReferenceImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxReferenceImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SizeModes(); ok {
+		_spec.SetField(modelaccountmodel.FieldSizeModes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSizeModes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSizeModes, value)
+		})
+	}
+	if _u.mutation.SizeModesCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSizeModes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.SupportedRatios(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedRatios(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedRatios, value)
+		})
+	}
+	if _u.mutation.SupportedRatiosCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.SupportedPixelSizes(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedPixelSizes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedPixelSizes, value)
+		})
+	}
+	if _u.mutation.SupportedPixelSizesCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputFormat(); ok {
+		_spec.SetField(modelaccountmodel.FieldOutputFormat, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedOutputFormat(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldOutputFormat, value)
+		})
+	}
+	if _u.mutation.OutputFormatCleared() {
+		_spec.ClearField(modelaccountmodel.FieldOutputFormat, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputCompression(); ok {
+		_spec.SetField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedOutputCompression(); ok {
+		_spec.AddField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SupportsOutputCompression(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsOutputCompression, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Moderation(); ok {
+		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedModeration(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldModeration, value)
+		})
+	}
+	if _u.mutation.ModerationCleared() {
+		_spec.ClearField(modelaccountmodel.FieldModeration, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CostPerImage(); ok {
 		_spec.SetField(modelaccountmodel.FieldCostPerImage, field.TypeString, value)
@@ -438,21 +710,206 @@ func (_u *ModelAccountModelUpdateOne) ClearTaskTypes() *ModelAccountModelUpdateO
 	return _u
 }
 
-// SetQualities sets the "qualities" field.
-func (_u *ModelAccountModelUpdateOne) SetQualities(v []string) *ModelAccountModelUpdateOne {
-	_u.mutation.SetQualities(v)
+// SetBaseResolution sets the "base_resolution" field.
+func (_u *ModelAccountModelUpdateOne) SetBaseResolution(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetBaseResolution(v)
 	return _u
 }
 
-// AppendQualities appends value to the "qualities" field.
-func (_u *ModelAccountModelUpdateOne) AppendQualities(v []string) *ModelAccountModelUpdateOne {
-	_u.mutation.AppendQualities(v)
+// AppendBaseResolution appends value to the "base_resolution" field.
+func (_u *ModelAccountModelUpdateOne) AppendBaseResolution(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendBaseResolution(v)
 	return _u
 }
 
-// ClearQualities clears the value of the "qualities" field.
-func (_u *ModelAccountModelUpdateOne) ClearQualities() *ModelAccountModelUpdateOne {
-	_u.mutation.ClearQualities()
+// ClearBaseResolution clears the value of the "base_resolution" field.
+func (_u *ModelAccountModelUpdateOne) ClearBaseResolution() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearBaseResolution()
+	return _u
+}
+
+// SetQuality sets the "quality" field.
+func (_u *ModelAccountModelUpdateOne) SetQuality(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetQuality(v)
+	return _u
+}
+
+// AppendQuality appends value to the "quality" field.
+func (_u *ModelAccountModelUpdateOne) AppendQuality(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendQuality(v)
+	return _u
+}
+
+// ClearQuality clears the value of the "quality" field.
+func (_u *ModelAccountModelUpdateOne) ClearQuality() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearQuality()
+	return _u
+}
+
+// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdateOne) SetMaxReferenceImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMaxReferenceImageCount()
+	_u.mutation.SetMaxReferenceImageCount(v)
+	return _u
+}
+
+// SetNillableMaxReferenceImageCount sets the "max_reference_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMaxReferenceImageCount(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMaxReferenceImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxReferenceImageCount adds value to the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdateOne) AddMaxReferenceImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMaxReferenceImageCount(v)
+	return _u
+}
+
+// SetMaxImageCount sets the "max_image_count" field.
+func (_u *ModelAccountModelUpdateOne) SetMaxImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMaxImageCount()
+	_u.mutation.SetMaxImageCount(v)
+	return _u
+}
+
+// SetNillableMaxImageCount sets the "max_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMaxImageCount(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMaxImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxImageCount adds value to the "max_image_count" field.
+func (_u *ModelAccountModelUpdateOne) AddMaxImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMaxImageCount(v)
+	return _u
+}
+
+// SetSizeModes sets the "size_modes" field.
+func (_u *ModelAccountModelUpdateOne) SetSizeModes(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSizeModes(v)
+	return _u
+}
+
+// AppendSizeModes appends value to the "size_modes" field.
+func (_u *ModelAccountModelUpdateOne) AppendSizeModes(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendSizeModes(v)
+	return _u
+}
+
+// ClearSizeModes clears the value of the "size_modes" field.
+func (_u *ModelAccountModelUpdateOne) ClearSizeModes() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearSizeModes()
+	return _u
+}
+
+// SetSupportedRatios sets the "supported_ratios" field.
+func (_u *ModelAccountModelUpdateOne) SetSupportedRatios(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSupportedRatios(v)
+	return _u
+}
+
+// AppendSupportedRatios appends value to the "supported_ratios" field.
+func (_u *ModelAccountModelUpdateOne) AppendSupportedRatios(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendSupportedRatios(v)
+	return _u
+}
+
+// ClearSupportedRatios clears the value of the "supported_ratios" field.
+func (_u *ModelAccountModelUpdateOne) ClearSupportedRatios() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearSupportedRatios()
+	return _u
+}
+
+// SetSupportedPixelSizes sets the "supported_pixel_sizes" field.
+func (_u *ModelAccountModelUpdateOne) SetSupportedPixelSizes(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSupportedPixelSizes(v)
+	return _u
+}
+
+// AppendSupportedPixelSizes appends value to the "supported_pixel_sizes" field.
+func (_u *ModelAccountModelUpdateOne) AppendSupportedPixelSizes(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendSupportedPixelSizes(v)
+	return _u
+}
+
+// ClearSupportedPixelSizes clears the value of the "supported_pixel_sizes" field.
+func (_u *ModelAccountModelUpdateOne) ClearSupportedPixelSizes() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearSupportedPixelSizes()
+	return _u
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (_u *ModelAccountModelUpdateOne) SetOutputFormat(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetOutputFormat(v)
+	return _u
+}
+
+// AppendOutputFormat appends value to the "output_format" field.
+func (_u *ModelAccountModelUpdateOne) AppendOutputFormat(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendOutputFormat(v)
+	return _u
+}
+
+// ClearOutputFormat clears the value of the "output_format" field.
+func (_u *ModelAccountModelUpdateOne) ClearOutputFormat() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearOutputFormat()
+	return _u
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (_u *ModelAccountModelUpdateOne) SetOutputCompression(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetOutputCompression()
+	_u.mutation.SetOutputCompression(v)
+	return _u
+}
+
+// SetNillableOutputCompression sets the "output_compression" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableOutputCompression(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetOutputCompression(*v)
+	}
+	return _u
+}
+
+// AddOutputCompression adds value to the "output_compression" field.
+func (_u *ModelAccountModelUpdateOne) AddOutputCompression(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddOutputCompression(v)
+	return _u
+}
+
+// SetSupportsOutputCompression sets the "supports_output_compression" field.
+func (_u *ModelAccountModelUpdateOne) SetSupportsOutputCompression(v bool) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSupportsOutputCompression(v)
+	return _u
+}
+
+// SetNillableSupportsOutputCompression sets the "supports_output_compression" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableSupportsOutputCompression(v *bool) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetSupportsOutputCompression(*v)
+	}
+	return _u
+}
+
+// SetModeration sets the "moderation" field.
+func (_u *ModelAccountModelUpdateOne) SetModeration(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetModeration(v)
+	return _u
+}
+
+// AppendModeration appends value to the "moderation" field.
+func (_u *ModelAccountModelUpdateOne) AppendModeration(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendModeration(v)
+	return _u
+}
+
+// ClearModeration clears the value of the "moderation" field.
+func (_u *ModelAccountModelUpdateOne) ClearModeration() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearModeration()
 	return _u
 }
 
@@ -645,16 +1102,103 @@ func (_u *ModelAccountModelUpdateOne) sqlSave(ctx context.Context) (_node *Model
 	if _u.mutation.TaskTypesCleared() {
 		_spec.ClearField(modelaccountmodel.FieldTaskTypes, field.TypeJSON)
 	}
-	if value, ok := _u.mutation.Qualities(); ok {
-		_spec.SetField(modelaccountmodel.FieldQualities, field.TypeJSON, value)
+	if value, ok := _u.mutation.BaseResolution(); ok {
+		_spec.SetField(modelaccountmodel.FieldBaseResolution, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.AppendedQualities(); ok {
+	if value, ok := _u.mutation.AppendedBaseResolution(); ok {
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, modelaccountmodel.FieldQualities, value)
+			sqljson.Append(u, modelaccountmodel.FieldBaseResolution, value)
 		})
 	}
-	if _u.mutation.QualitiesCleared() {
-		_spec.ClearField(modelaccountmodel.FieldQualities, field.TypeJSON)
+	if _u.mutation.BaseResolutionCleared() {
+		_spec.ClearField(modelaccountmodel.FieldBaseResolution, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.Quality(); ok {
+		_spec.SetField(modelaccountmodel.FieldQuality, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedQuality(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldQuality, value)
+		})
+	}
+	if _u.mutation.QualityCleared() {
+		_spec.ClearField(modelaccountmodel.FieldQuality, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.MaxReferenceImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxReferenceImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SizeModes(); ok {
+		_spec.SetField(modelaccountmodel.FieldSizeModes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSizeModes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSizeModes, value)
+		})
+	}
+	if _u.mutation.SizeModesCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSizeModes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.SupportedRatios(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedRatios(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedRatios, value)
+		})
+	}
+	if _u.mutation.SupportedRatiosCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.SupportedPixelSizes(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedPixelSizes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedPixelSizes, value)
+		})
+	}
+	if _u.mutation.SupportedPixelSizesCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputFormat(); ok {
+		_spec.SetField(modelaccountmodel.FieldOutputFormat, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedOutputFormat(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldOutputFormat, value)
+		})
+	}
+	if _u.mutation.OutputFormatCleared() {
+		_spec.ClearField(modelaccountmodel.FieldOutputFormat, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.OutputCompression(); ok {
+		_spec.SetField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedOutputCompression(); ok {
+		_spec.AddField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SupportsOutputCompression(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsOutputCompression, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Moderation(); ok {
+		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedModeration(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldModeration, value)
+		})
+	}
+	if _u.mutation.ModerationCleared() {
+		_spec.ClearField(modelaccountmodel.FieldModeration, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CostPerImage(); ok {
 		_spec.SetField(modelaccountmodel.FieldCostPerImage, field.TypeString, value)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react'
 import { cn } from '../../../shared/classnames'
+import { openDocsEntry } from '../docsUrl'
 import { rdShell, rdWorkspace, rdCommon, rdHome, rdGallery, rdBilling } from '../ui/redesign-classes'
 import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
 
@@ -275,7 +276,7 @@ export function RedesignDemo() {
                     <AvatarMenuItem icon={<UserIcon />} label="个人中心" onClick={() => navigate('profile')} />
                     <AvatarMenuItem icon={<CreditCardIcon />} label="积分充值" onClick={() => navigate('billing')} />
                     <AvatarMenuItem icon={<KeyIcon />} label="API 密钥" onClick={() => navigate('apiKeys')} />
-                    <AvatarMenuItem icon={<DocsIcon />} label="开发文档" onClick={() => navigate('docs')} />
+                    <AvatarMenuItem icon={<DocsIcon />} label="开发文档" onClick={() => openDocsEntry('account-menu')} />
                     <div className="my-2 h-px bg-[var(--border)]" />
                     <AvatarMenuItem icon={<LogoutIcon />} label="退出登录" tone="danger" onClick={() => setAvatarMenuOpen(false)} />
                   </div>

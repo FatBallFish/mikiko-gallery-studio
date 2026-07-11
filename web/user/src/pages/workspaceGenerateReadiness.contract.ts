@@ -32,7 +32,7 @@ const insufficient = workspaceGenerateReadiness({
     points: '12.00000',
     display_points: '12.00',
     formula: 'plus x auto',
-    resolved_quality: 'auto',
+    base_resolution: 'auto',
     sufficient: false,
     insufficient_points: '7.00000',
   } satisfies EstimateResult,
@@ -50,13 +50,26 @@ const shortPrompt = workspaceGenerateReadiness({
   estimate: {
     points: '2.00000',
     formula: 'plus x auto',
-    resolved_quality: 'auto',
+    base_resolution: 'auto',
     sufficient: true,
   } satisfies EstimateResult,
 })
 
 if (!shortPrompt.disabled || !shortPrompt.reason.includes('至少需要 8 个字符')) {
   throw new Error(`workspace should explain prompt minimum, got ${shortPrompt.reason}`)
+}
+
+const unsupportedEstimate = workspaceGenerateReadiness({
+  busy: false,
+  hasModel: true,
+  parametersReady: true,
+  prompt: '一张未来城市里的雨夜街景',
+  estimate: null,
+  estimateError: '当前配置暂不支持生成，请更换类似配置。',
+})
+
+if (!unsupportedEstimate.disabled || !unsupportedEstimate.reason.includes('暂不支持生成')) {
+  throw new Error(`workspace should block generation when estimate failed, got ${JSON.stringify(unsupportedEstimate)}`)
 }
 
 const ready = workspaceGenerateReadiness({
@@ -67,7 +80,7 @@ const ready = workspaceGenerateReadiness({
   estimate: {
     points: '2.00000',
     formula: 'plus x auto',
-    resolved_quality: 'auto',
+    base_resolution: 'auto',
     sufficient: true,
   } satisfies EstimateResult,
 })

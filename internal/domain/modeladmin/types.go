@@ -72,31 +72,51 @@ type ModelAccountListPage struct {
 }
 
 type ModelAccountModel struct {
-	ID           int64          `json:"id"`
-	AccountID    int64          `json:"account_id"`
-	AccountName  string         `json:"account_name,omitempty"`
-	ModelCode    string         `json:"model_code"`
-	DisplayName  string         `json:"display_name"`
-	TaskTypes    []string       `json:"task_types"`
-	Qualities    []string       `json:"qualities"`
-	CostPerImage string         `json:"cost_per_image"`
-	Currency     string         `json:"currency"`
-	Enabled      bool           `json:"enabled"`
-	Extra        map[string]any `json:"extra,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID                        int64          `json:"id"`
+	AccountID                 int64          `json:"account_id"`
+	AccountName               string         `json:"account_name,omitempty"`
+	ModelCode                 string         `json:"model_code"`
+	DisplayName               string         `json:"display_name"`
+	TaskTypes                 []string       `json:"task_types"`
+	BaseResolution            []string       `json:"base_resolution"`
+	Quality                   []string       `json:"quality"`
+	MaxReferenceImageCount    int            `json:"max_reference_image_count"`
+	MaxImageCount             int            `json:"max_image_count"`
+	SizeModes                 []string       `json:"size_modes"`
+	SupportedRatios           []string       `json:"supported_ratios"`
+	SupportedPixelSizes       []string       `json:"supported_pixel_sizes"`
+	OutputFormat              []string       `json:"output_format"`
+	OutputCompression         int            `json:"output_compression"`
+	SupportsOutputCompression bool           `json:"supports_output_compression"`
+	Moderation                []string       `json:"moderation"`
+	CostPerImage              string         `json:"cost_per_image"`
+	Currency                  string         `json:"currency"`
+	Enabled                   bool           `json:"enabled"`
+	Extra                     map[string]any `json:"extra,omitempty"`
+	CreatedAt                 time.Time      `json:"created_at"`
+	UpdatedAt                 time.Time      `json:"updated_at"`
 }
 
 type ModelAccountModelWriteRequest struct {
-	AccountID    int64
-	ModelCode    string
-	DisplayName  string
-	TaskTypes    []string
-	Qualities    []string
-	CostPerImage string
-	Currency     string
-	Enabled      bool
-	Extra        map[string]any
+	AccountID                 int64
+	ModelCode                 string
+	DisplayName               string
+	TaskTypes                 []string
+	BaseResolution            []string
+	Quality                   []string
+	MaxReferenceImageCount    int
+	MaxImageCount             int
+	SizeModes                 []string
+	SupportedRatios           []string
+	SupportedPixelSizes       []string
+	OutputFormat              []string
+	OutputCompression         int
+	SupportsOutputCompression bool
+	Moderation                []string
+	CostPerImage              string
+	Currency                  string
+	Enabled                   bool
+	Extra                     map[string]any
 }
 
 type ModelAccountModelListRequest struct {
@@ -180,7 +200,7 @@ type RouteModelPrice struct {
 	RouteModelID        int64  `json:"route_model_id"`
 	RouteModelCode      string `json:"route_model_code,omitempty"`
 	TaskType            string `json:"task_type"`
-	Quality             string `json:"quality"`
+	BaseResolution      string `json:"base_resolution"`
 	BasePoints          string `json:"base_points"`
 	ReferenceMultiplier string `json:"reference_multiplier"`
 	Enabled             bool   `json:"enabled"`
@@ -189,19 +209,19 @@ type RouteModelPrice struct {
 type RouteModelPriceWriteRequest struct {
 	RouteModelID        int64
 	TaskType            string
-	Quality             string
+	BaseResolution      string
 	BasePoints          string
 	ReferenceMultiplier string
 	Enabled             bool
 }
 
 type RouteModelPriceListRequest struct {
-	Page         int
-	PageSize     int
-	RouteModelID int64
-	TaskType     string
-	Quality      string
-	Enabled      *bool
+	Page           int
+	PageSize       int
+	RouteModelID   int64
+	TaskType       string
+	BaseResolution string
+	Enabled        *bool
 }
 
 type RouteModelPriceListPage struct {
@@ -245,45 +265,53 @@ type ProviderListPage struct {
 }
 
 type ProviderModel struct {
-	ID                     int64      `json:"id"`
-	ProviderID             int64      `json:"provider_id"`
-	ProviderCode           string     `json:"provider_code"`
-	ModelCode              string     `json:"model_code"`
-	CompatMode             string     `json:"compat_mode"`
-	SupportsImageInput     bool       `json:"supports_image_input"`
-	SupportsMask           bool       `json:"supports_mask"`
-	SupportedQualities     []string   `json:"supported_qualities"`
-	SupportedRatios        []string   `json:"supported_ratios"`
-	MaxImageCount          int        `json:"max_image_count"`
-	MaxReferenceImageCount int        `json:"max_reference_image_count"`
-	TimeoutMS              int        `json:"timeout_ms"`
-	InputCost              string     `json:"input_cost"`
-	OutputCost             string     `json:"output_cost"`
-	Currency               string     `json:"currency"`
-	HealthStatus           string     `json:"health_status"`
-	LastHealthCheckedAt    *time.Time `json:"last_health_checked_at,omitempty"`
-	Enabled                bool       `json:"enabled"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	ID                      int64      `json:"id"`
+	ProviderID              int64      `json:"provider_id"`
+	ProviderCode            string     `json:"provider_code"`
+	ModelCode               string     `json:"model_code"`
+	CompatMode              string     `json:"compat_mode"`
+	SupportsImageInput      bool       `json:"supports_image_input"`
+	SupportsMask            bool       `json:"supports_mask"`
+	SupportedBaseResolution []string   `json:"supported_base_resolution"`
+	Quality                 []string   `json:"quality"`
+	SupportedRatios         []string   `json:"supported_ratios"`
+	OutputFormat            []string   `json:"output_format"`
+	OutputCompression       int        `json:"output_compression"`
+	Moderation              []string   `json:"moderation"`
+	MaxImageCount           int        `json:"max_image_count"`
+	MaxReferenceImageCount  int        `json:"max_reference_image_count"`
+	TimeoutMS               int        `json:"timeout_ms"`
+	InputCost               string     `json:"input_cost"`
+	OutputCost              string     `json:"output_cost"`
+	Currency                string     `json:"currency"`
+	HealthStatus            string     `json:"health_status"`
+	LastHealthCheckedAt     *time.Time `json:"last_health_checked_at,omitempty"`
+	Enabled                 bool       `json:"enabled"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 type ProviderModelWriteRequest struct {
-	ProviderCode           string
-	ModelCode              string
-	CompatMode             string
-	SupportsImageInput     bool
-	SupportsMask           bool
-	SupportedQualities     []string
-	SupportedRatios        []string
-	MaxImageCount          int
-	MaxReferenceImageCount int
-	TimeoutMS              int
-	InputCost              string
-	OutputCost             string
-	Currency               string
-	HealthStatus           string
-	LastHealthCheckedAt    *time.Time
-	Enabled                bool
+	ProviderCode            string
+	ModelCode               string
+	CompatMode              string
+	SupportsImageInput      bool
+	SupportsMask            bool
+	SupportedBaseResolution []string
+	Quality                 []string
+	SupportedRatios         []string
+	OutputFormat            []string
+	OutputCompression       int
+	Moderation              []string
+	MaxImageCount           int
+	MaxReferenceImageCount  int
+	TimeoutMS               int
+	InputCost               string
+	OutputCost              string
+	Currency                string
+	HealthStatus            string
+	LastHealthCheckedAt     *time.Time
+	Enabled                 bool
 }
 
 type ProviderModelListRequest struct {

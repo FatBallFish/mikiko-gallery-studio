@@ -27,8 +27,28 @@ const (
 	FieldDisplayName = "display_name"
 	// FieldTaskTypes holds the string denoting the task_types field in the database.
 	FieldTaskTypes = "task_types"
-	// FieldQualities holds the string denoting the qualities field in the database.
-	FieldQualities = "qualities"
+	// FieldBaseResolution holds the string denoting the base_resolution field in the database.
+	FieldBaseResolution = "base_resolution"
+	// FieldQuality holds the string denoting the quality field in the database.
+	FieldQuality = "quality"
+	// FieldMaxReferenceImageCount holds the string denoting the max_reference_image_count field in the database.
+	FieldMaxReferenceImageCount = "max_reference_image_count"
+	// FieldMaxImageCount holds the string denoting the max_image_count field in the database.
+	FieldMaxImageCount = "max_image_count"
+	// FieldSizeModes holds the string denoting the size_modes field in the database.
+	FieldSizeModes = "size_modes"
+	// FieldSupportedRatios holds the string denoting the supported_ratios field in the database.
+	FieldSupportedRatios = "supported_ratios"
+	// FieldSupportedPixelSizes holds the string denoting the supported_pixel_sizes field in the database.
+	FieldSupportedPixelSizes = "supported_pixel_sizes"
+	// FieldOutputFormat holds the string denoting the output_format field in the database.
+	FieldOutputFormat = "output_format"
+	// FieldOutputCompression holds the string denoting the output_compression field in the database.
+	FieldOutputCompression = "output_compression"
+	// FieldSupportsOutputCompression holds the string denoting the supports_output_compression field in the database.
+	FieldSupportsOutputCompression = "supports_output_compression"
+	// FieldModeration holds the string denoting the moderation field in the database.
+	FieldModeration = "moderation"
 	// FieldCostPerImage holds the string denoting the cost_per_image field in the database.
 	FieldCostPerImage = "cost_per_image"
 	// FieldCurrency holds the string denoting the currency field in the database.
@@ -51,7 +71,17 @@ var Columns = []string{
 	FieldModelCode,
 	FieldDisplayName,
 	FieldTaskTypes,
-	FieldQualities,
+	FieldBaseResolution,
+	FieldQuality,
+	FieldMaxReferenceImageCount,
+	FieldMaxImageCount,
+	FieldSizeModes,
+	FieldSupportedRatios,
+	FieldSupportedPixelSizes,
+	FieldOutputFormat,
+	FieldOutputCompression,
+	FieldSupportsOutputCompression,
+	FieldModeration,
 	FieldCostPerImage,
 	FieldCurrency,
 	FieldEnabled,
@@ -81,6 +111,14 @@ var (
 	DefaultDisplayName string
 	// DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
 	DisplayNameValidator func(string) error
+	// DefaultMaxReferenceImageCount holds the default value on creation for the "max_reference_image_count" field.
+	DefaultMaxReferenceImageCount int
+	// DefaultMaxImageCount holds the default value on creation for the "max_image_count" field.
+	DefaultMaxImageCount int
+	// DefaultOutputCompression holds the default value on creation for the "output_compression" field.
+	DefaultOutputCompression int
+	// DefaultSupportsOutputCompression holds the default value on creation for the "supports_output_compression" field.
+	DefaultSupportsOutputCompression bool
 	// DefaultCostPerImage holds the default value on creation for the "cost_per_image" field.
 	DefaultCostPerImage string
 	// DefaultCurrency holds the default value on creation for the "currency" field.
@@ -127,6 +165,26 @@ func ByModelCode(opts ...sql.OrderTermOption) OrderOption {
 // ByDisplayName orders the results by the display_name field.
 func ByDisplayName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDisplayName, opts...).ToFunc()
+}
+
+// ByMaxReferenceImageCount orders the results by the max_reference_image_count field.
+func ByMaxReferenceImageCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxReferenceImageCount, opts...).ToFunc()
+}
+
+// ByMaxImageCount orders the results by the max_image_count field.
+func ByMaxImageCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxImageCount, opts...).ToFunc()
+}
+
+// ByOutputCompression orders the results by the output_compression field.
+func ByOutputCompression(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOutputCompression, opts...).ToFunc()
+}
+
+// BySupportsOutputCompression orders the results by the supports_output_compression field.
+func BySupportsOutputCompression(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSupportsOutputCompression, opts...).ToFunc()
 }
 
 // ByCostPerImage orders the results by the cost_per_image field.

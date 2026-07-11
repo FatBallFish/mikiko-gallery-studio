@@ -109,10 +109,16 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 	if len(groupCodes) == 0 && strings.TrimSpace(req.UserGroupCode) != "" {
 		groupCodes = append(groupCodes, req.UserGroupCode)
 	}
-	resolved, err := resolver.ResolveContext(context.Background(), modelhub.ResolveRequest{
+	resolveReq, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
 		RouteModelCode:            req.RouteModelCode,
 		TaskType:                  req.TaskType,
-		RequestedQuality:          req.RequestedQuality,
+		SizeMode:                  req.SizeMode,
+		AspectRatio:               req.AspectRatio,
+		BaseResolution:            req.BaseResolution,
+		Quality:                   req.Quality,
+		OutputFormat:              req.OutputFormat,
+		OutputCompression:         req.OutputCompression,
+		Moderation:                req.Moderation,
 		RequestedSize:             req.RequestedSize,
 		RequestedOutputImageCount: req.RequestedOutputImageCount,
 		ReferenceImageCount:       req.ReferenceImageCount,
@@ -121,7 +127,11 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 	if err != nil {
 		return domainbilling.EstimateResult{}, err
 	}
-	quality := resolved.ResolvedQualityBucket
+	resolved, err := resolver.ResolveContext(context.Background(), resolveReq)
+	if err != nil {
+		return domainbilling.EstimateResult{}, err
+	}
+	baseResolution := resolved.BaseResolution
 	models, err := resolver.ListVisibleRouteModels(context.Background(), groupCodes, cfg.TaskMultipliers)
 	if err != nil {
 		return domainbilling.EstimateResult{}, err
@@ -135,7 +145,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 			if !strings.EqualFold(price.TaskType, req.TaskType) {
 				continue
 			}
-			if !strings.EqualFold(price.Quality, quality) {
+			if !strings.EqualFold(price.BaseResolution, baseResolution) {
 				continue
 			}
 			count := req.RequestedOutputImageCount
@@ -151,9 +161,14 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 				RouteModelCode:            model.Code,
 				AbstractModel:             model.Code,
 				TaskType:                  req.TaskType,
-				RequestedQuality:          req.RequestedQuality,
-				RequestedSize:             req.RequestedSize,
-				ResolvedQualityBucket:     price.Quality,
+				SizeMode:                  modelhub.PublicSizeMode(resolveReq.SizeMode),
+				AspectRatio:               resolveReq.AspectRatio,
+				BaseResolution:            price.BaseResolution,
+				Quality:                   resolveReq.Quality,
+				OutputFormat:              resolveReq.OutputFormat,
+				OutputCompression:         resolveReq.OutputCompression,
+				Moderation:                resolveReq.Moderation,
+				RequestedSize:             resolveReq.RequestedSize,
 				RequestedOutputImageCount: count,
 				ReferenceImageCount:       req.ReferenceImageCount,
 				UserGroupCode:             strings.Join(groupCodes, ","),
@@ -164,7 +179,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 				EstimatedPoints:           total.StringFixed(5),
 			}
 			return domainbilling.EstimateResult{
-				ResolvedQualityBucket:     price.Quality,
+				BaseResolution:            price.BaseResolution,
 				EstimatedPoints:           snapshot.EstimatedPoints,
 				ChargedPoints:             snapshot.EstimatedPoints,
 				DisplayPoints:             total.Round(2).StringFixed(2),
@@ -208,9 +223,9 @@ func (s *Service) currentBillingConfig(ctx context.Context) config.BillingConfig
 			if value := stringConfigValue(raw); value != "" {
 				cfg.CNYPerPoint = value
 			}
-		case "auto_quality_default_by_group":
+		case "auto_base_resolution_default_by_group":
 			if value := stringMapConfigValue(raw); len(value) > 0 {
-				cfg.AutoQualityDefaultByGroup = value
+				cfg.AutoBaseResolutionDefaultByGroup = value
 			}
 		case "task_multipliers":
 			if value := stringMapConfigValue(raw); len(value) > 0 {

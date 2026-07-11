@@ -1,24 +1,51 @@
 import type { ImageResult, ImageTask } from '../../../shared/api-types'
-import { generationSlots, workspaceProgressNodes, workspaceQualityLabel } from './workspaceTaskProgress'
+import { generationSlots, workspaceBaseResolutionLabel, workspaceProgressNodes } from './workspaceTaskProgress'
 
-if (workspaceQualityLabel('auto') !== '自动') {
-  throw new Error(`quality auto should localize to 自动, got ${workspaceQualityLabel('auto')}`)
+if (workspaceBaseResolutionLabel('auto') !== '自动') {
+  throw new Error(`base resolution auto should localize to 自动, got ${workspaceBaseResolutionLabel('auto')}`)
 }
 
-if (workspaceQualityLabel('HIGH') !== '高清') {
-  throw new Error(`quality labels should be case-insensitive, got ${workspaceQualityLabel('HIGH')}`)
+if (workspaceBaseResolutionLabel('HIGH') !== '高清') {
+  throw new Error(`base resolution labels should be case-insensitive, got ${workspaceBaseResolutionLabel('HIGH')}`)
 }
 
-if (workspaceQualityLabel('experimental') !== 'experimental') {
-  throw new Error(`unknown quality should preserve backend value, got ${workspaceQualityLabel('experimental')}`)
+if (workspaceBaseResolutionLabel('experimental') !== 'experimental') {
+  throw new Error(`unknown base resolution should preserve backend value, got ${workspaceBaseResolutionLabel('experimental')}`)
 }
 
-const runningNodes = workspaceProgressNodes(task({ status: 'running', progress: 40 }))
-if (runningNodes.find((item) => item.phase === 'queued')?.status !== 'done') {
-  throw new Error(`progress 40 should complete queue node, got ${JSON.stringify(runningNodes)}`)
-}
+const runningNodes = workspaceProgressNodes(task({ status: 'running', progress: 96 }))
 if (runningNodes.find((item) => item.phase === 'generating')?.status !== 'active') {
-  throw new Error(`progress 40 should activate generation node, got ${JSON.stringify(runningNodes)}`)
+  throw new Error(`running without a backend stage should truthfully show generation regardless of legacy percentage, got ${JSON.stringify(runningNodes)}`)
+}
+
+const queuedStageNodes = workspaceProgressNodes(task({ status: 'queued', progress: 8, progress_stage: 'queued' }))
+if (queuedStageNodes.find((item) => item.phase === 'queued')?.status !== 'active') {
+  throw new Error(`known queued stage must override low percentage, got ${JSON.stringify(queuedStageNodes)}`)
+}
+
+const runningStageCases = [
+  { stage: 'routing', phase: 'generating' },
+  { stage: 'provider', phase: 'generating' },
+  { stage: 'running', phase: 'generating' },
+  { stage: 'persisting', phase: 'storing' },
+  { stage: 'settling', phase: 'settling' },
+] as const
+
+for (const testCase of runningStageCases) {
+  const nodes = workspaceProgressNodes(task({ status: 'running', progress: 8, progress_stage: testCase.stage }))
+  if (nodes.find((item) => item.phase === testCase.phase)?.status !== 'active') {
+    throw new Error(`backend stage ${testCase.stage} must activate ${testCase.phase}, got ${JSON.stringify(nodes)}`)
+  }
+}
+
+const failedAtProvider = workspaceProgressNodes(task({ status: 'failed', progress_stage: 'provider' }))
+if (failedAtProvider.find((item) => item.phase === 'generating')?.status !== 'failed') {
+  throw new Error(`failure must stay at its known backend stage, got ${JSON.stringify(failedAtProvider)}`)
+}
+
+const unknownStageFallback = workspaceProgressNodes(task({ status: 'running', progress: 99, progress_stage: 'future_stage' }))
+if (unknownStageFallback.find((item) => item.phase === 'generating')?.status !== 'active') {
+  throw new Error(`unknown backend stages must fall back to indeterminate generation, got ${JSON.stringify(unknownStageFallback)}`)
 }
 
 const succeededNodes = workspaceProgressNodes(task({ status: 'succeeded', progress: 10 }))
@@ -26,9 +53,9 @@ if (succeededNodes.some((item) => item.status !== 'done')) {
   throw new Error(`succeeded task should mark all progress nodes done, got ${JSON.stringify(succeededNodes)}`)
 }
 
-const failedNodes = workspaceProgressNodes(task({ status: 'failed', progress: 34 }))
-if (!failedNodes.some((item) => item.status === 'failed')) {
-  throw new Error(`failed task should mark one progress node failed, got ${JSON.stringify(failedNodes)}`)
+const failedNodes = workspaceProgressNodes(task({ status: 'failed', progress: 100, progress_stage: 'failed' }))
+if (failedNodes.find((item) => item.phase === 'generating')?.status !== 'failed') {
+  throw new Error(`failed task without a prior stage must not infer completion from legacy percentage, got ${JSON.stringify(failedNodes)}`)
 }
 
 const partialSlots = generationSlots(task({
@@ -68,9 +95,11 @@ function task(patch: Partial<ImageTask>): ImageTask {
     prompt: patch.prompt ?? '生成一张测试图',
     task_type: patch.task_type ?? 'text_to_image',
     status: patch.status ?? 'queued',
+    progress_stage: patch.progress_stage,
     route_model_code: patch.route_model_code,
     model_group: patch.model_group ?? 'plus',
-    quality: patch.quality ?? '2K',
+    base_resolution: patch.base_resolution ?? '2K',
+    quality: patch.quality ?? 'auto',
     aspect_ratio: patch.aspect_ratio ?? '1:1',
     image_count: patch.image_count ?? 1,
     estimate_points: patch.estimate_points ?? '1.00000',

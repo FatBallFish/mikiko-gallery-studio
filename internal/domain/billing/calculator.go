@@ -12,18 +12,18 @@ import (
 
 type Calculator struct {
 	cfg      config.BillingConfig
-	resolver qualityResolver
+	resolver baseResolutionResolver
 }
 
-type qualityResolver interface {
-	ResolveQuality(requestedQuality, requestedSize, abstractModel string) (string, error)
+type baseResolutionResolver interface {
+	ResolveBaseResolution(requestedBaseResolution, requestedSize, abstractModel string) (string, error)
 }
 
 func NewCalculator(cfg config.BillingConfig) *Calculator {
 	return &Calculator{cfg: cfg, resolver: modelhub.NewResolver(config.Config{Billing: cfg})}
 }
 
-func NewCalculatorWithResolver(cfg config.BillingConfig, resolver qualityResolver) *Calculator {
+func NewCalculatorWithResolver(cfg config.BillingConfig, resolver baseResolutionResolver) *Calculator {
 	if resolver == nil {
 		resolver = modelhub.NewResolver(config.Config{Billing: cfg})
 	}
@@ -31,18 +31,31 @@ func NewCalculatorWithResolver(cfg config.BillingConfig, resolver qualityResolve
 }
 
 func (c *Calculator) Estimate(req EstimateRequest) (EstimateResult, error) {
-	resolved, err := c.resolver.ResolveQuality(req.RequestedQuality, req.RequestedSize, req.AbstractModel)
+	normalized, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
+		SizeMode:       req.SizeMode,
+		AspectRatio:    req.AspectRatio,
+		BaseResolution: req.BaseResolution,
+		RequestedSize:  req.RequestedSize,
+	})
+	if err != nil {
+		return EstimateResult{}, err
+	}
+	req.SizeMode = modelhub.PublicSizeMode(normalized.SizeMode)
+	req.AspectRatio = normalized.AspectRatio
+	req.BaseResolution = normalized.BaseResolution
+	req.RequestedSize = normalized.RequestedSize
+	resolved, err := c.resolver.ResolveBaseResolution(req.BaseResolution, req.RequestedSize, req.AbstractModel)
 	if err != nil {
 		return EstimateResult{}, err
 	}
 	if req.RequestedOutputImageCount <= 0 {
 		req.RequestedOutputImageCount = 1
 	}
-	unitStr := c.cfg.QualityPointsByModel[strings.ToLower(req.AbstractModel)][resolved]
+	unitStr := c.cfg.BaseResolutionPointsByModel[strings.ToLower(req.AbstractModel)][resolved]
 	if unitStr == "" {
-		return EstimateResult{}, errs.New(400, errs.CodeImageCapabilityMismatch, "no pricing for requested model and quality")
+		return EstimateResult{}, errs.New(400, errs.CodeImageCapabilityMismatch, "no pricing for requested model and base_resolution")
 	}
-	unit, err := parseDecimalRequired(unitStr, "quality unit points")
+	unit, err := parseDecimalRequired(unitStr, "base_resolution unit points")
 	if err != nil {
 		return EstimateResult{}, err
 	}
@@ -84,9 +97,14 @@ func (c *Calculator) Estimate(req EstimateRequest) (EstimateResult, error) {
 	snapshot := PricingSnapshot{
 		AbstractModel:             req.AbstractModel,
 		TaskType:                  req.TaskType,
-		RequestedQuality:          req.RequestedQuality,
+		SizeMode:                  req.SizeMode,
+		AspectRatio:               req.AspectRatio,
+		BaseResolution:            resolved,
+		Quality:                   req.Quality,
+		OutputFormat:              req.OutputFormat,
+		OutputCompression:         req.OutputCompression,
+		Moderation:                req.Moderation,
 		RequestedSize:             req.RequestedSize,
-		ResolvedQualityBucket:     resolved,
 		RequestedOutputImageCount: req.RequestedOutputImageCount,
 		ReferenceImageCount:       req.ReferenceImageCount,
 		UserGroupCode:             req.UserGroupCode,
@@ -97,7 +115,7 @@ func (c *Calculator) Estimate(req EstimateRequest) (EstimateResult, error) {
 		EstimatedPoints:           total.StringFixed(int32(c.cfg.PointsScale)),
 	}
 	return EstimateResult{
-		ResolvedQualityBucket:     resolved,
+		BaseResolution:            resolved,
 		EstimatedPoints:           snapshot.EstimatedPoints,
 		UserGroupMultiplier:       snapshot.UserGroupMultiplier,
 		RequestedOutputImageCount: req.RequestedOutputImageCount,

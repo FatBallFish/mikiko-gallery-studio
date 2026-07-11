@@ -81,7 +81,7 @@ export function callRecordRows(records: CallRecord[]): CallRecordRowModel[] {
     userLabel: `User #${record.user_id}`,
     userDetail: record.api_key_id ? `API Key #${record.api_key_id}` : channelLabel(record.source_channel),
     routeLabel: record.abstract_model || '-',
-    routeDetail: `${record.quality || '-'} · ${channelLabel(record.source_channel)}`,
+    routeDetail: `${record.base_resolution || '-'} · ${record.quality || '-'} · ${channelLabel(record.source_channel)}`,
     providerLabel: record.provider || '-',
     providerDetail: providerDetail(record),
     status: record.status,

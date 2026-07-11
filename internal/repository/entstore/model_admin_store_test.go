@@ -42,19 +42,19 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 		t.Fatalf("expected default provider model, got %#v", providerModels)
 	}
 	explicitModel, err := store.CreateProviderModel(ctx, domainmodeladmin.ProviderModelWriteRequest{
-		ProviderCode:           "openrouter",
-		ModelCode:              "openrouter/vision",
-		CompatMode:             "openrouter_chat_image",
-		SupportsImageInput:     true,
-		SupportedQualities:     []string{"1k", "2k"},
-		MaxImageCount:          4,
-		MaxReferenceImageCount: 2,
-		TimeoutMS:              45000,
-		InputCost:              "0.12",
-		OutputCost:             "0.34",
-		Currency:               "USD",
-		HealthStatus:           "healthy",
-		Enabled:                true,
+		ProviderCode:            "openrouter",
+		ModelCode:               "openrouter/vision",
+		CompatMode:              "openrouter_chat_image",
+		SupportsImageInput:      true,
+		SupportedBaseResolution: []string{"1k", "2k"},
+		MaxImageCount:           4,
+		MaxReferenceImageCount:  2,
+		TimeoutMS:               45000,
+		InputCost:               "0.12",
+		OutputCost:              "0.34",
+		Currency:                "USD",
+		HealthStatus:            "healthy",
+		Enabled:                 true,
 	})
 	if err != nil {
 		t.Fatalf("CreateProviderModel explicit: %v", err)
@@ -62,7 +62,6 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 	if explicitModel.ID == 0 || explicitModel.ModelCode != "openrouter/vision" {
 		t.Fatalf("unexpected explicit model %#v", explicitModel)
 	}
-
 	route, err := store.CreateRoute(ctx, domainmodeladmin.RouteWriteRequest{
 		GroupCode:       "plus",
 		TaskType:        "text_to_image",
@@ -98,5 +97,66 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 	}
 	if err := store.DeleteProvider(ctx, "openrouter"); err != nil {
 		t.Fatalf("DeleteProvider: %v", err)
+	}
+}
+
+func TestModelAdminStorePersistsOutputCompressionCapability(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:modeladminstore-compression?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name:        "OpenAI compatible",
+		AdapterType: "openai_compatible",
+		AuthType:    "api_key",
+		BaseURL:     "https://example.test/v1",
+		Credentials: map[string]string{"api_key": "test-key"},
+		Status:      "enabled",
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	accountModel, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID:                 account.ID,
+		ModelCode:                 "image-compressible",
+		DisplayName:               "Image Compressible",
+		TaskTypes:                 []string{"text_to_image"},
+		BaseResolution:            []string{"1k"},
+		Quality:                   []string{"auto"},
+		MaxImageCount:             1,
+		SizeModes:                 []string{"ratio"},
+		SupportedRatios:           []string{"1:1"},
+		OutputFormat:              []string{"jpeg", "webp"},
+		OutputCompression:         100,
+		SupportsOutputCompression: true,
+		Moderation:                []string{"auto"},
+		CostPerImage:              "0.1",
+		Currency:                  "USD",
+		Enabled:                   true,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccountModel: %v", err)
+	}
+	persisted, err := store.GetModelAccountModel(ctx, accountModel.ID)
+	if err != nil {
+		t.Fatalf("GetModelAccountModel: %v", err)
+	}
+	if !persisted.SupportsOutputCompression {
+		t.Fatalf("expected compression capability to round-trip, got %#v", persisted)
+	}
+
+	snapshot, err := store.ModelRoutingConfig(ctx)
+	if err != nil {
+		t.Fatalf("ModelRoutingConfig: %v", err)
+	}
+	if len(snapshot.ProviderModels) != 1 || !snapshot.ProviderModels[0].SupportsOutputCompression {
+		t.Fatalf("expected compression capability in runtime snapshot, got %#v", snapshot.ProviderModels)
 	}
 }

@@ -62,9 +62,9 @@ func TaskType(v string) predicate.RouteModelPrice {
 	return predicate.RouteModelPrice(sql.FieldEQ(FieldTaskType, v))
 }
 
-// Quality applies equality check predicate on the "quality" field. It's identical to QualityEQ.
-func Quality(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldEQ(FieldQuality, v))
+// BaseResolution applies equality check predicate on the "base_resolution" field. It's identical to BaseResolutionEQ.
+func BaseResolution(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldEQ(FieldBaseResolution, v))
 }
 
 // BasePoints applies equality check predicate on the "base_points" field. It's identical to BasePointsEQ.
@@ -187,69 +187,69 @@ func TaskTypeContainsFold(v string) predicate.RouteModelPrice {
 	return predicate.RouteModelPrice(sql.FieldContainsFold(FieldTaskType, v))
 }
 
-// QualityEQ applies the EQ predicate on the "quality" field.
-func QualityEQ(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldEQ(FieldQuality, v))
+// BaseResolutionEQ applies the EQ predicate on the "base_resolution" field.
+func BaseResolutionEQ(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldEQ(FieldBaseResolution, v))
 }
 
-// QualityNEQ applies the NEQ predicate on the "quality" field.
-func QualityNEQ(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldNEQ(FieldQuality, v))
+// BaseResolutionNEQ applies the NEQ predicate on the "base_resolution" field.
+func BaseResolutionNEQ(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldNEQ(FieldBaseResolution, v))
 }
 
-// QualityIn applies the In predicate on the "quality" field.
-func QualityIn(vs ...string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldIn(FieldQuality, vs...))
+// BaseResolutionIn applies the In predicate on the "base_resolution" field.
+func BaseResolutionIn(vs ...string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldIn(FieldBaseResolution, vs...))
 }
 
-// QualityNotIn applies the NotIn predicate on the "quality" field.
-func QualityNotIn(vs ...string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldNotIn(FieldQuality, vs...))
+// BaseResolutionNotIn applies the NotIn predicate on the "base_resolution" field.
+func BaseResolutionNotIn(vs ...string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldNotIn(FieldBaseResolution, vs...))
 }
 
-// QualityGT applies the GT predicate on the "quality" field.
-func QualityGT(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldGT(FieldQuality, v))
+// BaseResolutionGT applies the GT predicate on the "base_resolution" field.
+func BaseResolutionGT(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldGT(FieldBaseResolution, v))
 }
 
-// QualityGTE applies the GTE predicate on the "quality" field.
-func QualityGTE(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldGTE(FieldQuality, v))
+// BaseResolutionGTE applies the GTE predicate on the "base_resolution" field.
+func BaseResolutionGTE(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldGTE(FieldBaseResolution, v))
 }
 
-// QualityLT applies the LT predicate on the "quality" field.
-func QualityLT(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldLT(FieldQuality, v))
+// BaseResolutionLT applies the LT predicate on the "base_resolution" field.
+func BaseResolutionLT(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldLT(FieldBaseResolution, v))
 }
 
-// QualityLTE applies the LTE predicate on the "quality" field.
-func QualityLTE(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldLTE(FieldQuality, v))
+// BaseResolutionLTE applies the LTE predicate on the "base_resolution" field.
+func BaseResolutionLTE(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldLTE(FieldBaseResolution, v))
 }
 
-// QualityContains applies the Contains predicate on the "quality" field.
-func QualityContains(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldContains(FieldQuality, v))
+// BaseResolutionContains applies the Contains predicate on the "base_resolution" field.
+func BaseResolutionContains(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldContains(FieldBaseResolution, v))
 }
 
-// QualityHasPrefix applies the HasPrefix predicate on the "quality" field.
-func QualityHasPrefix(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldHasPrefix(FieldQuality, v))
+// BaseResolutionHasPrefix applies the HasPrefix predicate on the "base_resolution" field.
+func BaseResolutionHasPrefix(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldHasPrefix(FieldBaseResolution, v))
 }
 
-// QualityHasSuffix applies the HasSuffix predicate on the "quality" field.
-func QualityHasSuffix(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldHasSuffix(FieldQuality, v))
+// BaseResolutionHasSuffix applies the HasSuffix predicate on the "base_resolution" field.
+func BaseResolutionHasSuffix(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldHasSuffix(FieldBaseResolution, v))
 }
 
-// QualityEqualFold applies the EqualFold predicate on the "quality" field.
-func QualityEqualFold(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldEqualFold(FieldQuality, v))
+// BaseResolutionEqualFold applies the EqualFold predicate on the "base_resolution" field.
+func BaseResolutionEqualFold(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldEqualFold(FieldBaseResolution, v))
 }
 
-// QualityContainsFold applies the ContainsFold predicate on the "quality" field.
-func QualityContainsFold(v string) predicate.RouteModelPrice {
-	return predicate.RouteModelPrice(sql.FieldContainsFold(FieldQuality, v))
+// BaseResolutionContainsFold applies the ContainsFold predicate on the "base_resolution" field.
+func BaseResolutionContainsFold(v string) predicate.RouteModelPrice {
+	return predicate.RouteModelPrice(sql.FieldContainsFold(FieldBaseResolution, v))
 }
 
 // BasePointsEQ applies the EQ predicate on the "base_points" field.

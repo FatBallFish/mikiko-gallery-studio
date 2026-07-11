@@ -3,10 +3,77 @@ package imagetask
 import (
 	"context"
 	"testing"
+	"time"
 
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 )
+
+func TestMemoryStoreUpdateProgressIfOwnedPreservesTaskState(t *testing.T) {
+	store := NewMemoryStore()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	expiresAt := now.Add(time.Minute)
+	task := domainimagetask.Task{
+		ID:              "progress-task",
+		UserID:          91,
+		Status:          domainimagetask.StatusRunning,
+		ProgressStage:   domainimagetask.ProgressStageProvider,
+		ProgressMessage: "provider",
+		LeaseOwner:      "worker-a",
+		LeaseExpiresAt:  &expiresAt,
+		ActualPoints:    "2.00000",
+		Results:         []provider.ImageResult{{ID: "image-a", URL: "https://example.test/image-a.png"}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.UpdateProgressIfOwned(ctx, task.ID, "worker-a", domainimagetask.ProgressStagePersisting, "persisting", now); err != nil {
+		t.Fatalf("UpdateProgressIfOwned: %v", err)
+	}
+
+	loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if loaded.ProgressStage != domainimagetask.ProgressStagePersisting || loaded.ProgressMessage != "persisting" {
+		t.Fatalf("expected progress metadata update, got %#v", loaded)
+	}
+	if loaded.ActualPoints != task.ActualPoints || len(loaded.Results) != 1 || loaded.Results[0].ID != "image-a" {
+		t.Fatalf("progress update must preserve billing and results, got %#v", loaded)
+	}
+	if loaded.LeaseOwner != "worker-a" || loaded.LeaseExpiresAt == nil || !loaded.LeaseExpiresAt.Equal(expiresAt) {
+		t.Fatalf("progress update must preserve lease, got %#v", loaded)
+	}
+	if err := store.UpdateProgressIfOwned(ctx, task.ID, "worker-b", domainimagetask.ProgressStageSettling, "settling", now); err == nil {
+		t.Fatal("expected stale owner progress update to conflict")
+	}
+}
+
+func TestMemoryStoreSaveTerminalStateRejectsReclaimedOwner(t *testing.T) {
+	store := NewMemoryStore()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	expiresAt := now.Add(time.Minute)
+	current := domainimagetask.Task{
+		ID:             "terminal-owner-task",
+		UserID:         92,
+		Status:         domainimagetask.StatusRunning,
+		LeaseOwner:     "worker-b",
+		LeaseExpiresAt: &expiresAt,
+	}
+	if err := store.Save(ctx, current); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	stale := current
+	stale.Status = domainimagetask.StatusSucceeded
+	stale.LeaseOwner = ""
+	stale.LeaseExpiresAt = nil
+	stale.Results = []provider.ImageResult{{ID: "stale-result"}}
+	if err := store.SaveTerminalState(ctx, stale, "worker-a", now); err == nil {
+		t.Fatal("expected stale terminal save to conflict after reclaim")
+	}
+}
 
 func TestMemoryStorePublicGalleryHotSortIgnoresLegacyCommentCount(t *testing.T) {
 	store := NewMemoryStore()
@@ -46,16 +113,16 @@ func TestMemoryStorePublicGalleryHotSortIgnoresLegacyCommentCount(t *testing.T) 
 
 func publicGalleryTask(taskID, imageID string) domainimagetask.Task {
 	return domainimagetask.Task{
-		UserID:                91,
-		ID:                    taskID,
-		Status:                domainimagetask.StatusSucceeded,
-		Provider:              "openai",
-		AbstractModel:         "basic",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "public gallery hot sort",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "1k",
-		OutputImageCount:      1,
+		UserID:        91,
+		ID:            taskID,
+		Status:        domainimagetask.StatusSucceeded,
+		Provider:      "openai",
+		AbstractModel: "basic",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "public gallery hot sort",
+
+		BaseResolution:   "1k",
+		OutputImageCount: 1,
 		Results: []provider.ImageResult{{
 			ID:               imageID,
 			URL:              "https://cdn.example.com/" + imageID + ".png",

@@ -20,8 +20,8 @@ type RouteModelPrice struct {
 	RouteModelID int64 `json:"route_model_id,omitempty"`
 	// TaskType holds the value of the "task_type" field.
 	TaskType string `json:"task_type,omitempty"`
-	// Quality holds the value of the "quality" field.
-	Quality string `json:"quality,omitempty"`
+	// BaseResolution holds the value of the "base_resolution" field.
+	BaseResolution string `json:"base_resolution,omitempty"`
 	// BasePoints holds the value of the "base_points" field.
 	BasePoints string `json:"base_points,omitempty"`
 	// ReferenceMultiplier holds the value of the "reference_multiplier" field.
@@ -40,7 +40,7 @@ func (*RouteModelPrice) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case routemodelprice.FieldID, routemodelprice.FieldRouteModelID:
 			values[i] = new(sql.NullInt64)
-		case routemodelprice.FieldTaskType, routemodelprice.FieldQuality, routemodelprice.FieldBasePoints, routemodelprice.FieldReferenceMultiplier:
+		case routemodelprice.FieldTaskType, routemodelprice.FieldBaseResolution, routemodelprice.FieldBasePoints, routemodelprice.FieldReferenceMultiplier:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -75,11 +75,11 @@ func (_m *RouteModelPrice) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TaskType = value.String
 			}
-		case routemodelprice.FieldQuality:
+		case routemodelprice.FieldBaseResolution:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field quality", values[i])
+				return fmt.Errorf("unexpected type %T for field base_resolution", values[i])
 			} else if value.Valid {
-				_m.Quality = value.String
+				_m.BaseResolution = value.String
 			}
 		case routemodelprice.FieldBasePoints:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -141,8 +141,8 @@ func (_m *RouteModelPrice) String() string {
 	builder.WriteString("task_type=")
 	builder.WriteString(_m.TaskType)
 	builder.WriteString(", ")
-	builder.WriteString("quality=")
-	builder.WriteString(_m.Quality)
+	builder.WriteString("base_resolution=")
+	builder.WriteString(_m.BaseResolution)
 	builder.WriteString(", ")
 	builder.WriteString("base_points=")
 	builder.WriteString(_m.BasePoints)

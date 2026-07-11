@@ -253,6 +253,9 @@ func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
 	if r.compensation != nil {
 		processed, err := r.compensation.ProcessRefundFinalizeFailures(ctx, r.cfg.RefundCompensationBatchSize)
 		if err != nil {
+			if repoerr.IsTransientContention(err) {
+				return false, nil
+			}
 			return false, err
 		}
 		if processed > 0 {

@@ -30,22 +30,22 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:                12,
-		APIKeyID:              88,
-		SourceChannel:         "openapi",
-		ID:                    "11111111-1111-1111-1111-111111111111",
-		Status:                domainimagetask.StatusSucceeded,
-		Provider:              "openrouter",
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		OutputImageCount:      2,
-		ReferenceImageCount:   2,
-		ReferenceAssetIDs:     []string{"asset-a", "asset-b"},
-		EstimatedPoints:       "16.00000",
-		ActualPoints:          "8.00000",
-		Results:               []provider.ImageResult{{URL: "https://cdn.example.com/task.png"}},
+		UserID:        12,
+		APIKeyID:      88,
+		SourceChannel: "openapi",
+		ID:            "11111111-1111-1111-1111-111111111111",
+		Status:        domainimagetask.StatusSucceeded,
+		Provider:      "openrouter",
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+
+		BaseResolution:      "2k",
+		OutputImageCount:    2,
+		ReferenceImageCount: 2,
+		ReferenceAssetIDs:   []string{"asset-a", "asset-b"},
+		EstimatedPoints:     "16.00000",
+		ActualPoints:        "8.00000",
+		Results:             []provider.ImageResult{{URL: "https://cdn.example.com/task.png"}},
 	}
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -103,6 +103,67 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	}
 }
 
+func TestImageTaskStoreProgressUpdatePreservesStateAndRejectsStaleOwner(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-progress-owner?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(time.Minute)
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		ID:               "14141414-1414-1414-1414-141414141414",
+		UserID:           44,
+		Status:           domainimagetask.StatusRunning,
+		ProgressStage:    domainimagetask.ProgressStageProvider,
+		ProgressMessage:  "provider",
+		LeaseOwner:       "worker-b",
+		LeaseExpiresAt:   &expiresAt,
+		TaskType:         string(provider.TaskTypeTextToImage),
+		AbstractModel:    "plus",
+		BaseResolution:   "1k",
+		ActualPoints:     "2.00000",
+		OutputImageCount: 1,
+		Results:          []provider.ImageResult{{ID: "15151515-1515-1515-1515-151515151515", URL: "https://example.test/result.png"}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.UpdateProgressIfOwned(ctx, task.ID, "worker-b", domainimagetask.ProgressStagePersisting, "persisting", now); err != nil {
+		t.Fatalf("UpdateProgressIfOwned: %v", err)
+	}
+	loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if loaded.ProgressStage != domainimagetask.ProgressStagePersisting || loaded.ActualPoints != task.ActualPoints || len(loaded.Results) != 1 {
+		t.Fatalf("progress update must preserve results and billing, got %#v", loaded)
+	}
+	if loaded.LeaseOwner != "worker-b" || loaded.LeaseExpiresAt == nil || !loaded.LeaseExpiresAt.Equal(expiresAt) {
+		t.Fatalf("progress update must preserve lease, got %#v", loaded)
+	}
+
+	stale := loaded
+	stale.Status = domainimagetask.StatusSucceeded
+	stale.Results = []provider.ImageResult{{ID: "16161616-1616-1616-1616-161616161616", URL: "https://example.test/stale.png"}}
+	if err := store.SaveTerminalState(ctx, stale, "worker-a", now); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("expected stale terminal save conflict, got %v", err)
+	}
+	afterConflict, err := store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after conflict: %v", err)
+	}
+	if afterConflict.Status != domainimagetask.StatusRunning || afterConflict.LeaseOwner != "worker-b" || len(afterConflict.Results) != 1 || afterConflict.Results[0].ID != loaded.Results[0].ID {
+		t.Fatalf("stale terminal save must not replace reclaimed task, got %#v", afterConflict)
+	}
+}
+
 func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:imagetasklocalresult?mode=memory&cache=shared&_fk=1")
@@ -118,17 +179,17 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	hash := sha256.Sum256(imageBytes)
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:                41,
-		ID:                    "12121212-1212-1212-1212-121212121212",
-		Status:                domainimagetask.StatusSucceeded,
-		Provider:              "openai",
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "store local result",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		RequestedSize:         "1024x1024",
-		OutputImageCount:      1,
+		UserID:        41,
+		ID:            "12121212-1212-1212-1212-121212121212",
+		Status:        domainimagetask.StatusSucceeded,
+		Provider:      "openai",
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "store local result",
+
+		BaseResolution:   "2k",
+		RequestedSize:    "1024x1024",
+		OutputImageCount: 1,
 		Results: []provider.ImageResult{{
 			ObjectKey:        "generated-images/41/12121212-1212-1212-1212-121212121212/0.png",
 			MimeType:         "image/png",
@@ -183,16 +244,16 @@ func TestImageTaskStoreListsApprovedPublicImagesWithoutPublishedAt(t *testing.T)
 
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:                61,
-		ID:                    "61616161-6161-6161-6161-616161616161",
-		Status:                domainimagetask.StatusSucceeded,
-		Provider:              "openai",
-		AbstractModel:         "basic",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "public gallery image",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "1k",
-		OutputImageCount:      1,
+		UserID:        61,
+		ID:            "61616161-6161-6161-6161-616161616161",
+		Status:        domainimagetask.StatusSucceeded,
+		Provider:      "openai",
+		AbstractModel: "basic",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "public gallery image",
+
+		BaseResolution:   "1k",
+		OutputImageCount: 1,
 		Results: []provider.ImageResult{{
 			ObjectKey:        "generated-images/61/61616161-6161-6161-6161-616161616161/0.png",
 			MimeType:         "image/png",
@@ -339,16 +400,16 @@ func TestImageTaskStorePublicGalleryHotSortIgnoresLegacyCommentCount(t *testing.
 
 func publicGalleryTask(taskID, imageID string) domainimagetask.Task {
 	return domainimagetask.Task{
-		UserID:                72,
-		ID:                    taskID,
-		Status:                domainimagetask.StatusSucceeded,
-		Provider:              "openai",
-		AbstractModel:         "basic",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "public gallery hot sort",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "1k",
-		OutputImageCount:      1,
+		UserID:        72,
+		ID:            taskID,
+		Status:        domainimagetask.StatusSucceeded,
+		Provider:      "openai",
+		AbstractModel: "basic",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "public gallery hot sort",
+
+		BaseResolution:   "1k",
+		OutputImageCount: 1,
 		Results: []provider.ImageResult{{
 			ID:               imageID,
 			URL:              "https://cdn.example.com/" + imageID + ".png",
@@ -379,16 +440,16 @@ func TestImageTaskStoreAcquireNextQueuedTaskAndReclaimExpiredLease(t *testing.T)
 
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:                88,
-		ID:                    "22222222-2222-2222-2222-222222222222",
-		Status:                domainimagetask.StatusQueued,
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "queue this",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		RequestedSize:         "auto",
-		OutputImageCount:      1,
+		UserID:        88,
+		ID:            "22222222-2222-2222-2222-222222222222",
+		Status:        domainimagetask.StatusQueued,
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "queue this",
+
+		BaseResolution:   "2k",
+		RequestedSize:    "auto",
+		OutputImageCount: 1,
 	}
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save queued task: %v", err)
@@ -435,16 +496,16 @@ func TestImageTaskStoreRenewTaskLeaseRequiresOwner(t *testing.T) {
 
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:                91,
-		ID:                    "33333333-3333-3333-3333-333333333333",
-		Status:                domainimagetask.StatusQueued,
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "renew me",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		RequestedSize:         "auto",
-		OutputImageCount:      1,
+		UserID:        91,
+		ID:            "33333333-3333-3333-3333-333333333333",
+		Status:        domainimagetask.StatusQueued,
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "renew me",
+
+		BaseResolution:   "2k",
+		RequestedSize:    "auto",
+		OutputImageCount: 1,
 	}
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save queued task: %v", err)
@@ -486,16 +547,16 @@ func TestImageTaskStoreSaveIfOwnedRejectsStaleWorkerWriteAfterReclaim(t *testing
 
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:                92,
-		ID:                    "44444444-4444-4444-4444-444444444444",
-		Status:                domainimagetask.StatusQueued,
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "stale write",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		RequestedSize:         "auto",
-		OutputImageCount:      1,
+		UserID:        92,
+		ID:            "44444444-4444-4444-4444-444444444444",
+		Status:        domainimagetask.StatusQueued,
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "stale write",
+
+		BaseResolution:   "2k",
+		RequestedSize:    "auto",
+		OutputImageCount: 1,
 	}
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save queued task: %v", err)
@@ -539,16 +600,16 @@ func TestImageTaskStoreSaveIfOwnedPreservesRenewedLeaseForRunningTask(t *testing
 
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:                93,
-		ID:                    "55555555-5555-5555-5555-555555555555",
-		Status:                domainimagetask.StatusQueued,
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "renewed lease",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		RequestedSize:         "auto",
-		OutputImageCount:      1,
+		UserID:        93,
+		ID:            "55555555-5555-5555-5555-555555555555",
+		Status:        domainimagetask.StatusQueued,
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "renewed lease",
+
+		BaseResolution:   "2k",
+		RequestedSize:    "auto",
+		OutputImageCount: 1,
 	}
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save queued task: %v", err)
@@ -579,5 +640,65 @@ func TestImageTaskStoreSaveIfOwnedPreservesRenewedLeaseForRunningTask(t *testing
 	}
 	if !loaded.LeaseExpiresAt.Equal(*renewed.LeaseExpiresAt) {
 		t.Fatalf("expected latest renewed lease %v, got %v", renewed.LeaseExpiresAt, loaded.LeaseExpiresAt)
+	}
+}
+
+func TestImageTaskStorePersistsProgressAndGuardsUpdatesByLeaseOwner(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetaskprogress?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID:           94,
+		ID:               "66666666-6666-6666-6666-666666666666",
+		Status:           domainimagetask.StatusQueued,
+		ProgressStage:    "queued",
+		ProgressMessage:  "task queued",
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "track real progress",
+		BaseResolution:   "2k",
+		RequestedSize:    "auto",
+		OutputImageCount: 1,
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save queued task: %v", err)
+	}
+
+	loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID queued task: %v", err)
+	}
+	if loaded.ProgressStage != "queued" || loaded.ProgressMessage != "task queued" {
+		t.Fatalf("expected queued progress to round-trip, got stage=%q message=%q", loaded.ProgressStage, loaded.ProgressMessage)
+	}
+
+	now := time.Now().UTC()
+	claimed, err := store.AcquireNextQueuedTask(ctx, "worker-a", now, 30*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireNextQueuedTask: %v", err)
+	}
+	claimed.ProgressStage = "provider"
+	claimed.ProgressMessage = "provider generating"
+	if err := store.SaveIfOwned(ctx, claimed, "worker-b", now.Add(time.Second)); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("expected non-owner progress update to conflict, got %v", err)
+	}
+	if err := store.SaveIfOwned(ctx, claimed, "worker-a", now.Add(time.Second)); err != nil {
+		t.Fatalf("owner progress update: %v", err)
+	}
+
+	loaded, err = store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID updated task: %v", err)
+	}
+	if loaded.ProgressStage != "provider" || loaded.ProgressMessage != "provider generating" {
+		t.Fatalf("expected provider progress to round-trip, got stage=%q message=%q", loaded.ProgressStage, loaded.ProgressMessage)
 	}
 }

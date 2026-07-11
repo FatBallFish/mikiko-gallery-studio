@@ -82,6 +82,16 @@ if (queued.title !== '排队中' || running.title !== '生成中' || unknownPend
   throw new Error(`workspace pending state should use localized titles, got ${JSON.stringify({ queued, running, unknownPending })}`)
 }
 
+const provider = workspaceTaskPendingView(task({ status: 'running', progress_stage: 'provider', progress_message: '正在调用 Studio 生成图片' }))
+const persisting = workspaceTaskPendingView(task({ status: 'running', progress_stage: 'persisting' }))
+const settling = workspaceTaskPendingView(task({ status: 'running', progress_stage: 'settling' }))
+if (provider.title !== '正在生成图片' || provider.detail !== '正在调用 Studio 生成图片') {
+  throw new Error(`provider progress should use the persisted backend message, got ${JSON.stringify(provider)}`)
+}
+if (persisting.title !== '正在保存结果' || settling.title !== '正在结算积分') {
+  throw new Error(`real persistence and settlement stages should have distinct titles, got ${JSON.stringify({ persisting, settling })}`)
+}
+
 function task(patch: Partial<ImageTask>): ImageTask {
   return {
     id: patch.id ?? 'task-card-001',
@@ -89,9 +99,12 @@ function task(patch: Partial<ImageTask>): ImageTask {
     prompt: patch.prompt ?? '生成一张测试图',
     task_type: patch.task_type ?? 'text_to_image',
     status: patch.status ?? 'queued',
+    progress_stage: patch.progress_stage,
+    progress_message: patch.progress_message,
     route_model_code: patch.route_model_code,
     model_group: patch.model_group ?? 'plus',
-    quality: patch.quality ?? '2K',
+    base_resolution: patch.base_resolution ?? '2K',
+    quality: patch.quality ?? 'auto',
     aspect_ratio: patch.aspect_ratio ?? '1:1',
     image_count: patch.image_count ?? 1,
     estimate_points: patch.estimate_points ?? '1.00000',

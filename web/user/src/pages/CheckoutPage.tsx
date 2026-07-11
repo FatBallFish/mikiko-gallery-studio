@@ -4,7 +4,6 @@ import type { CashierOptions, CashierOrder, CashierPlan, PaymentVisibleMethod } 
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, LoadingState, Modal, copyText, useApp } from '../components'
-import { card } from '../ui/redesign-classes'
 import { rdBilling } from '../ui/redesign-classes'
 import { Wallet, CreditCard, QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
@@ -15,12 +14,12 @@ import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
 
 const checkoutClasses = {
-  page: 'w-full flex-1 p-6 md:p-10',
-  header: 'mb-12',
-  title: 'mb-4 text-4xl font-black md:text-6xl',
-  detail: 'text-lg leading-relaxed text-[var(--muted)]',
+  page: 'w-full flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-8',
+  header: 'mb-8 border-b border-[var(--border)] pb-7',
+  title: 'mb-3 text-[clamp(2rem,4vw,3.25rem)] font-black leading-none',
+  detail: 'max-w-3xl text-sm leading-relaxed text-[var(--muted)] md:text-base',
   layout: rdBilling.layout,
-  panel: cn(rdBilling.card, 'grid min-w-0 gap-8'),
+  panel: cn(rdBilling.card, 'grid min-w-0 gap-6'),
   sectionHeading: 'text-sm font-bold text-[var(--muted)]',
   optionGrid: rdBilling.planGrid,
   optionButton: rdBilling.planItem,
@@ -29,7 +28,7 @@ const checkoutClasses = {
   planPoints: rdBilling.planPrice,
   planPrice: 'text-[13px] not-italic text-[var(--fg)]',
   methodGrid: 'grid grid-cols-1 gap-3',
-  methodButton: 'group flex min-h-[74px] cursor-pointer items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-left text-[var(--fg)] transition-all duration-300 hover:border-[var(--accent)]',
+  methodButton: 'group flex min-h-[68px] cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-left text-[var(--fg)] transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
   methodIcon: 'grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]',
   custom: 'mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/80 px-4 py-3',
   customResult: 'grid min-h-[70px] gap-1.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
@@ -46,7 +45,7 @@ const checkoutClasses = {
   orderSectionTitle: 'text-xs font-bold text-[var(--muted)]',
   orderTotalRow: cn(rdBilling.orderRow, 'mt-2 border-0 pt-6'),
   orderTotal: rdBilling.orderTotal,
-  payButton: 'relative mt-1 grid h-16 w-full place-items-center overflow-hidden rounded-2xl bg-[var(--accent)] px-5 text-lg font-black text-white shadow-[0_18px_42px_rgba(var(--accent-rgb),0.28)] transition hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100',
+  payButton: 'relative mt-1 grid h-14 w-full place-items-center overflow-hidden rounded-xl bg-[var(--accent)] px-5 text-base font-black text-[#111218] shadow-[0_14px_34px_rgba(var(--accent-rgb),0.24)] transition-transform hover:scale-[1.01] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 motion-reduce:transform-none motion-reduce:transition-none',
   actions: 'flex flex-wrap justify-end gap-3 max-[420px]:flex-col max-[420px]:items-stretch',
   payment: 'grid gap-2.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
   paymentUnsupported: 'border-[color-mix(in_oklch,var(--warn)_45%,var(--border))] bg-[color-mix(in_oklch,var(--warn)_9%,transparent)]',
@@ -69,7 +68,7 @@ const checkoutClasses = {
   paymentResultWarn: 'border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_10%,transparent)]',
   paymentResultNote: 'text-xs text-[var(--muted)]',
   recentActions: 'flex flex-wrap items-center justify-end gap-2 md:col-start-4 md:justify-self-end',
-  recent: cn(card.padded, 'mt-8 grid gap-4'),
+  recent: 'mt-10 grid gap-4 border-t border-[var(--border)] pt-8',
   recentTitle: 'flex items-center justify-between gap-3',
   recentList: 'grid gap-2.5',
   recentRow: 'grid grid-cols-1 items-center gap-3 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_86%,var(--bg))] p-3.5 text-left text-[var(--fg)] md:grid-cols-[minmax(180px,1.25fr)_minmax(120px,.72fr)_minmax(120px,.72fr)_minmax(220px,.9fr)]',

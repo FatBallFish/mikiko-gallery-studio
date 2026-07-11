@@ -1,5 +1,45 @@
-import type { Balance, Capability } from '../../../shared/api-types'
-import { homeAccountReadinessView, homeModelReadinessView } from './homeGalleryModel'
+import type { Balance, Capability, ImageResult, ImageTask } from '../../../shared/api-types'
+import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeModelReadinessView, homeRecentTaskView } from './homeGalleryModel'
+
+const noHistory = homeContinuationView([])
+if (noHistory.action !== 'create' || noHistory.route !== 'genpic' || noHistory.label !== '开始第一次创作') {
+  throw new Error(`home without task history should start creation, got ${JSON.stringify(noHistory)}`)
+}
+
+const latestFailed = task({ id: 'task_failed', status: 'failed', created_at: '2026-07-10T09:00:00Z', failure_reason: '模型暂时繁忙' })
+const olderSuccess = task({ id: 'task_done', status: 'succeeded', created_at: '2026-07-09T09:00:00Z' })
+const continuation = homeContinuationView([olderSuccess, latestFailed])
+if (continuation.action !== 'retry' || continuation.route !== 'genpic' || continuation.taskId !== 'task_failed') {
+  throw new Error(`home should continue the newest actionable task, got ${JSON.stringify(continuation)}`)
+}
+if (continuation.route === ('docs' as string) || continuation.route === ('checkout' as string)) {
+  throw new Error(`documentation and billing must never become the home primary action, got ${continuation.route}`)
+}
+
+const recentFailure = homeRecentTaskView(latestFailed, false)
+if (recentFailure.tone !== 'error' || recentFailure.action !== 'retry' || !recentFailure.detail.includes('模型暂时繁忙')) {
+  throw new Error(`failed recent task should explain the failure and offer retry, got ${JSON.stringify(recentFailure)}`)
+}
+
+const recentRunning = homeRecentTaskView(task({ status: 'running', progress: 42 }), false)
+if (recentRunning.tone !== 'warning' || recentRunning.action !== 'continue' || !recentRunning.detail.includes('42%')) {
+  throw new Error(`running recent task should expose progress and continuation, got ${JSON.stringify(recentRunning)}`)
+}
+
+const recentLoading = homeRecentTaskView(null, true)
+if (recentLoading.state !== 'loading' || recentLoading.action !== 'none') {
+  throw new Error(`recent task loading should stay non-actionable, got ${JSON.stringify(recentLoading)}`)
+}
+
+const curated = curatedHomeGallery(Array.from({ length: 10 }, (_, index) => image(`image_${index}`)), 6)
+if (curated.length !== 6 || curated[0]?.id !== 'image_0' || curated[5]?.id !== 'image_5') {
+  throw new Error(`home curated gallery should preserve order and stay bounded to six works, got ${curated.map((item) => item.id).join(',')}`)
+}
+
+const uniqueCurated = curatedHomeGallery([image('duplicate'), image('duplicate'), image('unique')], 6)
+if (uniqueCurated.length !== 2 || uniqueCurated[1]?.id !== 'unique') {
+  throw new Error(`home curated gallery should de-duplicate results, got ${uniqueCurated.map((item) => item.id).join(',')}`)
+}
 
 const loading = homeModelReadinessView(null, true)
 if (loading.value !== '检测中' || loading.detail !== '正在检查平台生图能力。' || loading.warning) {
@@ -67,11 +107,11 @@ function capability(codes: string[]): Capability {
       code,
       name: code,
       task_types: ['text_to_image'],
-      qualities: ['1k'],
+      base_resolution: ['1k'],
       prices: [],
       supports_reference: true,
     })),
-    qualities: ['1k'],
+    base_resolution: ['1k'],
     aspect_ratios: ['1:1'],
     max_image_count: 1,
     task_types: ['text_to_image'],
@@ -87,5 +127,38 @@ function zeroBalance(): Balance {
     recharge_points: '0.00000',
     plan_name: 'FREE',
     first_purchase_bonus: false,
+  }
+}
+
+function task(patch: Partial<ImageTask>): ImageTask {
+  return {
+    id: patch.id ?? 'task_1',
+    title: patch.title ?? '新作品',
+    prompt: patch.prompt ?? 'a cinematic landscape',
+    task_type: patch.task_type ?? 'text_to_image',
+    status: patch.status ?? 'succeeded',
+    model_group: patch.model_group ?? 'plus',
+    quality: patch.quality ?? 'auto',
+    aspect_ratio: patch.aspect_ratio ?? '1:1',
+    image_count: patch.image_count ?? 1,
+    estimate_points: patch.estimate_points ?? '1.00000',
+    progress: patch.progress ?? 100,
+    provider: patch.provider ?? 'openai',
+    route: patch.route ?? 'plus',
+    reference_assets: patch.reference_assets ?? [],
+    results: patch.results ?? [],
+    created_at: patch.created_at ?? '2026-07-10T08:00:00Z',
+    updated_at: patch.updated_at ?? patch.created_at ?? '2026-07-10T08:00:00Z',
+    failure_reason: patch.failure_reason,
+  }
+}
+
+function image(id: string): ImageResult {
+  return {
+    id,
+    url: `/images/${id}.png`,
+    width: 1024,
+    height: 1024,
+    publish_status: 'approved',
   }
 }

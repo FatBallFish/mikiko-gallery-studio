@@ -6,21 +6,21 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
 
-func TestEstimateAppliesAutoQualityAndMultipliers(t *testing.T) {
+func TestEstimateAppliesAutoBaseResolutionAndMultipliers(t *testing.T) {
 	calc := NewCalculator(config.BillingConfig{
-		PointsScale:               5,
-		AutoQualityDefaultByGroup: map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"},
-		QualityPointsByModel:      map[string]map[string]string{"plus": {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"}},
-		UserGroupMultipliers:      map[string]string{"plus": "1.20000"},
-		TaskMultipliers:           map[string]string{"reference_generate": "1.15000"},
-		ReferenceImageExtra:       config.ReferenceExtra{First: "0.10000", Additional: "0.05000"},
+		PointsScale:                      5,
+		AutoBaseResolutionDefaultByGroup: map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"},
+		BaseResolutionPointsByModel:      map[string]map[string]string{"plus": {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"}},
+		UserGroupMultipliers:             map[string]string{"plus": "1.20000"},
+		TaskMultipliers:                  map[string]string{"reference_generate": "1.15000"},
+		ReferenceImageExtra:              config.ReferenceExtra{First: "0.10000", Additional: "0.05000"},
 	})
-	result, err := calc.Estimate(EstimateRequest{TaskType: "reference_generate", AbstractModel: "plus", RequestedQuality: "auto", RequestedSize: "1536x1024", RequestedOutputImageCount: 2, ReferenceImageCount: 1, UserGroupCode: "plus"})
+	result, err := calc.Estimate(EstimateRequest{TaskType: "reference_generate", AbstractModel: "plus", BaseResolution: "auto", RequestedSize: "1536x1024", RequestedOutputImageCount: 2, ReferenceImageCount: 1, UserGroupCode: "plus"})
 	if err != nil {
 		t.Fatalf("Estimate: %v", err)
 	}
-	if result.ResolvedQualityBucket != "2k" {
-		t.Fatalf("expected 2k, got %s", result.ResolvedQualityBucket)
+	if result.BaseResolution != "2k" {
+		t.Fatalf("expected 2k, got %s", result.BaseResolution)
 	}
 	if result.EstimatedPoints != "24.28800" {
 		t.Fatalf("expected 24.28800, got %s", result.EstimatedPoints)
@@ -42,11 +42,11 @@ func TestEstimateAppliesAutoQualityAndMultipliers(t *testing.T) {
 
 func TestEstimateFailsFastOnInvalidPricingConfig(t *testing.T) {
 	calc := NewCalculator(config.BillingConfig{
-		PointsScale:               5,
-		AutoQualityDefaultByGroup: map[string]string{"basic": "1k"},
-		QualityPointsByModel:      map[string]map[string]string{"plus": {"1k": "bad"}},
+		PointsScale:                      5,
+		AutoBaseResolutionDefaultByGroup: map[string]string{"basic": "1k"},
+		BaseResolutionPointsByModel:      map[string]map[string]string{"plus": {"1k": "bad"}},
 	})
-	if _, err := calc.Estimate(EstimateRequest{TaskType: "text_to_image", AbstractModel: "plus", RequestedQuality: "1k", RequestedSize: "1024x1024", RequestedOutputImageCount: 1, UserGroupCode: "basic"}); err == nil {
+	if _, err := calc.Estimate(EstimateRequest{TaskType: "text_to_image", AbstractModel: "plus", BaseResolution: "1k", RequestedSize: "1024x1024", RequestedOutputImageCount: 1, UserGroupCode: "basic"}); err == nil {
 		t.Fatal("expected invalid pricing config to fail fast")
 	}
 }

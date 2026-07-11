@@ -102,15 +102,47 @@ func (_c *ProviderModelCreate) SetNillableSupportsMask(v *bool) *ProviderModelCr
 	return _c
 }
 
-// SetSupportedQualities sets the "supported_qualities" field.
-func (_c *ProviderModelCreate) SetSupportedQualities(v []string) *ProviderModelCreate {
-	_c.mutation.SetSupportedQualities(v)
+// SetSupportedBaseResolution sets the "supported_base_resolution" field.
+func (_c *ProviderModelCreate) SetSupportedBaseResolution(v []string) *ProviderModelCreate {
+	_c.mutation.SetSupportedBaseResolution(v)
+	return _c
+}
+
+// SetQuality sets the "quality" field.
+func (_c *ProviderModelCreate) SetQuality(v []string) *ProviderModelCreate {
+	_c.mutation.SetQuality(v)
 	return _c
 }
 
 // SetSupportedRatios sets the "supported_ratios" field.
 func (_c *ProviderModelCreate) SetSupportedRatios(v []string) *ProviderModelCreate {
 	_c.mutation.SetSupportedRatios(v)
+	return _c
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (_c *ProviderModelCreate) SetOutputFormat(v []string) *ProviderModelCreate {
+	_c.mutation.SetOutputFormat(v)
+	return _c
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (_c *ProviderModelCreate) SetOutputCompression(v int) *ProviderModelCreate {
+	_c.mutation.SetOutputCompression(v)
+	return _c
+}
+
+// SetNillableOutputCompression sets the "output_compression" field if the given value is not nil.
+func (_c *ProviderModelCreate) SetNillableOutputCompression(v *int) *ProviderModelCreate {
+	if v != nil {
+		_c.SetOutputCompression(*v)
+	}
+	return _c
+}
+
+// SetModeration sets the "moderation" field.
+func (_c *ProviderModelCreate) SetModeration(v []string) *ProviderModelCreate {
+	_c.mutation.SetModeration(v)
 	return _c
 }
 
@@ -295,6 +327,10 @@ func (_c *ProviderModelCreate) defaults() {
 		v := providermodel.DefaultSupportsMask
 		_c.mutation.SetSupportsMask(v)
 	}
+	if _, ok := _c.mutation.OutputCompression(); !ok {
+		v := providermodel.DefaultOutputCompression
+		_c.mutation.SetOutputCompression(v)
+	}
 	if _, ok := _c.mutation.MaxImageCount(); !ok {
 		v := providermodel.DefaultMaxImageCount
 		_c.mutation.SetMaxImageCount(v)
@@ -361,6 +397,9 @@ func (_c *ProviderModelCreate) check() error {
 	}
 	if _, ok := _c.mutation.SupportsMask(); !ok {
 		return &ValidationError{Name: "supports_mask", err: errors.New(`ent: missing required field "ProviderModel.supports_mask"`)}
+	}
+	if _, ok := _c.mutation.OutputCompression(); !ok {
+		return &ValidationError{Name: "output_compression", err: errors.New(`ent: missing required field "ProviderModel.output_compression"`)}
 	}
 	if _, ok := _c.mutation.MaxImageCount(); !ok {
 		return &ValidationError{Name: "max_image_count", err: errors.New(`ent: missing required field "ProviderModel.max_image_count"`)}
@@ -460,13 +499,29 @@ func (_c *ProviderModelCreate) createSpec() (*ProviderModel, *sqlgraph.CreateSpe
 		_spec.SetField(providermodel.FieldSupportsMask, field.TypeBool, value)
 		_node.SupportsMask = value
 	}
-	if value, ok := _c.mutation.SupportedQualities(); ok {
-		_spec.SetField(providermodel.FieldSupportedQualities, field.TypeJSON, value)
-		_node.SupportedQualities = value
+	if value, ok := _c.mutation.SupportedBaseResolution(); ok {
+		_spec.SetField(providermodel.FieldSupportedBaseResolution, field.TypeJSON, value)
+		_node.SupportedBaseResolution = value
+	}
+	if value, ok := _c.mutation.Quality(); ok {
+		_spec.SetField(providermodel.FieldQuality, field.TypeJSON, value)
+		_node.Quality = value
 	}
 	if value, ok := _c.mutation.SupportedRatios(); ok {
 		_spec.SetField(providermodel.FieldSupportedRatios, field.TypeJSON, value)
 		_node.SupportedRatios = value
+	}
+	if value, ok := _c.mutation.OutputFormat(); ok {
+		_spec.SetField(providermodel.FieldOutputFormat, field.TypeJSON, value)
+		_node.OutputFormat = value
+	}
+	if value, ok := _c.mutation.OutputCompression(); ok {
+		_spec.SetField(providermodel.FieldOutputCompression, field.TypeInt, value)
+		_node.OutputCompression = value
+	}
+	if value, ok := _c.mutation.Moderation(); ok {
+		_spec.SetField(providermodel.FieldModeration, field.TypeJSON, value)
+		_node.Moderation = value
 	}
 	if value, ok := _c.mutation.MaxImageCount(); ok {
 		_spec.SetField(providermodel.FieldMaxImageCount, field.TypeInt, value)

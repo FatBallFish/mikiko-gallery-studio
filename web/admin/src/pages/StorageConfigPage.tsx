@@ -3,8 +3,16 @@ import type { FormEvent } from 'react'
 import type { StorageConfigView, StorageConfigWriteRequest } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
+import { ApiError } from '../../../shared/http-client'
 import { Badge, ErrorBlock, Field, LoadingBlock, PageHeader, StatusCell, StatusStrip } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import {
+  activateSavedStorageConfig,
+  storageActivationLabel,
+  storageConfigNeedsProbe,
+  storageDraftIsDirty,
+  type StorageActivationPhase,
+} from './storageActivation'
 
 type StorageDraft = {
   id: string
@@ -48,6 +56,7 @@ export function StorageConfigPage({ onFeedback, compact = false, summaryMode = f
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [probing, setProbing] = useState(false)
+  const [activationPhase, setActivationPhase] = useState<StorageActivationPhase>('idle')
   const [error, setError] = useState<string | null>(null)
 
   const selected = useMemo(() => items.find((item) => item.id === selectedID) ?? items[0] ?? null, [items, selectedID])
@@ -67,8 +76,10 @@ export function StorageConfigPage({ onFeedback, compact = false, summaryMode = f
         setSelectedID('')
         setDraft(newStorageDraft())
       }
+      return next
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '存储配置读取失败')
+      return undefined
     } finally {
       setLoading(false)
     }
@@ -86,34 +97,69 @@ export function StorageConfigPage({ onFeedback, compact = false, summaryMode = f
     event.preventDefault()
     setSaving(true)
     setError(null)
+    const payload = payloadFromDraft(draft)
     try {
-      const payload = payloadFromDraft(draft)
       const saved = draft.id ? await adminApi.updateStorageConfig(draft.id, payload) : await adminApi.createStorageConfig(payload)
       onFeedback?.('存储配置已保存', saved.code)
       setSelectedID(saved.id)
       setDraft(draftFromStorage(saved))
       await load(saved.id)
     } catch (caught) {
+      if (draft.id && isVersionConflict(caught)) {
+        try {
+          if (await recoverVersionConflictAndMaybeRetrySave(draft, payload)) return
+        } catch (retryError) {
+          setError(retryError instanceof Error ? retryError.message : '存储配置保存失败')
+          return
+        }
+      }
       setError(caught instanceof Error ? caught.message : '存储配置保存失败')
     } finally {
       setSaving(false)
     }
   }
 
+  async function recoverVersionConflictAndMaybeRetrySave(currentDraft: StorageDraft, payload: StorageConfigWriteRequest) {
+    const nextItems = await adminApi.listStorageConfigs()
+    setItems(nextItems)
+    const latest = nextItems.find((item) => item.id === currentDraft.id)
+    if (!latest) {
+      setSelectedID('')
+      setDraft(newStorageDraft())
+      setError('存储配置已被删除或不可用，请刷新后再操作。')
+      return true
+    }
+    setSelectedID(latest.id)
+    if (selected && storageEditableSignature(latest) === storageEditableSignature(selected)) {
+      const saved = await adminApi.updateStorageConfig(currentDraft.id, { ...payload, version: latest.version })
+      onFeedback?.('存储配置已保存', saved.code)
+      setDraft(draftFromStorage(saved))
+      await load(saved.id)
+      return true
+    }
+    setDraft(draftFromStorage(latest))
+    setError('存储配置已被其他操作更新，已刷新最新内容，请确认后再保存。')
+    return true
+  }
+
   async function probeCurrent() {
     setProbing(true)
     setError(null)
     try {
-      if (draft.id) {
+      const shouldProbeDraft = !draft.id || draft.access_key_id.trim() !== '' || draft.secret_access_key.trim() !== ''
+      if (draft.id && !shouldProbeDraft) {
         const updated = await adminApi.probeStorageConfig(draft.id)
         onFeedback?.('连接测试完成', probeSummary(updated))
         setDraft(draftFromStorage(updated))
         await load(updated.id)
       } else {
         const result = await adminApi.probeStorageConfigDraft(payloadFromDraft(draft))
-        onFeedback?.('连接测试完成', `${result.status}: ${result.message ?? ''}`)
+        onFeedback?.('连接测试完成', probeResultSummary(result))
       }
     } catch (caught) {
+      if (draft.id) {
+        await load(draft.id)
+      }
       setError(caught instanceof Error ? caught.message : '连接测试失败')
     } finally {
       setProbing(false)
@@ -121,17 +167,30 @@ export function StorageConfigPage({ onFeedback, compact = false, summaryMode = f
   }
 
   async function setDefault() {
-    if (!draft.id) return
-    setSaving(true)
+    if (!draft.id || !selected || selected.id !== draft.id) return
     setError(null)
+    if (storageDraftIsDirty(draft, selected)) {
+      setError('当前配置有未保存修改，请先保存后再设为默认。')
+      return
+    }
     try {
-      const updated = await adminApi.setDefaultStorageConfig(draft.id, draft.version)
+      const updated = await activateSavedStorageConfig({
+        draft,
+        saved: selected,
+        probe: adminApi.probeStorageConfig,
+        setDefault: adminApi.setDefaultStorageConfig,
+        onPhase: setActivationPhase,
+      })
       onFeedback?.('默认存储已切换', updated.code)
       await load(updated.id)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '默认存储切换失败')
+      const message = caught instanceof Error ? caught.message : '默认存储切换失败'
+      const refreshed = await load(draft.id)
+      const latest = refreshed?.find((item) => item.id === draft.id)
+      const probeMessage = latest?.last_probe?.status === 'failed' ? latest.last_probe.message : ''
+      setError(probeMessage || message)
     } finally {
-      setSaving(false)
+      setActivationPhase('idle')
     }
   }
 
@@ -174,10 +233,10 @@ export function StorageConfigPage({ onFeedback, compact = false, summaryMode = f
           </div>
           <div className={storageClasses.actions}>
             {draft.id ? <Badge tone={selected?.is_default ? 'success' : 'neutral'}>{selected?.is_default ? 'Default' : `v${draft.version}`}</Badge> : <Badge tone="primary">New</Badge>}
-            <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} disabled={probing} onClick={() => void probeCurrent()}>{probing ? '测试中...' : '测试连接'}</button>
-            {draft.id && !selected?.is_default ? <button type="button" className={cn(adminButton.base, adminButton.success, adminButton.small)} disabled={saving} onClick={() => void setDefault()}>设为默认</button> : null}
-            {draft.id && selected?.write_enabled ? <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} disabled={saving} onClick={() => void setReadOnly()}>设为只读</button> : null}
-            <button type="submit" className={cn(adminButton.base, adminButton.primary)} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+            <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} disabled={probing || activationPhase !== 'idle'} onClick={() => void probeCurrent()}>{probing ? '测试中...' : '测试连接'}</button>
+            {draft.id && !selected?.is_default ? <button type="button" className={cn(adminButton.base, adminButton.success, adminButton.small)} disabled={saving || probing || activationPhase !== 'idle'} onClick={() => void setDefault()}>{storageActivationLabel(activationPhase, selected ? storageConfigNeedsProbe(selected) : false)}</button> : null}
+            {draft.id && selected?.write_enabled ? <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} disabled={saving || activationPhase !== 'idle'} onClick={() => void setReadOnly()}>设为只读</button> : null}
+            <button type="submit" className={cn(adminButton.base, adminButton.primary)} disabled={saving || activationPhase !== 'idle'}>{saving ? '保存中...' : '保存'}</button>
           </div>
         </div>
         <div className={adminPage.formGrid}>
@@ -332,6 +391,32 @@ function payloadFromDraft(draft: StorageDraft): StorageConfigWriteRequest {
   }
 }
 
+function isVersionConflict(error: unknown) {
+  return error instanceof ApiError && error.status === 409 && error.code === 'CONFLICT'
+}
+
+function storageEditableSignature(item: StorageConfigView) {
+  return JSON.stringify([
+    item.code,
+    item.name,
+    item.driver,
+    item.provider,
+    item.status,
+    item.read_enabled,
+    item.write_enabled,
+    item.endpoint ?? '',
+    item.region ?? '',
+    item.bucket ?? '',
+    item.prefix ?? '',
+    item.force_path_style,
+    item.public_base_url ?? '',
+    item.local_root ?? '',
+    item.secret_status?.has_secret ?? false,
+    item.secret_status?.fingerprint ?? '',
+    (item.secret_status?.secret_fields ?? []).join(','),
+  ])
+}
+
 function driverTemplate(draft: StorageDraft): StorageDraft {
   if (draft.driver === 'local') return { ...draft, provider: 'local', region: '', force_path_style: false }
   return providerTemplate({ ...draft, provider: draft.provider === 'local' ? 'r2' : draft.provider })
@@ -345,5 +430,11 @@ function providerTemplate(draft: StorageDraft): StorageDraft {
 }
 
 function probeSummary(item: StorageConfigView) {
-  return `${item.last_probe?.status ?? 'never'} · ${item.last_probe?.message ?? item.code}`
+  return probeResultSummary(item.last_probe, item.code)
+}
+
+function probeResultSummary(result: { status?: string; Status?: string; message?: string; Message?: string } | undefined, fallback = '连接测试完成') {
+  const status = result?.status ?? result?.Status ?? 'success'
+  const message = result?.message ?? result?.Message ?? fallback
+  return message ? `${status} · ${message}` : status
 }

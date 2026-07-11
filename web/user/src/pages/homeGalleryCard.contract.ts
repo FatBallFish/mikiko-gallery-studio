@@ -10,7 +10,8 @@ const guestImage: ImageResult = {
   prompt: 'Full prompt should only appear after authenticated detail fetch',
   prompt_excerpt: 'A soft neon city…',
   route_model_code: 'plus',
-  quality: '2K',
+  base_resolution: '2K',
+  quality: 'auto',
   created_at: '2026-06-05T00:00:00Z',
 }
 
@@ -25,7 +26,7 @@ if (card.title.includes('Full prompt')) {
 }
 
 if (!card.meta.includes('plus') || !card.meta.includes('2K')) {
-  throw new Error(`home gallery card should keep model and quality metadata, got ${card.meta}`)
+  throw new Error(`home gallery card should keep model and base resolution metadata, got ${card.meta}`)
 }
 
 if (!card.meta.includes('2026/06/05 00:00')) {

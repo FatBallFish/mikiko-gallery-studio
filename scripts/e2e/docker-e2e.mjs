@@ -11,6 +11,8 @@ const BASE_URL = envUrl('BASE_URL', 'http://127.0.0.1:18080')
 const USER_WEB_URL = envUrl('USER_WEB_URL', 'http://127.0.0.1:5173')
 const ADMIN_WEB_URL = envUrl('ADMIN_WEB_URL', 'http://127.0.0.1:5174')
 const NGINX_URL = envUrl('NGINX_URL', 'http://127.0.0.1:18081')
+const MINIO_URL = envUrl('MINIO_URL', `http://127.0.0.1:${process.env.MINIO_API_PORT || '9000'}`)
+const MAILPIT_URL = envUrl('MAILPIT_URL', `http://127.0.0.1:${process.env.MAILPIT_UI_PORT || '8025'}`)
 const REPORT_DIR = path.join(ROOT_DIR, 'tmp/e2e')
 const RUN_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
 const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII='
@@ -241,11 +243,11 @@ async function ensureBasicRouteModel() {
 
 async function ensureBasicRoutePrice(routeModelId) {
   const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-model-prices?page=1&page_size=100&route_model_id=${routeModelId}&task_type=text_to_image`, 200, { headers: bearer(state.admin.token) })
-  const existing = (data(list).items || []).find(item => item.quality === '1k')
+  const existing = (data(list).items || []).find(item => item.base_resolution === '1k')
   const body = {
     route_model_id: Number(routeModelId),
     task_type: 'text_to_image',
-    quality: '1k',
+    base_resolution: '1k',
     base_points: '1.00000',
     reference_multiplier: '1.00000',
     enabled: true,
@@ -288,7 +290,7 @@ async function seedGenerationRoute() {
       model_code: 'openrouter/imagen',
       display_name: 'Docker E2E Image Model',
       task_types: ['text_to_image'],
-      qualities: ['1k'],
+      base_resolution: ['1k'],
       cost_per_image: '0.00000',
       currency: 'USD',
       enabled: true,
@@ -532,7 +534,7 @@ async function happyPathAgentBilling() {
   if (!findLedgerItem(data(signupLedger).items, 'trial_grant', 'trial', 'signup')) {
     fail('Ledger did not include signup trial grant bucket metadata', { body: signupLedger.text })
   }
-  const estimate = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0`, 200, {
+  const estimate = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0`, 200, {
     headers: bearer(state.user.token),
   })
   if (!data(estimate).estimated_points) fail('Estimate response did not include estimated_points')
@@ -632,7 +634,7 @@ async function happyPathAssetsAndTasks() {
       prompt: 'docker e2e prompt',
       abstract_model: 'basic',
       route_model_code: 'basic',
-      requested_quality: 'auto',
+      base_resolution: 'auto',
       requested_size: '1024x1024',
       requested_output_image_count: 1,
       reference_image_count: 0,
@@ -648,7 +650,7 @@ async function happyPathAssetsAndTasks() {
 }
 
 async function happyPathOpenAPI() {
-  const estimatePath = '/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&route_model_code=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
+  const estimatePath = '/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&route_model_code=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
   const estimate = await signedRequest('GET', estimatePath)
   if (estimate.status !== 200) fail('Native Open API estimate failed', { status: estimate.status, body: estimate.text })
   await signedOk('GET', '/api/open/image/v1/capabilities')
@@ -670,7 +672,7 @@ async function happyPathOpenAPI() {
     prompt: 'docker e2e open api prompt',
     abstract_model: 'basic',
     route_model_code: 'basic',
-    requested_quality: 'auto',
+    base_resolution: 'auto',
     requested_size: '1024x1024',
     requested_output_image_count: 1,
     response_mode: 'async',
@@ -792,7 +794,7 @@ async function happyPathAdmin() {
       compat_mode: 'openai_images',
       supports_image_input: true,
       supports_mask: true,
-      supported_qualities: ['1k'],
+      supported_base_resolution: ['1k'],
       supported_ratios: ['1:1'],
       max_image_count: 1,
       max_reference_image_count: 1,
@@ -827,7 +829,7 @@ async function happyPathAdmin() {
       task_type: 'text_to_image',
       prompt: 'docker e2e route preflight failure',
       route_model_code: missingRouteCode,
-      requested_quality: 'auto',
+      base_resolution: 'auto',
       requested_size: '1024x1024',
       requested_output_image_count: 1,
       response_mode: 'async',
@@ -981,7 +983,7 @@ function materializePath(template) {
 
 function defaultQuery(template) {
   if (template.includes('/estimate')) {
-    return '?task_type=text_to_image&abstract_model=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
+    return '?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
   }
   if (template.endsWith('/users')) return '?page=1&page_size=20'
   if (template.endsWith('/audit-logs')) return '?page=1&page_size=20'
@@ -1009,13 +1011,13 @@ function defaultBody(method, template) {
     '/api/agent/billing/v1/orders': { plan_code: 'basic-monthly', provider: 'mock' },
     '/api/agent/cashier/v1/orders': { purchase_type: 'plan', plan_code: 'basic-monthly', visible_method: 'mock' },
     '/api/agent/image/v1/reference-assets': { filename: `sweep-${RUN_ID}.png`, mime_type: 'image/png', content_base64: TINY_PNG_BASE64 },
-    '/api/agent/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep prompt', abstract_model: 'basic', requested_quality: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
+    '/api/agent/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep prompt', abstract_model: 'basic', base_resolution: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
     '/api/agent/user/v1/profile': { display_name: `E2E ${RUN_ID}` },
     '/api/agent/user/v1/account/close': { reason: 'sweep' },
     '/api/open/image/v1/payments/webhooks/{channel}': { order_no: `missing-${RUN_ID}`, trade_no: `trade-${RUN_ID}` },
     '/api/open/image/v1/reference-assets': { filename: `open-sweep-${RUN_ID}.png`, mime_type: 'image/png' },
     '/api/open/image/v1/reference-assets/uploads': { filename: `open-sweep-${RUN_ID}.png`, mime_type: 'image/png', content_base64: TINY_PNG_BASE64 },
-    '/api/open/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep open prompt', abstract_model: 'basic', requested_quality: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
+    '/api/open/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep open prompt', abstract_model: 'basic', base_resolution: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
     '/api/ops/admin/v1/auth/login': { email: 'admin@example.com', password: 'admin123456' },
     '/api/ops/admin/v1/cashier/custom-amount-config': { enabled: true, min_amount_cny: '1.00000', max_amount_cny: '500.00000', cny_per_point: '1.00000' },
     '/api/ops/admin/v1/cashier/visible-methods': { items: [mockVisibleMethod()] },
@@ -1025,8 +1027,8 @@ function defaultBody(method, template) {
     '/api/ops/admin/v1/model-providers/{provider_code}': { provider_code: state.ids.providerCode, provider_type: 'openai', auth_config_encrypted: 'cipher', health_status: 'healthy', enabled: true },
     '/api/ops/admin/v1/model-routes': { group_code: state.ids.groupCode, task_type: 'image_to_image', provider_code: state.ids.providerCode, priority: 5, weight_percent: 100, fallback_order: 1, enabled: true },
     '/api/ops/admin/v1/model-routes/{route_id}': { group_code: state.ids.groupCode, task_type: 'text_to_image', provider_code: state.ids.providerCode, priority: 3, weight_percent: 100, fallback_order: 1, enabled: true },
-    '/api/ops/admin/v1/provider-models': { provider_code: state.ids.providerCode, model_code: `sweep-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
-    '/api/ops/admin/v1/provider-models/{provider_model_id}': { provider_code: state.ids.providerCode, model_code: `e2e-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
+    '/api/ops/admin/v1/provider-models': { provider_code: state.ids.providerCode, model_code: `sweep-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_base_resolution: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
+    '/api/ops/admin/v1/provider-models/{provider_model_id}': { provider_code: state.ids.providerCode, model_code: `e2e-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_base_resolution: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
     '/api/ops/admin/v1/redeem-codes': { code: `SWEEP-${RUN_ID}`, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
     '/api/ops/admin/v1/redeem-codes/{code_id}/status': { status: 'disabled' },
     '/api/ops/admin/v1/redeem-codes:batch-create': { count: 1, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
@@ -1089,8 +1091,8 @@ async function main() {
       await waitFor(`${USER_WEB_URL}/`)
       await waitFor(`${ADMIN_WEB_URL}/`)
       await waitFor(`${NGINX_URL}/readyz`)
-      await waitFor('http://127.0.0.1:9000/minio/health/live')
-      await waitFor('http://127.0.0.1:8025/api/v1/info')
+      await waitFor(`${MINIO_URL}/minio/health/live`)
+      await waitFor(`${MAILPIT_URL}/api/v1/info`)
     })
     const openapi = await loadOpenAPI()
     await step('user and admin web routes return app shell', async () => {

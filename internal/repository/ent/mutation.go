@@ -6094,17 +6094,24 @@ type ImageTaskMutation struct {
 	source_channel                  *string
 	task_type                       *string
 	status                          *string
+	progress_stage                  *string
+	progress_message                *string
 	prompt                          *string
 	negative_prompt                 *string
 	abstract_model                  *string
-	requested_quality               *string
-	resolved_quality_bucket         *string
+	size_mode                       *string
+	base_resolution                 *string
+	quality                         *string
 	requested_size                  *string
 	resolved_width                  *int
 	addresolved_width               *int
 	resolved_height                 *int
 	addresolved_height              *int
 	aspect_ratio                    *string
+	output_format                   *string
+	output_compression              *int
+	addoutput_compression           *int
+	moderation                      *string
 	requested_output_image_count    *int
 	addrequested_output_image_count *int
 	success_output_image_count      *int
@@ -6612,6 +6619,78 @@ func (m *ImageTaskMutation) ResetStatus() {
 	m.status = nil
 }
 
+// SetProgressStage sets the "progress_stage" field.
+func (m *ImageTaskMutation) SetProgressStage(s string) {
+	m.progress_stage = &s
+}
+
+// ProgressStage returns the value of the "progress_stage" field in the mutation.
+func (m *ImageTaskMutation) ProgressStage() (r string, exists bool) {
+	v := m.progress_stage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProgressStage returns the old "progress_stage" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldProgressStage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProgressStage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProgressStage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProgressStage: %w", err)
+	}
+	return oldValue.ProgressStage, nil
+}
+
+// ResetProgressStage resets all changes to the "progress_stage" field.
+func (m *ImageTaskMutation) ResetProgressStage() {
+	m.progress_stage = nil
+}
+
+// SetProgressMessage sets the "progress_message" field.
+func (m *ImageTaskMutation) SetProgressMessage(s string) {
+	m.progress_message = &s
+}
+
+// ProgressMessage returns the value of the "progress_message" field in the mutation.
+func (m *ImageTaskMutation) ProgressMessage() (r string, exists bool) {
+	v := m.progress_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProgressMessage returns the old "progress_message" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldProgressMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProgressMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProgressMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProgressMessage: %w", err)
+	}
+	return oldValue.ProgressMessage, nil
+}
+
+// ResetProgressMessage resets all changes to the "progress_message" field.
+func (m *ImageTaskMutation) ResetProgressMessage() {
+	m.progress_message = nil
+}
+
 // SetPrompt sets the "prompt" field.
 func (m *ImageTaskMutation) SetPrompt(s string) {
 	m.prompt = &s
@@ -6733,76 +6812,112 @@ func (m *ImageTaskMutation) ResetAbstractModel() {
 	m.abstract_model = nil
 }
 
-// SetRequestedQuality sets the "requested_quality" field.
-func (m *ImageTaskMutation) SetRequestedQuality(s string) {
-	m.requested_quality = &s
+// SetSizeMode sets the "size_mode" field.
+func (m *ImageTaskMutation) SetSizeMode(s string) {
+	m.size_mode = &s
 }
 
-// RequestedQuality returns the value of the "requested_quality" field in the mutation.
-func (m *ImageTaskMutation) RequestedQuality() (r string, exists bool) {
-	v := m.requested_quality
+// SizeMode returns the value of the "size_mode" field in the mutation.
+func (m *ImageTaskMutation) SizeMode() (r string, exists bool) {
+	v := m.size_mode
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldRequestedQuality returns the old "requested_quality" field's value of the ImageTask entity.
+// OldSizeMode returns the old "size_mode" field's value of the ImageTask entity.
 // If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ImageTaskMutation) OldRequestedQuality(ctx context.Context) (v string, err error) {
+func (m *ImageTaskMutation) OldSizeMode(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldRequestedQuality is only allowed on UpdateOne operations")
+		return v, errors.New("OldSizeMode is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldRequestedQuality requires an ID field in the mutation")
+		return v, errors.New("OldSizeMode requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldRequestedQuality: %w", err)
+		return v, fmt.Errorf("querying old value for OldSizeMode: %w", err)
 	}
-	return oldValue.RequestedQuality, nil
+	return oldValue.SizeMode, nil
 }
 
-// ResetRequestedQuality resets all changes to the "requested_quality" field.
-func (m *ImageTaskMutation) ResetRequestedQuality() {
-	m.requested_quality = nil
+// ResetSizeMode resets all changes to the "size_mode" field.
+func (m *ImageTaskMutation) ResetSizeMode() {
+	m.size_mode = nil
 }
 
-// SetResolvedQualityBucket sets the "resolved_quality_bucket" field.
-func (m *ImageTaskMutation) SetResolvedQualityBucket(s string) {
-	m.resolved_quality_bucket = &s
+// SetBaseResolution sets the "base_resolution" field.
+func (m *ImageTaskMutation) SetBaseResolution(s string) {
+	m.base_resolution = &s
 }
 
-// ResolvedQualityBucket returns the value of the "resolved_quality_bucket" field in the mutation.
-func (m *ImageTaskMutation) ResolvedQualityBucket() (r string, exists bool) {
-	v := m.resolved_quality_bucket
+// BaseResolution returns the value of the "base_resolution" field in the mutation.
+func (m *ImageTaskMutation) BaseResolution() (r string, exists bool) {
+	v := m.base_resolution
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldResolvedQualityBucket returns the old "resolved_quality_bucket" field's value of the ImageTask entity.
+// OldBaseResolution returns the old "base_resolution" field's value of the ImageTask entity.
 // If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ImageTaskMutation) OldResolvedQualityBucket(ctx context.Context) (v string, err error) {
+func (m *ImageTaskMutation) OldBaseResolution(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldResolvedQualityBucket is only allowed on UpdateOne operations")
+		return v, errors.New("OldBaseResolution is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldResolvedQualityBucket requires an ID field in the mutation")
+		return v, errors.New("OldBaseResolution requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldResolvedQualityBucket: %w", err)
+		return v, fmt.Errorf("querying old value for OldBaseResolution: %w", err)
 	}
-	return oldValue.ResolvedQualityBucket, nil
+	return oldValue.BaseResolution, nil
 }
 
-// ResetResolvedQualityBucket resets all changes to the "resolved_quality_bucket" field.
-func (m *ImageTaskMutation) ResetResolvedQualityBucket() {
-	m.resolved_quality_bucket = nil
+// ResetBaseResolution resets all changes to the "base_resolution" field.
+func (m *ImageTaskMutation) ResetBaseResolution() {
+	m.base_resolution = nil
+}
+
+// SetQuality sets the "quality" field.
+func (m *ImageTaskMutation) SetQuality(s string) {
+	m.quality = &s
+}
+
+// Quality returns the value of the "quality" field in the mutation.
+func (m *ImageTaskMutation) Quality() (r string, exists bool) {
+	v := m.quality
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuality returns the old "quality" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldQuality(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuality is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuality requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuality: %w", err)
+	}
+	return oldValue.Quality, nil
+}
+
+// ResetQuality resets all changes to the "quality" field.
+func (m *ImageTaskMutation) ResetQuality() {
+	m.quality = nil
 }
 
 // SetRequestedSize sets the "requested_size" field.
@@ -7028,6 +7143,134 @@ func (m *ImageTaskMutation) OldAspectRatio(ctx context.Context) (v string, err e
 // ResetAspectRatio resets all changes to the "aspect_ratio" field.
 func (m *ImageTaskMutation) ResetAspectRatio() {
 	m.aspect_ratio = nil
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (m *ImageTaskMutation) SetOutputFormat(s string) {
+	m.output_format = &s
+}
+
+// OutputFormat returns the value of the "output_format" field in the mutation.
+func (m *ImageTaskMutation) OutputFormat() (r string, exists bool) {
+	v := m.output_format
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputFormat returns the old "output_format" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldOutputFormat(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputFormat is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputFormat requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputFormat: %w", err)
+	}
+	return oldValue.OutputFormat, nil
+}
+
+// ResetOutputFormat resets all changes to the "output_format" field.
+func (m *ImageTaskMutation) ResetOutputFormat() {
+	m.output_format = nil
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (m *ImageTaskMutation) SetOutputCompression(i int) {
+	m.output_compression = &i
+	m.addoutput_compression = nil
+}
+
+// OutputCompression returns the value of the "output_compression" field in the mutation.
+func (m *ImageTaskMutation) OutputCompression() (r int, exists bool) {
+	v := m.output_compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputCompression returns the old "output_compression" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldOutputCompression(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputCompression is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputCompression requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputCompression: %w", err)
+	}
+	return oldValue.OutputCompression, nil
+}
+
+// AddOutputCompression adds i to the "output_compression" field.
+func (m *ImageTaskMutation) AddOutputCompression(i int) {
+	if m.addoutput_compression != nil {
+		*m.addoutput_compression += i
+	} else {
+		m.addoutput_compression = &i
+	}
+}
+
+// AddedOutputCompression returns the value that was added to the "output_compression" field in this mutation.
+func (m *ImageTaskMutation) AddedOutputCompression() (r int, exists bool) {
+	v := m.addoutput_compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputCompression resets all changes to the "output_compression" field.
+func (m *ImageTaskMutation) ResetOutputCompression() {
+	m.output_compression = nil
+	m.addoutput_compression = nil
+}
+
+// SetModeration sets the "moderation" field.
+func (m *ImageTaskMutation) SetModeration(s string) {
+	m.moderation = &s
+}
+
+// Moderation returns the value of the "moderation" field in the mutation.
+func (m *ImageTaskMutation) Moderation() (r string, exists bool) {
+	v := m.moderation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModeration returns the old "moderation" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldModeration(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModeration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModeration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModeration: %w", err)
+	}
+	return oldValue.Moderation, nil
+}
+
+// ResetModeration resets all changes to the "moderation" field.
+func (m *ImageTaskMutation) ResetModeration() {
+	m.moderation = nil
 }
 
 // SetRequestedOutputImageCount sets the "requested_output_image_count" field.
@@ -8630,7 +8873,7 @@ func (m *ImageTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImageTaskMutation) Fields() []string {
-	fields := make([]string, 0, 49)
+	fields := make([]string, 0, 55)
 	if m.created_at != nil {
 		fields = append(fields, imagetask.FieldCreatedAt)
 	}
@@ -8655,6 +8898,12 @@ func (m *ImageTaskMutation) Fields() []string {
 	if m.status != nil {
 		fields = append(fields, imagetask.FieldStatus)
 	}
+	if m.progress_stage != nil {
+		fields = append(fields, imagetask.FieldProgressStage)
+	}
+	if m.progress_message != nil {
+		fields = append(fields, imagetask.FieldProgressMessage)
+	}
 	if m.prompt != nil {
 		fields = append(fields, imagetask.FieldPrompt)
 	}
@@ -8664,11 +8913,14 @@ func (m *ImageTaskMutation) Fields() []string {
 	if m.abstract_model != nil {
 		fields = append(fields, imagetask.FieldAbstractModel)
 	}
-	if m.requested_quality != nil {
-		fields = append(fields, imagetask.FieldRequestedQuality)
+	if m.size_mode != nil {
+		fields = append(fields, imagetask.FieldSizeMode)
 	}
-	if m.resolved_quality_bucket != nil {
-		fields = append(fields, imagetask.FieldResolvedQualityBucket)
+	if m.base_resolution != nil {
+		fields = append(fields, imagetask.FieldBaseResolution)
+	}
+	if m.quality != nil {
+		fields = append(fields, imagetask.FieldQuality)
 	}
 	if m.requested_size != nil {
 		fields = append(fields, imagetask.FieldRequestedSize)
@@ -8681,6 +8933,15 @@ func (m *ImageTaskMutation) Fields() []string {
 	}
 	if m.aspect_ratio != nil {
 		fields = append(fields, imagetask.FieldAspectRatio)
+	}
+	if m.output_format != nil {
+		fields = append(fields, imagetask.FieldOutputFormat)
+	}
+	if m.output_compression != nil {
+		fields = append(fields, imagetask.FieldOutputCompression)
+	}
+	if m.moderation != nil {
+		fields = append(fields, imagetask.FieldModeration)
 	}
 	if m.requested_output_image_count != nil {
 		fields = append(fields, imagetask.FieldRequestedOutputImageCount)
@@ -8802,16 +9063,22 @@ func (m *ImageTaskMutation) Field(name string) (ent.Value, bool) {
 		return m.TaskType()
 	case imagetask.FieldStatus:
 		return m.Status()
+	case imagetask.FieldProgressStage:
+		return m.ProgressStage()
+	case imagetask.FieldProgressMessage:
+		return m.ProgressMessage()
 	case imagetask.FieldPrompt:
 		return m.Prompt()
 	case imagetask.FieldNegativePrompt:
 		return m.NegativePrompt()
 	case imagetask.FieldAbstractModel:
 		return m.AbstractModel()
-	case imagetask.FieldRequestedQuality:
-		return m.RequestedQuality()
-	case imagetask.FieldResolvedQualityBucket:
-		return m.ResolvedQualityBucket()
+	case imagetask.FieldSizeMode:
+		return m.SizeMode()
+	case imagetask.FieldBaseResolution:
+		return m.BaseResolution()
+	case imagetask.FieldQuality:
+		return m.Quality()
 	case imagetask.FieldRequestedSize:
 		return m.RequestedSize()
 	case imagetask.FieldResolvedWidth:
@@ -8820,6 +9087,12 @@ func (m *ImageTaskMutation) Field(name string) (ent.Value, bool) {
 		return m.ResolvedHeight()
 	case imagetask.FieldAspectRatio:
 		return m.AspectRatio()
+	case imagetask.FieldOutputFormat:
+		return m.OutputFormat()
+	case imagetask.FieldOutputCompression:
+		return m.OutputCompression()
+	case imagetask.FieldModeration:
+		return m.Moderation()
 	case imagetask.FieldRequestedOutputImageCount:
 		return m.RequestedOutputImageCount()
 	case imagetask.FieldSuccessOutputImageCount:
@@ -8909,16 +9182,22 @@ func (m *ImageTaskMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldTaskType(ctx)
 	case imagetask.FieldStatus:
 		return m.OldStatus(ctx)
+	case imagetask.FieldProgressStage:
+		return m.OldProgressStage(ctx)
+	case imagetask.FieldProgressMessage:
+		return m.OldProgressMessage(ctx)
 	case imagetask.FieldPrompt:
 		return m.OldPrompt(ctx)
 	case imagetask.FieldNegativePrompt:
 		return m.OldNegativePrompt(ctx)
 	case imagetask.FieldAbstractModel:
 		return m.OldAbstractModel(ctx)
-	case imagetask.FieldRequestedQuality:
-		return m.OldRequestedQuality(ctx)
-	case imagetask.FieldResolvedQualityBucket:
-		return m.OldResolvedQualityBucket(ctx)
+	case imagetask.FieldSizeMode:
+		return m.OldSizeMode(ctx)
+	case imagetask.FieldBaseResolution:
+		return m.OldBaseResolution(ctx)
+	case imagetask.FieldQuality:
+		return m.OldQuality(ctx)
 	case imagetask.FieldRequestedSize:
 		return m.OldRequestedSize(ctx)
 	case imagetask.FieldResolvedWidth:
@@ -8927,6 +9206,12 @@ func (m *ImageTaskMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldResolvedHeight(ctx)
 	case imagetask.FieldAspectRatio:
 		return m.OldAspectRatio(ctx)
+	case imagetask.FieldOutputFormat:
+		return m.OldOutputFormat(ctx)
+	case imagetask.FieldOutputCompression:
+		return m.OldOutputCompression(ctx)
+	case imagetask.FieldModeration:
+		return m.OldModeration(ctx)
 	case imagetask.FieldRequestedOutputImageCount:
 		return m.OldRequestedOutputImageCount(ctx)
 	case imagetask.FieldSuccessOutputImageCount:
@@ -9056,6 +9341,20 @@ func (m *ImageTaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetStatus(v)
 		return nil
+	case imagetask.FieldProgressStage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProgressStage(v)
+		return nil
+	case imagetask.FieldProgressMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProgressMessage(v)
+		return nil
 	case imagetask.FieldPrompt:
 		v, ok := value.(string)
 		if !ok {
@@ -9077,19 +9376,26 @@ func (m *ImageTaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAbstractModel(v)
 		return nil
-	case imagetask.FieldRequestedQuality:
+	case imagetask.FieldSizeMode:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetRequestedQuality(v)
+		m.SetSizeMode(v)
 		return nil
-	case imagetask.FieldResolvedQualityBucket:
+	case imagetask.FieldBaseResolution:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetResolvedQualityBucket(v)
+		m.SetBaseResolution(v)
+		return nil
+	case imagetask.FieldQuality:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuality(v)
 		return nil
 	case imagetask.FieldRequestedSize:
 		v, ok := value.(string)
@@ -9118,6 +9424,27 @@ func (m *ImageTaskMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAspectRatio(v)
+		return nil
+	case imagetask.FieldOutputFormat:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputFormat(v)
+		return nil
+	case imagetask.FieldOutputCompression:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputCompression(v)
+		return nil
+	case imagetask.FieldModeration:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModeration(v)
 		return nil
 	case imagetask.FieldRequestedOutputImageCount:
 		v, ok := value.(int)
@@ -9363,6 +9690,9 @@ func (m *ImageTaskMutation) AddedFields() []string {
 	if m.addresolved_height != nil {
 		fields = append(fields, imagetask.FieldResolvedHeight)
 	}
+	if m.addoutput_compression != nil {
+		fields = append(fields, imagetask.FieldOutputCompression)
+	}
 	if m.addrequested_output_image_count != nil {
 		fields = append(fields, imagetask.FieldRequestedOutputImageCount)
 	}
@@ -9409,6 +9739,8 @@ func (m *ImageTaskMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedResolvedWidth()
 	case imagetask.FieldResolvedHeight:
 		return m.AddedResolvedHeight()
+	case imagetask.FieldOutputCompression:
+		return m.AddedOutputCompression()
 	case imagetask.FieldRequestedOutputImageCount:
 		return m.AddedRequestedOutputImageCount()
 	case imagetask.FieldSuccessOutputImageCount:
@@ -9465,6 +9797,13 @@ func (m *ImageTaskMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddResolvedHeight(v)
+		return nil
+	case imagetask.FieldOutputCompression:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputCompression(v)
 		return nil
 	case imagetask.FieldRequestedOutputImageCount:
 		v, ok := value.(int)
@@ -9722,6 +10061,12 @@ func (m *ImageTaskMutation) ResetField(name string) error {
 	case imagetask.FieldStatus:
 		m.ResetStatus()
 		return nil
+	case imagetask.FieldProgressStage:
+		m.ResetProgressStage()
+		return nil
+	case imagetask.FieldProgressMessage:
+		m.ResetProgressMessage()
+		return nil
 	case imagetask.FieldPrompt:
 		m.ResetPrompt()
 		return nil
@@ -9731,11 +10076,14 @@ func (m *ImageTaskMutation) ResetField(name string) error {
 	case imagetask.FieldAbstractModel:
 		m.ResetAbstractModel()
 		return nil
-	case imagetask.FieldRequestedQuality:
-		m.ResetRequestedQuality()
+	case imagetask.FieldSizeMode:
+		m.ResetSizeMode()
 		return nil
-	case imagetask.FieldResolvedQualityBucket:
-		m.ResetResolvedQualityBucket()
+	case imagetask.FieldBaseResolution:
+		m.ResetBaseResolution()
+		return nil
+	case imagetask.FieldQuality:
+		m.ResetQuality()
 		return nil
 	case imagetask.FieldRequestedSize:
 		m.ResetRequestedSize()
@@ -9748,6 +10096,15 @@ func (m *ImageTaskMutation) ResetField(name string) error {
 		return nil
 	case imagetask.FieldAspectRatio:
 		m.ResetAspectRatio()
+		return nil
+	case imagetask.FieldOutputFormat:
+		m.ResetOutputFormat()
+		return nil
+	case imagetask.FieldOutputCompression:
+		m.ResetOutputCompression()
+		return nil
+	case imagetask.FieldModeration:
+		m.ResetModeration()
 		return nil
 	case imagetask.FieldRequestedOutputImageCount:
 		m.ResetRequestedOutputImageCount()
@@ -11323,28 +11680,47 @@ func (m *ModelAccountMutation) ResetEdge(name string) error {
 // ModelAccountModelMutation represents an operation that mutates the ModelAccountModel nodes in the graph.
 type ModelAccountModelMutation struct {
 	config
-	op               Op
-	typ              string
-	id               *int
-	created_at       *time.Time
-	updated_at       *time.Time
-	deleted_at       *time.Time
-	account_id       *int64
-	addaccount_id    *int64
-	model_code       *string
-	display_name     *string
-	task_types       *[]string
-	appendtask_types []string
-	qualities        *[]string
-	appendqualities  []string
-	cost_per_image   *string
-	currency         *string
-	enabled          *bool
-	extra            *map[string]interface{}
-	clearedFields    map[string]struct{}
-	done             bool
-	oldValue         func(context.Context) (*ModelAccountModel, error)
-	predicates       []predicate.ModelAccountModel
+	op                           Op
+	typ                          string
+	id                           *int
+	created_at                   *time.Time
+	updated_at                   *time.Time
+	deleted_at                   *time.Time
+	account_id                   *int64
+	addaccount_id                *int64
+	model_code                   *string
+	display_name                 *string
+	task_types                   *[]string
+	appendtask_types             []string
+	base_resolution              *[]string
+	appendbase_resolution        []string
+	quality                      *[]string
+	appendquality                []string
+	max_reference_image_count    *int
+	addmax_reference_image_count *int
+	max_image_count              *int
+	addmax_image_count           *int
+	size_modes                   *[]string
+	appendsize_modes             []string
+	supported_ratios             *[]string
+	appendsupported_ratios       []string
+	supported_pixel_sizes        *[]string
+	appendsupported_pixel_sizes  []string
+	output_format                *[]string
+	appendoutput_format          []string
+	output_compression           *int
+	addoutput_compression        *int
+	supports_output_compression  *bool
+	moderation                   *[]string
+	appendmoderation             []string
+	cost_per_image               *string
+	currency                     *string
+	enabled                      *bool
+	extra                        *map[string]interface{}
+	clearedFields                map[string]struct{}
+	done                         bool
+	oldValue                     func(context.Context) (*ModelAccountModel, error)
+	predicates                   []predicate.ModelAccountModel
 }
 
 var _ ent.Mutation = (*ModelAccountModelMutation)(nil)
@@ -11759,69 +12135,663 @@ func (m *ModelAccountModelMutation) ResetTaskTypes() {
 	delete(m.clearedFields, modelaccountmodel.FieldTaskTypes)
 }
 
-// SetQualities sets the "qualities" field.
-func (m *ModelAccountModelMutation) SetQualities(s []string) {
-	m.qualities = &s
-	m.appendqualities = nil
+// SetBaseResolution sets the "base_resolution" field.
+func (m *ModelAccountModelMutation) SetBaseResolution(s []string) {
+	m.base_resolution = &s
+	m.appendbase_resolution = nil
 }
 
-// Qualities returns the value of the "qualities" field in the mutation.
-func (m *ModelAccountModelMutation) Qualities() (r []string, exists bool) {
-	v := m.qualities
+// BaseResolution returns the value of the "base_resolution" field in the mutation.
+func (m *ModelAccountModelMutation) BaseResolution() (r []string, exists bool) {
+	v := m.base_resolution
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldQualities returns the old "qualities" field's value of the ModelAccountModel entity.
+// OldBaseResolution returns the old "base_resolution" field's value of the ModelAccountModel entity.
 // If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ModelAccountModelMutation) OldQualities(ctx context.Context) (v []string, err error) {
+func (m *ModelAccountModelMutation) OldBaseResolution(ctx context.Context) (v []string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldQualities is only allowed on UpdateOne operations")
+		return v, errors.New("OldBaseResolution is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldQualities requires an ID field in the mutation")
+		return v, errors.New("OldBaseResolution requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldQualities: %w", err)
+		return v, fmt.Errorf("querying old value for OldBaseResolution: %w", err)
 	}
-	return oldValue.Qualities, nil
+	return oldValue.BaseResolution, nil
 }
 
-// AppendQualities adds s to the "qualities" field.
-func (m *ModelAccountModelMutation) AppendQualities(s []string) {
-	m.appendqualities = append(m.appendqualities, s...)
+// AppendBaseResolution adds s to the "base_resolution" field.
+func (m *ModelAccountModelMutation) AppendBaseResolution(s []string) {
+	m.appendbase_resolution = append(m.appendbase_resolution, s...)
 }
 
-// AppendedQualities returns the list of values that were appended to the "qualities" field in this mutation.
-func (m *ModelAccountModelMutation) AppendedQualities() ([]string, bool) {
-	if len(m.appendqualities) == 0 {
+// AppendedBaseResolution returns the list of values that were appended to the "base_resolution" field in this mutation.
+func (m *ModelAccountModelMutation) AppendedBaseResolution() ([]string, bool) {
+	if len(m.appendbase_resolution) == 0 {
 		return nil, false
 	}
-	return m.appendqualities, true
+	return m.appendbase_resolution, true
 }
 
-// ClearQualities clears the value of the "qualities" field.
-func (m *ModelAccountModelMutation) ClearQualities() {
-	m.qualities = nil
-	m.appendqualities = nil
-	m.clearedFields[modelaccountmodel.FieldQualities] = struct{}{}
+// ClearBaseResolution clears the value of the "base_resolution" field.
+func (m *ModelAccountModelMutation) ClearBaseResolution() {
+	m.base_resolution = nil
+	m.appendbase_resolution = nil
+	m.clearedFields[modelaccountmodel.FieldBaseResolution] = struct{}{}
 }
 
-// QualitiesCleared returns if the "qualities" field was cleared in this mutation.
-func (m *ModelAccountModelMutation) QualitiesCleared() bool {
-	_, ok := m.clearedFields[modelaccountmodel.FieldQualities]
+// BaseResolutionCleared returns if the "base_resolution" field was cleared in this mutation.
+func (m *ModelAccountModelMutation) BaseResolutionCleared() bool {
+	_, ok := m.clearedFields[modelaccountmodel.FieldBaseResolution]
 	return ok
 }
 
-// ResetQualities resets all changes to the "qualities" field.
-func (m *ModelAccountModelMutation) ResetQualities() {
-	m.qualities = nil
-	m.appendqualities = nil
-	delete(m.clearedFields, modelaccountmodel.FieldQualities)
+// ResetBaseResolution resets all changes to the "base_resolution" field.
+func (m *ModelAccountModelMutation) ResetBaseResolution() {
+	m.base_resolution = nil
+	m.appendbase_resolution = nil
+	delete(m.clearedFields, modelaccountmodel.FieldBaseResolution)
+}
+
+// SetQuality sets the "quality" field.
+func (m *ModelAccountModelMutation) SetQuality(s []string) {
+	m.quality = &s
+	m.appendquality = nil
+}
+
+// Quality returns the value of the "quality" field in the mutation.
+func (m *ModelAccountModelMutation) Quality() (r []string, exists bool) {
+	v := m.quality
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuality returns the old "quality" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldQuality(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuality is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuality requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuality: %w", err)
+	}
+	return oldValue.Quality, nil
+}
+
+// AppendQuality adds s to the "quality" field.
+func (m *ModelAccountModelMutation) AppendQuality(s []string) {
+	m.appendquality = append(m.appendquality, s...)
+}
+
+// AppendedQuality returns the list of values that were appended to the "quality" field in this mutation.
+func (m *ModelAccountModelMutation) AppendedQuality() ([]string, bool) {
+	if len(m.appendquality) == 0 {
+		return nil, false
+	}
+	return m.appendquality, true
+}
+
+// ClearQuality clears the value of the "quality" field.
+func (m *ModelAccountModelMutation) ClearQuality() {
+	m.quality = nil
+	m.appendquality = nil
+	m.clearedFields[modelaccountmodel.FieldQuality] = struct{}{}
+}
+
+// QualityCleared returns if the "quality" field was cleared in this mutation.
+func (m *ModelAccountModelMutation) QualityCleared() bool {
+	_, ok := m.clearedFields[modelaccountmodel.FieldQuality]
+	return ok
+}
+
+// ResetQuality resets all changes to the "quality" field.
+func (m *ModelAccountModelMutation) ResetQuality() {
+	m.quality = nil
+	m.appendquality = nil
+	delete(m.clearedFields, modelaccountmodel.FieldQuality)
+}
+
+// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
+func (m *ModelAccountModelMutation) SetMaxReferenceImageCount(i int) {
+	m.max_reference_image_count = &i
+	m.addmax_reference_image_count = nil
+}
+
+// MaxReferenceImageCount returns the value of the "max_reference_image_count" field in the mutation.
+func (m *ModelAccountModelMutation) MaxReferenceImageCount() (r int, exists bool) {
+	v := m.max_reference_image_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxReferenceImageCount returns the old "max_reference_image_count" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldMaxReferenceImageCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxReferenceImageCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxReferenceImageCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxReferenceImageCount: %w", err)
+	}
+	return oldValue.MaxReferenceImageCount, nil
+}
+
+// AddMaxReferenceImageCount adds i to the "max_reference_image_count" field.
+func (m *ModelAccountModelMutation) AddMaxReferenceImageCount(i int) {
+	if m.addmax_reference_image_count != nil {
+		*m.addmax_reference_image_count += i
+	} else {
+		m.addmax_reference_image_count = &i
+	}
+}
+
+// AddedMaxReferenceImageCount returns the value that was added to the "max_reference_image_count" field in this mutation.
+func (m *ModelAccountModelMutation) AddedMaxReferenceImageCount() (r int, exists bool) {
+	v := m.addmax_reference_image_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetMaxReferenceImageCount resets all changes to the "max_reference_image_count" field.
+func (m *ModelAccountModelMutation) ResetMaxReferenceImageCount() {
+	m.max_reference_image_count = nil
+	m.addmax_reference_image_count = nil
+}
+
+// SetMaxImageCount sets the "max_image_count" field.
+func (m *ModelAccountModelMutation) SetMaxImageCount(i int) {
+	m.max_image_count = &i
+	m.addmax_image_count = nil
+}
+
+// MaxImageCount returns the value of the "max_image_count" field in the mutation.
+func (m *ModelAccountModelMutation) MaxImageCount() (r int, exists bool) {
+	v := m.max_image_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxImageCount returns the old "max_image_count" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldMaxImageCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxImageCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxImageCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxImageCount: %w", err)
+	}
+	return oldValue.MaxImageCount, nil
+}
+
+// AddMaxImageCount adds i to the "max_image_count" field.
+func (m *ModelAccountModelMutation) AddMaxImageCount(i int) {
+	if m.addmax_image_count != nil {
+		*m.addmax_image_count += i
+	} else {
+		m.addmax_image_count = &i
+	}
+}
+
+// AddedMaxImageCount returns the value that was added to the "max_image_count" field in this mutation.
+func (m *ModelAccountModelMutation) AddedMaxImageCount() (r int, exists bool) {
+	v := m.addmax_image_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetMaxImageCount resets all changes to the "max_image_count" field.
+func (m *ModelAccountModelMutation) ResetMaxImageCount() {
+	m.max_image_count = nil
+	m.addmax_image_count = nil
+}
+
+// SetSizeModes sets the "size_modes" field.
+func (m *ModelAccountModelMutation) SetSizeModes(s []string) {
+	m.size_modes = &s
+	m.appendsize_modes = nil
+}
+
+// SizeModes returns the value of the "size_modes" field in the mutation.
+func (m *ModelAccountModelMutation) SizeModes() (r []string, exists bool) {
+	v := m.size_modes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSizeModes returns the old "size_modes" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldSizeModes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSizeModes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSizeModes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSizeModes: %w", err)
+	}
+	return oldValue.SizeModes, nil
+}
+
+// AppendSizeModes adds s to the "size_modes" field.
+func (m *ModelAccountModelMutation) AppendSizeModes(s []string) {
+	m.appendsize_modes = append(m.appendsize_modes, s...)
+}
+
+// AppendedSizeModes returns the list of values that were appended to the "size_modes" field in this mutation.
+func (m *ModelAccountModelMutation) AppendedSizeModes() ([]string, bool) {
+	if len(m.appendsize_modes) == 0 {
+		return nil, false
+	}
+	return m.appendsize_modes, true
+}
+
+// ClearSizeModes clears the value of the "size_modes" field.
+func (m *ModelAccountModelMutation) ClearSizeModes() {
+	m.size_modes = nil
+	m.appendsize_modes = nil
+	m.clearedFields[modelaccountmodel.FieldSizeModes] = struct{}{}
+}
+
+// SizeModesCleared returns if the "size_modes" field was cleared in this mutation.
+func (m *ModelAccountModelMutation) SizeModesCleared() bool {
+	_, ok := m.clearedFields[modelaccountmodel.FieldSizeModes]
+	return ok
+}
+
+// ResetSizeModes resets all changes to the "size_modes" field.
+func (m *ModelAccountModelMutation) ResetSizeModes() {
+	m.size_modes = nil
+	m.appendsize_modes = nil
+	delete(m.clearedFields, modelaccountmodel.FieldSizeModes)
+}
+
+// SetSupportedRatios sets the "supported_ratios" field.
+func (m *ModelAccountModelMutation) SetSupportedRatios(s []string) {
+	m.supported_ratios = &s
+	m.appendsupported_ratios = nil
+}
+
+// SupportedRatios returns the value of the "supported_ratios" field in the mutation.
+func (m *ModelAccountModelMutation) SupportedRatios() (r []string, exists bool) {
+	v := m.supported_ratios
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportedRatios returns the old "supported_ratios" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldSupportedRatios(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportedRatios is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportedRatios requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportedRatios: %w", err)
+	}
+	return oldValue.SupportedRatios, nil
+}
+
+// AppendSupportedRatios adds s to the "supported_ratios" field.
+func (m *ModelAccountModelMutation) AppendSupportedRatios(s []string) {
+	m.appendsupported_ratios = append(m.appendsupported_ratios, s...)
+}
+
+// AppendedSupportedRatios returns the list of values that were appended to the "supported_ratios" field in this mutation.
+func (m *ModelAccountModelMutation) AppendedSupportedRatios() ([]string, bool) {
+	if len(m.appendsupported_ratios) == 0 {
+		return nil, false
+	}
+	return m.appendsupported_ratios, true
+}
+
+// ClearSupportedRatios clears the value of the "supported_ratios" field.
+func (m *ModelAccountModelMutation) ClearSupportedRatios() {
+	m.supported_ratios = nil
+	m.appendsupported_ratios = nil
+	m.clearedFields[modelaccountmodel.FieldSupportedRatios] = struct{}{}
+}
+
+// SupportedRatiosCleared returns if the "supported_ratios" field was cleared in this mutation.
+func (m *ModelAccountModelMutation) SupportedRatiosCleared() bool {
+	_, ok := m.clearedFields[modelaccountmodel.FieldSupportedRatios]
+	return ok
+}
+
+// ResetSupportedRatios resets all changes to the "supported_ratios" field.
+func (m *ModelAccountModelMutation) ResetSupportedRatios() {
+	m.supported_ratios = nil
+	m.appendsupported_ratios = nil
+	delete(m.clearedFields, modelaccountmodel.FieldSupportedRatios)
+}
+
+// SetSupportedPixelSizes sets the "supported_pixel_sizes" field.
+func (m *ModelAccountModelMutation) SetSupportedPixelSizes(s []string) {
+	m.supported_pixel_sizes = &s
+	m.appendsupported_pixel_sizes = nil
+}
+
+// SupportedPixelSizes returns the value of the "supported_pixel_sizes" field in the mutation.
+func (m *ModelAccountModelMutation) SupportedPixelSizes() (r []string, exists bool) {
+	v := m.supported_pixel_sizes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportedPixelSizes returns the old "supported_pixel_sizes" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldSupportedPixelSizes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportedPixelSizes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportedPixelSizes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportedPixelSizes: %w", err)
+	}
+	return oldValue.SupportedPixelSizes, nil
+}
+
+// AppendSupportedPixelSizes adds s to the "supported_pixel_sizes" field.
+func (m *ModelAccountModelMutation) AppendSupportedPixelSizes(s []string) {
+	m.appendsupported_pixel_sizes = append(m.appendsupported_pixel_sizes, s...)
+}
+
+// AppendedSupportedPixelSizes returns the list of values that were appended to the "supported_pixel_sizes" field in this mutation.
+func (m *ModelAccountModelMutation) AppendedSupportedPixelSizes() ([]string, bool) {
+	if len(m.appendsupported_pixel_sizes) == 0 {
+		return nil, false
+	}
+	return m.appendsupported_pixel_sizes, true
+}
+
+// ClearSupportedPixelSizes clears the value of the "supported_pixel_sizes" field.
+func (m *ModelAccountModelMutation) ClearSupportedPixelSizes() {
+	m.supported_pixel_sizes = nil
+	m.appendsupported_pixel_sizes = nil
+	m.clearedFields[modelaccountmodel.FieldSupportedPixelSizes] = struct{}{}
+}
+
+// SupportedPixelSizesCleared returns if the "supported_pixel_sizes" field was cleared in this mutation.
+func (m *ModelAccountModelMutation) SupportedPixelSizesCleared() bool {
+	_, ok := m.clearedFields[modelaccountmodel.FieldSupportedPixelSizes]
+	return ok
+}
+
+// ResetSupportedPixelSizes resets all changes to the "supported_pixel_sizes" field.
+func (m *ModelAccountModelMutation) ResetSupportedPixelSizes() {
+	m.supported_pixel_sizes = nil
+	m.appendsupported_pixel_sizes = nil
+	delete(m.clearedFields, modelaccountmodel.FieldSupportedPixelSizes)
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (m *ModelAccountModelMutation) SetOutputFormat(s []string) {
+	m.output_format = &s
+	m.appendoutput_format = nil
+}
+
+// OutputFormat returns the value of the "output_format" field in the mutation.
+func (m *ModelAccountModelMutation) OutputFormat() (r []string, exists bool) {
+	v := m.output_format
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputFormat returns the old "output_format" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldOutputFormat(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputFormat is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputFormat requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputFormat: %w", err)
+	}
+	return oldValue.OutputFormat, nil
+}
+
+// AppendOutputFormat adds s to the "output_format" field.
+func (m *ModelAccountModelMutation) AppendOutputFormat(s []string) {
+	m.appendoutput_format = append(m.appendoutput_format, s...)
+}
+
+// AppendedOutputFormat returns the list of values that were appended to the "output_format" field in this mutation.
+func (m *ModelAccountModelMutation) AppendedOutputFormat() ([]string, bool) {
+	if len(m.appendoutput_format) == 0 {
+		return nil, false
+	}
+	return m.appendoutput_format, true
+}
+
+// ClearOutputFormat clears the value of the "output_format" field.
+func (m *ModelAccountModelMutation) ClearOutputFormat() {
+	m.output_format = nil
+	m.appendoutput_format = nil
+	m.clearedFields[modelaccountmodel.FieldOutputFormat] = struct{}{}
+}
+
+// OutputFormatCleared returns if the "output_format" field was cleared in this mutation.
+func (m *ModelAccountModelMutation) OutputFormatCleared() bool {
+	_, ok := m.clearedFields[modelaccountmodel.FieldOutputFormat]
+	return ok
+}
+
+// ResetOutputFormat resets all changes to the "output_format" field.
+func (m *ModelAccountModelMutation) ResetOutputFormat() {
+	m.output_format = nil
+	m.appendoutput_format = nil
+	delete(m.clearedFields, modelaccountmodel.FieldOutputFormat)
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (m *ModelAccountModelMutation) SetOutputCompression(i int) {
+	m.output_compression = &i
+	m.addoutput_compression = nil
+}
+
+// OutputCompression returns the value of the "output_compression" field in the mutation.
+func (m *ModelAccountModelMutation) OutputCompression() (r int, exists bool) {
+	v := m.output_compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputCompression returns the old "output_compression" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldOutputCompression(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputCompression is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputCompression requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputCompression: %w", err)
+	}
+	return oldValue.OutputCompression, nil
+}
+
+// AddOutputCompression adds i to the "output_compression" field.
+func (m *ModelAccountModelMutation) AddOutputCompression(i int) {
+	if m.addoutput_compression != nil {
+		*m.addoutput_compression += i
+	} else {
+		m.addoutput_compression = &i
+	}
+}
+
+// AddedOutputCompression returns the value that was added to the "output_compression" field in this mutation.
+func (m *ModelAccountModelMutation) AddedOutputCompression() (r int, exists bool) {
+	v := m.addoutput_compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputCompression resets all changes to the "output_compression" field.
+func (m *ModelAccountModelMutation) ResetOutputCompression() {
+	m.output_compression = nil
+	m.addoutput_compression = nil
+}
+
+// SetSupportsOutputCompression sets the "supports_output_compression" field.
+func (m *ModelAccountModelMutation) SetSupportsOutputCompression(b bool) {
+	m.supports_output_compression = &b
+}
+
+// SupportsOutputCompression returns the value of the "supports_output_compression" field in the mutation.
+func (m *ModelAccountModelMutation) SupportsOutputCompression() (r bool, exists bool) {
+	v := m.supports_output_compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportsOutputCompression returns the old "supports_output_compression" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldSupportsOutputCompression(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportsOutputCompression is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportsOutputCompression requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportsOutputCompression: %w", err)
+	}
+	return oldValue.SupportsOutputCompression, nil
+}
+
+// ResetSupportsOutputCompression resets all changes to the "supports_output_compression" field.
+func (m *ModelAccountModelMutation) ResetSupportsOutputCompression() {
+	m.supports_output_compression = nil
+}
+
+// SetModeration sets the "moderation" field.
+func (m *ModelAccountModelMutation) SetModeration(s []string) {
+	m.moderation = &s
+	m.appendmoderation = nil
+}
+
+// Moderation returns the value of the "moderation" field in the mutation.
+func (m *ModelAccountModelMutation) Moderation() (r []string, exists bool) {
+	v := m.moderation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModeration returns the old "moderation" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldModeration(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModeration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModeration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModeration: %w", err)
+	}
+	return oldValue.Moderation, nil
+}
+
+// AppendModeration adds s to the "moderation" field.
+func (m *ModelAccountModelMutation) AppendModeration(s []string) {
+	m.appendmoderation = append(m.appendmoderation, s...)
+}
+
+// AppendedModeration returns the list of values that were appended to the "moderation" field in this mutation.
+func (m *ModelAccountModelMutation) AppendedModeration() ([]string, bool) {
+	if len(m.appendmoderation) == 0 {
+		return nil, false
+	}
+	return m.appendmoderation, true
+}
+
+// ClearModeration clears the value of the "moderation" field.
+func (m *ModelAccountModelMutation) ClearModeration() {
+	m.moderation = nil
+	m.appendmoderation = nil
+	m.clearedFields[modelaccountmodel.FieldModeration] = struct{}{}
+}
+
+// ModerationCleared returns if the "moderation" field was cleared in this mutation.
+func (m *ModelAccountModelMutation) ModerationCleared() bool {
+	_, ok := m.clearedFields[modelaccountmodel.FieldModeration]
+	return ok
+}
+
+// ResetModeration resets all changes to the "moderation" field.
+func (m *ModelAccountModelMutation) ResetModeration() {
+	m.moderation = nil
+	m.appendmoderation = nil
+	delete(m.clearedFields, modelaccountmodel.FieldModeration)
 }
 
 // SetCostPerImage sets the "cost_per_image" field.
@@ -12015,7 +12985,7 @@ func (m *ModelAccountModelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ModelAccountModelMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 22)
 	if m.created_at != nil {
 		fields = append(fields, modelaccountmodel.FieldCreatedAt)
 	}
@@ -12037,8 +13007,38 @@ func (m *ModelAccountModelMutation) Fields() []string {
 	if m.task_types != nil {
 		fields = append(fields, modelaccountmodel.FieldTaskTypes)
 	}
-	if m.qualities != nil {
-		fields = append(fields, modelaccountmodel.FieldQualities)
+	if m.base_resolution != nil {
+		fields = append(fields, modelaccountmodel.FieldBaseResolution)
+	}
+	if m.quality != nil {
+		fields = append(fields, modelaccountmodel.FieldQuality)
+	}
+	if m.max_reference_image_count != nil {
+		fields = append(fields, modelaccountmodel.FieldMaxReferenceImageCount)
+	}
+	if m.max_image_count != nil {
+		fields = append(fields, modelaccountmodel.FieldMaxImageCount)
+	}
+	if m.size_modes != nil {
+		fields = append(fields, modelaccountmodel.FieldSizeModes)
+	}
+	if m.supported_ratios != nil {
+		fields = append(fields, modelaccountmodel.FieldSupportedRatios)
+	}
+	if m.supported_pixel_sizes != nil {
+		fields = append(fields, modelaccountmodel.FieldSupportedPixelSizes)
+	}
+	if m.output_format != nil {
+		fields = append(fields, modelaccountmodel.FieldOutputFormat)
+	}
+	if m.output_compression != nil {
+		fields = append(fields, modelaccountmodel.FieldOutputCompression)
+	}
+	if m.supports_output_compression != nil {
+		fields = append(fields, modelaccountmodel.FieldSupportsOutputCompression)
+	}
+	if m.moderation != nil {
+		fields = append(fields, modelaccountmodel.FieldModeration)
 	}
 	if m.cost_per_image != nil {
 		fields = append(fields, modelaccountmodel.FieldCostPerImage)
@@ -12074,8 +13074,28 @@ func (m *ModelAccountModelMutation) Field(name string) (ent.Value, bool) {
 		return m.DisplayName()
 	case modelaccountmodel.FieldTaskTypes:
 		return m.TaskTypes()
-	case modelaccountmodel.FieldQualities:
-		return m.Qualities()
+	case modelaccountmodel.FieldBaseResolution:
+		return m.BaseResolution()
+	case modelaccountmodel.FieldQuality:
+		return m.Quality()
+	case modelaccountmodel.FieldMaxReferenceImageCount:
+		return m.MaxReferenceImageCount()
+	case modelaccountmodel.FieldMaxImageCount:
+		return m.MaxImageCount()
+	case modelaccountmodel.FieldSizeModes:
+		return m.SizeModes()
+	case modelaccountmodel.FieldSupportedRatios:
+		return m.SupportedRatios()
+	case modelaccountmodel.FieldSupportedPixelSizes:
+		return m.SupportedPixelSizes()
+	case modelaccountmodel.FieldOutputFormat:
+		return m.OutputFormat()
+	case modelaccountmodel.FieldOutputCompression:
+		return m.OutputCompression()
+	case modelaccountmodel.FieldSupportsOutputCompression:
+		return m.SupportsOutputCompression()
+	case modelaccountmodel.FieldModeration:
+		return m.Moderation()
 	case modelaccountmodel.FieldCostPerImage:
 		return m.CostPerImage()
 	case modelaccountmodel.FieldCurrency:
@@ -12107,8 +13127,28 @@ func (m *ModelAccountModelMutation) OldField(ctx context.Context, name string) (
 		return m.OldDisplayName(ctx)
 	case modelaccountmodel.FieldTaskTypes:
 		return m.OldTaskTypes(ctx)
-	case modelaccountmodel.FieldQualities:
-		return m.OldQualities(ctx)
+	case modelaccountmodel.FieldBaseResolution:
+		return m.OldBaseResolution(ctx)
+	case modelaccountmodel.FieldQuality:
+		return m.OldQuality(ctx)
+	case modelaccountmodel.FieldMaxReferenceImageCount:
+		return m.OldMaxReferenceImageCount(ctx)
+	case modelaccountmodel.FieldMaxImageCount:
+		return m.OldMaxImageCount(ctx)
+	case modelaccountmodel.FieldSizeModes:
+		return m.OldSizeModes(ctx)
+	case modelaccountmodel.FieldSupportedRatios:
+		return m.OldSupportedRatios(ctx)
+	case modelaccountmodel.FieldSupportedPixelSizes:
+		return m.OldSupportedPixelSizes(ctx)
+	case modelaccountmodel.FieldOutputFormat:
+		return m.OldOutputFormat(ctx)
+	case modelaccountmodel.FieldOutputCompression:
+		return m.OldOutputCompression(ctx)
+	case modelaccountmodel.FieldSupportsOutputCompression:
+		return m.OldSupportsOutputCompression(ctx)
+	case modelaccountmodel.FieldModeration:
+		return m.OldModeration(ctx)
 	case modelaccountmodel.FieldCostPerImage:
 		return m.OldCostPerImage(ctx)
 	case modelaccountmodel.FieldCurrency:
@@ -12175,12 +13215,82 @@ func (m *ModelAccountModelMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetTaskTypes(v)
 		return nil
-	case modelaccountmodel.FieldQualities:
+	case modelaccountmodel.FieldBaseResolution:
 		v, ok := value.([]string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetQualities(v)
+		m.SetBaseResolution(v)
+		return nil
+	case modelaccountmodel.FieldQuality:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuality(v)
+		return nil
+	case modelaccountmodel.FieldMaxReferenceImageCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxReferenceImageCount(v)
+		return nil
+	case modelaccountmodel.FieldMaxImageCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxImageCount(v)
+		return nil
+	case modelaccountmodel.FieldSizeModes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSizeModes(v)
+		return nil
+	case modelaccountmodel.FieldSupportedRatios:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportedRatios(v)
+		return nil
+	case modelaccountmodel.FieldSupportedPixelSizes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportedPixelSizes(v)
+		return nil
+	case modelaccountmodel.FieldOutputFormat:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputFormat(v)
+		return nil
+	case modelaccountmodel.FieldOutputCompression:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputCompression(v)
+		return nil
+	case modelaccountmodel.FieldSupportsOutputCompression:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportsOutputCompression(v)
+		return nil
+	case modelaccountmodel.FieldModeration:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModeration(v)
 		return nil
 	case modelaccountmodel.FieldCostPerImage:
 		v, ok := value.(string)
@@ -12221,6 +13331,15 @@ func (m *ModelAccountModelMutation) AddedFields() []string {
 	if m.addaccount_id != nil {
 		fields = append(fields, modelaccountmodel.FieldAccountID)
 	}
+	if m.addmax_reference_image_count != nil {
+		fields = append(fields, modelaccountmodel.FieldMaxReferenceImageCount)
+	}
+	if m.addmax_image_count != nil {
+		fields = append(fields, modelaccountmodel.FieldMaxImageCount)
+	}
+	if m.addoutput_compression != nil {
+		fields = append(fields, modelaccountmodel.FieldOutputCompression)
+	}
 	return fields
 }
 
@@ -12231,6 +13350,12 @@ func (m *ModelAccountModelMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case modelaccountmodel.FieldAccountID:
 		return m.AddedAccountID()
+	case modelaccountmodel.FieldMaxReferenceImageCount:
+		return m.AddedMaxReferenceImageCount()
+	case modelaccountmodel.FieldMaxImageCount:
+		return m.AddedMaxImageCount()
+	case modelaccountmodel.FieldOutputCompression:
+		return m.AddedOutputCompression()
 	}
 	return nil, false
 }
@@ -12247,6 +13372,27 @@ func (m *ModelAccountModelMutation) AddField(name string, value ent.Value) error
 		}
 		m.AddAccountID(v)
 		return nil
+	case modelaccountmodel.FieldMaxReferenceImageCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxReferenceImageCount(v)
+		return nil
+	case modelaccountmodel.FieldMaxImageCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxImageCount(v)
+		return nil
+	case modelaccountmodel.FieldOutputCompression:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputCompression(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ModelAccountModel numeric field %s", name)
 }
@@ -12261,8 +13407,26 @@ func (m *ModelAccountModelMutation) ClearedFields() []string {
 	if m.FieldCleared(modelaccountmodel.FieldTaskTypes) {
 		fields = append(fields, modelaccountmodel.FieldTaskTypes)
 	}
-	if m.FieldCleared(modelaccountmodel.FieldQualities) {
-		fields = append(fields, modelaccountmodel.FieldQualities)
+	if m.FieldCleared(modelaccountmodel.FieldBaseResolution) {
+		fields = append(fields, modelaccountmodel.FieldBaseResolution)
+	}
+	if m.FieldCleared(modelaccountmodel.FieldQuality) {
+		fields = append(fields, modelaccountmodel.FieldQuality)
+	}
+	if m.FieldCleared(modelaccountmodel.FieldSizeModes) {
+		fields = append(fields, modelaccountmodel.FieldSizeModes)
+	}
+	if m.FieldCleared(modelaccountmodel.FieldSupportedRatios) {
+		fields = append(fields, modelaccountmodel.FieldSupportedRatios)
+	}
+	if m.FieldCleared(modelaccountmodel.FieldSupportedPixelSizes) {
+		fields = append(fields, modelaccountmodel.FieldSupportedPixelSizes)
+	}
+	if m.FieldCleared(modelaccountmodel.FieldOutputFormat) {
+		fields = append(fields, modelaccountmodel.FieldOutputFormat)
+	}
+	if m.FieldCleared(modelaccountmodel.FieldModeration) {
+		fields = append(fields, modelaccountmodel.FieldModeration)
 	}
 	if m.FieldCleared(modelaccountmodel.FieldExtra) {
 		fields = append(fields, modelaccountmodel.FieldExtra)
@@ -12287,8 +13451,26 @@ func (m *ModelAccountModelMutation) ClearField(name string) error {
 	case modelaccountmodel.FieldTaskTypes:
 		m.ClearTaskTypes()
 		return nil
-	case modelaccountmodel.FieldQualities:
-		m.ClearQualities()
+	case modelaccountmodel.FieldBaseResolution:
+		m.ClearBaseResolution()
+		return nil
+	case modelaccountmodel.FieldQuality:
+		m.ClearQuality()
+		return nil
+	case modelaccountmodel.FieldSizeModes:
+		m.ClearSizeModes()
+		return nil
+	case modelaccountmodel.FieldSupportedRatios:
+		m.ClearSupportedRatios()
+		return nil
+	case modelaccountmodel.FieldSupportedPixelSizes:
+		m.ClearSupportedPixelSizes()
+		return nil
+	case modelaccountmodel.FieldOutputFormat:
+		m.ClearOutputFormat()
+		return nil
+	case modelaccountmodel.FieldModeration:
+		m.ClearModeration()
 		return nil
 	case modelaccountmodel.FieldExtra:
 		m.ClearExtra()
@@ -12322,8 +13504,38 @@ func (m *ModelAccountModelMutation) ResetField(name string) error {
 	case modelaccountmodel.FieldTaskTypes:
 		m.ResetTaskTypes()
 		return nil
-	case modelaccountmodel.FieldQualities:
-		m.ResetQualities()
+	case modelaccountmodel.FieldBaseResolution:
+		m.ResetBaseResolution()
+		return nil
+	case modelaccountmodel.FieldQuality:
+		m.ResetQuality()
+		return nil
+	case modelaccountmodel.FieldMaxReferenceImageCount:
+		m.ResetMaxReferenceImageCount()
+		return nil
+	case modelaccountmodel.FieldMaxImageCount:
+		m.ResetMaxImageCount()
+		return nil
+	case modelaccountmodel.FieldSizeModes:
+		m.ResetSizeModes()
+		return nil
+	case modelaccountmodel.FieldSupportedRatios:
+		m.ResetSupportedRatios()
+		return nil
+	case modelaccountmodel.FieldSupportedPixelSizes:
+		m.ResetSupportedPixelSizes()
+		return nil
+	case modelaccountmodel.FieldOutputFormat:
+		m.ResetOutputFormat()
+		return nil
+	case modelaccountmodel.FieldOutputCompression:
+		m.ResetOutputCompression()
+		return nil
+	case modelaccountmodel.FieldSupportsOutputCompression:
+		m.ResetSupportsOutputCompression()
+		return nil
+	case modelaccountmodel.FieldModeration:
+		m.ResetModeration()
 		return nil
 	case modelaccountmodel.FieldCostPerImage:
 		m.ResetCostPerImage()
@@ -23020,37 +24232,45 @@ func (m *ProviderErrorPolicyMutation) ResetEdge(name string) error {
 // ProviderModelMutation represents an operation that mutates the ProviderModel nodes in the graph.
 type ProviderModelMutation struct {
 	config
-	op                           Op
-	typ                          string
-	id                           *int
-	created_at                   *time.Time
-	updated_at                   *time.Time
-	provider_id                  *int64
-	addprovider_id               *int64
-	model_code                   *string
-	compat_mode                  *string
-	supports_image_input         *bool
-	supports_mask                *bool
-	supported_qualities          *[]string
-	appendsupported_qualities    []string
-	supported_ratios             *[]string
-	appendsupported_ratios       []string
-	max_image_count              *int
-	addmax_image_count           *int
-	max_reference_image_count    *int
-	addmax_reference_image_count *int
-	timeout_ms                   *int
-	addtimeout_ms                *int
-	input_cost                   *string
-	output_cost                  *string
-	currency                     *string
-	health_status                *string
-	last_health_checked_at       *time.Time
-	enabled                      *bool
-	clearedFields                map[string]struct{}
-	done                         bool
-	oldValue                     func(context.Context) (*ProviderModel, error)
-	predicates                   []predicate.ProviderModel
+	op                              Op
+	typ                             string
+	id                              *int
+	created_at                      *time.Time
+	updated_at                      *time.Time
+	provider_id                     *int64
+	addprovider_id                  *int64
+	model_code                      *string
+	compat_mode                     *string
+	supports_image_input            *bool
+	supports_mask                   *bool
+	supported_base_resolution       *[]string
+	appendsupported_base_resolution []string
+	quality                         *[]string
+	appendquality                   []string
+	supported_ratios                *[]string
+	appendsupported_ratios          []string
+	output_format                   *[]string
+	appendoutput_format             []string
+	output_compression              *int
+	addoutput_compression           *int
+	moderation                      *[]string
+	appendmoderation                []string
+	max_image_count                 *int
+	addmax_image_count              *int
+	max_reference_image_count       *int
+	addmax_reference_image_count    *int
+	timeout_ms                      *int
+	addtimeout_ms                   *int
+	input_cost                      *string
+	output_cost                     *string
+	currency                        *string
+	health_status                   *string
+	last_health_checked_at          *time.Time
+	enabled                         *bool
+	clearedFields                   map[string]struct{}
+	done                            bool
+	oldValue                        func(context.Context) (*ProviderModel, error)
+	predicates                      []predicate.ProviderModel
 }
 
 var _ ent.Mutation = (*ProviderModelMutation)(nil)
@@ -23423,69 +24643,134 @@ func (m *ProviderModelMutation) ResetSupportsMask() {
 	m.supports_mask = nil
 }
 
-// SetSupportedQualities sets the "supported_qualities" field.
-func (m *ProviderModelMutation) SetSupportedQualities(s []string) {
-	m.supported_qualities = &s
-	m.appendsupported_qualities = nil
+// SetSupportedBaseResolution sets the "supported_base_resolution" field.
+func (m *ProviderModelMutation) SetSupportedBaseResolution(s []string) {
+	m.supported_base_resolution = &s
+	m.appendsupported_base_resolution = nil
 }
 
-// SupportedQualities returns the value of the "supported_qualities" field in the mutation.
-func (m *ProviderModelMutation) SupportedQualities() (r []string, exists bool) {
-	v := m.supported_qualities
+// SupportedBaseResolution returns the value of the "supported_base_resolution" field in the mutation.
+func (m *ProviderModelMutation) SupportedBaseResolution() (r []string, exists bool) {
+	v := m.supported_base_resolution
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldSupportedQualities returns the old "supported_qualities" field's value of the ProviderModel entity.
+// OldSupportedBaseResolution returns the old "supported_base_resolution" field's value of the ProviderModel entity.
 // If the ProviderModel object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ProviderModelMutation) OldSupportedQualities(ctx context.Context) (v []string, err error) {
+func (m *ProviderModelMutation) OldSupportedBaseResolution(ctx context.Context) (v []string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSupportedQualities is only allowed on UpdateOne operations")
+		return v, errors.New("OldSupportedBaseResolution is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSupportedQualities requires an ID field in the mutation")
+		return v, errors.New("OldSupportedBaseResolution requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSupportedQualities: %w", err)
+		return v, fmt.Errorf("querying old value for OldSupportedBaseResolution: %w", err)
 	}
-	return oldValue.SupportedQualities, nil
+	return oldValue.SupportedBaseResolution, nil
 }
 
-// AppendSupportedQualities adds s to the "supported_qualities" field.
-func (m *ProviderModelMutation) AppendSupportedQualities(s []string) {
-	m.appendsupported_qualities = append(m.appendsupported_qualities, s...)
+// AppendSupportedBaseResolution adds s to the "supported_base_resolution" field.
+func (m *ProviderModelMutation) AppendSupportedBaseResolution(s []string) {
+	m.appendsupported_base_resolution = append(m.appendsupported_base_resolution, s...)
 }
 
-// AppendedSupportedQualities returns the list of values that were appended to the "supported_qualities" field in this mutation.
-func (m *ProviderModelMutation) AppendedSupportedQualities() ([]string, bool) {
-	if len(m.appendsupported_qualities) == 0 {
+// AppendedSupportedBaseResolution returns the list of values that were appended to the "supported_base_resolution" field in this mutation.
+func (m *ProviderModelMutation) AppendedSupportedBaseResolution() ([]string, bool) {
+	if len(m.appendsupported_base_resolution) == 0 {
 		return nil, false
 	}
-	return m.appendsupported_qualities, true
+	return m.appendsupported_base_resolution, true
 }
 
-// ClearSupportedQualities clears the value of the "supported_qualities" field.
-func (m *ProviderModelMutation) ClearSupportedQualities() {
-	m.supported_qualities = nil
-	m.appendsupported_qualities = nil
-	m.clearedFields[providermodel.FieldSupportedQualities] = struct{}{}
+// ClearSupportedBaseResolution clears the value of the "supported_base_resolution" field.
+func (m *ProviderModelMutation) ClearSupportedBaseResolution() {
+	m.supported_base_resolution = nil
+	m.appendsupported_base_resolution = nil
+	m.clearedFields[providermodel.FieldSupportedBaseResolution] = struct{}{}
 }
 
-// SupportedQualitiesCleared returns if the "supported_qualities" field was cleared in this mutation.
-func (m *ProviderModelMutation) SupportedQualitiesCleared() bool {
-	_, ok := m.clearedFields[providermodel.FieldSupportedQualities]
+// SupportedBaseResolutionCleared returns if the "supported_base_resolution" field was cleared in this mutation.
+func (m *ProviderModelMutation) SupportedBaseResolutionCleared() bool {
+	_, ok := m.clearedFields[providermodel.FieldSupportedBaseResolution]
 	return ok
 }
 
-// ResetSupportedQualities resets all changes to the "supported_qualities" field.
-func (m *ProviderModelMutation) ResetSupportedQualities() {
-	m.supported_qualities = nil
-	m.appendsupported_qualities = nil
-	delete(m.clearedFields, providermodel.FieldSupportedQualities)
+// ResetSupportedBaseResolution resets all changes to the "supported_base_resolution" field.
+func (m *ProviderModelMutation) ResetSupportedBaseResolution() {
+	m.supported_base_resolution = nil
+	m.appendsupported_base_resolution = nil
+	delete(m.clearedFields, providermodel.FieldSupportedBaseResolution)
+}
+
+// SetQuality sets the "quality" field.
+func (m *ProviderModelMutation) SetQuality(s []string) {
+	m.quality = &s
+	m.appendquality = nil
+}
+
+// Quality returns the value of the "quality" field in the mutation.
+func (m *ProviderModelMutation) Quality() (r []string, exists bool) {
+	v := m.quality
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuality returns the old "quality" field's value of the ProviderModel entity.
+// If the ProviderModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProviderModelMutation) OldQuality(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuality is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuality requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuality: %w", err)
+	}
+	return oldValue.Quality, nil
+}
+
+// AppendQuality adds s to the "quality" field.
+func (m *ProviderModelMutation) AppendQuality(s []string) {
+	m.appendquality = append(m.appendquality, s...)
+}
+
+// AppendedQuality returns the list of values that were appended to the "quality" field in this mutation.
+func (m *ProviderModelMutation) AppendedQuality() ([]string, bool) {
+	if len(m.appendquality) == 0 {
+		return nil, false
+	}
+	return m.appendquality, true
+}
+
+// ClearQuality clears the value of the "quality" field.
+func (m *ProviderModelMutation) ClearQuality() {
+	m.quality = nil
+	m.appendquality = nil
+	m.clearedFields[providermodel.FieldQuality] = struct{}{}
+}
+
+// QualityCleared returns if the "quality" field was cleared in this mutation.
+func (m *ProviderModelMutation) QualityCleared() bool {
+	_, ok := m.clearedFields[providermodel.FieldQuality]
+	return ok
+}
+
+// ResetQuality resets all changes to the "quality" field.
+func (m *ProviderModelMutation) ResetQuality() {
+	m.quality = nil
+	m.appendquality = nil
+	delete(m.clearedFields, providermodel.FieldQuality)
 }
 
 // SetSupportedRatios sets the "supported_ratios" field.
@@ -23551,6 +24836,192 @@ func (m *ProviderModelMutation) ResetSupportedRatios() {
 	m.supported_ratios = nil
 	m.appendsupported_ratios = nil
 	delete(m.clearedFields, providermodel.FieldSupportedRatios)
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (m *ProviderModelMutation) SetOutputFormat(s []string) {
+	m.output_format = &s
+	m.appendoutput_format = nil
+}
+
+// OutputFormat returns the value of the "output_format" field in the mutation.
+func (m *ProviderModelMutation) OutputFormat() (r []string, exists bool) {
+	v := m.output_format
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputFormat returns the old "output_format" field's value of the ProviderModel entity.
+// If the ProviderModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProviderModelMutation) OldOutputFormat(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputFormat is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputFormat requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputFormat: %w", err)
+	}
+	return oldValue.OutputFormat, nil
+}
+
+// AppendOutputFormat adds s to the "output_format" field.
+func (m *ProviderModelMutation) AppendOutputFormat(s []string) {
+	m.appendoutput_format = append(m.appendoutput_format, s...)
+}
+
+// AppendedOutputFormat returns the list of values that were appended to the "output_format" field in this mutation.
+func (m *ProviderModelMutation) AppendedOutputFormat() ([]string, bool) {
+	if len(m.appendoutput_format) == 0 {
+		return nil, false
+	}
+	return m.appendoutput_format, true
+}
+
+// ClearOutputFormat clears the value of the "output_format" field.
+func (m *ProviderModelMutation) ClearOutputFormat() {
+	m.output_format = nil
+	m.appendoutput_format = nil
+	m.clearedFields[providermodel.FieldOutputFormat] = struct{}{}
+}
+
+// OutputFormatCleared returns if the "output_format" field was cleared in this mutation.
+func (m *ProviderModelMutation) OutputFormatCleared() bool {
+	_, ok := m.clearedFields[providermodel.FieldOutputFormat]
+	return ok
+}
+
+// ResetOutputFormat resets all changes to the "output_format" field.
+func (m *ProviderModelMutation) ResetOutputFormat() {
+	m.output_format = nil
+	m.appendoutput_format = nil
+	delete(m.clearedFields, providermodel.FieldOutputFormat)
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (m *ProviderModelMutation) SetOutputCompression(i int) {
+	m.output_compression = &i
+	m.addoutput_compression = nil
+}
+
+// OutputCompression returns the value of the "output_compression" field in the mutation.
+func (m *ProviderModelMutation) OutputCompression() (r int, exists bool) {
+	v := m.output_compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputCompression returns the old "output_compression" field's value of the ProviderModel entity.
+// If the ProviderModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProviderModelMutation) OldOutputCompression(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputCompression is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputCompression requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputCompression: %w", err)
+	}
+	return oldValue.OutputCompression, nil
+}
+
+// AddOutputCompression adds i to the "output_compression" field.
+func (m *ProviderModelMutation) AddOutputCompression(i int) {
+	if m.addoutput_compression != nil {
+		*m.addoutput_compression += i
+	} else {
+		m.addoutput_compression = &i
+	}
+}
+
+// AddedOutputCompression returns the value that was added to the "output_compression" field in this mutation.
+func (m *ProviderModelMutation) AddedOutputCompression() (r int, exists bool) {
+	v := m.addoutput_compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputCompression resets all changes to the "output_compression" field.
+func (m *ProviderModelMutation) ResetOutputCompression() {
+	m.output_compression = nil
+	m.addoutput_compression = nil
+}
+
+// SetModeration sets the "moderation" field.
+func (m *ProviderModelMutation) SetModeration(s []string) {
+	m.moderation = &s
+	m.appendmoderation = nil
+}
+
+// Moderation returns the value of the "moderation" field in the mutation.
+func (m *ProviderModelMutation) Moderation() (r []string, exists bool) {
+	v := m.moderation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModeration returns the old "moderation" field's value of the ProviderModel entity.
+// If the ProviderModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProviderModelMutation) OldModeration(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModeration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModeration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModeration: %w", err)
+	}
+	return oldValue.Moderation, nil
+}
+
+// AppendModeration adds s to the "moderation" field.
+func (m *ProviderModelMutation) AppendModeration(s []string) {
+	m.appendmoderation = append(m.appendmoderation, s...)
+}
+
+// AppendedModeration returns the list of values that were appended to the "moderation" field in this mutation.
+func (m *ProviderModelMutation) AppendedModeration() ([]string, bool) {
+	if len(m.appendmoderation) == 0 {
+		return nil, false
+	}
+	return m.appendmoderation, true
+}
+
+// ClearModeration clears the value of the "moderation" field.
+func (m *ProviderModelMutation) ClearModeration() {
+	m.moderation = nil
+	m.appendmoderation = nil
+	m.clearedFields[providermodel.FieldModeration] = struct{}{}
+}
+
+// ModerationCleared returns if the "moderation" field was cleared in this mutation.
+func (m *ProviderModelMutation) ModerationCleared() bool {
+	_, ok := m.clearedFields[providermodel.FieldModeration]
+	return ok
+}
+
+// ResetModeration resets all changes to the "moderation" field.
+func (m *ProviderModelMutation) ResetModeration() {
+	m.moderation = nil
+	m.appendmoderation = nil
+	delete(m.clearedFields, providermodel.FieldModeration)
 }
 
 // SetMaxImageCount sets the "max_image_count" field.
@@ -23984,7 +25455,7 @@ func (m *ProviderModelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ProviderModelMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 22)
 	if m.created_at != nil {
 		fields = append(fields, providermodel.FieldCreatedAt)
 	}
@@ -24006,11 +25477,23 @@ func (m *ProviderModelMutation) Fields() []string {
 	if m.supports_mask != nil {
 		fields = append(fields, providermodel.FieldSupportsMask)
 	}
-	if m.supported_qualities != nil {
-		fields = append(fields, providermodel.FieldSupportedQualities)
+	if m.supported_base_resolution != nil {
+		fields = append(fields, providermodel.FieldSupportedBaseResolution)
+	}
+	if m.quality != nil {
+		fields = append(fields, providermodel.FieldQuality)
 	}
 	if m.supported_ratios != nil {
 		fields = append(fields, providermodel.FieldSupportedRatios)
+	}
+	if m.output_format != nil {
+		fields = append(fields, providermodel.FieldOutputFormat)
+	}
+	if m.output_compression != nil {
+		fields = append(fields, providermodel.FieldOutputCompression)
+	}
+	if m.moderation != nil {
+		fields = append(fields, providermodel.FieldModeration)
 	}
 	if m.max_image_count != nil {
 		fields = append(fields, providermodel.FieldMaxImageCount)
@@ -24061,10 +25544,18 @@ func (m *ProviderModelMutation) Field(name string) (ent.Value, bool) {
 		return m.SupportsImageInput()
 	case providermodel.FieldSupportsMask:
 		return m.SupportsMask()
-	case providermodel.FieldSupportedQualities:
-		return m.SupportedQualities()
+	case providermodel.FieldSupportedBaseResolution:
+		return m.SupportedBaseResolution()
+	case providermodel.FieldQuality:
+		return m.Quality()
 	case providermodel.FieldSupportedRatios:
 		return m.SupportedRatios()
+	case providermodel.FieldOutputFormat:
+		return m.OutputFormat()
+	case providermodel.FieldOutputCompression:
+		return m.OutputCompression()
+	case providermodel.FieldModeration:
+		return m.Moderation()
 	case providermodel.FieldMaxImageCount:
 		return m.MaxImageCount()
 	case providermodel.FieldMaxReferenceImageCount:
@@ -24106,10 +25597,18 @@ func (m *ProviderModelMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldSupportsImageInput(ctx)
 	case providermodel.FieldSupportsMask:
 		return m.OldSupportsMask(ctx)
-	case providermodel.FieldSupportedQualities:
-		return m.OldSupportedQualities(ctx)
+	case providermodel.FieldSupportedBaseResolution:
+		return m.OldSupportedBaseResolution(ctx)
+	case providermodel.FieldQuality:
+		return m.OldQuality(ctx)
 	case providermodel.FieldSupportedRatios:
 		return m.OldSupportedRatios(ctx)
+	case providermodel.FieldOutputFormat:
+		return m.OldOutputFormat(ctx)
+	case providermodel.FieldOutputCompression:
+		return m.OldOutputCompression(ctx)
+	case providermodel.FieldModeration:
+		return m.OldModeration(ctx)
 	case providermodel.FieldMaxImageCount:
 		return m.OldMaxImageCount(ctx)
 	case providermodel.FieldMaxReferenceImageCount:
@@ -24186,12 +25685,19 @@ func (m *ProviderModelMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSupportsMask(v)
 		return nil
-	case providermodel.FieldSupportedQualities:
+	case providermodel.FieldSupportedBaseResolution:
 		v, ok := value.([]string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetSupportedQualities(v)
+		m.SetSupportedBaseResolution(v)
+		return nil
+	case providermodel.FieldQuality:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuality(v)
 		return nil
 	case providermodel.FieldSupportedRatios:
 		v, ok := value.([]string)
@@ -24199,6 +25705,27 @@ func (m *ProviderModelMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSupportedRatios(v)
+		return nil
+	case providermodel.FieldOutputFormat:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputFormat(v)
+		return nil
+	case providermodel.FieldOutputCompression:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputCompression(v)
+		return nil
+	case providermodel.FieldModeration:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModeration(v)
 		return nil
 	case providermodel.FieldMaxImageCount:
 		v, ok := value.(int)
@@ -24274,6 +25801,9 @@ func (m *ProviderModelMutation) AddedFields() []string {
 	if m.addprovider_id != nil {
 		fields = append(fields, providermodel.FieldProviderID)
 	}
+	if m.addoutput_compression != nil {
+		fields = append(fields, providermodel.FieldOutputCompression)
+	}
 	if m.addmax_image_count != nil {
 		fields = append(fields, providermodel.FieldMaxImageCount)
 	}
@@ -24293,6 +25823,8 @@ func (m *ProviderModelMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case providermodel.FieldProviderID:
 		return m.AddedProviderID()
+	case providermodel.FieldOutputCompression:
+		return m.AddedOutputCompression()
 	case providermodel.FieldMaxImageCount:
 		return m.AddedMaxImageCount()
 	case providermodel.FieldMaxReferenceImageCount:
@@ -24314,6 +25846,13 @@ func (m *ProviderModelMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddProviderID(v)
+		return nil
+	case providermodel.FieldOutputCompression:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputCompression(v)
 		return nil
 	case providermodel.FieldMaxImageCount:
 		v, ok := value.(int)
@@ -24344,11 +25883,20 @@ func (m *ProviderModelMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *ProviderModelMutation) ClearedFields() []string {
 	var fields []string
-	if m.FieldCleared(providermodel.FieldSupportedQualities) {
-		fields = append(fields, providermodel.FieldSupportedQualities)
+	if m.FieldCleared(providermodel.FieldSupportedBaseResolution) {
+		fields = append(fields, providermodel.FieldSupportedBaseResolution)
+	}
+	if m.FieldCleared(providermodel.FieldQuality) {
+		fields = append(fields, providermodel.FieldQuality)
 	}
 	if m.FieldCleared(providermodel.FieldSupportedRatios) {
 		fields = append(fields, providermodel.FieldSupportedRatios)
+	}
+	if m.FieldCleared(providermodel.FieldOutputFormat) {
+		fields = append(fields, providermodel.FieldOutputFormat)
+	}
+	if m.FieldCleared(providermodel.FieldModeration) {
+		fields = append(fields, providermodel.FieldModeration)
 	}
 	if m.FieldCleared(providermodel.FieldLastHealthCheckedAt) {
 		fields = append(fields, providermodel.FieldLastHealthCheckedAt)
@@ -24367,11 +25915,20 @@ func (m *ProviderModelMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *ProviderModelMutation) ClearField(name string) error {
 	switch name {
-	case providermodel.FieldSupportedQualities:
-		m.ClearSupportedQualities()
+	case providermodel.FieldSupportedBaseResolution:
+		m.ClearSupportedBaseResolution()
+		return nil
+	case providermodel.FieldQuality:
+		m.ClearQuality()
 		return nil
 	case providermodel.FieldSupportedRatios:
 		m.ClearSupportedRatios()
+		return nil
+	case providermodel.FieldOutputFormat:
+		m.ClearOutputFormat()
+		return nil
+	case providermodel.FieldModeration:
+		m.ClearModeration()
 		return nil
 	case providermodel.FieldLastHealthCheckedAt:
 		m.ClearLastHealthCheckedAt()
@@ -24405,11 +25962,23 @@ func (m *ProviderModelMutation) ResetField(name string) error {
 	case providermodel.FieldSupportsMask:
 		m.ResetSupportsMask()
 		return nil
-	case providermodel.FieldSupportedQualities:
-		m.ResetSupportedQualities()
+	case providermodel.FieldSupportedBaseResolution:
+		m.ResetSupportedBaseResolution()
+		return nil
+	case providermodel.FieldQuality:
+		m.ResetQuality()
 		return nil
 	case providermodel.FieldSupportedRatios:
 		m.ResetSupportedRatios()
+		return nil
+	case providermodel.FieldOutputFormat:
+		m.ResetOutputFormat()
+		return nil
+	case providermodel.FieldOutputCompression:
+		m.ResetOutputCompression()
+		return nil
+	case providermodel.FieldModeration:
+		m.ResetModeration()
 		return nil
 	case providermodel.FieldMaxImageCount:
 		m.ResetMaxImageCount()
@@ -30920,7 +32489,7 @@ type RouteModelPriceMutation struct {
 	route_model_id       *int64
 	addroute_model_id    *int64
 	task_type            *string
-	quality              *string
+	base_resolution      *string
 	base_points          *string
 	reference_multiplier *string
 	enabled              *bool
@@ -31120,40 +32689,40 @@ func (m *RouteModelPriceMutation) ResetTaskType() {
 	m.task_type = nil
 }
 
-// SetQuality sets the "quality" field.
-func (m *RouteModelPriceMutation) SetQuality(s string) {
-	m.quality = &s
+// SetBaseResolution sets the "base_resolution" field.
+func (m *RouteModelPriceMutation) SetBaseResolution(s string) {
+	m.base_resolution = &s
 }
 
-// Quality returns the value of the "quality" field in the mutation.
-func (m *RouteModelPriceMutation) Quality() (r string, exists bool) {
-	v := m.quality
+// BaseResolution returns the value of the "base_resolution" field in the mutation.
+func (m *RouteModelPriceMutation) BaseResolution() (r string, exists bool) {
+	v := m.base_resolution
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldQuality returns the old "quality" field's value of the RouteModelPrice entity.
+// OldBaseResolution returns the old "base_resolution" field's value of the RouteModelPrice entity.
 // If the RouteModelPrice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RouteModelPriceMutation) OldQuality(ctx context.Context) (v string, err error) {
+func (m *RouteModelPriceMutation) OldBaseResolution(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldQuality is only allowed on UpdateOne operations")
+		return v, errors.New("OldBaseResolution is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldQuality requires an ID field in the mutation")
+		return v, errors.New("OldBaseResolution requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldQuality: %w", err)
+		return v, fmt.Errorf("querying old value for OldBaseResolution: %w", err)
 	}
-	return oldValue.Quality, nil
+	return oldValue.BaseResolution, nil
 }
 
-// ResetQuality resets all changes to the "quality" field.
-func (m *RouteModelPriceMutation) ResetQuality() {
-	m.quality = nil
+// ResetBaseResolution resets all changes to the "base_resolution" field.
+func (m *RouteModelPriceMutation) ResetBaseResolution() {
+	m.base_resolution = nil
 }
 
 // SetBasePoints sets the "base_points" field.
@@ -31305,8 +32874,8 @@ func (m *RouteModelPriceMutation) Fields() []string {
 	if m.task_type != nil {
 		fields = append(fields, routemodelprice.FieldTaskType)
 	}
-	if m.quality != nil {
-		fields = append(fields, routemodelprice.FieldQuality)
+	if m.base_resolution != nil {
+		fields = append(fields, routemodelprice.FieldBaseResolution)
 	}
 	if m.base_points != nil {
 		fields = append(fields, routemodelprice.FieldBasePoints)
@@ -31329,8 +32898,8 @@ func (m *RouteModelPriceMutation) Field(name string) (ent.Value, bool) {
 		return m.RouteModelID()
 	case routemodelprice.FieldTaskType:
 		return m.TaskType()
-	case routemodelprice.FieldQuality:
-		return m.Quality()
+	case routemodelprice.FieldBaseResolution:
+		return m.BaseResolution()
 	case routemodelprice.FieldBasePoints:
 		return m.BasePoints()
 	case routemodelprice.FieldReferenceMultiplier:
@@ -31350,8 +32919,8 @@ func (m *RouteModelPriceMutation) OldField(ctx context.Context, name string) (en
 		return m.OldRouteModelID(ctx)
 	case routemodelprice.FieldTaskType:
 		return m.OldTaskType(ctx)
-	case routemodelprice.FieldQuality:
-		return m.OldQuality(ctx)
+	case routemodelprice.FieldBaseResolution:
+		return m.OldBaseResolution(ctx)
 	case routemodelprice.FieldBasePoints:
 		return m.OldBasePoints(ctx)
 	case routemodelprice.FieldReferenceMultiplier:
@@ -31381,12 +32950,12 @@ func (m *RouteModelPriceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTaskType(v)
 		return nil
-	case routemodelprice.FieldQuality:
+	case routemodelprice.FieldBaseResolution:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetQuality(v)
+		m.SetBaseResolution(v)
 		return nil
 	case routemodelprice.FieldBasePoints:
 		v, ok := value.(string)
@@ -31479,8 +33048,8 @@ func (m *RouteModelPriceMutation) ResetField(name string) error {
 	case routemodelprice.FieldTaskType:
 		m.ResetTaskType()
 		return nil
-	case routemodelprice.FieldQuality:
-		m.ResetQuality()
+	case routemodelprice.FieldBaseResolution:
+		m.ResetBaseResolution()
 		return nil
 	case routemodelprice.FieldBasePoints:
 		m.ResetBasePoints()

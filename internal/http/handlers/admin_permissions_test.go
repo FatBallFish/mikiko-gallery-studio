@@ -137,7 +137,7 @@ func TestAdminHandlersUsePermissionFacadeContract(t *testing.T) {
 
 	for _, match := range matches {
 		name := source[match[2]:match[3]]
-		if name == "HandleAdminLogin" {
+		if name == "HandleAdminLogin" || name == "HandleAdminRefresh" {
 			continue
 		}
 		body, ok := functionBody(source, match[0])

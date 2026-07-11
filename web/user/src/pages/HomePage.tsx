@@ -1,279 +1,156 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ImageResult, PageResult } from '../../../shared/api-types'
-import { cn } from '../../../shared/classnames'
+import { useMemo, useState } from 'react'
+import type { ImageResult } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
-import heroImage from '../../../../docs/template/PicGallery/mpdhezm8-image.png'
-import { EmptyState, ImageLightbox, type ImageLightboxPayload, useApp } from '../components'
-import { publicEngagementScore } from '../publicEngagementModel'
-import { button as btn } from '../ui/redesign-classes'
-import { rdGallery, rdHome } from '../ui/redesign-classes'
-import { errorMessage } from '../useApiResource'
-import { homeGalleryCardView } from './homeGalleryModel'
-import { Image as ImageIcon, RefreshCw } from '../ui/icons'
-
-type FilterMode = 'latest' | 'hot'
-
-type MasonryCard = {
-  id: string
-  title: string
-  meta: string
-  imageUrl?: string
-  createdAt: string
-  hotScore: number
-  image: ImageResult
-  onClick: () => void
-}
+import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageLightbox, LocalFeedback, StatusRail, type ImageLightboxPayload, useApp } from '../components'
+import { useApiResource } from '../useApiResource'
+import { ArrowRight, Image as ImageIcon, RefreshCw, Sparkles } from '../ui/icons'
+import { galleryImageAspect } from './galleryExperience'
+import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
 
 const homeClasses = {
-  content: 'w-full flex-1 p-6 md:p-10',
-  carousel: cn(rdHome.hero, 'mb-16 min-h-[420px] cursor-pointer border border-[var(--border)] p-10 md:p-16 max-[760px]:min-h-[360px] max-[760px]:p-6'),
-  heroImage: rdHome.heroImg,
-  carouselOverlay: rdHome.heroOverlay,
-  heroTitle: rdHome.heroTitle,
-  heroContent: rdHome.heroContent,
-  heroText: rdHome.heroText,
-  actionRow: rdHome.heroActions,
-  sectionHead: 'mb-6 flex items-end justify-between gap-4 max-[760px]:items-start max-[760px]:flex-col',
-  sectionTitle: 'm-0 text-3xl font-black md:text-4xl',
-  sectionDetail: 'mt-1.5 block text-[13px] text-[var(--muted)]',
-  filterGroup: 'flex flex-wrap justify-end gap-3',
-  masonry: rdGallery.masonry,
-  masonryItem: cn(rdGallery.itemShell, 'mb-8 block w-full break-inside-avoid overflow-hidden border-0 p-1 text-left text-[var(--fg)] active:scale-[0.98]'),
-  masonryImage: cn(rdGallery.itemImg, 'h-auto opacity-90 transition duration-700 hover:scale-110 hover:opacity-100'),
-  cardBody: 'p-5',
-  cardTitle: 'mb-1 block text-sm font-bold',
-  cardMeta: 'font-mono text-[11px] uppercase text-[var(--muted)]',
-  placeholder: 'grid min-h-[220px] place-items-center bg-[color-mix(in_oklch,var(--fg)_4%,transparent)] text-[var(--muted)]',
-  smallNote: 'm-0 mt-2.5 text-[13px] text-[var(--muted)]',
-  button: cn(btn.base, 'min-h-0 px-4 py-1.5 text-[13px] font-semibold'),
-  buttonActive: cn(btn.primary, 'font-extrabold'),
-  buttonGhost: cn(btn.base, btn.ghost, 'min-h-0 px-4 py-1.5 text-[13px] font-semibold'),
-  loadSentinel: 'mt-8 flex min-h-12 items-center justify-center gap-2 text-sm text-[var(--muted)]',
-  skeletonCard: 'mb-8 break-inside-avoid overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]',
-  skeletonImage: 'pg-skeleton aspect-[4/3] w-full',
-  skeletonBody: 'grid gap-3 p-5',
+  content: 'mx-auto w-full max-w-[1440px] flex-1 px-6 pb-28 pt-8 md:px-10 md:pb-16 md:pt-12',
+  continuation: 'grid min-h-[300px] grid-cols-[minmax(0,1.2fr)_minmax(18rem,.8fr)] items-end gap-10 border-b border-[var(--border)] pb-12 max-[840px]:grid-cols-1 max-[840px]:gap-8',
+  kicker: 'mb-4 inline-flex items-center gap-2 text-xs font-semibold text-[var(--accent)]',
+  title: 'm-0 max-w-[18ch] font-vault-display text-[clamp(2.6rem,6vw,5.5rem)] font-medium leading-[.98] text-[var(--fg)]',
+  lead: 'mb-0 mt-6 max-w-[58ch] text-sm leading-7 text-[var(--muted)] md:text-base',
+  actions: 'mt-7 flex flex-wrap items-center gap-3',
+  recent: 'border-l border-[var(--border)] pl-8 max-[840px]:border-l-0 max-[840px]:border-t max-[840px]:pl-0 max-[840px]:pt-6',
+  recentLabel: 'mb-3 block text-xs font-semibold text-[var(--muted)]',
+  recentTitle: 'm-0 text-xl font-semibold text-[var(--fg)]',
+  recentDetail: 'mb-0 mt-3 text-sm leading-6 text-[var(--muted)]',
+  section: 'pt-16 md:pt-24',
+  sectionHeader: 'mb-7 flex flex-wrap items-end justify-between gap-5 border-b border-[var(--border)] pb-5',
+  sectionTitle: 'm-0 font-vault-display text-[clamp(2rem,4vw,3.75rem)] font-medium leading-none text-[var(--fg)]',
+  sectionDetail: 'mb-0 mt-3 max-w-[60ch] text-sm leading-6 text-[var(--muted)]',
+  gallery: 'grid grid-cols-3 gap-x-5 gap-y-9 max-[980px]:grid-cols-2 max-[620px]:grid-cols-1',
+  galleryItem: 'min-w-0',
+  galleryTitle: 'mb-0 mt-3 line-clamp-2 text-sm font-semibold leading-6 text-[var(--fg)]',
+  galleryMeta: 'mt-1 block truncate font-vault-mono text-[11px] text-[var(--muted)]',
 }
 
-const HOME_PAGE_SIZE = 16
+const recentActionLabels = {
+  create: '开始创作',
+  continue: '查看任务进度',
+  retry: '查看并重试',
+  inspect: '查看任务结果',
+} as const
 
 export function HomePage() {
   const app = useApp()
-  const [filter, setFilter] = useState<FilterMode>('hot')
+  const balance = useApiResource(() => userApi.getBalance(), [])
+  const capabilities = useApiResource(() => userApi.getCapabilities(), [])
+  const tasks = useApiResource(() => userApi.listTasks(), [])
+  const publicGallery = useApiResource(() => openApi.listPublicGallery(1, 12, { sort: 'hot', accessToken: null }), [])
   const [imagePreview, setImagePreview] = useState<ImageLightboxPayload | null>(null)
-  const [cardsData, setCardsData] = useState<ImageResult[]>([])
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [reloadKey, setReloadKey] = useState(0)
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
 
-  const cards = useMemo(() => {
-    return cardsData.map((image) => {
-      const card = homeGalleryCardView(image)
-      return {
-        id: image.id,
-        title: card.title,
-        meta: card.meta,
-        imageUrl: image.url ? userApi.imageAssetUrl(image.url, app.session?.token) : undefined,
-        createdAt: image.created_at ?? '',
-        hotScore: publicEngagementScore(image),
-        image,
-        onClick: () => openImageLightbox(image),
-      }
-    })
-  }, [app.session?.token, cardsData])
+  const latestTask = useMemo(() => newestHomeTask(tasks.data ?? []), [tasks.data])
+  const continuation = useMemo(() => homeContinuationView(tasks.data ?? []), [tasks.data])
+  const recent = homeRecentTaskView(latestTask, tasks.loading)
+  const account = homeAccountReadinessView(balance.data)
+  const models = homeModelReadinessView(capabilities.data, capabilities.loading)
+  const curated = useMemo(() => curatedHomeGallery(publicGallery.data?.items ?? [], 6), [publicGallery.data?.items])
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadPublic(pageNo: number, mode: 'replace' | 'append') {
-      if (mode === 'replace') setLoading(true)
-      else setLoadingMore(true)
-      try {
-        const result: PageResult<ImageResult> = await openApi.listPublicGallery(pageNo, HOME_PAGE_SIZE, { sort: filter, accessToken: app.session?.token })
-        if (cancelled) return
-        setCardsData((current) => mode === 'replace' ? result.items : [...current, ...result.items])
-        const total = result.pagination?.total ?? result.total ?? 0
-        const loaded = result.items.length
-        setHasMore(result.items.length === HOME_PAGE_SIZE && (total <= 0 || loaded < total))
-        setPage(pageNo)
-      } catch (err) {
-        if (!cancelled) app.notify('error', errorMessage(err))
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-          setLoadingMore(false)
-        }
-      }
-    }
-
-    setCardsData([])
-    setHasMore(true)
-    setPage(1)
-    void loadPublic(1, 'replace')
-    return () => { cancelled = true }
-  }, [app, app.session?.token, filter, reloadKey])
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    if (!sentinel || !hasMore || loading || loadingMore) return undefined
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return
-      void (async () => {
-        setLoadingMore(true)
-        try {
-          const nextPage = page + 1
-          const result = await openApi.listPublicGallery(nextPage, HOME_PAGE_SIZE, { sort: filter, accessToken: app.session?.token })
-          let loaded = result.items.length
-          setCardsData((current) => {
-            const next = [...current, ...result.items]
-            loaded = next.length
-            return next
-          })
-          const total = result.pagination?.total ?? result.total ?? 0
-          setHasMore(result.items.length === HOME_PAGE_SIZE && (total <= 0 || loaded < total))
-          setPage(nextPage)
-        } catch (err) {
-          app.notify('error', errorMessage(err))
-        } finally {
-          setLoadingMore(false)
-        }
-      })()
-    }, { rootMargin: '240px 0px' })
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [app, app.session?.token, filter, hasMore, loading, loadingMore, page])
-
-  function openImageLightbox(image: ImageResult) {
-    const url = image.url || image.download_url
-    if (!url) return
+  function openImage(image: ImageResult) {
+    const source = image.url || image.download_url
+    if (!source) return
     setImagePreview({
-      url: userApi.imageAssetUrl(url, app.session?.token),
-      downloadUrl: userApi.imageAssetUrl(image.download_url || url, app.session?.token),
+      url: userApi.imageAssetUrl(source, null),
+      downloadUrl: userApi.imageAssetUrl(image.download_url || source, null),
       alt: image.prompt || image.prompt_excerpt || image.id,
       prompt: image.prompt || image.prompt_excerpt,
       width: image.width,
       height: image.height,
       ratio: image.aspect_ratio,
       model: image.route_model_code || image.abstract_model,
-      source: '灵感发现',
+      source: '精选灵感',
     })
   }
 
   return (
-    <div className={homeClasses.content}>
-      <section
-        className={homeClasses.carousel}
-        role="button"
-        tabIndex={0}
-        aria-label="套用高奢腕表影棚主题"
-        onClick={() => app.navigate('genpic')}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') app.navigate('genpic')
-        }}
-      >
-        <img src={heroImage} alt="Carousel Banner" className={homeClasses.heroImage} />
-        <div className={homeClasses.carouselOverlay} />
-        <div className={homeClasses.heroContent}>
-          <h1 className={homeClasses.heroTitle}>高奢视觉生成工坊</h1>
-          <p className={homeClasses.heroText}>用统一模型、清晰参数和可追溯历史，快速完成商品图、概念稿和视觉提案。</p>
-          <div className={homeClasses.actionRow}>
-            <HomeButton isActive onClick={(event) => navigateFromButton(event, () => app.navigate('genpic'))}>开始创作</HomeButton>
-            <HomeButton onClick={(event) => navigateFromButton(event, () => app.navigate('docs'))}>查看文档</HomeButton>
+    <main className={homeClasses.content}>
+      <section className={homeClasses.continuation} aria-labelledby="home-continuation-title">
+        <div>
+          <span className={homeClasses.kicker}><Sparkles size={15} strokeWidth={1.5} aria-hidden="true" /> 今天的创作入口</span>
+          <h1 id="home-continuation-title" className={homeClasses.title}>回到下一张图像</h1>
+          <p className={homeClasses.lead}>继续最近的任务，或者带着一个新想法进入创作台。模型状态、可用积分与历史结果都会留在同一条路径上。</p>
+          <div className={homeClasses.actions}>
+            <Button onClick={() => app.navigate(continuation.route, { taskId: continuation.taskId })}>{continuation.label}<ArrowRight size={17} strokeWidth={1.5} aria-hidden="true" /></Button>
+            <Button tone="ghost" onClick={() => app.navigate('gallery')}>查看历史资产</Button>
           </div>
+        </div>
+        <div className={homeClasses.recent}>
+          <span className={homeClasses.recentLabel}>最近任务</span>
+          <h2 className={homeClasses.recentTitle}>{recent.title}</h2>
+          <p className={homeClasses.recentDetail}>{recent.detail}</p>
+          {recent.state === 'failed' ? <LocalFeedback className="mt-5" tone="error" title="可以调整参数后重试" detail="失败任务不会按成功图片数量扣费。" /> : null}
+          {recent.action !== 'none' ? (
+            <Button className="mt-5" tone="ghost" onClick={() => app.navigate('genpic', { taskId: latestTask?.id })}>
+              {recentActionLabels[recent.action]}
+              <ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
       </section>
 
-      <section aria-labelledby="inspiration-title">
-        <div className={homeClasses.sectionHead}>
+      <StatusRail
+        label="创作就绪状态"
+        className="px-0 py-5"
+        items={[
+          { key: 'models', label: '生图能力', value: models.value, tone: models.warning ? 'warning' : 'success' },
+          { key: 'balance', label: '可用积分', value: balance.loading ? '读取中' : account.availableValue, tone: Number.parseFloat(balance.data?.available_points ?? '0') > 0 ? 'success' : 'warning' },
+          { key: 'trial', label: '体验额度', value: balance.loading ? '读取中' : account.trialValue, tone: account.trialWarning ? 'warning' : 'neutral' },
+        ]}
+      />
+
+      {(capabilities.error || balance.error || tasks.error) ? (
+        <ErrorState message={capabilities.error || balance.error || tasks.error || '首页状态读取失败'} onRetry={() => void Promise.all([capabilities.reload(), balance.reload(), tasks.reload()])} />
+      ) : null}
+
+      <section className={homeClasses.section} aria-labelledby="home-inspiration-title">
+        <div className={homeClasses.sectionHeader}>
           <div>
-            <h2 id="inspiration-title" className={homeClasses.sectionTitle}>灵感发现</h2>
-            <span className={homeClasses.sectionDetail}>
-              {loading ? '正在刷新公开广场...' : '查看公开作品的模型、比例与提示词方向。'}
-            </span>
+            <h2 id="home-inspiration-title" className={homeClasses.sectionTitle}>精选灵感</h2>
+            <p className={homeClasses.sectionDetail}>从已公开作品中选取少量代表性结果，聚焦构图、模型与比例，不让信息流淹没下一次创作。</p>
           </div>
-          <div className={homeClasses.filterGroup} aria-label="灵感筛选">
-            <FilterButton active={filter === 'latest'} onClick={() => setFilter('latest')}>最新</FilterButton>
-            <FilterButton active={filter === 'hot'} onClick={() => setFilter('hot')}>最热</FilterButton>
-            <button type="button" className={cn(homeClasses.buttonGhost, 'inline-flex items-center gap-1.5')} onClick={() => setReloadKey((current) => current + 1)} aria-label="刷新">
-              <RefreshCw size={14} strokeWidth={1.5} />
-              刷新
-            </button>
-          </div>
+          <Button tone="ghost" onClick={() => app.navigate('public-gallery')}>浏览公开广场<ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" /></Button>
         </div>
 
-        {loading && !cards.length ? <HomeMasonrySkeleton /> : cards.length ? (
-          <div className={cn(homeClasses.masonry, 'pg-enter')}>
-            {cards.map((card) => (
-              <button type="button" className={homeClasses.masonryItem} key={card.id} onClick={card.onClick}>
-                {card.imageUrl ? <img src={card.imageUrl} alt={card.title} className={homeClasses.masonryImage} /> : <ImagePlaceholder />}
-                <div className={homeClasses.cardBody}>
-                  <strong className={homeClasses.cardTitle}>{card.title}</strong>
-                  <span className={homeClasses.cardMeta}>{card.meta}</span>
-                </div>
-              </button>
-            ))}
+        {publicGallery.loading && !curated.length ? <HomeGallerySkeleton /> : null}
+        {publicGallery.error && !curated.length ? <ErrorState message={publicGallery.error} onRetry={() => void publicGallery.reload()} /> : null}
+        {!publicGallery.loading && !publicGallery.error && !curated.length ? <EmptyState icon={<ImageIcon size={26} strokeWidth={1.5} />} title="暂无精选作品" detail="公开广场还没有审核通过的图片。" /> : null}
+        {curated.length ? (
+          <div className={homeClasses.gallery}>
+            {curated.map((image) => {
+              const card = homeGalleryCardView(image)
+              const src = image.url || image.download_url
+              return (
+                <article className={homeClasses.galleryItem} key={image.id}>
+                  <GalleryImageFrame
+                    src={src ? userApi.imageAssetUrl(src, null) : undefined}
+                    alt={card.title}
+                    width={image.width}
+                    height={image.height}
+                    aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
+                    onOpen={() => openImage(image)}
+                  />
+                  <h3 className={homeClasses.galleryTitle}>{card.title}</h3>
+                  <span className={homeClasses.galleryMeta}>{card.meta}</span>
+                </article>
+              )
+            })}
           </div>
-        ) : (
-          <EmptyState title="暂无公开灵感" detail="当前公开广场还没有可展示的作品。" />
-        )}
-        <div ref={sentinelRef} className={homeClasses.loadSentinel}>
-          {loadingMore ? (
-            <div className="grid w-full max-w-sm gap-2">
-              <div className="pg-skeleton h-4 rounded-xl" />
-              <div className="pg-skeleton h-4 w-2/3 rounded-xl" />
-            </div>
-          ) : hasMore ? '继续下滑加载更多' : cards.length ? '已经到底了' : ''}
-        </div>
+        ) : null}
       </section>
       <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} />
-    </div>
+    </main>
   )
 }
 
-function navigateFromButton(event: React.MouseEvent<HTMLButtonElement>, navigate: () => void) {
-  event.stopPropagation()
-  navigate()
-}
-
-function HomeButton({ children, isActive = false, onClick }: { children: React.ReactNode; isActive?: boolean; onClick: React.MouseEventHandler<HTMLButtonElement> }) {
+function HomeGallerySkeleton() {
   return (
-    <button type="button" className={cn(homeClasses.button, isActive && homeClasses.buttonActive)} onClick={onClick}>
-      {children}
-    </button>
-  )
-}
-
-function FilterButton({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" aria-pressed={active} className={cn(homeClasses.button, active && homeClasses.buttonActive)} onClick={onClick}>
-      {children}
-    </button>
-  )
-}
-
-function ImagePlaceholder() {
-  return (
-    <div className={homeClasses.placeholder}>
-      <ImageIcon size={48} strokeWidth={1} aria-hidden="true" />
-    </div>
-  )
-}
-
-function HomeMasonrySkeleton() {
-  return (
-    <div className={homeClasses.masonry} aria-hidden="true">
-      {Array.from({ length: 8 }).map((_, index) => (
-        <div key={index} className={homeClasses.skeletonCard}>
-          <div className={homeClasses.skeletonImage} />
-          <div className={homeClasses.skeletonBody}>
-            <div className="pg-skeleton h-4 rounded-xl" />
-            <div className="pg-skeleton h-3 w-2/3 rounded-xl" />
-          </div>
-        </div>
-      ))}
+    <div className={homeClasses.gallery} aria-label="正在读取精选作品">
+      {Array.from({ length: 6 }).map((_, index) => <div key={index} className="pg-skeleton aspect-[4/3] rounded-2xl" />)}
     </div>
   )
 }

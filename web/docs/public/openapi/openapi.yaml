@@ -1,0 +1,399 @@
+openapi: 3.1.0
+info:
+  title: Pic Gallery Developer API
+  version: 0.2.0
+  description: Public image generation APIs for native AK/SK integrations and OpenAI-compatible clients.
+servers:
+  - url: http://localhost:8080
+    description: Local API server
+tags:
+  - name: Open Image API
+  - name: OpenAI Compat
+paths:
+  /api/open/image/v1/reference-assets/uploads:
+    post:
+      tags:
+        - Open Image API
+      summary: Create an upload session for reference assets
+      operationId: postOpenReferenceAssetUploadSession
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/openapi.yaml#/components/schemas/UploadSessionRequest
+      responses:
+        "201":
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openapi.yaml#/components/schemas/UploadSessionResponse
+  /api/open/image/v1/tasks:
+    post:
+      tags:
+        - Open Image API
+      summary: Create an image task through Open API
+      operationId: postOpenImageTask
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/CreateImageTaskRequest
+      responses:
+        "202":
+          description: Task accepted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+        "400":
+          description: Invalid task request, including unsupported sync response_mode
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/image/v1/estimate:
+    get:
+      tags:
+        - Open Image API
+      summary: Estimate task points through Open API
+      operationId: getOpenEstimate
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
+        - $ref: ./components/parameters/common.yaml#/components/parameters/BaseResolution
+        - $ref: ./components/parameters/common.yaml#/components/parameters/Quality
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputFormat
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputCompression
+        - $ref: ./components/parameters/common.yaml#/components/parameters/Moderation
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputImageCount
+        - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceImageCount
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskType
+      responses:
+        "200":
+          description: Cost estimate
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
+  /api/open/image/v1/gallery/images:
+    get:
+      tags:
+        - Open Image API
+      summary: List public gallery images
+      operationId: getOpenGalleryImages
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 20
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum:
+              - latest
+              - hot
+        - name: query
+          in: query
+          description: Keyword search over public image ID, prompt excerpt, model, task type, and author. Full prompts remain hidden from list responses.
+          schema:
+            type: string
+        - name: route_model_code
+          in: query
+          schema:
+            type: string
+        - name: task_type
+          in: query
+          schema:
+            type: string
+        - name: liked
+          in: query
+          schema:
+            type: boolean
+        - name: favorited
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Public gallery images
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/PublicGalleryListResponse
+  /api/open/image/v1/gallery/images/{image_id}:
+    get:
+      tags:
+        - Open Image API
+      summary: Get public gallery image detail
+      operationId: getOpenGalleryImageDetail
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Public gallery image detail
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/PublicGalleryDetailResponse
+        "401":
+          description: Login required for full prompt and viewer interaction state
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/image/v1/payments/webhooks/{channel}:
+    post:
+      tags:
+        - Open Image API
+      summary: Payment provider webhook callback
+      operationId: postOpenPaymentWebhook
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - alipay
+              - wxpay
+      responses:
+        "200":
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /v1/images/generations:
+    post:
+      tags:
+        - OpenAI Compat
+      summary: OpenAI-compatible image generation endpoint
+      operationId: postOpenAIImageGeneration
+      security:
+        - compatBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageGenerationRequest
+      responses:
+        "200":
+          description: OpenAI-compatible image generation response
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageResponse
+  /v1/images/edits:
+    post:
+      tags:
+        - OpenAI Compat
+      summary: OpenAI-compatible image edit endpoint
+      operationId: postOpenAIImageEdit
+      security:
+        - compatBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageEditRequest
+      responses:
+        "200":
+          description: OpenAI-compatible image edit response
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIImageResponse
+  /v1/models:
+    get:
+      tags:
+        - OpenAI Compat
+      summary: OpenAI-compatible model list
+      operationId: getOpenAIModels
+      security:
+        - compatBearerAuth: []
+      responses:
+        "200":
+          description: OpenAI-compatible models
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/openai-compat.yaml#/components/schemas/OpenAIModelListResponse
+  /api/open/image/v1/reference-assets:
+    post:
+      tags:
+        - Open Image API
+      summary: Upload a reference asset using multipart form data
+      operationId: postOpenReferenceAssetMultipart
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Reference asset created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
+  /api/open/image/v1/reference-assets/{asset_id}:
+    get:
+      tags:
+        - Open Image API
+      summary: Get Open API reference asset metadata
+      operationId: getOpenReferenceAsset
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reference asset metadata
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
+  /api/open/image/v1/tasks/{task_id}:
+    get:
+      tags:
+        - Open Image API
+      summary: Get Open API image task status and results
+      operationId: getOpenTask
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Image task
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+  /api/open/image/v1/balance:
+    get:
+      tags:
+        - Open Image API
+      summary: Get Open API key user balance
+      operationId: getOpenBalance
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      responses:
+        "200":
+          description: Balance summary
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/BalanceResponse
+  /api/open/image/v1/capabilities:
+    get:
+      tags:
+        - Open Image API
+      summary: Get Open API image generation capabilities
+      operationId: getOpenCapabilities
+      security:
+        - accessKeyAuth: []
+          accessTimestamp: []
+          accessBodySHA256: []
+          accessSignature: []
+      responses:
+        "200":
+          description: Capability list
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CapabilitiesResponse
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    compatBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: sk-*
+    accessKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Access-Key
+    accessTimestamp:
+      type: apiKey
+      in: header
+      name: X-Timestamp
+      description: RFC3339 timestamp; requests outside the configured drift window are rejected.
+    accessBodySHA256:
+      type: apiKey
+      in: header
+      name: X-Body-SHA256
+      description: Base64url-encoded SHA-256 of the exact request body bytes; use the empty body hash for GET.
+    accessSignature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: HMAC-SHA256 over method, request URI, timestamp, and X-Body-SHA256 using the API key secret.

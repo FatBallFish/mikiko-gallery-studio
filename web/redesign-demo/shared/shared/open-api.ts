@@ -57,7 +57,8 @@ function toEstimateQuery(req: EstimateRequest) {
   return {
     task_type: req.task_type,
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
+    base_resolution: req.base_resolution,
+    quality: req.quality ?? 'auto',
     requested_size: req.aspect_ratio,
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,

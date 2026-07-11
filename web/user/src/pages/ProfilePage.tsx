@@ -4,6 +4,7 @@ import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, Field, useApp } from '../components'
 import { button as btn, card, form } from '../ui/redesign-classes'
+import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage } from '../useApiResource'
 import { balanceBucketLabel, bucketExpiryText, normalizeBalanceBuckets, profileLedgerRows } from './profileBalanceModel'
 
@@ -112,11 +113,11 @@ export function ProfilePage() {
   if (loading) return <ProfileLoadingSkeleton />
 
   return (
-    <div className={profileClasses.content}>
-      <div className={profileClasses.header}>
-        <h1 className={profileClasses.title}>个人中心</h1>
-      </div>
-
+    <SettingsWorkspace
+      active="profile"
+      title="个人资料"
+      detail="管理账户资料、积分余额、兑换记录与默认生成偏好。"
+    >
       <div className={profileClasses.grid}>
         <div className={profileClasses.stack}>
           <div className={cn(profileClasses.card, 'pg-enter')}>
@@ -175,7 +176,7 @@ export function ProfilePage() {
           </div>
         </div>
       </div>
-    </div>
+    </SettingsWorkspace>
   )
 }
 
@@ -257,7 +258,7 @@ function ProfileEditor({ profile, busy, onSave }: { profile: UserProfile; busy: 
       <div className={profileClasses.prefGrid}>
         <Field label="默认模型"><select className={form.input} value={preferences.model_group} onChange={(event) => setPreferences({ ...preferences, model_group: event.target.value })}><option value="basic-image">Basic Image</option><option value="plus-image">Plus Image</option><option value="pro-image">Pro Studio</option></select></Field>
         <Field label="默认比例"><select className={form.input} value={preferences.aspect_ratio} onChange={(event) => setPreferences({ ...preferences, aspect_ratio: event.target.value })}><option>1:1</option><option>16:9</option><option>9:16</option><option>4:3</option></select></Field>
-        <Field label="默认质量"><select className={form.input} value={preferences.quality} onChange={(event) => setPreferences({ ...preferences, quality: event.target.value })}><option>auto</option><option>1K</option><option>2K</option><option>4K</option></select></Field>
+        <Field label="默认基础分辨率"><select className={form.input} value={preferences.base_resolution} onChange={(event) => setPreferences({ ...preferences, base_resolution: event.target.value })}><option>auto</option><option>1K</option><option>2K</option><option>4K</option></select></Field>
       </div>
       <button className={cn(btn.base, btn.primary)} type="button" disabled={busy} onClick={() => void onSave({ display_name: name, signature, preferences })}>{busy ? '保存中...' : '保存修改'}</button>
     </div>

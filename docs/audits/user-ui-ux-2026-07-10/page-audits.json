@@ -1,0 +1,46 @@
+{
+  "date": "2026-07-10",
+  "design_system": "Luminous Vault",
+  "routes": [
+    {
+      "surface": "authentication",
+      "status": "passed-existing-evidence",
+      "evidence": "authentication-acceptance.md"
+    },
+    {
+      "surface": "workspace",
+      "status": "passed-existing-evidence",
+      "evidence": "workspace-task6-acceptance.md"
+    },
+    {
+      "surface": "home-assets-public-gallery",
+      "status": "passed-existing-evidence",
+      "evidence": "task7-gallery-acceptance.md"
+    },
+    {
+      "surface": "docs-quickstart",
+      "status": "passed",
+      "viewports": ["1440x900", "390x844"],
+      "screenshots": ["screenshots/docs-quickstart-1440.png", "screenshots/docs-quickstart-390.png"],
+      "scroll_width_matches_viewport": true
+    },
+    {
+      "surface": "docs-search",
+      "status": "passed",
+      "viewports": ["1440x900"],
+      "screenshots": ["screenshots/docs-search-1440.png"],
+      "interactions": ["slash shortcut", "mixed-language query", "arrow selection", "enter navigation", "escape", "focus trap"]
+    },
+    {
+      "surface": "docs-reference",
+      "status": "passed",
+      "viewports": ["1440x900", "390x844"],
+      "screenshots": ["screenshots/docs-reference-1440-fixed.png", "screenshots/docs-reference-390-fixed.png"],
+      "scroll_width_matches_viewport": true,
+      "public_paths_only": true
+    }
+  ],
+  "residual_risks": [
+    "Scalar is isolated in a lazy chunk but remains substantially larger than the guide application bundle."
+  ]
+}

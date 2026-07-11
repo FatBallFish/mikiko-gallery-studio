@@ -9,7 +9,7 @@ CGO_TARGET=${DEVOPS_CGO_ENABLED:-0}
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/devops/package.sh <user-web|admin-web|api-server|worker|all>
+Usage: scripts/devops/package.sh <user-web|admin-web|docs-web|api-server|worker|all>
 
 Environment overrides:
   DEVOPS_TARGET_ROOT   Output root, default target/devops
@@ -35,6 +35,8 @@ package_frontend() {
   local base_path="/"
   if [[ "$app" == "admin" ]]; then
     base_path="/admin/"
+  elif [[ "$app" == "docs" ]]; then
+    base_path="/developer-docs/"
   fi
 
   echo "==> Building $app-web"
@@ -43,12 +45,14 @@ package_frontend() {
 
   mkdir -p "$out_dir"
   cp -R "$web_dir/dist" "$out_dir/dist"
-  mkdir -p "$out_dir/env"
-  copy_file "$ROOT_DIR/deployments/devops/env/frontend.env.example" "$out_dir/env/frontend.env.example"
-  copy_file "$ROOT_DIR/deployments/devops/frontend-env.template.js" "$out_dir/env.template.js"
   copy_file "$ROOT_DIR/deployments/devops/nginx-$app-web.conf" "$out_dir/nginx.conf"
-  copy_file "$ROOT_DIR/deployments/devops/start-$app-web.sh" "$out_dir/start-$app-web.sh"
-  chmod +x "$out_dir/start-$app-web.sh"
+  if [[ "$app" != "docs" ]]; then
+    mkdir -p "$out_dir/env"
+    copy_file "$ROOT_DIR/deployments/devops/env/frontend.env.example" "$out_dir/env/frontend.env.example"
+    copy_file "$ROOT_DIR/deployments/devops/frontend-env.template.js" "$out_dir/env.template.js"
+    copy_file "$ROOT_DIR/deployments/devops/start-$app-web.sh" "$out_dir/start-$app-web.sh"
+    chmod +x "$out_dir/start-$app-web.sh"
+  fi
 }
 
 package_backend() {
@@ -101,6 +105,7 @@ package_backend() {
 package_all() {
   package_frontend user
   package_frontend admin
+  package_frontend docs
   package_backend api-server
   package_backend worker
   mkdir -p "$TARGET_ROOT"
@@ -121,6 +126,9 @@ main() {
       ;;
     admin-web)
       package_frontend admin
+      ;;
+    docs-web)
+      package_frontend docs
       ;;
     api-server|worker)
       package_backend "$target"

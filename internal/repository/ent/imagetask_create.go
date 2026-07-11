@@ -117,6 +117,34 @@ func (_c *ImageTaskCreate) SetNillableStatus(v *string) *ImageTaskCreate {
 	return _c
 }
 
+// SetProgressStage sets the "progress_stage" field.
+func (_c *ImageTaskCreate) SetProgressStage(v string) *ImageTaskCreate {
+	_c.mutation.SetProgressStage(v)
+	return _c
+}
+
+// SetNillableProgressStage sets the "progress_stage" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableProgressStage(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetProgressStage(*v)
+	}
+	return _c
+}
+
+// SetProgressMessage sets the "progress_message" field.
+func (_c *ImageTaskCreate) SetProgressMessage(v string) *ImageTaskCreate {
+	_c.mutation.SetProgressMessage(v)
+	return _c
+}
+
+// SetNillableProgressMessage sets the "progress_message" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableProgressMessage(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetProgressMessage(*v)
+	}
+	return _c
+}
+
 // SetPrompt sets the "prompt" field.
 func (_c *ImageTaskCreate) SetPrompt(v string) *ImageTaskCreate {
 	_c.mutation.SetPrompt(v)
@@ -143,30 +171,44 @@ func (_c *ImageTaskCreate) SetAbstractModel(v string) *ImageTaskCreate {
 	return _c
 }
 
-// SetRequestedQuality sets the "requested_quality" field.
-func (_c *ImageTaskCreate) SetRequestedQuality(v string) *ImageTaskCreate {
-	_c.mutation.SetRequestedQuality(v)
+// SetSizeMode sets the "size_mode" field.
+func (_c *ImageTaskCreate) SetSizeMode(v string) *ImageTaskCreate {
+	_c.mutation.SetSizeMode(v)
 	return _c
 }
 
-// SetNillableRequestedQuality sets the "requested_quality" field if the given value is not nil.
-func (_c *ImageTaskCreate) SetNillableRequestedQuality(v *string) *ImageTaskCreate {
+// SetNillableSizeMode sets the "size_mode" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableSizeMode(v *string) *ImageTaskCreate {
 	if v != nil {
-		_c.SetRequestedQuality(*v)
+		_c.SetSizeMode(*v)
 	}
 	return _c
 }
 
-// SetResolvedQualityBucket sets the "resolved_quality_bucket" field.
-func (_c *ImageTaskCreate) SetResolvedQualityBucket(v string) *ImageTaskCreate {
-	_c.mutation.SetResolvedQualityBucket(v)
+// SetBaseResolution sets the "base_resolution" field.
+func (_c *ImageTaskCreate) SetBaseResolution(v string) *ImageTaskCreate {
+	_c.mutation.SetBaseResolution(v)
 	return _c
 }
 
-// SetNillableResolvedQualityBucket sets the "resolved_quality_bucket" field if the given value is not nil.
-func (_c *ImageTaskCreate) SetNillableResolvedQualityBucket(v *string) *ImageTaskCreate {
+// SetNillableBaseResolution sets the "base_resolution" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableBaseResolution(v *string) *ImageTaskCreate {
 	if v != nil {
-		_c.SetResolvedQualityBucket(*v)
+		_c.SetBaseResolution(*v)
+	}
+	return _c
+}
+
+// SetQuality sets the "quality" field.
+func (_c *ImageTaskCreate) SetQuality(v string) *ImageTaskCreate {
+	_c.mutation.SetQuality(v)
+	return _c
+}
+
+// SetNillableQuality sets the "quality" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableQuality(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetQuality(*v)
 	}
 	return _c
 }
@@ -223,6 +265,48 @@ func (_c *ImageTaskCreate) SetAspectRatio(v string) *ImageTaskCreate {
 func (_c *ImageTaskCreate) SetNillableAspectRatio(v *string) *ImageTaskCreate {
 	if v != nil {
 		_c.SetAspectRatio(*v)
+	}
+	return _c
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (_c *ImageTaskCreate) SetOutputFormat(v string) *ImageTaskCreate {
+	_c.mutation.SetOutputFormat(v)
+	return _c
+}
+
+// SetNillableOutputFormat sets the "output_format" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableOutputFormat(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetOutputFormat(*v)
+	}
+	return _c
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (_c *ImageTaskCreate) SetOutputCompression(v int) *ImageTaskCreate {
+	_c.mutation.SetOutputCompression(v)
+	return _c
+}
+
+// SetNillableOutputCompression sets the "output_compression" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableOutputCompression(v *int) *ImageTaskCreate {
+	if v != nil {
+		_c.SetOutputCompression(*v)
+	}
+	return _c
+}
+
+// SetModeration sets the "moderation" field.
+func (_c *ImageTaskCreate) SetModeration(v string) *ImageTaskCreate {
+	_c.mutation.SetModeration(v)
+	return _c
+}
+
+// SetNillableModeration sets the "moderation" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableModeration(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetModeration(*v)
 	}
 	return _c
 }
@@ -708,17 +792,41 @@ func (_c *ImageTaskCreate) defaults() {
 		v := imagetask.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
-	if _, ok := _c.mutation.RequestedQuality(); !ok {
-		v := imagetask.DefaultRequestedQuality
-		_c.mutation.SetRequestedQuality(v)
+	if _, ok := _c.mutation.ProgressStage(); !ok {
+		v := imagetask.DefaultProgressStage
+		_c.mutation.SetProgressStage(v)
 	}
-	if _, ok := _c.mutation.ResolvedQualityBucket(); !ok {
-		v := imagetask.DefaultResolvedQualityBucket
-		_c.mutation.SetResolvedQualityBucket(v)
+	if _, ok := _c.mutation.ProgressMessage(); !ok {
+		v := imagetask.DefaultProgressMessage
+		_c.mutation.SetProgressMessage(v)
+	}
+	if _, ok := _c.mutation.SizeMode(); !ok {
+		v := imagetask.DefaultSizeMode
+		_c.mutation.SetSizeMode(v)
+	}
+	if _, ok := _c.mutation.BaseResolution(); !ok {
+		v := imagetask.DefaultBaseResolution
+		_c.mutation.SetBaseResolution(v)
+	}
+	if _, ok := _c.mutation.Quality(); !ok {
+		v := imagetask.DefaultQuality
+		_c.mutation.SetQuality(v)
 	}
 	if _, ok := _c.mutation.AspectRatio(); !ok {
 		v := imagetask.DefaultAspectRatio
 		_c.mutation.SetAspectRatio(v)
+	}
+	if _, ok := _c.mutation.OutputFormat(); !ok {
+		v := imagetask.DefaultOutputFormat
+		_c.mutation.SetOutputFormat(v)
+	}
+	if _, ok := _c.mutation.OutputCompression(); !ok {
+		v := imagetask.DefaultOutputCompression
+		_c.mutation.SetOutputCompression(v)
+	}
+	if _, ok := _c.mutation.Moderation(); !ok {
+		v := imagetask.DefaultModeration
+		_c.mutation.SetModeration(v)
 	}
 	if _, ok := _c.mutation.RequestedOutputImageCount(); !ok {
 		v := imagetask.DefaultRequestedOutputImageCount
@@ -825,6 +933,17 @@ func (_c *ImageTaskCreate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.status": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.ProgressStage(); !ok {
+		return &ValidationError{Name: "progress_stage", err: errors.New(`ent: missing required field "ImageTask.progress_stage"`)}
+	}
+	if v, ok := _c.mutation.ProgressStage(); ok {
+		if err := imagetask.ProgressStageValidator(v); err != nil {
+			return &ValidationError{Name: "progress_stage", err: fmt.Errorf(`ent: validator failed for field "ImageTask.progress_stage": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ProgressMessage(); !ok {
+		return &ValidationError{Name: "progress_message", err: errors.New(`ent: missing required field "ImageTask.progress_message"`)}
+	}
 	if _, ok := _c.mutation.Prompt(); !ok {
 		return &ValidationError{Name: "prompt", err: errors.New(`ent: missing required field "ImageTask.prompt"`)}
 	}
@@ -836,20 +955,28 @@ func (_c *ImageTaskCreate) check() error {
 			return &ValidationError{Name: "abstract_model", err: fmt.Errorf(`ent: validator failed for field "ImageTask.abstract_model": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.RequestedQuality(); !ok {
-		return &ValidationError{Name: "requested_quality", err: errors.New(`ent: missing required field "ImageTask.requested_quality"`)}
+	if _, ok := _c.mutation.SizeMode(); !ok {
+		return &ValidationError{Name: "size_mode", err: errors.New(`ent: missing required field "ImageTask.size_mode"`)}
 	}
-	if v, ok := _c.mutation.RequestedQuality(); ok {
-		if err := imagetask.RequestedQualityValidator(v); err != nil {
-			return &ValidationError{Name: "requested_quality", err: fmt.Errorf(`ent: validator failed for field "ImageTask.requested_quality": %w`, err)}
+	if v, ok := _c.mutation.SizeMode(); ok {
+		if err := imagetask.SizeModeValidator(v); err != nil {
+			return &ValidationError{Name: "size_mode", err: fmt.Errorf(`ent: validator failed for field "ImageTask.size_mode": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.ResolvedQualityBucket(); !ok {
-		return &ValidationError{Name: "resolved_quality_bucket", err: errors.New(`ent: missing required field "ImageTask.resolved_quality_bucket"`)}
+	if _, ok := _c.mutation.BaseResolution(); !ok {
+		return &ValidationError{Name: "base_resolution", err: errors.New(`ent: missing required field "ImageTask.base_resolution"`)}
 	}
-	if v, ok := _c.mutation.ResolvedQualityBucket(); ok {
-		if err := imagetask.ResolvedQualityBucketValidator(v); err != nil {
-			return &ValidationError{Name: "resolved_quality_bucket", err: fmt.Errorf(`ent: validator failed for field "ImageTask.resolved_quality_bucket": %w`, err)}
+	if v, ok := _c.mutation.BaseResolution(); ok {
+		if err := imagetask.BaseResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "base_resolution", err: fmt.Errorf(`ent: validator failed for field "ImageTask.base_resolution": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Quality(); !ok {
+		return &ValidationError{Name: "quality", err: errors.New(`ent: missing required field "ImageTask.quality"`)}
+	}
+	if v, ok := _c.mutation.Quality(); ok {
+		if err := imagetask.QualityValidator(v); err != nil {
+			return &ValidationError{Name: "quality", err: fmt.Errorf(`ent: validator failed for field "ImageTask.quality": %w`, err)}
 		}
 	}
 	if v, ok := _c.mutation.RequestedSize(); ok {
@@ -863,6 +990,25 @@ func (_c *ImageTaskCreate) check() error {
 	if v, ok := _c.mutation.AspectRatio(); ok {
 		if err := imagetask.AspectRatioValidator(v); err != nil {
 			return &ValidationError{Name: "aspect_ratio", err: fmt.Errorf(`ent: validator failed for field "ImageTask.aspect_ratio": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.OutputFormat(); !ok {
+		return &ValidationError{Name: "output_format", err: errors.New(`ent: missing required field "ImageTask.output_format"`)}
+	}
+	if v, ok := _c.mutation.OutputFormat(); ok {
+		if err := imagetask.OutputFormatValidator(v); err != nil {
+			return &ValidationError{Name: "output_format", err: fmt.Errorf(`ent: validator failed for field "ImageTask.output_format": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.OutputCompression(); !ok {
+		return &ValidationError{Name: "output_compression", err: errors.New(`ent: missing required field "ImageTask.output_compression"`)}
+	}
+	if _, ok := _c.mutation.Moderation(); !ok {
+		return &ValidationError{Name: "moderation", err: errors.New(`ent: missing required field "ImageTask.moderation"`)}
+	}
+	if v, ok := _c.mutation.Moderation(); ok {
+		if err := imagetask.ModerationValidator(v); err != nil {
+			return &ValidationError{Name: "moderation", err: fmt.Errorf(`ent: validator failed for field "ImageTask.moderation": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.RequestedOutputImageCount(); !ok {
@@ -1015,6 +1161,14 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 		_spec.SetField(imagetask.FieldStatus, field.TypeString, value)
 		_node.Status = value
 	}
+	if value, ok := _c.mutation.ProgressStage(); ok {
+		_spec.SetField(imagetask.FieldProgressStage, field.TypeString, value)
+		_node.ProgressStage = value
+	}
+	if value, ok := _c.mutation.ProgressMessage(); ok {
+		_spec.SetField(imagetask.FieldProgressMessage, field.TypeString, value)
+		_node.ProgressMessage = value
+	}
 	if value, ok := _c.mutation.Prompt(); ok {
 		_spec.SetField(imagetask.FieldPrompt, field.TypeString, value)
 		_node.Prompt = value
@@ -1027,13 +1181,17 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 		_spec.SetField(imagetask.FieldAbstractModel, field.TypeString, value)
 		_node.AbstractModel = value
 	}
-	if value, ok := _c.mutation.RequestedQuality(); ok {
-		_spec.SetField(imagetask.FieldRequestedQuality, field.TypeString, value)
-		_node.RequestedQuality = value
+	if value, ok := _c.mutation.SizeMode(); ok {
+		_spec.SetField(imagetask.FieldSizeMode, field.TypeString, value)
+		_node.SizeMode = value
 	}
-	if value, ok := _c.mutation.ResolvedQualityBucket(); ok {
-		_spec.SetField(imagetask.FieldResolvedQualityBucket, field.TypeString, value)
-		_node.ResolvedQualityBucket = value
+	if value, ok := _c.mutation.BaseResolution(); ok {
+		_spec.SetField(imagetask.FieldBaseResolution, field.TypeString, value)
+		_node.BaseResolution = value
+	}
+	if value, ok := _c.mutation.Quality(); ok {
+		_spec.SetField(imagetask.FieldQuality, field.TypeString, value)
+		_node.Quality = value
 	}
 	if value, ok := _c.mutation.RequestedSize(); ok {
 		_spec.SetField(imagetask.FieldRequestedSize, field.TypeString, value)
@@ -1050,6 +1208,18 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AspectRatio(); ok {
 		_spec.SetField(imagetask.FieldAspectRatio, field.TypeString, value)
 		_node.AspectRatio = value
+	}
+	if value, ok := _c.mutation.OutputFormat(); ok {
+		_spec.SetField(imagetask.FieldOutputFormat, field.TypeString, value)
+		_node.OutputFormat = value
+	}
+	if value, ok := _c.mutation.OutputCompression(); ok {
+		_spec.SetField(imagetask.FieldOutputCompression, field.TypeInt, value)
+		_node.OutputCompression = value
+	}
+	if value, ok := _c.mutation.Moderation(); ok {
+		_spec.SetField(imagetask.FieldModeration, field.TypeString, value)
+		_node.Moderation = value
 	}
 	if value, ok := _c.mutation.RequestedOutputImageCount(); ok {
 		_spec.SetField(imagetask.FieldRequestedOutputImageCount, field.TypeInt, value)

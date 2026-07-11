@@ -32,8 +32,28 @@ type ModelAccountModel struct {
 	DisplayName string `json:"display_name,omitempty"`
 	// TaskTypes holds the value of the "task_types" field.
 	TaskTypes []string `json:"task_types,omitempty"`
-	// Qualities holds the value of the "qualities" field.
-	Qualities []string `json:"qualities,omitempty"`
+	// BaseResolution holds the value of the "base_resolution" field.
+	BaseResolution []string `json:"base_resolution,omitempty"`
+	// Quality holds the value of the "quality" field.
+	Quality []string `json:"quality,omitempty"`
+	// MaxReferenceImageCount holds the value of the "max_reference_image_count" field.
+	MaxReferenceImageCount int `json:"max_reference_image_count,omitempty"`
+	// MaxImageCount holds the value of the "max_image_count" field.
+	MaxImageCount int `json:"max_image_count,omitempty"`
+	// SizeModes holds the value of the "size_modes" field.
+	SizeModes []string `json:"size_modes,omitempty"`
+	// SupportedRatios holds the value of the "supported_ratios" field.
+	SupportedRatios []string `json:"supported_ratios,omitempty"`
+	// SupportedPixelSizes holds the value of the "supported_pixel_sizes" field.
+	SupportedPixelSizes []string `json:"supported_pixel_sizes,omitempty"`
+	// OutputFormat holds the value of the "output_format" field.
+	OutputFormat []string `json:"output_format,omitempty"`
+	// OutputCompression holds the value of the "output_compression" field.
+	OutputCompression int `json:"output_compression,omitempty"`
+	// SupportsOutputCompression holds the value of the "supports_output_compression" field.
+	SupportsOutputCompression bool `json:"supports_output_compression,omitempty"`
+	// Moderation holds the value of the "moderation" field.
+	Moderation []string `json:"moderation,omitempty"`
 	// CostPerImage holds the value of the "cost_per_image" field.
 	CostPerImage string `json:"cost_per_image,omitempty"`
 	// Currency holds the value of the "currency" field.
@@ -50,11 +70,11 @@ func (*ModelAccountModel) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case modelaccountmodel.FieldTaskTypes, modelaccountmodel.FieldQualities, modelaccountmodel.FieldExtra:
+		case modelaccountmodel.FieldTaskTypes, modelaccountmodel.FieldBaseResolution, modelaccountmodel.FieldQuality, modelaccountmodel.FieldSizeModes, modelaccountmodel.FieldSupportedRatios, modelaccountmodel.FieldSupportedPixelSizes, modelaccountmodel.FieldOutputFormat, modelaccountmodel.FieldModeration, modelaccountmodel.FieldExtra:
 			values[i] = new([]byte)
-		case modelaccountmodel.FieldEnabled:
+		case modelaccountmodel.FieldSupportsOutputCompression, modelaccountmodel.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case modelaccountmodel.FieldID, modelaccountmodel.FieldAccountID:
+		case modelaccountmodel.FieldID, modelaccountmodel.FieldAccountID, modelaccountmodel.FieldMaxReferenceImageCount, modelaccountmodel.FieldMaxImageCount, modelaccountmodel.FieldOutputCompression:
 			values[i] = new(sql.NullInt64)
 		case modelaccountmodel.FieldModelCode, modelaccountmodel.FieldDisplayName, modelaccountmodel.FieldCostPerImage, modelaccountmodel.FieldCurrency:
 			values[i] = new(sql.NullString)
@@ -126,12 +146,84 @@ func (_m *ModelAccountModel) assignValues(columns []string, values []any) error 
 					return fmt.Errorf("unmarshal field task_types: %w", err)
 				}
 			}
-		case modelaccountmodel.FieldQualities:
+		case modelaccountmodel.FieldBaseResolution:
 			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field qualities", values[i])
+				return fmt.Errorf("unexpected type %T for field base_resolution", values[i])
 			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Qualities); err != nil {
-					return fmt.Errorf("unmarshal field qualities: %w", err)
+				if err := json.Unmarshal(*value, &_m.BaseResolution); err != nil {
+					return fmt.Errorf("unmarshal field base_resolution: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldQuality:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field quality", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Quality); err != nil {
+					return fmt.Errorf("unmarshal field quality: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldMaxReferenceImageCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field max_reference_image_count", values[i])
+			} else if value.Valid {
+				_m.MaxReferenceImageCount = int(value.Int64)
+			}
+		case modelaccountmodel.FieldMaxImageCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field max_image_count", values[i])
+			} else if value.Valid {
+				_m.MaxImageCount = int(value.Int64)
+			}
+		case modelaccountmodel.FieldSizeModes:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field size_modes", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SizeModes); err != nil {
+					return fmt.Errorf("unmarshal field size_modes: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldSupportedRatios:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field supported_ratios", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SupportedRatios); err != nil {
+					return fmt.Errorf("unmarshal field supported_ratios: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldSupportedPixelSizes:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field supported_pixel_sizes", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SupportedPixelSizes); err != nil {
+					return fmt.Errorf("unmarshal field supported_pixel_sizes: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldOutputFormat:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field output_format", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.OutputFormat); err != nil {
+					return fmt.Errorf("unmarshal field output_format: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldOutputCompression:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field output_compression", values[i])
+			} else if value.Valid {
+				_m.OutputCompression = int(value.Int64)
+			}
+		case modelaccountmodel.FieldSupportsOutputCompression:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field supports_output_compression", values[i])
+			} else if value.Valid {
+				_m.SupportsOutputCompression = value.Bool
+			}
+		case modelaccountmodel.FieldModeration:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field moderation", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Moderation); err != nil {
+					return fmt.Errorf("unmarshal field moderation: %w", err)
 				}
 			}
 		case modelaccountmodel.FieldCostPerImage:
@@ -219,8 +311,38 @@ func (_m *ModelAccountModel) String() string {
 	builder.WriteString("task_types=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TaskTypes))
 	builder.WriteString(", ")
-	builder.WriteString("qualities=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Qualities))
+	builder.WriteString("base_resolution=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BaseResolution))
+	builder.WriteString(", ")
+	builder.WriteString("quality=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Quality))
+	builder.WriteString(", ")
+	builder.WriteString("max_reference_image_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MaxReferenceImageCount))
+	builder.WriteString(", ")
+	builder.WriteString("max_image_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MaxImageCount))
+	builder.WriteString(", ")
+	builder.WriteString("size_modes=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SizeModes))
+	builder.WriteString(", ")
+	builder.WriteString("supported_ratios=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportedRatios))
+	builder.WriteString(", ")
+	builder.WriteString("supported_pixel_sizes=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportedPixelSizes))
+	builder.WriteString(", ")
+	builder.WriteString("output_format=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OutputFormat))
+	builder.WriteString(", ")
+	builder.WriteString("output_compression=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OutputCompression))
+	builder.WriteString(", ")
+	builder.WriteString("supports_output_compression=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportsOutputCompression))
+	builder.WriteString(", ")
+	builder.WriteString("moderation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Moderation))
 	builder.WriteString(", ")
 	builder.WriteString("cost_per_image=")
 	builder.WriteString(_m.CostPerImage)

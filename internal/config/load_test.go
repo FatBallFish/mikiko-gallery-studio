@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadUsesEnvByDefault(t *testing.T) {
@@ -44,8 +45,14 @@ func TestLoadUsesEnvByDefault(t *testing.T) {
 	if cfg.Billing.PointsScale != 5 {
 		t.Fatalf("expected billing scale 5, got %d", cfg.Billing.PointsScale)
 	}
-	if cfg.Billing.QualityPointsByModel["basic"]["1k"] != "2.00000" {
-		t.Fatalf("expected default basic 1k pricing, got %#v", cfg.Billing.QualityPointsByModel)
+	if cfg.Auth.AccessTokenTTL != 10*time.Minute || cfg.Auth.RefreshTokenTTL != 30*time.Minute {
+		t.Fatalf("expected auth TTL defaults 10m/30m, got access=%s refresh=%s", cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL)
+	}
+	if cfg.Auth.RefreshCookieName != "pg_refresh_token" || cfg.Auth.AdminRefreshCookieName != "pg_admin_refresh_token" {
+		t.Fatalf("expected refresh cookie defaults, got user=%q admin=%q", cfg.Auth.RefreshCookieName, cfg.Auth.AdminRefreshCookieName)
+	}
+	if cfg.Billing.BaseResolutionPointsByModel["basic"]["1k"] != "2.00000" {
+		t.Fatalf("expected default basic 1k pricing, got %#v", cfg.Billing.BaseResolutionPointsByModel)
 	}
 	if cfg.Cashier.MaxPendingOrdersPerUser != 3 || cfg.Cashier.OrderTimeoutSeconds != 1800 {
 		t.Fatalf("expected cashier defaults from config, got %#v", cfg.Cashier)

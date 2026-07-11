@@ -115,7 +115,7 @@ export function toImageResult(raw: any): ImageResult {
 export function toTask(raw: any): ImageTask {
   const results = (raw.results ?? raw.images ?? raw.image_results ?? []).map(toImageResult)
   const taskType = normalizeTaskType(raw.task_type ?? 'text_to_image')
-  const quality = raw.quality ?? raw.requested_quality ?? raw.resolved_quality_bucket ?? 'auto'
+  const quality = raw.quality ?? raw.base_resolution ?? raw.base_resolution ?? 'auto'
   return {
     ...raw,
     id: String(raw.id ?? ''),
@@ -148,7 +148,8 @@ function toEstimateQuery(req: EstimateRequest) {
   return {
     task_type: toBackendTaskType(req.task_type),
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
+    base_resolution: req.base_resolution,
+    quality: req.quality ?? 'auto',
     requested_size: sizeMap[req.aspect_ratio] ?? req.aspect_ratio,
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,
@@ -160,7 +161,8 @@ function toBackendTask(req: CreateTaskRequest) {
     task_type: toBackendTaskType(req.task_type),
     prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
+    base_resolution: req.base_resolution,
+    quality: req.quality ?? 'auto',
     requested_size: sizeMap[req.aspect_ratio] ?? req.aspect_ratio,
     requested_output_image_count: req.image_count,
     reference_asset_ids: req.reference_asset_ids ?? [],
@@ -176,8 +178,8 @@ function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
     points,
     charged_points: raw.charged_points ?? raw.estimated_points ?? raw.points,
     display_points: raw.display_points ?? points,
-    formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${req?.quality ?? raw.resolved_quality_bucket ?? ''}`,
-    resolved_quality: raw.resolved_quality_bucket ?? raw.resolved_quality ?? req?.quality ?? 'auto',
+    formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${req?.base_resolution ?? raw.base_resolution ?? ''}`,
+    base_resolution: raw.base_resolution ?? req?.base_resolution ?? 'auto',
     sufficient: Boolean(raw.sufficient),
     insufficient_points: raw.insufficient_points ?? '0.00000',
     balance: raw.balance ? toBalance(raw.balance) : undefined,
@@ -273,8 +275,8 @@ export const userApi = {
     const normalizedModels = models.flatMap((item: any) => {
       const taskTypes = pick<string[]>(item, 'task_types', 'TaskTypes') ?? ['text_to_image']
       const normalizedTaskTypes = taskTypes.map(normalizeTaskType)
-      const qualities = pick<string[]>(item, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
-        ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
+      const base_resolution = pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution')
+        ?? pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution')
         ?? ['auto']
       const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => ({
         task_type: normalizeTaskType(pick<string>(price, 'task_type', 'TaskType') ?? 'text_to_image'),
@@ -294,7 +296,7 @@ export const userApi = {
         name: pick(item, 'name', 'Name', 'group_name', 'GroupName', 'model_code', 'ModelCode') ?? normalizedCode,
         description: pick<string>(item, 'description', 'Description') ?? '',
         task_types: normalizedTaskTypes,
-        qualities,
+        base_resolution,
         aspect_ratios: pick(item, 'aspect_ratios', 'AspectRatios') ?? pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios'),
         max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
         max_reference_image_count: maxReference,
@@ -308,7 +310,7 @@ export const userApi = {
       raw,
       unavailable_reason: raw.unavailable_reason ?? null,
       model_groups: normalizedModels,
-      qualities: pick(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K'],
+      base_resolution: pick(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? ['auto', '1K', '2K', '4K'],
       aspect_ratios: pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? ['1:1', '16:9', '9:16', '4:3'],
       max_image_count: pick(raw, 'max_image_count', 'MaxImageCount') ?? 4,
       reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,

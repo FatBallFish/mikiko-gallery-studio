@@ -3,6 +3,7 @@ import { cn } from '../../../shared/classnames'
 import { useApp } from '../components'
 import { button as btn, card } from '../ui/redesign-classes'
 import { Sun, Moon, Palette } from '../ui/icons'
+import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { settingsAccentThemeOptions, settingsThemeModeOptions } from './settingsThemeModel'
 
 const settingsClasses = {
@@ -41,12 +42,11 @@ export function SettingsPage() {
   const activeAccent = app.themePreference.accent
 
   return (
-    <div className={settingsClasses.page}>
-      <header className={settingsClasses.header}>
-        <h1 className={settingsClasses.title}>设置</h1>
-        <p className={settingsClasses.detail}>调整 Mikiko Studio 的站点外观偏好。主题模式与主题色会立即应用，并在登录状态下同步到账户偏好。</p>
-      </header>
-
+    <SettingsWorkspace
+      active="appearance"
+      title="外观偏好"
+      detail="主题模式与强调色会即时应用，并在登录状态下同步到你的 Mikiko Studio 账户。"
+    >
       <div className={settingsClasses.grid}>
         <section className={settingsClasses.card}>
           <div className={settingsClasses.cardHead}>
@@ -123,6 +123,6 @@ export function SettingsPage() {
           当前偏好会先保存在本机，并在登录状态下同步到 Mikiko Studio 账户。若网络异常，本机外观仍会保持当前选择。
         </p>
       </section>
-    </div>
+    </SettingsWorkspace>
   )
 }

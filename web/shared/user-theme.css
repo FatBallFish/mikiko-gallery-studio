@@ -15,6 +15,7 @@
   --lv-border-strong: rgb(255 255 255 / 0.17);
   --lv-brand-amber: #d7a566;
   --lv-brand-amber-rgb: 215, 165, 102;
+  --lv-accent-contrast: #07080d;
   --lv-status-violet: #9187ff;
   --lv-status-violet-rgb: 145, 135, 255;
   --lv-status-emerald: #55c6a1;
@@ -54,6 +55,7 @@ html[data-theme-mode='light'] {
   --lv-border-strong: rgb(29 32 39 / 0.2);
   --lv-brand-amber: #a9651f;
   --lv-brand-amber-rgb: 169, 101, 31;
+  --lv-accent-contrast: #1d2027;
   --lv-status-violet: #6557dc;
   --lv-status-violet-rgb: 101, 87, 220;
   --lv-status-emerald: #177d61;
@@ -90,6 +92,7 @@ html[data-theme-mode='light'] {
     --lv-border-strong: rgb(29 32 39 / 0.2);
     --lv-brand-amber: #a9651f;
     --lv-brand-amber-rgb: 169, 101, 31;
+    --lv-accent-contrast: #1d2027;
     --lv-status-violet: #6557dc;
     --lv-status-violet-rgb: 101, 87, 220;
     --lv-status-emerald: #177d61;

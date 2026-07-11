@@ -122,4 +122,83 @@ func TestAdminStorageConfigEndpoints(t *testing.T) {
 	if probeRec.Code != http.StatusOK {
 		t.Fatalf("expected draft local probe 200, got %d body=%s", probeRec.Code, probeRec.Body.String())
 	}
+	var probeResp struct {
+		Data struct {
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(probeRec.Body).Decode(&probeResp); err != nil {
+		t.Fatalf("decode draft probe response: %v", err)
+	}
+	if probeResp.Data.Status != "success" || probeResp.Data.Message == "" {
+		t.Fatalf("expected draft probe response to use snake_case status/message, got %#v body=%s", probeResp.Data, probeRec.Body.String())
+	}
+
+	localBody := `{"code":"local-default","name":"Local Default","driver":"local","provider":"local","local_root":"` + cfg.Storage.LocalRoot + `","read_enabled":true,"write_enabled":true}`
+	localCreateReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/storage-configs", bytes.NewBufferString(localBody))
+	localCreateReq.Header.Set("Authorization", "Bearer "+rootToken)
+	localCreateReq.Header.Set("Content-Type", "application/json")
+	localCreateRec := httptest.NewRecorder()
+	handler.ServeHTTP(localCreateRec, localCreateReq)
+	if localCreateRec.Code != http.StatusCreated {
+		t.Fatalf("expected saved local storage create 201, got %d body=%s", localCreateRec.Code, localCreateRec.Body.String())
+	}
+	var localCreateResp struct {
+		Data struct {
+			ID      string `json:"id"`
+			Version int64  `json:"version"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(localCreateRec.Body).Decode(&localCreateResp); err != nil {
+		t.Fatalf("decode saved local create response: %v", err)
+	}
+
+	savedProbeReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/storage-configs/"+localCreateResp.Data.ID+":probe", nil)
+	savedProbeReq.Header.Set("Authorization", "Bearer "+rootToken)
+	savedProbeRec := httptest.NewRecorder()
+	handler.ServeHTTP(savedProbeRec, savedProbeReq)
+	if savedProbeRec.Code != http.StatusOK {
+		t.Fatalf("expected saved local probe 200, got %d body=%s", savedProbeRec.Code, savedProbeRec.Body.String())
+	}
+	var savedProbeResp struct {
+		Data struct {
+			ID        string `json:"id"`
+			Version   int64  `json:"version"`
+			LastProbe struct {
+				Status string `json:"status"`
+			} `json:"last_probe"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(savedProbeRec.Body).Decode(&savedProbeResp); err != nil {
+		t.Fatalf("decode saved local probe response: %v", err)
+	}
+	if savedProbeResp.Data.LastProbe.Status != "success" || savedProbeResp.Data.Version <= localCreateResp.Data.Version {
+		t.Fatalf("expected persisted successful probe with incremented version, created=%#v probed=%#v", localCreateResp.Data, savedProbeResp.Data)
+	}
+
+	setDefaultBody, err := json.Marshal(map[string]int64{"version": savedProbeResp.Data.Version})
+	if err != nil {
+		t.Fatalf("marshal set-default body: %v", err)
+	}
+	setProbedDefaultReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/storage-configs/"+savedProbeResp.Data.ID+":set-default", bytes.NewReader(setDefaultBody))
+	setProbedDefaultReq.Header.Set("Authorization", "Bearer "+rootToken)
+	setProbedDefaultReq.Header.Set("Content-Type", "application/json")
+	setProbedDefaultRec := httptest.NewRecorder()
+	handler.ServeHTTP(setProbedDefaultRec, setProbedDefaultReq)
+	if setProbedDefaultRec.Code != http.StatusOK {
+		t.Fatalf("expected set-default after saved probe 200, got %d body=%s", setProbedDefaultRec.Code, setProbedDefaultRec.Body.String())
+	}
+	var setProbedDefaultResp struct {
+		Data struct {
+			ID        string `json:"id"`
+			IsDefault bool   `json:"is_default"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(setProbedDefaultRec.Body).Decode(&setProbedDefaultResp); err != nil {
+		t.Fatalf("decode set-default response: %v", err)
+	}
+	if setProbedDefaultResp.Data.ID != savedProbeResp.Data.ID || !setProbedDefaultResp.Data.IsDefault {
+		t.Fatalf("expected probed config to become default, got %#v", setProbedDefaultResp.Data)
+	}
 }

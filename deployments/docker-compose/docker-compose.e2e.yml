@@ -81,7 +81,7 @@ services:
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-e2e-access-token-secret-change-me
       AUTH_ACCESS_TOKEN_TTL: 10m
-      AUTH_REFRESH_TOKEN_TTL: 168h
+      AUTH_REFRESH_TOKEN_TTL: 30m
       AUTH_FIXED_EMAIL_CODE: "123456"
       AUTH_DEV_EMAIL_CODES: "true"
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-e2e-api-key-signing-secret-encryption-key
@@ -130,7 +130,7 @@ services:
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-e2e-access-token-secret-change-me
       AUTH_ACCESS_TOKEN_TTL: 10m
-      AUTH_REFRESH_TOKEN_TTL: 168h
+      AUTH_REFRESH_TOKEN_TTL: 30m
       AUTH_FIXED_EMAIL_CODE: "123456"
       AUTH_DEV_EMAIL_CODES: "true"
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-e2e-api-key-signing-secret-encryption-key
@@ -162,6 +162,7 @@ services:
       VITE_AUTH_DEFAULT_MODE: code
       VITE_DEFAULT_USER_EMAIL: user@example.com
       VITE_DEFAULT_USER_CODE: "123456"
+      VITE_DOCS_URL: http://localhost:${DOCS_WEB_PORT:-5175}/developer-docs/
     ports:
       - "${USER_WEB_PORT:-5173}:5173"
     volumes:
@@ -170,6 +171,19 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  docs-web:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app/web/docs
+    command: sh -lc "npm ci && npm run dev -- --port 80"
+    environment:
+      VITE_BASE_PATH: /developer-docs/
+    ports:
+      - "${DOCS_WEB_PORT:-5175}:80"
+    volumes:
+      - ../../:/app
+      - docs-node-modules:/app/web/docs/node_modules
 
   admin-web:
     image: node:22-alpine
@@ -199,6 +213,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      docs-web:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/readyz"]
       interval: 15s
@@ -213,3 +229,4 @@ volumes:
   go-cache:
   user-node-modules:
   admin-node-modules:
+  docs-node-modules:

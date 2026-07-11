@@ -3,7 +3,9 @@ import type { ApiKey } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, CopyButton, EmptyState, Field, LoadingState, Modal, useApp } from '../components'
+import { openDocsEntry } from '../docsUrl'
 import { userButton, userForm } from '../ui/classes'
+import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage, useApiResource } from '../useApiResource'
 import {
   apiKeyCreatePayload,
@@ -141,15 +143,12 @@ export function ApiKeysPage() {
   }
 
   return (
-    <div className={apiKeyClasses.content}>
-      <div className={apiKeyClasses.header}>
-        <div>
-          <h1 className={apiKeyClasses.title}>API 密钥</h1>
-          <p className={apiKeyClasses.detail}>管理开放接口调用凭证、限速和额度。密钥仅以首尾明文展示，中间内容始终隐藏。</p>
-        </div>
-        <button className={apiKeyClasses.createButton} type="button" onClick={() => setCreating(true)}>+ {apiKeyPageLabels.create}</button>
-      </div>
-
+    <SettingsWorkspace
+      active="api-keys"
+      title="API 密钥"
+      detail="管理开放接口调用凭证、限速和额度。Secret 仅在创建或重置时展示一次。"
+      action={<button className={apiKeyClasses.createButton} type="button" onClick={() => setCreating(true)}>+ {apiKeyPageLabels.create}</button>}
+    >
       {oneTimeSecret ? (
         <div className={apiKeyClasses.oneTimeSecret}>
           <div className={apiKeyClasses.oneTimeSecretHead}>
@@ -243,7 +242,7 @@ export function ApiKeysPage() {
             <pre className={apiKeyClasses.codePre}>{quickstart.code}</pre>
           </div>
         </div>
-        <p className={apiKeyClasses.docHint}>查看完整 <a href="#/docs" className={apiKeyClasses.docLink}>开发文档</a> 获取更多语言示例。</p>
+        <p className={apiKeyClasses.docHint}>查看完整 <button type="button" className={cn(apiKeyClasses.docLink, 'border-0 bg-transparent p-0')} onClick={() => openDocsEntry('api-keys')}>开发文档</button> 获取更多语言示例。</p>
         </div>
         <div className={apiKeyClasses.securityCard}>
           <h3 className="mb-4 text-xl font-black">安全建议</h3>
@@ -262,7 +261,7 @@ export function ApiKeysPage() {
       }} /> : null}
       {editTarget ? <EditKeyModal keyItem={editTarget} onClose={() => setEditTarget(null)} onSaved={async (key) => { await keys.reload(); setSelectedId(key.id); setEditTarget(null) }} /> : null}
       {deleteTarget ? <DeleteKeyModal keyItem={deleteTarget} busy={busyKeyId === deleteTarget.id} onCancel={() => setDeleteTarget(null)} onConfirm={() => void remove(deleteTarget)} /> : null}
-    </div>
+    </SettingsWorkspace>
   )
 }
 

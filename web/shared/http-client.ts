@@ -100,8 +100,8 @@ const errorMessages: Record<string, Record<ErrorLocale, string>> = {
     en: 'Insufficient points. Please add points or lower the generation settings.',
   },
   IMAGE_CAPABILITY_MISMATCH: {
-    zh: '当前模型不支持所选参数，请调整模型、清晰度或图片数量。',
-    en: 'The selected model does not support these settings. Please adjust the model, quality, or image count.',
+    zh: '当前模型不支持所选参数，请调整模型、基础分辨率、质量参数或图片数量。',
+    en: 'The selected model does not support these settings. Please adjust the model, base resolution, quality, or image count.',
   },
   IMAGE_REFERENCE_REQUIRED: {
     zh: '请先上传参考图后再发起生成。',
@@ -116,8 +116,8 @@ const errorMessages: Record<string, Record<ErrorLocale, string>> = {
     en: 'The reference image is too large. Please compress it and upload again.',
   },
   IMAGE_AUTO_RESOLUTION_UNSUPPORTED: {
-    zh: '当前模型不支持所选尺寸或自动清晰度，请调整后重试。',
-    en: 'The selected model does not support this size or automatic quality. Please adjust and try again.',
+    zh: '当前模型不支持所选尺寸或自动基础分辨率，请调整后重试。',
+    en: 'The selected model does not support this size or automatic base resolution. Please adjust and try again.',
   },
   IMAGE_TASK_FAILED: {
     zh: '图片生成失败，请调整提示词或稍后重试。',

@@ -54,11 +54,18 @@ export type OpenApiHeaders = {
 }
 
 function toEstimateQuery(req: EstimateRequest) {
+  const sizeMode = req.size_mode === 'pixel' ? 'pixel' : 'ratio'
   return {
     task_type: req.task_type,
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
-    requested_size: req.aspect_ratio,
+    size_mode: sizeMode,
+    aspect_ratio: sizeMode === 'ratio' ? req.aspect_ratio : undefined,
+    base_resolution: sizeMode === 'ratio' ? req.base_resolution : 'auto',
+    quality: req.quality ?? 'auto',
+    output_format: req.output_format ?? 'png',
+    output_compression: req.output_compression ?? 100,
+    moderation: req.moderation ?? 'auto',
+    requested_size: sizeMode === 'pixel' ? req.pixel_size : 'auto',
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,
   }
