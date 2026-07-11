@@ -15,6 +15,8 @@ import {
   LayoutDashboard,
   LayoutPanelTop,
   LoaderCircle,
+  LogOut,
+  Menu,
   Moon,
   NotebookText,
   Package,
@@ -23,9 +25,11 @@ import {
   ShieldCheck,
   Sun,
   Ticket,
+  UserRoundCog,
   UserRound,
   Users,
   UsersRound,
+  X,
 } from 'lucide-react'
 
 function withDefaults(Icon: LucideIcon) {
@@ -61,3 +65,7 @@ export const EmptyIcon = withDefaults(Inbox)
 export const ImageEmptyIcon = withDefaults(ImageOff)
 export const AlertIcon = withDefaults(BadgeAlert)
 export const LoaderIcon = withDefaults(LoaderCircle)
+export const MenuIcon = withDefaults(Menu)
+export const XIcon = withDefaults(X)
+export const LogOutIcon = withDefaults(LogOut)
+export const UserMenuIcon = withDefaults(UserRoundCog)

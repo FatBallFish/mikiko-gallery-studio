@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const componentsSource = readFileSync(join(currentDir, 'components.tsx'), 'utf8')
 const classesSource = readFileSync(join(currentDir, 'ui/classes.ts'), 'utf8')
+const iconsSource = readFileSync(join(currentDir, 'ui/icons.tsx'), 'utf8')
 
 if (componentsSource.includes('adminShell.statusStrip')) {
   throw new Error('AdminLayout must not render the global Current View/Admin Role status strip')
@@ -33,4 +34,28 @@ for (const shellContract of [
 
 if (componentsSource.includes('<span className="text-[10px] text-[var(--dim)]">{currentTitle}</span>')) {
   throw new Error('desktop topbar must not repeat the current page title in the account widget')
+}
+
+for (const focusContract of [
+  'navTriggerRef',
+  'mobileDrawerRef',
+  "event.key === 'Escape'",
+  "event.key === 'Tab'",
+  'navTriggerRef.current?.focus()',
+  'aria-haspopup="menu"',
+  'role="menu"',
+]) {
+  if (!componentsSource.includes(focusContract)) {
+    throw new Error(`AdminLayout must provide accessible navigation and account interactions via ${focusContract}`)
+  }
+}
+
+for (const iconName of ['MenuIcon', 'XIcon', 'LogOutIcon', 'UserMenuIcon']) {
+  if (!iconsSource.includes(`export const ${iconName}`) || !componentsSource.includes(`<${iconName}`)) {
+    throw new Error(`AdminLayout must use the shared Lucide ${iconName}`)
+  }
+}
+
+if (componentsSource.includes('>☰<') || componentsSource.includes('>×<')) {
+  throw new Error('AdminLayout must not use text glyphs for navigation controls')
 }
