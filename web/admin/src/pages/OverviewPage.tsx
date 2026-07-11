@@ -4,6 +4,8 @@ import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, MetricStrip, PageHeader } from '../components'
 import { adminButton, adminPage, adminSurface } from '../ui/classes'
+import type { ColumnDef } from '../ui/dataTable'
+import { DataTable } from '../ui/dataTable'
 import { overviewReadinessRows, type OverviewReadinessRow } from './overviewReadinessRows'
 import { overviewRecentUserRows } from './overviewRows'
 
@@ -27,13 +29,6 @@ const overviewClasses = {
   table: 'admin-table min-w-0',
   tableHeadRight: 'text-right',
   tableCellRight: 'text-right',
-  dataGrid: 'grid min-w-[760px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]',
-  readinessGrid: '[grid-template-columns:minmax(180px,1.6fr)_minmax(80px,.7fr)_minmax(300px,2.4fr)_minmax(100px,.8fr)]',
-  dataHead: 'grid border-b border-[var(--border)] bg-[var(--surface-solid)] text-[length:var(--admin-type-label)] font-semibold text-[var(--muted-strong)]',
-  dataRow: 'grid border-b border-[var(--border)] last:border-b-0',
-  dataCell: 'min-w-0 px-3 py-3',
-  keyText: 'm-0 mt-1 font-mono text-xs text-[var(--soft)]',
-  detailText: 'min-w-0 px-3 py-3 text-sm text-[var(--soft)] [overflow-wrap:anywhere]',
   insightGrid: 'grid grid-flow-dense grid-cols-12 gap-4 max-lg:grid-cols-1',
   chartPanel: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-8'),
   rankPanel: cn(adminSurface.card, 'min-w-0 p-5 lg:col-span-4'),
@@ -322,22 +317,50 @@ function ReadinessRiskPanel({ report, risks }: { report: ReadinessReport; risks:
         {risks.length === 0 ? (
           <EmptyBlock variant="inline" title="暂无上线风险" detail="当前关键配置检查均已通过。" />
         ) : (
-          <div className={cn(overviewClasses.dataGrid, overviewClasses.readinessGrid)}>
-            <div className={cn(overviewClasses.dataHead, overviewClasses.readinessGrid)}><span className={overviewClasses.dataCell}>检查项</span><span className={overviewClasses.dataCell}>状态</span><span className={overviewClasses.dataCell}>说明</span><span className={overviewClasses.dataCell}>入口</span></div>
-            {risks.map((risk) => (
-              <div className={cn(overviewClasses.dataRow, overviewClasses.readinessGrid)} key={risk.key}>
-                <div className={overviewClasses.dataCell}>
-                  <strong>{risk.label}</strong>
-                  <p className={overviewClasses.keyText}>{risk.key}</p>
-                </div>
-                <div className={overviewClasses.dataCell}><Badge tone={risk.statusTone}>{risk.status}</Badge></div>
-                <span className={overviewClasses.detailText}>{risk.detail}</span>
-                <div className={overviewClasses.dataCell}><a className={cn(adminButton.base, adminButton.small)} href={risk.actionHref}>{risk.actionLabel}</a></div>
-              </div>
-            ))}
+          <div className="min-w-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-solid)]">
+            <DataTable
+              columns={overviewReadinessColumns()}
+              rows={risks}
+              rowKey={(risk) => risk.key}
+            />
           </div>
         )}
       </section>
     </section>
   )
+}
+
+function overviewReadinessColumns(): ColumnDef<OverviewReadinessRow>[] {
+  return [
+    {
+      key: 'check',
+      title: '检查项',
+      width: 'minmax(180px,1.6fr)',
+      render: (risk) => (
+        <div className="min-w-0">
+          <strong className="text-[var(--fg)]">{risk.label}</strong>
+          <p className="m-0 mt-1 font-[family-name:var(--admin-font-mono)] text-xs text-[var(--soft)]">{risk.key}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      title: '状态',
+      width: 'minmax(90px,.7fr)',
+      render: (risk) => <Badge tone={risk.statusTone}>{risk.status}</Badge>,
+    },
+    {
+      key: 'detail',
+      title: '说明',
+      width: 'minmax(300px,2.4fr)',
+      render: (risk) => <span className="[overflow-wrap:anywhere]">{risk.detail}</span>,
+    },
+    {
+      key: 'action',
+      title: '入口',
+      width: 'minmax(110px,.8fr)',
+      align: 'right',
+      render: (risk) => <a className={cn(adminButton.base, adminButton.small)} href={risk.actionHref}>{risk.actionLabel}</a>,
+    },
+  ]
 }
