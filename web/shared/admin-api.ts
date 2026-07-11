@@ -1,6 +1,7 @@
 import type {
   AdminLoginResult,
   AdminDashboard,
+  AdminMonitoringSnapshot,
   AdminMetric,
   AdminPermission,
   AdminSession,
@@ -19,6 +20,7 @@ import type {
   ConfigTab,
   LedgerEntry,
   ModelProvider,
+  MonitoringWindow,
   ModelRoute,
   ModelAccount,
   ModelAccountModel,
@@ -112,6 +114,8 @@ export const adminApi = {
       audit: (raw.audit ?? []).map(toAudit),
     }
   },
+  getMonitoringSnapshot: (window: MonitoringWindow): Promise<AdminMonitoringSnapshot> =>
+    sharedApiClient.request<AdminMonitoringSnapshot>(API_PATHS.ops.monitoringSnapshot, { query: { window } }),
   getReadiness: async () => toReadinessReport(await sharedApiClient.request(API_PATHS.ops.readiness)),
   listConfig: async () => {
     const tabs = (await sharedApiClient.request<{ items: any[] }>(API_PATHS.ops.configTabs)).items ?? []
