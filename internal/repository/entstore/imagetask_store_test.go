@@ -130,6 +130,7 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 		RequestedSize:         "1024x1024",
 		OutputImageCount:      1,
 		Results: []provider.ImageResult{{
+			StorageConfigID:  "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			ObjectKey:        "generated-images/41/12121212-1212-1212-1212-121212121212/0.png",
 			MimeType:         "image/png",
 			FileSizeBytes:    int64(len(imageBytes)),
@@ -158,6 +159,9 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	}
 	if result.StorageDriver != "local" || result.ObjectKey != task.Results[0].ObjectKey {
 		t.Fatalf("expected local object key to round-trip, got %#v", result)
+	}
+	if result.StorageConfigID != task.Results[0].StorageConfigID {
+		t.Fatalf("expected storage config id to round-trip, got %#v", result)
 	}
 	if result.MimeType != "image/png" || result.FileSizeBytes != int64(len(imageBytes)) || result.Width != 2 || result.Height != 1 {
 		t.Fatalf("expected local image metadata to round-trip, got %#v", result)

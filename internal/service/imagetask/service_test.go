@@ -21,6 +21,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -1142,6 +1143,56 @@ func TestExecuteWithStorePersistsThroughStoreBackend(t *testing.T) {
 	if loaded.ID != result.Task.ID || len(loaded.Results) != 1 {
 		t.Fatalf("unexpected persisted task %#v", loaded)
 	}
+}
+
+func TestGeneratedImageStorageRouterPinsOriginalConfig(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Data: []provider.ImageResult{{URL: "https://cdn.example.com/routed.png"}}}, nil
+		}},
+	}
+	original := storage.BackendRef{ConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Version: 2, Driver: "local", Backend: storage.NewLocalBackend(t.TempDir())}
+	replacement := storage.BackendRef{ConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Version: 1, Driver: "local", Backend: storage.NewLocalBackend(t.TempDir())}
+	router := &switchingImageRouter{defaultRef: original, refs: map[string]storage.BackendRef{original.ConfigID: original, replacement.ConfigID: replacement}}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, nil, nil, router)
+	imageBytes, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")
+	svc.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
+	})})
+
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 31, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "route it",
+		RequestedSize: "auto", RequestedQuality: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(result.Task.Results) != 1 || result.Task.Results[0].StorageConfigID != original.ConfigID {
+		t.Fatalf("expected result pinned to original config, got %#v", result.Task.Results)
+	}
+	router.defaultRef = replacement
+	_, downloaded, err := svc.DownloadImageResult(context.Background(), 31, result.Task.Results[0].ID)
+	if err != nil {
+		t.Fatalf("DownloadImageResult after switch: %v", err)
+	}
+	if len(downloaded) == 0 {
+		t.Fatal("expected historical image bytes")
+	}
+}
+
+type switchingImageRouter struct {
+	defaultRef storage.BackendRef
+	refs       map[string]storage.BackendRef
+}
+
+func (r *switchingImageRouter) DefaultWriter(context.Context) (storage.BackendRef, error) {
+	return r.defaultRef, nil
+}
+
+func (r *switchingImageRouter) BackendFor(_ context.Context, configID string, _ string) (storage.BackendRef, error) {
+	return r.refs[configID], nil
 }
 
 func TestCreateTaskQueuesResolvedTask(t *testing.T) {

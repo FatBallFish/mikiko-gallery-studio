@@ -224,6 +224,7 @@ type GalleryImage struct {
 	SHA256            string                  `json:"sha256,omitempty"`
 	ObjectKey         string                  `json:"object_key,omitempty"`
 	StorageDriver     string                  `json:"storage_driver,omitempty"`
+	StorageConfigID   string                  `json:"storage_config_id,omitempty"`
 	ImageGroup        string                  `json:"image_group,omitempty"`
 	VisibilityStatus  string                  `json:"visibility_status"`
 	ReviewReason      string                  `json:"review_reason,omitempty"`

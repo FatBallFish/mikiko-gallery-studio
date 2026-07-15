@@ -1311,6 +1311,13 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 	if result.PublishedAt != nil {
 		builder.SetPublishedAt(*result.PublishedAt)
 	}
+	if strings.TrimSpace(result.StorageConfigID) != "" {
+		storageConfigID, err := uuid.Parse(result.StorageConfigID)
+		if err != nil {
+			return err
+		}
+		builder.SetStorageConfigID(storageConfigID)
+	}
 	return builder.Exec(ctx)
 }
 
@@ -1515,6 +1522,9 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 		VisibilityStatus: entity.VisibilityStatus,
 		ReviewReason:     nullableString(entity.ReviewReason),
 		PublishedAt:      entity.PublishedAt,
+	}
+	if entity.StorageConfigID != nil {
+		item.StorageConfigID = entity.StorageConfigID.String()
 	}
 	if entity.StorageDriver == "remote" {
 		item.URL = entity.ObjectKey
@@ -1729,6 +1739,7 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		SHA256:            item.SHA256,
 		ObjectKey:         item.ObjectKey,
 		StorageDriver:     item.StorageDriver,
+		StorageConfigID:   item.StorageConfigID,
 		ImageGroup:        item.ImageGroup,
 		VisibilityStatus:  defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate),
 		ReviewReason:      nullableString(entity.ReviewReason),

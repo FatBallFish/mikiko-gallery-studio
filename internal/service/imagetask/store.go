@@ -631,6 +631,7 @@ func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.Image
 		SHA256:            result.SHA256,
 		ObjectKey:         result.ObjectKey,
 		StorageDriver:     result.StorageDriver,
+		StorageConfigID:   result.StorageConfigID,
 		ImageGroup:        result.ImageGroup,
 		VisibilityStatus:  defaultVisibilityStatus(result.VisibilityStatus),
 		ReviewReason:      result.ReviewReason,

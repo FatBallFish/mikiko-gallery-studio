@@ -34,7 +34,7 @@ type storedAsset struct {
 type Service struct {
 	mu           sync.Mutex
 	store        Store
-	backend      storage.Backend
+	router       storage.Router
 	maxBytes     int64
 	assetsByID   map[string]storedAsset
 	assetsByHash map[string]string
@@ -56,7 +56,14 @@ func NewServiceWithStoreAndBackend(_ config.StorageConfig, limits config.Generat
 	if backend == nil {
 		backend = storage.NewLocalBackend("")
 	}
-	return &Service{store: store, backend: backend, maxBytes: int64(limits.ReferenceImageMaxMB) * 1024 * 1024, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
+	return NewServiceWithStoreAndRouter(limits, store, storage.NewStaticRouter(backend))
+}
+
+func NewServiceWithStoreAndRouter(limits config.GenerationLimitsConfig, store Store, router storage.Router) *Service {
+	if router == nil {
+		router = storage.NewStaticRouter(storage.NewLocalBackend(""))
+	}
+	return &Service{store: store, router: router, maxBytes: int64(limits.ReferenceImageMaxMB) * 1024 * 1024, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
 }
 
 func (s *Service) Upload(userID int64, filename string, contentType string, content []byte) (domainassets.ReferenceAsset, error) {
@@ -118,10 +125,14 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 		}
 	}
 	objectKey := filepath.Join("reference-assets", assetID+strings.ToLower(ext))
-	if err := s.backend.Put(context.Background(), objectKey, contentType, content); err != nil {
+	writer, err := s.router.DefaultWriter(context.Background())
+	if err != nil {
+		return domainassets.ReferenceAsset{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
+	}
+	if err := writer.Backend.Put(context.Background(), objectKey, contentType, content); err != nil {
 		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store reference asset")
 	}
-	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageDriver: s.backend.Driver(), MimeType: contentType, FileSizeBytes: int64(len(content)), Width: config.Width, Height: config.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
+	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, MimeType: contentType, FileSizeBytes: int64(len(content)), Width: config.Width, Height: config.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
 	if s.store != nil {
 		if metadataStore, ok := s.store.(MetadataStore); ok {
 			err = metadataStore.SaveWithMetadata(context.Background(), userID, asset, metadata)
@@ -129,7 +140,7 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 			err = s.store.Save(context.Background(), userID, asset)
 		}
 		if err != nil {
-			_ = s.backend.Delete(context.Background(), objectKey)
+			_ = writer.Backend.Delete(context.Background(), objectKey)
 			return domainassets.ReferenceAsset{}, err
 		}
 	}
@@ -197,7 +208,11 @@ func (s *Service) Download(userID int64, assetID string) (domainassets.Reference
 	if err != nil {
 		return domainassets.ReferenceAsset{}, nil, err
 	}
-	content, readErr := s.backend.Get(context.Background(), asset.ObjectKey)
+	backend, err := s.router.BackendFor(context.Background(), asset.StorageConfigID, asset.StorageDriver)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, nil, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	content, readErr := backend.Backend.Get(context.Background(), asset.ObjectKey)
 	if readErr != nil {
 		return domainassets.ReferenceAsset{}, nil, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
 	}
@@ -209,7 +224,11 @@ func (s *Service) LoadInput(userID int64, assetID string) (provider.ImageInput, 
 	if err != nil {
 		return provider.ImageInput{}, err
 	}
-	content, readErr := s.backend.Get(context.Background(), asset.ObjectKey)
+	backend, err := s.router.BackendFor(context.Background(), asset.StorageConfigID, asset.StorageDriver)
+	if err != nil {
+		return provider.ImageInput{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	content, readErr := backend.Backend.Get(context.Background(), asset.ObjectKey)
 	if readErr != nil {
 		return provider.ImageInput{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read reference asset")
 	}
