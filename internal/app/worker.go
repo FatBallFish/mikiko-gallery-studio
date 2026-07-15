@@ -16,6 +16,7 @@ import (
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/internal/worker"
 )
@@ -38,11 +39,6 @@ func RunWorker() error {
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
-	storageBackend, err := storage.NewBackend(cfg.Storage)
-	if err != nil {
-		return fmt.Errorf("init storage backend: %w", err)
-	}
-
 	redisClient, _, err := newRedisClient(context.Background(), cfg)
 	if err != nil {
 		return err
@@ -51,17 +47,28 @@ func RunWorker() error {
 		defer redisClient.Close()
 	}
 
-	assetSvc := entstore.NewAssetsStore(client)
+	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
+	if err := storageConfigSvc.Bootstrap(context.Background(), 0); err != nil {
+		return fmt.Errorf("bootstrap storage config: %w", err)
+	}
+	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
+	if redisClient != nil {
+		storageInvalidationBus := storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)
+		subscriber := startStorageInvalidationSubscriber(context.Background(), storageInvalidationBus, storageRegistry.Invalidate, time.Second, 30*time.Second)
+		defer subscriber.Stop()
+	}
+
+	assetStore := entstore.NewAssetsStore(client)
 	adminCfgSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
 	billingSvc.SetAdminConfigResolver(adminCfgSvc)
-	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(
 		cfg,
 		nil,
 		entstore.NewImageTaskStore(client),
-		assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, assetSvc, storageBackend),
+		assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, assetStore, storageRegistry),
 		billingSvc,
-		storageBackend,
+		storageRegistry,
 	)
 	taskSvc.SetModelRoutingSource(entstore.NewModelAdminStore(client))
 	slog.Info("database-backed task store enabled for worker")

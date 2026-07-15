@@ -29,6 +29,7 @@ import (
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
+	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
@@ -89,11 +90,6 @@ func Run() error {
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
-	storageBackend, err := storage.NewBackend(cfg.Storage)
-	if err != nil {
-		return fmt.Errorf("init storage backend: %w", err)
-	}
-
 	redisClient, allowRedisFallback, err := newRedisClient(context.Background(), cfg)
 	if err != nil {
 		return err
@@ -108,14 +104,25 @@ func Run() error {
 	}
 
 	secureConfigSvc := secureconfigservice.NewService(entstore.NewSecureConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Auth.SMTP, cfg.App.Env)
+	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
+	if err := storageConfigSvc.Bootstrap(context.Background(), 0); err != nil {
+		return fmt.Errorf("bootstrap storage config: %w", err)
+	}
+	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
+	var storageInvalidationBus *storage.RedisInvalidationBus
+	if redisClient != nil {
+		storageInvalidationBus = storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)
+		subscriber := startStorageInvalidationSubscriber(context.Background(), storageInvalidationBus, storageRegistry.Invalidate, time.Second, 30*time.Second)
+		defer subscriber.Stop()
+	}
 	authSvc := authservice.NewServiceWithStoreAndRedis(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client), authRedisRuntime, allowRedisFallback)
 	authSvc.SetSMTPConfigResolver(secureConfigSvc)
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	billingSvc.SetAdminConfigResolver(adminSvc)
-	assetSvc := assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, entstore.NewAssetsStore(client), storageBackend)
-	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageBackend)
+	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRegistry)
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageRegistry)
 	modelAdminStore := entstore.NewModelAdminStore(client)
 	taskSvc.SetModelRoutingSource(modelAdminStore)
 	apiKeySvc, err := newRuntimeAPIKeyService(cfg, entstore.NewAPIKeyStore(client))
@@ -135,6 +142,7 @@ func Run() error {
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)
+	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,

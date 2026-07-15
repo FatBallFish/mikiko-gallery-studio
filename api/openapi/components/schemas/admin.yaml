@@ -234,6 +234,143 @@ components:
           properties:
             request_id:
               type: string
+    AdminStorageProbe:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [never, success, failed]
+        checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        latency_ms:
+          type: integer
+          format: int64
+        message:
+          type: string
+    AdminStorageConfig:
+      type: object
+      required: [id, code, name, driver, provider, status, read_enabled, write_enabled, is_default, force_path_style, secret_status, last_probe, version]
+      properties:
+        id: { type: string }
+        code: { type: string }
+        name: { type: string }
+        driver:
+          type: string
+          enum: [local, s3]
+        provider:
+          type: string
+          enum: [local, aws_s3, minio, r2, custom_s3]
+        status:
+          type: string
+          enum: [enabled, disabled, deleted]
+        read_enabled: { type: boolean }
+        write_enabled: { type: boolean }
+        is_default: { type: boolean }
+        endpoint: { type: string }
+        region: { type: string }
+        bucket: { type: string }
+        prefix: { type: string }
+        force_path_style: { type: boolean }
+        public_base_url: { type: string }
+        local_root: { type: string }
+        secret_status:
+          $ref: '#/components/schemas/SecretStatus'
+        last_probe:
+          $ref: '#/components/schemas/AdminStorageProbe'
+        version:
+          type: integer
+          format: int64
+        updated_by:
+          type: integer
+          format: int64
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdminStorageConfigWriteRequest:
+      type: object
+      required: [name, driver, provider]
+      properties:
+        version: { type: integer, format: int64 }
+        code: { type: string }
+        name: { type: string }
+        driver:
+          type: string
+          enum: [local, s3]
+        provider:
+          type: string
+          enum: [local, aws_s3, minio, r2, custom_s3]
+        status:
+          type: string
+          enum: [enabled, disabled]
+          default: enabled
+        read_enabled: { type: boolean, default: true }
+        write_enabled: { type: boolean, default: true }
+        endpoint: { type: string }
+        region: { type: string }
+        bucket: { type: string }
+        prefix: { type: string }
+        force_path_style: { type: boolean, default: false }
+        public_base_url: { type: string }
+        local_root: { type: string }
+        secrets:
+          type: object
+          writeOnly: true
+          properties:
+            access_key_id: { type: string, format: password }
+            secret_access_key: { type: string, format: password }
+        clear_secrets:
+          type: array
+          items:
+            type: string
+            enum: [access_key_id, secret_access_key]
+    AdminStorageSetDefaultRequest:
+      type: object
+      properties:
+        version: { type: integer, format: int64 }
+    AdminStorageStatusRequest:
+      type: object
+      required: [status, read_enabled, write_enabled]
+      properties:
+        version: { type: integer, format: int64 }
+        status:
+          type: string
+          enum: [enabled, disabled]
+        read_enabled: { type: boolean }
+        write_enabled: { type: boolean }
+    AdminStorageConfigResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminStorageConfig'
+        meta:
+          type: object
+          properties:
+            request_id: { type: string }
+    AdminStorageConfigListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminStorageConfig'
+        meta:
+          type: object
+          properties:
+            request_id: { type: string }
+    AdminStorageProbeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminStorageProbe'
+        meta:
+          type: object
+          properties:
+            request_id: { type: string }
     SystemAdminUser:
       type: object
       properties:

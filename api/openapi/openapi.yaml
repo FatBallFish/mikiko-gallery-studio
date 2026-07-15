@@ -18,6 +18,7 @@ tags:
   - name: Open Image API
   - name: Admin Config
   - name: Admin Security Config
+  - name: Admin Storage Config
   - name: Admin Auth
   - name: Admin Users
   - name: Admin Redeem Codes
@@ -1065,6 +1066,175 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPTestResponse
+  /api/ops/admin/v1/storage-configs:
+    get:
+      tags: [Admin Storage Config]
+      summary: List object storage configurations without plaintext secrets
+      operationId: getAdminStorageConfigs
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Storage configuration list
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigListResponse
+    post:
+      tags: [Admin Storage Config]
+      summary: Create an object storage configuration
+      operationId: postAdminStorageConfig
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigWriteRequest
+      responses:
+        '201':
+          description: Storage configuration created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
+  /api/ops/admin/v1/storage-configs:probe:
+    post:
+      tags: [Admin Storage Config]
+      summary: Probe a draft object storage configuration
+      operationId: postAdminStorageConfigDraftProbe
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigWriteRequest
+      responses:
+        '200':
+          description: Probe succeeded
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageProbeResponse
+        '400':
+          description: Probe failed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageProbeResponse
+  /api/ops/admin/v1/storage-configs/{storage_config_id}:
+    get:
+      tags: [Admin Storage Config]
+      summary: Get an object storage configuration
+      operationId: getAdminStorageConfig
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: storage_config_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Storage configuration
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
+    put:
+      tags: [Admin Storage Config]
+      summary: Update an object storage configuration
+      operationId: putAdminStorageConfig
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: storage_config_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigWriteRequest
+      responses:
+        '200':
+          description: Storage configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
+  /api/ops/admin/v1/storage-configs/{storage_config_id}:probe:
+    post:
+      tags: [Admin Storage Config]
+      summary: Probe a saved storage configuration
+      operationId: postAdminStorageConfigProbe
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: storage_config_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Probe succeeded and result persisted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
+        '400':
+          description: Probe failed and result persisted
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
+  /api/ops/admin/v1/storage-configs/{storage_config_id}:set-default:
+    post:
+      tags: [Admin Storage Config]
+      summary: Set a probed readable and writable storage configuration as default
+      operationId: postAdminStorageConfigSetDefault
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: storage_config_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageSetDefaultRequest
+      responses:
+        '200':
+          description: Default storage configuration changed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
+  /api/ops/admin/v1/storage-configs/{storage_config_id}:set-status:
+    post:
+      tags: [Admin Storage Config]
+      summary: Change storage read and write availability
+      operationId: postAdminStorageConfigSetStatus
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: storage_config_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageStatusRequest
+      responses:
+        '200':
+          description: Storage status changed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
   /api/ops/admin/v1/admin-users:
     get:
       tags: [Admin System Users]
