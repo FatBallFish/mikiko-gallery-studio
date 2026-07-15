@@ -87,6 +87,9 @@ func Run() error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer client.Close()
+	if err := db.PrepareLegacyData(context.Background(), cfg.Database.URL); err != nil {
+		return fmt.Errorf("prepare legacy database data: %w", err)
+	}
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
