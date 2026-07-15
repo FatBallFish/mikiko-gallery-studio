@@ -599,7 +599,7 @@ func (s *MemoryStore) RenewTaskLease(_ context.Context, taskID, owner string, no
 func taskEligibleForLease(task domainimagetask.Task, now time.Time) bool {
 	switch task.Status {
 	case domainimagetask.StatusQueued:
-		return true
+		return task.ArtifactRecovery.Status != artifactRecoveryPending || task.ArtifactRecovery.NextRetryAt == nil || !task.ArtifactRecovery.NextRetryAt.After(now)
 	case domainimagetask.StatusRunning:
 		return task.LeaseExpiresAt == nil || task.LeaseExpiresAt.Before(now)
 	default:

@@ -865,7 +865,7 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetProviderTrace(trace).
 		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
 		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
-		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskCreateArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
@@ -955,7 +955,7 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetProviderTrace(trace).
 		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
 		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
-		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateOneArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
@@ -1096,7 +1096,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetProviderTrace(trace).
 		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
 		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
-		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
@@ -1221,7 +1221,7 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetProviderTrace(trace).
 		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
 		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
-		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
@@ -1362,8 +1362,8 @@ func setImageTaskUpdateArtifactFields(builder *repoent.ImageTaskUpdate, task dom
 	}
 }
 
-func artifactDiagnosticMap(value domainimagetask.ArtifactDiagnostic) map[string]any {
-	encoded, err := json.Marshal(value)
+func artifactDiagnosticsMap(recovery domainimagetask.ArtifactRecovery) map[string]any {
+	encoded, err := json.Marshal(map[string]any{"last": recovery.LastDiagnostic, "attempts": recovery.Diagnostics})
 	if err != nil {
 		return map[string]any{}
 	}
@@ -1374,16 +1374,30 @@ func artifactDiagnosticMap(value domainimagetask.ArtifactDiagnostic) map[string]
 	return decoded
 }
 
-func decodeArtifactDiagnostic(value map[string]any) domainimagetask.ArtifactDiagnostic {
+func decodeArtifactDiagnostics(value map[string]any) (domainimagetask.ArtifactDiagnostic, []domainimagetask.ArtifactDiagnostic) {
+	if _, hasEnvelope := value["last"]; !hasEnvelope {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return domainimagetask.ArtifactDiagnostic{}, nil
+		}
+		var legacy domainimagetask.ArtifactDiagnostic
+		if err := json.Unmarshal(encoded, &legacy); err != nil {
+			return domainimagetask.ArtifactDiagnostic{}, nil
+		}
+		return legacy, nil
+	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		return domainimagetask.ArtifactDiagnostic{}
+		return domainimagetask.ArtifactDiagnostic{}, nil
 	}
-	var decoded domainimagetask.ArtifactDiagnostic
+	var decoded struct {
+		Last     domainimagetask.ArtifactDiagnostic   `json:"last"`
+		Attempts []domainimagetask.ArtifactDiagnostic `json:"attempts"`
+	}
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		return domainimagetask.ArtifactDiagnostic{}
+		return domainimagetask.ArtifactDiagnostic{}, nil
 	}
-	return decoded
+	return decoded.Last, decoded.Attempts
 }
 
 func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, userID int64, index int, result provider.ImageResult) error {
@@ -1492,12 +1506,12 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 			EncryptedPayload: nullableString(entity.ArtifactRecoveryPayload),
 			AttemptCount:     entity.ArtifactAttemptCount,
 			NextRetryAt:      entity.ArtifactNextRetryAt,
-			LastDiagnostic:   decodeArtifactDiagnostic(entity.ArtifactLastDiagnostic),
 			StorageVersion:   entity.ArtifactStorageVersion,
 		},
 		CreatedAt: entity.CreatedAt,
 		UpdatedAt: entity.UpdatedAt,
 	}
+	task.ArtifactRecovery.LastDiagnostic, task.ArtifactRecovery.Diagnostics = decodeArtifactDiagnostics(entity.ArtifactLastDiagnostic)
 	if entity.ArtifactStorageConfigID != nil {
 		task.ArtifactRecovery.StorageConfigID = entity.ArtifactStorageConfigID.String()
 	}
@@ -1948,7 +1962,14 @@ func decodeReferenceAssetIDs(value any) []string {
 
 func acquireEligiblePredicate(now time.Time) predicate.ImageTask {
 	return imagetask.Or(
-		imagetask.StatusEQ(domainimagetask.StatusQueued),
+		imagetask.And(
+			imagetask.StatusEQ(domainimagetask.StatusQueued),
+			imagetask.Or(
+				imagetask.ArtifactRecoveryStatusNEQ("pending"),
+				imagetask.ArtifactNextRetryAtIsNil(),
+				imagetask.ArtifactNextRetryAtLTE(now),
+			),
+		),
 		imagetask.And(
 			imagetask.StatusEQ(domainimagetask.StatusRunning),
 			imagetask.Or(imagetask.LeaseExpiresAtIsNil(), imagetask.LeaseExpiresAtLT(now)),

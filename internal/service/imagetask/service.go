@@ -47,6 +47,7 @@ type Service struct {
 	router        storage.Router
 	recoveryCodec *secretcodec.Codec
 	httpClient    *http.Client
+	now           func() time.Time
 }
 
 type executionOptions struct {
@@ -143,6 +144,7 @@ func NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg config.Config, provi
 		router:        router,
 		recoveryCodec: secretcodec.New(cfg.Security.SecureConfigEncryptionKey),
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		now:           time.Now,
 	}
 }
 
@@ -166,6 +168,13 @@ func (s *Service) SetHTTPClient(client *http.Client) {
 		return
 	}
 	s.httpClient = client
+}
+
+func (s *Service) nowUTC() time.Time {
+	if s == nil || s.now == nil {
+		return time.Now().UTC()
+	}
+	return s.now().UTC()
 }
 
 func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequest) (domainimagetask.Task, error) {
@@ -226,7 +235,7 @@ func (s *Service) persistPreflightFailedTask(ctx context.Context, task domainima
 }
 
 func (s *Service) AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
-	task, err := s.store.AcquireNextQueuedTask(ctx, owner, time.Now().UTC(), leaseTTL)
+	task, err := s.store.AcquireNextQueuedTask(ctx, owner, s.nowUTC(), leaseTTL)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return domainimagetask.Task{}, false, nil
@@ -240,7 +249,7 @@ func (s *Service) AcquireNextTask(ctx context.Context, owner string, leaseTTL ti
 }
 
 func (s *Service) HeartbeatTask(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error) {
-	task, err := s.store.RenewTaskLease(ctx, taskID, owner, time.Now().UTC(), leaseTTL)
+	task, err := s.store.RenewTaskLease(ctx, taskID, owner, s.nowUTC(), leaseTTL)
 	if err != nil {
 		switch {
 		case errors.Is(err, repoerr.ErrNotFound):
@@ -282,7 +291,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		SavePolicy:          "private",
 	}, resolved, domainimagetask.StatusRunning)
 	leaseOwner := "inline-executor"
-	leaseExpiresAt := time.Now().UTC().Add(2 * time.Minute)
+	leaseExpiresAt := s.nowUTC().Add(2 * time.Minute)
 	task.LeaseOwner = leaseOwner
 	task.LeaseExpiresAt = &leaseExpiresAt
 	if err := s.applyTaskEstimate(ctx, &task, domainimagetask.CreateRequest{
@@ -335,8 +344,11 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 	if stored, ok, err := terminalTaskResult(task); err != nil || ok {
 		return stored, err
 	}
-	if !leaseOwnedBy(task, owner, time.Now().UTC()) {
+	if !leaseOwnedBy(task, owner, s.nowUTC()) {
 		return domainimagetask.ExecuteResult{}, errs.New(409, errs.CodeConflict, "image task lease conflict")
+	}
+	if task.ArtifactRecovery.EncryptedPayload != "" {
+		return s.executeArtifactRecovery(ctx, task, owner)
 	}
 
 	if recovered, ok, err := s.resumeTerminalization(ctx, task, owner); err != nil || ok {
@@ -418,9 +430,9 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 		return domainimagetask.TestModelAccountResult{}, compatErr
 	}
 
-	startedAt := time.Now().UTC()
+	startedAt := s.nowUTC()
 	resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
-	finishedAt := time.Now().UTC()
+	finishedAt := s.nowUTC()
 	task.Provider = candidate.Provider
 	task.ProviderModelID = candidate.ProviderModelID
 	task.RouteModelID = candidate.RouteModelID
@@ -506,11 +518,11 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			return s.failOwnedTask(ctx, task, owner, compatErr)
 		}
 
-		attemptStarted := time.Now().UTC()
+		attemptStarted := s.nowUTC()
 		openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
 		if openAIFormat && normalizedCount(task.OutputImageCount) > 1 {
 			progress, progressErr := s.executeOpenAIFanoutWithProgress(ctx, providerClient, candidate, task, owner, providerReq)
-			attemptFinished := time.Now().UTC()
+			attemptFinished := s.nowUTC()
 			if progressErr != nil {
 				return s.failOwnedTask(ctx, task, owner, progressErr)
 			}
@@ -558,14 +570,14 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		}
 
 		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
-		attemptFinished := time.Now().UTC()
+		attemptFinished := s.nowUTC()
 		if err == nil {
 			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
 				return domainimagetask.ExecuteResult{}, checkpointErr
 			}
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
-				return s.failOwnedTask(ctx, task, owner, persistErr)
+				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
 			}
 			finalStatus := domainimagetask.StatusSucceeded
 			if openAIFormat && len(persistedResults) < normalizedCount(task.OutputImageCount) {
@@ -574,7 +586,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.Status = domainimagetask.StatusRunning
 			task.FallbackCount = len(task.Attempts)
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
-			task.ArtifactRecovery = domainimagetask.ArtifactRecovery{}
+			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
 			}
@@ -1276,7 +1288,7 @@ func (s *Service) SetPublicImageInteraction(ctx context.Context, userID int64, i
 }
 
 func (s *Service) saveOwnedTask(ctx context.Context, task domainimagetask.Task, owner string) error {
-	if err := s.store.SaveIfOwned(ctx, task, owner, time.Now().UTC()); err != nil {
+	if err := s.store.SaveIfOwned(ctx, task, owner, s.nowUTC()); err != nil {
 		switch {
 		case errors.Is(err, repoerr.ErrNotFound):
 			return errs.New(404, errs.CodeNotFound, "image task not found")
@@ -1290,7 +1302,7 @@ func (s *Service) saveOwnedTask(ctx context.Context, task domainimagetask.Task, 
 }
 
 func (s *Service) saveTerminalState(ctx context.Context, task domainimagetask.Task, owner string) error {
-	if err := s.store.SaveTerminalState(ctx, task, owner, time.Now().UTC()); err != nil {
+	if err := s.store.SaveTerminalState(ctx, task, owner, s.nowUTC()); err != nil {
 		switch {
 		case errors.Is(err, repoerr.ErrNotFound):
 			return errs.New(404, errs.CodeNotFound, "image task not found")
@@ -1384,40 +1396,67 @@ func isDataURL(value string) bool {
 }
 
 func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
+	startedAt := s.nowUTC()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, result.URL, nil)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image URL is invalid")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactSourceURLInvalid, "fetch", false, err)
 	}
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to fetch generated image")
+		failure := classifyFetchError(s, err)
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, nil, 0, startedAt)
+		return provider.ImageResult{}, failure
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to fetch generated image")
+		failure := newArtifactFailure(s, errs.CodeArtifactFetchHTTPStatus, "fetch", resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500, fmt.Errorf("upstream artifact returned status %d", resp.StatusCode))
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, 0, startedAt)
+		return provider.ImageResult{}, failure
 	}
-	content, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	if err != nil || len(content) == 0 {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read generated image")
+	content, err := io.ReadAll(io.LimitReader(resp.Body, maxGeneratedArtifactBytes+1))
+	if err != nil {
+		failure := newArtifactFailure(s, errs.CodeArtifactFetchReadFailed, "read", true, err)
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
+		return provider.ImageResult{}, failure
+	}
+	if int64(len(content)) > maxGeneratedArtifactBytes {
+		failure := newArtifactFailure(s, errs.CodeArtifactSizeLimitExceeded, "read", false, fmt.Errorf("generated artifact exceeds %d bytes", maxGeneratedArtifactBytes))
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
+		return provider.ImageResult{}, failure
+	}
+	if len(content) == 0 {
+		failure := newArtifactFailure(s, errs.CodeArtifactEmptyBody, "read", true, errors.New("generated artifact body is empty"))
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, 0, startedAt)
+		return provider.ImageResult{}, failure
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image has unsupported format")
+		failure := newArtifactFailure(s, errs.CodeArtifactFormatUnsupported, "validate", false, err)
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
+		return provider.ImageResult{}, failure
 	}
 	mimeType := imageMimeType(format, provider.ImageResult{MimeType: defaultString(resp.Header.Get("Content-Type"), result.MimeType), Format: result.Format})
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])
 	resultID := strings.TrimSpace(result.ID)
 	if resultID == "" {
-		resultID = uuid.NewString()
+		resultID = deterministicImageResultID(task.ID, index)
 	}
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
 	writer, err := s.artifactWriter(ctx, task)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)
 	}
 	if err := writer.Backend.Put(ctx, objectKey, mimeType, content); err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageWriteFailed, "store", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		failure.diagnostic.BytesRead = int64(len(content))
+		return provider.ImageResult{}, failure
+	}
+	if err := verifyStoredArtifact(ctx, writer.Backend, objectKey, content); err != nil {
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageVerifyFailed, "verify", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		return provider.ImageResult{}, failure
 	}
 	result.ID = resultID
 	result.B64JSON = ""
@@ -1439,23 +1478,34 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
 	content, err := decodeBase64ImageResult(result.B64JSON)
 	if err != nil {
-		return provider.ImageResult{}, err
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactRecoveryPayloadInvalid, "decode", false, err)
+	}
+	if int64(len(content)) > maxGeneratedArtifactBytes {
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactSizeLimitExceeded, "decode", false, fmt.Errorf("generated artifact exceeds %d bytes", maxGeneratedArtifactBytes))
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image has unsupported format")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactFormatUnsupported, "validate", false, err)
 	}
 	mimeType := imageMimeType(format, result)
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])
-	resultID := uuid.NewString()
+	resultID := deterministicImageResultID(task.ID, index)
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
 	writer, err := s.artifactWriter(context.Background(), task)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)
 	}
 	if err := writer.Backend.Put(context.Background(), objectKey, mimeType, content); err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageWriteFailed, "store", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		failure.diagnostic.BytesRead = int64(len(content))
+		return provider.ImageResult{}, failure
+	}
+	if err := verifyStoredArtifact(context.Background(), writer.Backend, objectKey, content); err != nil {
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageVerifyFailed, "verify", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		return provider.ImageResult{}, failure
 	}
 	result.ID = resultID
 	result.B64JSON = ""
@@ -1472,6 +1522,10 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
 	result.URL = result.DownloadURL
 	return result, nil
+}
+
+func deterministicImageResultID(taskID string, index int) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("%s:%d", taskID, index))).String()
 }
 
 func decodeBase64ImageResult(value string) ([]byte, error) {
@@ -1663,7 +1717,7 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 
 	var apiKeyQuota domainbilling.APIKeyQuota
 	if s.apiKeys != nil && req.APIKeyID > 0 {
-		quota, err := s.apiKeys.CheckTaskAllowed(ctx, req.APIKeyID, req.UserID, estimate.EstimatedPoints, time.Now())
+		quota, err := s.apiKeys.CheckTaskAllowed(ctx, req.APIKeyID, req.UserID, estimate.EstimatedPoints, s.nowUTC())
 		if err != nil {
 			return err
 		}
@@ -1807,6 +1861,7 @@ func errorMessage(err error) string {
 func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	task.Attempts = append([]domainimagetask.Attempt(nil), task.Attempts...)
 	task.Results = append([]provider.ImageResult(nil), task.Results...)
+	task.ArtifactRecovery.Diagnostics = append([]domainimagetask.ArtifactDiagnostic(nil), task.ArtifactRecovery.Diagnostics...)
 	task.ReferenceAssetIDs = append([]string(nil), task.ReferenceAssetIDs...)
 	if task.Seed != nil {
 		seed := *task.Seed

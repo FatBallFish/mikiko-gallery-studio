@@ -137,6 +137,7 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 			Status: "pending", EncryptedPayload: `{"ciphertext":"v1:encrypted"}`, AttemptCount: 2, NextRetryAt: &nextRetryAt,
 			StorageConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", StorageVersion: 4,
 			LastDiagnostic: domainimagetask.ArtifactDiagnostic{Code: "ARTIFACT_STORAGE_WRITE_FAILED", Stage: "store", Attempt: 2, Retryable: true, BytesRead: 68},
+			Diagnostics:    []domainimagetask.ArtifactDiagnostic{{Code: "ARTIFACT_FETCH_TIMEOUT", Attempt: 1}, {Code: "ARTIFACT_STORAGE_WRITE_FAILED", Attempt: 2}},
 		},
 		Results: []provider.ImageResult{{
 			StorageConfigID:  "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -187,7 +188,7 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	if loaded.ArtifactRecovery.Status != "pending" || loaded.ArtifactRecovery.EncryptedPayload != task.ArtifactRecovery.EncryptedPayload || loaded.ArtifactRecovery.AttemptCount != 2 {
 		t.Fatalf("expected artifact recovery envelope to round-trip, got %#v", loaded.ArtifactRecovery)
 	}
-	if loaded.ArtifactRecovery.NextRetryAt == nil || loaded.ArtifactRecovery.LastDiagnostic.Code != "ARTIFACT_STORAGE_WRITE_FAILED" || loaded.ArtifactRecovery.StorageVersion != 4 {
+	if loaded.ArtifactRecovery.NextRetryAt == nil || loaded.ArtifactRecovery.LastDiagnostic.Code != "ARTIFACT_STORAGE_WRITE_FAILED" || len(loaded.ArtifactRecovery.Diagnostics) != 2 || loaded.ArtifactRecovery.StorageVersion != 4 {
 		t.Fatalf("expected artifact retry state to round-trip, got %#v", loaded.ArtifactRecovery)
 	}
 }

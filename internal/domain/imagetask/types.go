@@ -134,13 +134,14 @@ type ArtifactDiagnostic struct {
 }
 
 type ArtifactRecovery struct {
-	Status           string             `json:"status,omitempty"`
-	EncryptedPayload string             `json:"-"`
-	AttemptCount     int                `json:"attempt_count,omitempty"`
-	NextRetryAt      *time.Time         `json:"next_retry_at,omitempty"`
-	LastDiagnostic   ArtifactDiagnostic `json:"last_diagnostic,omitempty"`
-	StorageConfigID  string             `json:"storage_config_id,omitempty"`
-	StorageVersion   int64              `json:"storage_version,omitempty"`
+	Status           string               `json:"status,omitempty"`
+	EncryptedPayload string               `json:"-"`
+	AttemptCount     int                  `json:"attempt_count,omitempty"`
+	NextRetryAt      *time.Time           `json:"next_retry_at,omitempty"`
+	LastDiagnostic   ArtifactDiagnostic   `json:"last_diagnostic,omitempty"`
+	Diagnostics      []ArtifactDiagnostic `json:"diagnostics,omitempty"`
+	StorageConfigID  string               `json:"storage_config_id,omitempty"`
+	StorageVersion   int64                `json:"storage_version,omitempty"`
 }
 
 type Task struct {
