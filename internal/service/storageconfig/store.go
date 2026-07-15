@@ -13,5 +13,5 @@ type Store interface {
 	GetDefaultWritable(ctx context.Context) (domainstorageconfig.ConfigRecord, bool, error)
 	GetLegacyByDriver(ctx context.Context, driver string) (domainstorageconfig.ConfigRecord, bool, error)
 	Save(ctx context.Context, record domainstorageconfig.ConfigRecord) (domainstorageconfig.ConfigRecord, error)
-	ClearDefault(ctx context.Context) error
+	SetDefault(ctx context.Context, id string, expectedVersion, updatedBy int64) (domainstorageconfig.ConfigRecord, error)
 }

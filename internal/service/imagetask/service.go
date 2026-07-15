@@ -521,27 +521,33 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		attemptStarted := s.nowUTC()
 		openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
 		if openAIFormat && normalizedCount(task.OutputImageCount) > 1 {
-			progress, progressErr := s.executeOpenAIFanoutWithProgress(ctx, providerClient, candidate, task, owner, providerReq)
+			progress, progressErr := s.executeOpenAIFanout(ctx, providerClient, task, providerReq)
 			attemptFinished := s.nowUTC()
 			if progressErr != nil {
 				return s.failOwnedTask(ctx, task, owner, progressErr)
 			}
 			resp := progress.Response
 			resp.Data = append([]provider.ImageResult(nil), progress.Results...)
-			persistedResults := append([]provider.ImageResult(nil), progress.Results...)
-			finalStatus := domainimagetask.StatusSucceeded
-			if len(progress.Failures) > 0 && len(persistedResults) > 0 {
-				finalStatus = domainimagetask.StatusPartialFailed
-			}
 			task = s.decorateTaskProvider(task, candidate)
-			task.Status = domainimagetask.StatusRunning
-			task.FallbackCount = len(task.Attempts)
-			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, attemptStarted, attemptFinished))
-			task.Results = persistedResults
 			if len(progress.Failures) > 0 {
 				task.ErrorCode = errorCode(progress.Failures[0])
 				task.ErrorMessage = errorMessage(progress.Failures[0])
 			}
+			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
+				return domainimagetask.ExecuteResult{}, checkpointErr
+			}
+			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
+			if persistErr != nil {
+				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
+			}
+			finalStatus := domainimagetask.StatusSucceeded
+			if len(progress.Failures) > 0 && len(persistedResults) > 0 {
+				finalStatus = domainimagetask.StatusPartialFailed
+			}
+			task.Status = domainimagetask.StatusRunning
+			task.FallbackCount = len(task.Attempts)
+			task.Results = persistedResults
+			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
 			}
@@ -655,7 +661,7 @@ func (s *Service) decorateTaskProvider(task domainimagetask.Task, candidate mode
 	return task
 }
 
-func (s *Service) executeOpenAIFanoutWithProgress(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, owner string, req provider.ImageRequest) (openAIFanoutProgress, error) {
+func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.ImageProvider, task domainimagetask.Task, req provider.ImageRequest) (openAIFanoutProgress, error) {
 	call := func(ctx context.Context, singleReq provider.ImageRequest) (provider.ImageResponse, error) {
 		if task.TaskType == string(provider.TaskTypeImageEdit) {
 			return client.Edit(ctx, singleReq)
@@ -692,28 +698,7 @@ func (s *Service) executeOpenAIFanoutWithProgress(ctx context.Context, client pr
 				progress.Failures = append(progress.Failures, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images"))
 				return nil
 			}
-			persisted, persistErr := s.persistImageResults(ctx, task, resp.Data)
-			if persistErr != nil {
-				progress.Failures = append(progress.Failures, persistErr)
-				return nil
-			}
-			progress.Results = append(progress.Results, persisted...)
-			snapshot := s.decorateTaskProvider(task, candidate)
-			snapshot.Status = domainimagetask.StatusRunning
-			snapshot.Results = append([]provider.ImageResult(nil), progress.Results...)
-			if len(progress.Failures) > 0 {
-				snapshot.ErrorCode = errorCode(progress.Failures[0])
-				snapshot.ErrorMessage = errorMessage(progress.Failures[0])
-			}
-			if billingErr := s.applyActualPoints(&snapshot, len(snapshot.Results)); billingErr != nil {
-				progress.Failures = append(progress.Failures, billingErr)
-				return nil
-			}
-			snapshot.ProviderCost = calculateProviderCost(candidate, len(snapshot.Results))
-			snapshot.GrossMargin = calculateGrossMargin(snapshot.ActualPoints, snapshot.ProviderCost)
-			if saveErr := s.saveOwnedTask(ctx, snapshot, owner); saveErr != nil {
-				return saveErr
-			}
+			progress.Results = append(progress.Results, resp.Data...)
 			return nil
 		})
 	}

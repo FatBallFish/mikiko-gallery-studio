@@ -38,12 +38,8 @@ func TestStorageConfigStorePersistsAndSwitchesDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save second: %v", err)
 	}
-	if err := store.ClearDefault(ctx); err != nil {
-		t.Fatalf("clear default: %v", err)
-	}
-	second.IsDefault = true
-	second.Version++
-	if _, err := store.Save(ctx, second); err != nil {
+	second, err = store.SetDefault(ctx, second.ID, second.Version, 7)
+	if err != nil {
 		t.Fatalf("set second default: %v", err)
 	}
 
@@ -53,6 +49,17 @@ func TestStorageConfigStorePersistsAndSwitchesDefault(t *testing.T) {
 	}
 	if resolved.ID != second.ID || resolved.SecretFingerprint != "sha256:test" || resolved.SecretEncrypted["ciphertext"] != "v1:encrypted" {
 		t.Fatalf("unexpected default record %#v", resolved)
+	}
+	if _, err := store.SetDefault(ctx, first.ID, first.Version+99, 8); err == nil {
+		t.Fatal("expected stale default switch to fail")
+	}
+	stillDefault, ok, err := store.GetDefaultWritable(ctx)
+	if err != nil || !ok || stillDefault.ID != second.ID {
+		t.Fatalf("failed switch must preserve current default: record=%#v ok=%v err=%v", stillDefault, ok, err)
+	}
+	first.IsDefault = true
+	if _, err := store.Save(ctx, first); err == nil {
+		t.Fatal("database unique index must reject a second default")
 	}
 	historical, ok, err := store.GetByID(ctx, first.ID)
 	if err != nil || !ok || historical.LocalRoot != "/first" {

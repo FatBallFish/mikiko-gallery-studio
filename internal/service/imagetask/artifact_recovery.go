@@ -115,6 +115,9 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 		return domainimagetask.ExecuteResult{}, err
 	}
 	task.Status = domainimagetask.StatusSucceeded
+	if len(persisted) < normalizedCount(task.OutputImageCount) {
+		task.Status = domainimagetask.StatusPartialFailed
+	}
 	task.LeaseOwner = ""
 	task.LeaseExpiresAt = nil
 	if err := s.saveOwnedTask(ctx, task, owner); err != nil {

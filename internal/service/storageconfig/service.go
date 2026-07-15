@@ -100,6 +100,20 @@ func (s *Service) Update(ctx context.Context, req domainstorageconfig.WriteReque
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
 	}
+	backendChanged := storageBackendChanged(current, record)
+	if current.IsDefault {
+		if current.Status != record.Status || current.ReadEnabled != record.ReadEnabled || current.WriteEnabled != record.WriteEnabled {
+			return domainstorageconfig.ConfigView{}, errs.BadRequest("default storage config must remain enabled for read and write")
+		}
+		if backendChanged {
+			return domainstorageconfig.ConfigView{}, errs.BadRequest("switch default storage before changing its backend settings")
+		}
+	}
+	if backendChanged {
+		record.LastProbeStatus = domainstorageconfig.ProbeStatusNever
+		record.LastProbeMessage = ""
+		record.LastProbeAt = nil
+	}
 	saved, err := s.store.Save(ctx, record)
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
@@ -148,15 +162,18 @@ func (s *Service) SetDefault(ctx context.Context, req domainstorageconfig.SetDef
 	if current.LastProbeStatus != domainstorageconfig.ProbeStatusSuccess {
 		return domainstorageconfig.ConfigView{}, errs.BadRequest("storage config must pass probe before becoming default")
 	}
-	if err := s.store.ClearDefault(ctx); err != nil {
-		return domainstorageconfig.ConfigView{}, err
-	}
-	current.IsDefault, current.UpdatedBy, current.Version = true, req.UpdatedBy, current.Version+1
-	saved, err := s.store.Save(ctx, current)
+	saved, err := s.store.SetDefault(ctx, current.ID, current.Version, req.UpdatedBy)
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
 	}
 	return viewFromRecord(saved), nil
+}
+
+func storageBackendChanged(before, after domainstorageconfig.ConfigRecord) bool {
+	return before.Driver != after.Driver || before.Provider != after.Provider || before.Endpoint != after.Endpoint ||
+		before.Region != after.Region || before.Bucket != after.Bucket || before.Prefix != after.Prefix ||
+		before.ForcePathStyle != after.ForcePathStyle || before.LocalRoot != after.LocalRoot ||
+		before.SecretFingerprint != after.SecretFingerprint
 }
 
 func (s *Service) ResolveDefaultWritable(ctx context.Context) (domainstorageconfig.ResolvedConfig, error) {

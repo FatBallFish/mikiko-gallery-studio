@@ -1067,7 +1067,7 @@ func TestExecuteOpenAIFormatMultiImageFansOutAndChargesActualSuccesses(t *testin
 	}
 }
 
-func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testing.T) {
+func TestExecuteLeasedTaskWaitsToCheckpointOpenAIFanoutBeforePersistence(t *testing.T) {
 	cfg := taskTestConfig()
 	billingSvc := billingservice.NewService(cfg.Billing)
 	seedBalance(t, billingSvc, 278, "40.00000")
@@ -1132,7 +1132,6 @@ func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testin
 		resultCh <- result
 	}()
 
-	var progressTask domainimagetask.Task
 	deadline := time.After(2 * time.Second)
 	for {
 		select {
@@ -1141,9 +1140,17 @@ func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testin
 		case <-deadline:
 			t.Fatal("timed out waiting for partial running snapshot")
 		default:
-			loaded, loadErr := svc.GetByID(context.Background(), 278, created.ID)
-			if loadErr == nil && loaded.Status == domainimagetask.StatusRunning && len(loaded.Results) == 1 {
-				progressTask = loaded
+			mu.Lock()
+			startedCalls := calls
+			mu.Unlock()
+			if startedCalls == 3 {
+				loaded, loadErr := svc.GetByID(context.Background(), 278, created.ID)
+				if loadErr != nil {
+					t.Fatalf("GetByID before checkpoint: %v", loadErr)
+				}
+				if len(loaded.Results) != 0 || loaded.ArtifactRecovery.EncryptedPayload != "" {
+					t.Fatalf("fanout must not persist artifacts before all paid responses are gathered: %#v", loaded)
+				}
 				close(releaseLaterCalls)
 				goto waitFinal
 			}
@@ -1152,10 +1159,6 @@ func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testin
 	}
 
 waitFinal:
-	if progressTask.ActualPoints != "8.00000" {
-		t.Fatalf("expected partial actual points 8.00000 after first success, got %s", progressTask.ActualPoints)
-	}
-
 	var result domainimagetask.ExecuteResult
 	select {
 	case err := <-errCh:

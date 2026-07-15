@@ -130,9 +130,39 @@ func (s *StorageConfigStore) Save(ctx context.Context, record domainstorageconfi
 	return mapObjectStorageConfig(updated), nil
 }
 
-func (s *StorageConfigStore) ClearDefault(ctx context.Context) error {
-	_, err := s.client.ObjectStorageConfig.Update().Where(objectstorageconfig.IsDefaultEQ(true)).SetIsDefault(false).Save(ctx)
-	return err
+func (s *StorageConfigStore) SetDefault(ctx context.Context, id string, expectedVersion, updatedBy int64) (domainstorageconfig.ConfigRecord, error) {
+	parsed, err := uuid.Parse(strings.TrimSpace(id))
+	if err != nil {
+		return domainstorageconfig.ConfigRecord{}, repoerr.ErrNotFound
+	}
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainstorageconfig.ConfigRecord{}, err
+	}
+	defer tx.Rollback()
+	current, err := tx.ObjectStorageConfig.Query().Where(objectstorageconfig.IDEQ(parsed), objectstorageconfig.VersionEQ(expectedVersion), objectstorageconfig.StatusNEQ(domainstorageconfig.StatusDeleted)).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainstorageconfig.ConfigRecord{}, repoerr.ErrConflict
+		}
+		return domainstorageconfig.ConfigRecord{}, err
+	}
+	if _, err := tx.ObjectStorageConfig.Update().Where(objectstorageconfig.IsDefaultEQ(true), objectstorageconfig.IDNEQ(parsed)).SetIsDefault(false).Save(ctx); err != nil {
+		return domainstorageconfig.ConfigRecord{}, err
+	}
+	updated, err := tx.ObjectStorageConfig.UpdateOneID(parsed).
+		SetIsDefault(true).
+		SetVersion(current.Version + 1).
+		SetUpdatedBy(updatedBy).
+		SetUpdatedAt(time.Now().UTC()).
+		Save(ctx)
+	if err != nil {
+		return domainstorageconfig.ConfigRecord{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domainstorageconfig.ConfigRecord{}, err
+	}
+	return mapObjectStorageConfig(updated), nil
 }
 
 func mapObjectStorageConfig(row *repoent.ObjectStorageConfig) domainstorageconfig.ConfigRecord {

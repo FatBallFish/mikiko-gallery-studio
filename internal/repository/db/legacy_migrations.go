@@ -12,6 +12,25 @@ DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'object_storage_configs'
+          AND column_name = 'is_default'
+    ) THEN
+        WITH ranked_defaults AS (
+            SELECT id, row_number() OVER (ORDER BY updated_at DESC, id DESC) AS position
+            FROM object_storage_configs
+            WHERE is_default = true
+        )
+        UPDATE object_storage_configs AS configs
+        SET is_default = false
+        FROM ranked_defaults
+        WHERE configs.id = ranked_defaults.id
+          AND ranked_defaults.position > 1;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
         FROM information_schema.tables
         WHERE table_schema = current_schema()
           AND table_name = 'route_model_prices'

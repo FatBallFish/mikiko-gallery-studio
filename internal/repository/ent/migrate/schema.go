@@ -601,6 +601,14 @@ var (
 				Columns: []*schema.Column{ObjectStorageConfigsColumns[4]},
 			},
 			{
+				Name:    "objectstorageconfig_is_default",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectStorageConfigsColumns[11]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "is_default",
+				},
+			},
+			{
 				Name:    "objectstorageconfig_is_default_status_write_enabled",
 				Unique:  false,
 				Columns: []*schema.Column{ObjectStorageConfigsColumns[11], ObjectStorageConfigsColumns[8], ObjectStorageConfigsColumns[10]},

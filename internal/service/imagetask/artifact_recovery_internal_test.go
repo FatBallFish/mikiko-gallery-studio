@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -64,6 +65,65 @@ func TestArtifactRecoveryRetriesThreeTimesWithoutSecondProviderCall(t *testing.T
 	}
 	if billing.finalizeCalls != 1 || billing.lastActualPoints != "1.00000" {
 		t.Fatalf("expected one successful billing finalization, got %#v", billing)
+	}
+}
+
+func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.T) {
+	now := time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC)
+	providerCalls := 0
+	providers := map[string]provider.ImageProvider{"openai": artifactTestProvider{generate: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+		providerCalls++
+		return provider.ImageResponse{ProviderRequestID: fmt.Sprintf("paid-fanout-%d", providerCalls), Data: []provider.ImageResult{{URL: fmt.Sprintf("https://cdn.example.com/result-%d.png?sig=secret", providerCalls)}}}, nil
+	}}}
+	backend := &countingArtifactBackend{failWrites: 1, objects: map[string][]byte{}}
+	store := NewMemoryStore()
+	cfg := artifactRecoveryTestConfig()
+	cfg.GenerationLimits.MaxImageCount = 2
+	cfg.Providers.OpenRouter.Enabled = false
+	cfg.Providers.OpenAI.Enabled = true
+	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{"openai": {
+		SupportedModels: []string{"basic"}, SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}, SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 2, Priority: 1,
+	}}
+	cfg.Routing.ProviderModelMap = map[string]map[string]string{"basic": {"openai": "gpt-image"}}
+	svc := NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, nil, &trackingArtifactBilling{}, storage.NewStaticRouter(backend))
+	svc.now = func() time.Time { return now }
+	imageBytes, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg==")
+	svc.SetHTTPClient(&http.Client{Transport: artifactRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
+	})})
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{UserID: 502, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover fanout", RequestedQuality: "1k", RequestedSize: "1024x1024", OutputImageCount: 2})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("AcquireNextTask: ok=%v err=%v", ok, err)
+	}
+	pending, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker", []string{"openai"})
+	if err != nil {
+		t.Fatalf("initial fanout execution: %v", err)
+	}
+	if pending.Task.ArtifactRecovery.Status != artifactRecoveryPending || pending.Task.ArtifactRecovery.AttemptCount != 1 || providerCalls != 2 {
+		t.Fatalf("expected paid fanout checkpoint and pending recovery, task=%#v provider_calls=%d", pending.Task, providerCalls)
+	}
+	now = pending.Task.ArtifactRecovery.NextRetryAt.Add(time.Millisecond)
+	reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("reclaim fanout: ok=%v err=%v", ok, err)
+	}
+	recovered, err := svc.ExecuteLeasedTask(context.Background(), reclaimed, "worker", []string{"openai"})
+	if err != nil {
+		t.Fatalf("recover fanout: %v", err)
+	}
+	if recovered.Task.Status != domainimagetask.StatusSucceeded || len(recovered.Task.Results) != 2 || providerCalls != 2 {
+		t.Fatalf("expected two recovered results without provider replay, task=%#v provider_calls=%d", recovered.Task, providerCalls)
+	}
+	if recovered.Task.Results[0].ID == recovered.Task.Results[1].ID || recovered.Task.Results[0].ObjectKey == recovered.Task.Results[1].ObjectKey {
+		t.Fatalf("fanout results collided: %#v", recovered.Task.Results)
+	}
+	loaded, err := store.GetByID(context.Background(), 502, created.ID)
+	if err != nil || len(loaded.Results) != 2 {
+		t.Fatalf("persisted fanout results: task=%#v err=%v", loaded, err)
 	}
 }
 

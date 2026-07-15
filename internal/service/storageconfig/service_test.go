@@ -2,6 +2,7 @@ package storageconfig
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -80,6 +81,48 @@ func TestStorageConfigRejectsMaskedSecretPlaceholder(t *testing.T) {
 	}
 }
 
+func TestStorageConfigBackendUpdateInvalidatesProbeAndRequiresReprobe(t *testing.T) {
+	svc := NewService(newMemoryStore(), "test-key", config.StorageConfig{Driver: "local"}, "local")
+	created, err := svc.Create(context.Background(), domainstorageconfig.WriteRequest{Code: "local-next", Name: "Local", Driver: "local", Provider: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: true, LocalRoot: "/first"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	probed, err := svc.UpdateProbe(context.Background(), created.ID, domainstorageconfig.ProbeResult{Status: "success", Message: "ok"}, 1)
+	if err != nil {
+		t.Fatalf("UpdateProbe: %v", err)
+	}
+	updated, err := svc.Update(context.Background(), domainstorageconfig.WriteRequest{ID: created.ID, Version: probed.Version, Code: created.Code, Name: created.Name, Driver: "local", Provider: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: true, LocalRoot: "/second"})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.LastProbe.Status != domainstorageconfig.ProbeStatusNever || updated.LastProbe.CheckedAt != nil {
+		t.Fatalf("backend change must invalidate probe: %#v", updated.LastProbe)
+	}
+	if _, err := svc.SetDefault(context.Background(), domainstorageconfig.SetDefaultRequest{ID: updated.ID, Version: updated.Version}); err == nil {
+		t.Fatal("updated backend must be reprobed before becoming default")
+	}
+}
+
+func TestStorageConfigDefaultRejectsBackendOrAvailabilityUpdate(t *testing.T) {
+	store := newMemoryStore()
+	svc := NewService(store, "test-key", config.StorageConfig{Driver: "local", LocalRoot: "/first"}, "local")
+	if err := svc.Bootstrap(context.Background(), 0); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	current, err := svc.ResolveDefaultWritable(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveDefaultWritable: %v", err)
+	}
+	for _, req := range []domainstorageconfig.WriteRequest{
+		{ID: current.ID, Version: current.Version, Code: current.Code, Name: current.Name, Driver: "local", Provider: "local", Status: "disabled", ReadEnabled: false, WriteEnabled: false, LocalRoot: current.LocalRoot},
+		{ID: current.ID, Version: current.Version, Code: current.Code, Name: current.Name, Driver: "local", Provider: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: true, LocalRoot: "/changed"},
+	} {
+		if _, err := svc.Update(context.Background(), req); err == nil {
+			t.Fatalf("default config update should be rejected: %#v", req)
+		}
+	}
+}
+
 type memoryStore struct {
 	records map[string]domainstorageconfig.ConfigRecord
 	nextID  int
@@ -135,10 +178,18 @@ func (s *memoryStore) Save(_ context.Context, record domainstorageconfig.ConfigR
 	return record, nil
 }
 
-func (s *memoryStore) ClearDefault(context.Context) error {
-	for id, item := range s.records {
-		item.IsDefault = false
-		s.records[id] = item
+func (s *memoryStore) SetDefault(_ context.Context, id string, expectedVersion, updatedBy int64) (domainstorageconfig.ConfigRecord, error) {
+	item, ok := s.records[id]
+	if !ok || item.Version != expectedVersion {
+		return domainstorageconfig.ConfigRecord{}, errors.New("storage config version conflict")
 	}
-	return nil
+	for recordID, record := range s.records {
+		record.IsDefault = false
+		s.records[recordID] = record
+	}
+	item.IsDefault = true
+	item.Version++
+	item.UpdatedBy = updatedBy
+	s.records[id] = item
+	return item, nil
 }
