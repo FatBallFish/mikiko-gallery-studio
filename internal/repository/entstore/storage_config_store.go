@@ -110,7 +110,9 @@ func (s *StorageConfigStore) Save(ctx context.Context, record domainstorageconfi
 	if err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
-	update := s.client.ObjectStorageConfig.UpdateOneID(id).SetName(record.Name).SetDriver(record.Driver).
+	update := s.client.ObjectStorageConfig.UpdateOneID(id).
+		Where(objectstorageconfig.VersionEQ(record.Version-1), objectstorageconfig.IsDefaultEQ(record.IsDefault)).
+		SetName(record.Name).SetDriver(record.Driver).
 		SetProvider(record.Provider).SetStatus(record.Status).SetReadEnabled(record.ReadEnabled).SetWriteEnabled(record.WriteEnabled).
 		SetIsDefault(record.IsDefault).SetPrefix(record.Prefix).SetForcePathStyle(record.ForcePathStyle).
 		SetPublicValue(cloneConfigValue(record.PublicValue)).SetSecretEncrypted(cloneConfigValue(record.SecretEncrypted)).
@@ -125,6 +127,9 @@ func (s *StorageConfigStore) Save(ctx context.Context, record domainstorageconfi
 	}
 	updated, err := update.Save(ctx)
 	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainstorageconfig.ConfigRecord{}, repoerr.ErrConflict
+		}
 		return domainstorageconfig.ConfigRecord{}, err
 	}
 	return mapObjectStorageConfig(updated), nil

@@ -38,6 +38,7 @@ func TestStorageConfigStorePersistsAndSwitchesDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save second: %v", err)
 	}
+	staleSecond := second
 	second, err = store.SetDefault(ctx, second.ID, second.Version, 7)
 	if err != nil {
 		t.Fatalf("set second default: %v", err)
@@ -57,7 +58,17 @@ func TestStorageConfigStorePersistsAndSwitchesDefault(t *testing.T) {
 	if err != nil || !ok || stillDefault.ID != second.ID {
 		t.Fatalf("failed switch must preserve current default: record=%#v ok=%v err=%v", stillDefault, ok, err)
 	}
+	staleSecond.Name = "stale update"
+	staleSecond.Version++
+	if _, err := store.Save(ctx, staleSecond); err == nil {
+		t.Fatal("stale update must not overwrite a concurrent default switch")
+	}
+	stillDefault, ok, err = store.GetDefaultWritable(ctx)
+	if err != nil || !ok || stillDefault.ID != second.ID {
+		t.Fatalf("stale update must preserve current default: record=%#v ok=%v err=%v", stillDefault, ok, err)
+	}
 	first.IsDefault = true
+	first.Version++
 	if _, err := store.Save(ctx, first); err == nil {
 		t.Fatal("database unique index must reject a second default")
 	}
