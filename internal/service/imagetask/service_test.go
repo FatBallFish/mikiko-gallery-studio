@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -736,6 +737,7 @@ type failingSaveStore struct {
 	failSaveIfOwned      bool
 	failSaveIfOwnedError error
 	failAcquireError     error
+	ownedSnapshots       []domainimagetask.Task
 }
 
 func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) error {
@@ -747,6 +749,7 @@ func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) 
 }
 
 func (s *failingSaveStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	s.ownedSnapshots = append(s.ownedSnapshots, task)
 	if s.failSaveIfOwned {
 		s.failSaveIfOwned = false
 		if s.failSaveIfOwnedError != nil {
@@ -756,6 +759,62 @@ func (s *failingSaveStore) SaveIfOwned(ctx context.Context, task domainimagetask
 	}
 	return s.base.SaveIfOwned(ctx, task, owner, now)
 }
+
+func TestProviderSuccessIsCheckpointedBeforeArtifactPersistence(t *testing.T) {
+	cfg := taskTestConfig()
+	cfg.Security.SecureConfigEncryptionKey = "artifact-recovery-test-key"
+	providerCalls := 0
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+			providerCalls++
+			return provider.ImageResponse{ProviderRequestID: "req-paid-1", Data: []provider.ImageResult{{URL: "https://cdn.example.com/result.png?signature=top-secret"}}}, nil
+		}},
+	}
+	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
+	failingRef := storage.BackendRef{ConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Version: 3, Driver: "local", Backend: alwaysFailingArtifactBackend{}}
+	router := &switchingImageRouter{defaultRef: failingRef, refs: map[string]storage.BackendRef{failingRef.ConfigID: failingRef}}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, nil, nil, router)
+	svc.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		imageBytes, _ := base64.StdEncoding.DecodeString(tinyPNGBase64)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
+	})})
+
+	_, _ = svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 77, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "paid result",
+		RequestedSize: "auto", RequestedQuality: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
+	})
+	if providerCalls != 1 {
+		t.Fatalf("expected one provider call, got %d", providerCalls)
+	}
+	checkpointFound := false
+	for _, snapshot := range store.ownedSnapshots {
+		if snapshot.ProviderRequestID != "req-paid-1" || snapshot.ArtifactRecovery.EncryptedPayload == "" {
+			continue
+		}
+		checkpointFound = true
+		if snapshot.UpstreamSucceededAt == nil || len(snapshot.Attempts) != 1 || snapshot.Attempts[0].Status != domainimagetask.StatusSucceeded {
+			t.Fatalf("provider success metadata missing from checkpoint: %#v", snapshot)
+		}
+		if strings.Contains(snapshot.ArtifactRecovery.EncryptedPayload, "top-secret") || strings.Contains(snapshot.ArtifactRecovery.EncryptedPayload, "cdn.example.com") {
+			t.Fatalf("recovery payload was not encrypted: %s", snapshot.ArtifactRecovery.EncryptedPayload)
+		}
+		break
+	}
+	if !checkpointFound {
+		t.Fatalf("expected provider success checkpoint before artifact failure, snapshots=%#v", store.ownedSnapshots)
+	}
+}
+
+type alwaysFailingArtifactBackend struct{}
+
+func (alwaysFailingArtifactBackend) Driver() string { return "local" }
+func (alwaysFailingArtifactBackend) Put(context.Context, string, string, []byte) error {
+	return errors.New("storage write unavailable")
+}
+func (alwaysFailingArtifactBackend) Get(context.Context, string) ([]byte, error) {
+	return nil, errors.New("storage read unavailable")
+}
+func (alwaysFailingArtifactBackend) Delete(context.Context, string) error { return nil }
 
 func (s *failingSaveStore) SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
 	return s.base.SaveTerminalState(ctx, task, owner, now)

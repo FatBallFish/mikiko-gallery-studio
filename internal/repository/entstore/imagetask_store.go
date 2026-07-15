@@ -862,7 +862,12 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetRouteSnapshotVersion(defaultString(task.RouteSnapshotVersion, "")).
 		SetPricingSnapshot(pricingSnapshot).
 		SetRoutingSnapshot(routingSnapshot).
-		SetProviderTrace(trace)
+		SetProviderTrace(trace).
+		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
+		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
+		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
+	setImageTaskCreateArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	}
@@ -947,7 +952,12 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetRouteSnapshotVersion(defaultString(task.RouteSnapshotVersion, entity.RouteSnapshotVersion)).
 		SetPricingSnapshot(pricingSnapshot).
 		SetRoutingSnapshot(routingSnapshot).
-		SetProviderTrace(trace)
+		SetProviderTrace(trace).
+		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
+		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
+		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
+	setImageTaskUpdateOneArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1083,7 +1093,12 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetRouteSnapshotVersion(defaultString(task.RouteSnapshotVersion, entity.RouteSnapshotVersion)).
 		SetPricingSnapshot(pricingSnapshot).
 		SetRoutingSnapshot(routingSnapshot).
-		SetProviderTrace(trace)
+		SetProviderTrace(trace).
+		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
+		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
+		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
+	setImageTaskUpdateArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1203,7 +1218,12 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetRouteSnapshotVersion(defaultString(task.RouteSnapshotVersion, entity.RouteSnapshotVersion)).
 		SetPricingSnapshot(pricingSnapshot).
 		SetRoutingSnapshot(routingSnapshot).
-		SetProviderTrace(trace)
+		SetProviderTrace(trace).
+		SetArtifactRecoveryStatus(task.ArtifactRecovery.Status).
+		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
+		SetArtifactLastDiagnostic(artifactDiagnosticMap(task.ArtifactRecovery.LastDiagnostic)).
+		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
+	setImageTaskUpdateArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1266,6 +1286,104 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		builder.ClearFinishedAt()
 	}
 	return builder.Save(ctx)
+}
+
+func setImageTaskCreateArtifactFields(builder *repoent.ImageTaskCreate, task domainimagetask.Task) {
+	if task.ProviderRequestID != "" {
+		builder.SetProviderRequestID(task.ProviderRequestID)
+	}
+	if task.UpstreamSucceededAt != nil {
+		builder.SetUpstreamSucceededAt(*task.UpstreamSucceededAt)
+	}
+	if task.ArtifactRecovery.EncryptedPayload != "" {
+		builder.SetArtifactRecoveryPayload(task.ArtifactRecovery.EncryptedPayload)
+	}
+	if task.ArtifactRecovery.NextRetryAt != nil {
+		builder.SetArtifactNextRetryAt(*task.ArtifactRecovery.NextRetryAt)
+	}
+	if id, err := uuid.Parse(task.ArtifactRecovery.StorageConfigID); err == nil {
+		builder.SetArtifactStorageConfigID(id)
+	}
+}
+
+func setImageTaskUpdateOneArtifactFields(builder *repoent.ImageTaskUpdateOne, task domainimagetask.Task) {
+	if task.ProviderRequestID != "" {
+		builder.SetProviderRequestID(task.ProviderRequestID)
+	} else {
+		builder.ClearProviderRequestID()
+	}
+	if task.UpstreamSucceededAt != nil {
+		builder.SetUpstreamSucceededAt(*task.UpstreamSucceededAt)
+	} else {
+		builder.ClearUpstreamSucceededAt()
+	}
+	if task.ArtifactRecovery.EncryptedPayload != "" {
+		builder.SetArtifactRecoveryPayload(task.ArtifactRecovery.EncryptedPayload)
+	} else {
+		builder.ClearArtifactRecoveryPayload()
+	}
+	if task.ArtifactRecovery.NextRetryAt != nil {
+		builder.SetArtifactNextRetryAt(*task.ArtifactRecovery.NextRetryAt)
+	} else {
+		builder.ClearArtifactNextRetryAt()
+	}
+	if id, err := uuid.Parse(task.ArtifactRecovery.StorageConfigID); err == nil {
+		builder.SetArtifactStorageConfigID(id)
+	} else {
+		builder.ClearArtifactStorageConfigID()
+	}
+}
+
+func setImageTaskUpdateArtifactFields(builder *repoent.ImageTaskUpdate, task domainimagetask.Task) {
+	if task.ProviderRequestID != "" {
+		builder.SetProviderRequestID(task.ProviderRequestID)
+	} else {
+		builder.ClearProviderRequestID()
+	}
+	if task.UpstreamSucceededAt != nil {
+		builder.SetUpstreamSucceededAt(*task.UpstreamSucceededAt)
+	} else {
+		builder.ClearUpstreamSucceededAt()
+	}
+	if task.ArtifactRecovery.EncryptedPayload != "" {
+		builder.SetArtifactRecoveryPayload(task.ArtifactRecovery.EncryptedPayload)
+	} else {
+		builder.ClearArtifactRecoveryPayload()
+	}
+	if task.ArtifactRecovery.NextRetryAt != nil {
+		builder.SetArtifactNextRetryAt(*task.ArtifactRecovery.NextRetryAt)
+	} else {
+		builder.ClearArtifactNextRetryAt()
+	}
+	if id, err := uuid.Parse(task.ArtifactRecovery.StorageConfigID); err == nil {
+		builder.SetArtifactStorageConfigID(id)
+	} else {
+		builder.ClearArtifactStorageConfigID()
+	}
+}
+
+func artifactDiagnosticMap(value domainimagetask.ArtifactDiagnostic) map[string]any {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return map[string]any{}
+	}
+	decoded := map[string]any{}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return map[string]any{}
+	}
+	return decoded
+}
+
+func decodeArtifactDiagnostic(value map[string]any) domainimagetask.ArtifactDiagnostic {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return domainimagetask.ArtifactDiagnostic{}
+	}
+	var decoded domainimagetask.ArtifactDiagnostic
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return domainimagetask.ArtifactDiagnostic{}
+	}
+	return decoded
 }
 
 func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, userID int64, index int, result provider.ImageResult) error {
@@ -1367,8 +1485,21 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		LeaseExpiresAt:        entity.LeaseExpiresAt,
 		ErrorCode:             nullableString(entity.ErrorCode),
 		ErrorMessage:          nullableString(entity.ErrorMessage),
-		CreatedAt:             entity.CreatedAt,
-		UpdatedAt:             entity.UpdatedAt,
+		ProviderRequestID:     nullableString(entity.ProviderRequestID),
+		UpstreamSucceededAt:   entity.UpstreamSucceededAt,
+		ArtifactRecovery: domainimagetask.ArtifactRecovery{
+			Status:           entity.ArtifactRecoveryStatus,
+			EncryptedPayload: nullableString(entity.ArtifactRecoveryPayload),
+			AttemptCount:     entity.ArtifactAttemptCount,
+			NextRetryAt:      entity.ArtifactNextRetryAt,
+			LastDiagnostic:   decodeArtifactDiagnostic(entity.ArtifactLastDiagnostic),
+			StorageVersion:   entity.ArtifactStorageVersion,
+		},
+		CreatedAt: entity.CreatedAt,
+		UpdatedAt: entity.UpdatedAt,
+	}
+	if entity.ArtifactStorageConfigID != nil {
+		task.ArtifactRecovery.StorageConfigID = entity.ArtifactStorageConfigID.String()
 	}
 	if entity.APIKeyID != nil {
 		task.APIKeyID = *entity.APIKeyID

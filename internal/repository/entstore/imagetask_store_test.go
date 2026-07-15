@@ -116,6 +116,8 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 
 	imageBytes := []byte("fake-png")
 	hash := sha256.Sum256(imageBytes)
+	upstreamSucceededAt := time.Now().UTC().Add(-time.Second)
+	nextRetryAt := time.Now().UTC().Add(time.Minute)
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
 		UserID:                41,
@@ -129,6 +131,13 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 		ResolvedQualityBucket: "2k",
 		RequestedSize:         "1024x1024",
 		OutputImageCount:      1,
+		ProviderRequestID:     "provider-request-1",
+		UpstreamSucceededAt:   &upstreamSucceededAt,
+		ArtifactRecovery: domainimagetask.ArtifactRecovery{
+			Status: "pending", EncryptedPayload: `{"ciphertext":"v1:encrypted"}`, AttemptCount: 2, NextRetryAt: &nextRetryAt,
+			StorageConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", StorageVersion: 4,
+			LastDiagnostic: domainimagetask.ArtifactDiagnostic{Code: "ARTIFACT_STORAGE_WRITE_FAILED", Stage: "store", Attempt: 2, Retryable: true, BytesRead: 68},
+		},
 		Results: []provider.ImageResult{{
 			StorageConfigID:  "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			ObjectKey:        "generated-images/41/12121212-1212-1212-1212-121212121212/0.png",
@@ -171,6 +180,15 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	}
 	if result.DownloadURL == "" {
 		t.Fatalf("expected local result to expose download_url, got %#v", result)
+	}
+	if loaded.ProviderRequestID != task.ProviderRequestID || loaded.UpstreamSucceededAt == nil || !loaded.UpstreamSucceededAt.Equal(upstreamSucceededAt) {
+		t.Fatalf("expected provider success checkpoint to round-trip, got %#v", loaded)
+	}
+	if loaded.ArtifactRecovery.Status != "pending" || loaded.ArtifactRecovery.EncryptedPayload != task.ArtifactRecovery.EncryptedPayload || loaded.ArtifactRecovery.AttemptCount != 2 {
+		t.Fatalf("expected artifact recovery envelope to round-trip, got %#v", loaded.ArtifactRecovery)
+	}
+	if loaded.ArtifactRecovery.NextRetryAt == nil || loaded.ArtifactRecovery.LastDiagnostic.Code != "ARTIFACT_STORAGE_WRITE_FAILED" || loaded.ArtifactRecovery.StorageVersion != 4 {
+		t.Fatalf("expected artifact retry state to round-trip, got %#v", loaded.ArtifactRecovery)
 	}
 }
 

@@ -31,20 +31,22 @@ import (
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/fatballfish/pic-gallery/internal/service/secretcodec"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type Service struct {
-	cfg        config.Config
-	resolver   *modelhub.Resolver
-	providers  map[string]provider.ImageProvider
-	store      Store
-	assets     AssetLoader
-	billing    BillingManager
-	apiKeys    APIKeyUsageManager
-	router     storage.Router
-	httpClient *http.Client
+	cfg           config.Config
+	resolver      *modelhub.Resolver
+	providers     map[string]provider.ImageProvider
+	store         Store
+	assets        AssetLoader
+	billing       BillingManager
+	apiKeys       APIKeyUsageManager
+	router        storage.Router
+	recoveryCodec *secretcodec.Codec
+	httpClient    *http.Client
 }
 
 type executionOptions struct {
@@ -132,14 +134,15 @@ func NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg config.Config, provi
 		router = storage.NewStaticRouter(storage.NewLocalBackend(cfg.Storage.LocalRoot))
 	}
 	return &Service{
-		cfg:        cfg,
-		resolver:   modelhub.NewResolver(cfg),
-		providers:  providers,
-		store:      store,
-		assets:     assets,
-		billing:    billing,
-		router:     router,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		cfg:           cfg,
+		resolver:      modelhub.NewResolver(cfg),
+		providers:     providers,
+		store:         store,
+		assets:        assets,
+		billing:       billing,
+		router:        router,
+		recoveryCodec: secretcodec.New(cfg.Security.SecureConfigEncryptionKey),
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -557,7 +560,9 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
 		attemptFinished := time.Now().UTC()
 		if err == nil {
-
+			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
+				return domainimagetask.ExecuteResult{}, checkpointErr
+			}
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
 				return s.failOwnedTask(ctx, task, owner, persistErr)
@@ -566,11 +571,10 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			if openAIFormat && len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
 			}
-			task = s.decorateTaskProvider(task, candidate)
 			task.Status = domainimagetask.StatusRunning
 			task.FallbackCount = len(task.Attempts)
-			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, attemptStarted, attemptFinished))
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
+			task.ArtifactRecovery = domainimagetask.ArtifactRecovery{}
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
 			}
@@ -1408,7 +1412,7 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 		resultID = uuid.NewString()
 	}
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	writer, err := s.router.DefaultWriter(ctx)
+	writer, err := s.artifactWriter(ctx, task)
 	if err != nil {
 		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
 	}
@@ -1446,7 +1450,7 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	sha := hex.EncodeToString(hash[:])
 	resultID := uuid.NewString()
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	writer, err := s.router.DefaultWriter(context.Background())
+	writer, err := s.artifactWriter(context.Background(), task)
 	if err != nil {
 		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
 	}
@@ -1811,6 +1815,14 @@ func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	if task.LeaseExpiresAt != nil {
 		expiresAt := *task.LeaseExpiresAt
 		task.LeaseExpiresAt = &expiresAt
+	}
+	if task.UpstreamSucceededAt != nil {
+		succeededAt := *task.UpstreamSucceededAt
+		task.UpstreamSucceededAt = &succeededAt
+	}
+	if task.ArtifactRecovery.NextRetryAt != nil {
+		nextRetryAt := *task.ArtifactRecovery.NextRetryAt
+		task.ArtifactRecovery.NextRetryAt = &nextRetryAt
 	}
 	return task
 }
