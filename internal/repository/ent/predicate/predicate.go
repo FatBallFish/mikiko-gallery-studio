@@ -39,6 +39,9 @@ type ModelProvider func(*sql.Selector)
 // ModelRoute is the predicate function for modelroute builders.
 type ModelRoute func(*sql.Selector)
 
+// ObjectStorageConfig is the predicate function for objectstorageconfig builders.
+type ObjectStorageConfig func(*sql.Selector)
+
 // PaymentOrder is the predicate function for paymentorder builders.
 type PaymentOrder func(*sql.Selector)
 

@@ -100,6 +100,24 @@ const (
 	FieldErrorPolicySnapshot = "error_policy_snapshot"
 	// FieldProviderTrace holds the string denoting the provider_trace field in the database.
 	FieldProviderTrace = "provider_trace"
+	// FieldProviderRequestID holds the string denoting the provider_request_id field in the database.
+	FieldProviderRequestID = "provider_request_id"
+	// FieldUpstreamSucceededAt holds the string denoting the upstream_succeeded_at field in the database.
+	FieldUpstreamSucceededAt = "upstream_succeeded_at"
+	// FieldArtifactRecoveryStatus holds the string denoting the artifact_recovery_status field in the database.
+	FieldArtifactRecoveryStatus = "artifact_recovery_status"
+	// FieldArtifactRecoveryPayload holds the string denoting the artifact_recovery_payload field in the database.
+	FieldArtifactRecoveryPayload = "artifact_recovery_payload"
+	// FieldArtifactAttemptCount holds the string denoting the artifact_attempt_count field in the database.
+	FieldArtifactAttemptCount = "artifact_attempt_count"
+	// FieldArtifactNextRetryAt holds the string denoting the artifact_next_retry_at field in the database.
+	FieldArtifactNextRetryAt = "artifact_next_retry_at"
+	// FieldArtifactLastDiagnostic holds the string denoting the artifact_last_diagnostic field in the database.
+	FieldArtifactLastDiagnostic = "artifact_last_diagnostic"
+	// FieldArtifactStorageConfigID holds the string denoting the artifact_storage_config_id field in the database.
+	FieldArtifactStorageConfigID = "artifact_storage_config_id"
+	// FieldArtifactStorageVersion holds the string denoting the artifact_storage_version field in the database.
+	FieldArtifactStorageVersion = "artifact_storage_version"
 	// FieldLeaseOwner holds the string denoting the lease_owner field in the database.
 	FieldLeaseOwner = "lease_owner"
 	// FieldLeaseExpiresAt holds the string denoting the lease_expires_at field in the database.
@@ -162,6 +180,15 @@ var Columns = []string{
 	FieldRoutingSnapshot,
 	FieldErrorPolicySnapshot,
 	FieldProviderTrace,
+	FieldProviderRequestID,
+	FieldUpstreamSucceededAt,
+	FieldArtifactRecoveryStatus,
+	FieldArtifactRecoveryPayload,
+	FieldArtifactAttemptCount,
+	FieldArtifactNextRetryAt,
+	FieldArtifactLastDiagnostic,
+	FieldArtifactStorageConfigID,
+	FieldArtifactStorageVersion,
 	FieldLeaseOwner,
 	FieldLeaseExpiresAt,
 	FieldErrorCode,
@@ -255,6 +282,16 @@ var (
 	DefaultRouteSnapshotVersion string
 	// RouteSnapshotVersionValidator is a validator for the "route_snapshot_version" field. It is called by the builders before save.
 	RouteSnapshotVersionValidator func(string) error
+	// ProviderRequestIDValidator is a validator for the "provider_request_id" field. It is called by the builders before save.
+	ProviderRequestIDValidator func(string) error
+	// DefaultArtifactRecoveryStatus holds the default value on creation for the "artifact_recovery_status" field.
+	DefaultArtifactRecoveryStatus string
+	// ArtifactRecoveryStatusValidator is a validator for the "artifact_recovery_status" field. It is called by the builders before save.
+	ArtifactRecoveryStatusValidator func(string) error
+	// DefaultArtifactAttemptCount holds the default value on creation for the "artifact_attempt_count" field.
+	DefaultArtifactAttemptCount int
+	// DefaultArtifactStorageVersion holds the default value on creation for the "artifact_storage_version" field.
+	DefaultArtifactStorageVersion int64
 	// LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	LeaseOwnerValidator func(string) error
 	// ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
@@ -464,6 +501,46 @@ func ByFallbackCount(opts ...sql.OrderTermOption) OrderOption {
 // ByRouteSnapshotVersion orders the results by the route_snapshot_version field.
 func ByRouteSnapshotVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRouteSnapshotVersion, opts...).ToFunc()
+}
+
+// ByProviderRequestID orders the results by the provider_request_id field.
+func ByProviderRequestID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderRequestID, opts...).ToFunc()
+}
+
+// ByUpstreamSucceededAt orders the results by the upstream_succeeded_at field.
+func ByUpstreamSucceededAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamSucceededAt, opts...).ToFunc()
+}
+
+// ByArtifactRecoveryStatus orders the results by the artifact_recovery_status field.
+func ByArtifactRecoveryStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactRecoveryStatus, opts...).ToFunc()
+}
+
+// ByArtifactRecoveryPayload orders the results by the artifact_recovery_payload field.
+func ByArtifactRecoveryPayload(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactRecoveryPayload, opts...).ToFunc()
+}
+
+// ByArtifactAttemptCount orders the results by the artifact_attempt_count field.
+func ByArtifactAttemptCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactAttemptCount, opts...).ToFunc()
+}
+
+// ByArtifactNextRetryAt orders the results by the artifact_next_retry_at field.
+func ByArtifactNextRetryAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactNextRetryAt, opts...).ToFunc()
+}
+
+// ByArtifactStorageConfigID orders the results by the artifact_storage_config_id field.
+func ByArtifactStorageConfigID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactStorageConfigID, opts...).ToFunc()
+}
+
+// ByArtifactStorageVersion orders the results by the artifact_storage_version field.
+func ByArtifactStorageVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactStorageVersion, opts...).ToFunc()
 }
 
 // ByLeaseOwner orders the results by the lease_owner field.

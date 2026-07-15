@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/google/uuid"
 )
 
 // ImageTaskUpdate is the builder for updating ImageTask entities.
@@ -770,6 +771,174 @@ func (_u *ImageTaskUpdate) ClearProviderTrace() *ImageTaskUpdate {
 	return _u
 }
 
+// SetProviderRequestID sets the "provider_request_id" field.
+func (_u *ImageTaskUpdate) SetProviderRequestID(v string) *ImageTaskUpdate {
+	_u.mutation.SetProviderRequestID(v)
+	return _u
+}
+
+// SetNillableProviderRequestID sets the "provider_request_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableProviderRequestID(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetProviderRequestID(*v)
+	}
+	return _u
+}
+
+// ClearProviderRequestID clears the value of the "provider_request_id" field.
+func (_u *ImageTaskUpdate) ClearProviderRequestID() *ImageTaskUpdate {
+	_u.mutation.ClearProviderRequestID()
+	return _u
+}
+
+// SetUpstreamSucceededAt sets the "upstream_succeeded_at" field.
+func (_u *ImageTaskUpdate) SetUpstreamSucceededAt(v time.Time) *ImageTaskUpdate {
+	_u.mutation.SetUpstreamSucceededAt(v)
+	return _u
+}
+
+// SetNillableUpstreamSucceededAt sets the "upstream_succeeded_at" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableUpstreamSucceededAt(v *time.Time) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetUpstreamSucceededAt(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamSucceededAt clears the value of the "upstream_succeeded_at" field.
+func (_u *ImageTaskUpdate) ClearUpstreamSucceededAt() *ImageTaskUpdate {
+	_u.mutation.ClearUpstreamSucceededAt()
+	return _u
+}
+
+// SetArtifactRecoveryStatus sets the "artifact_recovery_status" field.
+func (_u *ImageTaskUpdate) SetArtifactRecoveryStatus(v string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactRecoveryStatus(v)
+	return _u
+}
+
+// SetNillableArtifactRecoveryStatus sets the "artifact_recovery_status" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactRecoveryStatus(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactRecoveryStatus(*v)
+	}
+	return _u
+}
+
+// SetArtifactRecoveryPayload sets the "artifact_recovery_payload" field.
+func (_u *ImageTaskUpdate) SetArtifactRecoveryPayload(v string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactRecoveryPayload(v)
+	return _u
+}
+
+// SetNillableArtifactRecoveryPayload sets the "artifact_recovery_payload" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactRecoveryPayload(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactRecoveryPayload(*v)
+	}
+	return _u
+}
+
+// ClearArtifactRecoveryPayload clears the value of the "artifact_recovery_payload" field.
+func (_u *ImageTaskUpdate) ClearArtifactRecoveryPayload() *ImageTaskUpdate {
+	_u.mutation.ClearArtifactRecoveryPayload()
+	return _u
+}
+
+// SetArtifactAttemptCount sets the "artifact_attempt_count" field.
+func (_u *ImageTaskUpdate) SetArtifactAttemptCount(v int) *ImageTaskUpdate {
+	_u.mutation.ResetArtifactAttemptCount()
+	_u.mutation.SetArtifactAttemptCount(v)
+	return _u
+}
+
+// SetNillableArtifactAttemptCount sets the "artifact_attempt_count" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactAttemptCount(v *int) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactAttemptCount(*v)
+	}
+	return _u
+}
+
+// AddArtifactAttemptCount adds value to the "artifact_attempt_count" field.
+func (_u *ImageTaskUpdate) AddArtifactAttemptCount(v int) *ImageTaskUpdate {
+	_u.mutation.AddArtifactAttemptCount(v)
+	return _u
+}
+
+// SetArtifactNextRetryAt sets the "artifact_next_retry_at" field.
+func (_u *ImageTaskUpdate) SetArtifactNextRetryAt(v time.Time) *ImageTaskUpdate {
+	_u.mutation.SetArtifactNextRetryAt(v)
+	return _u
+}
+
+// SetNillableArtifactNextRetryAt sets the "artifact_next_retry_at" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactNextRetryAt(v *time.Time) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactNextRetryAt(*v)
+	}
+	return _u
+}
+
+// ClearArtifactNextRetryAt clears the value of the "artifact_next_retry_at" field.
+func (_u *ImageTaskUpdate) ClearArtifactNextRetryAt() *ImageTaskUpdate {
+	_u.mutation.ClearArtifactNextRetryAt()
+	return _u
+}
+
+// SetArtifactLastDiagnostic sets the "artifact_last_diagnostic" field.
+func (_u *ImageTaskUpdate) SetArtifactLastDiagnostic(v map[string]interface{}) *ImageTaskUpdate {
+	_u.mutation.SetArtifactLastDiagnostic(v)
+	return _u
+}
+
+// ClearArtifactLastDiagnostic clears the value of the "artifact_last_diagnostic" field.
+func (_u *ImageTaskUpdate) ClearArtifactLastDiagnostic() *ImageTaskUpdate {
+	_u.mutation.ClearArtifactLastDiagnostic()
+	return _u
+}
+
+// SetArtifactStorageConfigID sets the "artifact_storage_config_id" field.
+func (_u *ImageTaskUpdate) SetArtifactStorageConfigID(v uuid.UUID) *ImageTaskUpdate {
+	_u.mutation.SetArtifactStorageConfigID(v)
+	return _u
+}
+
+// SetNillableArtifactStorageConfigID sets the "artifact_storage_config_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactStorageConfigID(v *uuid.UUID) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactStorageConfigID(*v)
+	}
+	return _u
+}
+
+// ClearArtifactStorageConfigID clears the value of the "artifact_storage_config_id" field.
+func (_u *ImageTaskUpdate) ClearArtifactStorageConfigID() *ImageTaskUpdate {
+	_u.mutation.ClearArtifactStorageConfigID()
+	return _u
+}
+
+// SetArtifactStorageVersion sets the "artifact_storage_version" field.
+func (_u *ImageTaskUpdate) SetArtifactStorageVersion(v int64) *ImageTaskUpdate {
+	_u.mutation.ResetArtifactStorageVersion()
+	_u.mutation.SetArtifactStorageVersion(v)
+	return _u
+}
+
+// SetNillableArtifactStorageVersion sets the "artifact_storage_version" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactStorageVersion(v *int64) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactStorageVersion(*v)
+	}
+	return _u
+}
+
+// AddArtifactStorageVersion adds value to the "artifact_storage_version" field.
+func (_u *ImageTaskUpdate) AddArtifactStorageVersion(v int64) *ImageTaskUpdate {
+	_u.mutation.AddArtifactStorageVersion(v)
+	return _u
+}
+
 // SetLeaseOwner sets the "lease_owner" field.
 func (_u *ImageTaskUpdate) SetLeaseOwner(v string) *ImageTaskUpdate {
 	_u.mutation.SetLeaseOwner(v)
@@ -996,6 +1165,16 @@ func (_u *ImageTaskUpdate) check() error {
 	if v, ok := _u.mutation.RouteSnapshotVersion(); ok {
 		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
 			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ProviderRequestID(); ok {
+		if err := imagetask.ProviderRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "provider_request_id", err: fmt.Errorf(`ent: validator failed for field "ImageTask.provider_request_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
+		if err := imagetask.ArtifactRecoveryStatusValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_recovery_status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_recovery_status": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
@@ -1238,6 +1417,57 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ProviderTraceCleared() {
 		_spec.ClearField(imagetask.FieldProviderTrace, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ProviderRequestID(); ok {
+		_spec.SetField(imagetask.FieldProviderRequestID, field.TypeString, value)
+	}
+	if _u.mutation.ProviderRequestIDCleared() {
+		_spec.ClearField(imagetask.FieldProviderRequestID, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamSucceededAt(); ok {
+		_spec.SetField(imagetask.FieldUpstreamSucceededAt, field.TypeTime, value)
+	}
+	if _u.mutation.UpstreamSucceededAtCleared() {
+		_spec.ClearField(imagetask.FieldUpstreamSucceededAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
+		_spec.SetField(imagetask.FieldArtifactRecoveryStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactRecoveryPayload(); ok {
+		_spec.SetField(imagetask.FieldArtifactRecoveryPayload, field.TypeString, value)
+	}
+	if _u.mutation.ArtifactRecoveryPayloadCleared() {
+		_spec.ClearField(imagetask.FieldArtifactRecoveryPayload, field.TypeString)
+	}
+	if value, ok := _u.mutation.ArtifactAttemptCount(); ok {
+		_spec.SetField(imagetask.FieldArtifactAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedArtifactAttemptCount(); ok {
+		_spec.AddField(imagetask.FieldArtifactAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ArtifactNextRetryAt(); ok {
+		_spec.SetField(imagetask.FieldArtifactNextRetryAt, field.TypeTime, value)
+	}
+	if _u.mutation.ArtifactNextRetryAtCleared() {
+		_spec.ClearField(imagetask.FieldArtifactNextRetryAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ArtifactLastDiagnostic(); ok {
+		_spec.SetField(imagetask.FieldArtifactLastDiagnostic, field.TypeJSON, value)
+	}
+	if _u.mutation.ArtifactLastDiagnosticCleared() {
+		_spec.ClearField(imagetask.FieldArtifactLastDiagnostic, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ArtifactStorageConfigID(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID, value)
+	}
+	if _u.mutation.ArtifactStorageConfigIDCleared() {
+		_spec.ClearField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.ArtifactStorageVersion(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedArtifactStorageVersion(); ok {
+		_spec.AddField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.LeaseOwner(); ok {
 		_spec.SetField(imagetask.FieldLeaseOwner, field.TypeString, value)
@@ -2037,6 +2267,174 @@ func (_u *ImageTaskUpdateOne) ClearProviderTrace() *ImageTaskUpdateOne {
 	return _u
 }
 
+// SetProviderRequestID sets the "provider_request_id" field.
+func (_u *ImageTaskUpdateOne) SetProviderRequestID(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetProviderRequestID(v)
+	return _u
+}
+
+// SetNillableProviderRequestID sets the "provider_request_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableProviderRequestID(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetProviderRequestID(*v)
+	}
+	return _u
+}
+
+// ClearProviderRequestID clears the value of the "provider_request_id" field.
+func (_u *ImageTaskUpdateOne) ClearProviderRequestID() *ImageTaskUpdateOne {
+	_u.mutation.ClearProviderRequestID()
+	return _u
+}
+
+// SetUpstreamSucceededAt sets the "upstream_succeeded_at" field.
+func (_u *ImageTaskUpdateOne) SetUpstreamSucceededAt(v time.Time) *ImageTaskUpdateOne {
+	_u.mutation.SetUpstreamSucceededAt(v)
+	return _u
+}
+
+// SetNillableUpstreamSucceededAt sets the "upstream_succeeded_at" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableUpstreamSucceededAt(v *time.Time) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetUpstreamSucceededAt(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamSucceededAt clears the value of the "upstream_succeeded_at" field.
+func (_u *ImageTaskUpdateOne) ClearUpstreamSucceededAt() *ImageTaskUpdateOne {
+	_u.mutation.ClearUpstreamSucceededAt()
+	return _u
+}
+
+// SetArtifactRecoveryStatus sets the "artifact_recovery_status" field.
+func (_u *ImageTaskUpdateOne) SetArtifactRecoveryStatus(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactRecoveryStatus(v)
+	return _u
+}
+
+// SetNillableArtifactRecoveryStatus sets the "artifact_recovery_status" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactRecoveryStatus(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactRecoveryStatus(*v)
+	}
+	return _u
+}
+
+// SetArtifactRecoveryPayload sets the "artifact_recovery_payload" field.
+func (_u *ImageTaskUpdateOne) SetArtifactRecoveryPayload(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactRecoveryPayload(v)
+	return _u
+}
+
+// SetNillableArtifactRecoveryPayload sets the "artifact_recovery_payload" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactRecoveryPayload(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactRecoveryPayload(*v)
+	}
+	return _u
+}
+
+// ClearArtifactRecoveryPayload clears the value of the "artifact_recovery_payload" field.
+func (_u *ImageTaskUpdateOne) ClearArtifactRecoveryPayload() *ImageTaskUpdateOne {
+	_u.mutation.ClearArtifactRecoveryPayload()
+	return _u
+}
+
+// SetArtifactAttemptCount sets the "artifact_attempt_count" field.
+func (_u *ImageTaskUpdateOne) SetArtifactAttemptCount(v int) *ImageTaskUpdateOne {
+	_u.mutation.ResetArtifactAttemptCount()
+	_u.mutation.SetArtifactAttemptCount(v)
+	return _u
+}
+
+// SetNillableArtifactAttemptCount sets the "artifact_attempt_count" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactAttemptCount(v *int) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactAttemptCount(*v)
+	}
+	return _u
+}
+
+// AddArtifactAttemptCount adds value to the "artifact_attempt_count" field.
+func (_u *ImageTaskUpdateOne) AddArtifactAttemptCount(v int) *ImageTaskUpdateOne {
+	_u.mutation.AddArtifactAttemptCount(v)
+	return _u
+}
+
+// SetArtifactNextRetryAt sets the "artifact_next_retry_at" field.
+func (_u *ImageTaskUpdateOne) SetArtifactNextRetryAt(v time.Time) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactNextRetryAt(v)
+	return _u
+}
+
+// SetNillableArtifactNextRetryAt sets the "artifact_next_retry_at" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactNextRetryAt(v *time.Time) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactNextRetryAt(*v)
+	}
+	return _u
+}
+
+// ClearArtifactNextRetryAt clears the value of the "artifact_next_retry_at" field.
+func (_u *ImageTaskUpdateOne) ClearArtifactNextRetryAt() *ImageTaskUpdateOne {
+	_u.mutation.ClearArtifactNextRetryAt()
+	return _u
+}
+
+// SetArtifactLastDiagnostic sets the "artifact_last_diagnostic" field.
+func (_u *ImageTaskUpdateOne) SetArtifactLastDiagnostic(v map[string]interface{}) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactLastDiagnostic(v)
+	return _u
+}
+
+// ClearArtifactLastDiagnostic clears the value of the "artifact_last_diagnostic" field.
+func (_u *ImageTaskUpdateOne) ClearArtifactLastDiagnostic() *ImageTaskUpdateOne {
+	_u.mutation.ClearArtifactLastDiagnostic()
+	return _u
+}
+
+// SetArtifactStorageConfigID sets the "artifact_storage_config_id" field.
+func (_u *ImageTaskUpdateOne) SetArtifactStorageConfigID(v uuid.UUID) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactStorageConfigID(v)
+	return _u
+}
+
+// SetNillableArtifactStorageConfigID sets the "artifact_storage_config_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactStorageConfigID(v *uuid.UUID) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactStorageConfigID(*v)
+	}
+	return _u
+}
+
+// ClearArtifactStorageConfigID clears the value of the "artifact_storage_config_id" field.
+func (_u *ImageTaskUpdateOne) ClearArtifactStorageConfigID() *ImageTaskUpdateOne {
+	_u.mutation.ClearArtifactStorageConfigID()
+	return _u
+}
+
+// SetArtifactStorageVersion sets the "artifact_storage_version" field.
+func (_u *ImageTaskUpdateOne) SetArtifactStorageVersion(v int64) *ImageTaskUpdateOne {
+	_u.mutation.ResetArtifactStorageVersion()
+	_u.mutation.SetArtifactStorageVersion(v)
+	return _u
+}
+
+// SetNillableArtifactStorageVersion sets the "artifact_storage_version" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactStorageVersion(v *int64) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactStorageVersion(*v)
+	}
+	return _u
+}
+
+// AddArtifactStorageVersion adds value to the "artifact_storage_version" field.
+func (_u *ImageTaskUpdateOne) AddArtifactStorageVersion(v int64) *ImageTaskUpdateOne {
+	_u.mutation.AddArtifactStorageVersion(v)
+	return _u
+}
+
 // SetLeaseOwner sets the "lease_owner" field.
 func (_u *ImageTaskUpdateOne) SetLeaseOwner(v string) *ImageTaskUpdateOne {
 	_u.mutation.SetLeaseOwner(v)
@@ -2276,6 +2674,16 @@ func (_u *ImageTaskUpdateOne) check() error {
 	if v, ok := _u.mutation.RouteSnapshotVersion(); ok {
 		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
 			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ProviderRequestID(); ok {
+		if err := imagetask.ProviderRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "provider_request_id", err: fmt.Errorf(`ent: validator failed for field "ImageTask.provider_request_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
+		if err := imagetask.ArtifactRecoveryStatusValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_recovery_status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_recovery_status": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
@@ -2535,6 +2943,57 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if _u.mutation.ProviderTraceCleared() {
 		_spec.ClearField(imagetask.FieldProviderTrace, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ProviderRequestID(); ok {
+		_spec.SetField(imagetask.FieldProviderRequestID, field.TypeString, value)
+	}
+	if _u.mutation.ProviderRequestIDCleared() {
+		_spec.ClearField(imagetask.FieldProviderRequestID, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamSucceededAt(); ok {
+		_spec.SetField(imagetask.FieldUpstreamSucceededAt, field.TypeTime, value)
+	}
+	if _u.mutation.UpstreamSucceededAtCleared() {
+		_spec.ClearField(imagetask.FieldUpstreamSucceededAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
+		_spec.SetField(imagetask.FieldArtifactRecoveryStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactRecoveryPayload(); ok {
+		_spec.SetField(imagetask.FieldArtifactRecoveryPayload, field.TypeString, value)
+	}
+	if _u.mutation.ArtifactRecoveryPayloadCleared() {
+		_spec.ClearField(imagetask.FieldArtifactRecoveryPayload, field.TypeString)
+	}
+	if value, ok := _u.mutation.ArtifactAttemptCount(); ok {
+		_spec.SetField(imagetask.FieldArtifactAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedArtifactAttemptCount(); ok {
+		_spec.AddField(imagetask.FieldArtifactAttemptCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ArtifactNextRetryAt(); ok {
+		_spec.SetField(imagetask.FieldArtifactNextRetryAt, field.TypeTime, value)
+	}
+	if _u.mutation.ArtifactNextRetryAtCleared() {
+		_spec.ClearField(imagetask.FieldArtifactNextRetryAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ArtifactLastDiagnostic(); ok {
+		_spec.SetField(imagetask.FieldArtifactLastDiagnostic, field.TypeJSON, value)
+	}
+	if _u.mutation.ArtifactLastDiagnosticCleared() {
+		_spec.ClearField(imagetask.FieldArtifactLastDiagnostic, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ArtifactStorageConfigID(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID, value)
+	}
+	if _u.mutation.ArtifactStorageConfigIDCleared() {
+		_spec.ClearField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.ArtifactStorageVersion(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedArtifactStorageVersion(); ok {
+		_spec.AddField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.LeaseOwner(); ok {
 		_spec.SetField(imagetask.FieldLeaseOwner, field.TypeString, value)

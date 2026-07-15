@@ -32,6 +32,8 @@ type ImageResult struct {
 	ImageRole string `json:"image_role,omitempty"`
 	// StorageDriver holds the value of the "storage_driver" field.
 	StorageDriver string `json:"storage_driver,omitempty"`
+	// StorageConfigID holds the value of the "storage_config_id" field.
+	StorageConfigID *uuid.UUID `json:"storage_config_id,omitempty"`
 	// ObjectKey holds the value of the "object_key" field.
 	ObjectKey string `json:"object_key,omitempty"`
 	// MimeType holds the value of the "mime_type" field.
@@ -60,6 +62,8 @@ func (*ImageResult) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case imageresult.FieldStorageConfigID:
+			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
 		case imageresult.FieldUserID, imageresult.FieldFileSizeBytes, imageresult.FieldWidth, imageresult.FieldHeight:
 			values[i] = new(sql.NullInt64)
 		case imageresult.FieldImageRole, imageresult.FieldStorageDriver, imageresult.FieldObjectKey, imageresult.FieldMimeType, imageresult.FieldSha256, imageresult.FieldImageGroup, imageresult.FieldVisibilityStatus, imageresult.FieldReviewReason:
@@ -131,6 +135,13 @@ func (_m *ImageResult) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field storage_driver", values[i])
 			} else if value.Valid {
 				_m.StorageDriver = value.String
+			}
+		case imageresult.FieldStorageConfigID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field storage_config_id", values[i])
+			} else if value.Valid {
+				_m.StorageConfigID = new(uuid.UUID)
+				*_m.StorageConfigID = *value.S.(*uuid.UUID)
 			}
 		case imageresult.FieldObjectKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -252,6 +263,11 @@ func (_m *ImageResult) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("storage_driver=")
 	builder.WriteString(_m.StorageDriver)
+	builder.WriteString(", ")
+	if v := _m.StorageConfigID; v != nil {
+		builder.WriteString("storage_config_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("object_key=")
 	builder.WriteString(_m.ObjectKey)

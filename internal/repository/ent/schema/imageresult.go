@@ -19,6 +19,7 @@ func (ImageResult) Fields() []ent.Field {
 		field.Int64("user_id"),
 		field.String("image_role").MaxLen(16).Default("output"),
 		field.String("storage_driver").MaxLen(16).Default("local"),
+		field.UUID("storage_config_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("object_key").MaxLen(255).NotEmpty(),
 		field.String("mime_type").MaxLen(64).NotEmpty(),
 		field.Int64("file_size_bytes").Default(0),

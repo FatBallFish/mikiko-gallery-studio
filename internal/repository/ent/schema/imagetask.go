@@ -54,6 +54,15 @@ func (ImageTask) Fields() []ent.Field {
 		field.JSON("routing_snapshot", map[string]any{}).Optional(),
 		field.JSON("error_policy_snapshot", map[string]any{}).Optional(),
 		field.JSON("provider_trace", map[string]any{}).Optional(),
+		field.String("provider_request_id").MaxLen(128).Optional().Nillable(),
+		field.Time("upstream_succeeded_at").Optional().Nillable(),
+		field.String("artifact_recovery_status").MaxLen(32).Default(""),
+		field.Text("artifact_recovery_payload").Optional().Nillable(),
+		field.Int("artifact_attempt_count").Default(0),
+		field.Time("artifact_next_retry_at").Optional().Nillable(),
+		field.JSON("artifact_last_diagnostic", map[string]any{}).Optional(),
+		field.UUID("artifact_storage_config_id", uuid.UUID{}).Optional().Nillable(),
+		field.Int64("artifact_storage_version").Default(0),
 		field.String("lease_owner").MaxLen(64).Optional().Nillable(),
 		field.Time("lease_expires_at").Optional().Nillable(),
 		field.String("error_code").MaxLen(64).Optional().Nillable(),
@@ -66,6 +75,6 @@ func (ImageTask) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),
 		index.Fields("status"), index.Fields("abstract_model"), index.Fields("route_model_code"), index.Fields("resolved_quality_bucket"), index.Fields("provider_model_id"), index.Fields("account_model_id"), index.Fields("model_account_id"), index.Fields("lease_owner"),
-		index.Fields("lease_expires_at"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("deleted_at"),
+		index.Fields("lease_expires_at"), index.Fields("artifact_recovery_status", "artifact_next_retry_at"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("deleted_at"),
 	}
 }

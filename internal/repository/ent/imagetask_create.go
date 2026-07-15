@@ -559,6 +559,124 @@ func (_c *ImageTaskCreate) SetProviderTrace(v map[string]interface{}) *ImageTask
 	return _c
 }
 
+// SetProviderRequestID sets the "provider_request_id" field.
+func (_c *ImageTaskCreate) SetProviderRequestID(v string) *ImageTaskCreate {
+	_c.mutation.SetProviderRequestID(v)
+	return _c
+}
+
+// SetNillableProviderRequestID sets the "provider_request_id" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableProviderRequestID(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetProviderRequestID(*v)
+	}
+	return _c
+}
+
+// SetUpstreamSucceededAt sets the "upstream_succeeded_at" field.
+func (_c *ImageTaskCreate) SetUpstreamSucceededAt(v time.Time) *ImageTaskCreate {
+	_c.mutation.SetUpstreamSucceededAt(v)
+	return _c
+}
+
+// SetNillableUpstreamSucceededAt sets the "upstream_succeeded_at" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableUpstreamSucceededAt(v *time.Time) *ImageTaskCreate {
+	if v != nil {
+		_c.SetUpstreamSucceededAt(*v)
+	}
+	return _c
+}
+
+// SetArtifactRecoveryStatus sets the "artifact_recovery_status" field.
+func (_c *ImageTaskCreate) SetArtifactRecoveryStatus(v string) *ImageTaskCreate {
+	_c.mutation.SetArtifactRecoveryStatus(v)
+	return _c
+}
+
+// SetNillableArtifactRecoveryStatus sets the "artifact_recovery_status" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactRecoveryStatus(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactRecoveryStatus(*v)
+	}
+	return _c
+}
+
+// SetArtifactRecoveryPayload sets the "artifact_recovery_payload" field.
+func (_c *ImageTaskCreate) SetArtifactRecoveryPayload(v string) *ImageTaskCreate {
+	_c.mutation.SetArtifactRecoveryPayload(v)
+	return _c
+}
+
+// SetNillableArtifactRecoveryPayload sets the "artifact_recovery_payload" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactRecoveryPayload(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactRecoveryPayload(*v)
+	}
+	return _c
+}
+
+// SetArtifactAttemptCount sets the "artifact_attempt_count" field.
+func (_c *ImageTaskCreate) SetArtifactAttemptCount(v int) *ImageTaskCreate {
+	_c.mutation.SetArtifactAttemptCount(v)
+	return _c
+}
+
+// SetNillableArtifactAttemptCount sets the "artifact_attempt_count" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactAttemptCount(v *int) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactAttemptCount(*v)
+	}
+	return _c
+}
+
+// SetArtifactNextRetryAt sets the "artifact_next_retry_at" field.
+func (_c *ImageTaskCreate) SetArtifactNextRetryAt(v time.Time) *ImageTaskCreate {
+	_c.mutation.SetArtifactNextRetryAt(v)
+	return _c
+}
+
+// SetNillableArtifactNextRetryAt sets the "artifact_next_retry_at" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactNextRetryAt(v *time.Time) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactNextRetryAt(*v)
+	}
+	return _c
+}
+
+// SetArtifactLastDiagnostic sets the "artifact_last_diagnostic" field.
+func (_c *ImageTaskCreate) SetArtifactLastDiagnostic(v map[string]interface{}) *ImageTaskCreate {
+	_c.mutation.SetArtifactLastDiagnostic(v)
+	return _c
+}
+
+// SetArtifactStorageConfigID sets the "artifact_storage_config_id" field.
+func (_c *ImageTaskCreate) SetArtifactStorageConfigID(v uuid.UUID) *ImageTaskCreate {
+	_c.mutation.SetArtifactStorageConfigID(v)
+	return _c
+}
+
+// SetNillableArtifactStorageConfigID sets the "artifact_storage_config_id" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactStorageConfigID(v *uuid.UUID) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactStorageConfigID(*v)
+	}
+	return _c
+}
+
+// SetArtifactStorageVersion sets the "artifact_storage_version" field.
+func (_c *ImageTaskCreate) SetArtifactStorageVersion(v int64) *ImageTaskCreate {
+	_c.mutation.SetArtifactStorageVersion(v)
+	return _c
+}
+
+// SetNillableArtifactStorageVersion sets the "artifact_storage_version" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactStorageVersion(v *int64) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactStorageVersion(*v)
+	}
+	return _c
+}
+
 // SetLeaseOwner sets the "lease_owner" field.
 func (_c *ImageTaskCreate) SetLeaseOwner(v string) *ImageTaskCreate {
 	_c.mutation.SetLeaseOwner(v)
@@ -784,6 +902,18 @@ func (_c *ImageTaskCreate) defaults() {
 		v := imagetask.DefaultRouteSnapshotVersion
 		_c.mutation.SetRouteSnapshotVersion(v)
 	}
+	if _, ok := _c.mutation.ArtifactRecoveryStatus(); !ok {
+		v := imagetask.DefaultArtifactRecoveryStatus
+		_c.mutation.SetArtifactRecoveryStatus(v)
+	}
+	if _, ok := _c.mutation.ArtifactAttemptCount(); !ok {
+		v := imagetask.DefaultArtifactAttemptCount
+		_c.mutation.SetArtifactAttemptCount(v)
+	}
+	if _, ok := _c.mutation.ArtifactStorageVersion(); !ok {
+		v := imagetask.DefaultArtifactStorageVersion
+		_c.mutation.SetArtifactStorageVersion(v)
+	}
 	if _, ok := _c.mutation.ID(); !ok {
 		v := imagetask.DefaultID()
 		_c.mutation.SetID(v)
@@ -937,6 +1067,25 @@ func (_c *ImageTaskCreate) check() error {
 		if err := imagetask.RouteSnapshotVersionValidator(v); err != nil {
 			return &ValidationError{Name: "route_snapshot_version", err: fmt.Errorf(`ent: validator failed for field "ImageTask.route_snapshot_version": %w`, err)}
 		}
+	}
+	if v, ok := _c.mutation.ProviderRequestID(); ok {
+		if err := imagetask.ProviderRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "provider_request_id", err: fmt.Errorf(`ent: validator failed for field "ImageTask.provider_request_id": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ArtifactRecoveryStatus(); !ok {
+		return &ValidationError{Name: "artifact_recovery_status", err: errors.New(`ent: missing required field "ImageTask.artifact_recovery_status"`)}
+	}
+	if v, ok := _c.mutation.ArtifactRecoveryStatus(); ok {
+		if err := imagetask.ArtifactRecoveryStatusValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_recovery_status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_recovery_status": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ArtifactAttemptCount(); !ok {
+		return &ValidationError{Name: "artifact_attempt_count", err: errors.New(`ent: missing required field "ImageTask.artifact_attempt_count"`)}
+	}
+	if _, ok := _c.mutation.ArtifactStorageVersion(); !ok {
+		return &ValidationError{Name: "artifact_storage_version", err: errors.New(`ent: missing required field "ImageTask.artifact_storage_version"`)}
 	}
 	if v, ok := _c.mutation.LeaseOwner(); ok {
 		if err := imagetask.LeaseOwnerValidator(v); err != nil {
@@ -1154,6 +1303,42 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ProviderTrace(); ok {
 		_spec.SetField(imagetask.FieldProviderTrace, field.TypeJSON, value)
 		_node.ProviderTrace = value
+	}
+	if value, ok := _c.mutation.ProviderRequestID(); ok {
+		_spec.SetField(imagetask.FieldProviderRequestID, field.TypeString, value)
+		_node.ProviderRequestID = &value
+	}
+	if value, ok := _c.mutation.UpstreamSucceededAt(); ok {
+		_spec.SetField(imagetask.FieldUpstreamSucceededAt, field.TypeTime, value)
+		_node.UpstreamSucceededAt = &value
+	}
+	if value, ok := _c.mutation.ArtifactRecoveryStatus(); ok {
+		_spec.SetField(imagetask.FieldArtifactRecoveryStatus, field.TypeString, value)
+		_node.ArtifactRecoveryStatus = value
+	}
+	if value, ok := _c.mutation.ArtifactRecoveryPayload(); ok {
+		_spec.SetField(imagetask.FieldArtifactRecoveryPayload, field.TypeString, value)
+		_node.ArtifactRecoveryPayload = &value
+	}
+	if value, ok := _c.mutation.ArtifactAttemptCount(); ok {
+		_spec.SetField(imagetask.FieldArtifactAttemptCount, field.TypeInt, value)
+		_node.ArtifactAttemptCount = value
+	}
+	if value, ok := _c.mutation.ArtifactNextRetryAt(); ok {
+		_spec.SetField(imagetask.FieldArtifactNextRetryAt, field.TypeTime, value)
+		_node.ArtifactNextRetryAt = &value
+	}
+	if value, ok := _c.mutation.ArtifactLastDiagnostic(); ok {
+		_spec.SetField(imagetask.FieldArtifactLastDiagnostic, field.TypeJSON, value)
+		_node.ArtifactLastDiagnostic = value
+	}
+	if value, ok := _c.mutation.ArtifactStorageConfigID(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID, value)
+		_node.ArtifactStorageConfigID = &value
+	}
+	if value, ok := _c.mutation.ArtifactStorageVersion(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
+		_node.ArtifactStorageVersion = value
 	}
 	if value, ok := _c.mutation.LeaseOwner(); ok {
 		_spec.SetField(imagetask.FieldLeaseOwner, field.TypeString, value)

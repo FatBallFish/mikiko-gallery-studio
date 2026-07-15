@@ -145,6 +145,26 @@ func (_u *ReferenceAssetUpdate) SetNillableStorageDriver(v *string) *ReferenceAs
 	return _u
 }
 
+// SetStorageConfigID sets the "storage_config_id" field.
+func (_u *ReferenceAssetUpdate) SetStorageConfigID(v uuid.UUID) *ReferenceAssetUpdate {
+	_u.mutation.SetStorageConfigID(v)
+	return _u
+}
+
+// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdate) SetNillableStorageConfigID(v *uuid.UUID) *ReferenceAssetUpdate {
+	if v != nil {
+		_u.SetStorageConfigID(*v)
+	}
+	return _u
+}
+
+// ClearStorageConfigID clears the value of the "storage_config_id" field.
+func (_u *ReferenceAssetUpdate) ClearStorageConfigID() *ReferenceAssetUpdate {
+	_u.mutation.ClearStorageConfigID()
+	return _u
+}
+
 // SetObjectKey sets the "object_key" field.
 func (_u *ReferenceAssetUpdate) SetObjectKey(v string) *ReferenceAssetUpdate {
 	_u.mutation.SetObjectKey(v)
@@ -417,6 +437,12 @@ func (_u *ReferenceAssetUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if value, ok := _u.mutation.StorageDriver(); ok {
 		_spec.SetField(referenceasset.FieldStorageDriver, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.StorageConfigID(); ok {
+		_spec.SetField(referenceasset.FieldStorageConfigID, field.TypeUUID, value)
+	}
+	if _u.mutation.StorageConfigIDCleared() {
+		_spec.ClearField(referenceasset.FieldStorageConfigID, field.TypeUUID)
+	}
 	if value, ok := _u.mutation.ObjectKey(); ok {
 		_spec.SetField(referenceasset.FieldObjectKey, field.TypeString, value)
 	}
@@ -592,6 +618,26 @@ func (_u *ReferenceAssetUpdateOne) SetNillableStorageDriver(v *string) *Referenc
 	if v != nil {
 		_u.SetStorageDriver(*v)
 	}
+	return _u
+}
+
+// SetStorageConfigID sets the "storage_config_id" field.
+func (_u *ReferenceAssetUpdateOne) SetStorageConfigID(v uuid.UUID) *ReferenceAssetUpdateOne {
+	_u.mutation.SetStorageConfigID(v)
+	return _u
+}
+
+// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdateOne) SetNillableStorageConfigID(v *uuid.UUID) *ReferenceAssetUpdateOne {
+	if v != nil {
+		_u.SetStorageConfigID(*v)
+	}
+	return _u
+}
+
+// ClearStorageConfigID clears the value of the "storage_config_id" field.
+func (_u *ReferenceAssetUpdateOne) ClearStorageConfigID() *ReferenceAssetUpdateOne {
+	_u.mutation.ClearStorageConfigID()
 	return _u
 }
 
@@ -896,6 +942,12 @@ func (_u *ReferenceAssetUpdateOne) sqlSave(ctx context.Context) (_node *Referenc
 	}
 	if value, ok := _u.mutation.StorageDriver(); ok {
 		_spec.SetField(referenceasset.FieldStorageDriver, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.StorageConfigID(); ok {
+		_spec.SetField(referenceasset.FieldStorageConfigID, field.TypeUUID, value)
+	}
+	if _u.mutation.StorageConfigIDCleared() {
+		_spec.ClearField(referenceasset.FieldStorageConfigID, field.TypeUUID)
 	}
 	if value, ok := _u.mutation.ObjectKey(); ok {
 		_spec.SetField(referenceasset.FieldObjectKey, field.TypeString, value)

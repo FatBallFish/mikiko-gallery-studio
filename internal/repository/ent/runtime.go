@@ -16,6 +16,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
@@ -474,7 +475,7 @@ func init() {
 	// imageresult.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
 	imageresult.StorageDriverValidator = imageresultDescStorageDriver.Validators[0].(func(string) error)
 	// imageresultDescObjectKey is the schema descriptor for object_key field.
-	imageresultDescObjectKey := imageresultFields[5].Descriptor()
+	imageresultDescObjectKey := imageresultFields[6].Descriptor()
 	// imageresult.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
 	imageresult.ObjectKeyValidator = func() func(string) error {
 		validators := imageresultDescObjectKey.Validators
@@ -492,7 +493,7 @@ func init() {
 		}
 	}()
 	// imageresultDescMimeType is the schema descriptor for mime_type field.
-	imageresultDescMimeType := imageresultFields[6].Descriptor()
+	imageresultDescMimeType := imageresultFields[7].Descriptor()
 	// imageresult.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
 	imageresult.MimeTypeValidator = func() func(string) error {
 		validators := imageresultDescMimeType.Validators
@@ -510,19 +511,19 @@ func init() {
 		}
 	}()
 	// imageresultDescFileSizeBytes is the schema descriptor for file_size_bytes field.
-	imageresultDescFileSizeBytes := imageresultFields[7].Descriptor()
+	imageresultDescFileSizeBytes := imageresultFields[8].Descriptor()
 	// imageresult.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
 	imageresult.DefaultFileSizeBytes = imageresultDescFileSizeBytes.Default.(int64)
 	// imageresultDescWidth is the schema descriptor for width field.
-	imageresultDescWidth := imageresultFields[8].Descriptor()
+	imageresultDescWidth := imageresultFields[9].Descriptor()
 	// imageresult.DefaultWidth holds the default value on creation for the width field.
 	imageresult.DefaultWidth = imageresultDescWidth.Default.(int)
 	// imageresultDescHeight is the schema descriptor for height field.
-	imageresultDescHeight := imageresultFields[9].Descriptor()
+	imageresultDescHeight := imageresultFields[10].Descriptor()
 	// imageresult.DefaultHeight holds the default value on creation for the height field.
 	imageresult.DefaultHeight = imageresultDescHeight.Default.(int)
 	// imageresultDescSha256 is the schema descriptor for sha256 field.
-	imageresultDescSha256 := imageresultFields[10].Descriptor()
+	imageresultDescSha256 := imageresultFields[11].Descriptor()
 	// imageresult.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
 	imageresult.Sha256Validator = func() func(string) error {
 		validators := imageresultDescSha256.Validators
@@ -540,19 +541,19 @@ func init() {
 		}
 	}()
 	// imageresultDescImageGroup is the schema descriptor for image_group field.
-	imageresultDescImageGroup := imageresultFields[11].Descriptor()
+	imageresultDescImageGroup := imageresultFields[12].Descriptor()
 	// imageresult.DefaultImageGroup holds the default value on creation for the image_group field.
 	imageresult.DefaultImageGroup = imageresultDescImageGroup.Default.(string)
 	// imageresult.ImageGroupValidator is a validator for the "image_group" field. It is called by the builders before save.
 	imageresult.ImageGroupValidator = imageresultDescImageGroup.Validators[0].(func(string) error)
 	// imageresultDescVisibilityStatus is the schema descriptor for visibility_status field.
-	imageresultDescVisibilityStatus := imageresultFields[12].Descriptor()
+	imageresultDescVisibilityStatus := imageresultFields[13].Descriptor()
 	// imageresult.DefaultVisibilityStatus holds the default value on creation for the visibility_status field.
 	imageresult.DefaultVisibilityStatus = imageresultDescVisibilityStatus.Default.(string)
 	// imageresult.VisibilityStatusValidator is a validator for the "visibility_status" field. It is called by the builders before save.
 	imageresult.VisibilityStatusValidator = imageresultDescVisibilityStatus.Validators[0].(func(string) error)
 	// imageresultDescReviewReason is the schema descriptor for review_reason field.
-	imageresultDescReviewReason := imageresultFields[13].Descriptor()
+	imageresultDescReviewReason := imageresultFields[14].Descriptor()
 	// imageresult.ReviewReasonValidator is a validator for the "review_reason" field. It is called by the builders before save.
 	imageresult.ReviewReasonValidator = imageresultDescReviewReason.Validators[0].(func(string) error)
 	// imageresultDescID is the schema descriptor for id field.
@@ -718,12 +719,30 @@ func init() {
 	imagetask.DefaultRouteSnapshotVersion = imagetaskDescRouteSnapshotVersion.Default.(string)
 	// imagetask.RouteSnapshotVersionValidator is a validator for the "route_snapshot_version" field. It is called by the builders before save.
 	imagetask.RouteSnapshotVersionValidator = imagetaskDescRouteSnapshotVersion.Validators[0].(func(string) error)
+	// imagetaskDescProviderRequestID is the schema descriptor for provider_request_id field.
+	imagetaskDescProviderRequestID := imagetaskFields[41].Descriptor()
+	// imagetask.ProviderRequestIDValidator is a validator for the "provider_request_id" field. It is called by the builders before save.
+	imagetask.ProviderRequestIDValidator = imagetaskDescProviderRequestID.Validators[0].(func(string) error)
+	// imagetaskDescArtifactRecoveryStatus is the schema descriptor for artifact_recovery_status field.
+	imagetaskDescArtifactRecoveryStatus := imagetaskFields[43].Descriptor()
+	// imagetask.DefaultArtifactRecoveryStatus holds the default value on creation for the artifact_recovery_status field.
+	imagetask.DefaultArtifactRecoveryStatus = imagetaskDescArtifactRecoveryStatus.Default.(string)
+	// imagetask.ArtifactRecoveryStatusValidator is a validator for the "artifact_recovery_status" field. It is called by the builders before save.
+	imagetask.ArtifactRecoveryStatusValidator = imagetaskDescArtifactRecoveryStatus.Validators[0].(func(string) error)
+	// imagetaskDescArtifactAttemptCount is the schema descriptor for artifact_attempt_count field.
+	imagetaskDescArtifactAttemptCount := imagetaskFields[45].Descriptor()
+	// imagetask.DefaultArtifactAttemptCount holds the default value on creation for the artifact_attempt_count field.
+	imagetask.DefaultArtifactAttemptCount = imagetaskDescArtifactAttemptCount.Default.(int)
+	// imagetaskDescArtifactStorageVersion is the schema descriptor for artifact_storage_version field.
+	imagetaskDescArtifactStorageVersion := imagetaskFields[49].Descriptor()
+	// imagetask.DefaultArtifactStorageVersion holds the default value on creation for the artifact_storage_version field.
+	imagetask.DefaultArtifactStorageVersion = imagetaskDescArtifactStorageVersion.Default.(int64)
 	// imagetaskDescLeaseOwner is the schema descriptor for lease_owner field.
-	imagetaskDescLeaseOwner := imagetaskFields[41].Descriptor()
+	imagetaskDescLeaseOwner := imagetaskFields[50].Descriptor()
 	// imagetask.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	imagetask.LeaseOwnerValidator = imagetaskDescLeaseOwner.Validators[0].(func(string) error)
 	// imagetaskDescErrorCode is the schema descriptor for error_code field.
-	imagetaskDescErrorCode := imagetaskFields[43].Descriptor()
+	imagetaskDescErrorCode := imagetaskFields[52].Descriptor()
 	// imagetask.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
 	imagetask.ErrorCodeValidator = imagetaskDescErrorCode.Validators[0].(func(string) error)
 	// imagetaskDescID is the schema descriptor for id field.
@@ -1034,6 +1053,147 @@ func init() {
 	modelrouteDescEnabled := modelrouteFields[6].Descriptor()
 	// modelroute.DefaultEnabled holds the default value on creation for the enabled field.
 	modelroute.DefaultEnabled = modelrouteDescEnabled.Default.(bool)
+	objectstorageconfigMixin := schema.ObjectStorageConfig{}.Mixin()
+	objectstorageconfigMixinFields0 := objectstorageconfigMixin[0].Fields()
+	_ = objectstorageconfigMixinFields0
+	objectstorageconfigFields := schema.ObjectStorageConfig{}.Fields()
+	_ = objectstorageconfigFields
+	// objectstorageconfigDescCreatedAt is the schema descriptor for created_at field.
+	objectstorageconfigDescCreatedAt := objectstorageconfigMixinFields0[0].Descriptor()
+	// objectstorageconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
+	objectstorageconfig.DefaultCreatedAt = objectstorageconfigDescCreatedAt.Default.(func() time.Time)
+	// objectstorageconfigDescUpdatedAt is the schema descriptor for updated_at field.
+	objectstorageconfigDescUpdatedAt := objectstorageconfigMixinFields0[1].Descriptor()
+	// objectstorageconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	objectstorageconfig.DefaultUpdatedAt = objectstorageconfigDescUpdatedAt.Default.(func() time.Time)
+	// objectstorageconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	objectstorageconfig.UpdateDefaultUpdatedAt = objectstorageconfigDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// objectstorageconfigDescCode is the schema descriptor for code field.
+	objectstorageconfigDescCode := objectstorageconfigFields[1].Descriptor()
+	// objectstorageconfig.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	objectstorageconfig.CodeValidator = func() func(string) error {
+		validators := objectstorageconfigDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// objectstorageconfigDescName is the schema descriptor for name field.
+	objectstorageconfigDescName := objectstorageconfigFields[2].Descriptor()
+	// objectstorageconfig.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	objectstorageconfig.NameValidator = func() func(string) error {
+		validators := objectstorageconfigDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// objectstorageconfigDescDriver is the schema descriptor for driver field.
+	objectstorageconfigDescDriver := objectstorageconfigFields[3].Descriptor()
+	// objectstorageconfig.DefaultDriver holds the default value on creation for the driver field.
+	objectstorageconfig.DefaultDriver = objectstorageconfigDescDriver.Default.(string)
+	// objectstorageconfig.DriverValidator is a validator for the "driver" field. It is called by the builders before save.
+	objectstorageconfig.DriverValidator = objectstorageconfigDescDriver.Validators[0].(func(string) error)
+	// objectstorageconfigDescProvider is the schema descriptor for provider field.
+	objectstorageconfigDescProvider := objectstorageconfigFields[4].Descriptor()
+	// objectstorageconfig.DefaultProvider holds the default value on creation for the provider field.
+	objectstorageconfig.DefaultProvider = objectstorageconfigDescProvider.Default.(string)
+	// objectstorageconfig.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	objectstorageconfig.ProviderValidator = objectstorageconfigDescProvider.Validators[0].(func(string) error)
+	// objectstorageconfigDescStatus is the schema descriptor for status field.
+	objectstorageconfigDescStatus := objectstorageconfigFields[5].Descriptor()
+	// objectstorageconfig.DefaultStatus holds the default value on creation for the status field.
+	objectstorageconfig.DefaultStatus = objectstorageconfigDescStatus.Default.(string)
+	// objectstorageconfig.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	objectstorageconfig.StatusValidator = objectstorageconfigDescStatus.Validators[0].(func(string) error)
+	// objectstorageconfigDescReadEnabled is the schema descriptor for read_enabled field.
+	objectstorageconfigDescReadEnabled := objectstorageconfigFields[6].Descriptor()
+	// objectstorageconfig.DefaultReadEnabled holds the default value on creation for the read_enabled field.
+	objectstorageconfig.DefaultReadEnabled = objectstorageconfigDescReadEnabled.Default.(bool)
+	// objectstorageconfigDescWriteEnabled is the schema descriptor for write_enabled field.
+	objectstorageconfigDescWriteEnabled := objectstorageconfigFields[7].Descriptor()
+	// objectstorageconfig.DefaultWriteEnabled holds the default value on creation for the write_enabled field.
+	objectstorageconfig.DefaultWriteEnabled = objectstorageconfigDescWriteEnabled.Default.(bool)
+	// objectstorageconfigDescIsDefault is the schema descriptor for is_default field.
+	objectstorageconfigDescIsDefault := objectstorageconfigFields[8].Descriptor()
+	// objectstorageconfig.DefaultIsDefault holds the default value on creation for the is_default field.
+	objectstorageconfig.DefaultIsDefault = objectstorageconfigDescIsDefault.Default.(bool)
+	// objectstorageconfigDescEndpoint is the schema descriptor for endpoint field.
+	objectstorageconfigDescEndpoint := objectstorageconfigFields[9].Descriptor()
+	// objectstorageconfig.EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
+	objectstorageconfig.EndpointValidator = objectstorageconfigDescEndpoint.Validators[0].(func(string) error)
+	// objectstorageconfigDescRegion is the schema descriptor for region field.
+	objectstorageconfigDescRegion := objectstorageconfigFields[10].Descriptor()
+	// objectstorageconfig.RegionValidator is a validator for the "region" field. It is called by the builders before save.
+	objectstorageconfig.RegionValidator = objectstorageconfigDescRegion.Validators[0].(func(string) error)
+	// objectstorageconfigDescBucket is the schema descriptor for bucket field.
+	objectstorageconfigDescBucket := objectstorageconfigFields[11].Descriptor()
+	// objectstorageconfig.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
+	objectstorageconfig.BucketValidator = objectstorageconfigDescBucket.Validators[0].(func(string) error)
+	// objectstorageconfigDescPrefix is the schema descriptor for prefix field.
+	objectstorageconfigDescPrefix := objectstorageconfigFields[12].Descriptor()
+	// objectstorageconfig.DefaultPrefix holds the default value on creation for the prefix field.
+	objectstorageconfig.DefaultPrefix = objectstorageconfigDescPrefix.Default.(string)
+	// objectstorageconfig.PrefixValidator is a validator for the "prefix" field. It is called by the builders before save.
+	objectstorageconfig.PrefixValidator = objectstorageconfigDescPrefix.Validators[0].(func(string) error)
+	// objectstorageconfigDescForcePathStyle is the schema descriptor for force_path_style field.
+	objectstorageconfigDescForcePathStyle := objectstorageconfigFields[13].Descriptor()
+	// objectstorageconfig.DefaultForcePathStyle holds the default value on creation for the force_path_style field.
+	objectstorageconfig.DefaultForcePathStyle = objectstorageconfigDescForcePathStyle.Default.(bool)
+	// objectstorageconfigDescPublicBaseURL is the schema descriptor for public_base_url field.
+	objectstorageconfigDescPublicBaseURL := objectstorageconfigFields[14].Descriptor()
+	// objectstorageconfig.PublicBaseURLValidator is a validator for the "public_base_url" field. It is called by the builders before save.
+	objectstorageconfig.PublicBaseURLValidator = objectstorageconfigDescPublicBaseURL.Validators[0].(func(string) error)
+	// objectstorageconfigDescLocalRoot is the schema descriptor for local_root field.
+	objectstorageconfigDescLocalRoot := objectstorageconfigFields[15].Descriptor()
+	// objectstorageconfig.LocalRootValidator is a validator for the "local_root" field. It is called by the builders before save.
+	objectstorageconfig.LocalRootValidator = objectstorageconfigDescLocalRoot.Validators[0].(func(string) error)
+	// objectstorageconfigDescSecretFingerprint is the schema descriptor for secret_fingerprint field.
+	objectstorageconfigDescSecretFingerprint := objectstorageconfigFields[18].Descriptor()
+	// objectstorageconfig.DefaultSecretFingerprint holds the default value on creation for the secret_fingerprint field.
+	objectstorageconfig.DefaultSecretFingerprint = objectstorageconfigDescSecretFingerprint.Default.(string)
+	// objectstorageconfig.SecretFingerprintValidator is a validator for the "secret_fingerprint" field. It is called by the builders before save.
+	objectstorageconfig.SecretFingerprintValidator = objectstorageconfigDescSecretFingerprint.Validators[0].(func(string) error)
+	// objectstorageconfigDescLastProbeStatus is the schema descriptor for last_probe_status field.
+	objectstorageconfigDescLastProbeStatus := objectstorageconfigFields[20].Descriptor()
+	// objectstorageconfig.DefaultLastProbeStatus holds the default value on creation for the last_probe_status field.
+	objectstorageconfig.DefaultLastProbeStatus = objectstorageconfigDescLastProbeStatus.Default.(string)
+	// objectstorageconfig.LastProbeStatusValidator is a validator for the "last_probe_status" field. It is called by the builders before save.
+	objectstorageconfig.LastProbeStatusValidator = objectstorageconfigDescLastProbeStatus.Validators[0].(func(string) error)
+	// objectstorageconfigDescLastProbeMessage is the schema descriptor for last_probe_message field.
+	objectstorageconfigDescLastProbeMessage := objectstorageconfigFields[21].Descriptor()
+	// objectstorageconfig.DefaultLastProbeMessage holds the default value on creation for the last_probe_message field.
+	objectstorageconfig.DefaultLastProbeMessage = objectstorageconfigDescLastProbeMessage.Default.(string)
+	// objectstorageconfig.LastProbeMessageValidator is a validator for the "last_probe_message" field. It is called by the builders before save.
+	objectstorageconfig.LastProbeMessageValidator = objectstorageconfigDescLastProbeMessage.Validators[0].(func(string) error)
+	// objectstorageconfigDescVersion is the schema descriptor for version field.
+	objectstorageconfigDescVersion := objectstorageconfigFields[23].Descriptor()
+	// objectstorageconfig.DefaultVersion holds the default value on creation for the version field.
+	objectstorageconfig.DefaultVersion = objectstorageconfigDescVersion.Default.(int64)
+	// objectstorageconfigDescUpdatedBy is the schema descriptor for updated_by field.
+	objectstorageconfigDescUpdatedBy := objectstorageconfigFields[24].Descriptor()
+	// objectstorageconfig.DefaultUpdatedBy holds the default value on creation for the updated_by field.
+	objectstorageconfig.DefaultUpdatedBy = objectstorageconfigDescUpdatedBy.Default.(int64)
+	// objectstorageconfigDescID is the schema descriptor for id field.
+	objectstorageconfigDescID := objectstorageconfigFields[0].Descriptor()
+	// objectstorageconfig.DefaultID holds the default value on creation for the id field.
+	objectstorageconfig.DefaultID = objectstorageconfigDescID.Default.(func() uuid.UUID)
 	paymentorderMixin := schema.PaymentOrder{}.Mixin()
 	paymentorderMixinFields0 := paymentorderMixin[0].Fields()
 	_ = paymentorderMixinFields0
@@ -1677,7 +1837,7 @@ func init() {
 	// referenceasset.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
 	referenceasset.StorageDriverValidator = referenceassetDescStorageDriver.Validators[0].(func(string) error)
 	// referenceassetDescObjectKey is the schema descriptor for object_key field.
-	referenceassetDescObjectKey := referenceassetFields[6].Descriptor()
+	referenceassetDescObjectKey := referenceassetFields[7].Descriptor()
 	// referenceasset.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
 	referenceasset.ObjectKeyValidator = func() func(string) error {
 		validators := referenceassetDescObjectKey.Validators
@@ -1695,7 +1855,7 @@ func init() {
 		}
 	}()
 	// referenceassetDescMimeType is the schema descriptor for mime_type field.
-	referenceassetDescMimeType := referenceassetFields[7].Descriptor()
+	referenceassetDescMimeType := referenceassetFields[8].Descriptor()
 	// referenceasset.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
 	referenceasset.MimeTypeValidator = func() func(string) error {
 		validators := referenceassetDescMimeType.Validators
@@ -1713,11 +1873,11 @@ func init() {
 		}
 	}()
 	// referenceassetDescFileSizeBytes is the schema descriptor for file_size_bytes field.
-	referenceassetDescFileSizeBytes := referenceassetFields[8].Descriptor()
+	referenceassetDescFileSizeBytes := referenceassetFields[9].Descriptor()
 	// referenceasset.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
 	referenceasset.DefaultFileSizeBytes = referenceassetDescFileSizeBytes.Default.(int64)
 	// referenceassetDescSha256 is the schema descriptor for sha256 field.
-	referenceassetDescSha256 := referenceassetFields[11].Descriptor()
+	referenceassetDescSha256 := referenceassetFields[12].Descriptor()
 	// referenceasset.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
 	referenceasset.Sha256Validator = func() func(string) error {
 		validators := referenceassetDescSha256.Validators
@@ -1735,7 +1895,7 @@ func init() {
 		}
 	}()
 	// referenceassetDescExpiresAt is the schema descriptor for expires_at field.
-	referenceassetDescExpiresAt := referenceassetFields[13].Descriptor()
+	referenceassetDescExpiresAt := referenceassetFields[14].Descriptor()
 	// referenceasset.DefaultExpiresAt holds the default value on creation for the expires_at field.
 	referenceasset.DefaultExpiresAt = referenceassetDescExpiresAt.Default.(func() time.Time)
 	// referenceassetDescID is the schema descriptor for id field.

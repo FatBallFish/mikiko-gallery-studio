@@ -105,6 +105,24 @@ type ImageTask struct {
 	ErrorPolicySnapshot map[string]interface{} `json:"error_policy_snapshot,omitempty"`
 	// ProviderTrace holds the value of the "provider_trace" field.
 	ProviderTrace map[string]interface{} `json:"provider_trace,omitempty"`
+	// ProviderRequestID holds the value of the "provider_request_id" field.
+	ProviderRequestID *string `json:"provider_request_id,omitempty"`
+	// UpstreamSucceededAt holds the value of the "upstream_succeeded_at" field.
+	UpstreamSucceededAt *time.Time `json:"upstream_succeeded_at,omitempty"`
+	// ArtifactRecoveryStatus holds the value of the "artifact_recovery_status" field.
+	ArtifactRecoveryStatus string `json:"artifact_recovery_status,omitempty"`
+	// ArtifactRecoveryPayload holds the value of the "artifact_recovery_payload" field.
+	ArtifactRecoveryPayload *string `json:"artifact_recovery_payload,omitempty"`
+	// ArtifactAttemptCount holds the value of the "artifact_attempt_count" field.
+	ArtifactAttemptCount int `json:"artifact_attempt_count,omitempty"`
+	// ArtifactNextRetryAt holds the value of the "artifact_next_retry_at" field.
+	ArtifactNextRetryAt *time.Time `json:"artifact_next_retry_at,omitempty"`
+	// ArtifactLastDiagnostic holds the value of the "artifact_last_diagnostic" field.
+	ArtifactLastDiagnostic map[string]interface{} `json:"artifact_last_diagnostic,omitempty"`
+	// ArtifactStorageConfigID holds the value of the "artifact_storage_config_id" field.
+	ArtifactStorageConfigID *uuid.UUID `json:"artifact_storage_config_id,omitempty"`
+	// ArtifactStorageVersion holds the value of the "artifact_storage_version" field.
+	ArtifactStorageVersion int64 `json:"artifact_storage_version,omitempty"`
 	// LeaseOwner holds the value of the "lease_owner" field.
 	LeaseOwner *string `json:"lease_owner,omitempty"`
 	// LeaseExpiresAt holds the value of the "lease_expires_at" field.
@@ -125,15 +143,17 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace:
+		case imagetask.FieldArtifactStorageConfigID:
+			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
+		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic:
 			values[i] = new([]byte)
 		case imagetask.FieldMaskPresent:
 			values[i] = new(sql.NullBool)
-		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount:
+		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount, imagetask.FieldArtifactAttemptCount, imagetask.FieldArtifactStorageVersion:
 			values[i] = new(sql.NullInt64)
-		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldRequestedQuality, imagetask.FieldResolvedQualityBucket, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
+		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldRequestedQuality, imagetask.FieldResolvedQualityBucket, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
 			values[i] = new(sql.NullString)
-		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
+		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldUpstreamSucceededAt, imagetask.FieldArtifactNextRetryAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
 		case imagetask.FieldID:
 			values[i] = new(uuid.UUID)
@@ -436,6 +456,67 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field provider_trace: %w", err)
 				}
 			}
+		case imagetask.FieldProviderRequestID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_request_id", values[i])
+			} else if value.Valid {
+				_m.ProviderRequestID = new(string)
+				*_m.ProviderRequestID = value.String
+			}
+		case imagetask.FieldUpstreamSucceededAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_succeeded_at", values[i])
+			} else if value.Valid {
+				_m.UpstreamSucceededAt = new(time.Time)
+				*_m.UpstreamSucceededAt = value.Time
+			}
+		case imagetask.FieldArtifactRecoveryStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_recovery_status", values[i])
+			} else if value.Valid {
+				_m.ArtifactRecoveryStatus = value.String
+			}
+		case imagetask.FieldArtifactRecoveryPayload:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_recovery_payload", values[i])
+			} else if value.Valid {
+				_m.ArtifactRecoveryPayload = new(string)
+				*_m.ArtifactRecoveryPayload = value.String
+			}
+		case imagetask.FieldArtifactAttemptCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_attempt_count", values[i])
+			} else if value.Valid {
+				_m.ArtifactAttemptCount = int(value.Int64)
+			}
+		case imagetask.FieldArtifactNextRetryAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_next_retry_at", values[i])
+			} else if value.Valid {
+				_m.ArtifactNextRetryAt = new(time.Time)
+				*_m.ArtifactNextRetryAt = value.Time
+			}
+		case imagetask.FieldArtifactLastDiagnostic:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_last_diagnostic", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ArtifactLastDiagnostic); err != nil {
+					return fmt.Errorf("unmarshal field artifact_last_diagnostic: %w", err)
+				}
+			}
+		case imagetask.FieldArtifactStorageConfigID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_storage_config_id", values[i])
+			} else if value.Valid {
+				_m.ArtifactStorageConfigID = new(uuid.UUID)
+				*_m.ArtifactStorageConfigID = *value.S.(*uuid.UUID)
+			}
+		case imagetask.FieldArtifactStorageVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_storage_version", values[i])
+			} else if value.Valid {
+				_m.ArtifactStorageVersion = value.Int64
+			}
 		case imagetask.FieldLeaseOwner:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field lease_owner", values[i])
@@ -666,6 +747,43 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("provider_trace=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ProviderTrace))
+	builder.WriteString(", ")
+	if v := _m.ProviderRequestID; v != nil {
+		builder.WriteString("provider_request_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamSucceededAt; v != nil {
+		builder.WriteString("upstream_succeeded_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("artifact_recovery_status=")
+	builder.WriteString(_m.ArtifactRecoveryStatus)
+	builder.WriteString(", ")
+	if v := _m.ArtifactRecoveryPayload; v != nil {
+		builder.WriteString("artifact_recovery_payload=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("artifact_attempt_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactAttemptCount))
+	builder.WriteString(", ")
+	if v := _m.ArtifactNextRetryAt; v != nil {
+		builder.WriteString("artifact_next_retry_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("artifact_last_diagnostic=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactLastDiagnostic))
+	builder.WriteString(", ")
+	if v := _m.ArtifactStorageConfigID; v != nil {
+		builder.WriteString("artifact_storage_config_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("artifact_storage_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactStorageVersion))
 	builder.WriteString(", ")
 	if v := _m.LeaseOwner; v != nil {
 		builder.WriteString("lease_owner=")

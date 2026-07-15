@@ -215,6 +215,7 @@ var (
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "image_role", Type: field.TypeString, Size: 16, Default: "output"},
 		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "object_key", Type: field.TypeString, Size: 255},
 		{Name: "mime_type", Type: field.TypeString, Size: 64},
 		{Name: "file_size_bytes", Type: field.TypeInt64, Default: 0},
@@ -250,17 +251,17 @@ var (
 			{
 				Name:    "imageresult_object_key",
 				Unique:  true,
-				Columns: []*schema.Column{TaskImagesColumns[8]},
+				Columns: []*schema.Column{TaskImagesColumns[9]},
 			},
 			{
 				Name:    "imageresult_sha256",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[13]},
+				Columns: []*schema.Column{TaskImagesColumns[14]},
 			},
 			{
 				Name:    "imageresult_visibility_status",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[15]},
+				Columns: []*schema.Column{TaskImagesColumns[16]},
 			},
 		},
 	}
@@ -310,6 +311,15 @@ var (
 		{Name: "routing_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "error_policy_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "provider_trace", Type: field.TypeJSON, Nullable: true},
+		{Name: "provider_request_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "upstream_succeeded_at", Type: field.TypeTime, Nullable: true},
+		{Name: "artifact_recovery_status", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "artifact_recovery_payload", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "artifact_attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "artifact_next_retry_at", Type: field.TypeTime, Nullable: true},
+		{Name: "artifact_last_diagnostic", Type: field.TypeJSON, Nullable: true},
+		{Name: "artifact_storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "artifact_storage_version", Type: field.TypeInt64, Default: 0},
 		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
@@ -381,17 +391,22 @@ var (
 			{
 				Name:    "imagetask_lease_owner",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[44]},
+				Columns: []*schema.Column{ImageTasksColumns[53]},
 			},
 			{
 				Name:    "imagetask_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[45]},
+				Columns: []*schema.Column{ImageTasksColumns[54]},
+			},
+			{
+				Name:    "imagetask_artifact_recovery_status_artifact_next_retry_at",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[46], ImageTasksColumns[49]},
 			},
 			{
 				Name:    "imagetask_error_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[46]},
+				Columns: []*schema.Column{ImageTasksColumns[55]},
 			},
 			{
 				Name:    "imagetask_created_at",
@@ -540,6 +555,60 @@ var (
 				Name:    "modelroute_provider_model_id",
 				Unique:  false,
 				Columns: []*schema.Column{ModelRoutesColumns[5]},
+			},
+		},
+	}
+	// ObjectStorageConfigsColumns holds the columns for the "object_storage_configs" table.
+	ObjectStorageConfigsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "code", Type: field.TypeString, Size: 64},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "driver", Type: field.TypeString, Size: 16, Default: "local"},
+		{Name: "provider", Type: field.TypeString, Size: 32, Default: "local"},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "enabled"},
+		{Name: "read_enabled", Type: field.TypeBool, Default: true},
+		{Name: "write_enabled", Type: field.TypeBool, Default: true},
+		{Name: "is_default", Type: field.TypeBool, Default: false},
+		{Name: "endpoint", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "region", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "bucket", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "prefix", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "force_path_style", Type: field.TypeBool, Default: false},
+		{Name: "public_base_url", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "local_root", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "public_value", Type: field.TypeJSON, Nullable: true},
+		{Name: "secret_encrypted", Type: field.TypeJSON, Nullable: true},
+		{Name: "secret_fingerprint", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "secret_fields", Type: field.TypeJSON, Nullable: true},
+		{Name: "last_probe_status", Type: field.TypeString, Size: 32, Default: "never"},
+		{Name: "last_probe_message", Type: field.TypeString, Size: 512, Default: ""},
+		{Name: "last_probe_at", Type: field.TypeTime, Nullable: true},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+		{Name: "updated_by", Type: field.TypeInt64, Default: 0},
+	}
+	// ObjectStorageConfigsTable holds the schema information for the "object_storage_configs" table.
+	ObjectStorageConfigsTable = &schema.Table{
+		Name:       "object_storage_configs",
+		Columns:    ObjectStorageConfigsColumns,
+		PrimaryKey: []*schema.Column{ObjectStorageConfigsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "objectstorageconfig_code",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectStorageConfigsColumns[4]},
+			},
+			{
+				Name:    "objectstorageconfig_is_default_status_write_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectStorageConfigsColumns[11], ObjectStorageConfigsColumns[8], ObjectStorageConfigsColumns[10]},
+			},
+			{
+				Name:    "objectstorageconfig_status",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectStorageConfigsColumns[8]},
 			},
 		},
 	}
@@ -1003,6 +1072,7 @@ var (
 		{Name: "upload_source", Type: field.TypeString, Size: 16, Default: "web"},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "uploading"},
 		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "object_key", Type: field.TypeString, Size: 255},
 		{Name: "mime_type", Type: field.TypeString, Size: 64},
 		{Name: "file_size_bytes", Type: field.TypeInt64, Default: 0},
@@ -1021,7 +1091,7 @@ var (
 			{
 				Name:    "referenceasset_object_key",
 				Unique:  true,
-				Columns: []*schema.Column{ReferenceAssetsColumns[9]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[10]},
 			},
 			{
 				Name:    "referenceasset_user_id",
@@ -1036,12 +1106,12 @@ var (
 			{
 				Name:    "referenceasset_sha256",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[14]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[15]},
 			},
 			{
 				Name:    "referenceasset_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[16]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[17]},
 			},
 		},
 	}
@@ -1538,6 +1608,7 @@ var (
 		ModelAccountModelsTable,
 		ModelProvidersTable,
 		ModelRoutesTable,
+		ObjectStorageConfigsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
 		PaymentWebhookEventsTable,
@@ -1582,6 +1653,9 @@ func init() {
 	}
 	ModelRoutesTable.Annotation = &entsql.Annotation{
 		Table: "model_routes",
+	}
+	ObjectStorageConfigsTable.Annotation = &entsql.Annotation{
+		Table: "object_storage_configs",
 	}
 	ProviderErrorPoliciesTable.Annotation = &entsql.Annotation{
 		Table: "provider_error_policies",

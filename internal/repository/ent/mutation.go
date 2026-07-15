@@ -22,6 +22,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
@@ -69,6 +70,7 @@ const (
 	TypeModelAccountModel           = "ModelAccountModel"
 	TypeModelProvider               = "ModelProvider"
 	TypeModelRoute                  = "ModelRoute"
+	TypeObjectStorageConfig         = "ObjectStorageConfig"
 	TypePaymentOrder                = "PaymentOrder"
 	TypePaymentProviderInstance     = "PaymentProviderInstance"
 	TypePaymentWebhookEvent         = "PaymentWebhookEvent"
@@ -4626,6 +4628,7 @@ type ImageResultMutation struct {
 	adduser_id         *int64
 	image_role         *string
 	storage_driver     *string
+	storage_config_id  *uuid.UUID
 	object_key         *string
 	mime_type          *string
 	file_size_bytes    *int64
@@ -5032,6 +5035,55 @@ func (m *ImageResultMutation) OldStorageDriver(ctx context.Context) (v string, e
 // ResetStorageDriver resets all changes to the "storage_driver" field.
 func (m *ImageResultMutation) ResetStorageDriver() {
 	m.storage_driver = nil
+}
+
+// SetStorageConfigID sets the "storage_config_id" field.
+func (m *ImageResultMutation) SetStorageConfigID(u uuid.UUID) {
+	m.storage_config_id = &u
+}
+
+// StorageConfigID returns the value of the "storage_config_id" field in the mutation.
+func (m *ImageResultMutation) StorageConfigID() (r uuid.UUID, exists bool) {
+	v := m.storage_config_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStorageConfigID returns the old "storage_config_id" field's value of the ImageResult entity.
+// If the ImageResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageResultMutation) OldStorageConfigID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStorageConfigID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStorageConfigID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStorageConfigID: %w", err)
+	}
+	return oldValue.StorageConfigID, nil
+}
+
+// ClearStorageConfigID clears the value of the "storage_config_id" field.
+func (m *ImageResultMutation) ClearStorageConfigID() {
+	m.storage_config_id = nil
+	m.clearedFields[imageresult.FieldStorageConfigID] = struct{}{}
+}
+
+// StorageConfigIDCleared returns if the "storage_config_id" field was cleared in this mutation.
+func (m *ImageResultMutation) StorageConfigIDCleared() bool {
+	_, ok := m.clearedFields[imageresult.FieldStorageConfigID]
+	return ok
+}
+
+// ResetStorageConfigID resets all changes to the "storage_config_id" field.
+func (m *ImageResultMutation) ResetStorageConfigID() {
+	m.storage_config_id = nil
+	delete(m.clearedFields, imageresult.FieldStorageConfigID)
 }
 
 // SetObjectKey sets the "object_key" field.
@@ -5514,7 +5566,7 @@ func (m *ImageResultMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImageResultMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.created_at != nil {
 		fields = append(fields, imageresult.FieldCreatedAt)
 	}
@@ -5535,6 +5587,9 @@ func (m *ImageResultMutation) Fields() []string {
 	}
 	if m.storage_driver != nil {
 		fields = append(fields, imageresult.FieldStorageDriver)
+	}
+	if m.storage_config_id != nil {
+		fields = append(fields, imageresult.FieldStorageConfigID)
 	}
 	if m.object_key != nil {
 		fields = append(fields, imageresult.FieldObjectKey)
@@ -5588,6 +5643,8 @@ func (m *ImageResultMutation) Field(name string) (ent.Value, bool) {
 		return m.ImageRole()
 	case imageresult.FieldStorageDriver:
 		return m.StorageDriver()
+	case imageresult.FieldStorageConfigID:
+		return m.StorageConfigID()
 	case imageresult.FieldObjectKey:
 		return m.ObjectKey()
 	case imageresult.FieldMimeType:
@@ -5631,6 +5688,8 @@ func (m *ImageResultMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldImageRole(ctx)
 	case imageresult.FieldStorageDriver:
 		return m.OldStorageDriver(ctx)
+	case imageresult.FieldStorageConfigID:
+		return m.OldStorageConfigID(ctx)
 	case imageresult.FieldObjectKey:
 		return m.OldObjectKey(ctx)
 	case imageresult.FieldMimeType:
@@ -5708,6 +5767,13 @@ func (m *ImageResultMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStorageDriver(v)
+		return nil
+	case imageresult.FieldStorageConfigID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStorageConfigID(v)
 		return nil
 	case imageresult.FieldObjectKey:
 		v, ok := value.(string)
@@ -5863,6 +5929,9 @@ func (m *ImageResultMutation) ClearedFields() []string {
 	if m.FieldCleared(imageresult.FieldDeletedAt) {
 		fields = append(fields, imageresult.FieldDeletedAt)
 	}
+	if m.FieldCleared(imageresult.FieldStorageConfigID) {
+		fields = append(fields, imageresult.FieldStorageConfigID)
+	}
 	if m.FieldCleared(imageresult.FieldReviewReason) {
 		fields = append(fields, imageresult.FieldReviewReason)
 	}
@@ -5885,6 +5954,9 @@ func (m *ImageResultMutation) ClearField(name string) error {
 	switch name {
 	case imageresult.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case imageresult.FieldStorageConfigID:
+		m.ClearStorageConfigID()
 		return nil
 	case imageresult.FieldReviewReason:
 		m.ClearReviewReason()
@@ -5920,6 +5992,9 @@ func (m *ImageResultMutation) ResetField(name string) error {
 		return nil
 	case imageresult.FieldStorageDriver:
 		m.ResetStorageDriver()
+		return nil
+	case imageresult.FieldStorageConfigID:
+		m.ResetStorageConfigID()
 		return nil
 	case imageresult.FieldObjectKey:
 		m.ResetObjectKey()
@@ -6066,6 +6141,17 @@ type ImageTaskMutation struct {
 	routing_snapshot                *map[string]interface{}
 	error_policy_snapshot           *map[string]interface{}
 	provider_trace                  *map[string]interface{}
+	provider_request_id             *string
+	upstream_succeeded_at           *time.Time
+	artifact_recovery_status        *string
+	artifact_recovery_payload       *string
+	artifact_attempt_count          *int
+	addartifact_attempt_count       *int
+	artifact_next_retry_at          *time.Time
+	artifact_last_diagnostic        *map[string]interface{}
+	artifact_storage_config_id      *uuid.UUID
+	artifact_storage_version        *int64
+	addartifact_storage_version     *int64
 	lease_owner                     *string
 	lease_expires_at                *time.Time
 	error_code                      *string
@@ -8227,6 +8313,448 @@ func (m *ImageTaskMutation) ResetProviderTrace() {
 	delete(m.clearedFields, imagetask.FieldProviderTrace)
 }
 
+// SetProviderRequestID sets the "provider_request_id" field.
+func (m *ImageTaskMutation) SetProviderRequestID(s string) {
+	m.provider_request_id = &s
+}
+
+// ProviderRequestID returns the value of the "provider_request_id" field in the mutation.
+func (m *ImageTaskMutation) ProviderRequestID() (r string, exists bool) {
+	v := m.provider_request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderRequestID returns the old "provider_request_id" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldProviderRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderRequestID: %w", err)
+	}
+	return oldValue.ProviderRequestID, nil
+}
+
+// ClearProviderRequestID clears the value of the "provider_request_id" field.
+func (m *ImageTaskMutation) ClearProviderRequestID() {
+	m.provider_request_id = nil
+	m.clearedFields[imagetask.FieldProviderRequestID] = struct{}{}
+}
+
+// ProviderRequestIDCleared returns if the "provider_request_id" field was cleared in this mutation.
+func (m *ImageTaskMutation) ProviderRequestIDCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldProviderRequestID]
+	return ok
+}
+
+// ResetProviderRequestID resets all changes to the "provider_request_id" field.
+func (m *ImageTaskMutation) ResetProviderRequestID() {
+	m.provider_request_id = nil
+	delete(m.clearedFields, imagetask.FieldProviderRequestID)
+}
+
+// SetUpstreamSucceededAt sets the "upstream_succeeded_at" field.
+func (m *ImageTaskMutation) SetUpstreamSucceededAt(t time.Time) {
+	m.upstream_succeeded_at = &t
+}
+
+// UpstreamSucceededAt returns the value of the "upstream_succeeded_at" field in the mutation.
+func (m *ImageTaskMutation) UpstreamSucceededAt() (r time.Time, exists bool) {
+	v := m.upstream_succeeded_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamSucceededAt returns the old "upstream_succeeded_at" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldUpstreamSucceededAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamSucceededAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamSucceededAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamSucceededAt: %w", err)
+	}
+	return oldValue.UpstreamSucceededAt, nil
+}
+
+// ClearUpstreamSucceededAt clears the value of the "upstream_succeeded_at" field.
+func (m *ImageTaskMutation) ClearUpstreamSucceededAt() {
+	m.upstream_succeeded_at = nil
+	m.clearedFields[imagetask.FieldUpstreamSucceededAt] = struct{}{}
+}
+
+// UpstreamSucceededAtCleared returns if the "upstream_succeeded_at" field was cleared in this mutation.
+func (m *ImageTaskMutation) UpstreamSucceededAtCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldUpstreamSucceededAt]
+	return ok
+}
+
+// ResetUpstreamSucceededAt resets all changes to the "upstream_succeeded_at" field.
+func (m *ImageTaskMutation) ResetUpstreamSucceededAt() {
+	m.upstream_succeeded_at = nil
+	delete(m.clearedFields, imagetask.FieldUpstreamSucceededAt)
+}
+
+// SetArtifactRecoveryStatus sets the "artifact_recovery_status" field.
+func (m *ImageTaskMutation) SetArtifactRecoveryStatus(s string) {
+	m.artifact_recovery_status = &s
+}
+
+// ArtifactRecoveryStatus returns the value of the "artifact_recovery_status" field in the mutation.
+func (m *ImageTaskMutation) ArtifactRecoveryStatus() (r string, exists bool) {
+	v := m.artifact_recovery_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactRecoveryStatus returns the old "artifact_recovery_status" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactRecoveryStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactRecoveryStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactRecoveryStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactRecoveryStatus: %w", err)
+	}
+	return oldValue.ArtifactRecoveryStatus, nil
+}
+
+// ResetArtifactRecoveryStatus resets all changes to the "artifact_recovery_status" field.
+func (m *ImageTaskMutation) ResetArtifactRecoveryStatus() {
+	m.artifact_recovery_status = nil
+}
+
+// SetArtifactRecoveryPayload sets the "artifact_recovery_payload" field.
+func (m *ImageTaskMutation) SetArtifactRecoveryPayload(s string) {
+	m.artifact_recovery_payload = &s
+}
+
+// ArtifactRecoveryPayload returns the value of the "artifact_recovery_payload" field in the mutation.
+func (m *ImageTaskMutation) ArtifactRecoveryPayload() (r string, exists bool) {
+	v := m.artifact_recovery_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactRecoveryPayload returns the old "artifact_recovery_payload" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactRecoveryPayload(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactRecoveryPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactRecoveryPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactRecoveryPayload: %w", err)
+	}
+	return oldValue.ArtifactRecoveryPayload, nil
+}
+
+// ClearArtifactRecoveryPayload clears the value of the "artifact_recovery_payload" field.
+func (m *ImageTaskMutation) ClearArtifactRecoveryPayload() {
+	m.artifact_recovery_payload = nil
+	m.clearedFields[imagetask.FieldArtifactRecoveryPayload] = struct{}{}
+}
+
+// ArtifactRecoveryPayloadCleared returns if the "artifact_recovery_payload" field was cleared in this mutation.
+func (m *ImageTaskMutation) ArtifactRecoveryPayloadCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldArtifactRecoveryPayload]
+	return ok
+}
+
+// ResetArtifactRecoveryPayload resets all changes to the "artifact_recovery_payload" field.
+func (m *ImageTaskMutation) ResetArtifactRecoveryPayload() {
+	m.artifact_recovery_payload = nil
+	delete(m.clearedFields, imagetask.FieldArtifactRecoveryPayload)
+}
+
+// SetArtifactAttemptCount sets the "artifact_attempt_count" field.
+func (m *ImageTaskMutation) SetArtifactAttemptCount(i int) {
+	m.artifact_attempt_count = &i
+	m.addartifact_attempt_count = nil
+}
+
+// ArtifactAttemptCount returns the value of the "artifact_attempt_count" field in the mutation.
+func (m *ImageTaskMutation) ArtifactAttemptCount() (r int, exists bool) {
+	v := m.artifact_attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactAttemptCount returns the old "artifact_attempt_count" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactAttemptCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactAttemptCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactAttemptCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactAttemptCount: %w", err)
+	}
+	return oldValue.ArtifactAttemptCount, nil
+}
+
+// AddArtifactAttemptCount adds i to the "artifact_attempt_count" field.
+func (m *ImageTaskMutation) AddArtifactAttemptCount(i int) {
+	if m.addartifact_attempt_count != nil {
+		*m.addartifact_attempt_count += i
+	} else {
+		m.addartifact_attempt_count = &i
+	}
+}
+
+// AddedArtifactAttemptCount returns the value that was added to the "artifact_attempt_count" field in this mutation.
+func (m *ImageTaskMutation) AddedArtifactAttemptCount() (r int, exists bool) {
+	v := m.addartifact_attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetArtifactAttemptCount resets all changes to the "artifact_attempt_count" field.
+func (m *ImageTaskMutation) ResetArtifactAttemptCount() {
+	m.artifact_attempt_count = nil
+	m.addartifact_attempt_count = nil
+}
+
+// SetArtifactNextRetryAt sets the "artifact_next_retry_at" field.
+func (m *ImageTaskMutation) SetArtifactNextRetryAt(t time.Time) {
+	m.artifact_next_retry_at = &t
+}
+
+// ArtifactNextRetryAt returns the value of the "artifact_next_retry_at" field in the mutation.
+func (m *ImageTaskMutation) ArtifactNextRetryAt() (r time.Time, exists bool) {
+	v := m.artifact_next_retry_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactNextRetryAt returns the old "artifact_next_retry_at" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactNextRetryAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactNextRetryAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactNextRetryAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactNextRetryAt: %w", err)
+	}
+	return oldValue.ArtifactNextRetryAt, nil
+}
+
+// ClearArtifactNextRetryAt clears the value of the "artifact_next_retry_at" field.
+func (m *ImageTaskMutation) ClearArtifactNextRetryAt() {
+	m.artifact_next_retry_at = nil
+	m.clearedFields[imagetask.FieldArtifactNextRetryAt] = struct{}{}
+}
+
+// ArtifactNextRetryAtCleared returns if the "artifact_next_retry_at" field was cleared in this mutation.
+func (m *ImageTaskMutation) ArtifactNextRetryAtCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldArtifactNextRetryAt]
+	return ok
+}
+
+// ResetArtifactNextRetryAt resets all changes to the "artifact_next_retry_at" field.
+func (m *ImageTaskMutation) ResetArtifactNextRetryAt() {
+	m.artifact_next_retry_at = nil
+	delete(m.clearedFields, imagetask.FieldArtifactNextRetryAt)
+}
+
+// SetArtifactLastDiagnostic sets the "artifact_last_diagnostic" field.
+func (m *ImageTaskMutation) SetArtifactLastDiagnostic(value map[string]interface{}) {
+	m.artifact_last_diagnostic = &value
+}
+
+// ArtifactLastDiagnostic returns the value of the "artifact_last_diagnostic" field in the mutation.
+func (m *ImageTaskMutation) ArtifactLastDiagnostic() (r map[string]interface{}, exists bool) {
+	v := m.artifact_last_diagnostic
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactLastDiagnostic returns the old "artifact_last_diagnostic" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactLastDiagnostic(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactLastDiagnostic is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactLastDiagnostic requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactLastDiagnostic: %w", err)
+	}
+	return oldValue.ArtifactLastDiagnostic, nil
+}
+
+// ClearArtifactLastDiagnostic clears the value of the "artifact_last_diagnostic" field.
+func (m *ImageTaskMutation) ClearArtifactLastDiagnostic() {
+	m.artifact_last_diagnostic = nil
+	m.clearedFields[imagetask.FieldArtifactLastDiagnostic] = struct{}{}
+}
+
+// ArtifactLastDiagnosticCleared returns if the "artifact_last_diagnostic" field was cleared in this mutation.
+func (m *ImageTaskMutation) ArtifactLastDiagnosticCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldArtifactLastDiagnostic]
+	return ok
+}
+
+// ResetArtifactLastDiagnostic resets all changes to the "artifact_last_diagnostic" field.
+func (m *ImageTaskMutation) ResetArtifactLastDiagnostic() {
+	m.artifact_last_diagnostic = nil
+	delete(m.clearedFields, imagetask.FieldArtifactLastDiagnostic)
+}
+
+// SetArtifactStorageConfigID sets the "artifact_storage_config_id" field.
+func (m *ImageTaskMutation) SetArtifactStorageConfigID(u uuid.UUID) {
+	m.artifact_storage_config_id = &u
+}
+
+// ArtifactStorageConfigID returns the value of the "artifact_storage_config_id" field in the mutation.
+func (m *ImageTaskMutation) ArtifactStorageConfigID() (r uuid.UUID, exists bool) {
+	v := m.artifact_storage_config_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactStorageConfigID returns the old "artifact_storage_config_id" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactStorageConfigID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactStorageConfigID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactStorageConfigID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactStorageConfigID: %w", err)
+	}
+	return oldValue.ArtifactStorageConfigID, nil
+}
+
+// ClearArtifactStorageConfigID clears the value of the "artifact_storage_config_id" field.
+func (m *ImageTaskMutation) ClearArtifactStorageConfigID() {
+	m.artifact_storage_config_id = nil
+	m.clearedFields[imagetask.FieldArtifactStorageConfigID] = struct{}{}
+}
+
+// ArtifactStorageConfigIDCleared returns if the "artifact_storage_config_id" field was cleared in this mutation.
+func (m *ImageTaskMutation) ArtifactStorageConfigIDCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldArtifactStorageConfigID]
+	return ok
+}
+
+// ResetArtifactStorageConfigID resets all changes to the "artifact_storage_config_id" field.
+func (m *ImageTaskMutation) ResetArtifactStorageConfigID() {
+	m.artifact_storage_config_id = nil
+	delete(m.clearedFields, imagetask.FieldArtifactStorageConfigID)
+}
+
+// SetArtifactStorageVersion sets the "artifact_storage_version" field.
+func (m *ImageTaskMutation) SetArtifactStorageVersion(i int64) {
+	m.artifact_storage_version = &i
+	m.addartifact_storage_version = nil
+}
+
+// ArtifactStorageVersion returns the value of the "artifact_storage_version" field in the mutation.
+func (m *ImageTaskMutation) ArtifactStorageVersion() (r int64, exists bool) {
+	v := m.artifact_storage_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactStorageVersion returns the old "artifact_storage_version" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactStorageVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactStorageVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactStorageVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactStorageVersion: %w", err)
+	}
+	return oldValue.ArtifactStorageVersion, nil
+}
+
+// AddArtifactStorageVersion adds i to the "artifact_storage_version" field.
+func (m *ImageTaskMutation) AddArtifactStorageVersion(i int64) {
+	if m.addartifact_storage_version != nil {
+		*m.addartifact_storage_version += i
+	} else {
+		m.addartifact_storage_version = &i
+	}
+}
+
+// AddedArtifactStorageVersion returns the value that was added to the "artifact_storage_version" field in this mutation.
+func (m *ImageTaskMutation) AddedArtifactStorageVersion() (r int64, exists bool) {
+	v := m.addartifact_storage_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetArtifactStorageVersion resets all changes to the "artifact_storage_version" field.
+func (m *ImageTaskMutation) ResetArtifactStorageVersion() {
+	m.artifact_storage_version = nil
+	m.addartifact_storage_version = nil
+}
+
 // SetLeaseOwner sets the "lease_owner" field.
 func (m *ImageTaskMutation) SetLeaseOwner(s string) {
 	m.lease_owner = &s
@@ -8555,7 +9083,7 @@ func (m *ImageTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImageTaskMutation) Fields() []string {
-	fields := make([]string, 0, 49)
+	fields := make([]string, 0, 58)
 	if m.created_at != nil {
 		fields = append(fields, imagetask.FieldCreatedAt)
 	}
@@ -8685,6 +9213,33 @@ func (m *ImageTaskMutation) Fields() []string {
 	if m.provider_trace != nil {
 		fields = append(fields, imagetask.FieldProviderTrace)
 	}
+	if m.provider_request_id != nil {
+		fields = append(fields, imagetask.FieldProviderRequestID)
+	}
+	if m.upstream_succeeded_at != nil {
+		fields = append(fields, imagetask.FieldUpstreamSucceededAt)
+	}
+	if m.artifact_recovery_status != nil {
+		fields = append(fields, imagetask.FieldArtifactRecoveryStatus)
+	}
+	if m.artifact_recovery_payload != nil {
+		fields = append(fields, imagetask.FieldArtifactRecoveryPayload)
+	}
+	if m.artifact_attempt_count != nil {
+		fields = append(fields, imagetask.FieldArtifactAttemptCount)
+	}
+	if m.artifact_next_retry_at != nil {
+		fields = append(fields, imagetask.FieldArtifactNextRetryAt)
+	}
+	if m.artifact_last_diagnostic != nil {
+		fields = append(fields, imagetask.FieldArtifactLastDiagnostic)
+	}
+	if m.artifact_storage_config_id != nil {
+		fields = append(fields, imagetask.FieldArtifactStorageConfigID)
+	}
+	if m.artifact_storage_version != nil {
+		fields = append(fields, imagetask.FieldArtifactStorageVersion)
+	}
 	if m.lease_owner != nil {
 		fields = append(fields, imagetask.FieldLeaseOwner)
 	}
@@ -8797,6 +9352,24 @@ func (m *ImageTaskMutation) Field(name string) (ent.Value, bool) {
 		return m.ErrorPolicySnapshot()
 	case imagetask.FieldProviderTrace:
 		return m.ProviderTrace()
+	case imagetask.FieldProviderRequestID:
+		return m.ProviderRequestID()
+	case imagetask.FieldUpstreamSucceededAt:
+		return m.UpstreamSucceededAt()
+	case imagetask.FieldArtifactRecoveryStatus:
+		return m.ArtifactRecoveryStatus()
+	case imagetask.FieldArtifactRecoveryPayload:
+		return m.ArtifactRecoveryPayload()
+	case imagetask.FieldArtifactAttemptCount:
+		return m.ArtifactAttemptCount()
+	case imagetask.FieldArtifactNextRetryAt:
+		return m.ArtifactNextRetryAt()
+	case imagetask.FieldArtifactLastDiagnostic:
+		return m.ArtifactLastDiagnostic()
+	case imagetask.FieldArtifactStorageConfigID:
+		return m.ArtifactStorageConfigID()
+	case imagetask.FieldArtifactStorageVersion:
+		return m.ArtifactStorageVersion()
 	case imagetask.FieldLeaseOwner:
 		return m.LeaseOwner()
 	case imagetask.FieldLeaseExpiresAt:
@@ -8904,6 +9477,24 @@ func (m *ImageTaskMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldErrorPolicySnapshot(ctx)
 	case imagetask.FieldProviderTrace:
 		return m.OldProviderTrace(ctx)
+	case imagetask.FieldProviderRequestID:
+		return m.OldProviderRequestID(ctx)
+	case imagetask.FieldUpstreamSucceededAt:
+		return m.OldUpstreamSucceededAt(ctx)
+	case imagetask.FieldArtifactRecoveryStatus:
+		return m.OldArtifactRecoveryStatus(ctx)
+	case imagetask.FieldArtifactRecoveryPayload:
+		return m.OldArtifactRecoveryPayload(ctx)
+	case imagetask.FieldArtifactAttemptCount:
+		return m.OldArtifactAttemptCount(ctx)
+	case imagetask.FieldArtifactNextRetryAt:
+		return m.OldArtifactNextRetryAt(ctx)
+	case imagetask.FieldArtifactLastDiagnostic:
+		return m.OldArtifactLastDiagnostic(ctx)
+	case imagetask.FieldArtifactStorageConfigID:
+		return m.OldArtifactStorageConfigID(ctx)
+	case imagetask.FieldArtifactStorageVersion:
+		return m.OldArtifactStorageVersion(ctx)
 	case imagetask.FieldLeaseOwner:
 		return m.OldLeaseOwner(ctx)
 	case imagetask.FieldLeaseExpiresAt:
@@ -9226,6 +9817,69 @@ func (m *ImageTaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetProviderTrace(v)
 		return nil
+	case imagetask.FieldProviderRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderRequestID(v)
+		return nil
+	case imagetask.FieldUpstreamSucceededAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamSucceededAt(v)
+		return nil
+	case imagetask.FieldArtifactRecoveryStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactRecoveryStatus(v)
+		return nil
+	case imagetask.FieldArtifactRecoveryPayload:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactRecoveryPayload(v)
+		return nil
+	case imagetask.FieldArtifactAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactAttemptCount(v)
+		return nil
+	case imagetask.FieldArtifactNextRetryAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactNextRetryAt(v)
+		return nil
+	case imagetask.FieldArtifactLastDiagnostic:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactLastDiagnostic(v)
+		return nil
+	case imagetask.FieldArtifactStorageConfigID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactStorageConfigID(v)
+		return nil
+	case imagetask.FieldArtifactStorageVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactStorageVersion(v)
+		return nil
 	case imagetask.FieldLeaseOwner:
 		v, ok := value.(string)
 		if !ok {
@@ -9318,6 +9972,12 @@ func (m *ImageTaskMutation) AddedFields() []string {
 	if m.addfallback_count != nil {
 		fields = append(fields, imagetask.FieldFallbackCount)
 	}
+	if m.addartifact_attempt_count != nil {
+		fields = append(fields, imagetask.FieldArtifactAttemptCount)
+	}
+	if m.addartifact_storage_version != nil {
+		fields = append(fields, imagetask.FieldArtifactStorageVersion)
+	}
 	return fields
 }
 
@@ -9354,6 +10014,10 @@ func (m *ImageTaskMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedProviderModelID()
 	case imagetask.FieldFallbackCount:
 		return m.AddedFallbackCount()
+	case imagetask.FieldArtifactAttemptCount:
+		return m.AddedArtifactAttemptCount()
+	case imagetask.FieldArtifactStorageVersion:
+		return m.AddedArtifactStorageVersion()
 	}
 	return nil, false
 }
@@ -9461,6 +10125,20 @@ func (m *ImageTaskMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddFallbackCount(v)
 		return nil
+	case imagetask.FieldArtifactAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddArtifactAttemptCount(v)
+		return nil
+	case imagetask.FieldArtifactStorageVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddArtifactStorageVersion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ImageTask numeric field %s", name)
 }
@@ -9516,6 +10194,24 @@ func (m *ImageTaskMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(imagetask.FieldProviderTrace) {
 		fields = append(fields, imagetask.FieldProviderTrace)
+	}
+	if m.FieldCleared(imagetask.FieldProviderRequestID) {
+		fields = append(fields, imagetask.FieldProviderRequestID)
+	}
+	if m.FieldCleared(imagetask.FieldUpstreamSucceededAt) {
+		fields = append(fields, imagetask.FieldUpstreamSucceededAt)
+	}
+	if m.FieldCleared(imagetask.FieldArtifactRecoveryPayload) {
+		fields = append(fields, imagetask.FieldArtifactRecoveryPayload)
+	}
+	if m.FieldCleared(imagetask.FieldArtifactNextRetryAt) {
+		fields = append(fields, imagetask.FieldArtifactNextRetryAt)
+	}
+	if m.FieldCleared(imagetask.FieldArtifactLastDiagnostic) {
+		fields = append(fields, imagetask.FieldArtifactLastDiagnostic)
+	}
+	if m.FieldCleared(imagetask.FieldArtifactStorageConfigID) {
+		fields = append(fields, imagetask.FieldArtifactStorageConfigID)
 	}
 	if m.FieldCleared(imagetask.FieldLeaseOwner) {
 		fields = append(fields, imagetask.FieldLeaseOwner)
@@ -9596,6 +10292,24 @@ func (m *ImageTaskMutation) ClearField(name string) error {
 		return nil
 	case imagetask.FieldProviderTrace:
 		m.ClearProviderTrace()
+		return nil
+	case imagetask.FieldProviderRequestID:
+		m.ClearProviderRequestID()
+		return nil
+	case imagetask.FieldUpstreamSucceededAt:
+		m.ClearUpstreamSucceededAt()
+		return nil
+	case imagetask.FieldArtifactRecoveryPayload:
+		m.ClearArtifactRecoveryPayload()
+		return nil
+	case imagetask.FieldArtifactNextRetryAt:
+		m.ClearArtifactNextRetryAt()
+		return nil
+	case imagetask.FieldArtifactLastDiagnostic:
+		m.ClearArtifactLastDiagnostic()
+		return nil
+	case imagetask.FieldArtifactStorageConfigID:
+		m.ClearArtifactStorageConfigID()
 		return nil
 	case imagetask.FieldLeaseOwner:
 		m.ClearLeaseOwner()
@@ -9751,6 +10465,33 @@ func (m *ImageTaskMutation) ResetField(name string) error {
 		return nil
 	case imagetask.FieldProviderTrace:
 		m.ResetProviderTrace()
+		return nil
+	case imagetask.FieldProviderRequestID:
+		m.ResetProviderRequestID()
+		return nil
+	case imagetask.FieldUpstreamSucceededAt:
+		m.ResetUpstreamSucceededAt()
+		return nil
+	case imagetask.FieldArtifactRecoveryStatus:
+		m.ResetArtifactRecoveryStatus()
+		return nil
+	case imagetask.FieldArtifactRecoveryPayload:
+		m.ResetArtifactRecoveryPayload()
+		return nil
+	case imagetask.FieldArtifactAttemptCount:
+		m.ResetArtifactAttemptCount()
+		return nil
+	case imagetask.FieldArtifactNextRetryAt:
+		m.ResetArtifactNextRetryAt()
+		return nil
+	case imagetask.FieldArtifactLastDiagnostic:
+		m.ResetArtifactLastDiagnostic()
+		return nil
+	case imagetask.FieldArtifactStorageConfigID:
+		m.ResetArtifactStorageConfigID()
+		return nil
+	case imagetask.FieldArtifactStorageVersion:
+		m.ResetArtifactStorageVersion()
 		return nil
 	case imagetask.FieldLeaseOwner:
 		m.ResetLeaseOwner()
@@ -13855,6 +14596,2021 @@ func (m *ModelRouteMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ModelRouteMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ModelRoute edge %s", name)
+}
+
+// ObjectStorageConfigMutation represents an operation that mutates the ObjectStorageConfig nodes in the graph.
+type ObjectStorageConfigMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *uuid.UUID
+	created_at          *time.Time
+	updated_at          *time.Time
+	deleted_at          *time.Time
+	code                *string
+	name                *string
+	_driver             *string
+	provider            *string
+	status              *string
+	read_enabled        *bool
+	write_enabled       *bool
+	is_default          *bool
+	endpoint            *string
+	region              *string
+	bucket              *string
+	prefix              *string
+	force_path_style    *bool
+	public_base_url     *string
+	local_root          *string
+	public_value        *map[string]interface{}
+	secret_encrypted    *map[string]interface{}
+	secret_fingerprint  *string
+	secret_fields       *[]string
+	appendsecret_fields []string
+	last_probe_status   *string
+	last_probe_message  *string
+	last_probe_at       *time.Time
+	version             *int64
+	addversion          *int64
+	updated_by          *int64
+	addupdated_by       *int64
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*ObjectStorageConfig, error)
+	predicates          []predicate.ObjectStorageConfig
+}
+
+var _ ent.Mutation = (*ObjectStorageConfigMutation)(nil)
+
+// objectstorageconfigOption allows management of the mutation configuration using functional options.
+type objectstorageconfigOption func(*ObjectStorageConfigMutation)
+
+// newObjectStorageConfigMutation creates new mutation for the ObjectStorageConfig entity.
+func newObjectStorageConfigMutation(c config, op Op, opts ...objectstorageconfigOption) *ObjectStorageConfigMutation {
+	m := &ObjectStorageConfigMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeObjectStorageConfig,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withObjectStorageConfigID sets the ID field of the mutation.
+func withObjectStorageConfigID(id uuid.UUID) objectstorageconfigOption {
+	return func(m *ObjectStorageConfigMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ObjectStorageConfig
+		)
+		m.oldValue = func(ctx context.Context) (*ObjectStorageConfig, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ObjectStorageConfig.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withObjectStorageConfig sets the old ObjectStorageConfig of the mutation.
+func withObjectStorageConfig(node *ObjectStorageConfig) objectstorageconfigOption {
+	return func(m *ObjectStorageConfigMutation) {
+		m.oldValue = func(context.Context) (*ObjectStorageConfig, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ObjectStorageConfigMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ObjectStorageConfigMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ObjectStorageConfig entities.
+func (m *ObjectStorageConfigMutation) SetID(id uuid.UUID) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ObjectStorageConfigMutation) ID() (id uuid.UUID, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ObjectStorageConfigMutation) IDs(ctx context.Context) ([]uuid.UUID, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []uuid.UUID{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ObjectStorageConfig.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ObjectStorageConfigMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ObjectStorageConfigMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ObjectStorageConfigMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ObjectStorageConfigMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ObjectStorageConfigMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ObjectStorageConfigMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *ObjectStorageConfigMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *ObjectStorageConfigMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *ObjectStorageConfigMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[objectstorageconfig.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *ObjectStorageConfigMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, objectstorageconfig.FieldDeletedAt)
+}
+
+// SetCode sets the "code" field.
+func (m *ObjectStorageConfigMutation) SetCode(s string) {
+	m.code = &s
+}
+
+// Code returns the value of the "code" field in the mutation.
+func (m *ObjectStorageConfigMutation) Code() (r string, exists bool) {
+	v := m.code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCode returns the old "code" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCode: %w", err)
+	}
+	return oldValue.Code, nil
+}
+
+// ResetCode resets all changes to the "code" field.
+func (m *ObjectStorageConfigMutation) ResetCode() {
+	m.code = nil
+}
+
+// SetName sets the "name" field.
+func (m *ObjectStorageConfigMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *ObjectStorageConfigMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *ObjectStorageConfigMutation) ResetName() {
+	m.name = nil
+}
+
+// SetDriver sets the "driver" field.
+func (m *ObjectStorageConfigMutation) SetDriver(s string) {
+	m._driver = &s
+}
+
+// Driver returns the value of the "driver" field in the mutation.
+func (m *ObjectStorageConfigMutation) Driver() (r string, exists bool) {
+	v := m._driver
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDriver returns the old "driver" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldDriver(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDriver is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDriver requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDriver: %w", err)
+	}
+	return oldValue.Driver, nil
+}
+
+// ResetDriver resets all changes to the "driver" field.
+func (m *ObjectStorageConfigMutation) ResetDriver() {
+	m._driver = nil
+}
+
+// SetProvider sets the "provider" field.
+func (m *ObjectStorageConfigMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *ObjectStorageConfigMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldProvider(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *ObjectStorageConfigMutation) ResetProvider() {
+	m.provider = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *ObjectStorageConfigMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *ObjectStorageConfigMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *ObjectStorageConfigMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetReadEnabled sets the "read_enabled" field.
+func (m *ObjectStorageConfigMutation) SetReadEnabled(b bool) {
+	m.read_enabled = &b
+}
+
+// ReadEnabled returns the value of the "read_enabled" field in the mutation.
+func (m *ObjectStorageConfigMutation) ReadEnabled() (r bool, exists bool) {
+	v := m.read_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReadEnabled returns the old "read_enabled" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldReadEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReadEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReadEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReadEnabled: %w", err)
+	}
+	return oldValue.ReadEnabled, nil
+}
+
+// ResetReadEnabled resets all changes to the "read_enabled" field.
+func (m *ObjectStorageConfigMutation) ResetReadEnabled() {
+	m.read_enabled = nil
+}
+
+// SetWriteEnabled sets the "write_enabled" field.
+func (m *ObjectStorageConfigMutation) SetWriteEnabled(b bool) {
+	m.write_enabled = &b
+}
+
+// WriteEnabled returns the value of the "write_enabled" field in the mutation.
+func (m *ObjectStorageConfigMutation) WriteEnabled() (r bool, exists bool) {
+	v := m.write_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWriteEnabled returns the old "write_enabled" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldWriteEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWriteEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWriteEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWriteEnabled: %w", err)
+	}
+	return oldValue.WriteEnabled, nil
+}
+
+// ResetWriteEnabled resets all changes to the "write_enabled" field.
+func (m *ObjectStorageConfigMutation) ResetWriteEnabled() {
+	m.write_enabled = nil
+}
+
+// SetIsDefault sets the "is_default" field.
+func (m *ObjectStorageConfigMutation) SetIsDefault(b bool) {
+	m.is_default = &b
+}
+
+// IsDefault returns the value of the "is_default" field in the mutation.
+func (m *ObjectStorageConfigMutation) IsDefault() (r bool, exists bool) {
+	v := m.is_default
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsDefault returns the old "is_default" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldIsDefault(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsDefault is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsDefault requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsDefault: %w", err)
+	}
+	return oldValue.IsDefault, nil
+}
+
+// ResetIsDefault resets all changes to the "is_default" field.
+func (m *ObjectStorageConfigMutation) ResetIsDefault() {
+	m.is_default = nil
+}
+
+// SetEndpoint sets the "endpoint" field.
+func (m *ObjectStorageConfigMutation) SetEndpoint(s string) {
+	m.endpoint = &s
+}
+
+// Endpoint returns the value of the "endpoint" field in the mutation.
+func (m *ObjectStorageConfigMutation) Endpoint() (r string, exists bool) {
+	v := m.endpoint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEndpoint returns the old "endpoint" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldEndpoint(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEndpoint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEndpoint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEndpoint: %w", err)
+	}
+	return oldValue.Endpoint, nil
+}
+
+// ClearEndpoint clears the value of the "endpoint" field.
+func (m *ObjectStorageConfigMutation) ClearEndpoint() {
+	m.endpoint = nil
+	m.clearedFields[objectstorageconfig.FieldEndpoint] = struct{}{}
+}
+
+// EndpointCleared returns if the "endpoint" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) EndpointCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldEndpoint]
+	return ok
+}
+
+// ResetEndpoint resets all changes to the "endpoint" field.
+func (m *ObjectStorageConfigMutation) ResetEndpoint() {
+	m.endpoint = nil
+	delete(m.clearedFields, objectstorageconfig.FieldEndpoint)
+}
+
+// SetRegion sets the "region" field.
+func (m *ObjectStorageConfigMutation) SetRegion(s string) {
+	m.region = &s
+}
+
+// Region returns the value of the "region" field in the mutation.
+func (m *ObjectStorageConfigMutation) Region() (r string, exists bool) {
+	v := m.region
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRegion returns the old "region" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldRegion(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRegion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRegion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRegion: %w", err)
+	}
+	return oldValue.Region, nil
+}
+
+// ClearRegion clears the value of the "region" field.
+func (m *ObjectStorageConfigMutation) ClearRegion() {
+	m.region = nil
+	m.clearedFields[objectstorageconfig.FieldRegion] = struct{}{}
+}
+
+// RegionCleared returns if the "region" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) RegionCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldRegion]
+	return ok
+}
+
+// ResetRegion resets all changes to the "region" field.
+func (m *ObjectStorageConfigMutation) ResetRegion() {
+	m.region = nil
+	delete(m.clearedFields, objectstorageconfig.FieldRegion)
+}
+
+// SetBucket sets the "bucket" field.
+func (m *ObjectStorageConfigMutation) SetBucket(s string) {
+	m.bucket = &s
+}
+
+// Bucket returns the value of the "bucket" field in the mutation.
+func (m *ObjectStorageConfigMutation) Bucket() (r string, exists bool) {
+	v := m.bucket
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBucket returns the old "bucket" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldBucket(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBucket is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBucket requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBucket: %w", err)
+	}
+	return oldValue.Bucket, nil
+}
+
+// ClearBucket clears the value of the "bucket" field.
+func (m *ObjectStorageConfigMutation) ClearBucket() {
+	m.bucket = nil
+	m.clearedFields[objectstorageconfig.FieldBucket] = struct{}{}
+}
+
+// BucketCleared returns if the "bucket" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) BucketCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldBucket]
+	return ok
+}
+
+// ResetBucket resets all changes to the "bucket" field.
+func (m *ObjectStorageConfigMutation) ResetBucket() {
+	m.bucket = nil
+	delete(m.clearedFields, objectstorageconfig.FieldBucket)
+}
+
+// SetPrefix sets the "prefix" field.
+func (m *ObjectStorageConfigMutation) SetPrefix(s string) {
+	m.prefix = &s
+}
+
+// Prefix returns the value of the "prefix" field in the mutation.
+func (m *ObjectStorageConfigMutation) Prefix() (r string, exists bool) {
+	v := m.prefix
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrefix returns the old "prefix" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldPrefix(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrefix is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrefix requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrefix: %w", err)
+	}
+	return oldValue.Prefix, nil
+}
+
+// ResetPrefix resets all changes to the "prefix" field.
+func (m *ObjectStorageConfigMutation) ResetPrefix() {
+	m.prefix = nil
+}
+
+// SetForcePathStyle sets the "force_path_style" field.
+func (m *ObjectStorageConfigMutation) SetForcePathStyle(b bool) {
+	m.force_path_style = &b
+}
+
+// ForcePathStyle returns the value of the "force_path_style" field in the mutation.
+func (m *ObjectStorageConfigMutation) ForcePathStyle() (r bool, exists bool) {
+	v := m.force_path_style
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldForcePathStyle returns the old "force_path_style" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldForcePathStyle(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldForcePathStyle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldForcePathStyle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldForcePathStyle: %w", err)
+	}
+	return oldValue.ForcePathStyle, nil
+}
+
+// ResetForcePathStyle resets all changes to the "force_path_style" field.
+func (m *ObjectStorageConfigMutation) ResetForcePathStyle() {
+	m.force_path_style = nil
+}
+
+// SetPublicBaseURL sets the "public_base_url" field.
+func (m *ObjectStorageConfigMutation) SetPublicBaseURL(s string) {
+	m.public_base_url = &s
+}
+
+// PublicBaseURL returns the value of the "public_base_url" field in the mutation.
+func (m *ObjectStorageConfigMutation) PublicBaseURL() (r string, exists bool) {
+	v := m.public_base_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicBaseURL returns the old "public_base_url" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldPublicBaseURL(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicBaseURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicBaseURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicBaseURL: %w", err)
+	}
+	return oldValue.PublicBaseURL, nil
+}
+
+// ClearPublicBaseURL clears the value of the "public_base_url" field.
+func (m *ObjectStorageConfigMutation) ClearPublicBaseURL() {
+	m.public_base_url = nil
+	m.clearedFields[objectstorageconfig.FieldPublicBaseURL] = struct{}{}
+}
+
+// PublicBaseURLCleared returns if the "public_base_url" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) PublicBaseURLCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldPublicBaseURL]
+	return ok
+}
+
+// ResetPublicBaseURL resets all changes to the "public_base_url" field.
+func (m *ObjectStorageConfigMutation) ResetPublicBaseURL() {
+	m.public_base_url = nil
+	delete(m.clearedFields, objectstorageconfig.FieldPublicBaseURL)
+}
+
+// SetLocalRoot sets the "local_root" field.
+func (m *ObjectStorageConfigMutation) SetLocalRoot(s string) {
+	m.local_root = &s
+}
+
+// LocalRoot returns the value of the "local_root" field in the mutation.
+func (m *ObjectStorageConfigMutation) LocalRoot() (r string, exists bool) {
+	v := m.local_root
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLocalRoot returns the old "local_root" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldLocalRoot(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLocalRoot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLocalRoot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLocalRoot: %w", err)
+	}
+	return oldValue.LocalRoot, nil
+}
+
+// ClearLocalRoot clears the value of the "local_root" field.
+func (m *ObjectStorageConfigMutation) ClearLocalRoot() {
+	m.local_root = nil
+	m.clearedFields[objectstorageconfig.FieldLocalRoot] = struct{}{}
+}
+
+// LocalRootCleared returns if the "local_root" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) LocalRootCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldLocalRoot]
+	return ok
+}
+
+// ResetLocalRoot resets all changes to the "local_root" field.
+func (m *ObjectStorageConfigMutation) ResetLocalRoot() {
+	m.local_root = nil
+	delete(m.clearedFields, objectstorageconfig.FieldLocalRoot)
+}
+
+// SetPublicValue sets the "public_value" field.
+func (m *ObjectStorageConfigMutation) SetPublicValue(value map[string]interface{}) {
+	m.public_value = &value
+}
+
+// PublicValue returns the value of the "public_value" field in the mutation.
+func (m *ObjectStorageConfigMutation) PublicValue() (r map[string]interface{}, exists bool) {
+	v := m.public_value
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicValue returns the old "public_value" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldPublicValue(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicValue is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicValue requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicValue: %w", err)
+	}
+	return oldValue.PublicValue, nil
+}
+
+// ClearPublicValue clears the value of the "public_value" field.
+func (m *ObjectStorageConfigMutation) ClearPublicValue() {
+	m.public_value = nil
+	m.clearedFields[objectstorageconfig.FieldPublicValue] = struct{}{}
+}
+
+// PublicValueCleared returns if the "public_value" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) PublicValueCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldPublicValue]
+	return ok
+}
+
+// ResetPublicValue resets all changes to the "public_value" field.
+func (m *ObjectStorageConfigMutation) ResetPublicValue() {
+	m.public_value = nil
+	delete(m.clearedFields, objectstorageconfig.FieldPublicValue)
+}
+
+// SetSecretEncrypted sets the "secret_encrypted" field.
+func (m *ObjectStorageConfigMutation) SetSecretEncrypted(value map[string]interface{}) {
+	m.secret_encrypted = &value
+}
+
+// SecretEncrypted returns the value of the "secret_encrypted" field in the mutation.
+func (m *ObjectStorageConfigMutation) SecretEncrypted() (r map[string]interface{}, exists bool) {
+	v := m.secret_encrypted
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSecretEncrypted returns the old "secret_encrypted" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldSecretEncrypted(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSecretEncrypted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSecretEncrypted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSecretEncrypted: %w", err)
+	}
+	return oldValue.SecretEncrypted, nil
+}
+
+// ClearSecretEncrypted clears the value of the "secret_encrypted" field.
+func (m *ObjectStorageConfigMutation) ClearSecretEncrypted() {
+	m.secret_encrypted = nil
+	m.clearedFields[objectstorageconfig.FieldSecretEncrypted] = struct{}{}
+}
+
+// SecretEncryptedCleared returns if the "secret_encrypted" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) SecretEncryptedCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldSecretEncrypted]
+	return ok
+}
+
+// ResetSecretEncrypted resets all changes to the "secret_encrypted" field.
+func (m *ObjectStorageConfigMutation) ResetSecretEncrypted() {
+	m.secret_encrypted = nil
+	delete(m.clearedFields, objectstorageconfig.FieldSecretEncrypted)
+}
+
+// SetSecretFingerprint sets the "secret_fingerprint" field.
+func (m *ObjectStorageConfigMutation) SetSecretFingerprint(s string) {
+	m.secret_fingerprint = &s
+}
+
+// SecretFingerprint returns the value of the "secret_fingerprint" field in the mutation.
+func (m *ObjectStorageConfigMutation) SecretFingerprint() (r string, exists bool) {
+	v := m.secret_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSecretFingerprint returns the old "secret_fingerprint" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldSecretFingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSecretFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSecretFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSecretFingerprint: %w", err)
+	}
+	return oldValue.SecretFingerprint, nil
+}
+
+// ResetSecretFingerprint resets all changes to the "secret_fingerprint" field.
+func (m *ObjectStorageConfigMutation) ResetSecretFingerprint() {
+	m.secret_fingerprint = nil
+}
+
+// SetSecretFields sets the "secret_fields" field.
+func (m *ObjectStorageConfigMutation) SetSecretFields(s []string) {
+	m.secret_fields = &s
+	m.appendsecret_fields = nil
+}
+
+// SecretFields returns the value of the "secret_fields" field in the mutation.
+func (m *ObjectStorageConfigMutation) SecretFields() (r []string, exists bool) {
+	v := m.secret_fields
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSecretFields returns the old "secret_fields" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldSecretFields(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSecretFields is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSecretFields requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSecretFields: %w", err)
+	}
+	return oldValue.SecretFields, nil
+}
+
+// AppendSecretFields adds s to the "secret_fields" field.
+func (m *ObjectStorageConfigMutation) AppendSecretFields(s []string) {
+	m.appendsecret_fields = append(m.appendsecret_fields, s...)
+}
+
+// AppendedSecretFields returns the list of values that were appended to the "secret_fields" field in this mutation.
+func (m *ObjectStorageConfigMutation) AppendedSecretFields() ([]string, bool) {
+	if len(m.appendsecret_fields) == 0 {
+		return nil, false
+	}
+	return m.appendsecret_fields, true
+}
+
+// ClearSecretFields clears the value of the "secret_fields" field.
+func (m *ObjectStorageConfigMutation) ClearSecretFields() {
+	m.secret_fields = nil
+	m.appendsecret_fields = nil
+	m.clearedFields[objectstorageconfig.FieldSecretFields] = struct{}{}
+}
+
+// SecretFieldsCleared returns if the "secret_fields" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) SecretFieldsCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldSecretFields]
+	return ok
+}
+
+// ResetSecretFields resets all changes to the "secret_fields" field.
+func (m *ObjectStorageConfigMutation) ResetSecretFields() {
+	m.secret_fields = nil
+	m.appendsecret_fields = nil
+	delete(m.clearedFields, objectstorageconfig.FieldSecretFields)
+}
+
+// SetLastProbeStatus sets the "last_probe_status" field.
+func (m *ObjectStorageConfigMutation) SetLastProbeStatus(s string) {
+	m.last_probe_status = &s
+}
+
+// LastProbeStatus returns the value of the "last_probe_status" field in the mutation.
+func (m *ObjectStorageConfigMutation) LastProbeStatus() (r string, exists bool) {
+	v := m.last_probe_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastProbeStatus returns the old "last_probe_status" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldLastProbeStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastProbeStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastProbeStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastProbeStatus: %w", err)
+	}
+	return oldValue.LastProbeStatus, nil
+}
+
+// ResetLastProbeStatus resets all changes to the "last_probe_status" field.
+func (m *ObjectStorageConfigMutation) ResetLastProbeStatus() {
+	m.last_probe_status = nil
+}
+
+// SetLastProbeMessage sets the "last_probe_message" field.
+func (m *ObjectStorageConfigMutation) SetLastProbeMessage(s string) {
+	m.last_probe_message = &s
+}
+
+// LastProbeMessage returns the value of the "last_probe_message" field in the mutation.
+func (m *ObjectStorageConfigMutation) LastProbeMessage() (r string, exists bool) {
+	v := m.last_probe_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastProbeMessage returns the old "last_probe_message" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldLastProbeMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastProbeMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastProbeMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastProbeMessage: %w", err)
+	}
+	return oldValue.LastProbeMessage, nil
+}
+
+// ResetLastProbeMessage resets all changes to the "last_probe_message" field.
+func (m *ObjectStorageConfigMutation) ResetLastProbeMessage() {
+	m.last_probe_message = nil
+}
+
+// SetLastProbeAt sets the "last_probe_at" field.
+func (m *ObjectStorageConfigMutation) SetLastProbeAt(t time.Time) {
+	m.last_probe_at = &t
+}
+
+// LastProbeAt returns the value of the "last_probe_at" field in the mutation.
+func (m *ObjectStorageConfigMutation) LastProbeAt() (r time.Time, exists bool) {
+	v := m.last_probe_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastProbeAt returns the old "last_probe_at" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldLastProbeAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastProbeAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastProbeAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastProbeAt: %w", err)
+	}
+	return oldValue.LastProbeAt, nil
+}
+
+// ClearLastProbeAt clears the value of the "last_probe_at" field.
+func (m *ObjectStorageConfigMutation) ClearLastProbeAt() {
+	m.last_probe_at = nil
+	m.clearedFields[objectstorageconfig.FieldLastProbeAt] = struct{}{}
+}
+
+// LastProbeAtCleared returns if the "last_probe_at" field was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) LastProbeAtCleared() bool {
+	_, ok := m.clearedFields[objectstorageconfig.FieldLastProbeAt]
+	return ok
+}
+
+// ResetLastProbeAt resets all changes to the "last_probe_at" field.
+func (m *ObjectStorageConfigMutation) ResetLastProbeAt() {
+	m.last_probe_at = nil
+	delete(m.clearedFields, objectstorageconfig.FieldLastProbeAt)
+}
+
+// SetVersion sets the "version" field.
+func (m *ObjectStorageConfigMutation) SetVersion(i int64) {
+	m.version = &i
+	m.addversion = nil
+}
+
+// Version returns the value of the "version" field in the mutation.
+func (m *ObjectStorageConfigMutation) Version() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersion returns the old "version" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersion: %w", err)
+	}
+	return oldValue.Version, nil
+}
+
+// AddVersion adds i to the "version" field.
+func (m *ObjectStorageConfigMutation) AddVersion(i int64) {
+	if m.addversion != nil {
+		*m.addversion += i
+	} else {
+		m.addversion = &i
+	}
+}
+
+// AddedVersion returns the value that was added to the "version" field in this mutation.
+func (m *ObjectStorageConfigMutation) AddedVersion() (r int64, exists bool) {
+	v := m.addversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetVersion resets all changes to the "version" field.
+func (m *ObjectStorageConfigMutation) ResetVersion() {
+	m.version = nil
+	m.addversion = nil
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *ObjectStorageConfigMutation) SetUpdatedBy(i int64) {
+	m.updated_by = &i
+	m.addupdated_by = nil
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *ObjectStorageConfigMutation) UpdatedBy() (r int64, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the ObjectStorageConfig entity.
+// If the ObjectStorageConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectStorageConfigMutation) OldUpdatedBy(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// AddUpdatedBy adds i to the "updated_by" field.
+func (m *ObjectStorageConfigMutation) AddUpdatedBy(i int64) {
+	if m.addupdated_by != nil {
+		*m.addupdated_by += i
+	} else {
+		m.addupdated_by = &i
+	}
+}
+
+// AddedUpdatedBy returns the value that was added to the "updated_by" field in this mutation.
+func (m *ObjectStorageConfigMutation) AddedUpdatedBy() (r int64, exists bool) {
+	v := m.addupdated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *ObjectStorageConfigMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+	m.addupdated_by = nil
+}
+
+// Where appends a list predicates to the ObjectStorageConfigMutation builder.
+func (m *ObjectStorageConfigMutation) Where(ps ...predicate.ObjectStorageConfig) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ObjectStorageConfigMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ObjectStorageConfigMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ObjectStorageConfig, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ObjectStorageConfigMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ObjectStorageConfigMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ObjectStorageConfig).
+func (m *ObjectStorageConfigMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ObjectStorageConfigMutation) Fields() []string {
+	fields := make([]string, 0, 27)
+	if m.created_at != nil {
+		fields = append(fields, objectstorageconfig.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, objectstorageconfig.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, objectstorageconfig.FieldDeletedAt)
+	}
+	if m.code != nil {
+		fields = append(fields, objectstorageconfig.FieldCode)
+	}
+	if m.name != nil {
+		fields = append(fields, objectstorageconfig.FieldName)
+	}
+	if m._driver != nil {
+		fields = append(fields, objectstorageconfig.FieldDriver)
+	}
+	if m.provider != nil {
+		fields = append(fields, objectstorageconfig.FieldProvider)
+	}
+	if m.status != nil {
+		fields = append(fields, objectstorageconfig.FieldStatus)
+	}
+	if m.read_enabled != nil {
+		fields = append(fields, objectstorageconfig.FieldReadEnabled)
+	}
+	if m.write_enabled != nil {
+		fields = append(fields, objectstorageconfig.FieldWriteEnabled)
+	}
+	if m.is_default != nil {
+		fields = append(fields, objectstorageconfig.FieldIsDefault)
+	}
+	if m.endpoint != nil {
+		fields = append(fields, objectstorageconfig.FieldEndpoint)
+	}
+	if m.region != nil {
+		fields = append(fields, objectstorageconfig.FieldRegion)
+	}
+	if m.bucket != nil {
+		fields = append(fields, objectstorageconfig.FieldBucket)
+	}
+	if m.prefix != nil {
+		fields = append(fields, objectstorageconfig.FieldPrefix)
+	}
+	if m.force_path_style != nil {
+		fields = append(fields, objectstorageconfig.FieldForcePathStyle)
+	}
+	if m.public_base_url != nil {
+		fields = append(fields, objectstorageconfig.FieldPublicBaseURL)
+	}
+	if m.local_root != nil {
+		fields = append(fields, objectstorageconfig.FieldLocalRoot)
+	}
+	if m.public_value != nil {
+		fields = append(fields, objectstorageconfig.FieldPublicValue)
+	}
+	if m.secret_encrypted != nil {
+		fields = append(fields, objectstorageconfig.FieldSecretEncrypted)
+	}
+	if m.secret_fingerprint != nil {
+		fields = append(fields, objectstorageconfig.FieldSecretFingerprint)
+	}
+	if m.secret_fields != nil {
+		fields = append(fields, objectstorageconfig.FieldSecretFields)
+	}
+	if m.last_probe_status != nil {
+		fields = append(fields, objectstorageconfig.FieldLastProbeStatus)
+	}
+	if m.last_probe_message != nil {
+		fields = append(fields, objectstorageconfig.FieldLastProbeMessage)
+	}
+	if m.last_probe_at != nil {
+		fields = append(fields, objectstorageconfig.FieldLastProbeAt)
+	}
+	if m.version != nil {
+		fields = append(fields, objectstorageconfig.FieldVersion)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, objectstorageconfig.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ObjectStorageConfigMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case objectstorageconfig.FieldCreatedAt:
+		return m.CreatedAt()
+	case objectstorageconfig.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case objectstorageconfig.FieldDeletedAt:
+		return m.DeletedAt()
+	case objectstorageconfig.FieldCode:
+		return m.Code()
+	case objectstorageconfig.FieldName:
+		return m.Name()
+	case objectstorageconfig.FieldDriver:
+		return m.Driver()
+	case objectstorageconfig.FieldProvider:
+		return m.Provider()
+	case objectstorageconfig.FieldStatus:
+		return m.Status()
+	case objectstorageconfig.FieldReadEnabled:
+		return m.ReadEnabled()
+	case objectstorageconfig.FieldWriteEnabled:
+		return m.WriteEnabled()
+	case objectstorageconfig.FieldIsDefault:
+		return m.IsDefault()
+	case objectstorageconfig.FieldEndpoint:
+		return m.Endpoint()
+	case objectstorageconfig.FieldRegion:
+		return m.Region()
+	case objectstorageconfig.FieldBucket:
+		return m.Bucket()
+	case objectstorageconfig.FieldPrefix:
+		return m.Prefix()
+	case objectstorageconfig.FieldForcePathStyle:
+		return m.ForcePathStyle()
+	case objectstorageconfig.FieldPublicBaseURL:
+		return m.PublicBaseURL()
+	case objectstorageconfig.FieldLocalRoot:
+		return m.LocalRoot()
+	case objectstorageconfig.FieldPublicValue:
+		return m.PublicValue()
+	case objectstorageconfig.FieldSecretEncrypted:
+		return m.SecretEncrypted()
+	case objectstorageconfig.FieldSecretFingerprint:
+		return m.SecretFingerprint()
+	case objectstorageconfig.FieldSecretFields:
+		return m.SecretFields()
+	case objectstorageconfig.FieldLastProbeStatus:
+		return m.LastProbeStatus()
+	case objectstorageconfig.FieldLastProbeMessage:
+		return m.LastProbeMessage()
+	case objectstorageconfig.FieldLastProbeAt:
+		return m.LastProbeAt()
+	case objectstorageconfig.FieldVersion:
+		return m.Version()
+	case objectstorageconfig.FieldUpdatedBy:
+		return m.UpdatedBy()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ObjectStorageConfigMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case objectstorageconfig.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case objectstorageconfig.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case objectstorageconfig.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case objectstorageconfig.FieldCode:
+		return m.OldCode(ctx)
+	case objectstorageconfig.FieldName:
+		return m.OldName(ctx)
+	case objectstorageconfig.FieldDriver:
+		return m.OldDriver(ctx)
+	case objectstorageconfig.FieldProvider:
+		return m.OldProvider(ctx)
+	case objectstorageconfig.FieldStatus:
+		return m.OldStatus(ctx)
+	case objectstorageconfig.FieldReadEnabled:
+		return m.OldReadEnabled(ctx)
+	case objectstorageconfig.FieldWriteEnabled:
+		return m.OldWriteEnabled(ctx)
+	case objectstorageconfig.FieldIsDefault:
+		return m.OldIsDefault(ctx)
+	case objectstorageconfig.FieldEndpoint:
+		return m.OldEndpoint(ctx)
+	case objectstorageconfig.FieldRegion:
+		return m.OldRegion(ctx)
+	case objectstorageconfig.FieldBucket:
+		return m.OldBucket(ctx)
+	case objectstorageconfig.FieldPrefix:
+		return m.OldPrefix(ctx)
+	case objectstorageconfig.FieldForcePathStyle:
+		return m.OldForcePathStyle(ctx)
+	case objectstorageconfig.FieldPublicBaseURL:
+		return m.OldPublicBaseURL(ctx)
+	case objectstorageconfig.FieldLocalRoot:
+		return m.OldLocalRoot(ctx)
+	case objectstorageconfig.FieldPublicValue:
+		return m.OldPublicValue(ctx)
+	case objectstorageconfig.FieldSecretEncrypted:
+		return m.OldSecretEncrypted(ctx)
+	case objectstorageconfig.FieldSecretFingerprint:
+		return m.OldSecretFingerprint(ctx)
+	case objectstorageconfig.FieldSecretFields:
+		return m.OldSecretFields(ctx)
+	case objectstorageconfig.FieldLastProbeStatus:
+		return m.OldLastProbeStatus(ctx)
+	case objectstorageconfig.FieldLastProbeMessage:
+		return m.OldLastProbeMessage(ctx)
+	case objectstorageconfig.FieldLastProbeAt:
+		return m.OldLastProbeAt(ctx)
+	case objectstorageconfig.FieldVersion:
+		return m.OldVersion(ctx)
+	case objectstorageconfig.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	}
+	return nil, fmt.Errorf("unknown ObjectStorageConfig field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ObjectStorageConfigMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case objectstorageconfig.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case objectstorageconfig.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case objectstorageconfig.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case objectstorageconfig.FieldCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCode(v)
+		return nil
+	case objectstorageconfig.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case objectstorageconfig.FieldDriver:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDriver(v)
+		return nil
+	case objectstorageconfig.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case objectstorageconfig.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case objectstorageconfig.FieldReadEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReadEnabled(v)
+		return nil
+	case objectstorageconfig.FieldWriteEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWriteEnabled(v)
+		return nil
+	case objectstorageconfig.FieldIsDefault:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsDefault(v)
+		return nil
+	case objectstorageconfig.FieldEndpoint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEndpoint(v)
+		return nil
+	case objectstorageconfig.FieldRegion:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRegion(v)
+		return nil
+	case objectstorageconfig.FieldBucket:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBucket(v)
+		return nil
+	case objectstorageconfig.FieldPrefix:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrefix(v)
+		return nil
+	case objectstorageconfig.FieldForcePathStyle:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetForcePathStyle(v)
+		return nil
+	case objectstorageconfig.FieldPublicBaseURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicBaseURL(v)
+		return nil
+	case objectstorageconfig.FieldLocalRoot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLocalRoot(v)
+		return nil
+	case objectstorageconfig.FieldPublicValue:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicValue(v)
+		return nil
+	case objectstorageconfig.FieldSecretEncrypted:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSecretEncrypted(v)
+		return nil
+	case objectstorageconfig.FieldSecretFingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSecretFingerprint(v)
+		return nil
+	case objectstorageconfig.FieldSecretFields:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSecretFields(v)
+		return nil
+	case objectstorageconfig.FieldLastProbeStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastProbeStatus(v)
+		return nil
+	case objectstorageconfig.FieldLastProbeMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastProbeMessage(v)
+		return nil
+	case objectstorageconfig.FieldLastProbeAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastProbeAt(v)
+		return nil
+	case objectstorageconfig.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersion(v)
+		return nil
+	case objectstorageconfig.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ObjectStorageConfig field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ObjectStorageConfigMutation) AddedFields() []string {
+	var fields []string
+	if m.addversion != nil {
+		fields = append(fields, objectstorageconfig.FieldVersion)
+	}
+	if m.addupdated_by != nil {
+		fields = append(fields, objectstorageconfig.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ObjectStorageConfigMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case objectstorageconfig.FieldVersion:
+		return m.AddedVersion()
+	case objectstorageconfig.FieldUpdatedBy:
+		return m.AddedUpdatedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ObjectStorageConfigMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case objectstorageconfig.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVersion(v)
+		return nil
+	case objectstorageconfig.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ObjectStorageConfig numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ObjectStorageConfigMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(objectstorageconfig.FieldDeletedAt) {
+		fields = append(fields, objectstorageconfig.FieldDeletedAt)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldEndpoint) {
+		fields = append(fields, objectstorageconfig.FieldEndpoint)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldRegion) {
+		fields = append(fields, objectstorageconfig.FieldRegion)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldBucket) {
+		fields = append(fields, objectstorageconfig.FieldBucket)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldPublicBaseURL) {
+		fields = append(fields, objectstorageconfig.FieldPublicBaseURL)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldLocalRoot) {
+		fields = append(fields, objectstorageconfig.FieldLocalRoot)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldPublicValue) {
+		fields = append(fields, objectstorageconfig.FieldPublicValue)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldSecretEncrypted) {
+		fields = append(fields, objectstorageconfig.FieldSecretEncrypted)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldSecretFields) {
+		fields = append(fields, objectstorageconfig.FieldSecretFields)
+	}
+	if m.FieldCleared(objectstorageconfig.FieldLastProbeAt) {
+		fields = append(fields, objectstorageconfig.FieldLastProbeAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ObjectStorageConfigMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ObjectStorageConfigMutation) ClearField(name string) error {
+	switch name {
+	case objectstorageconfig.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	case objectstorageconfig.FieldEndpoint:
+		m.ClearEndpoint()
+		return nil
+	case objectstorageconfig.FieldRegion:
+		m.ClearRegion()
+		return nil
+	case objectstorageconfig.FieldBucket:
+		m.ClearBucket()
+		return nil
+	case objectstorageconfig.FieldPublicBaseURL:
+		m.ClearPublicBaseURL()
+		return nil
+	case objectstorageconfig.FieldLocalRoot:
+		m.ClearLocalRoot()
+		return nil
+	case objectstorageconfig.FieldPublicValue:
+		m.ClearPublicValue()
+		return nil
+	case objectstorageconfig.FieldSecretEncrypted:
+		m.ClearSecretEncrypted()
+		return nil
+	case objectstorageconfig.FieldSecretFields:
+		m.ClearSecretFields()
+		return nil
+	case objectstorageconfig.FieldLastProbeAt:
+		m.ClearLastProbeAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ObjectStorageConfig nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ObjectStorageConfigMutation) ResetField(name string) error {
+	switch name {
+	case objectstorageconfig.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case objectstorageconfig.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case objectstorageconfig.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case objectstorageconfig.FieldCode:
+		m.ResetCode()
+		return nil
+	case objectstorageconfig.FieldName:
+		m.ResetName()
+		return nil
+	case objectstorageconfig.FieldDriver:
+		m.ResetDriver()
+		return nil
+	case objectstorageconfig.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case objectstorageconfig.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case objectstorageconfig.FieldReadEnabled:
+		m.ResetReadEnabled()
+		return nil
+	case objectstorageconfig.FieldWriteEnabled:
+		m.ResetWriteEnabled()
+		return nil
+	case objectstorageconfig.FieldIsDefault:
+		m.ResetIsDefault()
+		return nil
+	case objectstorageconfig.FieldEndpoint:
+		m.ResetEndpoint()
+		return nil
+	case objectstorageconfig.FieldRegion:
+		m.ResetRegion()
+		return nil
+	case objectstorageconfig.FieldBucket:
+		m.ResetBucket()
+		return nil
+	case objectstorageconfig.FieldPrefix:
+		m.ResetPrefix()
+		return nil
+	case objectstorageconfig.FieldForcePathStyle:
+		m.ResetForcePathStyle()
+		return nil
+	case objectstorageconfig.FieldPublicBaseURL:
+		m.ResetPublicBaseURL()
+		return nil
+	case objectstorageconfig.FieldLocalRoot:
+		m.ResetLocalRoot()
+		return nil
+	case objectstorageconfig.FieldPublicValue:
+		m.ResetPublicValue()
+		return nil
+	case objectstorageconfig.FieldSecretEncrypted:
+		m.ResetSecretEncrypted()
+		return nil
+	case objectstorageconfig.FieldSecretFingerprint:
+		m.ResetSecretFingerprint()
+		return nil
+	case objectstorageconfig.FieldSecretFields:
+		m.ResetSecretFields()
+		return nil
+	case objectstorageconfig.FieldLastProbeStatus:
+		m.ResetLastProbeStatus()
+		return nil
+	case objectstorageconfig.FieldLastProbeMessage:
+		m.ResetLastProbeMessage()
+		return nil
+	case objectstorageconfig.FieldLastProbeAt:
+		m.ResetLastProbeAt()
+		return nil
+	case objectstorageconfig.FieldVersion:
+		m.ResetVersion()
+		return nil
+	case objectstorageconfig.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown ObjectStorageConfig field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ObjectStorageConfigMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ObjectStorageConfigMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ObjectStorageConfigMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ObjectStorageConfigMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ObjectStorageConfigMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ObjectStorageConfigMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ObjectStorageConfigMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ObjectStorageConfig unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ObjectStorageConfigMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ObjectStorageConfig edge %s", name)
 }
 
 // PaymentOrderMutation represents an operation that mutates the PaymentOrder nodes in the graph.
@@ -24824,6 +27580,7 @@ type ReferenceAssetMutation struct {
 	upload_source      *string
 	status             *string
 	storage_driver     *string
+	storage_config_id  *uuid.UUID
 	object_key         *string
 	mime_type          *string
 	file_size_bytes    *int64
@@ -25300,6 +28057,55 @@ func (m *ReferenceAssetMutation) ResetStorageDriver() {
 	m.storage_driver = nil
 }
 
+// SetStorageConfigID sets the "storage_config_id" field.
+func (m *ReferenceAssetMutation) SetStorageConfigID(u uuid.UUID) {
+	m.storage_config_id = &u
+}
+
+// StorageConfigID returns the value of the "storage_config_id" field in the mutation.
+func (m *ReferenceAssetMutation) StorageConfigID() (r uuid.UUID, exists bool) {
+	v := m.storage_config_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStorageConfigID returns the old "storage_config_id" field's value of the ReferenceAsset entity.
+// If the ReferenceAsset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ReferenceAssetMutation) OldStorageConfigID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStorageConfigID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStorageConfigID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStorageConfigID: %w", err)
+	}
+	return oldValue.StorageConfigID, nil
+}
+
+// ClearStorageConfigID clears the value of the "storage_config_id" field.
+func (m *ReferenceAssetMutation) ClearStorageConfigID() {
+	m.storage_config_id = nil
+	m.clearedFields[referenceasset.FieldStorageConfigID] = struct{}{}
+}
+
+// StorageConfigIDCleared returns if the "storage_config_id" field was cleared in this mutation.
+func (m *ReferenceAssetMutation) StorageConfigIDCleared() bool {
+	_, ok := m.clearedFields[referenceasset.FieldStorageConfigID]
+	return ok
+}
+
+// ResetStorageConfigID resets all changes to the "storage_config_id" field.
+func (m *ReferenceAssetMutation) ResetStorageConfigID() {
+	m.storage_config_id = nil
+	delete(m.clearedFields, referenceasset.FieldStorageConfigID)
+}
+
 // SetObjectKey sets the "object_key" field.
 func (m *ReferenceAssetMutation) SetObjectKey(s string) {
 	m.object_key = &s
@@ -25723,7 +28529,7 @@ func (m *ReferenceAssetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ReferenceAssetMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 17)
 	if m.created_at != nil {
 		fields = append(fields, referenceasset.FieldCreatedAt)
 	}
@@ -25747,6 +28553,9 @@ func (m *ReferenceAssetMutation) Fields() []string {
 	}
 	if m.storage_driver != nil {
 		fields = append(fields, referenceasset.FieldStorageDriver)
+	}
+	if m.storage_config_id != nil {
+		fields = append(fields, referenceasset.FieldStorageConfigID)
 	}
 	if m.object_key != nil {
 		fields = append(fields, referenceasset.FieldObjectKey)
@@ -25796,6 +28605,8 @@ func (m *ReferenceAssetMutation) Field(name string) (ent.Value, bool) {
 		return m.Status()
 	case referenceasset.FieldStorageDriver:
 		return m.StorageDriver()
+	case referenceasset.FieldStorageConfigID:
+		return m.StorageConfigID()
 	case referenceasset.FieldObjectKey:
 		return m.ObjectKey()
 	case referenceasset.FieldMimeType:
@@ -25837,6 +28648,8 @@ func (m *ReferenceAssetMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldStatus(ctx)
 	case referenceasset.FieldStorageDriver:
 		return m.OldStorageDriver(ctx)
+	case referenceasset.FieldStorageConfigID:
+		return m.OldStorageConfigID(ctx)
 	case referenceasset.FieldObjectKey:
 		return m.OldObjectKey(ctx)
 	case referenceasset.FieldMimeType:
@@ -25917,6 +28730,13 @@ func (m *ReferenceAssetMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStorageDriver(v)
+		return nil
+	case referenceasset.FieldStorageConfigID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStorageConfigID(v)
 		return nil
 	case referenceasset.FieldObjectKey:
 		v, ok := value.(string)
@@ -26073,6 +28893,9 @@ func (m *ReferenceAssetMutation) ClearedFields() []string {
 	if m.FieldCleared(referenceasset.FieldAPIKeyID) {
 		fields = append(fields, referenceasset.FieldAPIKeyID)
 	}
+	if m.FieldCleared(referenceasset.FieldStorageConfigID) {
+		fields = append(fields, referenceasset.FieldStorageConfigID)
+	}
 	if m.FieldCleared(referenceasset.FieldWidth) {
 		fields = append(fields, referenceasset.FieldWidth)
 	}
@@ -26101,6 +28924,9 @@ func (m *ReferenceAssetMutation) ClearField(name string) error {
 		return nil
 	case referenceasset.FieldAPIKeyID:
 		m.ClearAPIKeyID()
+		return nil
+	case referenceasset.FieldStorageConfigID:
+		m.ClearStorageConfigID()
 		return nil
 	case referenceasset.FieldWidth:
 		m.ClearWidth()
@@ -26142,6 +28968,9 @@ func (m *ReferenceAssetMutation) ResetField(name string) error {
 		return nil
 	case referenceasset.FieldStorageDriver:
 		m.ResetStorageDriver()
+		return nil
+	case referenceasset.FieldStorageConfigID:
+		m.ResetStorageConfigID()
 		return nil
 	case referenceasset.FieldObjectKey:
 		m.ResetObjectKey()
