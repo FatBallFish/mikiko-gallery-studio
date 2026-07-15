@@ -130,6 +130,8 @@ type adminDashboardOperations struct {
 	TrialExpiringUserCount         int            `json:"trial_expiring_user_count"`
 	PreflightFailureCount          int            `json:"preflight_failure_count"`
 	PreflightFailuresByErrorCode   map[string]int `json:"preflight_failures_by_error_code"`
+	PlatformLossCount              int            `json:"platform_loss_count"`
+	PlatformLossProviderCost       string         `json:"platform_loss_provider_cost"`
 	PublicGalleryListViews         uint64         `json:"public_gallery_list_views"`
 	PublicGalleryDetailLoginBlocks uint64         `json:"public_gallery_detail_login_blocks"`
 	EnabledPaymentMethods          []string       `json:"enabled_payment_methods"`
@@ -3174,6 +3176,8 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	)
 	preflightFailuresByCode := map[string]int{}
 	preflightFailureCount := 0
+	platformLossCount := 0
+	platformLossProviderCost := decimal.Zero
 	for _, item := range callRecords.Items {
 		switch item.Status {
 		case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed:
@@ -3184,6 +3188,12 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		if item.ErrorCode != nil && isPreflightErrorCode(*item.ErrorCode) {
 			preflightFailuresByCode[*item.ErrorCode]++
 			preflightFailureCount++
+		}
+		if item.PlatformLoss {
+			platformLossCount++
+			if cost, parseErr := decimal.NewFromString(strings.TrimSpace(item.ProviderCost)); parseErr == nil {
+				platformLossProviderCost = platformLossProviderCost.Add(cost)
+			}
 		}
 		if item.StartedAt != nil && item.FinishedAt != nil && item.FinishedAt.After(*item.StartedAt) {
 			totalDurationSec += item.FinishedAt.Sub(*item.StartedAt).Seconds()
@@ -3279,6 +3289,8 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		TrialExpiringUserCount:         trialExpiringUserCount,
 		PreflightFailureCount:          preflightFailureCount,
 		PreflightFailuresByErrorCode:   preflightFailuresByCode,
+		PlatformLossCount:              platformLossCount,
+		PlatformLossProviderCost:       platformLossProviderCost.StringFixed(5),
 		PublicGalleryListViews:         observability.DefaultMetrics().PublicGalleryListViewsTotal(),
 		PublicGalleryDetailLoginBlocks: observability.DefaultMetrics().PublicGalleryDetailLoginBlockTotal(),
 		EnabledPaymentMethods:          enabledMethods,
@@ -5539,17 +5551,23 @@ func (a *API) HandleAdminCallRecords(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
+	platformLoss, queryErr := parseOptionalBoolQuery(r, "platform_loss")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
 	result, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{
-		Page:          page,
-		PageSize:      pageSize,
-		Status:        r.URL.Query().Get("status"),
-		ErrorCode:     r.URL.Query().Get("error_code"),
-		Provider:      r.URL.Query().Get("provider"),
-		SourceChannel: r.URL.Query().Get("source_channel"),
-		UserID:        userID,
-		TaskID:        r.URL.Query().Get("task_id"),
-		CreatedFrom:   createdFrom,
-		CreatedTo:     createdTo,
+		Page:             page,
+		PageSize:         pageSize,
+		Status:           r.URL.Query().Get("status"),
+		ErrorCode:        r.URL.Query().Get("error_code"),
+		Provider:         r.URL.Query().Get("provider"),
+		SourceChannel:    r.URL.Query().Get("source_channel"),
+		UserID:           userID,
+		TaskID:           r.URL.Query().Get("task_id"),
+		CreatedFrom:      createdFrom,
+		CreatedTo:        createdTo,
+		PlatformLossOnly: platformLoss != nil && *platformLoss,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))

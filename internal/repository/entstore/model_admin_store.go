@@ -1004,7 +1004,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			MaxImageCount:          0,
 			MaxReferenceImageCount: 0,
 			HealthStatus:           account.Status,
-			InputCost:              model.CostPerImage,
+			OutputCost:             model.CostPerImage,
 			Currency:               model.Currency,
 			AccountExtra:           cloneModelAdminExtra(account.Extra),
 			ModelExtra:             cloneModelAdminExtra(model.Extra),

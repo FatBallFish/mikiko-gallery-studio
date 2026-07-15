@@ -23,6 +23,7 @@ SERVER_LOG="$TMP_DIR/api.log"
 WORKER_LOG="$TMP_DIR/worker.log"
 FAKE_PROVIDER_LOG="$TMP_DIR/fake-provider.log"
 STORAGE_ROOT="$TMP_DIR/storage"
+RUNTIME_STORAGE_ROOT="$TMP_DIR/runtime-storage"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 SMOKE_USER_EMAIL="smoke-user-${SMOKE_ID}@example.com"
 SMOKE_ADMIN_EMAIL="admin-smoke-${SMOKE_ID}@example.com"
@@ -1048,6 +1049,7 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or "0")
         if length:
             self.rfile.read(length)
+        print("provider-call", flush=True)
         body = {
             "choices": [
                 {
@@ -1468,6 +1470,49 @@ SUPER_ADMIN_TOKEN="$(assert_json_field "$super_admin_login_body" "data.access_to
 assert_json_array_contains "$super_admin_login_body" "data.permissions" "manage:admins" >/dev/null
 assert_json_array_contains "$super_admin_login_body" "data.permissions" "manage:dangerous_config" >/dev/null
 
+mkdir -p "$RUNTIME_STORAGE_ROOT"
+storage_draft_probe_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/storage-configs:probe" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(RUNTIME_STORAGE_ROOT="$RUNTIME_STORAGE_ROOT" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({"name": "Smoke runtime storage", "driver": "local", "provider": "local", "local_root": os.environ["RUNTIME_STORAGE_ROOT"]}))
+PY
+)")"
+[[ "$(assert_json_field "$storage_draft_probe_body" "data.status")" == "success" ]]
+
+storage_create_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/storage-configs" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(RUNTIME_STORAGE_ROOT="$RUNTIME_STORAGE_ROOT" SMOKE_ID="$SMOKE_ID" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "code": f"smoke-runtime-{os.environ['SMOKE_ID']}",
+    "name": "Smoke runtime storage",
+    "driver": "local",
+    "provider": "local",
+    "status": "enabled",
+    "read_enabled": True,
+    "write_enabled": True,
+    "local_root": os.environ["RUNTIME_STORAGE_ROOT"],
+}))
+PY
+)")"
+RUNTIME_STORAGE_ID="$(assert_json_field "$storage_create_body" "data.id")"
+storage_probe_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/storage-configs/${RUNTIME_STORAGE_ID}:probe" -H "Authorization: Bearer $SUPER_ADMIN_TOKEN")"
+[[ "$(assert_json_field "$storage_probe_body" "data.last_probe.status")" == "success" ]]
+RUNTIME_STORAGE_VERSION="$(assert_json_field "$storage_probe_body" "data.version")"
+storage_default_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/storage-configs/${RUNTIME_STORAGE_ID}:set-default" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "{\"version\":${RUNTIME_STORAGE_VERSION}}")"
+[[ "$(assert_json_field "$storage_default_body" "data.id")" == "$RUNTIME_STORAGE_ID" ]]
+[[ "$(assert_json_field "$storage_default_body" "data.is_default")" == "True" || "$(assert_json_field "$storage_default_body" "data.is_default")" == "true" ]]
+
 super_admin_dangerous_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/config-tabs/payments" \
   -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
@@ -1506,7 +1551,7 @@ model_account_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-ac
     "display_name":"Smoke GPT Image",
     "task_types":["text_to_image"],
     "qualities":["1k"],
-    "cost_per_image":"0.00000",
+    "cost_per_image":"0.12345",
     "currency":"USD",
     "enabled":true
   }')"
@@ -2316,6 +2361,32 @@ assert_public_gallery_viewer_list_state "$liked_public_gallery_body" "$PUBLIC_GA
 favorited_public_gallery_body="$(request "$BASE_URL/api/open/image/v1/gallery/images?page=1&page_size=10&favorited=true&access_token=${ACCESS_TOKEN}")"
 assert_public_gallery_viewer_list_state "$favorited_public_gallery_body" "$PUBLIC_GALLERY_IMAGE_ID" "favorited_by_viewer" >/dev/null
 
+provider_calls_before_loss="$(awk '$0 == "provider-call" { count++ } END { print count + 0 }' "$FAKE_PROVIDER_LOG")"
+rm -rf "$RUNTIME_STORAGE_ROOT"
+printf '%s\n' "storage root intentionally blocked for artifact recovery smoke" >"$RUNTIME_STORAGE_ROOT"
+artifact_loss_task_body="$(request -X POST "$BASE_URL/api/agent/image/v1/tasks" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"task_type":"text_to_image","prompt":"smoke artifact recovery loss","abstract_model":"basic","requested_quality":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}')"
+ARTIFACT_LOSS_TASK_ID="$(assert_json_field "$artifact_loss_task_body" "data.id")"
+artifact_loss_detail_body="$(wait_for_task_status "$ARTIFACT_LOSS_TASK_ID" "failed")"
+[[ "$(assert_json_field "$artifact_loss_detail_body" "data.error_code")" == "IMAGE_STORAGE_FAILED" ]]
+provider_calls_after_loss="$(awk '$0 == "provider-call" { count++ } END { print count + 0 }' "$FAKE_PROVIDER_LOG")"
+[[ "$provider_calls_after_loss" -eq $((provider_calls_before_loss + 1)) ]]
+
+artifact_loss_records_body="$(request "$BASE_URL/api/ops/admin/v1/call-records?page=1&page_size=5&platform_loss=true&task_id=${ARTIFACT_LOSS_TASK_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$artifact_loss_records_body" "data.pagination.total")" == "1" ]]
+[[ "$(assert_json_field "$artifact_loss_records_body" "data.items.0.provider_request_id")" == "fake-provider-smoke" ]]
+[[ "$(assert_json_field "$artifact_loss_records_body" "data.items.0.failure_phase")" == "artifact_persistence" ]]
+[[ "$(assert_json_field "$artifact_loss_records_body" "data.items.0.platform_loss")" == "True" || "$(assert_json_field "$artifact_loss_records_body" "data.items.0.platform_loss")" == "true" ]]
+[[ "$(assert_json_field "$artifact_loss_records_body" "data.items.0.provider_cost")" == "0.12345" ]]
+[[ "$(assert_json_field "$artifact_loss_records_body" "data.items.0.artifact_recovery.attempt_count")" == "4" ]]
+[[ "$(assert_json_field "$artifact_loss_records_body" "data.items.0.artifact_recovery.last_diagnostic.stage")" == "store" ]]
+if [[ "$artifact_loss_records_body" == *"artifact_recovery_payload"* || "$artifact_loss_records_body" == *"signature="* ]]; then
+  echo "Artifact loss call record exposed recovery payload or signed URL" >&2
+  exit 1
+fi
+
 missing_route_code="missing-smoke-${SMOKE_ID}"
 missing_route_status="$(curl --silent --output "$TMP_DIR/missing-route-task.json" --write-out "%{http_code}" \
   -X POST "$BASE_URL/api/agent/image/v1/tasks" \
@@ -2351,6 +2422,10 @@ assert_readiness_check "$readiness_body" "provider_models" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "route_models" "fail" >/dev/null
 assert_readiness_check "$readiness_body" "route_candidates" "fail" >/dev/null
 assert_readiness_check "$readiness_body" "route_prices" "fail" >/dev/null
+
+dashboard_body="$(request "$BASE_URL/api/ops/admin/v1/metrics/dashboard" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$dashboard_body" "data.operations.platform_loss_count")" -ge "1" ]]
+assert_json_field "$dashboard_body" "data.operations.platform_loss_provider_cost" >/dev/null
 
 cashier_overview_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/overview" -H "Authorization: Bearer $ADMIN_TOKEN")"
 [[ "$(assert_json_field "$cashier_overview_body" "data.mock_enabled")" == "True" || "$(assert_json_field "$cashier_overview_body" "data.mock_enabled")" == "true" ]]

@@ -2034,6 +2034,10 @@ paths:
         - name: created_to
           in: query
           schema: { type: string, format: date-time }
+        - name: platform_loss
+          in: query
+          description: When true, return only terminal upstream-success/platform-artifact-failure records.
+          schema: { type: boolean }
       responses:
         '200':
           description: Image task call record page

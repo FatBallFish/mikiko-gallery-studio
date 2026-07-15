@@ -100,3 +100,37 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 		t.Fatalf("DeleteProvider: %v", err)
 	}
 }
+
+func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:modeladmin-account-cost?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{Name: "paid", AdapterType: "openrouter", AuthType: "api_key", BaseURL: "https://example.com", Status: "enabled", Priority: 1, Weight: 100, ConcurrencyLimit: 1, TimeoutMS: 30000})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{AccountID: account.ID, ModelCode: "paid/image", DisplayName: "Paid Image", TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k"}, CostPerImage: "0.12345", Currency: "USD", Enabled: true})
+	if err != nil {
+		t.Fatalf("create account model: %v", err)
+	}
+	snapshot, err := store.ModelRoutingConfig(ctx)
+	if err != nil {
+		t.Fatalf("runtime snapshot: %v", err)
+	}
+	for _, candidate := range snapshot.ProviderModels {
+		if candidate.AccountModelID == model.ID {
+			if candidate.OutputCost != "0.12345" {
+				t.Fatalf("account model cost must be runtime output cost, got %#v", candidate)
+			}
+			return
+		}
+	}
+	t.Fatalf("runtime snapshot missing account model %d: %#v", model.ID, snapshot.ProviderModels)
+}

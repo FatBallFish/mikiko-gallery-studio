@@ -92,6 +92,21 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Save failed task: %v", err)
 	}
+	upstreamSucceededAt := time.Now().UTC().Add(-time.Minute)
+	if err := taskStore.Save(t.Context(), domainimagetask.Task{
+		UserID: 77, ID: "ffffffff-ffff-ffff-ffff-ffffffffffff", Status: domainimagetask.StatusFailed,
+		Provider: "openrouter", AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage),
+		RequestedQuality: "auto", ResolvedQualityBucket: "2k", OutputImageCount: 1,
+		ProviderRequestID: "paid-request-api", ProviderCost: "0.34567", UpstreamSucceededAt: &upstreamSucceededAt,
+		ErrorCode: "IMAGE_STORAGE_FAILED", ErrorMessage: "ARTIFACT_STORAGE_WRITE_FAILED",
+		ArtifactRecovery: domainimagetask.ArtifactRecovery{
+			Status: "failed", AttemptCount: 4, EncryptedPayload: "ciphertext-secret",
+			LastDiagnostic: domainimagetask.ArtifactDiagnostic{Code: "ARTIFACT_STORAGE_WRITE_FAILED", Stage: "store", Attempt: 4, Retryable: true, Cause: "temporary storage failure"},
+			Diagnostics:    []domainimagetask.ArtifactDiagnostic{{Code: "ARTIFACT_FETCH_TIMEOUT", Stage: "fetch", Attempt: 1, URLHost: "cdn.example.com", URLPath: "/result.png", Retryable: true}},
+		},
+	}); err != nil {
+		t.Fatalf("Save artifact loss task: %v", err)
+	}
 
 	adminToken := loginAdminForCallRecordsTest(t, handler)
 	listReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page=1&page_size=5&status=succeeded&provider=openai&source_channel=openapi&user_id=77&task_id=cccccccc-cccc-cccc-cccc-cccccccccccc", nil)
@@ -188,6 +203,24 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	}
 	if errorCodeResp.Data.Pagination.Total != 1 || len(errorCodeResp.Data.Items) != 1 || errorCodeResp.Data.Items[0].TaskID != "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee" {
 		t.Fatalf("expected error_code filter to return failed task, got %#v", errorCodeResp.Data)
+	}
+	lossReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page=1&page_size=5&platform_loss=true", nil)
+	lossReq.Header.Set("Authorization", "Bearer "+adminToken)
+	lossRec := httptest.NewRecorder()
+	handler.ServeHTTP(lossRec, lossReq)
+	if lossRec.Code != http.StatusOK {
+		t.Fatalf("expected platform loss list 200, got %d body=%s", lossRec.Code, lossRec.Body.String())
+	}
+	lossBody := lossRec.Body.String()
+	for _, expected := range []string{`"task_id":"ffffffff-ffff-ffff-ffff-ffffffffffff"`, `"provider_request_id":"paid-request-api"`, `"failure_phase":"artifact_persistence"`, `"platform_loss":true`, `"attempt_count":4`, `"url_host":"cdn.example.com"`} {
+		if !strings.Contains(lossBody, expected) {
+			t.Fatalf("platform loss response missing %s: %s", expected, lossBody)
+		}
+	}
+	for _, forbidden := range []string{"ciphertext-secret", "signature="} {
+		if strings.Contains(lossBody, forbidden) {
+			t.Fatalf("platform loss response leaked %q: %s", forbidden, lossBody)
+		}
 	}
 	tooLargeReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page_size=101", nil)
 	tooLargeReq.Header.Set("Authorization", "Bearer "+adminToken)

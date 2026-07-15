@@ -1,7 +1,9 @@
 package entstore
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -21,6 +23,61 @@ import (
 
 type adminCallRecordStaticRoutingSource struct {
 	snapshot modelhub.ModelRoutingSnapshot
+}
+
+func TestAdminCallRecordStoreClassifiesExhaustedArtifactRecoveryAsPlatformLoss(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-record-artifact-loss?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	upstreamSucceededAt := time.Date(2026, 7, 16, 2, 3, 4, 0, time.UTC)
+	task := domainimagetask.Task{
+		UserID: 7, ID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", Status: domainimagetask.StatusFailed,
+		Provider: "openrouter", AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage),
+		RequestedQuality: "auto", ResolvedQualityBucket: "2k", OutputImageCount: 1,
+		ProviderRequestID: "paid-request-123", ProviderCost: "0.12345", GrossMargin: "-0.12345",
+		UpstreamSucceededAt: &upstreamSucceededAt, ErrorCode: "ARTIFACT_STORAGE_WRITE_FAILED", ErrorMessage: "artifact persistence failed after 4 attempts",
+		ArtifactRecovery: domainimagetask.ArtifactRecovery{
+			Status: "failed", AttemptCount: 4, EncryptedPayload: "ciphertext-must-not-leak",
+			LastDiagnostic: domainimagetask.ArtifactDiagnostic{Code: "ARTIFACT_STORAGE_WRITE_FAILED", Stage: "store", Attempt: 4, StorageConfigID: "11111111-1111-1111-1111-111111111111", StorageVersion: 3, Retryable: true, Cause: "temporary storage failure"},
+			Diagnostics:    []domainimagetask.ArtifactDiagnostic{{Code: "ARTIFACT_FETCH_TIMEOUT", Stage: "fetch", Attempt: 1, URLHost: "cdn.example.com", URLPath: "/private/result.png", Cause: "request timed out"}},
+		},
+	}
+	if err := NewImageTaskStore(client).Save(ctx, task); err != nil {
+		t.Fatalf("save task: %v", err)
+	}
+
+	page, err := NewAdminCallRecordStore(client).ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10, TaskID: task.ID})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("list call record: page=%#v err=%v", page, err)
+	}
+	record := page.Items[0]
+	if record.FailurePhase != "artifact_persistence" || !record.PlatformLoss {
+		t.Fatalf("expected platform artifact loss classification, got %#v", record)
+	}
+	if record.ProviderRequestID != "paid-request-123" || record.ProviderCost != "0.12345" || record.UpstreamSucceededAt == nil {
+		t.Fatalf("expected upstream success and provider cost evidence, got %#v", record)
+	}
+	if record.ArtifactRecovery == nil || record.ArtifactRecovery.AttemptCount != 4 || record.ArtifactRecovery.LastDiagnostic.Stage != "store" || len(record.ArtifactRecovery.Diagnostics) != 1 || record.ArtifactRecovery.Diagnostics[0].URLHost != "cdn.example.com" {
+		t.Fatalf("expected artifact diagnostics, got %#v", record.ArtifactRecovery)
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal record: %v", err)
+	}
+	if bytes.Contains(encoded, []byte("ciphertext-must-not-leak")) || bytes.Contains(encoded, []byte("signature=")) {
+		t.Fatalf("call record leaked recovery secret: %s", encoded)
+	}
+	lossPage, err := NewAdminCallRecordStore(client).ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 1, PlatformLossOnly: true})
+	if err != nil || lossPage.Total != 1 || len(lossPage.Items) != 1 || lossPage.Items[0].TaskID != task.ID {
+		t.Fatalf("platform loss filter did not return the exhausted recovery: page=%#v err=%v", lossPage, err)
+	}
 }
 
 func (s adminCallRecordStaticRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
@@ -168,6 +225,9 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	}
 	if record.SourceChannel != "openapi" || record.TaskType != string(provider.TaskTypeTextToImage) || record.Status != domainimagetask.StatusFailed {
 		t.Fatalf("unexpected classification fields %#v", record)
+	}
+	if record.FailurePhase != "upstream" || record.PlatformLoss {
+		t.Fatalf("expected upstream failure without platform loss, got %#v", record)
 	}
 	if record.Provider != "openrouter" || record.AbstractModel != "plus" || record.Quality != "2k" {
 		t.Fatalf("unexpected model fields %#v", record)

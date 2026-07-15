@@ -927,6 +927,8 @@ components:
           type: string
         actual_points:
           type: string
+        provider_request_id:
+          type: string
         provider_model_id:
           type: integer
           format: int64
@@ -945,6 +947,17 @@ components:
           type: string
         gross_margin:
           type: string
+        upstream_succeeded_at:
+          type: string
+          format: date-time
+          nullable: true
+        failure_phase:
+          type: string
+          enum: [preflight, upstream, artifact_persistence]
+        platform_loss:
+          type: boolean
+        artifact_recovery:
+          $ref: '#/components/schemas/AdminArtifactRecoverySummary'
         fallback_count:
           type: integer
         route_snapshot_version:
@@ -981,6 +994,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminCallRecordAttempt'
+    AdminArtifactDiagnostic:
+      type: object
+      properties:
+        code: { type: string }
+        stage: { type: string }
+        attempt: { type: integer }
+        url_host: { type: string }
+        url_path:
+          type: string
+          description: URL path only; signed query parameters are never returned.
+        http_status: { type: integer }
+        content_type: { type: string }
+        content_length: { type: integer, format: int64 }
+        bytes_read: { type: integer, format: int64 }
+        duration_ms: { type: integer, format: int64 }
+        storage_config_id: { type: string }
+        storage_version: { type: integer, format: int64 }
+        retryable: { type: boolean }
+        cause: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    AdminArtifactRecoverySummary:
+      type: object
+      required: [status, attempt_count]
+      properties:
+        status: { type: string }
+        attempt_count: { type: integer }
+        last_diagnostic:
+          $ref: '#/components/schemas/AdminArtifactDiagnostic'
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminArtifactDiagnostic'
     AdminCallRecordAttempt:
       type: object
       properties:
@@ -1310,6 +1356,8 @@ components:
         - trial_expiring_user_count
         - preflight_failure_count
         - preflight_failures_by_error_code
+        - platform_loss_count
+        - platform_loss_provider_cost
         - public_gallery_list_views
         - public_gallery_detail_login_blocks
         - enabled_payment_methods
@@ -1340,6 +1388,10 @@ components:
           type: object
           additionalProperties:
             type: integer
+        platform_loss_count:
+          type: integer
+        platform_loss_provider_cost:
+          type: string
         public_gallery_list_views:
           type: integer
           format: int64

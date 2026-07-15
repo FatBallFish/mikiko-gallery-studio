@@ -105,8 +105,8 @@ type SetDefaultRequest struct {
 }
 
 type ProbeResult struct {
-	Status    string
-	CheckedAt time.Time
-	LatencyMS int64
-	Message   string
+	Status    string    `json:"status"`
+	CheckedAt time.Time `json:"checked_at"`
+	LatencyMS int64     `json:"latency_ms"`
+	Message   string    `json:"message"`
 }

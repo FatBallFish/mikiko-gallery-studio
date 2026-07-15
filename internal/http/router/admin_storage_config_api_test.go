@@ -69,6 +69,15 @@ func TestAdminStorageConfigPropagationUpdatesAPIAndWorkerRouters(t *testing.T) {
 	token := loginAdminWithCredentials(t, handler, "root-storage@example.com", "password")
 
 	newRoot := t.TempDir()
+	draftBody, _ := json.Marshal(map[string]any{"name": "Draft Local", "driver": "local", "provider": "local", "local_root": newRoot})
+	draftReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/storage-configs:probe", bytes.NewReader(draftBody))
+	draftReq.Header.Set("Authorization", "Bearer "+token)
+	draftReq.Header.Set("Content-Type", "application/json")
+	draftRec := httptest.NewRecorder()
+	handler.ServeHTTP(draftRec, draftReq)
+	if draftRec.Code != http.StatusOK || !bytes.Contains(draftRec.Body.Bytes(), []byte(`"status":"success"`)) || bytes.Contains(draftRec.Body.Bytes(), []byte(`"Status"`)) {
+		t.Fatalf("draft probe contract: status=%d body=%s", draftRec.Code, draftRec.Body.String())
+	}
 	createBody, _ := json.Marshal(map[string]any{
 		"code": "new-local", "name": "New Local", "driver": "local", "provider": "local",
 		"status": "enabled", "read_enabled": true, "write_enabled": true, "local_root": newRoot,
