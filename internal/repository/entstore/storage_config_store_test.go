@@ -8,6 +8,7 @@ import (
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -67,9 +68,7 @@ func TestStorageConfigStorePersistsAndSwitchesDefault(t *testing.T) {
 	if err != nil || !ok || stillDefault.ID != second.ID {
 		t.Fatalf("stale update must preserve current default: record=%#v ok=%v err=%v", stillDefault, ok, err)
 	}
-	first.IsDefault = true
-	first.Version++
-	if _, err := store.Save(ctx, first); err == nil {
+	if _, err := client.ObjectStorageConfig.UpdateOneID(uuid.MustParse(first.ID)).SetIsDefault(true).Save(ctx); err == nil {
 		t.Fatal("database unique index must reject a second default")
 	}
 	historical, ok, err := store.GetByID(ctx, first.ID)
