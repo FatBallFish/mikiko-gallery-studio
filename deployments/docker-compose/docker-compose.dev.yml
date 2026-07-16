@@ -74,6 +74,8 @@ services:
       STORAGE_PUBLIC_BASE_URL: http://localhost:${DEV_NGINX_PORT:-8088}/files
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-dev-secret
+      AUTH_ACCESS_TOKEN_TTL: 10m
+      AUTH_REFRESH_TOKEN_TTL: 2h
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-dev-api-key-signing-secret-encryption-key
       CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-dev-cashier-provider-config-encryption-key
       PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-dev-secure-config-encryption-key
@@ -116,6 +118,8 @@ services:
       STORAGE_PUBLIC_BASE_URL: http://localhost:${DEV_NGINX_PORT:-8088}/files
       STORAGE_SHARED_VOLUME: "true"
       AUTH_ACCESS_TOKEN_SECRET: local-dev-secret
+      AUTH_ACCESS_TOKEN_TTL: 10m
+      AUTH_REFRESH_TOKEN_TTL: 2h
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-dev-api-key-signing-secret-encryption-key
       CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-dev-cashier-provider-config-encryption-key
       PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-dev-secure-config-encryption-key

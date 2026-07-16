@@ -4,7 +4,29 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestLoadEnvDefaultsAuthenticationSessionTTLs(t *testing.T) {
+	envPath := filepath.Join(t.TempDir(), "empty.env")
+	if err := os.WriteFile(envPath, nil, 0o600); err != nil {
+		t.Fatalf("write empty env file: %v", err)
+	}
+	t.Setenv("AUTH_ACCESS_TOKEN_TTL", "")
+	t.Setenv("AUTH_REFRESH_TOKEN_TTL", "")
+
+	cfg, err := LoadEnv(envPath)
+	if err != nil {
+		t.Fatalf("LoadEnv returned error: %v", err)
+	}
+
+	if cfg.Auth.AccessTokenTTL != 10*time.Minute {
+		t.Fatalf("expected default access token TTL 10m, got %s", cfg.Auth.AccessTokenTTL)
+	}
+	if cfg.Auth.RefreshTokenTTL != 2*time.Hour {
+		t.Fatalf("expected default refresh token TTL 2h, got %s", cfg.Auth.RefreshTokenTTL)
+	}
+}
 
 func TestLoadUsesEnvByDefault(t *testing.T) {
 	t.Setenv("PIC_GALLERY_ENV", "production")
