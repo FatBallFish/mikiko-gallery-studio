@@ -1,4 +1,19 @@
-import { landingActionInk, landingChapters } from './landingContent'
+import * as landingContent from './landingContent'
+
+const { landingActionInk, landingChapters } = landingContent
+const landingAssetUrl = 'landingAssetUrl' in landingContent
+  ? landingContent.landingAssetUrl as (baseUrl: string, assetPath: string) => string
+  : null
+
+if (!landingAssetUrl) throw new Error('landing content must expose a base-path-aware asset URL helper')
+
+if (landingAssetUrl('/studio/', '/landing/hero-gallery.webp') !== '/studio/landing/hero-gallery.webp') {
+  throw new Error('landing assets must respect a non-root Vite base path')
+}
+
+if (landingAssetUrl('/', '/landing/workspace.webp') !== '/landing/workspace.webp') {
+  throw new Error('landing assets must preserve root deployments')
+}
 
 if (landingActionInk !== '#111218') {
   throw new Error(`landing action contrast ink drifted: ${landingActionInk}`)

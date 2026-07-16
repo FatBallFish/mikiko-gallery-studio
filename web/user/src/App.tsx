@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Balance, UserProfile, UserThemePreference } from '../../shared/api-types'
 import { userApi } from '../../shared/user-api'
 import { AppContext, protectedRoutes, Shell, ToastViewport } from './components'
 import type { RouteId, SessionState, Toast, ToastTone } from './types'
-import { LandingPage } from './pages/LandingPage'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
 import { WorkspacePage } from './pages/WorkspacePage'
@@ -14,16 +13,17 @@ import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { DocsPage } from './pages/DocsPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { parseUserHashState, userHashForRoute } from './routeState'
+import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './routeState'
 import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
 
 const sessionKey = 'pic-gallery-user-session'
+const LandingPage = lazy(() => import('./pages/LandingPage'))
 
 function parseHash() {
   return parseUserHashState(window.location.hash)
 }
 
-function writeHash(route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null }) {
+function writeHash(route: RouteId, options?: UserRouteOptions) {
   window.location.hash = userHashForRoute(route, options)
 }
 
@@ -41,8 +41,10 @@ export default function App() {
   const [route, setRoute] = useState<RouteId>(initial.route)
   const [returnTo, setReturnTo] = useState<RouteId | undefined>(initial.returnTo)
   const [routeImageId, setRouteImageId] = useState<string | undefined>(initial.imageId)
+  const [routeTaskId, setRouteTaskId] = useState<string | undefined>(initial.taskId)
   const [session, setSession] = useState<SessionState | null>(() => readStoredSession())
   const sessionRef = useRef<SessionState | null>(session)
+  const sessionVersionRef = useRef(0)
   const routeRef = useRef<RouteId>(initial.route)
   const expiredNoticeRef = useRef(false)
   const [profile, setProfile] = useState<UserProfile | null>(() => readStoredSession()?.profile ?? null)
@@ -70,6 +72,7 @@ export default function App() {
   }, [themePreference])
 
   const expireSession = useCallback(() => {
+    sessionVersionRef.current += 1
     sessionRef.current = null
     setSession(null)
     setProfile(null)
@@ -81,16 +84,23 @@ export default function App() {
     }
     const currentRoute = routeRef.current
     if (protectedRoutes.includes(currentRoute)) {
-      writeHash('login', { returnTo: currentRoute, imageId: currentRoute === 'public-gallery' ? routeImageId : undefined })
+      writeHash('login', {
+        returnTo: currentRoute,
+        imageId: currentRoute === 'public-gallery' ? routeImageId : undefined,
+        taskId: currentRoute === 'genpic' ? routeTaskId : undefined,
+      })
     }
-  }, [notify, routeImageId])
+  }, [notify, routeImageId, routeTaskId])
 
   useLayoutEffect(() => {
     userApi.configureAuth({
       getToken: () => sessionRef.current?.token,
+      getSessionVersion: () => sessionVersionRef.current,
       onUnauthorized: async () => {
+        const refreshSessionVersion = sessionVersionRef.current
         try {
           const refreshed = await userApi.refreshSession()
+          if (sessionVersionRef.current !== refreshSessionVersion) return null
           const currentProfile = sessionRef.current?.profile ?? profile ?? refreshed.profile ?? {
             id: String(refreshed.user_id ?? ''),
             email: '',
@@ -108,7 +118,7 @@ export default function App() {
           expiredNoticeRef.current = false
           return refreshed.access_token
         } catch {
-          expireSession()
+          if (sessionVersionRef.current === refreshSessionVersion) expireSession()
           return null
         }
       },
@@ -130,15 +140,21 @@ export default function App() {
   }, [])
 
   const refreshAccount = useCallback(async () => {
-    if (!sessionRef.current?.token) return
+    const currentSession = sessionRef.current
+    if (!currentSession?.token) return
+    const refreshAccountVersion = sessionVersionRef.current
     try {
       const [nextProfile, nextBalance] = await Promise.all([userApi.getProfile(), userApi.getBalance()])
+      if (sessionVersionRef.current !== refreshAccountVersion) return
+      const latestToken = sessionRef.current?.token
+      if (!latestToken) return
       setProfile(nextProfile)
       setBalance(nextBalance)
-      installSession({ token: sessionRef.current.token, profile: nextProfile })
+      installSession({ token: latestToken, profile: nextProfile })
     } catch (caught) {
+      if (sessionVersionRef.current !== refreshAccountVersion) return
       if (caught && typeof caught === 'object' && 'status' in caught && caught.status === 401) {
-        expireSession()
+        if (sessionVersionRef.current === refreshAccountVersion) expireSession()
         return
       }
       throw caught
@@ -151,6 +167,7 @@ export default function App() {
       setRoute(parsed.route)
       setReturnTo(parsed.returnTo)
       setRouteImageId(parsed.imageId)
+      setRouteTaskId(parsed.taskId)
     }
     window.addEventListener('hashchange', updateRoute)
     if (!window.location.hash) writeHash(session ? 'home' : 'landing')
@@ -192,14 +209,21 @@ export default function App() {
 
   useEffect(() => {
     if (!session && protectedRoutes.includes(route)) {
-      writeHash('login', { returnTo: route, imageId: route === 'public-gallery' ? routeImageId : undefined })
+      writeHash('login', {
+        returnTo: route,
+        imageId: route === 'public-gallery' ? routeImageId : undefined,
+        taskId: route === 'genpic' ? routeTaskId : undefined,
+      })
     }
     if (session && route === 'login') {
-      writeHash(returnTo ?? 'home', { imageId: returnTo === 'public-gallery' ? routeImageId : undefined })
+      writeHash(returnTo ?? 'home', {
+        imageId: returnTo === 'public-gallery' ? routeImageId : undefined,
+        taskId: returnTo === 'genpic' ? routeTaskId : undefined,
+      })
     }
-  }, [route, returnTo, routeImageId, session])
+  }, [route, returnTo, routeImageId, routeTaskId, session])
 
-  const navigate = useCallback((next: RouteId, options?: { returnTo?: RouteId; imageId?: string | null }) => {
+  const navigate = useCallback((next: RouteId, options?: UserRouteOptions) => {
     writeHash(next, options)
   }, [])
 
@@ -224,22 +248,29 @@ export default function App() {
     }
   }, [installSession, notify, themePreference])
 
-  const login = useCallback(async (nextSession: SessionState, target?: RouteId, options?: { imageId?: string | null }) => {
+  const login = useCallback(async (nextSession: SessionState, target?: RouteId, options?: { imageId?: string | null; taskId?: string | null }) => {
+    sessionVersionRef.current += 1
     expiredNoticeRef.current = false
     installSession(nextSession, { applyProfileTheme: true })
     notify('success', '登录成功，欢迎回到 Mikiko Studio')
     const destination = target ?? returnTo ?? 'home'
-    writeHash(destination, { imageId: destination === 'public-gallery' ? options?.imageId ?? routeImageId : undefined })
-  }, [installSession, notify, returnTo, routeImageId])
+    writeHash(destination, {
+      imageId: destination === 'public-gallery' ? options?.imageId ?? routeImageId : undefined,
+      taskId: destination === 'genpic' ? options?.taskId ?? routeTaskId : undefined,
+    })
+  }, [installSession, notify, returnTo, routeImageId, routeTaskId])
 
   const logout = useCallback(async () => {
-    await userApi.logout().catch(() => undefined)
+    const logoutRequest = userApi.logout().catch(() => undefined)
+    sessionVersionRef.current += 1
+    sessionRef.current = null
     window.localStorage.removeItem(sessionKey)
     setSession(null)
     setProfile(null)
     setBalance(null)
     notify('info', '已退出登录')
     writeHash('login')
+    await logoutRequest
   }, [notify])
 
   const appValue = useMemo(() => ({
@@ -259,11 +290,11 @@ export default function App() {
 
   const page = useMemo(() => {
     if (!session && protectedRoutes.includes(route)) {
-      return <LoginPage returnTo={route} imageId={route === 'public-gallery' ? routeImageId : undefined} />
+      return <LoginPage returnTo={route} imageId={route === 'public-gallery' ? routeImageId : undefined} taskId={route === 'genpic' ? routeTaskId : undefined} />
     }
     switch (route) {
       case 'login':
-        return <LoginPage returnTo={returnTo} imageId={returnTo === 'public-gallery' ? routeImageId : undefined} />
+        return <LoginPage returnTo={returnTo} imageId={returnTo === 'public-gallery' ? routeImageId : undefined} taskId={returnTo === 'genpic' ? routeTaskId : undefined} />
       case 'home':
         return <Shell><HomePage /></Shell>
       case 'genpic':
@@ -277,16 +308,20 @@ export default function App() {
       case 'api-keys':
         return <Shell><ApiKeysPage /></Shell>
       case 'profile':
-        return <Shell><ProfilePage /></Shell>
+        return <Shell scrollMode="document"><ProfilePage /></Shell>
       case 'docs':
-        return <Shell><DocsPage /></Shell>
+        return <Shell scrollMode="document"><DocsPage /></Shell>
       case 'settings':
         return <Shell><SettingsPage /></Shell>
       case 'landing':
       default:
-        return <LandingPage />
+        return (
+          <Suspense fallback={<main className="min-h-screen bg-[var(--bg)]" aria-label="正在载入首页" />}>
+            <LandingPage />
+          </Suspense>
+        )
     }
-  }, [route, returnTo, routeImageId, session])
+  }, [route, returnTo, routeImageId, routeTaskId, session])
 
   return (
     <AppContext.Provider value={appValue}>

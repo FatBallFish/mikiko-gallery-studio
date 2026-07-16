@@ -21,6 +21,8 @@ for (const required of [
   'min-[360px]:text-[1.75rem]',
   '/landing/hero-gallery.webp',
   '/landing/workspace.webp',
+  "landingAssetUrl(import.meta.env.BASE_URL, '/landing/hero-gallery.webp')",
+  "landingAssetUrl(import.meta.env.BASE_URL, '/landing/workspace.webp')",
   'fetchPriority="high"',
   'loading="eager"',
   'loading="lazy"',

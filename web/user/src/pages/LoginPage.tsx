@@ -1,41 +1,69 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
+import { ArrowLeft, Check, Eye, EyeOff, LoaderCircle, Moon, Sun } from 'lucide-react'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
-import { rdCommon, rdShell, rdWorkspace } from '../ui/redesign-classes'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
-import { loginCopy, loginLocale, socialLoginUnavailableMessage } from './loginCopy'
+import { loginCopy, loginLocale } from './loginCopy'
+import {
+  loginPresentation,
+  loginProviders,
+  firstLoginInvalidField,
+  loginCooldownForEmail,
+  nextLoginFlow,
+  nextLoginModeForKey,
+  normalizeLoginEmail,
+  validateLoginFields,
+  type LoginFieldErrors,
+  type LoginIntent,
+  type LoginMode,
+} from './loginPresentation'
 
 const lastLoginEmailKey = 'pic-gallery-last-login-email'
 
 const loginClasses = {
-  page: cn(rdShell.main, 'grid place-items-center p-6'),
-  card: cn(rdCommon.glass, 'w-[min(500px,100%)] rounded-[2.5rem] p-10 md:p-14 shadow-[0_40px_100px_rgba(0,0,0,0.6)] animate-in fade-in zoom-in-95 duration-700'),
-  header: 'mb-12 text-center',
-  logo: 'mb-6 inline-flex transition-transform hover:scale-110 active:scale-95',
-  brandOrb: rdShell.brandOrb,
-  subtitle: 'm-0 text-xs font-vault-mono uppercase tracking-[0.2em] text-[var(--muted)]',
-  tabs: 'auth-tabs mb-10 flex gap-2 rounded-2xl bg-[var(--bg)]/50 p-1.5 border border-[var(--border)]',
-  tab: 'flex-1 rounded-xl py-3 text-center text-[13px] font-bold text-[var(--muted)] transition-all duration-300 hover:text-[var(--fg)] hover:bg-[var(--surface)]',
-  tabActive: '!bg-[var(--accent)] !text-white shadow-[0_8px_20px_rgba(var(--accent-rgb),0.2)]',
-  field: 'auth-field mb-6 flex flex-col gap-2.5',
-  label: 'text-[11px] font-vault-mono uppercase tracking-widest text-[var(--muted)] pl-1',
-  input: 'w-full rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-[var(--fg)] outline-none transition-all focus:border-[var(--accent)]/50 focus:bg-[var(--surface)] focus:ring-4 focus:ring-[var(--accent)]/5',
+  page: 'relative grid min-h-svh w-full max-w-full overflow-x-hidden bg-[var(--bg)] font-vault-body text-[var(--fg)] md:grid-cols-[minmax(320px,1.08fr)_minmax(460px,0.92fr)]',
+  scene: 'pointer-events-none absolute inset-0 overflow-hidden md:relative md:min-h-svh',
+  sceneImage: 'size-full object-cover object-[44%_center] opacity-55 transition-[filter,opacity,transform] duration-700 md:opacity-100 md:hover:scale-[1.015] motion-reduce:transition-none motion-reduce:hover:scale-100',
+  sceneShade: 'absolute inset-0 bg-[linear-gradient(180deg,rgba(5,6,10,0.34)_0%,rgba(5,6,10,0.74)_58%,rgba(5,6,10,0.94)_100%)] md:bg-[linear-gradient(90deg,rgba(5,6,10,0.16)_0%,rgba(5,6,10,0.28)_58%,rgba(5,6,10,0.76)_100%)]',
+  sceneCopy: 'absolute bottom-10 left-10 hidden max-w-[560px] text-[#f8f4ed] lg:block xl:bottom-14 xl:left-14',
+  sceneTitle: 'm-0 max-w-[560px] font-vault-display text-[clamp(2.5rem,4.2vw,4.8rem)] font-bold leading-[1.02] tracking-[0]',
+  sceneSummary: 'mt-6 max-w-[420px] text-base leading-7 text-white/68',
+  brand: 'pointer-events-auto absolute left-4 top-4 z-30 rounded-xl border-0 bg-black/30 p-2 text-white backdrop-blur-md transition-transform duration-200 hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7a566] active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100 sm:left-6 sm:top-6 md:left-8 md:top-8',
+  panel: 'relative z-10 flex min-h-svh items-center justify-center bg-[color-mix(in_oklch,var(--bg)_88%,transparent)] px-3 py-20 backdrop-blur-xl min-[360px]:px-5 sm:px-8 md:bg-[var(--bg)] md:px-10 md:py-24 md:backdrop-blur-none',
+  themeButton: 'absolute right-4 top-4 grid size-11 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] shadow-[var(--shadow-sm)] transition-all duration-200 hover:-translate-y-px hover:border-[var(--border-strong)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.96] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 sm:right-6 sm:top-6 md:right-8 md:top-8',
+  formSurface: 'w-full max-w-[448px] rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface-solid)_92%,transparent)] p-5 shadow-[0_30px_90px_-48px_rgba(0,0,0,0.72)] backdrop-blur-xl min-[360px]:p-6 sm:p-8 md:bg-[var(--surface)] md:p-9',
+  back: 'mb-5 inline-flex min-h-10 items-center gap-2 rounded-lg border-0 bg-transparent px-1 text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+  eyebrow: 'm-0 font-vault-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]',
+  title: 'mb-0 mt-3 font-vault-display text-[clamp(1.8rem,8vw,2.6rem)] font-bold leading-[1.08] tracking-[0] text-[var(--fg)]',
+  summary: 'mb-0 mt-3 text-sm leading-6 text-[var(--muted)]',
+  tabs: 'mt-7 grid grid-cols-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-1',
+  tab: 'min-h-10 rounded-lg border-0 bg-transparent px-3 text-sm font-semibold text-[var(--muted)] transition-[background-color,color,box-shadow,transform] duration-200 hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 disabled:cursor-wait disabled:opacity-55',
+  tabActive: 'bg-[var(--elevated)] text-[var(--fg)] shadow-[var(--shadow-sm)]',
+  form: 'mt-6',
+  field: 'mb-5',
+  label: 'mb-2 block text-sm font-semibold text-[var(--fg)]',
+  input: 'min-h-12 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 text-base text-[var(--fg)] shadow-inner shadow-black/5 transition-[border-color,box-shadow,background-color] duration-200 placeholder:text-[var(--dim)] hover:border-[var(--border-strong)] focus:border-[var(--accent)] focus:bg-[var(--surface-solid)] focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_24%,transparent)] disabled:cursor-wait disabled:opacity-60',
+  inputError: 'border-[var(--accent-coral)] focus:border-[var(--accent-coral)] focus:ring-[color-mix(in_oklch,var(--accent-coral)_22%,transparent)]',
   passwordWrap: 'relative',
   passwordInput: 'pr-14',
-  passwordToggle: 'absolute right-2 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-xl border-0 bg-transparent text-[var(--muted)] transition-colors hover:text-[var(--accent)] hover:bg-[var(--accent)]/5',
-  forgot: 'self-end border-0 bg-transparent p-0 text-[11px] font-bold text-[var(--muted)] transition-colors hover:text-[var(--accent)]',
-  inlineControl: 'flex gap-3',
-  codeButton: 'whitespace-nowrap rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 px-5 text-[13px] font-bold text-[var(--fg)] transition-all hover:border-[var(--accent)]/50 hover:bg-[var(--surface)] disabled:opacity-50',
-  submit: cn(rdWorkspace.generateBtn, 'mt-4 h-14'),
-  divider: 'auth-divider my-10 flex items-center text-[10px] font-vault-mono uppercase tracking-[0.2em] text-[var(--muted)] before:flex-1 before:border-b before:border-[var(--border)] after:flex-1 after:border-b after:border-[var(--border)]',
-  dividerText: 'px-4',
-  social: 'auth-social flex gap-3',
-  socialButton: 'flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 transition-all hover:border-[var(--accent)]/50 hover:bg-[var(--surface)] hover:scale-[1.02] active:scale-[0.98]',
-  footer: 'auth-footer mt-10 text-center text-[13px] text-[var(--muted)]',
-  link: 'font-black text-[var(--accent)] hover:underline underline-offset-4 transition-all',
+  iconButton: 'absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-lg border-0 bg-transparent text-[var(--muted)] transition-colors hover:bg-[var(--elevated)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+  labelRow: 'mb-2 flex items-center justify-between gap-3',
+  forgot: 'min-h-8 shrink-0 rounded-lg border-0 bg-transparent px-1 text-xs font-bold text-[var(--accent)] transition-colors hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+  codeRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
+  codeButton: 'min-h-12 max-w-[132px] rounded-xl border border-[var(--border-strong)] bg-[var(--surface-solid)] px-3 text-xs font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-px hover:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-55',
+  error: 'mb-0 mt-2 text-xs leading-5 text-[var(--accent-coral)]',
+  notice: 'mb-0 mt-2 flex items-center gap-1.5 text-xs leading-5 text-[var(--accent-emerald)]',
+  formError: 'mb-4 rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_34%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_8%,transparent)] px-3 py-2.5 text-sm leading-5 text-[var(--accent-coral)]',
+  submit: 'mt-1 inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent)] px-5 text-sm font-bold text-[#111218] shadow-[0_18px_42px_-24px_rgba(var(--accent-rgb),0.9)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_52px_-22px_rgba(var(--accent-rgb),0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-3 focus-visible:ring-offset-[var(--surface-solid)] active:translate-y-0 active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 disabled:cursor-wait disabled:translate-y-0 disabled:opacity-60',
+  providers: 'mt-6 border-t border-[var(--border-subtle)] pt-5',
+  providerLabel: 'mb-3 text-xs font-semibold text-[var(--dim)]',
+  providerGrid: 'grid grid-cols-1 gap-2 min-[360px]:grid-cols-3',
+  provider: 'min-h-9 rounded-lg border border-[var(--border-subtle)] bg-transparent px-2 text-[10px] font-semibold leading-tight text-[var(--dim)] disabled:cursor-not-allowed disabled:opacity-75',
+  footer: 'mb-0 mt-6 text-center text-sm text-[var(--muted)]',
+  footerAction: 'min-h-9 rounded-lg border-0 bg-transparent px-1 font-bold text-[var(--accent)] transition-colors hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
 }
 
 function readLastLoginEmail() {
@@ -50,23 +78,38 @@ function rememberLoginEmail(email: string) {
   try {
     window.localStorage.setItem(lastLoginEmailKey, email)
   } catch {
-    // Ignore storage errors; login itself should not depend on local persistence.
+    // Login must not depend on local persistence.
   }
 }
 
-export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?: string }) {
+export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; imageId?: string; taskId?: string }) {
   const app = useApp()
   const env = import.meta.env as Record<string, string | undefined>
   const copy = loginCopy[loginLocale()]
-  const [mode, setMode] = useState<'password' | 'code'>(env.VITE_AUTH_DEFAULT_MODE === 'code' ? 'code' : 'password')
+  const formId = useId()
+  const formRef = useRef<HTMLFormElement>(null)
+  const passwordTabRef = useRef<HTMLButtonElement>(null)
+  const codeTabRef = useRef<HTMLButtonElement>(null)
+  const [mode, setMode] = useState<LoginMode>(env.VITE_AUTH_DEFAULT_MODE === 'code' ? 'code' : 'password')
+  const [intent, setIntent] = useState<LoginIntent>('login')
   const [email, setEmail] = useState(() => readLastLoginEmail())
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
-  const [resetMode, setResetMode] = useState(false)
-  const [resetPassword, setResetPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  const [cooldownEmail, setCooldownEmail] = useState('')
+  const [sending, setSending] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [errors, setErrors] = useState<LoginFieldErrors>({})
+  const [formError, setFormError] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
+
+  const effectiveCooldown = loginCooldownForEmail(cooldown, cooldownEmail, email)
+  const presentation = loginPresentation({ mode, intent, busy, sending, cooldown: effectiveCooldown })
+  const isDark = app.themePreference.mode === 'dark'
+  const activeTabId = `${formId}-${mode}-tab`
 
   useEffect(() => {
     if (cooldown <= 0) return undefined
@@ -74,42 +117,119 @@ export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?:
     return () => window.clearInterval(timer)
   }, [cooldown])
 
+  function clearFieldError(field: keyof LoginFieldErrors) {
+    setErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+    setFormError('')
+  }
+
+  function focusFirstInvalidField(validation: LoginFieldErrors) {
+    const field = firstLoginInvalidField(validation, mode, intent)
+    if (!field) return
+    window.requestAnimationFrame(() => {
+      formRef.current?.querySelector<HTMLInputElement>(`[data-auth-field="${field}"]`)?.focus()
+    })
+  }
+
+  function changeMode(nextMode: LoginMode) {
+    const next = nextLoginFlow(nextMode, cooldown)
+    setMode(next.mode)
+    setIntent(next.intent)
+    setCooldown(next.cooldown)
+    setCode(next.code)
+    setErrors({})
+    setFormError('')
+    setCodeSent(next.codeSent)
+  }
+
+  function changeIntent(nextIntent: LoginIntent) {
+    const next = nextLoginFlow(nextIntent, cooldown)
+    setIntent(next.intent)
+    setMode(next.mode)
+    setCooldown(next.cooldown)
+    setCode(next.code)
+    setErrors({})
+    setFormError('')
+    setCodeSent(next.codeSent)
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const nextMode = nextLoginModeForKey(mode, event.key)
+    if (!nextMode) return
+    event.preventDefault()
+    changeMode(nextMode)
+    const target = nextMode === 'password' ? passwordTabRef : codeTabRef
+    window.requestAnimationFrame(() => target.current?.focus())
+  }
+
   async function sendCode() {
+    const validation = validateLoginFields({ mode: 'code', intent, email, password, code: '123456', newPassword: intent === 'reset' ? '123456' : '' })
+    if (validation.email) {
+      setErrors((current) => ({ ...current, email: validation.email }))
+      focusFirstInvalidField({ email: validation.email })
+      return
+    }
+
+    setSending(true)
+    setFormError('')
+    setCodeSent(false)
     try {
-      if (resetMode) await userApi.requestPasswordReset(email)
-      else await userApi.sendEmailCode(email, 'login')
+      if (intent === 'reset') await userApi.requestPasswordReset(email.trim())
+      else await userApi.sendEmailCode(email.trim(), presentation.codeScene)
+      setCooldownEmail(normalizeLoginEmail(email))
       setCooldown(60)
+      setCodeSent(true)
       app.notify('success', '验证码已发送，请查看邮箱')
-    } catch (err) {
-      app.notify('error', `${copy.sendCodeFailed}: ${errorMessage(err)}`)
+    } catch (caught) {
+      const message = `${copy.sendCodeFailed}: ${errorMessage(caught)}`
+      setFormError(message)
+      app.notify('error', message)
+    } finally {
+      setSending(false)
     }
   }
 
-  async function submit(event: FormEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const validation = validateLoginFields({ mode, intent, email, password, code, newPassword })
+    setErrors(validation)
+    setFormError('')
+    if (Object.keys(validation).length > 0) {
+      focusFirstInvalidField(validation)
+      return
+    }
+
     setBusy(true)
     try {
-      if (resetMode) {
-        await userApi.confirmPasswordReset(email, code, resetPassword)
+      if (intent === 'reset') {
+        await userApi.confirmPasswordReset(email.trim(), code.trim(), newPassword)
         app.notify('success', '密码已重置，请使用新密码登录')
-        setResetMode(false)
-        setMode('password')
-        setPassword(resetPassword)
+        setPassword(newPassword)
+        setCode('')
+        setNewPassword('')
+        changeIntent('login')
         return
       }
+
       const result = mode === 'password'
-        ? await userApi.loginWithPassword(email, password)
-        : await userApi.loginWithEmailCode(email, code)
+        ? await userApi.loginWithPassword(email.trim(), password)
+        : await userApi.loginWithEmailCode(email.trim(), code.trim())
       const profile = await userApi.getProfileWithToken(result.access_token)
-      rememberLoginEmail(email)
-      await app.login({ token: result.access_token, profile }, returnTo, { imageId })
+      rememberLoginEmail(email.trim())
+      await app.login({ token: result.access_token, profile }, returnTo, { imageId, taskId })
       if (result.signup_grant?.granted) {
         app.notify('success', `已领取 ${result.signup_grant.balance.trial_points ?? result.signup_grant.balance.available_points} 体验积分`)
         await app.refreshAccount()
       }
-    } catch (err) {
-      const title = resetMode ? copy.resetPasswordFailed : mode === 'password' ? copy.passwordLoginFailed : copy.codeLoginFailed
-      app.notify('error', `${title}: ${errorMessage(err)}`)
+    } catch (caught) {
+      const title = intent === 'reset' ? copy.resetPasswordFailed : mode === 'password' ? copy.passwordLoginFailed : copy.codeLoginFailed
+      const message = `${title}: ${errorMessage(caught)}`
+      setFormError(message)
+      app.notify('error', message)
     } finally {
       setBusy(false)
     }
@@ -117,208 +237,222 @@ export function LoginPage({ returnTo, imageId }: { returnTo?: RouteId; imageId?:
 
   return (
     <main className={loginClasses.page}>
-      <div className={loginClasses.card}>
-        {/* Logo */}
-        <div className={loginClasses.header}>
-          <button
-            type="button"
-            onClick={() => app.navigate('landing')}
-            className={loginClasses.logo}
-            aria-label={`${siteBrand.name} 首页`}
-          >
-            <div className={loginClasses.brandOrb}>M</div>
-          </button>
-          <p className={loginClasses.subtitle}>Welcome to Luminous Vault</p>
+      <section className={loginClasses.scene} aria-hidden="true">
+        <img className={loginClasses.sceneImage} src="/landing/hero-gallery.webp" alt="" width={1280} height={720} decoding="async" fetchPriority="high" />
+        <div className={loginClasses.sceneShade} />
+        <div className={loginClasses.sceneCopy}>
+          <h1 className={loginClasses.sceneTitle}>让每一次生成，都回到同一座创作暗房。</h1>
+          <p className={loginClasses.sceneSummary}>任务、生成结果与图片资产在一个连续工作空间中沉淀。</p>
         </div>
+      </section>
 
-        {/* Tabs */}
-        <div className={loginClasses.tabs}>
-          <button
-            type="button"
-            className={cn(loginClasses.tab, mode === 'password' && loginClasses.tabActive)}
-            onClick={() => setMode('password')}
-          >
-            账号密码
-          </button>
-          <button
-            type="button"
-            className={cn(loginClasses.tab, mode === 'code' && loginClasses.tabActive)}
-            onClick={() => setMode('code')}
-          >
-            免密登录
-          </button>
-        </div>
+      <button type="button" className={loginClasses.brand} onClick={() => app.navigate('landing')} aria-label={`${siteBrand.name} 首页`}>
+        <BrandMark withText />
+      </button>
 
-        {/* Form */}
-        <form onSubmit={submit}>
-          <div className={loginClasses.field}>
-            <label className={loginClasses.label}>邮箱地址</label>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={copy.emailPlaceholder}
-              type="email"
-              required
-              className={loginClasses.input}
-            />
-          </div>
+      <section className={loginClasses.panel} aria-labelledby={`${formId}-title`}>
+        <button
+          type="button"
+          className={loginClasses.themeButton}
+          onClick={() => void app.setThemePreference({ mode: isDark ? 'light' : 'dark' })}
+          aria-label={isDark ? '切换到浅色主题' : '切换到深色主题'}
+          title={isDark ? '切换到浅色主题' : '切换到深色主题'}
+        >
+          {isDark ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+        </button>
 
-          {mode === 'password' ? (
-            <div className={loginClasses.field}>
-              <div className="flex items-center justify-between pr-1">
-                <label className={loginClasses.label}>安全密码</label>
-                <button type="button" className={loginClasses.forgot} onClick={() => { setResetMode(true); setMode('code') }}>忘记密码?</button>
-              </div>
-              <div className={loginClasses.passwordWrap}>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={copy.passwordPlaceholder}
-                  type={showPassword ? 'text' : 'password'}
-                  minLength={6}
-                  required
-                  className={cn(loginClasses.input, loginClasses.passwordInput)}
-                />
-                <button
-                  type="button"
-                  className={loginClasses.passwordToggle}
-                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                  aria-pressed={showPassword}
-                  onClick={() => setShowPassword((visible) => !visible)}
-                >
-                  {showPassword ? <EyeIcon /> : <EyeOffIcon />}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className={loginClasses.field}>
-              <label className={loginClasses.label}>{resetMode ? '重置验证码' : '邮箱验证码'}</label>
-              <div className={loginClasses.inlineControl}>
-                <input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder={copy.codePlaceholder}
-                  inputMode="numeric"
-                  required
-                  className={cn(loginClasses.input, 'flex-1')}
-                />
-                <button
-                  type="button"
-                  className={loginClasses.codeButton}
-                  onClick={sendCode}
-                  disabled={cooldown > 0}
-                >
-                  {cooldown > 0 ? `${cooldown}s` : '获取'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {resetMode ? (
-            <div className={loginClasses.field}>
-              <label className={loginClasses.label}>新密码</label>
-              <input
-                value={resetPassword}
-                onChange={(e) => setResetPassword(e.target.value)}
-                placeholder={copy.resetPasswordPlaceholder}
-                type="password"
-                minLength={6}
-                required
-                className={loginClasses.input}
-              />
-            </div>
+        <div className={loginClasses.formSurface}>
+          {intent !== 'login' ? (
+            <button type="button" className={loginClasses.back} disabled={busy || sending} onClick={() => changeIntent('login')}>
+              <ArrowLeft size={16} aria-hidden="true" />
+              返回登录
+            </button>
           ) : null}
 
-          <button
-            type="submit"
-            className={loginClasses.submit}
-            disabled={busy}
+          <p className={loginClasses.eyebrow}>Mikiko Studio Account</p>
+          <h2 id={`${formId}-title`} className={loginClasses.title}>{presentation.title}</h2>
+          <p className={loginClasses.summary}>{presentation.summary}</p>
+
+          {intent === 'login' ? (
+          <div className={loginClasses.tabs} role="tablist" aria-label="登录方式">
+            <button
+              id={`${formId}-password-tab`}
+              ref={passwordTabRef}
+              type="button"
+              role="tab"
+              aria-selected={mode === 'password'}
+              aria-controls={`${formId}-form`}
+              tabIndex={mode === 'password' ? 0 : -1}
+              disabled={busy || sending}
+              className={cn(loginClasses.tab, mode === 'password' && loginClasses.tabActive)}
+              onClick={() => changeMode('password')}
+              onKeyDown={handleTabKeyDown}
+            >
+              密码登录
+            </button>
+            <button
+              id={`${formId}-code-tab`}
+              ref={codeTabRef}
+              type="button"
+              role="tab"
+              aria-selected={mode === 'code'}
+              aria-controls={`${formId}-form`}
+              tabIndex={mode === 'code' ? 0 : -1}
+              disabled={busy || sending}
+              className={cn(loginClasses.tab, mode === 'code' && loginClasses.tabActive)}
+              onClick={() => changeMode('code')}
+              onKeyDown={handleTabKeyDown}
+            >
+              邮箱验证码
+            </button>
+          </div>
+          ) : null}
+
+          <form
+            ref={formRef}
+            id={`${formId}-form`}
+            className={loginClasses.form}
+            role={intent === 'login' ? 'tabpanel' : undefined}
+            aria-labelledby={intent === 'login' ? activeTabId : undefined}
+            onSubmit={submit}
+            noValidate
           >
-            <div className={rdWorkspace.btnGlow} />
-            <span className={rdWorkspace.btnText}>
-              {busy ? '正在同步...' : resetMode ? '重置并登录' : '登 录'}
-            </span>
-          </button>
-        </form>
+            <div className={loginClasses.field}>
+              <label className={loginClasses.label} htmlFor={`${formId}-email`}>邮箱地址</label>
+              <input
+                id={`${formId}-email`}
+                data-auth-field="email"
+                className={cn(loginClasses.input, errors.email && loginClasses.inputError)}
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                placeholder={copy.emailPlaceholder}
+                disabled={busy || sending}
+                aria-invalid={Boolean(errors.email)}
+                aria-describedby={errors.email ? `${formId}-email-error` : undefined}
+                onChange={(event) => {
+                  const nextEmail = event.target.value
+                  if (normalizeLoginEmail(nextEmail) !== normalizeLoginEmail(email)) {
+                    setCode('')
+                    setCodeSent(false)
+                  }
+                  setEmail(nextEmail)
+                  clearFieldError('email')
+                }}
+              />
+              {errors.email ? <p id={`${formId}-email-error`} className={loginClasses.error} role="alert">{errors.email}</p> : null}
+            </div>
 
-        {/* Divider */}
-        <div className={loginClasses.divider}>
-          <span className={loginClasses.dividerText}>第三方极速联登</span>
-        </div>
+            {presentation.showPassword ? (
+              <div className={loginClasses.field}>
+                <div className={loginClasses.labelRow}>
+                  <label className="text-sm font-semibold text-[var(--fg)]" htmlFor={`${formId}-password`}>密码</label>
+                  <button type="button" className={loginClasses.forgot} disabled={busy} onClick={() => changeIntent('reset')}>忘记密码</button>
+                </div>
+                <div className={loginClasses.passwordWrap}>
+                  <input
+                    id={`${formId}-password`}
+                    data-auth-field="password"
+                    className={cn(loginClasses.input, loginClasses.passwordInput, errors.password && loginClasses.inputError)}
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    placeholder={copy.passwordPlaceholder}
+                    disabled={busy}
+                    aria-invalid={Boolean(errors.password)}
+                    aria-describedby={errors.password ? `${formId}-password-error` : undefined}
+                    onChange={(event) => { setPassword(event.target.value); clearFieldError('password') }}
+                  />
+                  <button type="button" className={loginClasses.iconButton} onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? '隐藏密码' : '显示密码'} aria-pressed={showPassword}>
+                    {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                  </button>
+                </div>
+                {errors.password ? <p id={`${formId}-password-error`} className={loginClasses.error} role="alert">{errors.password}</p> : null}
+              </div>
+            ) : null}
 
-        {/* Social Login */}
-        <div className={loginClasses.social}>
-          <SocialButton icon={<WeChatIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('微信'))} />
-          <SocialButton icon={<DingTalkIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('钉钉'))} />
-          <SocialButton icon={<GoogleIcon />} onClick={() => app.notify('info', socialLoginUnavailableMessage('Google'))} />
-        </div>
+            {presentation.showCode ? (
+              <div className={loginClasses.field}>
+                <label className={loginClasses.label} htmlFor={`${formId}-code`}>{intent === 'reset' ? '重置验证码' : '邮箱验证码'}</label>
+                <div className={loginClasses.codeRow}>
+                  <input
+                    id={`${formId}-code`}
+                    data-auth-field="code"
+                    className={cn(loginClasses.input, errors.code && loginClasses.inputError)}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={code}
+                    placeholder={copy.codePlaceholder}
+                    disabled={busy}
+                    aria-invalid={Boolean(errors.code)}
+                    aria-describedby={errors.code ? `${formId}-code-error` : codeSent ? `${formId}-code-notice` : undefined}
+                    onChange={(event) => { setCode(event.target.value.replace(/\D/g, '').slice(0, 6)); clearFieldError('code') }}
+                  />
+                  <button type="button" className={loginClasses.codeButton} disabled={presentation.sendCodeDisabled} onClick={() => void sendCode()}>
+                    {sending ? <LoaderCircle className="mx-auto animate-spin motion-reduce:animate-none" size={17} aria-hidden="true" /> : presentation.sendCodeLabel}
+                  </button>
+                </div>
+                {errors.code ? <p id={`${formId}-code-error`} className={loginClasses.error} role="alert">{errors.code}</p> : null}
+                {codeSent && effectiveCooldown > 0 && !errors.code ? <p id={`${formId}-code-notice`} className={loginClasses.notice}><Check size={14} aria-hidden="true" />验证码已发送，请查看邮箱</p> : null}
+              </div>
+            ) : null}
 
-        {/* Footer */}
-        <div className={loginClasses.footer}>
-          还没有账号？ <button type="button" className={loginClasses.link} onClick={() => { setMode('code'); setResetMode(false) }}>立即注册</button>
+            {presentation.showNewPassword ? (
+              <div className={loginClasses.field}>
+                <label className={loginClasses.label} htmlFor={`${formId}-new-password`}>新密码</label>
+                <div className={loginClasses.passwordWrap}>
+                  <input
+                    id={`${formId}-new-password`}
+                    data-auth-field="newPassword"
+                    className={cn(loginClasses.input, loginClasses.passwordInput, errors.newPassword && loginClasses.inputError)}
+                    type={showNewPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={newPassword}
+                    placeholder={copy.resetPasswordPlaceholder}
+                    disabled={busy}
+                    aria-invalid={Boolean(errors.newPassword)}
+                    aria-describedby={errors.newPassword ? `${formId}-new-password-error` : undefined}
+                    onChange={(event) => { setNewPassword(event.target.value); clearFieldError('newPassword') }}
+                  />
+                  <button type="button" className={loginClasses.iconButton} onClick={() => setShowNewPassword((visible) => !visible)} aria-label={showNewPassword ? '隐藏新密码' : '显示新密码'} aria-pressed={showNewPassword}>
+                    {showNewPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                  </button>
+                </div>
+                {errors.newPassword ? <p id={`${formId}-new-password-error`} className={loginClasses.error} role="alert">{errors.newPassword}</p> : null}
+              </div>
+            ) : null}
+
+            {formError ? <p className={loginClasses.formError} role="alert">{formError}</p> : null}
+
+            <button type="submit" className={loginClasses.submit} style={{ color: '#111218' }} disabled={presentation.submitDisabled}>
+              {busy ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={17} aria-hidden="true" /> : null}
+              {presentation.submitLabel}
+            </button>
+          </form>
+
+          <div className={loginClasses.providers} aria-label="第三方登录状态">
+            <p className={loginClasses.providerLabel}>第三方登录正在接入，当前请使用邮箱。</p>
+            <div className={loginClasses.providerGrid}>
+              {loginProviders.map((provider) => (
+                <button key={provider.id} type="button" className={loginClasses.provider} disabled={provider.disabled} aria-disabled={provider.disabled}>
+                  {provider.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className={loginClasses.footer}>
+            {intent === 'register' ? '已经有账户？' : '还没有账户？'}{' '}
+            <button type="button" className={loginClasses.footerAction} disabled={busy || sending} onClick={() => changeIntent(intent === 'register' ? 'login' : 'register')}>
+              {intent === 'register' ? '返回登录' : '通过邮箱注册'}
+            </button>
+          </p>
         </div>
-      </div>
+      </section>
     </main>
-  )
-}
-
-function SocialButton({ icon, onClick }: { icon: React.ReactNode; onClick: () => void }) {
-  return (
-    <button type="button" className={loginClasses.socialButton} onClick={onClick}>
-      {icon}
-    </button>
-  )
-}
-
-function EyeIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  )
-}
-
-function EyeOffIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 3l18 18" />
-      <path d="M10.6 10.6A3 3 0 0012 15a3 3 0 002.4-4.8" />
-      <path d="M9.9 5.2A10.6 10.6 0 0112 5c6.5 0 10 7 10 7a18.5 18.5 0 01-3.3 4.4" />
-      <path d="M6.7 6.7C3.7 8.6 2 12 2 12s3.5 7 10 7c1.5 0 2.9-.4 4.1-1" />
-    </svg>
-  )
-}
-
-function WeChatIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#07C160" d="M9.3 5.1c-4 0-7.3 2.6-7.3 5.9 0 1.9 1.1 3.6 2.8 4.7l-.7 2.2 2.6-1.3c.8.2 1.6.3 2.6.3 4 0 7.3-2.6 7.3-5.9s-3.3-5.9-7.3-5.9z" />
-      <path fill="#1AAD19" d="M15.2 10.1c-3.4 0-6.2 2.2-6.2 5 0 2.7 2.8 5 6.2 5 .8 0 1.5-.1 2.2-.3l2.2 1.1-.6-1.9c1.5-.9 2.4-2.3 2.4-3.9 0-2.8-2.8-5-6.2-5z" />
-      <circle cx="6.9" cy="9.8" r=".7" fill="#fff" />
-      <circle cx="11.5" cy="9.8" r=".7" fill="#fff" />
-      <circle cx="13.1" cy="14.3" r=".6" fill="#fff" />
-      <circle cx="17" cy="14.3" r=".6" fill="#fff" />
-    </svg>
-  )
-}
-
-function DingTalkIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#1677FF" d="M20.8 4.4C16.7 2.7 11.4 1.5 4.9 1c-.8-.1-1.2.9-.6 1.4l4.4 3.7-5.4-.5c-.8-.1-1.2.9-.6 1.4l4.7 4-3.1.2c-.7.1-1 .9-.5 1.4l4.2 3.5-.9 4.7c-.1.6.6 1 1.1.6l12.9-11c2.4-2.2 2.3-4.8-.3-6z" />
-      <path fill="#fff" d="M9.3 8.6l5.9.8-4.9 1.8 4.1.6-5.2 1.9 1-2.2-3.6-3.1 2.7.2z" opacity=".88" />
-    </svg>
-  )
-}
-
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4c-.2 1.2-.9 2.3-1.9 3v2.5h3c1.9-1.7 3.1-4.2 3.1-7.3z" />
-      <path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.5l-3-2.5c-.8.6-1.9.9-3.6.9-2.6 0-4.7-1.7-5.5-4.1H3.4v2.6C5 19.7 8.3 22 12 22z" />
-      <path fill="#FBBC05" d="M6.5 13.8c-.2-.6-.3-1.2-.3-1.8s.1-1.2.3-1.8V7.6H3.4C2.8 8.9 2.4 10.4 2.4 12s.4 3.1 1 4.4l3.1-2.6z" />
-      <path fill="#EA4335" d="M12 6.1c1.5 0 2.8.5 3.8 1.5l2.8-2.8C16.9 3 14.7 2 12 2 8.3 2 5 4.3 3.4 7.6l3.1 2.6c.8-2.4 2.9-4.1 5.5-4.1z" />
-    </svg>
   )
 }

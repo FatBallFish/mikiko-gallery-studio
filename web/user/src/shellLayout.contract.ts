@@ -1,4 +1,10 @@
 import { resetShellScroll, shellActiveNavIndex, shellChromeClasses, shellLayoutClasses } from './shellLayout'
+import { readFileSync } from 'node:fs'
+
+const shellSource = readFileSync(new URL('./components.tsx', import.meta.url), 'utf8')
+if (!shellSource.includes('resetShellScroll(scrollMode, mainScrollRef.current, window)')) {
+  throw new Error('Shell must route scroll resets to the active app or document scroller')
+}
 
 const appLayout = shellLayoutClasses('app')
 if (!appLayout.shell.includes('h-screen') || !appLayout.main.includes('overflow-y-auto')) {
@@ -41,9 +47,18 @@ for (const route of ['profile', 'public-gallery', 'docs'] as const) {
 }
 
 const scrollTarget = { scrollTop: 384 }
-resetShellScroll(scrollTarget)
-if (scrollTarget.scrollTop !== 0) {
-  throw new Error(`route changes must reset persistent main scroll, got ${scrollTarget.scrollTop}`)
+const appWindowCalls: Array<[number, number]> = []
+if (resetShellScroll.length < 3) throw new Error('shell scroll reset must distinguish app and document scrolling')
+resetShellScroll('app', scrollTarget, { scrollTo: (x, y) => appWindowCalls.push([x, y]) })
+if (scrollTarget.scrollTop !== 0 || appWindowCalls.length !== 0) {
+  throw new Error(`app route changes must only reset persistent main scroll, got ${JSON.stringify({ scrollTarget, appWindowCalls })}`)
+}
+
+const documentTarget = { scrollTop: 384 }
+const documentWindowCalls: Array<[number, number]> = []
+resetShellScroll('document', documentTarget, { scrollTo: (x, y) => documentWindowCalls.push([x, y]) })
+if (documentTarget.scrollTop !== 384 || JSON.stringify(documentWindowCalls) !== '[[0,0]]') {
+  throw new Error(`document route changes must reset window scroll, got ${JSON.stringify({ documentTarget, documentWindowCalls })}`)
 }
 
 const documentLayout = shellLayoutClasses('document')

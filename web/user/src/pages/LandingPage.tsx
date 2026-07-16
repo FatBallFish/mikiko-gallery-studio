@@ -1,195 +1,370 @@
+import { useRef } from 'react'
 import { cn } from '../../../shared/classnames'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
-import { userButton } from '../ui/classes'
-import { rdCommon, rdGallery, rdHome, rdShell } from '../ui/redesign-classes'
+import {
+  ArrowRight,
+  Edit,
+  ExternalLink,
+  Image,
+  KeyRound,
+  Route,
+  Sparkles,
+  Wallet,
+} from '../ui/icons'
+import { useLandingMotion } from '../ui/useLandingMotion'
+import { landingActionInk, landingAssetUrl, landingChapters } from './landingContent'
 
-const landingClasses = {
-  page: cn(rdShell.main, 'min-h-screen overflow-x-hidden'),
-  nav: 'topnav sticky top-0 z-[100] border-b border-[var(--border)] bg-[var(--bg)]/70 backdrop-blur-2xl transition-all duration-500',
-  container: 'container mx-auto w-full max-w-[1280px] px-6 md:px-10',
-  topnavInner: 'topnav-inner flex items-center justify-between gap-4 py-5',
-  logo: 'landing-logo border-0 bg-transparent text-[var(--accent)] transition-transform hover:scale-105',
-  navLinks: 'hidden md:flex gap-10',
-  navLink: 'text-[13px] font-bold tracking-wide text-[var(--muted)] no-underline transition hover:text-[var(--accent)]',
-  section: 'section relative py-[clamp(80px,12vw,160px)]',
-  hero: 'hero overflow-hidden pb-10 pt-20 text-center',
-  h1: 'm-0 font-vault-display text-[clamp(3.5rem,10vw,8rem)] font-medium leading-[.88] tracking-[-0.02em]',
-  h2: 'h2 m-0 font-vault-display text-[clamp(2.5rem,6vw,5rem)] font-medium leading-[.95] tracking-[-0.01em]',
-  lead: 'lead mx-auto mt-8 max-w-[720px] text-lg leading-[1.6] text-[var(--muted)] md:text-xl',
-  heroCta: 'hero-cta mt-12 flex flex-wrap items-center justify-center gap-6 max-[420px]:flex-col max-[420px]:items-stretch',
-  grid3: 'grid-3 grid grid-cols-1 gap-8 md:grid-cols-3',
-  featureCard: rdHome.statCard,
-  featureIcon: 'feature-icon mb-6 inline-flex size-14 items-center justify-center rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_20px_rgba(var(--accent-rgb),0.1)]',
-  featureTitle: 'm-0 mb-3 font-vault-display text-3xl font-bold',
-  featureText: 'm-0 text-[15px] leading-relaxed text-[var(--muted)]',
-  split: 'split grid items-center gap-16 lg:grid-cols-[1fr_1.1fr]',
-  showcaseFrame: cn(rdGallery.itemShell, 'group relative aspect-[4/3] w-full cursor-default overflow-hidden border-0 p-1.5 transition-all duration-700 hover:translate-y-0 hover:shadow-[0_0_50px_rgba(var(--accent-rgb),0.15)]'),
-  showcaseInner: rdGallery.itemInner,
-  showcaseImage: cn(rdGallery.itemImg, 'opacity-80 grayscale-[0.3] transition-all duration-1000 group-hover:scale-105 group-hover:grayscale-0'),
-  promptTag: 'prompt-tag absolute bottom-6 left-6 rounded-2xl border border-[var(--border)] bg-black/60 px-6 py-4 text-xs font-vault-mono text-[var(--fg)] backdrop-blur-xl',
-  stat: rdHome.statCard,
-  statNum: 'stat-num font-vault-display text-6xl font-black leading-none text-[var(--accent)]',
-  statLabel: 'stat-label m-0 mt-3 text-sm font-bold uppercase tracking-widest text-[var(--muted)]',
-  ctaHero: 'cta-hero relative overflow-hidden rounded-[3rem] border border-[var(--border)] bg-gradient-to-b from-[var(--surface)] to-[var(--bg)] px-10 py-24 text-center shadow-2xl',
-  pagefoot: 'pagefoot border-t border-[var(--border)] bg-[var(--bg)]/50 py-16 text-sm text-[var(--muted)]',
-  footerInner: 'flex flex-col items-center justify-between gap-10 md:flex-row',
-  footerLinks: 'flex items-center gap-8',
-  footerMeta: 'flex flex-col items-center gap-3 md:items-end',
-}
+const container = 'mx-auto w-full max-w-[1440px] px-6 sm:px-8 lg:px-12 xl:px-16'
+const sectionSpace = 'py-32 md:py-48'
 
-const valueProps = [
-  {
-    title: '多模型路由',
-    detail: '集成全球顶尖生图引擎。根据创作意图自动匹配最佳模型路径，确保每一张作品都拥有极致的视觉表达。',
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5" />
-      </svg>
-    ),
-  },
-  {
-    title: '统一计费体系',
-    detail: '摆脱繁琐的模型账号维护。统一积分结算机制，精确到小数点后 5 位，让您的每一分投入都清晰可感。',
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <path d="M3 12h18M12 3v18" />
-      </svg>
-    ),
-  },
-  {
-    title: '原生 API 支持',
-    detail: '不仅是创作台，更是强大的生图基座。提供 OpenAI 兼容接口，助您轻松将 AI 创作力集成至自有业务。',
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M12 3l1.912 5.886H20.09l-4.73 3.436 1.806 5.556-4.73-3.436-4.73 3.436 1.806-5.556-4.73-3.436h6.178L12 3z" />
-      </svg>
-    ),
-  },
-]
-
-const stats = [
-  { num: '3.2', label: '积分 / 元', detail: '透明计费，充值即得' },
-  { num: '5', label: '位小数精度', detail: '不浪费任何一分额度' },
-  { num: '99.9', suffix: '%', label: '服务可用性', detail: '多模型降级策略保障' },
-]
+const capabilityIcons = {
+  generate: Sparkles,
+  edit: Edit,
+  reference: Image,
+  estimate: Wallet,
+} as const
 
 export function LandingPage() {
   const app = useApp()
+  const pageRef = useRef<HTMLElement>(null)
+  useLandingMotion(pageRef)
+  const heroGalleryAsset = landingAssetUrl(import.meta.env.BASE_URL, '/landing/hero-gallery.webp')
+  const workspaceAsset = landingAssetUrl(import.meta.env.BASE_URL, '/landing/workspace.webp')
+
+  const goCreate = () => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })
+
   return (
-    <main className={landingClasses.page}>
-      <header className={landingClasses.nav}>
-        <div className={`${landingClasses.container} ${landingClasses.topnavInner}`}>
-          <button className={landingClasses.logo} type="button" onClick={() => app.navigate('landing')} aria-label={`${siteBrand.name} 首页`}>
+    <main ref={pageRef} className="w-full max-w-full overflow-x-hidden bg-[var(--bg)] font-vault-body text-[var(--fg)]">
+      <style>{`
+        @keyframes landing-marquee { to { transform: translate3d(-50%, 0, 0); } }
+        @media (prefers-reduced-motion: reduce) {
+          .landing-marquee-track { display: none !important; }
+          .landing-marquee-static { display: flex !important; }
+        }
+      `}</style>
+
+      <header className="sticky top-0 z-[100] border-b border-[var(--border-subtle)] bg-[color-mix(in_oklch,var(--bg)_88%,transparent)] backdrop-blur-xl">
+        <div className={cn(container, 'flex min-h-[72px] items-center justify-between gap-4')}>
+          <button
+            type="button"
+            className="shrink-0 border-0 bg-transparent p-0 text-[var(--accent)] transition-transform duration-300 hover:scale-[1.03] focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:scale-[0.98]"
+            onClick={() => app.navigate('landing')}
+            aria-label={`${siteBrand.name} 首页`}
+          >
             <BrandMark withText />
           </button>
-          <nav className={landingClasses.navLinks}>
-            <a className={landingClasses.navLink} href="#features">功能特性</a>
-            <a className={landingClasses.navLink} href="#showcase">作品展示</a>
-            <a className={landingClasses.navLink} href="#pricing">计费规则</a>
+
+          <nav className="hidden items-center gap-8 md:flex" aria-label="落地页导航">
+            <a className="text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--fg)] focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href="#capabilities">能力</a>
+            <a className="text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--fg)] focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href="#workflow">流程</a>
+            <a className="text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--fg)] focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" href="#developers">开发者</a>
           </nav>
-          <div className="flex items-center gap-4">
-            <button type="button" className={cn(userButton.base, 'hidden border-0 bg-transparent text-[13px] font-bold sm:inline-flex')} onClick={() => app.navigate('login')}>登录</button>
-            <button type="button" className={cn(userButton.base, userButton.primary, 'min-h-[44px] px-6 text-[13px] shadow-[0_8px_20px_rgba(var(--accent-rgb),0.25)]')} onClick={() => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })}>进入工作台</button>
-          </div>
+
+          <button
+            type="button"
+            className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-px hover:border-[var(--border-strong)] hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98]"
+            onClick={() => app.navigate('login')}
+          >
+            {app.isAuthenticated ? '返回首页' : '登录'}
+          </button>
         </div>
       </header>
 
-      <section className={`${landingClasses.section} ${landingClasses.hero}`}>
-        <div className={landingClasses.container}>
-          <div className={cn(rdHome.heroBadge, 'animate-in fade-in slide-in-from-bottom-4 duration-1000')}>Luminous Vault Experience</div>
-          <h1 className={cn(landingClasses.h1, 'animate-in fade-in slide-in-from-bottom-6 duration-1000 fill-mode-both')}>文字跃然屏上<br />灵感触手可及</h1>
-          <p className={cn(landingClasses.lead, 'animate-in fade-in slide-in-from-bottom-8 duration-1000 fill-mode-both')}>Mikiko Studio 是为您量身定制的 AI 图片生成工作台。<br className="hidden md:block" />集成全球顶尖模型，为您提供极简、艺术、高效的创作体验。</p>
-          <div className={cn(landingClasses.heroCta, 'animate-in fade-in slide-in-from-bottom-10 duration-1000 fill-mode-both')}>
-            <button type="button" className={cn(userButton.base, userButton.primary, 'min-h-[56px] px-10 text-base shadow-[0_12px_30px_rgba(var(--accent-rgb),0.3)]')} onClick={() => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })}>立即免费开始</button>
-            <button type="button" className={cn(userButton.base, 'min-h-[56px] border-[var(--border)] bg-[var(--surface)]/50 px-10 text-base backdrop-blur-xl hover:bg-[var(--surface)]')} onClick={() => app.navigate('public-gallery')}>浏览画廊</button>
-          </div>
-        </div>
-      </section>
-
-      <section className={landingClasses.section} id="features">
-        <div className={`${landingClasses.container} ${landingClasses.grid3}`}>
-          {valueProps.map((prop, idx) => (
-            <article className={cn(landingClasses.featureCard, 'animate-in fade-in slide-in-from-bottom-12 duration-1000 fill-mode-both')} style={{ animationDelay: `${idx * 150}ms` }} key={prop.title}>
-              <div className={landingClasses.featureIcon}>{prop.icon}</div>
-              <h2 className={landingClasses.featureTitle}>{prop.title}</h2>
-              <p className={landingClasses.featureText}>{prop.detail}</p>
-              <div className={rdHome.statGlow} />
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className={landingClasses.section} id="showcase">
-        <div className={`${landingClasses.container} ${landingClasses.split}`}>
-          <div className="animate-in fade-in slide-in-from-left-8 duration-1000">
-            <div className={rdHome.heroBadge}>视觉资产生成</div>
-            <h2 className={landingClasses.h2}>从文生图到参考生图，<br />掌控每一处细节。</h2>
-            <p className={landingClasses.lead}>无论是电商产品图、社交媒体封面，还是极具创意的艺术作品，Mikiko Studio 都能为您提供精准的参数控制与卓越的输出质量。</p>
-            <button type="button" className={cn(userButton.base, 'mt-10 min-h-[52px] border-[var(--border)] bg-[var(--surface)] px-8 text-sm font-bold shadow-xl hover:border-[var(--accent)]/50')} onClick={() => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })}>探索创作工具</button>
-          </div>
-          <div className={cn(landingClasses.showcaseFrame, 'animate-in fade-in slide-in-from-right-8 duration-1000')}>
-            <div className={landingClasses.showcaseInner}>
-              <img src="/mpdhezm8-image.png" alt="Mikiko Studio showcase" className={landingClasses.showcaseImage} onError={(event) => { event.currentTarget.style.display = 'none' }} />
-              <div className={landingClasses.promptTag}>
-                <span className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--accent)]">Prompt</span>
-                A high-end watch in a cinematic luxury setting...
-              </div>
+      <section className="relative min-h-[600px] border-b border-[var(--border-subtle)] py-10 md:min-h-[760px] md:py-24">
+        <div className={cn(container, 'relative flex min-h-[520px] flex-col justify-center md:min-h-[568px]')}>
+          <div className="relative z-20 max-w-[1120px]">
+            <h1 className="m-0 w-full max-w-6xl font-vault-display text-[1.5rem] font-bold leading-[1.08] tracking-[0] min-[360px]:text-[1.75rem] min-[420px]:text-[2.25rem] md:text-[3.5rem] lg:text-[4.5rem] xl:text-[4.75rem]">
+              {landingChapters.hero.title.map((line) => (
+                <span key={line} data-landing-title-line className="block whitespace-nowrap">{line}</span>
+              ))}
+            </h1>
+            <p className="mt-8 max-w-[620px] text-base leading-8 text-[var(--muted)] md:text-lg">
+              {landingChapters.hero.summary}
+            </p>
+            <div className="mt-10 flex flex-col gap-3 min-[420px]:flex-row">
+              <button
+                type="button"
+                className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent)] px-7 text-base font-bold text-[#111218] shadow-[0_18px_50px_-24px_rgba(var(--accent-rgb),0.8)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_24px_60px_-22px_rgba(var(--accent-rgb),0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--bg)] active:translate-y-0 active:scale-[0.98]"
+                style={{ color: landingActionInk }}
+                onClick={goCreate}
+              >
+                {landingChapters.hero.actions[0].label}
+                <ArrowRight size={18} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[#f6f2eb] bg-[#f6f2eb] px-7 text-base font-bold text-[#111218] transition-all duration-200 hover:-translate-y-1 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6f2eb] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--bg)] active:translate-y-0 active:scale-[0.98]"
+                style={{ color: landingActionInk }}
+                onClick={() => app.navigate('docs')}
+              >
+                {landingChapters.hero.actions[1].label}
+                <ExternalLink size={17} aria-hidden="true" />
+              </button>
             </div>
           </div>
+
+          <button
+            type="button"
+            className="group absolute -bottom-12 -right-[32%] z-10 aspect-[16/9] w-[112%] overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--surface)] text-left opacity-60 shadow-[0_36px_100px_-40px_rgba(0,0,0,0.8)] transition-all duration-700 hover:-translate-y-2 hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:scale-[0.99] md:-bottom-28 md:-right-[14%] md:w-[64%] md:rotate-[-2deg] md:opacity-100 md:hover:rotate-0"
+            onClick={goCreate}
+            aria-label="打开图片生成页面"
+          >
+            <img
+              data-landing-image
+              className="size-full object-cover object-left transition-transform duration-700 ease-out group-hover:scale-105 group-focus-visible:scale-105"
+              src={heroGalleryAsset}
+              alt="Mikiko 图片详情中的真实生成结果"
+              width={1280}
+              height={720}
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
+            />
+            <span data-landing-image-overlay className="pointer-events-none absolute inset-0 bg-black opacity-0" />
+            <span className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-lg border border-white/15 bg-black/70 px-3 py-2 text-xs font-semibold text-white backdrop-blur-md md:bottom-6 md:left-6 md:text-sm">
+              从灵感发现进入生成与资产管理
+              <ArrowRight size={15} aria-hidden="true" />
+            </span>
+          </button>
         </div>
       </section>
 
-      <section className={landingClasses.section} id="pricing">
-        <div className={landingClasses.container}>
-          <div className="mb-16 text-center">
-            <div className={rdHome.heroBadge}>Transparent Billing</div>
-            <h2 className={landingClasses.h2}>透明、精准、可控</h2>
+      <section id="capabilities" className={cn(sectionSpace, 'relative')}>
+        <div className={container}>
+          <div className="mb-16 grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(280px,440px)] md:items-end">
+            <h2 className="m-0 max-w-[900px] font-vault-display text-4xl font-bold leading-[1.05] tracking-[0] md:text-6xl">
+              从意图到结果，能力各有边界
+            </h2>
+            <p className="m-0 text-base leading-7 text-[var(--muted)]">
+              平台读取当前模型能力开放参数，在提交前完成输入校验，让生成路径和预计消耗都更清楚。
+            </p>
           </div>
-          <div className={landingClasses.grid3}>
-            {stats.map((stat, idx) => (
-              <div key={stat.label} className={cn(landingClasses.stat, 'text-center animate-in fade-in slide-in-from-bottom-8 duration-1000 fill-mode-both')} style={{ animationDelay: `${idx * 200}ms` }}>
-                <div className={landingClasses.statNum}>{stat.num}{stat.suffix ? <span className="text-[0.4em] opacity-50">{stat.suffix}</span> : null}</div>
-                <p className={landingClasses.statLabel}>{stat.label}</p>
-                <p className="mt-2 text-sm text-[var(--muted)]">{stat.detail}</p>
-                <div className={rdHome.statGlow} />
+
+          {/* Desktop occupancy: 12 columns x 2 rows = 24 cells; 7x2 + 5x1 + 3x1 + 2x1 = 24. */}
+          <div className="grid grid-flow-dense grid-cols-1 gap-3 md:grid-cols-12 md:grid-rows-2 md:auto-rows-[240px]">
+            {landingChapters.capabilities.map((capability) => {
+              const Icon = capabilityIcons[capability.id]
+              return (
+                <button
+                  key={capability.id}
+                  type="button"
+                  className={cn(
+                    'group relative min-h-[220px] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 text-left transition-all duration-500 hover:-translate-y-1 hover:border-[color-mix(in_oklch,var(--accent)_48%,var(--border))] hover:shadow-[0_28px_70px_-42px_rgba(var(--accent-rgb),0.8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] md:min-h-0',
+                    capability.columns === 7 && 'md:col-span-7',
+                    capability.columns === 5 && 'md:col-span-5',
+                    capability.columns === 3 && 'md:col-span-3',
+                    capability.columns === 2 && 'md:col-span-2',
+                    capability.rows === 2 && 'md:row-span-2',
+                  )}
+                  onClick={goCreate}
+                >
+                  {capability.image ? (
+                    <img
+                      data-landing-image
+                      src={landingAssetUrl(import.meta.env.BASE_URL, capability.image)}
+                      alt=""
+                      width={capability.image === '/landing/workspace.webp' ? 1291 : 1280}
+                      height={capability.image === '/landing/workspace.webp' ? 808 : 720}
+                      loading="lazy"
+                      decoding="async"
+                      className="absolute inset-0 size-full object-cover opacity-30 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-45 group-focus-visible:scale-105 group-focus-visible:opacity-45"
+                    />
+                  ) : null}
+                  {capability.image ? <span data-landing-image-overlay className="pointer-events-none absolute inset-0 bg-black opacity-0" /> : null}
+                  <span className="absolute inset-0 bg-[color-mix(in_oklch,var(--surface-solid)_76%,transparent)]" />
+                  <span className="relative z-10 flex h-full flex-col">
+                    <span className="mb-auto inline-grid size-11 place-items-center rounded-xl border border-[var(--border)] bg-[var(--bg)] text-[var(--accent)] transition-transform duration-300 group-hover:scale-105 group-focus-visible:scale-105">
+                      <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
+                    </span>
+                    <span className="mt-10 block font-vault-display text-2xl font-bold leading-tight text-[var(--fg)] md:text-3xl">
+                      {capability.title}
+                    </span>
+                    <span className="mt-3 block max-w-[54ch] text-sm leading-6 text-[var(--muted)]">
+                      {capability.detail}
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" className={cn(sectionSpace, 'border-y border-[var(--border-subtle)] bg-[var(--canvas)]')}>
+        <div className={container}>
+          <h2 className="m-0 max-w-[1100px] font-vault-display text-4xl font-bold leading-[1.08] tracking-[0] md:text-6xl">
+            构想
+            <span className="mx-3 inline-block h-[0.72em] w-20 overflow-hidden rounded-full border border-[var(--border-strong)] align-middle transition-transform duration-700 hover:scale-105 md:w-32" aria-hidden="true">
+              <img
+                src={workspaceAsset}
+                alt=""
+                width={1291}
+                height={808}
+                loading="lazy"
+                decoding="async"
+                className="size-full object-cover"
+              />
+            </span>
+            经过一条可见链路，成为资产
+          </h2>
+
+          <p data-landing-reveal className="mt-16 max-w-[1100px] text-2xl font-medium leading-[1.6] text-[var(--fg)] md:text-4xl md:leading-[1.5]">
+            {[...landingChapters.workflow.statement].map((character, index) => (
+              <span key={`${character}-${index}`} data-landing-word>{character}</span>
+            ))}
+          </p>
+
+          <div className="mt-20 grid gap-px overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--border)] sm:grid-cols-2 lg:grid-cols-4">
+            {landingChapters.workflow.steps.map((step, index) => (
+              <div key={step} className="min-h-36 bg-[var(--surface-solid)] p-6">
+                <span className="font-vault-mono text-xs text-[var(--dim)]">0{index + 1}</span>
+                <p className="mt-10 text-lg font-bold text-[var(--fg)]">{step}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className={landingClasses.section}>
-        <div className={landingClasses.container}>
-          <div className={landingClasses.ctaHero}>
-            <div className="relative z-10">
-              <h2 className={landingClasses.h2}>准备好开启您的 AI 创作之旅了吗？</h2>
-              <p className={landingClasses.lead}>加入数千名创作者的行列，体验最纯粹的 AI 生图。<br className="hidden md:block" />无需繁琐配置，只需放飞灵感。</p>
-              <button type="button" className={cn(userButton.base, userButton.primary, 'mt-12 min-h-[64px] px-12 text-lg font-black shadow-[0_20px_50px_rgba(var(--accent-rgb),0.4)]')} onClick={() => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })}>立即注册，领取免费积分</button>
-            </div>
-            <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_50%_50%,var(--accent)/0.1,transparent_70%)] opacity-50" />
+      <section className={sectionSpace} aria-labelledby="modes-title">
+        <div className={container}>
+          <div className="mb-14 flex flex-col justify-between gap-6 md:flex-row md:items-end">
+            <h2 id="modes-title" className="m-0 max-w-[760px] font-vault-display text-4xl font-bold leading-[1.08] tracking-[0] md:text-6xl">
+              选择输入方式，不改变结果去向
+            </h2>
+            <p className="max-w-[420px] text-base leading-7 text-[var(--muted)]">每种任务都沿用能力校验、预估、状态追踪和资产保存。</p>
+          </div>
+
+          <div className="flex min-h-[620px] flex-col gap-3 lg:min-h-[560px] lg:flex-row">
+            {landingChapters.modes.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                className="group relative min-h-[190px] flex-1 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-left transition-[flex,transform,border-color] duration-700 ease-out hover:flex-[1.75] hover:-translate-y-1 hover:border-[color-mix(in_oklch,var(--accent)_48%,var(--border))] focus-visible:flex-[1.75] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] lg:min-h-0"
+                onClick={goCreate}
+              >
+                <img
+                  data-landing-image
+                  src={landingAssetUrl(import.meta.env.BASE_URL, mode.image)}
+                  alt=""
+                  width={mode.image === '/landing/workspace.webp' ? 1291 : 1280}
+                  height={mode.image === '/landing/workspace.webp' ? 808 : 720}
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 size-full object-cover opacity-45 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-65 group-focus-visible:scale-105 group-focus-visible:opacity-65"
+                />
+                <span data-landing-image-overlay className="pointer-events-none absolute inset-0 bg-black opacity-0" />
+                <span className="absolute inset-0 bg-[linear-gradient(to_top,rgba(5,6,10,0.96),rgba(5,6,10,0.12))]" />
+                <span className="absolute inset-x-0 bottom-0 z-10 block p-6 text-white md:p-8">
+                  <span className="block font-vault-display text-2xl font-bold md:text-3xl">{mode.title}</span>
+                  <span className="mt-3 block max-w-[48ch] text-sm leading-6 text-white/70 opacity-100 transition-opacity duration-500 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-visible:opacity-100">{mode.detail}</span>
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       </section>
 
-      <footer className={landingClasses.pagefoot}>
-        <div className={`${landingClasses.container} ${landingClasses.footerInner}`}>
-          <div className="flex flex-col items-center gap-6 md:items-start">
-            <div className={`${landingClasses.logo} cursor-default`}>
-              <BrandMark withText />
+      <section id="developers" className={cn(sectionSpace, 'overflow-hidden border-y border-[var(--border-subtle)] bg-[var(--canvas)]')}>
+        <div className={container}>
+          <div className="grid gap-16 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.82fr)] lg:items-center">
+            <div>
+              <div className="mb-8 inline-grid size-12 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]">
+                <Route size={22} strokeWidth={1.5} aria-hidden="true" />
+              </div>
+              <h2 className="m-0 max-w-[820px] font-vault-display text-4xl font-bold leading-[1.08] tracking-[0] md:text-6xl">{landingChapters.developer.title}</h2>
+              <p className="mt-8 max-w-[720px] text-base leading-8 text-[var(--muted)] md:text-lg">{landingChapters.developer.detail}</p>
+              <button
+                type="button"
+                className="mt-10 inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 text-sm font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-1 hover:border-[var(--border-strong)] hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98]"
+                onClick={() => app.navigate('docs')}
+              >
+                查看接入方式
+                <ExternalLink size={16} aria-hidden="true" />
+              </button>
             </div>
-            <p className="max-w-[300px] text-center text-xs leading-relaxed text-[var(--muted)] md:text-left">
-              专业级 AI 图像生成工作台。集成全球顶尖模型，为创作者提供更具艺术感、更高效率的视觉资产生产力。
-            </p>
+
+            <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[#080a10] text-[#f6f2eb] shadow-[0_32px_80px_-48px_rgba(0,0,0,0.9)]">
+              <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                <span className="font-vault-mono text-xs text-white/55">images/generations</span>
+                <span className="inline-flex items-center gap-2 text-xs text-white/60"><KeyRound size={14} aria-hidden="true" />AK / SK</span>
+              </div>
+              <pre className="m-0 overflow-x-auto p-6 font-vault-mono text-[13px] leading-7 text-white/80"><code>{`POST /v1/images/generations
+
+{
+  "model": "gpt-image-2",
+  "prompt": "cinematic product scene",
+  "size": "auto",
+  "n": 1
+}`}</code></pre>
+            </div>
           </div>
-          <div className={landingClasses.footerMeta}>
-            <div className={landingClasses.footerLinks}>
-              <a href="#" className="transition hover:text-[var(--accent)]">隐私政策</a>
-              <a href="#" className="transition hover:text-[var(--accent)]">服务条款</a>
-              <a href="#" className="transition hover:text-[var(--accent)]">联系我们</a>
+        </div>
+
+        <div className="mt-24 overflow-hidden border-y border-[var(--border-subtle)] py-5" aria-label="平台接入能力">
+          <div className="landing-marquee-track flex w-max animate-[landing-marquee_28s_linear_infinite] items-center will-change-transform">
+            {[0, 1].map((copy) => (
+              <div key={copy} className="flex shrink-0 items-center" aria-hidden={copy === 1 ? 'true' : undefined}>
+                {landingChapters.developer.terms.map((term) => (
+                  <span key={`${copy}-${term}`} className="flex items-center whitespace-nowrap px-7 font-vault-display text-xl font-semibold text-[var(--muted)] md:px-12 md:text-2xl">
+                    {term}<span className="ml-14 size-1.5 rounded-full bg-[var(--accent)] md:ml-24" />
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="landing-marquee-static hidden flex-wrap justify-center gap-x-8 gap-y-3 px-6">
+            {landingChapters.developer.terms.map((term) => (
+              <span
+                key={term}
+                data-landing-marquee-term
+                className="whitespace-nowrap font-vault-display text-base font-semibold text-[var(--muted)]"
+              >
+                {term}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className={sectionSpace}>
+        <div className={container}>
+          <div className="border-y border-[var(--border-strong)] py-20 text-center md:py-28">
+            <h2 className="mx-auto m-0 max-w-[1000px] font-vault-display text-4xl font-bold leading-[1.06] tracking-[0] md:text-7xl">{landingChapters.closing.title}</h2>
+            <p className="mx-auto mt-7 max-w-[620px] text-base leading-7 text-[var(--muted)] md:text-lg">{landingChapters.closing.detail}</p>
+            <div className="mt-10 flex flex-col justify-center gap-3 min-[420px]:flex-row">
+              <button
+                type="button"
+                className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent)] px-7 text-base font-bold text-[#111218] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_20px_55px_-28px_rgba(var(--accent-rgb),0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--bg)] active:translate-y-0 active:scale-[0.98]"
+                style={{ color: landingActionInk }}
+                onClick={goCreate}
+              >
+                开始生成
+                <ArrowRight size={18} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] px-7 text-base font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-1 hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98]"
+                onClick={() => app.navigate('docs')}
+              >
+                阅读 API 文档
+                <ExternalLink size={17} aria-hidden="true" />
+              </button>
             </div>
-            <p className="m-0 mt-4 opacity-50">© 2026 Mikiko Studio. All rights reserved.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-[var(--border-subtle)] py-12 text-sm text-[var(--muted)]">
+        <div className={cn(container, 'flex flex-col justify-between gap-8 md:flex-row md:items-end')}>
+          <div>
+            <div className="text-[var(--accent)]"><BrandMark withText /></div>
+            <p className="mt-5 max-w-[440px] leading-6">连接图片生成、任务状态、积分计费与历史资产的一体化平台。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
+            <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => app.navigate('docs')}>API 文档</button>
+            <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => app.navigate('public-gallery')}>公开画廊</button>
+            <span>© 2026 {siteBrand.name}</span>
           </div>
         </div>
       </footer>
@@ -197,3 +372,4 @@ export function LandingPage() {
   )
 }
 
+export default LandingPage
