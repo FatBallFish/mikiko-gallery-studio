@@ -1,47 +1,122 @@
 @import './tokens.css';
 
 :root {
-  --pg-user-bg-deep: #05070d;
-  --pg-user-bg-panel: #090c14;
-  --pg-user-bg-surface: rgba(255, 255, 255, 0.03);
-  --pg-user-bg-glass: rgba(10, 12, 20, 0.6);
-  
-  --pg-user-text-main: #f6efe4;
-  --pg-user-text-dim: rgba(246, 239, 228, 0.5);
-  --pg-user-text-soft: rgba(246, 239, 228, 0.68);
-  
-  --pg-user-border-thin: rgba(255, 255, 255, 0.08);
-  --pg-user-border-bright: rgba(255, 255, 255, 0.15);
-  --pg-user-gold: #d49d5e;
-  --pg-user-coral: #cb7c4d;
-  --pg-user-violet: #8376ff;
-  --pg-user-emerald: #41b995;
-  --pg-user-blue: #89b8ff;
-  --pg-line: rgba(255, 255, 255, 0.08);
-  --pg-line-strong: rgba(255, 255, 255, 0.15);
-  --pg-text-soft: rgba(246, 239, 228, 0.68);
-  --pg-focus-ring: var(--pg-user-gold);
+  color-scheme: dark;
+  --lv-bg: #07080d;
+  --lv-canvas: #0b0d14;
+  --lv-surface-1: #10121a;
+  --lv-surface-2: #151822;
+  --lv-surface-3: #1b1f2b;
+  --lv-text-primary: #f6f2eb;
+  --lv-text-secondary: rgb(246 242 235 / 0.68);
+  --lv-text-tertiary: rgb(246 242 235 / 0.46);
+  --lv-border-subtle: rgb(255 255 255 / 0.06);
+  --lv-border: rgb(255 255 255 / 0.1);
+  --lv-border-strong: rgb(255 255 255 / 0.17);
+  --lv-brand-amber: #d7a566;
+  --lv-brand-amber-rgb: 215, 165, 102;
+  --lv-accent-contrast: #07080d;
+  --lv-status-violet: #9187ff;
+  --lv-status-violet-rgb: 145, 135, 255;
+  --lv-status-emerald: #55c6a1;
+  --lv-status-emerald-rgb: 85, 198, 161;
+  --lv-status-coral: #df835e;
+  --lv-status-coral-rgb: 223, 131, 94;
+  --lv-status-blue: #83b7ff;
+  --lv-status-blue-rgb: 131, 183, 255;
+  --lv-image-overlay: linear-gradient(to top, rgb(4 5 8 / 0.94), rgb(4 5 8 / 0.14) 62%, rgb(4 5 8 / 0.36));
+  --lv-image-overlay-selected: rgb(4 5 8 / 0.46);
+  --lv-image-action: rgb(7 8 13 / 0.66);
+  --lv-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.22);
+  --lv-shadow-md: 0 16px 44px rgb(0 0 0 / 0.24);
+  --lv-shadow-lg: 0 32px 96px rgb(0 0 0 / 0.36);
+  --lv-focus-ring: color-mix(in oklch, var(--lv-brand-amber) 72%, white);
+  --lv-motion-fast: var(--pg-duration-fast);
+  --lv-motion-route: var(--pg-duration-base);
+  --lv-motion-slow: var(--pg-duration-slow);
+  --pg-shadow-sm: var(--lv-shadow-sm);
+  --pg-shadow-md: var(--lv-shadow-md);
+  --pg-shadow-lg: var(--lv-shadow-lg);
+  --pg-focus-ring: var(--lv-focus-ring);
 }
 
-body {
-  background-color: var(--pg-user-bg-deep);
-  background-image: 
-    radial-gradient(circle at 50% -20%, rgba(212, 157, 94, 0.08), transparent 50%),
-    radial-gradient(circle at 0% 100%, rgba(131, 118, 255, 0.05), transparent 40%);
-  color: var(--pg-user-text-main);
-  min-height: 100vh;
-  margin: 0;
-  -webkit-font-smoothing: antialiased;
-  font-family: 'Manrope', sans-serif;
+html[data-theme-mode='light'] {
+  color-scheme: light;
+  --lv-bg: #f4f6f8;
+  --lv-canvas: #f9fafb;
+  --lv-surface-1: #ffffff;
+  --lv-surface-2: #eef1f4;
+  --lv-surface-3: #e6eaee;
+  --lv-text-primary: #1d2027;
+  --lv-text-secondary: rgb(29 32 39 / 0.66);
+  --lv-text-tertiary: rgb(29 32 39 / 0.44);
+  --lv-border-subtle: rgb(29 32 39 / 0.07);
+  --lv-border: rgb(29 32 39 / 0.12);
+  --lv-border-strong: rgb(29 32 39 / 0.2);
+  --lv-brand-amber: #a9651f;
+  --lv-brand-amber-rgb: 169, 101, 31;
+  --lv-accent-contrast: #1d2027;
+  --lv-status-violet: #6557dc;
+  --lv-status-violet-rgb: 101, 87, 220;
+  --lv-status-emerald: #177d61;
+  --lv-status-emerald-rgb: 23, 125, 97;
+  --lv-status-coral: #b94f34;
+  --lv-status-coral-rgb: 185, 79, 52;
+  --lv-status-blue: #286cb8;
+  --lv-status-blue-rgb: 40, 108, 184;
+  --lv-image-overlay: linear-gradient(to top, rgb(255 255 255 / 0.94), rgb(255 255 255 / 0.12) 62%, rgb(255 255 255 / 0.32));
+  --lv-image-overlay-selected: rgb(255 255 255 / 0.46);
+  --lv-image-action: rgb(255 255 255 / 0.8);
+  --lv-shadow-sm: 0 1px 2px rgb(29 32 39 / 0.08);
+  --lv-shadow-md: 0 16px 44px rgb(29 32 39 / 0.1);
+  --lv-shadow-lg: 0 32px 96px rgb(29 32 39 / 0.14);
+  --lv-focus-ring: color-mix(in oklch, var(--lv-brand-amber) 78%, black);
+  --lv-motion-fast: var(--pg-duration-fast);
+  --lv-motion-route: var(--pg-duration-base);
+  --lv-motion-slow: var(--pg-duration-slow);
 }
 
-h1, strong, button {
-  font-family: 'Cormorant Garamond', serif;
+@media (prefers-color-scheme: light) {
+  html:not([data-theme-mode]) {
+    color-scheme: light;
+    --lv-bg: #f4f6f8;
+    --lv-canvas: #f9fafb;
+    --lv-surface-1: #ffffff;
+    --lv-surface-2: #eef1f4;
+    --lv-surface-3: #e6eaee;
+    --lv-text-primary: #1d2027;
+    --lv-text-secondary: rgb(29 32 39 / 0.66);
+    --lv-text-tertiary: rgb(29 32 39 / 0.44);
+    --lv-border-subtle: rgb(29 32 39 / 0.07);
+    --lv-border: rgb(29 32 39 / 0.12);
+    --lv-border-strong: rgb(29 32 39 / 0.2);
+    --lv-brand-amber: #a9651f;
+    --lv-brand-amber-rgb: 169, 101, 31;
+    --lv-accent-contrast: #1d2027;
+    --lv-status-violet: #6557dc;
+    --lv-status-violet-rgb: 101, 87, 220;
+    --lv-status-emerald: #177d61;
+    --lv-status-emerald-rgb: 23, 125, 97;
+    --lv-status-coral: #b94f34;
+    --lv-status-coral-rgb: 185, 79, 52;
+    --lv-status-blue: #286cb8;
+    --lv-status-blue-rgb: 40, 108, 184;
+    --lv-image-overlay: linear-gradient(to top, rgb(255 255 255 / 0.94), rgb(255 255 255 / 0.12) 62%, rgb(255 255 255 / 0.32));
+    --lv-image-overlay-selected: rgb(255 255 255 / 0.46);
+    --lv-image-action: rgb(255 255 255 / 0.8);
+    --lv-shadow-sm: 0 1px 2px rgb(29 32 39 / 0.08);
+    --lv-shadow-md: 0 16px 44px rgb(29 32 39 / 0.1);
+    --lv-shadow-lg: 0 32px 96px rgb(29 32 39 / 0.14);
+    --lv-focus-ring: color-mix(in oklch, var(--lv-brand-amber) 78%, black);
+    --lv-motion-fast: var(--pg-duration-fast);
+    --lv-motion-route: var(--pg-duration-base);
+    --lv-motion-slow: var(--pg-duration-slow);
+  }
 }
 
 .pg-glass-panel {
-  background: var(--pg-user-bg-glass);
+  background: color-mix(in oklch, var(--lv-surface-1) 72%, transparent);
   backdrop-filter: blur(20px);
-  border: 1px solid var(--pg-user-border-thin);
+  border: 1px solid var(--lv-border);
   border-radius: var(--pg-radius-md);
 }

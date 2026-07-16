@@ -1,13 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Manrope:wght@300;400;500;600&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
 @import 'tailwindcss';
 @import '../../shared/base.css';
 @import '../../shared/user-theme.css';
 
 @theme {
-  --font-vault-display: 'Cormorant Garamond', serif;
-  --font-vault-body: 'Manrope', system-ui, sans-serif;
-  --font-vault-mono: 'JetBrains Mono', monospace;
+  --font-vault-display: 'Satoshi', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-vault-body: 'Satoshi', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-vault-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 
   --color-vault-bg: oklch(12% 0.015 260);
   --color-vault-surface: oklch(16% 0.02 260);
@@ -19,33 +20,35 @@
   --color-vault-purple: oklch(60% 0.18 275);
   --color-vault-emerald: oklch(75% 0.15 165);
 
-  --radius-vault: 12px;
+  --radius-vault: var(--pg-radius-md);
 }
 
 :root {
-  --pg-user-dark-bg: #080910;
-  --pg-user-dark-canvas: #0d0f18;
-  --pg-user-dark-surface: #12141f;
-  --pg-user-dark-elevated: #181b29;
-  --pg-user-light-bg: #f6f2ea;
-  --pg-user-light-canvas: #fbf8f1;
+  --pg-user-dark-bg: #07080d;
+  --pg-user-dark-canvas: #0b0d14;
+  --pg-user-dark-surface: #10121a;
+  --pg-user-dark-elevated: #1b1f2b;
+  --pg-user-light-bg: #f4f6f8;
+  --pg-user-light-canvas: #f9fafb;
   --pg-user-light-surface: #ffffff;
-  --pg-user-light-elevated: #f1ece3;
-  --pg-user-text-main-dark: #f5f0e8;
-  --pg-user-text-muted-dark: rgba(245, 240, 232, 0.68);
-  --pg-user-text-dim-dark: rgba(245, 240, 232, 0.46);
-  --pg-user-text-main-light: #1f2129;
-  --pg-user-text-muted-light: rgba(31, 33, 41, 0.62);
-  --pg-user-text-dim-light: rgba(31, 33, 41, 0.42);
+  --pg-user-light-elevated: #e6eaee;
+  --pg-user-text-main-dark: #f6f2eb;
+  --pg-user-text-muted-dark: rgb(246 242 235 / 0.68);
+  --pg-user-text-dim-dark: rgb(246 242 235 / 0.46);
+  --pg-user-text-main-light: #1d2027;
+  --pg-user-text-muted-light: rgb(29 32 39 / 0.66);
+  --pg-user-text-dim-light: rgb(29 32 39 / 0.44);
   --pg-user-border-dark: rgba(255, 255, 255, 0.1);
   --pg-user-border-light: rgba(31, 33, 41, 0.12);
-  --pg-accent-amber: #d49d5e;
-  --pg-accent-violet: #8376ff;
-  --pg-accent-emerald: #41b995;
-  --pg-accent-coral: #cb7c4d;
+  --pg-accent-amber: var(--lv-brand-amber);
+  --pg-accent-violet: var(--lv-status-violet);
+  --pg-accent-emerald: var(--lv-status-emerald);
+  --pg-accent-coral: var(--lv-status-coral);
+  --pg-accent-blue: var(--lv-status-blue);
   --accent-coral: var(--pg-accent-coral);
   --accent-purple: var(--pg-accent-violet);
   --accent-emerald: var(--pg-accent-emerald);
+  --accent-blue: var(--pg-accent-blue);
   --image-overlay: linear-gradient(to top, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.4));
   --image-overlay-selected: rgb(0 0 0 / 0.4);
   --image-card-text: white;
@@ -63,31 +66,44 @@
   --lightbox-close-text: white;
   --lightbox-close-border: rgb(255 255 255 / 0.2);
   --sidebar-bg: #090a12;
-  --font-display: 'Cormorant Garamond', serif;
-  --font-body: 'Manrope', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  --sidebar-w: 108px;
-  --topbar-h: 76px;
-  --radius: 12px;
+  --font-display: 'Satoshi', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Satoshi', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --sidebar-w: var(--pg-sidebar-user-width);
+  --topbar-h: var(--pg-topbar-height);
+  --radius-sm: var(--pg-radius-sm);
+  --radius: var(--pg-radius-md);
+  --radius-lg: var(--pg-radius-lg);
+  --radius-xl: var(--pg-radius-xl);
+  --shadow-sm: var(--lv-shadow-sm);
+  --shadow-md: var(--lv-shadow-md);
+  --shadow-lg: var(--lv-shadow-lg);
+  --focus-ring: var(--lv-focus-ring);
+  --motion-fast: var(--lv-motion-fast);
+  --motion-route: var(--lv-motion-route);
+  --motion-slow: var(--lv-motion-slow);
+  --pg-focus-ring: var(--lv-focus-ring);
 }
 
 html,
 html[data-theme-mode="dark"] {
-  --bg: var(--pg-user-dark-bg);
-  --canvas: var(--pg-user-dark-canvas);
-  --surface: color-mix(in oklch, var(--pg-user-dark-surface) 92%, transparent);
-  --surface-solid: var(--pg-user-dark-surface);
-  --elevated: var(--pg-user-dark-elevated);
-  --fg: var(--pg-user-text-main-dark);
-  --muted: var(--pg-user-text-muted-dark);
-  --dim: var(--pg-user-text-dim-dark);
-  --border: var(--pg-user-border-dark);
-  --canvas-bg: color-mix(in oklch, var(--surface) 40%, black);
-  --image-overlay: linear-gradient(to top, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.4));
-  --image-overlay-selected: rgb(0 0 0 / 0.4);
+  --bg: var(--lv-bg);
+  --canvas: var(--lv-canvas);
+  --surface: color-mix(in oklch, var(--lv-surface-1) 92%, transparent);
+  --surface-solid: var(--lv-surface-1);
+  --elevated: var(--lv-surface-3);
+  --fg: var(--lv-text-primary);
+  --muted: var(--lv-text-secondary);
+  --dim: var(--lv-text-tertiary);
+  --border: var(--lv-border);
+  --border-subtle: var(--lv-border-subtle);
+  --border-strong: var(--lv-border-strong);
+  --canvas-bg: color-mix(in oklch, var(--lv-surface-1) 40%, black);
+  --image-overlay: var(--lv-image-overlay);
+  --image-overlay-selected: var(--lv-image-overlay-selected);
   --image-card-text: white;
   --image-card-muted: rgb(255 255 255 / 0.62);
-  --image-action-bg: rgb(0 0 0 / 0.45);
+  --image-action-bg: var(--lv-image-action);
   --image-action-border: rgb(255 255 255 / 0.1);
   --image-action-text: rgb(255 255 255 / 0.72);
   --image-action-hover-bg: rgb(255 255 255 / 0.1);
@@ -100,24 +116,30 @@ html[data-theme-mode="dark"] {
   --lightbox-close-text: white;
   --lightbox-close-border: rgb(255 255 255 / 0.2);
   --sidebar-bg: #090a12;
+  --atmosphere-grid: rgba(255, 255, 255, 0.025);
+  --atmosphere-glow:
+    radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 14%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in oklch, var(--bg) 0%, var(--pg-user-dark-canvas) 100%), var(--bg));
 }
 
 html[data-theme-mode="light"] {
-  --bg: var(--pg-user-light-bg);
-  --canvas: var(--pg-user-light-canvas);
-  --surface: color-mix(in oklch, var(--pg-user-light-surface) 90%, transparent);
-  --surface-solid: var(--pg-user-light-surface);
-  --elevated: var(--pg-user-light-elevated);
-  --fg: var(--pg-user-text-main-light);
-  --muted: var(--pg-user-text-muted-light);
-  --dim: var(--pg-user-text-dim-light);
-  --border: var(--pg-user-border-light);
-  --canvas-bg: color-mix(in oklch, var(--surface) 72%, var(--pg-user-light-elevated));
-  --image-overlay: linear-gradient(to top, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.15), rgb(255 255 255 / 0.34));
-  --image-overlay-selected: rgb(255 255 255 / 0.45);
+  --bg: var(--lv-bg);
+  --canvas: var(--lv-canvas);
+  --surface: color-mix(in oklch, var(--lv-surface-1) 90%, transparent);
+  --surface-solid: var(--lv-surface-1);
+  --elevated: var(--lv-surface-3);
+  --fg: var(--lv-text-primary);
+  --muted: var(--lv-text-secondary);
+  --dim: var(--lv-text-tertiary);
+  --border: var(--lv-border);
+  --border-subtle: var(--lv-border-subtle);
+  --border-strong: var(--lv-border-strong);
+  --canvas-bg: color-mix(in oklch, var(--lv-surface-1) 72%, var(--lv-surface-3));
+  --image-overlay: var(--lv-image-overlay);
+  --image-overlay-selected: var(--lv-image-overlay-selected);
   --image-card-text: #1f2129;
   --image-card-muted: rgb(31 33 41 / 0.62);
-  --image-action-bg: rgb(255 255 255 / 0.74);
+  --image-action-bg: var(--lv-image-action);
   --image-action-border: rgb(31 33 41 / 0.12);
   --image-action-text: rgb(31 33 41 / 0.72);
   --image-action-hover-bg: rgb(31 33 41 / 0.08);
@@ -130,27 +152,104 @@ html[data-theme-mode="light"] {
   --lightbox-close-text: #1f2129;
   --lightbox-close-border: rgb(31 33 41 / 0.14);
   --sidebar-bg: #fffaf1;
+  --atmosphere-grid: rgba(31, 33, 41, 0.04);
+  --atmosphere-glow:
+    radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 8%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--pg-user-light-canvas), var(--bg));
 }
 
 html[data-accent-theme="amber"],
 html:not([data-accent-theme]) {
   --accent: var(--pg-accent-amber);
-  --accent-rgb: 212, 157, 94;
+  --accent-rgb: var(--lv-brand-amber-rgb);
 }
 
 html[data-accent-theme="violet"] {
   --accent: var(--pg-accent-violet);
-  --accent-rgb: 131, 118, 255;
+  --accent-rgb: var(--lv-status-violet-rgb);
 }
 
 html[data-accent-theme="emerald"] {
   --accent: var(--pg-accent-emerald);
-  --accent-rgb: 65, 185, 149;
+  --accent-rgb: var(--lv-status-emerald-rgb);
 }
 
 html[data-accent-theme="coral"] {
   --accent: var(--pg-accent-coral);
-  --accent-rgb: 203, 124, 77;
+  --accent-rgb: var(--lv-status-coral-rgb);
+}
+
+/* System preference fallback - applies when data-theme-mode is not set */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme-mode]) {
+    --bg: var(--pg-user-light-bg);
+    --canvas: var(--pg-user-light-canvas);
+    --surface: color-mix(in oklch, var(--pg-user-light-surface) 90%, transparent);
+    --surface-solid: var(--pg-user-light-surface);
+    --elevated: var(--pg-user-light-elevated);
+    --fg: var(--pg-user-text-main-light);
+    --muted: var(--pg-user-text-muted-light);
+    --dim: var(--pg-user-text-dim-light);
+    --border: var(--pg-user-border-light);
+    --canvas-bg: color-mix(in oklch, var(--surface) 72%, var(--pg-user-light-elevated));
+    --image-overlay: linear-gradient(to top, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.15), rgb(255 255 255 / 0.34));
+    --image-overlay-selected: rgb(255 255 255 / 0.45);
+    --image-card-text: #1f2129;
+    --image-card-muted: rgb(31 33 41 / 0.62);
+    --image-action-bg: rgb(255 255 255 / 0.74);
+    --image-action-border: rgb(31 33 41 / 0.12);
+    --image-action-text: rgb(31 33 41 / 0.72);
+    --image-action-hover-bg: rgb(31 33 41 / 0.08);
+    --image-action-hover-text: #1f2129;
+    --image-checkbox-bg: rgb(255 255 255 / 0.82);
+    --image-checkbox-border: rgb(31 33 41 / 0.22);
+    --lightbox-backdrop: rgb(31 33 41 / 0.56);
+    --lightbox-stage-bg: var(--pg-user-light-canvas);
+    --lightbox-close-bg: rgb(255 255 255 / 0.84);
+    --lightbox-close-text: #1f2129;
+    --lightbox-close-border: rgb(31 33 41 / 0.14);
+    --sidebar-bg: #fffaf1;
+    --atmosphere-grid: rgba(31, 33, 41, 0.04);
+    --atmosphere-glow:
+      radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 8%, transparent), transparent 70%),
+      linear-gradient(180deg, var(--pg-user-light-canvas), var(--bg));
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme-mode]) {
+    --bg: var(--pg-user-dark-bg);
+    --canvas: var(--pg-user-dark-canvas);
+    --surface: color-mix(in oklch, var(--pg-user-dark-surface) 92%, transparent);
+    --surface-solid: var(--pg-user-dark-surface);
+    --elevated: var(--pg-user-dark-elevated);
+    --fg: var(--pg-user-text-main-dark);
+    --muted: var(--pg-user-text-muted-dark);
+    --dim: var(--pg-user-text-dim-dark);
+    --border: var(--pg-user-border-dark);
+    --canvas-bg: color-mix(in oklch, var(--surface) 40%, black);
+    --image-overlay: linear-gradient(to top, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.4));
+    --image-overlay-selected: rgb(0 0 0 / 0.4);
+    --image-card-text: white;
+    --image-card-muted: rgb(255 255 255 / 0.62);
+    --image-action-bg: rgb(0 0 0 / 0.45);
+    --image-action-border: rgb(255 255 255 / 0.1);
+    --image-action-text: rgb(255 255 255 / 0.72);
+    --image-action-hover-bg: rgb(255 255 255 / 0.1);
+    --image-action-hover-text: white;
+    --image-checkbox-bg: rgb(0 0 0 / 0.45);
+    --image-checkbox-border: rgb(255 255 255 / 0.3);
+    --lightbox-backdrop: rgb(0 0 0 / 0.9);
+    --lightbox-stage-bg: black;
+    --lightbox-close-bg: rgb(0 0 0 / 0.5);
+    --lightbox-close-text: white;
+    --lightbox-close-border: rgb(255 255 255 / 0.2);
+    --sidebar-bg: #090a12;
+    --atmosphere-grid: rgba(255, 255, 255, 0.025);
+    --atmosphere-glow:
+      radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in oklch, var(--accent) 14%, transparent), transparent 70%),
+      linear-gradient(180deg, var(--pg-user-dark-canvas), var(--bg));
+  }
 }
 
 html { scroll-behavior: smooth; }
@@ -163,30 +262,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Atmospheric backdrop - pure gradient + single subtle accent glow.
+   No grid lines, no multi-color blobs. Keeps the premium "Luminous Vault"
+   feel without looking like a tiled pattern. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: -1;
-  background:
-    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
-    radial-gradient(circle at 18% 8%, rgba(212,157,94,.18), transparent 28%),
-    radial-gradient(circle at 82% 16%, rgba(131,118,255,.15), transparent 32%),
-    radial-gradient(circle at 68% 84%, rgba(65,185,149,.12), transparent 32%);
-  background-size: 72px 72px, 72px 72px, auto, auto, auto;
+  background: var(--atmosphere-glow);
 }
 
 @layer utilities {
   .bg-vault-atmosphere {
-    background:
-      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
-      radial-gradient(circle at 18% 8%, rgba(212,157,94,.18), transparent 28%),
-      radial-gradient(circle at 82% 16%, rgba(131,118,255,.15), transparent 32%),
-      radial-gradient(circle at 68% 84%, rgba(65,185,149,.12), transparent 32%);
-    background-size: 72px 72px, 72px 72px, auto, auto, auto;
+    background: var(--atmosphere-glow);
   }
 }
 
@@ -258,3 +348,81 @@ html[data-theme-mode="dark"] .pg-date-input {
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+/* Motion vocabulary - aligned with spec section 14 (反馈与节奏, 不用于炫技) */
+@keyframes pg-fade-up {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes pg-route-enter {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes pg-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pg-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes pg-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.pg-enter {
+  animation: pg-fade-up 480ms var(--pg-ease-out) both;
+}
+.pg-route-enter {
+  animation: pg-route-enter var(--motion-route, 220ms) var(--pg-ease-out) both;
+}
+.pg-enter-fade {
+  animation: pg-fade-in 360ms var(--pg-ease-out) both;
+}
+.pg-enter-scale {
+  animation: pg-scale-in 320ms var(--pg-ease-spring) both;
+}
+.pg-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.18), transparent);
+  animation: pg-shimmer 1.6s var(--pg-ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-enter,
+  .pg-route-enter,
+  .pg-enter-fade,
+  .pg-enter-scale {
+    animation: none;
+  }
+  .pg-shimmer::after {
+    animation: none;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .pg-image-frame-actions {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Shimmer skeleton for loading states */
+.pg-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--fg) 6%, transparent);
+}
+.pg-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent) 12%, transparent), transparent);
+  animation: pg-shimmer 1.8s var(--pg-ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pg-skeleton::after { animation: none; }
+}
