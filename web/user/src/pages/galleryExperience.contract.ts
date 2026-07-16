@@ -1,6 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { galleryImageAspect, selectVisibleGalleryImages, toggleGalleryImageSelection } from './galleryExperience'
 
+const galleryModel = await import('./galleryExperience') as unknown as Record<string, unknown>
+type GalleryRow = { id: string }
+type VisibleSelection = <T extends GalleryRow>(rows: T[], selectedIds: ReadonlySet<string>) => T[]
+type AllVisibleSelection = (rows: GalleryRow[], selectedIds: ReadonlySet<string>) => boolean
+const selectedVisibleGalleryItems = galleryModel.selectedVisibleGalleryItems as VisibleSelection | undefined
+const areAllVisibleGalleryItemsSelected = galleryModel.areAllVisibleGalleryItemsSelected as AllVisibleSelection | undefined
+
+if (!selectedVisibleGalleryItems || !areAllVisibleGalleryItemsSelected) {
+  throw new Error('gallery batch actions need executable visible-selection helpers')
+}
+
 const componentsSource = readFileSync(new URL('../components.tsx', import.meta.url), 'utf8')
 const homeSource = readFileSync(new URL('./HomePage.tsx', import.meta.url), 'utf8')
 const privateGallerySource = readFileSync(new URL('./GalleryPage.tsx', import.meta.url), 'utf8')
@@ -29,13 +40,29 @@ if (unselected.has('image_1') || !unselected.has('image_2')) {
 }
 
 const allVisible = selectVisibleGalleryImages(new Set(['hidden']), ['visible_1', 'visible_2'], true)
-if (allVisible.has('hidden') || !allVisible.has('visible_1') || !allVisible.has('visible_2')) {
-  throw new Error('select-all should reflect only the current filtered gallery')
+if (!allVisible.has('hidden') || !allVisible.has('visible_1') || !allVisible.has('visible_2')) {
+  throw new Error('select-all should preserve hidden selection while selecting the current filtered gallery')
 }
 
 const cleared = selectVisibleGalleryImages(allVisible, ['visible_1', 'visible_2'], false)
-if (cleared.size !== 0) {
-  throw new Error('clearing visible selection should leave no stale items')
+if (cleared.size !== 1 || !cleared.has('hidden')) {
+  throw new Error('clearing visible selection must not discard selection from another filter')
+}
+
+const filteredRows = [{ id: 'visible_1' }, { id: 'visible_2' }]
+const selectionWithHidden = new Set(['hidden', 'visible_1'])
+const visibleBatchItems = selectedVisibleGalleryItems(filteredRows, selectionWithHidden)
+if (visibleBatchItems.length !== 1 || visibleBatchItems[0]?.id !== 'visible_1') {
+  throw new Error('batch targets must be the strict intersection of filtered rows and selected ids')
+}
+if (areAllVisibleGalleryItemsSelected(filteredRows, selectionWithHidden)) {
+  throw new Error('equal selected and filtered counts must not imply all visible rows are selected')
+}
+if (!areAllVisibleGalleryItemsSelected(filteredRows, new Set(['hidden', 'visible_1', 'visible_2']))) {
+  throw new Error('all-visible-selected must require every filtered id while tolerating hidden selection')
+}
+if (selectedVisibleGalleryItems(filteredRows, new Set(['hidden'])).length !== 0) {
+  throw new Error('a filter with no visible selected items must expose no batch targets')
 }
 
 for (const sharedPrimitive of ['export function GalleryFilterToolbar', 'export function GalleryImageFrame']) {
@@ -113,4 +140,13 @@ if (!privateGallerySource.includes("card: 'group/asset")) {
 
 if (!privateGallerySource.includes("selectedIds.has(image.id) && galleryClasses.assetSelectVisualSelected")) {
   throw new Error('selected gallery assets must keep the compact checkbox visible')
+}
+
+for (const visibleBatchContract of [
+  'selectedVisibleGalleryItems(filtered, selectedIds)',
+  'areAllVisibleGalleryItemsSelected(filtered, selectedIds)',
+]) {
+  if (!privateGallerySource.includes(visibleBatchContract)) {
+    throw new Error(`private gallery batch actions must wire ${visibleBatchContract}`)
+  }
 }

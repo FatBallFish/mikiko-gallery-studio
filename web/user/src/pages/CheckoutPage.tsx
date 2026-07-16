@@ -4,8 +4,8 @@ import type { CashierOptions, CashierOrder, CashierPlan, PaymentVisibleMethod } 
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, LoadingState, Modal, copyText, useApp } from '../components'
-import { userButton, userCard } from '../ui/classes'
 import { rdBilling } from '../ui/redesign-classes'
+import { Wallet, CreditCard, QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
@@ -14,12 +14,12 @@ import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
 
 const checkoutClasses = {
-  page: 'w-full flex-1 p-6 md:p-10',
-  header: 'mb-12',
-  title: 'mb-4 text-4xl font-black md:text-6xl',
-  detail: 'text-lg leading-relaxed text-[var(--muted)]',
+  page: 'w-full flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-8',
+  header: 'mb-8 border-b border-[var(--border)] pb-7',
+  title: 'mb-3 text-[clamp(2rem,4vw,3.25rem)] font-black leading-none',
+  detail: 'max-w-3xl text-sm leading-relaxed text-[var(--muted)] md:text-base',
   layout: rdBilling.layout,
-  panel: cn(rdBilling.card, 'grid min-w-0 gap-8'),
+  panel: cn(rdBilling.card, 'grid min-w-0 gap-6'),
   sectionHeading: 'text-sm font-bold text-[var(--muted)]',
   optionGrid: rdBilling.planGrid,
   optionButton: rdBilling.planItem,
@@ -28,10 +28,10 @@ const checkoutClasses = {
   planPoints: rdBilling.planPrice,
   planPrice: 'text-[13px] not-italic text-[var(--fg)]',
   methodGrid: 'grid grid-cols-1 gap-3',
-  methodButton: 'group flex min-h-[74px] cursor-pointer items-center gap-3 rounded-[1.4rem] border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-left text-[var(--fg)] transition-all duration-300 hover:border-[var(--accent)]',
+  methodButton: 'group flex min-h-[68px] cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-left text-[var(--fg)] transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
   methodIcon: 'grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]',
   custom: 'mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/80 px-4 py-3',
-  customResult: 'grid min-h-[70px] gap-1.5 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
+  customResult: 'grid min-h-[70px] gap-1.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
   customResultLabel: 'text-xs text-[var(--muted)]',
   customResultValue: 'font-mono text-2xl text-[var(--accent)]',
   sectionTitle: 'text-sm font-bold text-[var(--muted)]',
@@ -45,33 +45,33 @@ const checkoutClasses = {
   orderSectionTitle: 'text-xs font-bold text-[var(--muted)]',
   orderTotalRow: cn(rdBilling.orderRow, 'mt-2 border-0 pt-6'),
   orderTotal: rdBilling.orderTotal,
-  payButton: 'relative mt-1 grid h-16 w-full place-items-center overflow-hidden rounded-2xl bg-[var(--accent)] px-5 text-lg font-black text-white shadow-[0_18px_42px_rgba(var(--accent-rgb),0.28)] transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100',
+  payButton: 'relative mt-1 grid h-14 w-full place-items-center overflow-hidden rounded-xl bg-[var(--accent)] px-5 text-base font-black text-[#111218] shadow-[0_14px_34px_rgba(var(--accent-rgb),0.24)] transition-transform hover:scale-[1.01] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 motion-reduce:transform-none motion-reduce:transition-none',
   actions: 'flex flex-wrap justify-end gap-3 max-[420px]:flex-col max-[420px]:items-stretch',
-  payment: 'grid gap-2.5 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
+  payment: 'grid gap-2.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
   paymentUnsupported: 'border-[color-mix(in_oklch,var(--warn)_45%,var(--border))] bg-[color-mix(in_oklch,var(--warn)_9%,transparent)]',
   paymentLabel: 'text-sm font-extrabold text-[var(--fg)]',
   paymentDetail: 'm-0 text-[13px] leading-relaxed text-[var(--muted)]',
-  paymentCode: 'block max-w-full whitespace-normal rounded-md bg-[color-mix(in_oklch,var(--bg)_72%,transparent)] p-2.5 text-[var(--accent)] [overflow-wrap:anywhere]',
-  paymentQrWrap: 'grid justify-items-center gap-3 rounded-[1.6rem] border border-[var(--border)] bg-[var(--bg)] p-5',
-  paymentQrImage: 'size-52 rounded-2xl border border-[var(--border)] bg-white p-3 shadow-[0_18px_42px_rgba(0,0,0,0.16)]',
+  paymentCode: 'block max-w-full whitespace-normal rounded-xl bg-[color-mix(in_oklch,var(--bg)_72%,transparent)] p-2.5 text-[var(--accent)] [overflow-wrap:anywhere]',
+  paymentQrWrap: 'grid justify-items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-5',
+  paymentQrImage: 'size-52 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-3 shadow-[var(--pg-shadow-md)]',
   paymentModalBody: 'grid gap-5 pt-2',
   paymentModalLayout: 'grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.78fr)]',
-  paymentModalCard: 'grid gap-4 rounded-[1.8rem] border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_82%,transparent)] p-5',
+  paymentModalCard: 'grid gap-4 rounded-3xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_82%,transparent)] p-5',
   paymentModalGrid: 'grid gap-3 sm:grid-cols-2',
   paymentMeta: 'grid gap-1.5 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/72 p-3.5',
   paymentMetaLabel: 'text-[11px] font-bold text-[var(--muted)]',
   paymentMetaValue: 'text-sm font-black text-[var(--fg)] [overflow-wrap:anywhere]',
-  paymentStatus: 'grid gap-2 rounded-[1.4rem] border border-[var(--border)] bg-[var(--bg)]/72 p-4',
+  paymentStatus: 'grid gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/72 p-4',
   paymentStatusStrong: 'text-base font-black text-[var(--fg)]',
   paymentStatusDetail: 'm-0 text-sm leading-relaxed text-[var(--muted)]',
-  paymentResult: 'grid gap-2 rounded-[1.4rem] border border-[color-mix(in_oklch,var(--accent)_38%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] p-4',
-  paymentResultWarn: 'border-[color-mix(in_oklch,oklch(74%_.16_35)_42%,var(--border))] bg-[color-mix(in_oklch,oklch(74%_.16_35)_10%,transparent)]',
+  paymentResult: 'grid gap-2 rounded-2xl border border-[color-mix(in_oklch,var(--accent)_38%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] p-4',
+  paymentResultWarn: 'border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_10%,transparent)]',
   paymentResultNote: 'text-xs text-[var(--muted)]',
   recentActions: 'flex flex-wrap items-center justify-end gap-2 md:col-start-4 md:justify-self-end',
-  recent: cn(userCard.padded, 'mt-8 grid gap-4 rounded-[2.5rem]'),
+  recent: 'mt-10 grid gap-4 border-t border-[var(--border)] pt-8',
   recentTitle: 'flex items-center justify-between gap-3',
   recentList: 'grid gap-2.5',
-  recentRow: 'grid grid-cols-1 items-center gap-3 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_86%,#05070d)] p-3.5 text-left text-[var(--fg)] md:grid-cols-[minmax(180px,1.25fr)_minmax(120px,.72fr)_minmax(120px,.72fr)_minmax(220px,.9fr)]',
+  recentRow: 'grid grid-cols-1 items-center gap-3 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_86%,var(--bg))] p-3.5 text-left text-[var(--fg)] md:grid-cols-[minmax(180px,1.25fr)_minmax(120px,.72fr)_minmax(120px,.72fr)_minmax(220px,.9fr)]',
   recentRowActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_10%,var(--surface))]',
   recentCell: 'grid min-w-0 gap-1',
   recentStrong: 'min-w-0 [overflow-wrap:anywhere]',
@@ -572,7 +572,7 @@ function PaymentDisplayPanel({ order, busy, onMockPay }: { order: CashierOrder; 
               </div>
             </div>
           ) : (
-            <a className={cn(userButton.base, userButton.ghost)} href={paymentHref} target="_blank" rel="noreferrer">打开支付页</a>
+            <a className="inline-flex items-center justify-center gap-2 rounded-xl border border-transparent bg-transparent px-[18px] py-2.5 text-sm font-bold text-[var(--fg)] no-underline transition-all duration-200 hover:bg-[color-mix(in_oklch,var(--accent)_8%,transparent)]" href={paymentHref} target="_blank" rel="noreferrer">打开支付页</a>
           )}
         </>
       ) : null}
@@ -590,10 +590,7 @@ function PaymentQRCode({ value }: { value: string }) {
     void toDataURL(value, {
       margin: 1,
       width: 208,
-      color: {
-        dark: '#111111',
-        light: '#ffffff',
-      },
+      color: resolveQrColors(),
     }).then((url) => {
       if (!cancelled) setDataUrl(url)
     }).catch(() => {
@@ -606,6 +603,16 @@ function PaymentQRCode({ value }: { value: string }) {
 
   if (!dataUrl) return <div className={checkoutClasses.paymentQrImage} />
   return <img className={checkoutClasses.paymentQrImage} src={dataUrl} alt="支付二维码" />
+}
+
+function resolveQrColors() {
+  if (typeof window === 'undefined') {
+    return { dark: '#111111', light: '#ffffff' }
+  }
+  const style = window.getComputedStyle(document.documentElement)
+  const dark = style.getPropertyValue('--fg').trim() || '#111111'
+  const light = style.getPropertyValue('--surface-solid').trim() || '#ffffff'
+  return { dark, light }
 }
 
 function newCheckoutOrderIdempotencyKey() {
@@ -697,7 +704,7 @@ function MethodButton({ method, active, onSelect }: { method: PaymentVisibleMeth
   const display = checkoutPaymentMethodOptionModel(method)
   return (
     <button type="button" className={cn(checkoutClasses.optionButton, checkoutClasses.methodButton, active && checkoutClasses.optionActive)} onClick={onSelect}>
-      <span className={checkoutClasses.methodIcon}>{method.method.includes('wx') ? '微' : method.method.includes('ali') ? '支' : '¥'}</span>
+      <span className={checkoutClasses.methodIcon}>{method.method.includes('wx') ? <Wallet size={18} strokeWidth={1.5} /> : method.method.includes('ali') ? <CreditCard size={18} strokeWidth={1.5} /> : <QrCode size={18} strokeWidth={1.5} />}</span>
       <span className="grid min-w-0 gap-1">
         <strong>{display.label}</strong>
         <span className={checkoutClasses.optionLabel}>{display.detail}</span>

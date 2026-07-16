@@ -1,4 +1,67 @@
-import type { Balance, BalanceBucket, Capability, ImageResult, ImageTaskType } from '../../../shared/api-types'
+import type { Balance, BalanceBucket, Capability, ImageResult, ImageTask, ImageTaskType } from '../../../shared/api-types'
+
+export type HomeContinuationView = {
+  action: 'create' | 'continue' | 'retry' | 'inspect'
+  route: 'genpic'
+  label: string
+  taskId?: string
+}
+
+export type HomeRecentTaskView = {
+  state: 'loading' | 'empty' | 'active' | 'complete' | 'failed'
+  tone: 'neutral' | 'success' | 'warning' | 'error'
+  title: string
+  detail: string
+  action: 'none' | 'create' | 'continue' | 'retry' | 'inspect'
+}
+
+export function homeContinuationView(tasks: ImageTask[]): HomeContinuationView {
+  const latest = newestTask(tasks)
+  if (!latest) return { action: 'create', route: 'genpic', label: '开始第一次创作' }
+  if (isFailedTask(latest.status)) return { action: 'retry', route: 'genpic', label: '重试最近任务', taskId: latest.id }
+  if (latest.status === 'queued' || latest.status === 'running') return { action: 'continue', route: 'genpic', label: '继续查看进度', taskId: latest.id }
+  return { action: 'inspect', route: 'genpic', label: '继续创作', taskId: latest.id }
+}
+
+export function homeRecentTaskView(task: ImageTask | null, loading: boolean): HomeRecentTaskView {
+  if (loading) return { state: 'loading', tone: 'neutral', title: '正在读取最近任务', detail: '进度与结果会在这里同步。', action: 'none' }
+  if (!task) return { state: 'empty', tone: 'neutral', title: '还没有生成记录', detail: '从一段提示词开始你的第一张作品。', action: 'create' }
+  if (isFailedTask(task.status)) {
+    return { state: 'failed', tone: 'error', title: task.title || '最近任务未完成', detail: task.failure_reason || '本次未产生可用图片，不会按成功结果扣费。', action: 'retry' }
+  }
+  if (task.status === 'queued' || task.status === 'running') {
+    const progress = Math.max(0, Math.min(100, Math.round(task.progress || 0)))
+    return { state: 'active', tone: 'warning', title: task.title || '正在生成', detail: `${task.status === 'queued' ? '已进入队列' : '正在生成'} · ${progress}%`, action: 'continue' }
+  }
+  return { state: 'complete', tone: 'success', title: task.title || '最近作品已完成', detail: `${taskTypeLabel(task.task_type)} · ${task.route_model_code || task.abstract_model || task.model_group || '-'}`, action: 'inspect' }
+}
+
+export function curatedHomeGallery(images: ImageResult[], limit = 6) {
+  const boundedLimit = Math.max(0, Math.min(6, Math.floor(limit)))
+  const seen = new Set<string>()
+  return images.filter((image) => {
+    if (!image.id || seen.has(image.id)) return false
+    seen.add(image.id)
+    return true
+  }).slice(0, boundedLimit)
+}
+
+export function newestHomeTask(tasks: ImageTask[]) {
+  return newestTask(tasks)
+}
+
+function newestTask(tasks: ImageTask[]) {
+  return [...tasks].sort((left, right) => dateValue(right.created_at) - dateValue(left.created_at))[0] ?? null
+}
+
+function dateValue(value?: string) {
+  const parsed = Date.parse(value ?? '')
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function isFailedTask(status: ImageTask['status']) {
+  return status === 'failed' || status === 'rejected' || status === 'cancelled'
+}
 
 function taskTypeLabel(type: ImageTaskType | string) {
   const labels: Record<string, string> = {
@@ -19,7 +82,7 @@ function formatDateTime(date?: string) {
 export function homeGalleryCardView(image: ImageResult) {
   return {
     title: image.prompt_excerpt || '公开作品',
-    meta: `${taskTypeLabel(image.task_type ?? 'text_to_image')} · ${image.route_model_code || image.abstract_model || '-'} · ${image.quality || '-'} · ${formatDateTime(image.created_at)}`,
+    meta: `${taskTypeLabel(image.task_type ?? 'text_to_image')} · ${image.route_model_code || image.abstract_model || '-'} · ${image.base_resolution || image.quality || '-'} · ${formatDateTime(image.created_at)}`,
   }
 }
 

@@ -2,8 +2,9 @@ import { FormEvent, useMemo, useState } from 'react'
 import type { ApiKey } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
-import { Button, CopyButton, EmptyState, Field, LoadingState, Modal, useApp } from '../components'
+import { Button, CopyButton, EmptyState, Field, Modal, useApp } from '../components'
 import { userButton, userForm } from '../ui/classes'
+import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage, useApiResource } from '../useApiResource'
 import {
   apiKeyCreatePayload,
@@ -22,16 +23,12 @@ import {
 const allScopes = ['images:write', 'images:read', 'balance:read', 'profile:read']
 
 const apiKeyClasses = {
-  content: 'w-full flex-1 p-6 md:p-10',
-  header: 'mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between',
-  title: 'm-0 text-4xl font-black leading-none md:text-6xl',
-  detail: 'mt-4 max-w-2xl text-base leading-relaxed text-[var(--muted)]',
-  createButton: 'h-12 rounded-2xl bg-[var(--accent)] px-6 text-sm font-bold text-white shadow-lg shadow-[var(--accent)]/20 transition-transform hover:scale-[1.03]',
+  createButton: 'h-12 rounded-2xl bg-[var(--accent)] px-6 text-sm font-bold text-white shadow-lg shadow-[var(--accent)]/20 transition-transform hover:scale-[1.03] active:scale-[0.98]',
   metricGrid: 'mb-8 grid grid-cols-1 gap-4 md:grid-cols-3',
-  metric: 'rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-6',
+  metric: 'rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6',
   metricLabel: 'mb-2 text-xs font-bold text-[var(--muted)]',
   metricValue: 'text-3xl font-black text-[var(--fg)]',
-  panel: 'mb-8 overflow-hidden rounded-[2.5rem] border border-[var(--border)] bg-[var(--surface)]',
+  panel: 'mb-8 overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]',
   panelHead: 'flex flex-col gap-3 border-b border-[var(--border)] p-6 md:flex-row md:items-center md:justify-between',
   panelTitle: 'text-2xl font-black',
   panelHint: 'mt-1 text-sm text-[var(--muted)]',
@@ -43,18 +40,18 @@ const apiKeyClasses = {
   rowSelected: 'bg-[var(--accent)]/5 outline outline-1 outline-[rgba(var(--accent-rgb),.42)]',
   mutedSmall: 'text-xs text-[var(--muted)]',
   mutedSmallTop: 'mt-1 text-xs text-[var(--muted)]',
-  inlineCode: 'rounded-lg bg-[var(--bg)] px-2 py-1 font-vault-mono text-[var(--accent)]',
-  badge: 'rounded-md border border-[var(--border)] bg-white/[.06] px-2 py-1 font-mono text-[11px] font-bold',
-  badgeSuccess: 'border-[rgba(212,157,94,.35)] text-[var(--accent)]',
+  inlineCode: 'rounded-xl bg-[var(--bg)] px-2 py-1 font-vault-mono text-[var(--accent)]',
+  badge: 'rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_6%,transparent)] px-2 py-1 font-mono text-[11px] font-bold',
+  badgeSuccess: 'border-[color-mix(in_oklch,var(--accent)_35%,var(--border))] text-[var(--accent)]',
   actions: 'flex flex-wrap gap-2',
   tableAction: 'min-h-8 rounded-xl px-3 py-1.5 text-xs',
-  dangerButton: 'text-[oklch(70%_.2_25)]',
-  oneTimeSecret: 'mb-8 rounded-[2rem] border border-[rgba(var(--accent-rgb),0.42)] bg-[rgba(var(--accent-rgb),0.08)] p-6',
+  dangerButton: 'text-[var(--accent-coral)]',
+  oneTimeSecret: 'mb-8 rounded-3xl border border-[color-mix(in_oklch,var(--accent)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] p-6',
   oneTimeSecretHead: 'mb-3 flex flex-wrap items-center justify-between gap-3',
   oneTimeSecretTitle: 'font-bold text-[var(--fg)]',
   oneTimeSecretText: 'm-0 text-sm text-[var(--muted)]',
   quickstartGrid: 'grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]',
-  quickstartStack: 'overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--surface)]',
+  quickstartStack: 'overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)]',
   sectionTitle: 'm-0 text-2xl font-black leading-tight',
   codeCard: 'overflow-hidden',
   codeBar: 'flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--bg)] px-5 py-3 font-mono text-[13px] text-[var(--muted)]',
@@ -62,7 +59,7 @@ const apiKeyClasses = {
   codePre: 'm-0 whitespace-pre-wrap',
   docHint: 'p-6 pt-0 text-sm text-[var(--muted)]',
   docLink: 'text-[var(--accent)] underline',
-  securityCard: 'rounded-[2rem] border border-[var(--border)] bg-[var(--surface)] p-6',
+  securityCard: 'rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6',
   securityList: 'grid gap-3 text-sm text-[var(--muted)]',
   securityItem: 'rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-4',
   modalForm: 'grid gap-4',
@@ -73,7 +70,7 @@ const apiKeyClasses = {
   scopeGrid: 'grid gap-2 sm:grid-cols-2',
   scopeOption: 'inline-flex min-h-12 cursor-pointer items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/60 px-3 py-2 text-sm font-bold text-[var(--muted)] transition-all hover:border-[var(--accent)]/60 hover:text-[var(--fg)]',
   scopeOptionActive: 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--fg)] ring-1 ring-[var(--accent)]/45',
-  scopeCheck: 'grid size-5 shrink-0 place-items-center rounded-md border border-[var(--border)] bg-[var(--surface)] text-[11px] font-black text-transparent transition-colors',
+  scopeCheck: 'grid size-5 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[11px] font-black text-transparent transition-colors',
   scopeCheckActive: 'border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_0_0_1px_color-mix(in_oklch,var(--accent)_40%,transparent)]',
   rpmControl: 'grid gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/60 p-3',
   rpmRow: 'flex items-center justify-between gap-3',
@@ -81,7 +78,7 @@ const apiKeyClasses = {
   rpmButton: 'grid size-10 cursor-pointer place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-lg font-black text-[var(--fg)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45',
   rpmRange: 'accent-[var(--accent)]',
   secretOnce: 'grid gap-2 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3',
-  secretCode: 'overflow-x-auto rounded-lg bg-[var(--bg)] px-3 py-2 font-mono text-[var(--accent)]',
+  secretCode: 'overflow-x-auto rounded-xl bg-[var(--bg)] px-3 py-2 font-mono text-[var(--accent)]',
 }
 
 export function ApiKeysPage() {
@@ -141,15 +138,12 @@ export function ApiKeysPage() {
   }
 
   return (
-    <div className={apiKeyClasses.content}>
-      <div className={apiKeyClasses.header}>
-        <div>
-          <h1 className={apiKeyClasses.title}>API 密钥</h1>
-          <p className={apiKeyClasses.detail}>管理开放接口调用凭证、限速和额度。密钥仅以首尾明文展示，中间内容始终隐藏。</p>
-        </div>
-        <button className={apiKeyClasses.createButton} type="button" onClick={() => setCreating(true)}>+ {apiKeyPageLabels.create}</button>
-      </div>
-
+    <SettingsWorkspace
+      active="api-keys"
+      title="API 密钥"
+      detail="管理开放接口调用凭证、限速和额度。Secret 仅在创建或重置时展示一次。"
+      action={<button className={apiKeyClasses.createButton} type="button" onClick={() => setCreating(true)}>+ {apiKeyPageLabels.create}</button>}
+    >
       {oneTimeSecret ? (
         <div className={apiKeyClasses.oneTimeSecret}>
           <div className={apiKeyClasses.oneTimeSecretHead}>
@@ -180,7 +174,7 @@ export function ApiKeysPage() {
           </div>
           <button className={cn(userButton.base, userButton.ghost, 'rounded-2xl')} type="button" onClick={() => void keys.reload()}>刷新</button>
         </div>
-        {keys.loading ? <LoadingState /> : null}
+        {keys.loading ? <ApiKeysTableSkeleton /> : null}
         {!keys.loading && !keys.data?.length ? <EmptyState title="暂无密钥" detail="创建一个密钥后即可调试开放 API。" action={<Button onClick={() => setCreating(true)}>创建密钥</Button>} /> : null}
         {keys.data?.length ? (
           <div className={apiKeyClasses.tableWrap}>
@@ -243,7 +237,7 @@ export function ApiKeysPage() {
             <pre className={apiKeyClasses.codePre}>{quickstart.code}</pre>
           </div>
         </div>
-        <p className={apiKeyClasses.docHint}>查看完整 <a href="#/docs" className={apiKeyClasses.docLink}>开发文档</a> 获取更多语言示例。</p>
+        <p className={apiKeyClasses.docHint}>查看完整 <button type="button" className={cn(apiKeyClasses.docLink, 'border-0 bg-transparent p-0')} onClick={() => app.navigate('docs')}>开发文档</button> 获取更多语言示例。</p>
         </div>
         <div className={apiKeyClasses.securityCard}>
           <h3 className="mb-4 text-xl font-black">安全建议</h3>
@@ -262,6 +256,30 @@ export function ApiKeysPage() {
       }} /> : null}
       {editTarget ? <EditKeyModal keyItem={editTarget} onClose={() => setEditTarget(null)} onSaved={async (key) => { await keys.reload(); setSelectedId(key.id); setEditTarget(null) }} /> : null}
       {deleteTarget ? <DeleteKeyModal keyItem={deleteTarget} busy={busyKeyId === deleteTarget.id} onCancel={() => setDeleteTarget(null)} onConfirm={() => void remove(deleteTarget)} /> : null}
+    </SettingsWorkspace>
+  )
+}
+
+function ApiKeysTableSkeleton() {
+  return (
+    <div className="grid gap-4 p-6" aria-hidden="true">
+      <div className={apiKeyClasses.metricGrid}>
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className={apiKeyClasses.metric}>
+            <div className="pg-skeleton h-3 w-20 rounded-xl" />
+            <div className="mt-3 pg-skeleton h-8 w-24 rounded-xl" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-3">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="grid gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/35 p-4">
+            <div className="pg-skeleton h-4 w-1/4 rounded-xl" />
+            <div className="pg-skeleton h-4 w-2/3 rounded-xl" />
+            <div className="pg-skeleton h-4 w-1/2 rounded-xl" />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

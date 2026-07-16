@@ -336,7 +336,7 @@ export const userApi = {
       nickname: patch.display_name ?? patch.nickname,
       bio: patch.signature ?? patch.bio,
       avatar_object_key: patch.avatar_object_key,
-      default_locale: patch.default_locale ?? patch.preferences?.model_group,
+      default_locale: patch.default_locale,
       theme: patch.theme,
     },
   })),

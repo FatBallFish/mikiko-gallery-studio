@@ -8,6 +8,7 @@ export type GalleryEditContext = {
   fallbackImageUrl?: string
   task_type?: ImageTaskType
   route_model_code?: string
+  base_resolution?: string
   quality?: string
   aspect_ratio?: string
 }
@@ -20,6 +21,8 @@ type GalleryEditContextInput = {
   task_type?: ImageTaskType | null
   routeModelCode?: string | null
   route_model_code?: string | null
+  baseResolution?: string | null
+  base_resolution?: string | null
   quality?: string | null
   aspectRatio?: string | null
   aspect_ratio?: string | null
@@ -31,13 +34,15 @@ function clean(value?: string | null) {
 }
 
 export function createGalleryEditContext(input: GalleryEditContextInput): GalleryEditContext {
+  const resolution = clean(input.base_resolution ?? input.baseResolution ?? input.quality)
   return {
     prompt: input.prompt ?? '',
     sources: input.sources ?? [],
     fallbackImageUrl: clean(input.fallbackImageUrl),
     task_type: input.task_type ?? input.taskType ?? undefined,
     route_model_code: clean(input.route_model_code ?? input.routeModelCode),
-    quality: clean(input.quality),
+    base_resolution: resolution,
+    quality: clean(input.quality) ?? resolution,
     aspect_ratio: clean(input.aspect_ratio ?? input.aspectRatio),
   }
 }
