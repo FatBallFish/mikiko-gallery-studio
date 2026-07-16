@@ -3407,6 +3407,18 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminLoginResponse
+  /api/ops/admin/v1/auth/session/refresh:
+    post:
+      tags: [Admin Auth]
+      summary: Rotate the admin refresh session and issue a new access token
+      operationId: postOpsAdminSessionRefresh
+      responses:
+        '200':
+          description: Admin session refreshed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminLoginResponse
 components:
   securitySchemes:
     bearerAuth:

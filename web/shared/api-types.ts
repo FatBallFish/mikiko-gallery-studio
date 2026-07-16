@@ -80,6 +80,7 @@ export const API_PATHS = {
   },
   ops: {
     login: '/api/ops/admin/v1/auth/login',
+    refreshSession: '/api/ops/admin/v1/auth/session/refresh',
     logout: '/api/ops/admin/v1/auth/logout',
     auditLogs: '/api/ops/admin/v1/audit-logs',
     adminUsers: '/api/ops/admin/v1/admin-users',

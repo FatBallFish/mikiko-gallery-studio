@@ -82,6 +82,7 @@ func LoadEnv(path string) (Config, error) {
 	cfg.Auth.Issuer = envString(fileEnv, "AUTH_ISSUER", "")
 	cfg.Auth.AccessTokenSecret = envString(fileEnv, "AUTH_ACCESS_TOKEN_SECRET", "")
 	cfg.Auth.RefreshCookieName = envString(fileEnv, "AUTH_REFRESH_COOKIE_NAME", "")
+	cfg.Auth.AdminRefreshCookieName = envString(fileEnv, "AUTH_ADMIN_REFRESH_COOKIE_NAME", "")
 	cfg.Auth.FixedEmailCode = envString(fileEnv, "AUTH_FIXED_EMAIL_CODE", "")
 	cfg.Auth.DevEmailCodes = envBool(fileEnv, "AUTH_DEV_EMAIL_CODES", false)
 
@@ -155,6 +156,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Auth.RefreshCookieName == "" {
 		cfg.Auth.RefreshCookieName = "pg_refresh_token"
+	}
+	if cfg.Auth.AdminRefreshCookieName == "" {
+		cfg.Auth.AdminRefreshCookieName = "pg_admin_refresh_token"
 	}
 	if len(cfg.HTTP.CORSAllowedOrigins) == 0 {
 		cfg.HTTP.CORSAllowedOrigins = []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"}

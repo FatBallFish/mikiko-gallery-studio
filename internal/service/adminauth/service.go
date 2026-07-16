@@ -28,6 +28,8 @@ const (
 	bcryptPasswordHashPrefix = "bcrypt"
 	maxFailedLoginAttempts   = 5
 	failedLoginLockDuration  = 15 * time.Minute
+	maxAdminSessionFamilies  = 16
+	maxSessionsPerFamily     = 64
 )
 
 type Claims struct {
@@ -41,9 +43,21 @@ type Claims struct {
 
 type memorySession struct {
 	ID        string
+	FamilyID  string
 	AdminID   int64
 	Status    string
 	ExpiresAt time.Time
+}
+
+type refreshSession struct {
+	ID                  string
+	FamilyID            string
+	AdminID             int64
+	RefreshTokenHash    string
+	Status              string
+	CreatedAt           time.Time
+	ExpiresAt           time.Time
+	ReplacedBySessionID string
 }
 
 type loginFailure struct {
@@ -52,18 +66,29 @@ type loginFailure struct {
 }
 
 type Service struct {
-	mu       sync.Mutex
-	cfg      config.AuthConfig
-	store    Store
-	sessions map[string]memorySession
-	failures map[string]loginFailure
+	mu              sync.Mutex
+	cfg             config.AuthConfig
+	store           Store
+	refreshToken    func(int) (string, error)
+	sessions        map[string]memorySession
+	refreshesByHash map[string]*refreshSession
+	familyRefreshes map[string][]*refreshSession
+	failures        map[string]loginFailure
 }
 
 func NewService(cfg config.AuthConfig, store Store) *Service {
 	if store == nil {
 		store = NewMemoryStore()
 	}
-	return &Service{cfg: cfg, store: store, sessions: map[string]memorySession{}, failures: map[string]loginFailure{}}
+	return &Service{
+		cfg:             cfg,
+		store:           store,
+		refreshToken:    randomToken,
+		sessions:        map[string]memorySession{},
+		refreshesByHash: map[string]*refreshSession{},
+		familyRefreshes: map[string][]*refreshSession{},
+		failures:        map[string]loginFailure{},
+	}
 }
 
 func (s *Service) ListAdmins(ctx context.Context, req domainadminauth.AdminListRequest) (domainadminauth.AdminListPage, error) {
@@ -156,7 +181,13 @@ func (s *Service) UpdateAdmin(ctx context.Context, req domainadminauth.AdminUpda
 		}
 	}
 	updated, err := s.store.UpdateAdmin(ctx, req.AdminID, role, status, req.RoleProvided, req.StatusProvided)
-	return updated, normalizeAdminStoreError(err, "admin not found")
+	if err != nil {
+		return domainadminauth.AdminUser{}, normalizeAdminStoreError(err, "admin not found")
+	}
+	if updated.Role != current.Role || updated.Status != current.Status {
+		s.revokeAdminSessions(updated.ID)
+	}
+	return updated, nil
 }
 
 func (s *Service) ResetAdminPassword(ctx context.Context, req domainadminauth.AdminPasswordResetRequest) error {
@@ -167,7 +198,11 @@ func (s *Service) ResetAdminPassword(ctx context.Context, req domainadminauth.Ad
 	if len(password) < 6 {
 		return errs.BadRequest("new_password must be at least 6 characters")
 	}
-	return normalizeAdminStoreError(s.store.UpdateAdminPassword(ctx, req.AdminID, HashPassword(password)), "admin not found")
+	if err := s.store.UpdateAdminPassword(ctx, req.AdminID, HashPassword(password)); err != nil {
+		return normalizeAdminStoreError(err, "admin not found")
+	}
+	s.revokeAdminSessions(req.AdminID)
+	return nil
 }
 
 func (s *Service) DeleteAdmin(ctx context.Context, req domainadminauth.AdminDeleteRequest) (domainadminauth.AdminUser, error) {
@@ -191,6 +226,7 @@ func (s *Service) DeleteAdmin(ctx context.Context, req domainadminauth.AdminDele
 	if err := s.store.DeleteAdmin(ctx, req.AdminID); err != nil {
 		return domainadminauth.AdminUser{}, normalizeAdminStoreError(err, "admin not found")
 	}
+	s.revokeAdminSessions(req.AdminID)
 	return current, nil
 }
 
@@ -222,13 +258,131 @@ func (s *Service) Login(ctx context.Context, req domainadminauth.LoginRequest) (
 		_ = s.store.UpdateAdminPasswordHash(ctx, admin.ID, admin.PasswordHash, HashPassword(req.Password))
 	}
 	s.clearFailedLogin(email)
-	return s.issueSession(admin)
+	return s.issueLoginSession(ctx, admin.ID, admin.PasswordHash, req.Password)
+}
+
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (domainadminauth.Session, error) {
+	s.mu.Lock()
+	s.cleanupExpiredSessionsLocked(time.Now().UTC())
+	current, ok := s.refreshesByHash[hashToken(refreshToken)]
+	if !ok {
+		s.mu.Unlock()
+		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
+	}
+	if current.Status != "active" {
+		refreshErr := s.inactiveRefreshErrorLocked(current)
+		s.mu.Unlock()
+		return domainadminauth.Session{}, refreshErr
+	}
+	current.Status = "refreshing"
+	adminID := current.AdminID
+	familyID := current.FamilyID
+	s.mu.Unlock()
+
+	admin, err := s.store.GetAdminByID(ctx, adminID)
+	if err != nil {
+		if !errors.Is(err, repoerr.ErrNotFound) {
+			s.mu.Lock()
+			if current.Status == "refreshing" {
+				current.Status = "active"
+			}
+			s.mu.Unlock()
+			return domainadminauth.Session{}, fmt.Errorf("load admin for refresh: %w", err)
+		}
+		s.mu.Lock()
+		s.revokeSessionFamilyLocked(familyID)
+		s.mu.Unlock()
+		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
+	}
+	if admin.Status != "active" || admin.ID != adminID {
+		s.mu.Lock()
+		s.revokeSessionFamilyLocked(familyID)
+		s.mu.Unlock()
+		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current.Status != "refreshing" {
+		return domainadminauth.Session{}, s.inactiveRefreshErrorLocked(current)
+	}
+	if time.Now().After(current.ExpiresAt) {
+		current.Status = "expired"
+		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
+	}
+	next, err := s.issueSessionWithFamilyLocked(admin, familyID)
+	if err != nil {
+		if current.Status == "refreshing" {
+			current.Status = "active"
+		}
+		return domainadminauth.Session{}, err
+	}
+	current.Status = "rotated"
+	current.ReplacedBySessionID = next.SessionID
+	s.trimSessionFamilyLocked(familyID)
+	return next, nil
+}
+
+func (s *Service) LogoutRefresh(refreshToken string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupExpiredSessionsLocked(time.Now().UTC())
+	if current, ok := s.refreshesByHash[hashToken(refreshToken)]; ok {
+		s.revokeSessionFamilyLocked(current.FamilyID)
+	}
+}
+
+func (s *Service) LogoutAccessSession(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupExpiredSessionsLocked(time.Now().UTC())
+	if current, ok := s.sessions[strings.TrimSpace(sessionID)]; ok {
+		s.revokeSessionFamilyLocked(current.FamilyID)
+	}
+}
+
+func (s *Service) LogoutAccessToken(accessToken string) {
+	claims, err := s.parseAccessTokenClaims(accessToken)
+	if err != nil {
+		return
+	}
+	s.LogoutAccessSession(claims.SessionID)
 }
 
 func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (*Claims, error) {
+	claims, err := s.parseAccessTokenClaims(accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.cleanupExpiredSessionsLocked(time.Now().UTC())
+	session, ok := s.sessions[claims.SessionID]
+	s.mu.Unlock()
+	if !ok || session.Status != "active" || session.AdminID != claims.AdminID || time.Now().After(session.ExpiresAt) {
+		return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin session expired or invalid")
+	}
+	admin, err := s.store.GetAdminByID(ctx, claims.AdminID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin account not found")
+		}
+		return nil, fmt.Errorf("load admin for access token: %w", err)
+	}
+	if admin.Status != claims.Status || admin.Role != claims.Role || admin.Status != "active" {
+		return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin token claims are stale")
+	}
+	return claims, nil
+}
+
+func (s *Service) parseAccessTokenClaims(accessToken string) (*Claims, error) {
+	parseOptions := []jwt.ParserOption{jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()})}
+	if issuer := strings.TrimSpace(s.cfg.Issuer); issuer != "" {
+		parseOptions = append(parseOptions, jwt.WithIssuer(issuer))
+	}
 	token, err := jwt.ParseWithClaims(accessToken, &Claims{}, func(token *jwt.Token) (any, error) {
 		return []byte(s.cfg.AccessTokenSecret), nil
-	})
+	}, parseOptions...)
 	if err != nil {
 		return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin access token expired or invalid")
 	}
@@ -239,24 +393,52 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (*Cl
 	if claims.Role == "" || claims.Status == "" || claims.SessionID == "" {
 		return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin access token missing required claims")
 	}
-
-	s.mu.Lock()
-	session, ok := s.sessions[claims.SessionID]
-	s.mu.Unlock()
-	if !ok || session.Status != "active" || session.AdminID != claims.AdminID || time.Now().After(session.ExpiresAt) {
-		return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin session expired or invalid")
-	}
-	admin, err := s.store.GetAdminByID(ctx, claims.AdminID)
-	if err != nil {
-		return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin account not found")
-	}
-	if admin.Status != claims.Status || admin.Role != claims.Role || admin.Status != "active" {
-		return nil, errs.New(401, errs.CodeAuthAccessExpired, "admin token claims are stale")
-	}
 	return claims, nil
 }
 
 func (s *Service) issueSession(admin domainadminauth.AdminUser) (domainadminauth.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.issueNewSessionFamilyLocked(admin)
+}
+
+func (s *Service) issueLoginSession(ctx context.Context, adminID int64, expectedPasswordHash, password string) (domainadminauth.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	admin, err := s.store.GetAdminByID(ctx, adminID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainadminauth.Session{}, errs.Unauthorized("invalid admin credentials")
+		}
+		return domainadminauth.Session{}, fmt.Errorf("reload admin before login session issue: %w", err)
+	}
+	if admin.Status != "active" || (admin.PasswordHash != expectedPasswordHash && !VerifyPassword(admin.PasswordHash, password)) {
+		return domainadminauth.Session{}, errs.Unauthorized("admin credentials changed during login")
+	}
+	return s.issueNewSessionFamilyLocked(admin)
+}
+
+func (s *Service) issueNewSessionFamilyLocked(admin domainadminauth.AdminUser) (domainadminauth.Session, error) {
+	s.cleanupExpiredSessionsLocked(time.Now().UTC())
+	s.enforceAdminFamilyLimitLocked(admin.ID)
+	familyID := uuid.NewString()
+	session, err := s.issueSessionWithFamilyLocked(admin, familyID)
+	if err != nil {
+		return domainadminauth.Session{}, err
+	}
+	s.trimSessionFamilyLocked(familyID)
+	return session, nil
+}
+
+func (s *Service) inactiveRefreshErrorLocked(current *refreshSession) error {
+	if current.Status == "refreshing" {
+		return errs.New(409, errs.CodeConflict, "admin refresh token rotation is already in progress")
+	}
+	s.revokeSessionFamilyLocked(current.FamilyID)
+	return errs.New(401, errs.CodeAuthRefreshReplayBlocked, "admin refresh token replay detected")
+}
+
+func (s *Service) issueSessionWithFamilyLocked(admin domainadminauth.AdminUser, familyID string) (domainadminauth.Session, error) {
 	now := time.Now().UTC()
 	ttl := s.cfg.AccessTokenTTL
 	if ttl <= 0 {
@@ -281,10 +463,171 @@ func (s *Service) issueSession(admin domainadminauth.AdminUser) (domainadminauth
 	if err != nil {
 		return domainadminauth.Session{}, err
 	}
+	refreshToken, err := s.refreshToken(32)
+	if err != nil {
+		return domainadminauth.Session{}, err
+	}
+	refreshTTL := s.cfg.RefreshTokenTTL
+	if refreshTTL <= 0 {
+		refreshTTL = 2 * time.Hour
+	}
+	refreshExpiresAt := now.Add(refreshTTL)
+	refresh := &refreshSession{
+		ID:               uuid.NewString(),
+		FamilyID:         familyID,
+		AdminID:          admin.ID,
+		RefreshTokenHash: hashToken(refreshToken),
+		Status:           "active",
+		CreatedAt:        now,
+		ExpiresAt:        refreshExpiresAt,
+	}
+	s.sessions[sessionID] = memorySession{ID: sessionID, FamilyID: familyID, AdminID: admin.ID, Status: "active", ExpiresAt: expiresAt}
+	s.refreshesByHash[refresh.RefreshTokenHash] = refresh
+	s.familyRefreshes[familyID] = append(s.familyRefreshes[familyID], refresh)
+	return domainadminauth.Session{
+		AccessToken:           accessToken,
+		AccessTokenExpiresAt:  expiresAt,
+		RefreshToken:          refreshToken,
+		RefreshTokenExpiresAt: refreshExpiresAt,
+		SessionID:             sessionID,
+		SessionFamilyID:       familyID,
+		AdminID:               admin.ID,
+		Email:                 admin.Email,
+		Role:                  admin.Role,
+		Status:                admin.Status,
+	}, nil
+}
+
+func (s *Service) revokeSessionFamilyLocked(familyID string) {
+	for _, refresh := range s.familyRefreshes[familyID] {
+		refresh.Status = "replay_blocked"
+	}
+	for id, session := range s.sessions {
+		if session.FamilyID != familyID {
+			continue
+		}
+		session.Status = "revoked"
+		s.sessions[id] = session
+	}
+}
+
+func (s *Service) revokeAdminSessions(adminID int64) {
 	s.mu.Lock()
-	s.sessions[sessionID] = memorySession{ID: sessionID, AdminID: admin.ID, Status: "active", ExpiresAt: expiresAt}
-	s.mu.Unlock()
-	return domainadminauth.Session{AccessToken: accessToken, AccessTokenExpiresAt: expiresAt, SessionID: sessionID, AdminID: admin.ID, Email: admin.Email, Role: admin.Role, Status: admin.Status}, nil
+	defer s.mu.Unlock()
+	for familyID, refreshes := range s.familyRefreshes {
+		if len(refreshes) > 0 && refreshes[0].AdminID == adminID {
+			s.evictSessionFamilyLocked(familyID)
+		}
+	}
+	for id, session := range s.sessions {
+		if session.AdminID == adminID {
+			delete(s.sessions, id)
+		}
+	}
+}
+
+func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
+	for id, session := range s.sessions {
+		if session.Status != "active" || !now.Before(session.ExpiresAt) {
+			delete(s.sessions, id)
+		}
+	}
+	for familyID, refreshes := range s.familyRefreshes {
+		kept := refreshes[:0]
+		for _, refresh := range refreshes {
+			if (refresh.Status == "active" || refresh.Status == "refreshing" || refresh.Status == "rotated") && now.Before(refresh.ExpiresAt) {
+				kept = append(kept, refresh)
+				continue
+			}
+			delete(s.refreshesByHash, refresh.RefreshTokenHash)
+		}
+		if len(kept) == 0 {
+			delete(s.familyRefreshes, familyID)
+			continue
+		}
+		s.familyRefreshes[familyID] = kept
+	}
+}
+
+func (s *Service) enforceAdminFamilyLimitLocked(adminID int64) {
+	for s.adminFamilyCountLocked(adminID) >= maxAdminSessionFamilies {
+		oldestFamilyID := ""
+		var oldestCreatedAt time.Time
+		for familyID, refreshes := range s.familyRefreshes {
+			if len(refreshes) == 0 || refreshes[0].AdminID != adminID {
+				continue
+			}
+			createdAt := refreshes[0].CreatedAt
+			if oldestFamilyID == "" || createdAt.Before(oldestCreatedAt) {
+				oldestFamilyID = familyID
+				oldestCreatedAt = createdAt
+			}
+		}
+		if oldestFamilyID == "" {
+			return
+		}
+		s.evictSessionFamilyLocked(oldestFamilyID)
+	}
+}
+
+func (s *Service) adminFamilyCountLocked(adminID int64) int {
+	count := 0
+	for _, refreshes := range s.familyRefreshes {
+		if len(refreshes) > 0 && refreshes[0].AdminID == adminID {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *Service) trimSessionFamilyLocked(familyID string) {
+	refreshes := s.familyRefreshes[familyID]
+	if overflow := len(refreshes) - maxSessionsPerFamily; overflow > 0 {
+		for _, refresh := range refreshes[:overflow] {
+			delete(s.refreshesByHash, refresh.RefreshTokenHash)
+		}
+		s.familyRefreshes[familyID] = append([]*refreshSession(nil), refreshes[overflow:]...)
+	}
+	for s.accessSessionCountLocked(familyID) > maxSessionsPerFamily {
+		oldestID := ""
+		var oldestExpiry time.Time
+		for id, session := range s.sessions {
+			if session.FamilyID != familyID {
+				continue
+			}
+			if oldestID == "" || session.ExpiresAt.Before(oldestExpiry) {
+				oldestID = id
+				oldestExpiry = session.ExpiresAt
+			}
+		}
+		if oldestID == "" {
+			break
+		}
+		delete(s.sessions, oldestID)
+	}
+}
+
+func (s *Service) accessSessionCountLocked(familyID string) int {
+	count := 0
+	for _, session := range s.sessions {
+		if session.FamilyID == familyID {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *Service) evictSessionFamilyLocked(familyID string) {
+	for _, refresh := range s.familyRefreshes[familyID] {
+		refresh.Status = "revoked"
+		delete(s.refreshesByHash, refresh.RefreshTokenHash)
+	}
+	delete(s.familyRefreshes, familyID)
+	for id, session := range s.sessions {
+		if session.FamilyID == familyID {
+			delete(s.sessions, id)
+		}
+	}
 }
 
 func HashPassword(password string) string {
@@ -349,6 +692,19 @@ func (s *Service) clearFailedLogin(email string) {
 func hashPassword(password, salt string) string {
 	sum := sha256.Sum256([]byte(salt + ":" + password))
 	return passwordHashPrefix + "$" + salt + "$" + base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func randomToken(size int) (string, error) {
+	buffer := make([]byte, size)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
 func randomSalt() string {

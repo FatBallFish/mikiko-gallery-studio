@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -124,6 +126,45 @@ func TestAdminLogoutUsesPermissionFacade(t *testing.T) {
 	}
 }
 
+func TestAdminLogoutRevokesBearerFamilyWhenAdminLookupFails(t *testing.T) {
+	cfg := config.Config{Auth: config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+	}}
+	memoryStore := adminauthservice.NewMemoryStore()
+	if _, err := memoryStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email:        "ops@example.com",
+		PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role:         domainadminauth.RoleAdmin,
+		Status:       "active",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	store := &logoutLookupErrorStore{Store: memoryStore}
+	adminAuth := adminauthservice.NewService(cfg.Auth, store)
+	session, err := adminAuth.Login(t.Context(), domainadminauth.LoginRequest{Email: "ops@example.com", Password: "password"})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	store.err = errors.New("temporary database outage")
+	api := NewAPIWithCompletionServices(cfg, nil, nil, nil, nil, nil, nil, adminAuth, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	rec := httptest.NewRecorder()
+
+	api.HandleAdminLogout(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected transient lookup failure to remain visible, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	store.err = nil
+	if _, err := adminAuth.ParseAccessToken(t.Context(), session.AccessToken); err == nil {
+		t.Fatal("expected logout to revoke the bearer session family despite the lookup failure")
+	}
+}
+
 func TestAdminHandlersUsePermissionFacadeContract(t *testing.T) {
 	content, err := os.ReadFile("api.go")
 	if err != nil {
@@ -137,7 +178,7 @@ func TestAdminHandlersUsePermissionFacadeContract(t *testing.T) {
 
 	for _, match := range matches {
 		name := source[match[2]:match[3]]
-		if name == "HandleAdminLogin" {
+		if name == "HandleAdminLogin" || name == "HandleAdminRefresh" {
 			continue
 		}
 		body, ok := functionBody(source, match[0])
@@ -155,6 +196,18 @@ func TestAdminHandlersUsePermissionFacadeContract(t *testing.T) {
 
 type denyManageUsersResolver struct {
 	sawPrincipal bool
+}
+
+type logoutLookupErrorStore struct {
+	adminauthservice.Store
+	err error
+}
+
+func (s *logoutLookupErrorStore) GetAdminByID(ctx context.Context, id int64) (domainadminauth.AdminUser, error) {
+	if s.err != nil {
+		return domainadminauth.AdminUser{}, s.err
+	}
+	return s.Store.GetAdminByID(ctx, id)
 }
 
 func (r *denyManageUsersResolver) HasPermission(principal domainadminauth.AdminPrincipal, permission domainadminauth.Permission) bool {

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
 import { adminApi } from '../../shared/admin-api'
 import { EmptyBlock, ToastRail, useHashRoute, useToasts } from './components'
@@ -22,7 +22,12 @@ function readStoredSession(): AdminSession | null {
 export default function App() {
   const [route, setRoute] = useHashRoute()
   const [session, setSession] = useState<AdminSession | null>(() => readStoredSession())
+  const [sessionResolved, setSessionResolved] = useState(() => session !== null)
   const sessionRef = useRef<AdminSession | null>(session)
+  const sessionRefreshRef = useRef<Promise<AdminSession> | null>(null)
+  const authEpochRef = useRef(0)
+  const logoutPendingRef = useRef(false)
+  const [logoutPending, setLogoutPending] = useState(false)
   const [shellMetrics, setShellMetrics] = useState<AdminMetric[]>([])
   const [shellProviders, setShellProviders] = useState<ProviderHealth[]>([])
   const [reviewCount, setReviewCount] = useState(0)
@@ -30,25 +35,71 @@ export default function App() {
   const { toasts, pushToast, dismissToast } = useToasts()
   const isAuthed = Boolean(session)
 
+  const expireSession = useCallback(() => {
+    const hadSession = Boolean(sessionRef.current)
+    authEpochRef.current++
+    window.sessionStorage.removeItem(sessionKey)
+    sessionRef.current = null
+    setSession(null)
+    setRoute('login')
+    if (hadSession) {
+      pushToast({ tone: 'danger', title: '登录已过期', detail: '请重新登录后继续操作。' })
+    }
+  }, [pushToast, setRoute])
+
   useLayoutEffect(() => {
-    sessionRef.current = session
     adminApi.configureAuth({
       getToken: () => sessionRef.current?.token,
+      getSessionVersion: () => authEpochRef.current,
       onError: (error) => {
+        if (error.status === 401) {
+          expireSession()
+          return
+        }
         pushToast({ tone: 'danger', title: '接口调用失败', detail: error.message })
       },
-      onUnauthorized: () => {
-        if (sessionRef.current) {
-          window.sessionStorage.removeItem(sessionKey)
-          sessionRef.current = null
-          setSession(null)
-          setRoute('login')
-          pushToast({ tone: 'danger', title: '登录已过期', detail: '请重新登录后继续操作。' })
+      onUnauthorized: async () => {
+        const refreshEpoch = authEpochRef.current
+        const expectedSession = sessionRef.current
+        try {
+          const refreshed = await adminApi.refreshSession()
+          if (!expectedSession || refreshEpoch !== authEpochRef.current || sessionRef.current !== expectedSession) {
+            return undefined
+          }
+          sessionRef.current = refreshed
+          setSession(refreshed)
+          window.sessionStorage.setItem(sessionKey, JSON.stringify(refreshed))
+          return refreshed.token
+        } catch {
+          if (refreshEpoch === authEpochRef.current && sessionRef.current === expectedSession) {
+            expireSession()
+          }
+          return undefined
         }
-        return undefined
       },
     })
-  }, [session, pushToast, setRoute])
+  }, [expireSession, pushToast])
+
+  useEffect(() => {
+    if (sessionResolved) return
+    if (!sessionRefreshRef.current) {
+      sessionRefreshRef.current = adminApi.refreshSession()
+    }
+    const refreshEpoch = authEpochRef.current
+    let active = true
+    void sessionRefreshRef.current.then((refreshed) => {
+      if (!active || refreshEpoch !== authEpochRef.current) return
+      authEpochRef.current++
+      sessionRef.current = refreshed
+      setSession(refreshed)
+      window.sessionStorage.setItem(sessionKey, JSON.stringify(refreshed))
+    }).catch(() => undefined).finally(() => {
+      if (active) setSessionResolved(true)
+    })
+    return () => {
+      active = false
+    }
+  }, [sessionResolved])
 
   const refreshShell = async () => {
     if (!session) return
@@ -84,7 +135,7 @@ export default function App() {
       setShellProviders([])
       setShellMetrics([])
     })
-  }, [session])
+  }, [session?.admin_id])
 
   const feedback = (title: string, detail?: string) => {
     pushToast({ tone: 'success', title, detail })
@@ -92,8 +143,10 @@ export default function App() {
   }
 
   const handleLogin = (nextSession: AdminSession) => {
+    authEpochRef.current++
     sessionRef.current = nextSession
     setSession(nextSession)
+    setSessionResolved(true)
     window.sessionStorage.setItem(sessionKey, JSON.stringify(nextSession))
     const returnRoute = normalizeRoute(`#/${window.sessionStorage.getItem(returnKey) ?? 'dashboard'}`)
     window.sessionStorage.removeItem(returnKey)
@@ -102,11 +155,29 @@ export default function App() {
   }
 
   const handleLogout = () => {
-    void adminApi.logout().catch(() => undefined)
-    window.sessionStorage.removeItem(sessionKey)
-    setSession(null)
-    setRoute('login')
-    pushToast({ tone: 'neutral', title: '已退出后台' })
+    if (logoutPendingRef.current) return
+    const logoutSession = sessionRef.current
+    authEpochRef.current++
+    logoutPendingRef.current = true
+    setLogoutPending(true)
+    void adminApi.logout().then(() => {
+      if (sessionRef.current !== logoutSession) return
+      sessionRef.current = null
+      window.sessionStorage.removeItem(sessionKey)
+      setSession(null)
+      setRoute('login')
+      pushToast({ tone: 'neutral', title: '已退出后台' })
+    }).catch((error) => {
+      if (sessionRef.current !== logoutSession) return
+      pushToast({
+        tone: 'danger',
+        title: '退出未完成',
+        detail: error instanceof Error && error.name !== 'AbortError' ? error.message : '服务未确认退出，请检查网络后重试。',
+      })
+    }).finally(() => {
+      logoutPendingRef.current = false
+      setLogoutPending(false)
+    })
   }
 
   const page = useMemo(() => {
@@ -150,6 +221,10 @@ export default function App() {
         return <OverviewPage />
     }
   }, [route, session])
+
+  if (!sessionResolved || logoutPending) {
+    return <div className="grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-[var(--muted-strong)]" role="status">{logoutPending ? '正在安全退出...' : '正在恢复登录状态...'}</div>
+  }
 
   if (route === 'login' || !session) {
     return (

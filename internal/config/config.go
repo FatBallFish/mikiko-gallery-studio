@@ -58,14 +58,15 @@ type StorageS3Config struct {
 }
 
 type AuthConfig struct {
-	AccessTokenTTL    time.Duration `yaml:"access_token_ttl"`
-	RefreshTokenTTL   time.Duration `yaml:"refresh_token_ttl"`
-	Issuer            string        `yaml:"issuer"`
-	AccessTokenSecret string        `yaml:"access_token_secret"`
-	RefreshCookieName string        `yaml:"refresh_cookie_name"`
-	FixedEmailCode    string        `yaml:"fixed_email_code"`
-	DevEmailCodes     bool          `yaml:"dev_email_codes"`
-	SMTP              SMTPConfig    `yaml:"smtp"`
+	AccessTokenTTL         time.Duration `yaml:"access_token_ttl"`
+	RefreshTokenTTL        time.Duration `yaml:"refresh_token_ttl"`
+	Issuer                 string        `yaml:"issuer"`
+	AccessTokenSecret      string        `yaml:"access_token_secret"`
+	RefreshCookieName      string        `yaml:"refresh_cookie_name"`
+	AdminRefreshCookieName string        `yaml:"admin_refresh_cookie_name"`
+	FixedEmailCode         string        `yaml:"fixed_email_code"`
+	DevEmailCodes          bool          `yaml:"dev_email_codes"`
+	SMTP                   SMTPConfig    `yaml:"smtp"`
 }
 
 type AdminConfig struct {

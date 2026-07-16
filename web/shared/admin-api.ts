@@ -66,18 +66,71 @@ import type {
 import { API_PATHS } from './api-types'
 import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
 
+const adminSessionMutationLock = 'pic-gallery-admin-session-mutation'
+const adminSessionMutationTimeoutMs = 10_000
+let adminSessionMutationTail: Promise<void> = Promise.resolve()
+
+function serializeAdminSessionMutation<T>(mutation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const operation = adminSessionMutationTail.then(() => runAdminSessionMutation(mutation))
+  adminSessionMutationTail = operation.then(() => undefined, () => undefined)
+  return operation
+}
+
+async function runAdminSessionMutation<T>(mutation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController()
+  const timeout = globalThis.setTimeout(() => controller.abort(), adminSessionMutationTimeoutMs)
+  try {
+    return await withAdminSessionMutationLock(controller.signal, mutation)
+  } finally {
+    globalThis.clearTimeout(timeout)
+  }
+}
+
+async function withAdminSessionMutationLock<T>(signal: AbortSignal, mutation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const locks = globalThis.navigator?.locks
+  if (!locks) return mutation(signal)
+  return await locks.request(adminSessionMutationLock, { signal }, () => mutation(signal))
+}
+
 function normalizeGroupIds(ids: Array<string | number>) {
   return ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
 }
 
+function toAdminSession(result: AdminLoginResult): AdminSession {
+  const accessToken = typeof result?.access_token === 'string' ? result.access_token.trim() : ''
+  const adminId = Number(result?.admin_id)
+  if (!accessToken || !Number.isFinite(adminId) || adminId <= 0 || typeof result?.role !== 'string' || !result.role) {
+    throw new Error('后台会话刷新响应无效')
+  }
+  const permissions = (result as AdminLoginResult & { permissions?: AdminPermission[] }).permissions
+  return {
+    token: accessToken,
+    access_token: accessToken,
+    expires_in_seconds: Number(result.expires_in_seconds ?? 0),
+    admin_name: result.email || `Admin ${adminId}`,
+    role: result.role,
+    email: result.email,
+    admin_id: adminId,
+    permissions,
+  }
+}
+
 export const adminApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
-  login: async (email: string, password: string): Promise<AdminSession> => {
-    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.login, { method: 'POST', body: { email, password }, auth: false })
-    const permissions = (result as AdminLoginResult & { permissions?: AdminPermission[] }).permissions
-    return { token: result.access_token, admin_name: result.email || `Admin ${result.admin_id}`, role: result.role, email: result.email, admin_id: result.admin_id, permissions }
-  },
-  logout: () => sharedApiClient.request<void>(API_PATHS.ops.logout, { method: 'POST' }),
+  login: (email: string, password: string): Promise<AdminSession> => serializeAdminSessionMutation(async (signal) => {
+    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.login, { method: 'POST', body: { email, password }, auth: false, retryUnauthorized: false, signal })
+    return toAdminSession(result)
+  }),
+  refreshSession: (): Promise<AdminSession> => serializeAdminSessionMutation(async (signal) => {
+    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.refreshSession, {
+      method: 'POST',
+      auth: false,
+      retryUnauthorized: false,
+      signal,
+    })
+    return toAdminSession(result)
+  }),
+  logout: () => serializeAdminSessionMutation((signal) => sharedApiClient.request<void>(API_PATHS.ops.logout, { method: 'POST', retryUnauthorized: false, signal })),
   systemAdmins: {
     list: async (query: Record<string, string | number | undefined> = {}): Promise<PageResult<SystemAdminUser>> => {
       const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.adminUsers, { query }))

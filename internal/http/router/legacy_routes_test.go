@@ -136,6 +136,24 @@ func TestRestoredAdminAndDocsRoutes(t *testing.T) {
 	if err := json.NewDecoder(loginRec.Body).Decode(&loginResp); err != nil {
 		t.Fatalf("decode login response: %v", err)
 	}
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/auth/logout", nil)
+	logoutReq.Header.Set("Authorization", "Bearer "+loginResp.Data.AccessToken)
+	logoutRec := httptest.NewRecorder()
+	handler.ServeHTTP(logoutRec, logoutReq)
+	if logoutRec.Code != http.StatusNoContent {
+		t.Fatalf("expected admin logout 204, got %d body=%s", logoutRec.Code, logoutRec.Body.String())
+	}
+
+	loginReq = httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/auth/login", bytes.NewBufferString(`{"email":"legacy-admin@example.com","password":"password"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginRec = httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("expected admin re-login 200, got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+	if err := json.NewDecoder(loginRec.Body).Decode(&loginResp); err != nil {
+		t.Fatalf("decode re-login response: %v", err)
+	}
 
 	for _, tc := range []struct {
 		method string
@@ -143,7 +161,6 @@ func TestRestoredAdminAndDocsRoutes(t *testing.T) {
 		want   int
 		auth   bool
 	}{
-		{method: http.MethodPost, path: "/api/ops/admin/v1/auth/logout", want: http.StatusNoContent, auth: true},
 		{method: http.MethodGet, path: "/api/ops/admin/v1/audit-logs", want: http.StatusOK, auth: true},
 		{method: http.MethodGet, path: "/api/ops/admin/v1/call-records", want: http.StatusOK, auth: true},
 		{method: http.MethodGet, path: "/docs/openapi.yaml", want: http.StatusOK},

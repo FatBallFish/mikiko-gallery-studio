@@ -2763,7 +2763,44 @@ func (a *API) HandleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
+	a.setAdminRefreshCookie(w, session)
 	a.recordAudit(r, "admin", fmt.Sprintf("%d", session.AdminID), "admin.login", "admin_user", fmt.Sprintf("%d", session.AdminID), nil)
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"access_token":       session.AccessToken,
+		"expires_in_seconds": int(time.Until(session.AccessTokenExpiresAt).Seconds()),
+		"admin_id":           session.AdminID,
+		"email":              session.Email,
+		"role":               session.Role,
+		"permissions": a.adminPermissionsForPrincipal(domainadminauth.AdminPrincipal{
+			ID:     session.AdminID,
+			Email:  session.Email,
+			Role:   session.Role,
+			Status: session.Status,
+		}),
+	})
+}
+
+func (a *API) HandleAdminRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	cookie, err := r.Cookie(a.adminRefreshCookieName())
+	if err != nil {
+		a.clearAdminRefreshCookie(w)
+		httpx.WriteError(w, r, errs.New(http.StatusUnauthorized, errs.CodeAuthRefreshExpired, "admin refresh token expired"))
+		return
+	}
+	session, err := a.adminAuth.Refresh(r.Context(), cookie.Value)
+	if err != nil {
+		appErr := normalizeAppError(err)
+		if appErr.StatusCode == http.StatusUnauthorized || appErr.StatusCode == http.StatusForbidden {
+			a.clearAdminRefreshCookie(w)
+		}
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	a.setAdminRefreshCookie(w, session)
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
 		"access_token":       session.AccessToken,
 		"expires_in_seconds": int(time.Until(session.AccessTokenExpiresAt).Seconds()),
@@ -4677,9 +4714,28 @@ func (a *API) HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	accessToken := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		accessToken = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	}
 	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly)
+	accessSession := admin
+	if cookie, err := r.Cookie(a.adminRefreshCookieName()); err == nil {
+		a.adminAuth.LogoutRefresh(cookie.Value)
+	}
+	if accessSession != nil {
+		a.adminAuth.LogoutAccessSession(accessSession.SessionID)
+	} else if accessToken != "" {
+		a.adminAuth.LogoutAccessToken(accessToken)
+	}
+	a.clearAdminRefreshCookie(w)
 	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
+		if appErr.StatusCode != http.StatusUnauthorized {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "admin.logout", "admin_user", fmt.Sprintf("%d", admin.AdminID), nil)
@@ -9127,6 +9183,46 @@ func (a *API) setRefreshCookie(w http.ResponseWriter, session domainauth.Session
 		SameSite: http.SameSiteLaxMode,
 		Expires:  session.RefreshTokenExpiresAt,
 	})
+}
+
+func (a *API) setAdminRefreshCookie(w http.ResponseWriter, session domainadminauth.Session) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     a.adminRefreshCookieName(),
+		Value:    session.RefreshToken,
+		Path:     "/api/ops/admin/v1/auth",
+		Secure:   a.adminRefreshCookieSecure(),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  session.RefreshTokenExpiresAt,
+	})
+}
+
+func (a *API) clearAdminRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     a.adminRefreshCookieName(),
+		Value:    "",
+		Path:     "/api/ops/admin/v1/auth",
+		Secure:   a.adminRefreshCookieSecure(),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
+func (a *API) adminRefreshCookieName() string {
+	if name := strings.TrimSpace(a.cfg.Auth.AdminRefreshCookieName); name != "" {
+		return name
+	}
+	return "pg_admin_refresh_token"
+}
+
+func (a *API) adminRefreshCookieSecure() bool {
+	switch strings.ToLower(strings.TrimSpace(a.cfg.App.Env)) {
+	case "", "local", "dev", "development", "test":
+		return false
+	default:
+		return true
+	}
 }
 
 func (a *API) requireCompatBearer(r *http.Request) *errs.Error {

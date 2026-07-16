@@ -25,6 +25,7 @@ func NewWithAPIAndConfig(api *handlers.API, cfg config.Config) http.Handler {
 func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Root)
+	mux.HandleFunc("/api/", handlers.APINotFound)
 	mux.HandleFunc("/healthz", handlers.Healthz)
 	mux.HandleFunc("/readyz", handlers.Readyz)
 	mux.Handle("/metrics", handlers.Metrics())
@@ -89,6 +90,7 @@ func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 		mux.HandleFunc("/api/open/image/v1/gallery/images/", api.HandleOpenGalleryImageDetail)
 		mux.HandleFunc("/api/open/image/v1/payments/webhooks/", api.HandlePaymentWebhook)
 		mux.HandleFunc("/api/ops/admin/v1/auth/login", api.HandleAdminLogin)
+		mux.HandleFunc("/api/ops/admin/v1/auth/session/refresh", api.HandleAdminRefresh)
 		mux.HandleFunc("/api/ops/admin/v1/auth/logout", api.HandleAdminLogout)
 		mux.HandleFunc("/api/ops/admin/v1/audit-logs", api.HandleAdminAuditLogs)
 		mux.HandleFunc("/api/ops/admin/v1/image-reviews", api.HandleAdminImageReviews)

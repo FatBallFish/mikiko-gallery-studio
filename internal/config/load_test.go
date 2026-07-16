@@ -26,6 +26,9 @@ func TestLoadEnvDefaultsAuthenticationSessionTTLs(t *testing.T) {
 	if cfg.Auth.RefreshTokenTTL != 2*time.Hour {
 		t.Fatalf("expected default refresh token TTL 2h, got %s", cfg.Auth.RefreshTokenTTL)
 	}
+	if cfg.Auth.AdminRefreshCookieName != "pg_admin_refresh_token" {
+		t.Fatalf("expected default admin refresh cookie name pg_admin_refresh_token, got %#v", cfg.Auth)
+	}
 }
 
 func TestLoadUsesEnvByDefault(t *testing.T) {
