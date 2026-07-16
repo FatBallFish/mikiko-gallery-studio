@@ -1,6 +1,7 @@
 import type { Balance, Capability, CreateTaskRequest, EstimateRequest, EstimateResult, ImageResult, ImageTask, OpenAIImageEditRequest, OpenAIImageGenerationRequest, OpenAIImageResponse, OpenAIModelList, OpenReferenceAssetUploadSessionRequest, OpenReferenceAssetUploadSessionResponse, PageResult, ReferenceAsset } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, normalizePage, sharedApiClient } from './http-client'
+import { resolveGenerationResolution } from './generation-resolution'
+import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { docsFromOpenApi, normalizeErrors, normalizeExamples } from './open-api-docs'
 import { toImageResult, toReferenceAsset, toTask } from './user-api'
 
@@ -12,13 +13,13 @@ export const openApi = {
   getExamples: async () => normalizeExamples(await sharedApiClient.request<unknown>(API_PATHS.docs.examples, { auth: false })),
   getErrors: async () => normalizeErrors(await sharedApiClient.request<unknown>(API_PATHS.docs.errors, { auth: false })),
   createReferenceAssetUploadSession: (input: OpenReferenceAssetUploadSessionRequest, headers: OpenApiHeaders) =>
-    sharedApiClient.request<OpenReferenceAssetUploadSessionResponse>(API_PATHS.open.uploadSessions, { method: 'POST', body: input, headers, auth: false }),
-  getReferenceAsset: async (asset_id: string, headers: OpenApiHeaders) => toReferenceAsset(await sharedApiClient.request(API_PATHS.open.referenceAssetDetail, { pathParams: { asset_id }, headers, auth: false })),
-  createTask: async (input: CreateTaskRequest, headers: OpenApiHeaders): Promise<ImageTask> => toTask(await sharedApiClient.request(API_PATHS.open.tasks, { method: 'POST', body: toOpenTaskBody(input), headers, auth: false })),
-  getTask: async (task_id: string, headers: OpenApiHeaders): Promise<ImageTask> => toTask(await sharedApiClient.request(API_PATHS.open.taskDetail, { pathParams: { task_id }, headers, auth: false })),
-  getBalance: (headers: OpenApiHeaders) => sharedApiClient.request<Balance>(API_PATHS.open.balance, { headers, auth: false }),
-  getCapabilities: (headers: OpenApiHeaders) => sharedApiClient.request<Capability>(API_PATHS.open.capabilities, { headers, auth: false }),
-  estimate: (input: EstimateRequest, headers: OpenApiHeaders) => sharedApiClient.request<EstimateResult>(API_PATHS.open.estimate, { query: toEstimateQuery(input), headers, auth: false }),
+    sharedApiClient.request<OpenReferenceAssetUploadSessionResponse>(API_PATHS.open.uploadSessions, { method: 'POST', body: input, headers, auth: false, retryUnauthorized: false }),
+  getReferenceAsset: async (asset_id: string, headers: OpenApiHeaders) => toReferenceAsset(await sharedApiClient.request(API_PATHS.open.referenceAssetDetail, { pathParams: { asset_id }, headers, auth: false, retryUnauthorized: false })),
+  createTask: async (wire: OpenCreateTaskWireDescriptor, headers: OpenApiHeaders): Promise<ImageTask> => toTask(await sharedApiClient.request(wire.request_uri, { method: wire.method, serializedBody: wire.serialized_body, headers, auth: false, retryUnauthorized: false })),
+  getTask: async (task_id: string, headers: OpenApiHeaders): Promise<ImageTask> => toTask(await sharedApiClient.request(API_PATHS.open.taskDetail, { pathParams: { task_id }, headers, auth: false, retryUnauthorized: false })),
+  getBalance: (headers: OpenApiHeaders) => sharedApiClient.request<Balance>(API_PATHS.open.balance, { headers, auth: false, retryUnauthorized: false }),
+  getCapabilities: (headers: OpenApiHeaders) => sharedApiClient.request<Capability>(API_PATHS.open.capabilities, { headers, auth: false, retryUnauthorized: false }),
+  estimate: (wire: OpenEstimateWireDescriptor, headers: OpenApiHeaders) => sharedApiClient.request<EstimateResult>(wire.request_uri, { method: wire.method, headers, auth: false, retryUnauthorized: false }),
   listPublicGallery: async (page = 1, page_size = 20, options?: { sort?: 'latest' | 'hot'; query?: string; liked?: boolean; favorited?: boolean; accessToken?: string | null }): Promise<PageResult<ImageResult>> => {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.open.galleryImages, {
       query: { page, page_size, sort: options?.sort, query: options?.query, liked: options?.liked, favorited: options?.favorited },
@@ -53,12 +54,41 @@ export type OpenApiHeaders = {
   'X-Body-SHA256': string
 }
 
+export type OpenEstimateWireDescriptor = {
+  readonly method: 'GET'
+  readonly request_uri: string
+  readonly serialized_body: ''
+}
+
+export type OpenCreateTaskWireDescriptor = {
+  readonly method: 'POST'
+  readonly request_uri: string
+  readonly serialized_body: string
+}
+
+export function buildOpenEstimateWire(req: EstimateRequest): OpenEstimateWireDescriptor {
+  const query = toEstimateQuery(req)
+  return Object.freeze({
+    method: 'GET',
+    request_uri: withQuery(API_PATHS.open.estimate, query),
+    serialized_body: '',
+  })
+}
+
+export function buildOpenCreateTaskWire(req: CreateTaskRequest): OpenCreateTaskWireDescriptor {
+  const body = toOpenTaskBody(req)
+  return Object.freeze({
+    method: 'POST',
+    request_uri: API_PATHS.open.tasks,
+    serialized_body: JSON.stringify(body),
+  })
+}
+
 function toEstimateQuery(req: EstimateRequest) {
   return {
-    task_type: req.task_type,
+    task_type: req.task_type === 'reference_to_image' ? 'reference_generate' : req.task_type,
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
-    requested_size: req.aspect_ratio,
+    ...resolveGenerationResolution(req),
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,
   }

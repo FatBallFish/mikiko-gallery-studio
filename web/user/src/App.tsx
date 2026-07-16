@@ -109,7 +109,7 @@ export default function App() {
             tier: 'FREE' as const,
             group: 'DEFAULT',
             signature: '',
-            preferences: { model_group: 'plus-image', quality: 'auto', aspect_ratio: '16:9', image_count: 1 },
+            preferences: { model_group: 'plus-image', base_resolution: 'auto', quality: 'auto', aspect_ratio: '16:9', image_count: 1 },
           }
           const nextSession = { token: refreshed.access_token, profile: currentProfile }
           sessionRef.current = nextSession
@@ -193,7 +193,7 @@ export default function App() {
           tier: 'FREE',
           group: 'DEFAULT',
           signature: '',
-          preferences: { model_group: 'plus-image', quality: 'auto', aspect_ratio: '16:9', image_count: 1 },
+          preferences: { model_group: 'plus-image', base_resolution: 'auto', quality: 'auto', aspect_ratio: '16:9', image_count: 1 },
         } }
         const nextProfile = await userApi.getProfile()
         if (cancelled) return

@@ -1,6 +1,8 @@
 import type {
   ApiKey,
   Balance,
+  BackendCreateTaskRequest,
+  BackendEstimateRequest,
   BillingPlan,
   CashierOptions,
   CashierOrder,
@@ -23,8 +25,10 @@ import type {
   UserProfile,
 } from './api-types'
 import { API_PATHS } from './api-types'
+import { resolveGenerationResolution } from './generation-resolution'
 import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
-import { calculateImageSizeForQuality } from './image-size'
+
+export { resolveGenerationResolution } from './generation-resolution'
 
 function initials(input: string) {
   return input.trim().slice(0, 2).toUpperCase() || 'PG'
@@ -32,6 +36,7 @@ function initials(input: string) {
 
 export function toUserProfile(raw: any): UserProfile {
   const name = raw.nickname || raw.display_name || raw.email?.split('@')[0] || 'Mikiko User'
+  const resolution = raw.preferences?.base_resolution ?? raw.preferences?.quality ?? 'auto'
   return {
     ...raw,
     id: String(raw.id ?? raw.user_id ?? ''),
@@ -43,7 +48,8 @@ export function toUserProfile(raw: any): UserProfile {
     signature: raw.bio ?? raw.signature ?? '',
     preferences: {
       model_group: raw.preferences?.model_group ?? 'plus-image',
-      quality: raw.preferences?.quality ?? 'auto',
+      base_resolution: resolution,
+      quality: raw.preferences?.quality ?? resolution,
       aspect_ratio: raw.preferences?.aspect_ratio ?? '16:9',
       image_count: raw.preferences?.image_count ?? 1,
       theme_mode: raw.preferences?.theme_mode,
@@ -69,8 +75,10 @@ function normalizeTaskType(type: string): ImageTask['task_type'] {
   return 'text_to_image'
 }
 
-function toBackendTaskType(type: ImageTask['task_type'] | string) {
-  return type === 'reference_to_image' ? 'reference_generate' : type
+function toBackendTaskType(type: ImageTask['task_type'] | string): BackendEstimateRequest['task_type'] {
+  if (type === 'reference_to_image' || type === 'reference_generate') return 'reference_generate'
+  if (type === 'image_edit') return 'image_edit'
+  return 'text_to_image'
 }
 
 function pick<T = unknown>(source: any, ...keys: string[]): T | undefined {
@@ -79,6 +87,10 @@ function pick<T = unknown>(source: any, ...keys: string[]): T | undefined {
     if (value !== undefined && value !== null) return value as T
   }
   return undefined
+}
+
+function responseResolution(raw: any, fallback = 'auto') {
+  return String(raw?.base_resolution ?? raw?.resolved_quality_bucket ?? raw?.resolved_quality ?? raw?.requested_quality ?? raw?.quality ?? fallback)
 }
 
 export function toReferenceAsset(raw: any): ReferenceAsset {
@@ -101,6 +113,7 @@ export function toImageResult(raw: any): ImageResult {
     url: raw.url ?? raw.download_url ?? '',
     width: Number(raw.width ?? 0),
     height: Number(raw.height ?? 0),
+    base_resolution: responseResolution(raw),
     publish_status: raw.publish_status ?? raw.visibility_status ?? 'private',
     like_count: Number(raw.like_count ?? 0),
     favorite_count: Number(raw.favorite_count ?? 0),
@@ -113,6 +126,7 @@ export function toTask(raw: any): ImageTask {
   const results = (raw.results ?? raw.images ?? raw.image_results ?? []).map(toImageResult)
   const taskType = normalizeTaskType(raw.task_type ?? 'text_to_image')
   const quality = raw.quality ?? raw.requested_quality ?? raw.resolved_quality_bucket ?? 'auto'
+  const baseResolution = responseResolution(raw)
   return {
     ...raw,
     id: String(raw.id ?? ''),
@@ -125,11 +139,13 @@ export function toTask(raw: any): ImageTask {
     route_model_code: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
     route_model_name: raw.route_model_name,
     model_group: raw.route_model_code ?? raw.model_group ?? raw.abstract_model ?? raw.group_code ?? 'basic',
+    base_resolution: baseResolution,
+    size_mode: raw.size_mode ?? 'ratio',
     quality,
     aspect_ratio: raw.aspect_ratio ?? raw.requested_size ?? '1:1',
     image_count: Number(raw.image_count ?? raw.requested_output_image_count ?? results.length ?? 1),
     estimate_points: raw.estimate_points ?? raw.estimated_points ?? raw.actual_points ?? '0.00000',
-    progress: Number(raw.progress ?? (raw.status === 'succeeded' || raw.status === 'partial_failed' ? 100 : 0)),
+    progress: raw.progress == null ? undefined : Number(raw.progress),
     provider: raw.provider ?? raw.provider_code ?? '',
     route: raw.route ?? raw.route_policy ?? '',
     created_at: raw.created_at ?? '',
@@ -143,47 +159,48 @@ export function toTask(raw: any): ImageTask {
   }
 }
 
-function toEstimateQuery(req: EstimateRequest) {
+export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateRequest {
   return {
     task_type: toBackendTaskType(req.task_type),
     route_model_code: req.route_model_code,
-    requested_quality: req.quality,
-    requested_size: calculateImageSizeForQuality(req.quality, req.aspect_ratio),
+    ...resolveGenerationResolution(req),
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,
   }
 }
 
-function toBackendTask(req: CreateTaskRequest) {
+export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: BackendCreateTaskRequest; headers: Record<string, string> } {
+  const { reference_image_count: _, ...estimateFields } = buildEstimateWireRequest(req)
   return {
-    task_type: toBackendTaskType(req.task_type),
-    prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
-    route_model_code: req.route_model_code,
-    requested_quality: req.quality,
-    requested_size: calculateImageSizeForQuality(req.quality, req.aspect_ratio),
-    requested_output_image_count: req.image_count,
-    reference_asset_ids: req.reference_asset_ids ?? [],
-    response_mode: req.response_mode ?? 'async',
-    idempotency_key: req.idempotency_key,
+    body: {
+      ...estimateFields,
+      prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
+      reference_asset_ids: req.reference_asset_ids ?? [],
+      response_mode: 'async',
+    },
+    headers: req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : {},
   }
 }
 
-function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
+export function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
   const points = raw.display_points ?? raw.charged_points ?? raw.estimated_points ?? raw.points ?? '0.00000'
+  const requestBaseResolution = req ? resolveGenerationResolution(req).requested_quality : 'auto'
+  const baseResolution = responseResolution(raw, requestBaseResolution)
   return {
     ...raw,
     points,
     charged_points: raw.charged_points ?? raw.estimated_points ?? raw.points,
     display_points: raw.display_points ?? points,
-    formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${req?.quality ?? raw.resolved_quality_bucket ?? ''}`,
-    resolved_quality: raw.resolved_quality_bucket ?? raw.resolved_quality ?? req?.quality ?? 'auto',
+    formula: raw.formula ?? `${req?.route_model_code ?? raw.pricing_snapshot?.route_model_code ?? ''} x ${baseResolution}`,
+    resolved_quality: raw.resolved_quality_bucket ?? raw.resolved_quality ?? baseResolution,
+    base_resolution: baseResolution,
     sufficient: Boolean(raw.sufficient),
     insufficient_points: raw.insufficient_points ?? '0.00000',
     balance: raw.balance ? toBalance(raw.balance) : undefined,
   }
 }
 
-function toGalleryImage(raw: any): GalleryImage {
+export function toGalleryImage(raw: any): GalleryImage {
   const taskType = raw.task_type ? normalizeTaskType(raw.task_type) : undefined
   return {
     ...raw,
@@ -198,6 +215,7 @@ function toGalleryImage(raw: any): GalleryImage {
     width: Number(raw.width ?? 0),
     height: Number(raw.height ?? 0),
     image_group: raw.image_group ?? raw.group ?? '',
+    base_resolution: responseResolution(raw),
     visibility_status: raw.visibility_status ?? raw.publish_status ?? 'private',
     like_count: Number(raw.like_count ?? 0),
     favorite_count: Number(raw.favorite_count ?? 0),
@@ -205,6 +223,92 @@ function toGalleryImage(raw: any): GalleryImage {
     favorited_by_viewer: Boolean(raw.favorited_by_viewer),
     created_at: raw.created_at ?? '',
   }
+}
+
+function optionalOutputCapabilities(source: any) {
+  const result: {
+    quality?: string[]
+    output_format?: string[]
+    supports_output_compression?: boolean
+    moderation?: string[]
+  } = {}
+  const quality = pick<string[]>(source, 'quality', 'Quality')
+  const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
+  const supportsCompression = pick<boolean>(source, 'supports_output_compression', 'SupportsOutputCompression')
+  const moderation = pick<string[]>(source, 'moderation', 'Moderation')
+  if (quality !== undefined) result.quality = quality
+  if (outputFormat !== undefined) result.output_format = outputFormat
+  if (supportsCompression !== undefined) result.supports_output_compression = supportsCompression
+  if (moderation !== undefined) result.moderation = moderation
+  return result
+}
+
+export function normalizeCapabilities(raw: any): Capability {
+  const models = pick<any[]>(raw, 'model_groups', 'ModelGroups', 'abstract_models', 'AbstractModels', 'models', 'Models', 'items', 'Items') ?? []
+  const normalizedModels: Capability['model_groups'] = models.flatMap((item: any) => {
+    const taskTypes = pick<string[]>(item, 'task_types', 'TaskTypes') ?? ['text_to_image']
+    const normalizedTaskTypes = taskTypes.map(normalizeTaskType)
+    const qualities = pick<string[]>(item, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
+      ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
+      ?? ['auto']
+    const baseResolution = pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? qualities
+    const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => {
+      const quality = String(pick(price, 'quality', 'Quality', 'base_resolution', 'BaseResolution') ?? 'auto')
+      return {
+        task_type: normalizeTaskType(pick<string>(price, 'task_type', 'TaskType') ?? 'text_to_image'),
+        quality,
+        base_resolution: String(pick(price, 'base_resolution', 'BaseResolution') ?? quality),
+        base_points: String(pick(price, 'base_points', 'BasePoints') ?? '0.00000'),
+        charged_points: String(pick(price, 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00000'),
+        display_points: String(pick(price, 'display_points', 'DisplayPoints', 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00'),
+        reference_multiplier: pick<string>(price, 'reference_multiplier', 'ReferenceMultiplier'),
+      }
+    })
+    const code = pick(item, 'code', 'Code', 'route_model_code', 'RouteModelCode', 'abstract_model', 'AbstractModel', 'group_code', 'GroupCode', 'model_code', 'ModelCode', 'id', 'ID')
+    const normalizedCode = String(code ?? '').trim()
+    if (!normalizedCode || normalizedCode === 'undefined') return []
+    const maxReference = Number(pick(item, 'max_reference_image_count', 'MaxReferenceImageCount', 'max_reference_count', 'MaxReferenceCount') ?? 0)
+    return [{
+      id: normalizedCode,
+      code: normalizedCode,
+      name: pick<string>(item, 'name', 'Name', 'group_name', 'GroupName', 'model_code', 'ModelCode') ?? normalizedCode,
+      description: pick<string>(item, 'description', 'Description') ?? '',
+      task_types: normalizedTaskTypes,
+      qualities,
+      base_resolution: baseResolution,
+      size_modes: pick<Array<'ratio' | 'pixel' | string>>(item, 'size_modes', 'SizeModes') ?? ['ratio'],
+      aspect_ratios: pick<string[]>(item, 'aspect_ratios', 'AspectRatios') ?? pick<string[]>(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? [],
+      pixel_sizes: pick<string[]>(item, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? [],
+      max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
+      max_reference_image_count: maxReference,
+      effective_multiplier: pick<string>(item, 'effective_multiplier', 'EffectiveMultiplier'),
+      prices,
+      supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.some((type) => type === 'reference_to_image' || type === 'image_edit'))),
+      display_points: pick<string>(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
+      ...optionalOutputCapabilities(item),
+    }]
+  })
+  const qualities = pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K']
+  return {
+    raw,
+    unavailable_reason: pick(raw, 'unavailable_reason', 'UnavailableReason') ?? null,
+    model_groups: normalizedModels,
+    qualities,
+    base_resolution: pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? qualities,
+    size_modes: pick<Array<'ratio' | 'pixel' | string>>(raw, 'size_modes', 'SizeModes') ?? ['ratio'],
+    aspect_ratios: pick<string[]>(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? normalizedModels[0]?.aspect_ratios ?? ['1:1', '16:9', '9:16', '4:3'],
+    pixel_sizes: pick<string[]>(raw, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? [],
+    max_image_count: Number(pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
+    reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,
+    reference_image_max_bytes: Number(pick(raw, 'reference_image_max_bytes', 'ReferenceImageMaxBytes') ?? 0) || undefined,
+    task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? Array.from(new Set(normalizedModels.flatMap((item) => item.task_types)))).map(normalizeTaskType),
+    ...optionalOutputCapabilities(raw),
+  }
+}
+
+export function normalizeTaskList(raw: any): ImageTask[] {
+  const items = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : []
+  return items.map(toTask)
 }
 
 export const userApi = {
@@ -266,56 +370,8 @@ export const userApi = {
   cancelCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderCancel, { method: 'POST', pathParams: { order_id } }),
   mockPayCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderMockPay, { method: 'POST', pathParams: { order_id } }),
   redeemCode: (code: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request(API_PATHS.agent.redeemCode, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { code } }),
-  getCapabilities: async (): Promise<Capability> => {
-    const raw: any = await sharedApiClient.request(API_PATHS.agent.capabilities)
-    const models = raw.model_groups ?? raw.abstract_models ?? raw.models ?? []
-    const normalizedModels = models.flatMap((item: any) => {
-      const taskTypes = pick<string[]>(item, 'task_types', 'TaskTypes') ?? ['text_to_image']
-      const normalizedTaskTypes = taskTypes.map(normalizeTaskType)
-      const qualities = pick<string[]>(item, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
-        ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
-        ?? ['auto']
-      const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => ({
-        task_type: normalizeTaskType(pick<string>(price, 'task_type', 'TaskType') ?? 'text_to_image'),
-        quality: pick<string>(price, 'quality', 'Quality') ?? 'auto',
-        base_points: String(pick(price, 'base_points', 'BasePoints') ?? '0.00000'),
-        charged_points: String(pick(price, 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00000'),
-        display_points: String(pick(price, 'display_points', 'DisplayPoints', 'charged_points', 'ChargedPoints', 'points', 'Points', 'base_points', 'BasePoints') ?? '0.00'),
-        reference_multiplier: pick(price, 'reference_multiplier', 'ReferenceMultiplier'),
-      }))
-      const code = pick(item, 'code', 'Code', 'route_model_code', 'RouteModelCode', 'group_code', 'GroupCode', 'model_code', 'ModelCode', 'id', 'ID')
-      const normalizedCode = String(code ?? '').trim()
-      if (!normalizedCode || normalizedCode === 'undefined') return []
-      const maxReference = Number(pick(item, 'max_reference_image_count', 'MaxReferenceImageCount', 'max_reference_count', 'MaxReferenceCount') ?? 0)
-      return [{
-        id: normalizedCode,
-        code: normalizedCode,
-        name: pick(item, 'name', 'Name', 'group_name', 'GroupName', 'model_code', 'ModelCode') ?? normalizedCode,
-        description: pick<string>(item, 'description', 'Description') ?? '',
-        task_types: normalizedTaskTypes,
-        qualities,
-        aspect_ratios: pick(item, 'aspect_ratios', 'AspectRatios') ?? pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios'),
-        max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
-        max_reference_image_count: maxReference,
-        effective_multiplier: pick(item, 'effective_multiplier', 'EffectiveMultiplier'),
-        prices,
-        supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.some((type) => type === 'reference_to_image' || type === 'image_edit'))),
-        display_points: pick(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
-      }]
-    })
-    return {
-      raw,
-      unavailable_reason: raw.unavailable_reason ?? null,
-      model_groups: normalizedModels,
-      qualities: pick(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K'],
-      aspect_ratios: pick(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? ['1:1', '16:9', '9:16', '4:3'],
-      max_image_count: pick(raw, 'max_image_count', 'MaxImageCount') ?? 4,
-      reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,
-      reference_image_max_bytes: Number(pick(raw, 'reference_image_max_bytes', 'ReferenceImageMaxBytes') ?? 0) || undefined,
-      task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? ['text_to_image', 'reference_to_image', 'image_edit']).map(normalizeTaskType),
-    } satisfies Capability
-  },
-  estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: toEstimateQuery(req) }), req),
+  getCapabilities: async (): Promise<Capability> => normalizeCapabilities(await sharedApiClient.request(API_PATHS.agent.capabilities)),
+  estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
     if (typeof file === 'string') {
       return { id: '', name: file, preview_url: '', status: 'ready', size_bytes: sizeBytes ?? 0, created_at: '' } satisfies ReferenceAsset
@@ -336,21 +392,24 @@ export const userApi = {
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
   deleteReferenceAsset: (asset_id: string) => sharedApiClient.request<void>(API_PATHS.agent.referenceAssetDetail, { method: 'DELETE', pathParams: { asset_id } }),
   imageAssetUrl: (url: string, accessToken?: string | null) => apiEventUrl(url, accessToken),
-  createTask: async (req: CreateTaskRequest) => toTask(await sharedApiClient.request(API_PATHS.agent.tasks, { method: 'POST', body: toBackendTask(req) })),
+  createTask: async (req: CreateTaskRequest) => {
+    const wire = buildCreateTaskWireRequest(req)
+    return toTask(await sharedApiClient.request(API_PATHS.agent.tasks, { method: 'POST', body: wire.body, headers: wire.headers }))
+  },
   getTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.taskDetail, { pathParams: { task_id } })),
   taskEventsUrl: (task_id: string, accessToken?: string | null) => apiEventUrl(fillPath(API_PATHS.agent.taskEvents, { task_id }), accessToken),
   taskStreamUrl: (accessToken?: string | null) => apiEventUrl(API_PATHS.agent.taskStream, accessToken),
   listTasks: async (filters?: { query?: string; status?: string; type?: string }) => {
-    const page = normalizePage<any>(await sharedApiClient.request(API_PATHS.agent.tasks, {
+    const response = await sharedApiClient.request(API_PATHS.agent.tasks, {
       query: { status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
-    }))
-    return page.items.map(toTask)
+    })
+    return normalizeTaskList(response)
   },
   listHistoryTasks: async (filters?: { query?: string; status?: string; type?: string }) => {
-    const page = normalizePage<any>(await sharedApiClient.request(API_PATHS.agent.historyTasks, {
+    const response = await sharedApiClient.request(API_PATHS.agent.historyTasks, {
       query: { status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
-    }))
-    return page.items.map(toTask)
+    })
+    return normalizeTaskList(response)
   },
   listGalleryImages: async (page = 1, page_size = 100) => normalizePage<GalleryImage>(await sharedApiClient.request(API_PATHS.agent.galleryImages, { query: { page, page_size } })).items.map(toGalleryImage),
   retryTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.historyTaskRetry, { method: 'POST', pathParams: { task_id } })),

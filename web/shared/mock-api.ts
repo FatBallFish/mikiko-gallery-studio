@@ -1,4 +1,5 @@
 import type { AdminMetric, AdminSession, AdminUser, ApiKey, AuditLog, Balance, Capability, ConfigItem, CreateApiKeyRequest, CreateTaskRequest, EndpointDoc, EstimateRequest, EstimateResult, ImageTask, LedgerEntry, ModelRoute, PriceRow, ProviderHealth, ReferenceAsset, ReviewItem, UserProfile } from './api-types'
+import { resolveGenerationResolution } from './generation-resolution'
 import { adminMetrics, demoCapability, demoImages, demoProfile, endpointDocs, initialAudit, initialConfig, initialKeys, initialLedger, initialPrices, initialReviews, initialRoutes, initialTasks, initialUsers, providerHealth } from './mock-data'
 
 const wait = (ms = 320) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -118,16 +119,19 @@ class MockPicGalleryApi {
   async estimate(req: EstimateRequest): Promise<EstimateResult> {
     await wait(220)
     const routeCode = req.route_model_code ?? req.model_group ?? 'basic'
+    const { requested_quality: requestedQuality } = resolveGenerationResolution(req)
+    const resolvedQuality = requestedQuality === 'auto' ? '2k' : requestedQuality
     const modelBase = routeCode.includes('pro') ? 8 : routeCode.includes('plus') ? 5.125 : 2
-    const qualityMulti = req.quality === '4K' ? 2 : req.quality === '2K' ? 1.45 : req.quality === 'auto' ? 1.25 : 1
+    const qualityMulti = requestedQuality === '4k' ? 2 : requestedQuality === '2k' ? 1.45 : requestedQuality === 'auto' ? 1.25 : 1
     const refMulti = req.task_type === 'reference_to_image' || req.task_type === 'image_edit' ? 1.2 : 1
     const points = modelBase * qualityMulti * refMulti * req.image_count
     return {
       points: points.toFixed(2),
       charged_points: formatPoints(points),
       display_points: points.toFixed(2),
-      formula: `${routeCode} x ${req.quality} x ${req.task_type} x ${req.image_count}`,
-      resolved_quality: req.quality === 'auto' ? '2K' : req.quality,
+      formula: `${routeCode} x ${requestedQuality} x ${req.task_type} x ${req.image_count}`,
+      resolved_quality: resolvedQuality,
+      base_resolution: resolvedQuality,
       sufficient: this.balanceValue >= points,
     }
   }
@@ -151,6 +155,7 @@ class MockPicGalleryApi {
     if (!estimate.sufficient) throw new Error('积分余额不足，请充值或降低输出质量')
     this.balanceValue -= toNumber(estimate.charged_points ?? estimate.points)
     const routeCode = req.route_model_code ?? req.model_group ?? 'basic'
+    const resolvedQuality = estimate.base_resolution ?? estimate.resolved_quality ?? resolveGenerationResolution(req).requested_quality
     this.ledger.unshift({ id: id('led'), title: `生图任务: ${req.prompt.slice(0, 28)}...`, occurred_at: now(), amount: `-${estimate.charged_points ?? estimate.points}`, type: 'debit', detail: `${routeCode} / ${estimate.resolved_quality} / ${req.image_count} 张` })
     const task: ImageTask = {
       id: id('task'),
@@ -160,7 +165,8 @@ class MockPicGalleryApi {
       status: 'queued',
       route_model_code: routeCode,
       model_group: routeCode,
-      quality: estimate.resolved_quality,
+      base_resolution: resolvedQuality,
+      quality: resolvedQuality,
       aspect_ratio: req.aspect_ratio,
       image_count: req.image_count,
       estimate_points: estimate.display_points ?? estimate.points,

@@ -197,6 +197,7 @@ export type RequestOptions = {
   pathParams?: Record<string, string | number>
   query?: Record<string, QueryValue>
   body?: unknown
+  serializedBody?: string
   formData?: FormData
   headers?: HeadersInit
   auth?: boolean
@@ -333,6 +334,9 @@ export class ApiClient {
 
     if (options.formData) {
       body = options.formData
+    } else if (options.serializedBody !== undefined) {
+      headers.set('Content-Type', 'application/json')
+      body = options.serializedBody
     } else if (options.body !== undefined) {
       headers.set('Content-Type', 'application/json')
       body = JSON.stringify(options.body)
@@ -354,7 +358,7 @@ export class ApiClient {
       throw errorFromPayload(payload, response.status)
     }
 
-    if (response.status === 401 && allowRefresh && this.onUnauthorized) {
+    if (response.status === 401 && options.auth !== false && allowRefresh && this.onUnauthorized) {
       const currentToken = this.getToken?.()
       if (currentToken !== token) {
         if (currentToken) return this.send<T>(path, options, false)
@@ -373,7 +377,7 @@ export class ApiClient {
     }
 
     const error = errorFromPayload(payload, response.status)
-    this.onError?.(error)
+    if (!(options.auth === false && response.status === 401)) this.onError?.(error)
     throw error
   }
 }
