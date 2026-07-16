@@ -3,15 +3,15 @@ import { createGalleryEditContext, parseGalleryEditContext } from './galleryEdit
 const publicSameContext = createGalleryEditContext({
   prompt: 'sunset over glass city',
   routeModelCode: 'plus',
-  quality: '2K',
+  baseResolution: '2K',
   aspectRatio: '16:9',
 })
 
 const routeModelCode: string | undefined = publicSameContext.route_model_code
-const quality: string | undefined = publicSameContext.quality
+const baseResolution: string | undefined = publicSameContext.base_resolution
 const aspectRatio: string | undefined = publicSameContext.aspect_ratio
 
-if (routeModelCode !== 'plus' || quality !== '2K' || aspectRatio !== '16:9') {
+if (routeModelCode !== 'plus' || baseResolution !== '2K' || aspectRatio !== '16:9') {
   throw new Error('public same-generation context must preserve generation parameters')
 }
 
@@ -23,7 +23,7 @@ const parsed = parseGalleryEditContext(JSON.stringify({
   prompt: 'legacy prompt',
   routeModelCode: 'basic',
   aspectRatio: '1:1',
-  quality: '1K',
+  baseResolution: '1K',
 }))
 
 if (!parsed || parsed.route_model_code !== 'basic' || parsed.aspect_ratio !== '1:1') {

@@ -14,7 +14,7 @@ if (invalid.mode !== defaultThemePreference.mode || invalid.accent !== defaultTh
 const profilePreference = themePreferenceFromProfile({
   preferences: {
     model_group: 'plus-image',
-    quality: 'auto',
+    base_resolution: 'auto',
     aspect_ratio: '16:9',
     image_count: 1,
     theme_mode: 'light',
@@ -29,7 +29,7 @@ const legacyPreference = themePreferenceFromProfile({
   theme: 'dark:emerald',
   preferences: {
     model_group: 'plus-image',
-    quality: 'auto',
+    base_resolution: 'auto',
     aspect_ratio: '16:9',
     image_count: 1,
   },
