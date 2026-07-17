@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     base,
+    build: {
+      manifest: true,
+    },
     plugins: [tailwindcss(), react()],
     server: {
       fs: { allow: ['..'] },

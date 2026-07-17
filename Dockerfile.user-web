@@ -6,6 +6,7 @@ WORKDIR /src
 COPY web/user/package.json web/user/package-lock.json ./web/user/
 COPY web/shared ./web/shared
 COPY docs/template/PicGallery ./docs/template/PicGallery
+COPY scripts/workflow/contracts/landing-build.mjs ./scripts/workflow/contracts/landing-build.mjs
 WORKDIR /src/web/user
 RUN npm ci
 COPY web/user .
