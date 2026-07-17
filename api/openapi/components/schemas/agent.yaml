@@ -662,7 +662,7 @@ components:
           $ref: ./common.yaml#/components/schemas/ReferenceAsset
     CreateImageTaskRequest:
       type: object
-      required: [task_type, prompt, abstract_model, requested_quality, requested_output_image_count]
+      required: [task_type, prompt, route_model_code, requested_quality, requested_output_image_count]
       properties:
         task_type:
           type: string
@@ -671,9 +671,16 @@ components:
           type: string
         negative_prompt:
           type: string
+        route_model_code:
+          type: string
+          minLength: 1
+          example: basic
+          description: Current database-backed route model code. Takes precedence when abstract_model is also sent.
         abstract_model:
           type: string
           enum: [basic, plus, pro]
+          deprecated: true
+          description: Legacy static model selector retained for older clients.
         requested_quality:
           type: string
           enum: [auto, 1k, 2k, 4k]

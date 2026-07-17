@@ -103,8 +103,12 @@ components:
           type: string
         status:
           type: string
+        route_model_code:
+          type: string
         abstract_model:
           type: string
+          deprecated: true
+          description: Legacy model field retained for older clients. Use route_model_code for new integrations.
         requested_quality:
           type: string
         resolved_quality_bucket:

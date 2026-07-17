@@ -593,6 +593,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
         - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedQuality
         - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
@@ -857,6 +858,7 @@ paths:
           accessBodySHA256: []
           accessSignature: []
       parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
         - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedQuality
         - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize

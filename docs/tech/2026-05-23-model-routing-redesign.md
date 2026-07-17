@@ -380,7 +380,7 @@ sequenceDiagram
 
 `GET /api/agent/billing/v1/estimate`
 
-请求参数将 `abstract_model` 替换为 `route_model_code`。如果需要保留兼容期，前端和文档优先使用 `route_model_code`，旧参数只在过渡测试中覆盖；本项目当前无历史包袱，建议直接移除旧参数。
+请求参数将 `abstract_model` 替换为 `route_model_code`。前端和文档只使用 `route_model_code`；服务端在过渡期继续接受旧 `abstract_model`，两者同时存在时以 `route_model_code` 为准。
 
 ### 2.5 算法设计
 
@@ -663,7 +663,7 @@ display_points = round(charged_points, 2)
 |---|---|
 | 发布过程中新老服务端并存 | 本项目开发期直接改造，不设计新旧并存 |
 | 数据库变更兼容 | 不保留旧表兼容逻辑，允许开发库重建 |
-| 新版服务端兼容老版本客户端 | 不兼容旧 `abstract_model` 语义，前端同步改造 |
+| 新版服务端兼容老版本客户端 | 过渡期接受旧 `abstract_model`，新客户端和文档仅使用 `route_model_code`；两者同时存在时 route 优先 |
 | 新版客户端兼容老版本服务端 | 不要求 |
 | 新版客户端兼容老版客户端本地持久化 | 清理旧模型偏好；无法匹配时默认选择第一个可见模型 |
 | 策略/配置向前兼容 | 新配置必须由后台创建；没有配置不 fallback |

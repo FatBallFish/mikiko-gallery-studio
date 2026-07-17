@@ -1394,6 +1394,119 @@ func TestOpenAPISpecDocumentsNativeTaskAsyncOnlyContract(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var rootDoc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Ref string `yaml:"$ref"`
+			} `yaml:"parameters"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &rootDoc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+	for _, path := range []string{"/api/agent/billing/v1/estimate", "/api/open/image/v1/estimate"} {
+		parameters := rootDoc.Paths[path]["get"].Parameters
+		if len(parameters) < 2 || parameters[0].Ref != "./components/parameters/common.yaml#/components/parameters/RouteModelCode" {
+			t.Fatalf("expected %s to prefer RouteModelCode, got %#v", path, parameters)
+		}
+		foundLegacy := false
+		for _, parameter := range parameters {
+			if parameter.Ref == "./components/parameters/common.yaml#/components/parameters/AbstractModel" {
+				foundLegacy = true
+			}
+		}
+		if !foundLegacy {
+			t.Fatalf("expected %s to retain deprecated AbstractModel compatibility", path)
+		}
+	}
+
+	parameterContent, err := os.ReadFile("components/parameters/common.yaml")
+	if err != nil {
+		t.Fatalf("read common parameters: %v", err)
+	}
+	var parameterDoc struct {
+		Components struct {
+			Parameters map[string]struct {
+				Name       string `yaml:"name"`
+				Required   bool   `yaml:"required"`
+				Deprecated bool   `yaml:"deprecated"`
+				Schema     struct {
+					Type      string `yaml:"type"`
+					MinLength int    `yaml:"minLength"`
+				} `yaml:"schema"`
+			} `yaml:"parameters"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(parameterContent, &parameterDoc); err != nil {
+		t.Fatalf("unmarshal common parameters: %v", err)
+	}
+	routeParameter := parameterDoc.Components.Parameters["RouteModelCode"]
+	if routeParameter.Name != "route_model_code" || !routeParameter.Required || routeParameter.Schema.Type != "string" || routeParameter.Schema.MinLength != 1 {
+		t.Fatalf("unexpected RouteModelCode parameter %#v", routeParameter)
+	}
+	legacyParameter := parameterDoc.Components.Parameters["AbstractModel"]
+	if legacyParameter.Required || !legacyParameter.Deprecated {
+		t.Fatalf("expected AbstractModel to be optional and deprecated, got %#v", legacyParameter)
+	}
+
+	agentContent, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	var agentDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `yaml:"required"`
+				Properties map[string]struct {
+					Type       string `yaml:"type"`
+					Deprecated bool   `yaml:"deprecated"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(agentContent, &agentDoc); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+	createTask := agentDoc.Components.Schemas["CreateImageTaskRequest"]
+	required := map[string]bool{}
+	for _, field := range createTask.Required {
+		required[field] = true
+	}
+	if !required["route_model_code"] || required["abstract_model"] {
+		t.Fatalf("expected route_model_code, not abstract_model, to be required: %#v", createTask.Required)
+	}
+	if createTask.Properties["route_model_code"].Type != "string" || !createTask.Properties["abstract_model"].Deprecated {
+		t.Fatalf("unexpected task model properties %#v", createTask.Properties)
+	}
+
+	commonContent, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schema: %v", err)
+	}
+	var commonDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Type       string `yaml:"type"`
+					Deprecated bool   `yaml:"deprecated"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(commonContent, &commonDoc); err != nil {
+		t.Fatalf("unmarshal common schema: %v", err)
+	}
+	imageTask := commonDoc.Components.Schemas["ImageTask"]
+	if imageTask.Properties["route_model_code"].Type != "string" || !imageTask.Properties["abstract_model"].Deprecated {
+		t.Fatalf("unexpected ImageTask model properties %#v", imageTask.Properties)
+	}
+}
+
 func TestOpenAPISpecDocumentsLedgerContract(t *testing.T) {
 	content, err := os.ReadFile("openapi.yaml")
 	if err != nil {
