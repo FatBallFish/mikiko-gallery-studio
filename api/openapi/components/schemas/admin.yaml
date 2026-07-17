@@ -915,6 +915,8 @@ components:
           type: string
         abstract_model:
           type: string
+        base_resolution:
+          type: string
         quality:
           type: string
         requested_output_image_count:
@@ -1165,11 +1167,25 @@ components:
           type: boolean
         supports_mask:
           type: boolean
-        supported_qualities:
+        supported_base_resolution:
+          type: array
+          items:
+            type: string
+        quality:
           type: array
           items:
             type: string
         supported_ratios:
+          type: array
+          items:
+            type: string
+        output_format:
+          type: array
+          items:
+            type: string
+        output_compression:
+          type: integer
+        moderation:
           type: array
           items:
             type: string
@@ -1213,11 +1229,25 @@ components:
           type: boolean
         supports_mask:
           type: boolean
-        supported_qualities:
+        supported_base_resolution:
+          type: array
+          items:
+            type: string
+        quality:
           type: array
           items:
             type: string
         supported_ratios:
+          type: array
+          items:
+            type: string
+        output_format:
+          type: array
+          items:
+            type: string
+        output_compression:
+          type: integer
+        moderation:
           type: array
           items:
             type: string

@@ -14,6 +14,7 @@ for (const [label, route] of expectedRoutes) {
   const item = items.find((candidate) => candidate.label === label)
   if (!item) throw new Error(`avatar menu should include ${label}, got ${JSON.stringify(items)}`)
   if (item.route !== route) throw new Error(`${label} should route to ${route}, got ${item.route}`)
+  if (route === 'docs' && item.external !== true) throw new Error('documentation account entry should be marked as an external destination')
 }
 
 if (items.length !== expectedRoutes.size) {

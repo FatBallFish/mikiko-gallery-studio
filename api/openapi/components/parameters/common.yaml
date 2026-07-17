@@ -53,13 +53,42 @@ components:
       schema:
         type: string
         enum: [basic, plus, pro]
-    RequestedQuality:
-      name: requested_quality
+    BaseResolution:
+      name: base_resolution
       in: query
       required: true
       schema:
         type: string
         enum: [auto, 1k, 2k, 4k]
+    Quality:
+      name: quality
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [auto, low, medium, high]
+    OutputFormat:
+      name: output_format
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [png, jpeg, webp]
+    OutputCompression:
+      name: output_compression
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+    Moderation:
+      name: moderation
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [auto, low]
     RequestedSize:
       name: requested_size
       in: query

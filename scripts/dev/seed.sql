@@ -10,5 +10,5 @@ values
   ('generation_limits', 'max_image_count', '5'::jsonb, 'global', 1, 0),
   ('billing_pricing', 'points_decimal_scale', '5'::jsonb, 'global', 1, 0),
   ('billing_pricing', 'cny_per_point_micros', '312500'::jsonb, 'global', 1, 0),
-  ('billing_pricing', 'auto_quality_default_by_group', '{"basic":"1k","plus":"2k","pro":"4k"}'::jsonb, 'global', 1, 0)
+  ('billing_pricing', 'auto_base_resolution_default_by_group', '{"basic":"1k","plus":"2k","pro":"4k"}'::jsonb, 'global', 1, 0)
 on conflict (config_category, config_key, scope) do nothing;

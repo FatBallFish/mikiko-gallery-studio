@@ -54,10 +54,10 @@ export function modelEnabledTone(enabled: boolean): ProviderModelTone {
   return enabled ? 'success' : 'warning'
 }
 
-export function modelCapabilitySummary(model: Pick<ModelAccountModel, 'task_types' | 'qualities' | 'cost_per_image' | 'currency'>) {
+export function modelCapabilitySummary(model: Pick<ModelAccountModel, 'task_types' | 'base_resolution' | 'cost_per_image' | 'currency'>) {
   const taskTypes = model.task_types.length ? model.task_types.map(adminTaskTypeLabel).join('/') : '未配置任务类型'
-  const qualities = model.qualities.length ? model.qualities.join('/') : '未配置质量'
-  return `${taskTypes} · ${qualities} · ${model.cost_per_image} ${model.currency}`
+  const base_resolution = model.base_resolution.length ? model.base_resolution.join('/') : '未配置基础分辨率'
+  return `${taskTypes} · ${base_resolution} · ${model.cost_per_image} ${model.currency}`
 }
 
 function normalize(value: string) {

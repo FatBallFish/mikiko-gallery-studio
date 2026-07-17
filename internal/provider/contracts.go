@@ -33,16 +33,19 @@ type ImageInput struct {
 }
 
 type ImageRequest struct {
-	Model            string
-	TaskType         TaskType
-	Prompt           string
-	Size             string
-	Quality          string
-	OutputImageCount int
-	ResponseFormat   ResponseFormat
-	ReferenceImages  []ImageInput
-	Mask             *ImageInput
-	User             string
+	Model             string
+	TaskType          TaskType
+	Prompt            string
+	Size              string
+	Quality           string
+	OutputFormat      string
+	OutputCompression int
+	Moderation        string
+	OutputImageCount  int
+	ResponseFormat    ResponseFormat
+	ReferenceImages   []ImageInput
+	Mask              *ImageInput
+	User              string
 }
 
 type ImageResult struct {
@@ -57,6 +60,7 @@ type ImageResult struct {
 	Width            int        `json:"width"`
 	Height           int        `json:"height"`
 	SHA256           string     `json:"sha256,omitempty"`
+	StorageConfigID  string     `json:"storage_config_id,omitempty"`
 	ObjectKey        string     `json:"object_key,omitempty"`
 	StorageDriver    string     `json:"storage_driver,omitempty"`
 	StorageConfigID  string     `json:"storage_config_id,omitempty"`

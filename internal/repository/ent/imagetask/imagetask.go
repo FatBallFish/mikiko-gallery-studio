@@ -30,16 +30,22 @@ const (
 	FieldTaskType = "task_type"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldProgressStage holds the string denoting the progress_stage field in the database.
+	FieldProgressStage = "progress_stage"
+	// FieldProgressMessage holds the string denoting the progress_message field in the database.
+	FieldProgressMessage = "progress_message"
 	// FieldPrompt holds the string denoting the prompt field in the database.
 	FieldPrompt = "prompt"
 	// FieldNegativePrompt holds the string denoting the negative_prompt field in the database.
 	FieldNegativePrompt = "negative_prompt"
 	// FieldAbstractModel holds the string denoting the abstract_model field in the database.
 	FieldAbstractModel = "abstract_model"
-	// FieldRequestedQuality holds the string denoting the requested_quality field in the database.
-	FieldRequestedQuality = "requested_quality"
-	// FieldResolvedQualityBucket holds the string denoting the resolved_quality_bucket field in the database.
-	FieldResolvedQualityBucket = "resolved_quality_bucket"
+	// FieldSizeMode holds the string denoting the size_mode field in the database.
+	FieldSizeMode = "size_mode"
+	// FieldBaseResolution holds the string denoting the base_resolution field in the database.
+	FieldBaseResolution = "base_resolution"
+	// FieldQuality holds the string denoting the quality field in the database.
+	FieldQuality = "quality"
 	// FieldRequestedSize holds the string denoting the requested_size field in the database.
 	FieldRequestedSize = "requested_size"
 	// FieldResolvedWidth holds the string denoting the resolved_width field in the database.
@@ -48,6 +54,12 @@ const (
 	FieldResolvedHeight = "resolved_height"
 	// FieldAspectRatio holds the string denoting the aspect_ratio field in the database.
 	FieldAspectRatio = "aspect_ratio"
+	// FieldOutputFormat holds the string denoting the output_format field in the database.
+	FieldOutputFormat = "output_format"
+	// FieldOutputCompression holds the string denoting the output_compression field in the database.
+	FieldOutputCompression = "output_compression"
+	// FieldModeration holds the string denoting the moderation field in the database.
+	FieldModeration = "moderation"
 	// FieldRequestedOutputImageCount holds the string denoting the requested_output_image_count field in the database.
 	FieldRequestedOutputImageCount = "requested_output_image_count"
 	// FieldSuccessOutputImageCount holds the string denoting the success_output_image_count field in the database.
@@ -145,15 +157,21 @@ var Columns = []string{
 	FieldSourceChannel,
 	FieldTaskType,
 	FieldStatus,
+	FieldProgressStage,
+	FieldProgressMessage,
 	FieldPrompt,
 	FieldNegativePrompt,
 	FieldAbstractModel,
-	FieldRequestedQuality,
-	FieldResolvedQualityBucket,
+	FieldSizeMode,
+	FieldBaseResolution,
+	FieldQuality,
 	FieldRequestedSize,
 	FieldResolvedWidth,
 	FieldResolvedHeight,
 	FieldAspectRatio,
+	FieldOutputFormat,
+	FieldOutputCompression,
+	FieldModeration,
 	FieldRequestedOutputImageCount,
 	FieldSuccessOutputImageCount,
 	FieldReferenceImageCount,
@@ -224,22 +242,42 @@ var (
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	StatusValidator func(string) error
+	// DefaultProgressStage holds the default value on creation for the "progress_stage" field.
+	DefaultProgressStage string
+	// ProgressStageValidator is a validator for the "progress_stage" field. It is called by the builders before save.
+	ProgressStageValidator func(string) error
+	// DefaultProgressMessage holds the default value on creation for the "progress_message" field.
+	DefaultProgressMessage string
 	// AbstractModelValidator is a validator for the "abstract_model" field. It is called by the builders before save.
 	AbstractModelValidator func(string) error
-	// DefaultRequestedQuality holds the default value on creation for the "requested_quality" field.
-	DefaultRequestedQuality string
-	// RequestedQualityValidator is a validator for the "requested_quality" field. It is called by the builders before save.
-	RequestedQualityValidator func(string) error
-	// DefaultResolvedQualityBucket holds the default value on creation for the "resolved_quality_bucket" field.
-	DefaultResolvedQualityBucket string
-	// ResolvedQualityBucketValidator is a validator for the "resolved_quality_bucket" field. It is called by the builders before save.
-	ResolvedQualityBucketValidator func(string) error
+	// DefaultSizeMode holds the default value on creation for the "size_mode" field.
+	DefaultSizeMode string
+	// SizeModeValidator is a validator for the "size_mode" field. It is called by the builders before save.
+	SizeModeValidator func(string) error
+	// DefaultBaseResolution holds the default value on creation for the "base_resolution" field.
+	DefaultBaseResolution string
+	// BaseResolutionValidator is a validator for the "base_resolution" field. It is called by the builders before save.
+	BaseResolutionValidator func(string) error
+	// DefaultQuality holds the default value on creation for the "quality" field.
+	DefaultQuality string
+	// QualityValidator is a validator for the "quality" field. It is called by the builders before save.
+	QualityValidator func(string) error
 	// RequestedSizeValidator is a validator for the "requested_size" field. It is called by the builders before save.
 	RequestedSizeValidator func(string) error
 	// DefaultAspectRatio holds the default value on creation for the "aspect_ratio" field.
 	DefaultAspectRatio string
 	// AspectRatioValidator is a validator for the "aspect_ratio" field. It is called by the builders before save.
 	AspectRatioValidator func(string) error
+	// DefaultOutputFormat holds the default value on creation for the "output_format" field.
+	DefaultOutputFormat string
+	// OutputFormatValidator is a validator for the "output_format" field. It is called by the builders before save.
+	OutputFormatValidator func(string) error
+	// DefaultOutputCompression holds the default value on creation for the "output_compression" field.
+	DefaultOutputCompression int
+	// DefaultModeration holds the default value on creation for the "moderation" field.
+	DefaultModeration string
+	// ModerationValidator is a validator for the "moderation" field. It is called by the builders before save.
+	ModerationValidator func(string) error
 	// DefaultRequestedOutputImageCount holds the default value on creation for the "requested_output_image_count" field.
 	DefaultRequestedOutputImageCount int
 	// DefaultSuccessOutputImageCount holds the default value on creation for the "success_output_image_count" field.
@@ -348,6 +386,16 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
 }
 
+// ByProgressStage orders the results by the progress_stage field.
+func ByProgressStage(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProgressStage, opts...).ToFunc()
+}
+
+// ByProgressMessage orders the results by the progress_message field.
+func ByProgressMessage(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProgressMessage, opts...).ToFunc()
+}
+
 // ByPrompt orders the results by the prompt field.
 func ByPrompt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPrompt, opts...).ToFunc()
@@ -363,14 +411,19 @@ func ByAbstractModel(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAbstractModel, opts...).ToFunc()
 }
 
-// ByRequestedQuality orders the results by the requested_quality field.
-func ByRequestedQuality(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRequestedQuality, opts...).ToFunc()
+// BySizeMode orders the results by the size_mode field.
+func BySizeMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSizeMode, opts...).ToFunc()
 }
 
-// ByResolvedQualityBucket orders the results by the resolved_quality_bucket field.
-func ByResolvedQualityBucket(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldResolvedQualityBucket, opts...).ToFunc()
+// ByBaseResolution orders the results by the base_resolution field.
+func ByBaseResolution(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBaseResolution, opts...).ToFunc()
+}
+
+// ByQuality orders the results by the quality field.
+func ByQuality(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldQuality, opts...).ToFunc()
 }
 
 // ByRequestedSize orders the results by the requested_size field.
@@ -391,6 +444,21 @@ func ByResolvedHeight(opts ...sql.OrderTermOption) OrderOption {
 // ByAspectRatio orders the results by the aspect_ratio field.
 func ByAspectRatio(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAspectRatio, opts...).ToFunc()
+}
+
+// ByOutputFormat orders the results by the output_format field.
+func ByOutputFormat(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOutputFormat, opts...).ToFunc()
+}
+
+// ByOutputCompression orders the results by the output_compression field.
+func ByOutputCompression(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOutputCompression, opts...).ToFunc()
+}
+
+// ByModeration orders the results by the moderation field.
+func ByModeration(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldModeration, opts...).ToFunc()
 }
 
 // ByRequestedOutputImageCount orders the results by the requested_output_image_count field.

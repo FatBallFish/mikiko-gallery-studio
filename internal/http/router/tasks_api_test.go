@@ -141,11 +141,12 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: 1, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
 		t.Fatalf("AdminAdjust: %v", err)
 	}
-	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	taskStore := imagetaskservice.NewMemoryStore()
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, taskStore, nil, billingSvc)
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
-	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_image_count":0,"response_mode":"async"}`)
+	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a banner","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_image_count":0,"response_mode":"async"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", createBody)
 	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	createReq.Header.Set("Content-Type", "application/json")
@@ -176,17 +177,41 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 		t.Fatalf("expected backend progress fields on create response, got %#v", createResp.Data)
 	}
 
-	runner := worker.NewRunner(taskSvc, worker.Config{
-		Owner:              "router-test-worker",
-		LeaseTTL:           30 * time.Second,
-		PreferredProviders: []string{"openrouter"},
-	})
-	processed, err := runner.ProcessOnce(createReq.Context())
+	claimed, ok, err := taskSvc.AcquireNextTask(context.Background(), "router-test-worker", 30*time.Second)
 	if err != nil {
-		t.Fatalf("ProcessOnce: %v", err)
+		t.Fatalf("AcquireNextTask: %v", err)
 	}
-	if !processed {
-		t.Fatal("expected queued task to be processed by worker")
+	if !ok {
+		t.Fatal("expected queued task to be claimed")
+	}
+	claimed.ProgressStage = ""
+	claimed.ProgressMessage = ""
+	if err := taskStore.Save(context.Background(), claimed); err != nil {
+		t.Fatalf("save legacy running task: %v", err)
+	}
+
+	runningReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks/"+createResp.Data.ID, nil)
+	runningReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	runningRec := httptest.NewRecorder()
+	handler.ServeHTTP(runningRec, runningReq)
+	if runningRec.Code != http.StatusOK {
+		t.Fatalf("expected running detail 200, got %d body=%s", runningRec.Code, runningRec.Body.String())
+	}
+	var runningResp struct {
+		Data struct {
+			ProgressStage string `json:"progress_stage"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(runningRec.Body).Decode(&runningResp); err != nil {
+		t.Fatalf("decode running detail: %v", err)
+	}
+	if runningResp.Data.ProgressStage != "provider" {
+		t.Fatalf("expected legacy running task to fall back to provider, got %q", runningResp.Data.ProgressStage)
+	}
+
+	_, err = taskSvc.ExecuteLeasedTask(context.Background(), claimed, "router-test-worker", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/tasks", nil)
@@ -382,7 +407,7 @@ func TestAgentTaskCreateRejectsSyncResponseMode(t *testing.T) {
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"sync"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a banner","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"sync"}`))
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -683,7 +708,7 @@ func TestAgentHistoryTaskRetryCreatesQueuedTask(t *testing.T) {
 		AbstractModel:    "plus",
 		TaskType:         "text_to_image",
 		Prompt:           "Retry from history",
-		RequestedQuality: "auto",
+		BaseResolution:   "auto",
 		RequestedSize:    "auto",
 		AspectRatio:      "1:1",
 		OutputImageCount: 1,
@@ -721,8 +746,8 @@ func TestAgentHistoryTaskRetryCreatesQueuedTask(t *testing.T) {
 
 func taskAPIConfig(openrouterBaseURL string) config.Config {
 	cfg := config.Config{}
-	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"plus": "2k"}
-	cfg.Billing.QualityPointsByModel = map[string]map[string]string{
+	cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"plus": "2k"}
+	cfg.Billing.BaseResolutionPointsByModel = map[string]map[string]string{
 		"plus": {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 	}
 	cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000", "plus": "1.00000"}
@@ -739,26 +764,26 @@ func taskAPIConfig(openrouterBaseURL string) config.Config {
 	cfg.Providers.OpenAI.APIKey = "oa-key"
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
 		"openrouter": {
-			SupportedModels:        []string{"plus"},
-			SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
-			SupportedQualities:     []string{"1k", "2k", "4k"},
-			SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
-			MaxImageCount:          5,
-			MaxReferenceImageCount: 4,
-			SupportsImageInput:     true,
-			SupportsMask:           false,
-			Priority:               1,
+			SupportedModels:         []string{"plus"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedBaseResolution: []string{"1k", "2k", "4k"},
+			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
+			MaxImageCount:           5,
+			MaxReferenceImageCount:  4,
+			SupportsImageInput:      true,
+			SupportsMask:            false,
+			Priority:                1,
 		},
 		"openai": {
-			SupportedModels:        []string{"plus"},
-			SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
-			SupportedQualities:     []string{"1k", "2k", "4k"},
-			SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
-			MaxImageCount:          5,
-			MaxReferenceImageCount: 4,
-			SupportsImageInput:     true,
-			SupportsMask:           true,
-			Priority:               2,
+			SupportedModels:         []string{"plus"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedBaseResolution: []string{"1k", "2k", "4k"},
+			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
+			MaxImageCount:           5,
+			MaxReferenceImageCount:  4,
+			SupportsImageInput:      true,
+			SupportsMask:            true,
+			Priority:                2,
 		},
 	}
 	cfg.Routing.ProviderModelMap = map[string]map[string]string{
@@ -798,7 +823,7 @@ type domainauthSession struct {
 
 func createAndProcessAgentTask(t *testing.T, handler http.Handler, taskSvc *imagetaskservice.Service, accessToken string) string {
 	t.Helper()
-	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a downloadable banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`)
+	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a downloadable banner","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", createBody)
 	createReq.Header.Set("Authorization", "Bearer "+accessToken)
 	createReq.Header.Set("Content-Type", "application/json")
@@ -908,7 +933,7 @@ func TestAgentTaskCreateQueuesTaskForWorker(t *testing.T) {
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
-	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Queue a banner","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`)
+	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Queue a banner","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", createBody)
 	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	createReq.Header.Set("Content-Type", "application/json")
@@ -1167,7 +1192,7 @@ func TestAgentBillingEndpointsReuseTaskServiceBillingBackend(t *testing.T) {
 		TaskType:            "text_to_image",
 		Prompt:              "Create a campaign key visual",
 		RequestedSize:       "1536x1024",
-		RequestedQuality:    "auto",
+		BaseResolution:      "auto",
 		OutputImageCount:    1,
 		ReferenceImageCount: 0,
 		ResponseMode:        "async",
@@ -1231,7 +1256,7 @@ func TestAgentEstimateEndpointUsesSnakeCaseAndRejectsInvalidCounts(t *testing.T)
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=1", nil)
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1244,14 +1269,14 @@ func TestAgentEstimateEndpointUsesSnakeCaseAndRejectsInvalidCounts(t *testing.T)
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode estimate response: %v", err)
 	}
-	if _, ok := resp.Data["resolved_quality_bucket"]; !ok {
+	if _, ok := resp.Data["base_resolution"]; !ok {
 		t.Fatalf("expected snake_case keys, got %#v", resp.Data)
 	}
 	if _, ok := resp.Data["PricingSnapshot"]; ok {
 		t.Fatalf("expected pricing snapshot to stay internal, got %#v", resp.Data)
 	}
 
-	invalidReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=oops", nil)
+	invalidReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_output_image_count=oops", nil)
 	invalidReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	invalidRec := httptest.NewRecorder()
 	handler.ServeHTTP(invalidRec, invalidReq)
@@ -1268,7 +1293,7 @@ func TestAgentEstimateEndpointReturnsBalanceSufficiency(t *testing.T) {
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
-	estimateURL := "/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=1"
+	estimateURL := "/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=1"
 	req := httptest.NewRequest(http.MethodGet, estimateURL, nil)
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	rec := httptest.NewRecorder()
@@ -1354,7 +1379,7 @@ func TestAgentTaskCreateIsIdempotentWithIdempotencyKey(t *testing.T) {
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
-	body := `{"task_type":"text_to_image","prompt":"Queue once","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
+	body := `{"task_type":"text_to_image","prompt":"Queue once","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", bytes.NewBufferString(body))
 	firstReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	firstReq.Header.Set("Content-Type", "application/json")
@@ -1398,7 +1423,7 @@ func TestAgentTaskCreateIsIdempotentWithIdempotencyKey(t *testing.T) {
 		t.Fatalf("expected single reserve after idempotent retry, got %#v", summary)
 	}
 
-	thirdReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Queue changed","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`))
+	thirdReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Queue changed","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`))
 	thirdReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	thirdReq.Header.Set("Content-Type", "application/json")
 	thirdReq.Header.Set("Idempotency-Key", "same-request")

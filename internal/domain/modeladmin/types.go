@@ -186,7 +186,7 @@ type RouteModelPrice struct {
 	RouteModelID        int64  `json:"route_model_id"`
 	RouteModelCode      string `json:"route_model_code,omitempty"`
 	TaskType            string `json:"task_type"`
-	Quality             string `json:"quality"`
+	BaseResolution      string `json:"base_resolution"`
 	BasePoints          string `json:"base_points"`
 	ReferenceMultiplier string `json:"reference_multiplier"`
 	Enabled             bool   `json:"enabled"`
@@ -195,19 +195,19 @@ type RouteModelPrice struct {
 type RouteModelPriceWriteRequest struct {
 	RouteModelID        int64
 	TaskType            string
-	Quality             string
+	BaseResolution      string
 	BasePoints          string
 	ReferenceMultiplier string
 	Enabled             bool
 }
 
 type RouteModelPriceListRequest struct {
-	Page         int
-	PageSize     int
-	RouteModelID int64
-	TaskType     string
-	Quality      string
-	Enabled      *bool
+	Page           int
+	PageSize       int
+	RouteModelID   int64
+	TaskType       string
+	BaseResolution string
+	Enabled        *bool
 }
 
 type RouteModelPriceListPage struct {
@@ -251,45 +251,53 @@ type ProviderListPage struct {
 }
 
 type ProviderModel struct {
-	ID                     int64      `json:"id"`
-	ProviderID             int64      `json:"provider_id"`
-	ProviderCode           string     `json:"provider_code"`
-	ModelCode              string     `json:"model_code"`
-	CompatMode             string     `json:"compat_mode"`
-	SupportsImageInput     bool       `json:"supports_image_input"`
-	SupportsMask           bool       `json:"supports_mask"`
-	SupportedQualities     []string   `json:"supported_qualities"`
-	SupportedRatios        []string   `json:"supported_ratios"`
-	MaxImageCount          int        `json:"max_image_count"`
-	MaxReferenceImageCount int        `json:"max_reference_image_count"`
-	TimeoutMS              int        `json:"timeout_ms"`
-	InputCost              string     `json:"input_cost"`
-	OutputCost             string     `json:"output_cost"`
-	Currency               string     `json:"currency"`
-	HealthStatus           string     `json:"health_status"`
-	LastHealthCheckedAt    *time.Time `json:"last_health_checked_at,omitempty"`
-	Enabled                bool       `json:"enabled"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	ID                      int64      `json:"id"`
+	ProviderID              int64      `json:"provider_id"`
+	ProviderCode            string     `json:"provider_code"`
+	ModelCode               string     `json:"model_code"`
+	CompatMode              string     `json:"compat_mode"`
+	SupportsImageInput      bool       `json:"supports_image_input"`
+	SupportsMask            bool       `json:"supports_mask"`
+	SupportedBaseResolution []string   `json:"supported_base_resolution"`
+	Quality                 []string   `json:"quality"`
+	SupportedRatios         []string   `json:"supported_ratios"`
+	OutputFormat            []string   `json:"output_format"`
+	OutputCompression       int        `json:"output_compression"`
+	Moderation              []string   `json:"moderation"`
+	MaxImageCount           int        `json:"max_image_count"`
+	MaxReferenceImageCount  int        `json:"max_reference_image_count"`
+	TimeoutMS               int        `json:"timeout_ms"`
+	InputCost               string     `json:"input_cost"`
+	OutputCost              string     `json:"output_cost"`
+	Currency                string     `json:"currency"`
+	HealthStatus            string     `json:"health_status"`
+	LastHealthCheckedAt     *time.Time `json:"last_health_checked_at,omitempty"`
+	Enabled                 bool       `json:"enabled"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 type ProviderModelWriteRequest struct {
-	ProviderCode           string
-	ModelCode              string
-	CompatMode             string
-	SupportsImageInput     bool
-	SupportsMask           bool
-	SupportedQualities     []string
-	SupportedRatios        []string
-	MaxImageCount          int
-	MaxReferenceImageCount int
-	TimeoutMS              int
-	InputCost              string
-	OutputCost             string
-	Currency               string
-	HealthStatus           string
-	LastHealthCheckedAt    *time.Time
-	Enabled                bool
+	ProviderCode            string
+	ModelCode               string
+	CompatMode              string
+	SupportsImageInput      bool
+	SupportsMask            bool
+	SupportedBaseResolution []string
+	Quality                 []string
+	SupportedRatios         []string
+	OutputFormat            []string
+	OutputCompression       int
+	Moderation              []string
+	MaxImageCount           int
+	MaxReferenceImageCount  int
+	TimeoutMS               int
+	InputCost               string
+	OutputCost              string
+	Currency                string
+	HealthStatus            string
+	LastHealthCheckedAt     *time.Time
+	Enabled                 bool
 }
 
 type ProviderModelListRequest struct {

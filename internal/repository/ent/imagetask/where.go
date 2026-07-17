@@ -95,6 +95,16 @@ func Status(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldStatus, v))
 }
 
+// ProgressStage applies equality check predicate on the "progress_stage" field. It's identical to ProgressStageEQ.
+func ProgressStage(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProgressStage, v))
+}
+
+// ProgressMessage applies equality check predicate on the "progress_message" field. It's identical to ProgressMessageEQ.
+func ProgressMessage(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProgressMessage, v))
+}
+
 // Prompt applies equality check predicate on the "prompt" field. It's identical to PromptEQ.
 func Prompt(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldPrompt, v))
@@ -110,14 +120,19 @@ func AbstractModel(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldAbstractModel, v))
 }
 
-// RequestedQuality applies equality check predicate on the "requested_quality" field. It's identical to RequestedQualityEQ.
-func RequestedQuality(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldEQ(FieldRequestedQuality, v))
+// SizeMode applies equality check predicate on the "size_mode" field. It's identical to SizeModeEQ.
+func SizeMode(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldSizeMode, v))
 }
 
-// ResolvedQualityBucket applies equality check predicate on the "resolved_quality_bucket" field. It's identical to ResolvedQualityBucketEQ.
-func ResolvedQualityBucket(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldEQ(FieldResolvedQualityBucket, v))
+// BaseResolution applies equality check predicate on the "base_resolution" field. It's identical to BaseResolutionEQ.
+func BaseResolution(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldBaseResolution, v))
+}
+
+// Quality applies equality check predicate on the "quality" field. It's identical to QualityEQ.
+func Quality(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldQuality, v))
 }
 
 // RequestedSize applies equality check predicate on the "requested_size" field. It's identical to RequestedSizeEQ.
@@ -138,6 +153,21 @@ func ResolvedHeight(v int) predicate.ImageTask {
 // AspectRatio applies equality check predicate on the "aspect_ratio" field. It's identical to AspectRatioEQ.
 func AspectRatio(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldAspectRatio, v))
+}
+
+// OutputFormat applies equality check predicate on the "output_format" field. It's identical to OutputFormatEQ.
+func OutputFormat(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldOutputFormat, v))
+}
+
+// OutputCompression applies equality check predicate on the "output_compression" field. It's identical to OutputCompressionEQ.
+func OutputCompression(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldOutputCompression, v))
+}
+
+// Moderation applies equality check predicate on the "moderation" field. It's identical to ModerationEQ.
+func Moderation(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldModeration, v))
 }
 
 // RequestedOutputImageCount applies equality check predicate on the "requested_output_image_count" field. It's identical to RequestedOutputImageCountEQ.
@@ -735,6 +765,136 @@ func StatusContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldStatus, v))
 }
 
+// ProgressStageEQ applies the EQ predicate on the "progress_stage" field.
+func ProgressStageEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProgressStage, v))
+}
+
+// ProgressStageNEQ applies the NEQ predicate on the "progress_stage" field.
+func ProgressStageNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldProgressStage, v))
+}
+
+// ProgressStageIn applies the In predicate on the "progress_stage" field.
+func ProgressStageIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldProgressStage, vs...))
+}
+
+// ProgressStageNotIn applies the NotIn predicate on the "progress_stage" field.
+func ProgressStageNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldProgressStage, vs...))
+}
+
+// ProgressStageGT applies the GT predicate on the "progress_stage" field.
+func ProgressStageGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldProgressStage, v))
+}
+
+// ProgressStageGTE applies the GTE predicate on the "progress_stage" field.
+func ProgressStageGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldProgressStage, v))
+}
+
+// ProgressStageLT applies the LT predicate on the "progress_stage" field.
+func ProgressStageLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldProgressStage, v))
+}
+
+// ProgressStageLTE applies the LTE predicate on the "progress_stage" field.
+func ProgressStageLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldProgressStage, v))
+}
+
+// ProgressStageContains applies the Contains predicate on the "progress_stage" field.
+func ProgressStageContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldProgressStage, v))
+}
+
+// ProgressStageHasPrefix applies the HasPrefix predicate on the "progress_stage" field.
+func ProgressStageHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldProgressStage, v))
+}
+
+// ProgressStageHasSuffix applies the HasSuffix predicate on the "progress_stage" field.
+func ProgressStageHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldProgressStage, v))
+}
+
+// ProgressStageEqualFold applies the EqualFold predicate on the "progress_stage" field.
+func ProgressStageEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldProgressStage, v))
+}
+
+// ProgressStageContainsFold applies the ContainsFold predicate on the "progress_stage" field.
+func ProgressStageContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldProgressStage, v))
+}
+
+// ProgressMessageEQ applies the EQ predicate on the "progress_message" field.
+func ProgressMessageEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProgressMessage, v))
+}
+
+// ProgressMessageNEQ applies the NEQ predicate on the "progress_message" field.
+func ProgressMessageNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldProgressMessage, v))
+}
+
+// ProgressMessageIn applies the In predicate on the "progress_message" field.
+func ProgressMessageIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldProgressMessage, vs...))
+}
+
+// ProgressMessageNotIn applies the NotIn predicate on the "progress_message" field.
+func ProgressMessageNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldProgressMessage, vs...))
+}
+
+// ProgressMessageGT applies the GT predicate on the "progress_message" field.
+func ProgressMessageGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldProgressMessage, v))
+}
+
+// ProgressMessageGTE applies the GTE predicate on the "progress_message" field.
+func ProgressMessageGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldProgressMessage, v))
+}
+
+// ProgressMessageLT applies the LT predicate on the "progress_message" field.
+func ProgressMessageLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldProgressMessage, v))
+}
+
+// ProgressMessageLTE applies the LTE predicate on the "progress_message" field.
+func ProgressMessageLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldProgressMessage, v))
+}
+
+// ProgressMessageContains applies the Contains predicate on the "progress_message" field.
+func ProgressMessageContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldProgressMessage, v))
+}
+
+// ProgressMessageHasPrefix applies the HasPrefix predicate on the "progress_message" field.
+func ProgressMessageHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldProgressMessage, v))
+}
+
+// ProgressMessageHasSuffix applies the HasSuffix predicate on the "progress_message" field.
+func ProgressMessageHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldProgressMessage, v))
+}
+
+// ProgressMessageEqualFold applies the EqualFold predicate on the "progress_message" field.
+func ProgressMessageEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldProgressMessage, v))
+}
+
+// ProgressMessageContainsFold applies the ContainsFold predicate on the "progress_message" field.
+func ProgressMessageContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldProgressMessage, v))
+}
+
 // PromptEQ applies the EQ predicate on the "prompt" field.
 func PromptEQ(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldPrompt, v))
@@ -940,134 +1100,199 @@ func AbstractModelContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldAbstractModel, v))
 }
 
-// RequestedQualityEQ applies the EQ predicate on the "requested_quality" field.
-func RequestedQualityEQ(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldEQ(FieldRequestedQuality, v))
+// SizeModeEQ applies the EQ predicate on the "size_mode" field.
+func SizeModeEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldSizeMode, v))
 }
 
-// RequestedQualityNEQ applies the NEQ predicate on the "requested_quality" field.
-func RequestedQualityNEQ(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldNEQ(FieldRequestedQuality, v))
+// SizeModeNEQ applies the NEQ predicate on the "size_mode" field.
+func SizeModeNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldSizeMode, v))
 }
 
-// RequestedQualityIn applies the In predicate on the "requested_quality" field.
-func RequestedQualityIn(vs ...string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldIn(FieldRequestedQuality, vs...))
+// SizeModeIn applies the In predicate on the "size_mode" field.
+func SizeModeIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldSizeMode, vs...))
 }
 
-// RequestedQualityNotIn applies the NotIn predicate on the "requested_quality" field.
-func RequestedQualityNotIn(vs ...string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldNotIn(FieldRequestedQuality, vs...))
+// SizeModeNotIn applies the NotIn predicate on the "size_mode" field.
+func SizeModeNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldSizeMode, vs...))
 }
 
-// RequestedQualityGT applies the GT predicate on the "requested_quality" field.
-func RequestedQualityGT(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldGT(FieldRequestedQuality, v))
+// SizeModeGT applies the GT predicate on the "size_mode" field.
+func SizeModeGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldSizeMode, v))
 }
 
-// RequestedQualityGTE applies the GTE predicate on the "requested_quality" field.
-func RequestedQualityGTE(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldGTE(FieldRequestedQuality, v))
+// SizeModeGTE applies the GTE predicate on the "size_mode" field.
+func SizeModeGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldSizeMode, v))
 }
 
-// RequestedQualityLT applies the LT predicate on the "requested_quality" field.
-func RequestedQualityLT(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldLT(FieldRequestedQuality, v))
+// SizeModeLT applies the LT predicate on the "size_mode" field.
+func SizeModeLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldSizeMode, v))
 }
 
-// RequestedQualityLTE applies the LTE predicate on the "requested_quality" field.
-func RequestedQualityLTE(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldLTE(FieldRequestedQuality, v))
+// SizeModeLTE applies the LTE predicate on the "size_mode" field.
+func SizeModeLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldSizeMode, v))
 }
 
-// RequestedQualityContains applies the Contains predicate on the "requested_quality" field.
-func RequestedQualityContains(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldContains(FieldRequestedQuality, v))
+// SizeModeContains applies the Contains predicate on the "size_mode" field.
+func SizeModeContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldSizeMode, v))
 }
 
-// RequestedQualityHasPrefix applies the HasPrefix predicate on the "requested_quality" field.
-func RequestedQualityHasPrefix(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldHasPrefix(FieldRequestedQuality, v))
+// SizeModeHasPrefix applies the HasPrefix predicate on the "size_mode" field.
+func SizeModeHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldSizeMode, v))
 }
 
-// RequestedQualityHasSuffix applies the HasSuffix predicate on the "requested_quality" field.
-func RequestedQualityHasSuffix(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldHasSuffix(FieldRequestedQuality, v))
+// SizeModeHasSuffix applies the HasSuffix predicate on the "size_mode" field.
+func SizeModeHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldSizeMode, v))
 }
 
-// RequestedQualityEqualFold applies the EqualFold predicate on the "requested_quality" field.
-func RequestedQualityEqualFold(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldEqualFold(FieldRequestedQuality, v))
+// SizeModeEqualFold applies the EqualFold predicate on the "size_mode" field.
+func SizeModeEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldSizeMode, v))
 }
 
-// RequestedQualityContainsFold applies the ContainsFold predicate on the "requested_quality" field.
-func RequestedQualityContainsFold(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldContainsFold(FieldRequestedQuality, v))
+// SizeModeContainsFold applies the ContainsFold predicate on the "size_mode" field.
+func SizeModeContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldSizeMode, v))
 }
 
-// ResolvedQualityBucketEQ applies the EQ predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketEQ(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldEQ(FieldResolvedQualityBucket, v))
+// BaseResolutionEQ applies the EQ predicate on the "base_resolution" field.
+func BaseResolutionEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketNEQ applies the NEQ predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketNEQ(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldNEQ(FieldResolvedQualityBucket, v))
+// BaseResolutionNEQ applies the NEQ predicate on the "base_resolution" field.
+func BaseResolutionNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketIn applies the In predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketIn(vs ...string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldIn(FieldResolvedQualityBucket, vs...))
+// BaseResolutionIn applies the In predicate on the "base_resolution" field.
+func BaseResolutionIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldBaseResolution, vs...))
 }
 
-// ResolvedQualityBucketNotIn applies the NotIn predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketNotIn(vs ...string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldNotIn(FieldResolvedQualityBucket, vs...))
+// BaseResolutionNotIn applies the NotIn predicate on the "base_resolution" field.
+func BaseResolutionNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldBaseResolution, vs...))
 }
 
-// ResolvedQualityBucketGT applies the GT predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketGT(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldGT(FieldResolvedQualityBucket, v))
+// BaseResolutionGT applies the GT predicate on the "base_resolution" field.
+func BaseResolutionGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketGTE applies the GTE predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketGTE(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldGTE(FieldResolvedQualityBucket, v))
+// BaseResolutionGTE applies the GTE predicate on the "base_resolution" field.
+func BaseResolutionGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketLT applies the LT predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketLT(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldLT(FieldResolvedQualityBucket, v))
+// BaseResolutionLT applies the LT predicate on the "base_resolution" field.
+func BaseResolutionLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketLTE applies the LTE predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketLTE(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldLTE(FieldResolvedQualityBucket, v))
+// BaseResolutionLTE applies the LTE predicate on the "base_resolution" field.
+func BaseResolutionLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketContains applies the Contains predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketContains(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldContains(FieldResolvedQualityBucket, v))
+// BaseResolutionContains applies the Contains predicate on the "base_resolution" field.
+func BaseResolutionContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketHasPrefix applies the HasPrefix predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketHasPrefix(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldHasPrefix(FieldResolvedQualityBucket, v))
+// BaseResolutionHasPrefix applies the HasPrefix predicate on the "base_resolution" field.
+func BaseResolutionHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketHasSuffix applies the HasSuffix predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketHasSuffix(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldHasSuffix(FieldResolvedQualityBucket, v))
+// BaseResolutionHasSuffix applies the HasSuffix predicate on the "base_resolution" field.
+func BaseResolutionHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketEqualFold applies the EqualFold predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketEqualFold(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldEqualFold(FieldResolvedQualityBucket, v))
+// BaseResolutionEqualFold applies the EqualFold predicate on the "base_resolution" field.
+func BaseResolutionEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldBaseResolution, v))
 }
 
-// ResolvedQualityBucketContainsFold applies the ContainsFold predicate on the "resolved_quality_bucket" field.
-func ResolvedQualityBucketContainsFold(v string) predicate.ImageTask {
-	return predicate.ImageTask(sql.FieldContainsFold(FieldResolvedQualityBucket, v))
+// BaseResolutionContainsFold applies the ContainsFold predicate on the "base_resolution" field.
+func BaseResolutionContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldBaseResolution, v))
+}
+
+// QualityEQ applies the EQ predicate on the "quality" field.
+func QualityEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldQuality, v))
+}
+
+// QualityNEQ applies the NEQ predicate on the "quality" field.
+func QualityNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldQuality, v))
+}
+
+// QualityIn applies the In predicate on the "quality" field.
+func QualityIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldQuality, vs...))
+}
+
+// QualityNotIn applies the NotIn predicate on the "quality" field.
+func QualityNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldQuality, vs...))
+}
+
+// QualityGT applies the GT predicate on the "quality" field.
+func QualityGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldQuality, v))
+}
+
+// QualityGTE applies the GTE predicate on the "quality" field.
+func QualityGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldQuality, v))
+}
+
+// QualityLT applies the LT predicate on the "quality" field.
+func QualityLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldQuality, v))
+}
+
+// QualityLTE applies the LTE predicate on the "quality" field.
+func QualityLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldQuality, v))
+}
+
+// QualityContains applies the Contains predicate on the "quality" field.
+func QualityContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldQuality, v))
+}
+
+// QualityHasPrefix applies the HasPrefix predicate on the "quality" field.
+func QualityHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldQuality, v))
+}
+
+// QualityHasSuffix applies the HasSuffix predicate on the "quality" field.
+func QualityHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldQuality, v))
+}
+
+// QualityEqualFold applies the EqualFold predicate on the "quality" field.
+func QualityEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldQuality, v))
+}
+
+// QualityContainsFold applies the ContainsFold predicate on the "quality" field.
+func QualityContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldQuality, v))
 }
 
 // RequestedSizeEQ applies the EQ predicate on the "requested_size" field.
@@ -1308,6 +1533,176 @@ func AspectRatioEqualFold(v string) predicate.ImageTask {
 // AspectRatioContainsFold applies the ContainsFold predicate on the "aspect_ratio" field.
 func AspectRatioContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldAspectRatio, v))
+}
+
+// OutputFormatEQ applies the EQ predicate on the "output_format" field.
+func OutputFormatEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldOutputFormat, v))
+}
+
+// OutputFormatNEQ applies the NEQ predicate on the "output_format" field.
+func OutputFormatNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldOutputFormat, v))
+}
+
+// OutputFormatIn applies the In predicate on the "output_format" field.
+func OutputFormatIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldOutputFormat, vs...))
+}
+
+// OutputFormatNotIn applies the NotIn predicate on the "output_format" field.
+func OutputFormatNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldOutputFormat, vs...))
+}
+
+// OutputFormatGT applies the GT predicate on the "output_format" field.
+func OutputFormatGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldOutputFormat, v))
+}
+
+// OutputFormatGTE applies the GTE predicate on the "output_format" field.
+func OutputFormatGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldOutputFormat, v))
+}
+
+// OutputFormatLT applies the LT predicate on the "output_format" field.
+func OutputFormatLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldOutputFormat, v))
+}
+
+// OutputFormatLTE applies the LTE predicate on the "output_format" field.
+func OutputFormatLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldOutputFormat, v))
+}
+
+// OutputFormatContains applies the Contains predicate on the "output_format" field.
+func OutputFormatContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldOutputFormat, v))
+}
+
+// OutputFormatHasPrefix applies the HasPrefix predicate on the "output_format" field.
+func OutputFormatHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldOutputFormat, v))
+}
+
+// OutputFormatHasSuffix applies the HasSuffix predicate on the "output_format" field.
+func OutputFormatHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldOutputFormat, v))
+}
+
+// OutputFormatEqualFold applies the EqualFold predicate on the "output_format" field.
+func OutputFormatEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldOutputFormat, v))
+}
+
+// OutputFormatContainsFold applies the ContainsFold predicate on the "output_format" field.
+func OutputFormatContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldOutputFormat, v))
+}
+
+// OutputCompressionEQ applies the EQ predicate on the "output_compression" field.
+func OutputCompressionEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldOutputCompression, v))
+}
+
+// OutputCompressionNEQ applies the NEQ predicate on the "output_compression" field.
+func OutputCompressionNEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldOutputCompression, v))
+}
+
+// OutputCompressionIn applies the In predicate on the "output_compression" field.
+func OutputCompressionIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldOutputCompression, vs...))
+}
+
+// OutputCompressionNotIn applies the NotIn predicate on the "output_compression" field.
+func OutputCompressionNotIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldOutputCompression, vs...))
+}
+
+// OutputCompressionGT applies the GT predicate on the "output_compression" field.
+func OutputCompressionGT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldOutputCompression, v))
+}
+
+// OutputCompressionGTE applies the GTE predicate on the "output_compression" field.
+func OutputCompressionGTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldOutputCompression, v))
+}
+
+// OutputCompressionLT applies the LT predicate on the "output_compression" field.
+func OutputCompressionLT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldOutputCompression, v))
+}
+
+// OutputCompressionLTE applies the LTE predicate on the "output_compression" field.
+func OutputCompressionLTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldOutputCompression, v))
+}
+
+// ModerationEQ applies the EQ predicate on the "moderation" field.
+func ModerationEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldModeration, v))
+}
+
+// ModerationNEQ applies the NEQ predicate on the "moderation" field.
+func ModerationNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldModeration, v))
+}
+
+// ModerationIn applies the In predicate on the "moderation" field.
+func ModerationIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldModeration, vs...))
+}
+
+// ModerationNotIn applies the NotIn predicate on the "moderation" field.
+func ModerationNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldModeration, vs...))
+}
+
+// ModerationGT applies the GT predicate on the "moderation" field.
+func ModerationGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldModeration, v))
+}
+
+// ModerationGTE applies the GTE predicate on the "moderation" field.
+func ModerationGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldModeration, v))
+}
+
+// ModerationLT applies the LT predicate on the "moderation" field.
+func ModerationLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldModeration, v))
+}
+
+// ModerationLTE applies the LTE predicate on the "moderation" field.
+func ModerationLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldModeration, v))
+}
+
+// ModerationContains applies the Contains predicate on the "moderation" field.
+func ModerationContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldModeration, v))
+}
+
+// ModerationHasPrefix applies the HasPrefix predicate on the "moderation" field.
+func ModerationHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldModeration, v))
+}
+
+// ModerationHasSuffix applies the HasSuffix predicate on the "moderation" field.
+func ModerationHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldModeration, v))
+}
+
+// ModerationEqualFold applies the EqualFold predicate on the "moderation" field.
+func ModerationEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldModeration, v))
+}
+
+// ModerationContainsFold applies the ContainsFold predicate on the "moderation" field.
+func ModerationContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldModeration, v))
 }
 
 // RequestedOutputImageCountEQ applies the EQ predicate on the "requested_output_image_count" field.

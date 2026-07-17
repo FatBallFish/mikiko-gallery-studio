@@ -232,21 +232,21 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	}
 	const detailTaskID = "11111111-1111-4111-8111-111111111111"
 	if err := imageTaskStore.Save(t.Context(), domainimagetask.Task{
-		UserID:                managedUser.ID,
-		ID:                    detailTaskID,
-		Status:                domainimagetask.StatusQueued,
-		AbstractModel:         "basic",
-		RouteModelCode:        "basic",
-		TaskType:              "text_to_image",
-		Prompt:                "ops detail prompt",
-		RequestedQuality:      "1k",
-		ResolvedQualityBucket: "1k",
-		AspectRatio:           "1:1",
-		OutputImageCount:      1,
-		EstimatedPoints:       "1.00000",
-		ActualPoints:          "0.00000",
-		ResponseMode:          "async",
-		SavePolicy:            "private",
+		UserID:         managedUser.ID,
+		ID:             detailTaskID,
+		Status:         domainimagetask.StatusQueued,
+		AbstractModel:  "basic",
+		RouteModelCode: "basic",
+		TaskType:       "text_to_image",
+		Prompt:         "ops detail prompt",
+
+		BaseResolution:   "1k",
+		AspectRatio:      "1:1",
+		OutputImageCount: 1,
+		EstimatedPoints:  "1.00000",
+		ActualPoints:     "0.00000",
+		ResponseMode:     "async",
+		SavePolicy:       "private",
 	}); err != nil {
 		t.Fatalf("Save task: %v", err)
 	}

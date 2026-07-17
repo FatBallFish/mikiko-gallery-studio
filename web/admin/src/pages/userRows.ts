@@ -27,6 +27,22 @@ export type AdminUserRowView = {
   createdAtLabel: string
 }
 
+export type AdminUserRowAction = {
+  id: string
+  label: string
+  tone?: 'neutral' | 'danger'
+  confirm?: {
+    title: string
+    expectedValue: string
+  }
+}
+
+export type AdminUserRowActions = {
+  primary: AdminUserRowAction
+  secondary?: AdminUserRowAction
+  overflow: AdminUserRowAction[]
+}
+
 export const adminUserStatusOptions = [
   { value: 'active', label: '正常' },
   { value: 'pending', label: '待验证' },
@@ -70,6 +86,38 @@ export function adminUserRowView(user: AdminUser): AdminUserRowView {
     balanceLabel: user.balance || '0.00000',
     lastActiveAtLabel: adminUserDateTime(user.last_seen_at || user.updated_at),
     createdAtLabel: adminUserDateTime(user.created_at),
+  }
+}
+
+export function adminUserRowActions(user: AdminUser): AdminUserRowActions {
+  const email = user.email || user.id
+  const disabled = normalize(user.status) === 'disabled'
+  return {
+    primary: { id: 'detail', label: '详情' },
+    overflow: [
+      {
+        id: disabled ? 'enable' : 'disable',
+        label: disabled ? '启用' : '禁用',
+        tone: disabled ? 'neutral' : 'danger',
+        confirm: {
+          title: `请输入 ${email} 确认${disabled ? '启用' : '禁用'}该用户`,
+          expectedValue: email,
+        },
+      },
+      { id: 'group', label: '调整分组' },
+      { id: 'points', label: '调整积分' },
+      { id: 'limits', label: '设置限额' },
+      { id: 'password', label: '重置密码' },
+      {
+        id: 'delete',
+        label: '删除',
+        tone: 'danger',
+        confirm: {
+          title: `请输入 ${email} 确认删除该用户`,
+          expectedValue: email,
+        },
+      },
+    ],
   }
 }
 

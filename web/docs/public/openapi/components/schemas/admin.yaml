@@ -1,0 +1,2213 @@
+components:
+  schemas:
+    AdminPermission:
+      type: string
+      description: >-
+        Admin permission facade value. Current production resolver maps the
+        built-in super_admin/admin roles to this list; future custom RBAC can
+        return the same permission values per admin session.
+      enum:
+        - read:all
+        - manage:admins
+        - manage:users
+        - manage:billing
+        - manage:cashier
+        - manage:models
+        - manage:reviews
+        - manage:config
+        - manage:dangerous_config
+        - view:audit
+    AdminRole:
+      type: string
+      description: Built-in admin roles. Unknown role strings are reserved for future custom RBAC and require explicit permissions in the session payload.
+      enum:
+        - super_admin
+        - admin
+    AdminLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    AdminSession:
+      type: object
+      required: [access_token, expires_in_seconds, admin_id, email, role, permissions]
+      properties:
+        access_token:
+          type: string
+          description: Short-lived admin JWT access token.
+        expires_in_seconds:
+          type: integer
+          minimum: 0
+        admin_id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/AdminRole'
+        permissions:
+          type: array
+          description: Resolved permissions for the current admin session. The frontend must prefer this list over role string inference when present.
+          items:
+            $ref: '#/components/schemas/AdminPermission'
+    AdminLoginResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminSession'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    ConfigItem:
+      type: object
+      properties:
+        config_category:
+          type: string
+        config_key:
+          type: string
+        config_value:
+          type: object
+          additionalProperties: true
+        scope:
+          type: string
+        version:
+          type: integer
+    ConfigTab:
+      type: object
+      properties:
+        tab_key:
+          type: string
+        tab_name:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigItem'
+    ConfigTabListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ConfigTab'
+    UpdateConfigTabRequest:
+      type: object
+      required: [version, items]
+      properties:
+        version:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigItem'
+    ConfigTabResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/ConfigTab'
+    SecretStatus:
+      type: object
+      description: Write-only secret metadata. Plaintext secret values are never returned by read APIs.
+      properties:
+        has_secret:
+          type: boolean
+        fingerprint:
+          type: string
+          description: Short secret fingerprint for audit and operator confirmation.
+        updated_at:
+          type: string
+          format: date-time
+        secret_fields:
+          type: array
+          items:
+            type: string
+    AdminSecuritySMTPConfig:
+      type: object
+      required: [enabled, host, port, username, from, starttls, insecure_skip_verify, secret_status, version]
+      properties:
+        enabled:
+          type: boolean
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        username:
+          type: string
+        from:
+          type: string
+        starttls:
+          type: boolean
+        insecure_skip_verify:
+          type: boolean
+        secret_status:
+          $ref: '#/components/schemas/SecretStatus'
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+    AdminSecuritySMTPConfigWriteRequest:
+      type: object
+      required: [enabled, host, port, username, from, starttls, insecure_skip_verify]
+      properties:
+        version:
+          type: integer
+          format: int64
+          description: Optimistic concurrency version. Omit or send 0 when creating the first config.
+        enabled:
+          type: boolean
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        username:
+          type: string
+        from:
+          type: string
+        starttls:
+          type: boolean
+        insecure_skip_verify:
+          type: boolean
+        secrets:
+          type: object
+          description: Optional write-only SMTP secrets. Omit to preserve existing secrets.
+          properties:
+            password:
+              type: string
+              format: password
+        clear_secrets:
+          type: array
+          description: Secret field names to clear, for example ["password"].
+          items:
+            type: string
+            enum: [password]
+    AdminSecuritySMTPConfigResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminSecuritySMTPConfig'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminSecuritySMTPTestRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        scene:
+          type: string
+          default: smtp_test
+    AdminSecuritySMTPTestResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [sent]
+            recipient:
+              type: string
+              format: email
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminStorageProbe:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [never, success, failed]
+        checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        latency_ms:
+          type: integer
+          format: int64
+        message:
+          type: string
+    AdminStorageConfig:
+      type: object
+      required:
+        - id
+        - code
+        - name
+        - driver
+        - provider
+        - status
+        - read_enabled
+        - write_enabled
+        - is_default
+        - force_path_style
+        - secret_status
+        - last_probe
+        - version
+      properties:
+        id:
+          type: string
+          description: Stable storage configuration ID persisted on generated images and reference assets.
+        code:
+          type: string
+          description: Unique operator-facing code such as bootstrap-s3 or r2-prod.
+        name:
+          type: string
+        driver:
+          type: string
+          enum: [local, s3]
+        provider:
+          type: string
+          enum: [local, aws_s3, minio, r2, custom_s3]
+          description: Cloudflare R2 uses driver=s3 and provider=r2.
+        status:
+          type: string
+          enum: [enabled, disabled, deleted]
+        read_enabled:
+          type: boolean
+          description: Whether historical objects may still be read through this configuration.
+        write_enabled:
+          type: boolean
+          description: Whether new generated images and reference assets may be written here.
+        is_default:
+          type: boolean
+          description: True for the current default writer.
+        endpoint:
+          type: string
+        region:
+          type: string
+          description: R2 should use auto.
+        bucket:
+          type: string
+        prefix:
+          type: string
+        force_path_style:
+          type: boolean
+        public_base_url:
+          type: string
+        local_root:
+          type: string
+        secret_status:
+          $ref: '#/components/schemas/SecretStatus'
+        last_probe:
+          $ref: '#/components/schemas/AdminStorageProbe'
+        version:
+          type: integer
+          format: int64
+        updated_by:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminStorageConfigWriteRequest:
+      type: object
+      required: [name, driver, provider]
+      properties:
+        version:
+          type: integer
+          format: int64
+          description: Optimistic concurrency version. Omit or send 0 when creating.
+        code:
+          type: string
+          description: Required on create and immutable afterwards.
+        name:
+          type: string
+        driver:
+          type: string
+          enum: [local, s3]
+        provider:
+          type: string
+          enum: [local, aws_s3, minio, r2, custom_s3]
+        status:
+          type: string
+          enum: [enabled, disabled]
+          default: enabled
+        read_enabled:
+          type: boolean
+          default: true
+        write_enabled:
+          type: boolean
+          default: true
+        endpoint:
+          type: string
+          description: S3-compatible endpoint, for example https://<ACCOUNT_ID>.r2.cloudflarestorage.com.
+        region:
+          type: string
+          description: Use auto for Cloudflare R2.
+        bucket:
+          type: string
+        prefix:
+          type: string
+        force_path_style:
+          type: boolean
+          default: false
+        public_base_url:
+          type: string
+          description: Reserved for future direct delivery; current downloads remain proxied by the API.
+        local_root:
+          type: string
+        secrets:
+          type: object
+          description: Optional write-only storage secrets. Omit fields to preserve existing secrets; masked placeholders are rejected.
+          properties:
+            access_key_id:
+              type: string
+              format: password
+            secret_access_key:
+              type: string
+              format: password
+        clear_secrets:
+          type: array
+          items:
+            type: string
+            enum: [access_key_id, secret_access_key]
+    AdminStorageSetDefaultRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+    AdminStorageStatusRequest:
+      type: object
+      required: [status, read_enabled, write_enabled]
+      properties:
+        version:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [enabled, disabled]
+        read_enabled:
+          type: boolean
+        write_enabled:
+          type: boolean
+    AdminStorageConfigResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminStorageConfig'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminStorageConfigListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminStorageConfig'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminStorageProbeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminStorageProbe'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    SystemAdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [super_admin, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SystemAdminUserListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SystemAdminUser'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    SystemAdminUserCreateRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+        role:
+          type: string
+          enum: [super_admin, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+          default: active
+    SystemAdminUserUpdateRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [super_admin, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+    SystemAdminPasswordResetRequest:
+      type: object
+      required: [new_password]
+      properties:
+        new_password:
+          type: string
+          minLength: 6
+    SystemAdminUserResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SystemAdminUser'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    SystemAdminPasswordResetResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [password_reset]
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminUserSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, disabled]
+        user_group_code:
+          type: string
+        token_version:
+          type: integer
+        rpm_limit:
+          type: integer
+        concurrency_limit:
+          type: integer
+        default_locale:
+          type: string
+        theme:
+          type: string
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminUserListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminUserSummary'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminUserDetailResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/AdminUserSummary'
+            balance:
+              $ref: ./agent.yaml#/components/schemas/BalanceSummary
+            recent_ledger:
+              type: array
+              items:
+                $ref: ./agent.yaml#/components/schemas/PointLedgerEntry
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminCreateUserRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, disabled]
+          default: active
+        user_group_code:
+          type: string
+          default: basic
+        password:
+          type: string
+          description: Optional initial password. If omitted, the user can still log in through email code.
+        rpm_limit:
+          type: integer
+          minimum: 0
+          default: 0
+        concurrency_limit:
+          type: integer
+          minimum: 0
+          default: 0
+        default_locale:
+          type: string
+          default: zh-CN
+        theme:
+          type: string
+          default: system
+    AdminCreateUserResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminUserSummary'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminUpdateUserStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+    AdminUserStatusResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminUserSummary'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminPointAdjustmentRequest:
+      type: object
+      required: [change_points, reason]
+      properties:
+        change_points:
+          type: string
+          pattern: '^-?[0-9]+(\.[0-9]{1,5})?$'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 255
+    AdminPointAdjustmentResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./agent.yaml#/components/schemas/BalanceSummary
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminUserLimitsRequest:
+      type: object
+      required: [rpm_limit, concurrency_limit]
+      properties:
+        rpm_limit:
+          type: integer
+        concurrency_limit:
+          type: integer
+    AdminUserGroupAssignmentRequest:
+      type: object
+      required: [user_group_code]
+      properties:
+        user_group_code:
+          type: string
+    AdminResetPasswordRequest:
+      type: object
+      required: [new_password]
+      properties:
+        new_password:
+          type: string
+    AdminUserGroup:
+      type: object
+      properties:
+        group_code:
+          type: string
+        group_name:
+          type: string
+        multiplier:
+          type: string
+        status:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminUserGroupWriteRequest:
+      type: object
+      required: [group_code, group_name, multiplier, status]
+      properties:
+        group_code:
+          type: string
+        group_name:
+          type: string
+        multiplier:
+          type: string
+        status:
+          type: string
+        description:
+          type: string
+    AdminUserGroupResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminUserGroup'
+    AdminUserGroupListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminUserGroup'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminRedeemCode:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        batch_id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        status:
+          type: string
+          enum: [inactive, available, redeemed, expired, disabled]
+        reward_type:
+          type: string
+          enum: [points]
+        reward_value:
+          type: string
+          pattern: '^[0-9]+(\.[0-9]{1,5})?$'
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        max_redemptions:
+          type: integer
+          minimum: 1
+        redeemed_count:
+          type: integer
+          minimum: 0
+        last_redeemed_by:
+          type: integer
+          format: int64
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminCreateRedeemCodeRequest:
+      type: object
+      required: [reward_value, valid_until]
+      properties:
+        code:
+          type: string
+          description: Optional manual code. Empty value lets backend generate an uppercase safe code.
+        batch_id:
+          type: integer
+          format: int64
+          minimum: 0
+        status:
+          type: string
+          enum: [inactive, available, redeemed, expired, disabled]
+        reward_type:
+          type: string
+          enum: [points]
+        reward_value:
+          type: string
+          pattern: '^[0-9]+(\.[0-9]{1,5})?$'
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        max_redemptions:
+          type: integer
+          minimum: 1
+    AdminBatchCreateRedeemCodesRequest:
+      allOf:
+        - $ref: '#/components/schemas/AdminCreateRedeemCodeRequest'
+        - type: object
+          required: [count, reward_value, valid_until]
+          properties:
+            count:
+              type: integer
+              minimum: 1
+              maximum: 100
+    AdminUpdateRedeemCodeStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [inactive, available, redeemed, expired, disabled]
+    AdminRedeemCodeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminRedeemCode'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminRedeemCodeListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRedeemCode'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminBatchCreateRedeemCodesResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRedeemCode'
+            count:
+              type: integer
+            batch_id:
+              type: integer
+              format: int64
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminExportRedeemCodesRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [inactive, available, redeemed, expired, disabled]
+        code:
+          type: string
+          description: Optional fuzzy code filter.
+        batch_id:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminExportRedeemCodesResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRedeemCode'
+            count:
+              type: integer
+            filters:
+              type: object
+              properties:
+                status:
+                  type: string
+                code:
+                  type: string
+                batch_id:
+                  type: integer
+                  format: int64
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminRedeemCodeRedemptionEntry:
+      allOf:
+        - $ref: ./agent.yaml#/components/schemas/PointLedgerEntry
+        - type: object
+          properties:
+            user_id:
+              type: integer
+              format: int64
+            redeem_code_id:
+              type: integer
+              format: int64
+    AdminRedeemCodeRedemptionsResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRedeemCodeRedemptionEntry'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminCallRecord:
+      type: object
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        user_id:
+          type: integer
+          format: int64
+        api_key_id:
+          type: integer
+          format: int64
+          nullable: true
+        source_channel:
+          type: string
+        task_type:
+          type: string
+        status:
+          type: string
+        provider:
+          type: string
+        abstract_model:
+          type: string
+        base_resolution:
+          type: string
+        quality:
+          type: string
+        requested_output_image_count:
+          type: integer
+        success_output_image_count:
+          type: integer
+        reference_image_count:
+          type: integer
+        estimated_points:
+          type: string
+        actual_points:
+          type: string
+        provider_model_id:
+          type: integer
+          format: int64
+          nullable: true
+        account_model_id:
+          type: integer
+          format: int64
+          nullable: true
+        model_account_id:
+          type: integer
+          format: int64
+          nullable: true
+        upstream_model_code:
+          type: string
+        provider_cost:
+          type: string
+        gross_margin:
+          type: string
+        fallback_count:
+          type: integer
+        route_snapshot_version:
+          type: integer
+          format: int64
+        error_code:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        error_detail:
+          type: object
+          nullable: true
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        attempt_count:
+          type: integer
+          minimum: 0
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCallRecordAttempt'
+    AdminCallRecordAttempt:
+      type: object
+      properties:
+        provider:
+          type: string
+        adapter_type:
+          type: string
+        account_model_id:
+          type: integer
+          format: int64
+          nullable: true
+        model_account_id:
+          type: integer
+          format: int64
+          nullable: true
+        model_code:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+        error_code:
+          type: string
+        error_message:
+          type: string
+        error_detail:
+          type: object
+          additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+    AdminCallRecordListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminCallRecord'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelProvider:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        provider_code:
+          type: string
+        provider_type:
+          type: string
+        auth_config_encrypted:
+          type: string
+          description: Present only when the backend includes encrypted provider auth material.
+        health_status:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminModelProviderWriteRequest:
+      type: object
+      required: [provider_code, provider_type]
+      properties:
+        provider_code:
+          type: string
+        provider_type:
+          type: string
+        auth_config_encrypted:
+          type: string
+        health_status:
+          type: string
+          default: unknown
+        enabled:
+          type: boolean
+          default: false
+    AdminModelProviderResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminModelProvider'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelProviderListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminModelProvider'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminProviderModel:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        provider_id:
+          type: integer
+          format: int64
+        provider_code:
+          type: string
+        model_code:
+          type: string
+        compat_mode:
+          type: string
+        supports_image_input:
+          type: boolean
+        supports_mask:
+          type: boolean
+        supported_base_resolution:
+          type: array
+          items:
+            type: string
+        quality:
+          type: array
+          items:
+            type: string
+        supported_ratios:
+          type: array
+          items:
+            type: string
+        output_format:
+          type: array
+          items:
+            type: string
+        output_compression:
+          type: integer
+        moderation:
+          type: array
+          items:
+            type: string
+        max_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
+        timeout_ms:
+          type: integer
+        input_cost:
+          type: string
+        output_cost:
+          type: string
+        currency:
+          type: string
+        health_status:
+          type: string
+        last_health_checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminProviderModelWriteRequest:
+      type: object
+      required: [provider_code, model_code]
+      properties:
+        provider_code:
+          type: string
+        model_code:
+          type: string
+        compat_mode:
+          type: string
+        supports_image_input:
+          type: boolean
+        supports_mask:
+          type: boolean
+        supported_base_resolution:
+          type: array
+          items:
+            type: string
+        quality:
+          type: array
+          items:
+            type: string
+        supported_ratios:
+          type: array
+          items:
+            type: string
+        output_format:
+          type: array
+          items:
+            type: string
+        output_compression:
+          type: integer
+        moderation:
+          type: array
+          items:
+            type: string
+        max_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
+        timeout_ms:
+          type: integer
+        input_cost:
+          type: string
+        output_cost:
+          type: string
+        currency:
+          type: string
+        health_status:
+          type: string
+        last_health_checked_at:
+          type: string
+          format: date-time
+        enabled:
+          type: boolean
+    AdminProviderModelResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminProviderModel'
+    AdminProviderModelListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminProviderModel'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminAuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        action:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: string
+        result:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    AdminAuditLogListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminAuditLog'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminGalleryReviewListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./common.yaml#/components/schemas/GalleryImage
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminMetric:
+      type: object
+      required: [key, label, value, trend]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        value:
+          type: string
+        trend:
+          type: string
+        detail:
+          type: string
+        tone:
+          type: string
+          enum: [good, warn, bad, danger, neutral]
+    AdminProviderHealth:
+      type: object
+      required: [provider_code, provider_type, health_status, enabled]
+      properties:
+        provider_code:
+          type: string
+        provider_type:
+          type: string
+        health_status:
+          type: string
+        enabled:
+          type: boolean
+    AdminDashboardQueueItem:
+      type: object
+      required: [item, count, detail]
+      properties:
+        item:
+          type: string
+        count:
+          type: string
+        detail:
+          type: string
+    AdminDashboardOperations:
+      type: object
+      required:
+        - today_order_count
+        - payment_success_rate
+        - failed_webhook_count
+        - refund_compensation_failed_count
+        - mock_enabled
+        - signup_trial_granted_user_count
+        - trial_expiring_user_count
+        - preflight_failure_count
+        - preflight_failures_by_error_code
+        - public_gallery_list_views
+        - public_gallery_detail_login_blocks
+        - enabled_payment_methods
+        - generated_at
+      properties:
+        today_order_count:
+          type: integer
+        payment_success_rate:
+          type: string
+          example: 87.50%
+        failed_webhook_count:
+          type: integer
+        refund_compensation_failed_count:
+          type: integer
+        refund_compensation_oldest_failed_at:
+          type: string
+          format: date-time
+          nullable: true
+        mock_enabled:
+          type: boolean
+        signup_trial_granted_user_count:
+          type: integer
+        trial_expiring_user_count:
+          type: integer
+        preflight_failure_count:
+          type: integer
+        preflight_failures_by_error_code:
+          type: object
+          additionalProperties:
+            type: integer
+        public_gallery_list_views:
+          type: integer
+          format: int64
+        public_gallery_detail_login_blocks:
+          type: integer
+          format: int64
+        enabled_payment_methods:
+          type: array
+          items:
+            type: string
+        generated_at:
+          type: string
+          format: date-time
+    AdminDashboard:
+      type: object
+      required: [operations, metrics, providers, queue, audit]
+      properties:
+        operations:
+          $ref: '#/components/schemas/AdminDashboardOperations'
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminMetric'
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminProviderHealth'
+        queue:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminDashboardQueueItem'
+        audit:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAuditLog'
+    AdminDashboardResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminDashboard'
+    ReadinessCheck:
+      type: object
+      required: [key, label, status]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [pass, warn, fail]
+        summary:
+          type: string
+        detail:
+          type: string
+        action_route:
+          type: string
+        action_label:
+          type: string
+        fix_route:
+          type: string
+        fix_action:
+          type: string
+        blocking:
+          type: boolean
+        checked_at:
+          type: string
+          format: date-time
+    ReadinessReport:
+      type: object
+      required: [status, overall_status, generated_at, checks]
+      properties:
+        status:
+          type: string
+          enum: [pass, warn, fail]
+        overall_status:
+          type: string
+          enum: [pass, warn, fail]
+        generated_at:
+          type: string
+          format: date-time
+        summary:
+          type: object
+          properties:
+            pass:
+              type: integer
+            warn:
+              type: integer
+            fail:
+              type: integer
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReadinessCheck'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReadinessCheck'
+    ReadinessReportResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/ReadinessReport'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminCashierOverview:
+      type: object
+      required: [today_order_count, today_completed_count, today_amount_cny, success_rate, pending_count, failed_webhook_count, enabled_methods, enabled_provider_instances, mock_enabled]
+      properties:
+        today_order_count:
+          type: integer
+        today_completed_count:
+          type: integer
+        today_amount_cny:
+          type: string
+        success_rate:
+          type: string
+        pending_count:
+          type: integer
+        failed_webhook_count:
+          type: integer
+        enabled_methods:
+          type: array
+          items:
+            type: string
+        enabled_provider_instances:
+          type: integer
+        mock_enabled:
+          type: boolean
+    AdminCashierOverviewResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminCashierOverview'
+    AdminCashierPlan:
+      allOf:
+        - $ref: ./agent.yaml#/components/schemas/CashierPlan
+        - type: object
+          properties:
+            id:
+              type: integer
+              format: int64
+            description:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+    AdminCashierPlanWriteRequest:
+      type: object
+      required: [plan_code, plan_name, plan_type, purchase_enabled, price_cny, points]
+      properties:
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        plan_type:
+          type: string
+          enum: [points_package, subscription]
+        purchase_enabled:
+          type: boolean
+        price_cny:
+          type: string
+        points:
+          type: string
+        bonus_points:
+          type: string
+        currency:
+          type: string
+          default: CNY
+        sort_order:
+          type: integer
+        description:
+          type: string
+    AdminCashierPlanResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminCashierPlan'
+    AdminCashierPlanListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminCashierPlan'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminCashierCustomAmountConfig:
+      allOf:
+        - $ref: ./agent.yaml#/components/schemas/CashierCustomAmountConfig
+    AdminCashierCustomAmountConfigResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminCashierCustomAmountConfig'
+    AdminCashierVisibleMethod:
+      allOf:
+        - $ref: ./agent.yaml#/components/schemas/CashierVisibleMethod
+    AdminCashierVisibleMethodListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminCashierVisibleMethod'
+    AdminCashierProviderInstance:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        provider_type:
+          type: string
+          enum: [alipay_direct, wxpay_direct, easypay_alipay, easypay_wxpay, mock, jeepay_alipay, jeepay_wxpay]
+        name:
+          type: string
+        enabled:
+          type: boolean
+        supported_methods:
+          type: array
+          items:
+            type: string
+        sort_order:
+          type: integer
+        scheduler_weight:
+          type: integer
+        limits:
+          type: object
+          properties:
+            min_amount_cny:
+              type: string
+            max_amount_cny:
+              type: string
+            daily_amount_limit_cny:
+              type: string
+        config:
+          type: object
+          description: Non-sensitive provider configuration; secret values are never returned in plaintext.
+          additionalProperties: true
+        credentials_status:
+          $ref: '#/components/schemas/SecretStatus'
+        config_status:
+          type: string
+        last_error:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminCashierProviderInstanceWriteRequest:
+      type: object
+      required: [provider_type, name, supported_methods, config]
+      properties:
+        provider_type:
+          type: string
+          enum: [alipay_direct, wxpay_direct, easypay_alipay, easypay_wxpay, mock, jeepay_alipay, jeepay_wxpay]
+        name:
+          type: string
+        enabled:
+          type: boolean
+          default: false
+        supported_methods:
+          type: array
+          items:
+            type: string
+        sort_order:
+          type: integer
+        scheduler_weight:
+          type: integer
+        limits:
+          type: object
+          additionalProperties: true
+        config:
+          type: object
+          description: Non-sensitive provider configuration. Sensitive keys must be sent in secrets instead.
+          additionalProperties: true
+        secrets:
+          type: object
+          description: Optional write-only provider secrets. Omit to preserve existing secrets on update.
+          additionalProperties: true
+        clear_secrets:
+          type: array
+          description: Secret field names to clear.
+          items:
+            type: string
+    AdminCashierProviderInstanceResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminCashierProviderInstance'
+    AdminCashierProviderInstanceListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminCashierProviderInstance'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminCashierOrderResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./agent.yaml#/components/schemas/PaymentOrder
+    AdminCashierOrderListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./agent.yaml#/components/schemas/PaymentOrder
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminCashierManualCompleteRequest:
+      type: object
+      required: [trade_no]
+      properties:
+        provider:
+          type: string
+        trade_no:
+          type: string
+        reason:
+          type: string
+    AdminCashierCloseRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Optional operator-facing reason for closing a pending cashier order.
+    AdminCashierRefundRequest:
+      type: object
+      required: [refund_trade_no]
+      properties:
+        refund_trade_no:
+          type: string
+        refund_amount_cny:
+          type: string
+          description: Optional partial refund amount in CNY. Omit to refund the remaining refundable amount.
+        reason:
+          type: string
+    AdminCashierChargebackRequest:
+      type: object
+      required: [charge_points, reason]
+      properties:
+        charge_points:
+          type: string
+          description: Positive points amount to deduct from the order owner after a confirmed channel-side chargeback.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 255
+    AdminCashierChargebackResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [order, balance]
+          properties:
+            order:
+              $ref: ./agent.yaml#/components/schemas/PaymentOrder
+            balance:
+              $ref: ./agent.yaml#/components/schemas/BalanceSummary
+    AdminCashierOrderSyncResult:
+      type: object
+      required: [provider_type, query_status, paid, completed, synced_at]
+      properties:
+        provider_type:
+          type: string
+        provider_instance_id:
+          type: integer
+          format: int64
+        query_status:
+          type: string
+          enum: [pending, paid, closed, failed, refunded]
+          description: Platform-normalized channel order status observed during sync. Provider raw status remains in raw.
+        risk_category:
+          type: string
+          enum: [pending, paid, closed, refunded, channel_error, risk_control, channel_limited, signature_error, amount_mismatch, account_abnormal, channel_timeout]
+          description: Operator-facing category for channel status, risk control, channel limits, signature/config errors, amount mismatch, account abnormalities, timeouts, and other abnormal outcomes.
+        action_hint:
+          type: string
+          description: Operator-facing next action suggestion for the observed channel status.
+        paid:
+          type: boolean
+        completed:
+          type: boolean
+          description: True when this sync call completed local recharge fulfillment.
+        trade_no:
+          type: string
+        amount_cny:
+          type: string
+        message:
+          type: string
+        raw:
+          type: object
+          additionalProperties: true
+        synced_at:
+          type: string
+          format: date-time
+    AdminCashierOrderSyncResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [order, sync]
+          properties:
+            order:
+              $ref: ./agent.yaml#/components/schemas/PaymentOrder
+            sync:
+              $ref: '#/components/schemas/AdminCashierOrderSyncResult'
+    AdminPaymentWebhookEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_id:
+          type: integer
+          format: int64
+        order_no:
+          type: string
+        provider_type:
+          type: string
+        provider_instance_id:
+          type: integer
+          format: int64
+        event_type:
+          type: string
+        status:
+          type: string
+          enum: [received, verified, processed, failed]
+        failure_reason:
+          type: string
+          nullable: true
+        signature_status:
+          type: string
+          enum: [verified, recorded, not_recorded, failed]
+          description: Signature verification or capture status derived for admin troubleshooting.
+        result_summary:
+          type: string
+          description: Human-readable processing result summary for admin operators.
+        payload_preview:
+          type: string
+          description: Truncated webhook payload preview for troubleshooting; secrets are not expanded.
+        received_at:
+          type: string
+          format: date-time
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+    AdminPaymentWebhookEventResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminPaymentWebhookEvent'
+    AdminPaymentWebhookEventListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminPaymentWebhookEvent'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminModelRoute:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        group_code:
+          type: string
+        task_type:
+          type: string
+        provider_model_id:
+          type: integer
+          format: int64
+        provider_code:
+          type: string
+        priority:
+          type: integer
+        weight_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        fallback_order:
+          type: integer
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminModelRouteWriteRequest:
+      type: object
+      required: [group_code, task_type]
+      anyOf:
+        - required: [provider_code]
+        - required: [provider_model_id]
+      properties:
+        group_code:
+          type: string
+        task_type:
+          type: string
+        provider_model_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Required when provider_code is omitted.
+        provider_code:
+          type: string
+          description: Required when provider_model_id is omitted.
+        priority:
+          type: integer
+        weight_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 100
+        fallback_order:
+          type: integer
+        enabled:
+          type: boolean
+          default: false
+    AdminModelRouteResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminModelRoute'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelRouteListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminModelRoute'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    AdminModelAccount:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        adapter_type: { type: string, enum: [openai_compatible, openrouter] }
+        auth_type: { type: string, enum: [api_key] }
+        base_url: { type: string }
+        credentials_status:
+          type: object
+          properties:
+            has_api_key: { type: boolean }
+        status: { type: string, enum: [enabled, disabled, error] }
+    AdminModelAccountWriteRequest:
+      type: object
+      required: [name, adapter_type, auth_type, base_url]
+      properties:
+        name: { type: string }
+        adapter_type: { type: string, enum: [openai_compatible, openrouter] }
+        auth_type: { type: string, enum: [api_key] }
+        base_url: { type: string }
+        credentials:
+          type: object
+          additionalProperties: { type: string }
+        status: { type: string, enum: [enabled, disabled, error] }
+    AdminModelAccountResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminModelAccount'
+    AdminModelAccountListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminModelAccount'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminModelAccountModel:
+      type: object
+      required: [id, account_id, model_code, display_name, task_types, base_resolution, quality, max_reference_image_count, max_image_count, size_modes, supported_ratios, supported_pixel_sizes, output_format, supports_output_compression, moderation, cost_per_image, currency, enabled]
+      properties:
+        id: { type: integer, format: int64 }
+        account_id: { type: integer, format: int64 }
+        account_name: { type: string }
+        model_code: { type: string }
+        display_name: { type: string }
+        task_types:
+          type: array
+          items: { type: string }
+        base_resolution:
+          type: array
+          items: { type: string }
+        quality:
+          type: array
+          items: { type: string }
+        max_reference_image_count: { type: integer, minimum: 0 }
+        max_image_count: { type: integer, minimum: 1 }
+        size_modes:
+          type: array
+          items: { type: string, enum: [ratio, pixel] }
+        supported_ratios:
+          type: array
+          items: { type: string }
+        supported_pixel_sizes:
+          type: array
+          items: { type: string }
+        output_format:
+          type: array
+          items: { type: string }
+        output_compression:
+          type: integer
+          minimum: 1
+          maximum: 100
+          deprecated: true
+          description: Legacy default value. Use supports_output_compression to declare configurable compression support.
+        supports_output_compression:
+          type: boolean
+          description: Whether user-selected JPEG/WebP compression quality is supported.
+        moderation:
+          type: array
+          items: { type: string }
+        cost_per_image: { type: string }
+        currency: { type: string }
+        enabled: { type: boolean }
+        extra:
+          type: object
+          additionalProperties: true
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdminModelAccountModelWriteRequest:
+      type: object
+      required: [model_code, display_name, task_types, base_resolution, quality, max_reference_image_count, max_image_count, size_modes, supported_ratios, supported_pixel_sizes, output_format, supports_output_compression, moderation, cost_per_image, currency, enabled]
+      properties:
+        model_code: { type: string }
+        display_name: { type: string }
+        task_types:
+          type: array
+          items: { type: string }
+        base_resolution:
+          type: array
+          items: { type: string }
+        quality:
+          type: array
+          items: { type: string }
+        max_reference_image_count: { type: integer, minimum: 0 }
+        max_image_count: { type: integer, minimum: 1 }
+        size_modes:
+          type: array
+          items: { type: string, enum: [ratio, pixel] }
+        supported_ratios:
+          type: array
+          items: { type: string }
+        supported_pixel_sizes:
+          type: array
+          items: { type: string }
+        output_format:
+          type: array
+          items: { type: string }
+        supports_output_compression: { type: boolean, default: false }
+        moderation:
+          type: array
+          items: { type: string }
+        cost_per_image: { type: string }
+        currency: { type: string }
+        enabled: { type: boolean }
+        extra:
+          type: object
+          additionalProperties: true
+    AdminModelAccountModelResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminModelAccountModel'
+    AdminModelAccountModelListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminModelAccountModel'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    AdminRouteModel:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        visibility: { type: string, enum: [public, groups, hidden] }
+        enabled: { type: boolean }
+        group_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    AdminRouteModelWriteRequest:
+      type: object
+      required: [code, name, visibility]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        visibility: { type: string, enum: [public, groups, hidden] }
+        enabled: { type: boolean }
+        sort_order: { type: integer }
+        group_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    AdminRouteModelResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminRouteModel'
+    AdminRouteModelListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRouteModel'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination

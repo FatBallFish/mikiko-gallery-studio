@@ -411,26 +411,30 @@ func (s *MemoryStore) CreateProviderModel(_ context.Context, req domainmodeladmi
 	}
 	now := time.Now().UTC()
 	item := domainmodeladmin.ProviderModel{
-		ID:                     s.nextID,
-		ProviderID:             provider.ID,
-		ProviderCode:           provider.ProviderCode,
-		ModelCode:              req.ModelCode,
-		CompatMode:             req.CompatMode,
-		SupportsImageInput:     req.SupportsImageInput,
-		SupportsMask:           req.SupportsMask,
-		SupportedQualities:     append([]string(nil), req.SupportedQualities...),
-		SupportedRatios:        append([]string(nil), req.SupportedRatios...),
-		MaxImageCount:          req.MaxImageCount,
-		MaxReferenceImageCount: req.MaxReferenceImageCount,
-		TimeoutMS:              req.TimeoutMS,
-		InputCost:              req.InputCost,
-		OutputCost:             req.OutputCost,
-		Currency:               req.Currency,
-		HealthStatus:           req.HealthStatus,
-		LastHealthCheckedAt:    req.LastHealthCheckedAt,
-		Enabled:                req.Enabled,
-		CreatedAt:              now,
-		UpdatedAt:              now,
+		ID:                      s.nextID,
+		ProviderID:              provider.ID,
+		ProviderCode:            provider.ProviderCode,
+		ModelCode:               req.ModelCode,
+		CompatMode:              req.CompatMode,
+		SupportsImageInput:      req.SupportsImageInput,
+		SupportsMask:            req.SupportsMask,
+		SupportedBaseResolution: append([]string(nil), req.SupportedBaseResolution...),
+		Quality:                 append([]string(nil), req.Quality...),
+		SupportedRatios:         append([]string(nil), req.SupportedRatios...),
+		OutputFormat:            append([]string(nil), req.OutputFormat...),
+		OutputCompression:       req.OutputCompression,
+		Moderation:              append([]string(nil), req.Moderation...),
+		MaxImageCount:           req.MaxImageCount,
+		MaxReferenceImageCount:  req.MaxReferenceImageCount,
+		TimeoutMS:               req.TimeoutMS,
+		InputCost:               req.InputCost,
+		OutputCost:              req.OutputCost,
+		Currency:                req.Currency,
+		HealthStatus:            req.HealthStatus,
+		LastHealthCheckedAt:     req.LastHealthCheckedAt,
+		Enabled:                 req.Enabled,
+		CreatedAt:               now,
+		UpdatedAt:               now,
 	}
 	s.nextID++
 	s.models[item.ID] = item
@@ -454,8 +458,12 @@ func (s *MemoryStore) UpdateProviderModel(_ context.Context, providerModelID int
 	item.CompatMode = req.CompatMode
 	item.SupportsImageInput = req.SupportsImageInput
 	item.SupportsMask = req.SupportsMask
-	item.SupportedQualities = append([]string(nil), req.SupportedQualities...)
+	item.SupportedBaseResolution = append([]string(nil), req.SupportedBaseResolution...)
+	item.Quality = append([]string(nil), req.Quality...)
 	item.SupportedRatios = append([]string(nil), req.SupportedRatios...)
+	item.OutputFormat = append([]string(nil), req.OutputFormat...)
+	item.OutputCompression = req.OutputCompression
+	item.Moderation = append([]string(nil), req.Moderation...)
 	item.MaxImageCount = req.MaxImageCount
 	item.MaxReferenceImageCount = req.MaxReferenceImageCount
 	item.TimeoutMS = req.TimeoutMS
@@ -625,7 +633,7 @@ func (s *MemoryStore) ListRouteModelPrices(_ context.Context, req domainmodeladm
 		if req.TaskType != "" && item.TaskType != req.TaskType {
 			continue
 		}
-		if req.Quality != "" && item.Quality != req.Quality {
+		if req.BaseResolution != "" && item.BaseResolution != req.BaseResolution {
 			continue
 		}
 		if req.Enabled != nil && item.Enabled != *req.Enabled {
@@ -640,7 +648,7 @@ func (s *MemoryStore) ListRouteModelPrices(_ context.Context, req domainmodeladm
 func (s *MemoryStore) CreateRouteModelPrice(_ context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	item := domainmodeladmin.RouteModelPrice{ID: s.nextID, RouteModelID: req.RouteModelID, TaskType: req.TaskType, Quality: req.Quality, BasePoints: req.BasePoints, ReferenceMultiplier: req.ReferenceMultiplier, Enabled: req.Enabled}
+	item := domainmodeladmin.RouteModelPrice{ID: s.nextID, RouteModelID: req.RouteModelID, TaskType: req.TaskType, BaseResolution: req.BaseResolution, BasePoints: req.BasePoints, ReferenceMultiplier: req.ReferenceMultiplier, Enabled: req.Enabled}
 	if rm, ok := s.routeModels[req.RouteModelID]; ok {
 		item.RouteModelCode = rm.Code
 	}
@@ -656,7 +664,7 @@ func (s *MemoryStore) UpdateRouteModelPrice(_ context.Context, priceID int64, re
 	if !ok {
 		return domainmodeladmin.RouteModelPrice{}, repoerr.ErrNotFound
 	}
-	item.RouteModelID, item.TaskType, item.Quality = req.RouteModelID, req.TaskType, req.Quality
+	item.RouteModelID, item.TaskType, item.BaseResolution = req.RouteModelID, req.TaskType, req.BaseResolution
 	item.BasePoints, item.ReferenceMultiplier, item.Enabled = req.BasePoints, req.ReferenceMultiplier, req.Enabled
 	if rm, ok := s.routeModels[req.RouteModelID]; ok {
 		item.RouteModelCode = rm.Code
@@ -816,7 +824,7 @@ func (s *MemoryStore) ModelRoutingConfig(_ context.Context) (modelhub.ModelRouti
 		snapshot.Candidates = append(snapshot.Candidates, modelhub.RouteCandidateConfig{ID: item.ID, RouteModelID: item.RouteModelID, AccountModelID: item.AccountModelID, Priority: item.Priority, Weight: item.Weight, FallbackOrder: item.FallbackOrder, Enabled: item.Enabled})
 	}
 	for _, item := range s.prices {
-		snapshot.Prices = append(snapshot.Prices, modelhub.RoutePriceConfig{ID: item.ID, RouteModelID: item.RouteModelID, TaskType: item.TaskType, Quality: item.Quality, BasePoints: item.BasePoints, ReferenceMultiplier: item.ReferenceMultiplier, Enabled: item.Enabled})
+		snapshot.Prices = append(snapshot.Prices, modelhub.RoutePriceConfig{ID: item.ID, RouteModelID: item.RouteModelID, TaskType: item.TaskType, BaseResolution: item.BaseResolution, BasePoints: item.BasePoints, ReferenceMultiplier: item.ReferenceMultiplier, Enabled: item.Enabled})
 	}
 	for _, item := range s.accountModels {
 		account := s.accounts[item.AccountID]

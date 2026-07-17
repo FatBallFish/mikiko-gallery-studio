@@ -26,6 +26,8 @@ const (
 	FieldUserID = "user_id"
 	// FieldImageRole holds the string denoting the image_role field in the database.
 	FieldImageRole = "image_role"
+	// FieldStorageConfigID holds the string denoting the storage_config_id field in the database.
+	FieldStorageConfigID = "storage_config_id"
 	// FieldStorageDriver holds the string denoting the storage_driver field in the database.
 	FieldStorageDriver = "storage_driver"
 	// FieldStorageConfigID holds the string denoting the storage_config_id field in the database.
@@ -63,6 +65,7 @@ var Columns = []string{
 	FieldTaskID,
 	FieldUserID,
 	FieldImageRole,
+	FieldStorageConfigID,
 	FieldStorageDriver,
 	FieldStorageConfigID,
 	FieldObjectKey,
@@ -164,6 +167,11 @@ func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 // ByImageRole orders the results by the image_role field.
 func ByImageRole(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldImageRole, opts...).ToFunc()
+}
+
+// ByStorageConfigID orders the results by the storage_config_id field.
+func ByStorageConfigID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStorageConfigID, opts...).ToFunc()
 }
 
 // ByStorageDriver orders the results by the storage_driver field.

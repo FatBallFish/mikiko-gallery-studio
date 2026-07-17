@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import type { AdminUser, AdminUserCreateRequest, AdminUserDetail, ApiKey, BalanceBucket, ImageTask, LedgerEntry, PaymentOrder, UserGroup } from '../../../shared/api-types'
+import type { AdminMetric, AdminUser, AdminUserCreateRequest, AdminUserDetail, ApiKey, BalanceBucket, ImageTask, LedgerEntry, PaymentOrder, UserGroup } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal, PageHeader, StatusCell, StatusStrip } from '../components'
+import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
+import { ColumnDef, DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
+import { FilterIcon, XIcon } from '../ui/listIcons'
 import { canSaveUserPointAdjustment, newUserPointAdjustmentKey } from './userPointAdjustment'
 import { userDetailLedgerRows } from './userDetailLedgerRows'
 import {
@@ -13,30 +15,11 @@ import {
   userDetailOrderRow,
   userDetailTaskRow,
 } from './userDetailResourceRows'
-import { adminUserRowView, adminUserStatusBadge, adminUserStatusFilterOptions, adminUserStatusOptions, adminUserSummary } from './userRows'
+import { adminUserRowActions, adminUserRowView, adminUserStatusBadge, adminUserStatusFilterOptions, adminUserStatusOptions, adminUserSummary } from './userRows'
 
-const pageSize = 20
-const userFilterFormClass = 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] items-end gap-3 rounded-3xl border border-white/5 bg-white/[0.02] p-4'
 const inlineControlClass = 'flex items-center gap-2'
-const dangerTextClass = 'text-[var(--red)]'
 const creditAmountClass = 'text-[var(--success)]'
 const debitAmountClass = 'text-[var(--danger)]'
-
-const userClasses = {
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
-  table: 'w-full min-w-[1040px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors last:border-b-0 hover:bg-white/[0.03]',
-  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
-  userCell: 'flex min-w-0 items-center gap-3',
-  avatar: 'grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-sm font-black text-[var(--muted-strong)]',
-  userName: 'font-bold text-[var(--text)]',
-  userMeta: 'mt-1 text-[10px] text-[var(--muted-strong)] [overflow-wrap:anywhere]',
-  balance: 'font-mono font-bold text-[var(--text)]',
-  balanceUnit: 'text-[10px] text-[var(--muted-strong)]',
-  actionRow: 'flex flex-wrap items-center gap-2',
-  pager: 'flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] p-4 text-xs text-[var(--muted)]',
-}
 
 type UserAction =
   | { type: 'create'; draft: AdminUserCreateRequest }
@@ -63,21 +46,24 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   const [filters, setFilters] = useState<UserFilters>(initialFilters)
   const [appliedFilters, setAppliedFilters] = useState<UserFilters>(initialFilters)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [action, setAction] = useState<UserAction | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [detailTarget, setDetailTarget] = useState<AdminUser | null>(null)
   const [detail, setDetail] = useState<AdminUserDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [detailFeedback, setDetailFeedback] = useState<string | null>(null)
 
-  const load = async (nextFilters = appliedFilters, nextPage = page) => {
+  const load = async (nextFilters = appliedFilters, nextPage = page, nextPageize = pageSize) => {
     setLoading(true)
     setError(null)
     try {
-      const userPage = await adminApi.listUsersPage(nextFilters.query.trim(), nextPage, pageSize, userListFilters(nextFilters))
+      const userPage = await adminApi.listUsersPage(nextFilters.query.trim(), nextPage, nextPageize, userListFilters(nextFilters))
       setRows(userPage.items)
       setTotal(userPage.total)
       if (!groups.length) {
@@ -91,14 +77,21 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   }
 
   useEffect(() => {
-    void load(appliedFilters, page)
-  }, [appliedFilters, page])
+    void load(appliedFilters, page, pageSize)
+  }, [appliedFilters, page, pageSize])
 
   const totals = useMemo(() => adminUserSummary(rows), [rows])
+  const summaryMetrics = useMemo<AdminMetric[]>(() => [
+    { label: '当前结果', value: String(total), trend: `本页 ${rows.length} 位用户`, tone: 'neutral' },
+    { label: '正常', value: String(totals.active), trend: '当前页可用账户', tone: 'good' },
+    { label: '待处理', value: String(totals.pending + totals.disabled), trend: `${totals.pending} 待验证 · ${totals.disabled} 禁用`, tone: totals.pending + totals.disabled > 0 ? 'warn' : 'neutral' },
+    { label: '权益分组', value: String(groups.length), trend: '已配置分组', tone: 'neutral' },
+  ], [groups.length, rows.length, total, totals])
 
   const saveAction = async () => {
     if (!action) return
     setSaving(true)
+    setActionError(null)
     try {
       if (action.type === 'create') {
         const created = await adminApi.createUser(action.draft)
@@ -128,19 +121,26 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
         await adminApi.deleteUser(action.user.id)
         onFeedback('用户已删除', action.user.email)
       }
+      if (action.type !== 'create' && detailTarget?.id === action.user.id) {
+        if (action.type === 'delete') {
+          closeDetail()
+        } else {
+          setDetailFeedback(null)
+          setDetailError(null)
+          try {
+            setDetail(await adminApi.getUser(action.user.id))
+            setDetailFeedback('用户资料已更新，详情数据已同步。')
+          } catch (caught) {
+            const message = caught instanceof Error ? caught.message : '未知错误'
+            setDetailError(`操作已完成，但详情刷新失败：${message}`)
+          }
+        }
+      }
       setAction(null)
+      setActionError(null)
       await load(appliedFilters, page)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const updateStatus = async (user: AdminUser, status: string) => {
-    setSaving(true)
-    try {
-      const updated = await adminApi.updateUserStatus(user.id, status)
-      onFeedback('用户状态已更新', `${updated.display_name} · ${adminUserStatusBadge(updated.status).label}`)
-      await load(appliedFilters, page)
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : '用户操作失败')
     } finally {
       setSaving(false)
     }
@@ -150,6 +150,7 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
     setDetailTarget(user)
     setDetail(null)
     setDetailError(null)
+    setDetailFeedback(null)
     setDetailLoading(true)
     try {
       setDetail(await adminApi.getUser(user.id))
@@ -158,6 +159,18 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
     } finally {
       setDetailLoading(false)
     }
+  }
+
+  const closeDetail = () => {
+    setDetailTarget(null)
+    setDetail(null)
+    setDetailError(null)
+    setDetailFeedback(null)
+  }
+
+  const closeAction = () => {
+    setAction(null)
+    setActionError(null)
   }
 
   if (loading) return <LoadingBlock label="载入用户列表" />
@@ -169,183 +182,228 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
         eyebrow="Users"
         title="用户管理"
         detail="按用户名、状态和分组定位用户，并支持按积分、最后活跃、创建时间排序。"
-        actions={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setAction({ type: 'create', draft: { email: '', nickname: '', status: 'active', user_group_code: groups[0]?.code ?? 'basic', password: '', rpm_limit: 0, concurrency_limit: 0, default_locale: 'zh-CN', theme: 'system' } })}>新增用户</button>}
+        actions={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => { setActionError(null); setAction({ type: 'create', draft: { email: '', nickname: '', status: 'active', user_group_code: groups[0]?.code ?? 'basic', password: '', rpm_limit: 0, concurrency_limit: 0, default_locale: 'zh-CN', theme: 'system' } }) }}>新增用户</button>}
       />
-      <StatusStrip columns={4}>
-        <StatusCell label="正常" value={totals.active} />
-        <StatusCell label="待验证" value={totals.pending} />
-        <StatusCell label="禁用" value={totals.disabled} />
-        <StatusCell label="权益分组" value={groups.length} />
-      </StatusStrip>
-      <section className={adminPage.fullSurface}>
-        <section className={adminPage.mainLane}>
-          <div className={adminPage.toolbar}>
-            <form className={userFilterFormClass} onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedFilters(filters) }}>
-              <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="搜索用户名 / 邮箱" />
-              <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} aria-label="状态筛选">
-                {adminUserStatusFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}
-              </select>
-              <GroupSelect value={filters.group} groups={groups} includeAll onChange={(value) => setFilters({ ...filters, group: value })} />
-              <select value={filters.sortBy} onChange={(event) => setFilters({ ...filters, sortBy: event.target.value as UserFilters['sortBy'] })} aria-label="排序字段">
-                <option value="points">积分</option>
-                <option value="last_seen_at">最后活跃</option>
-                <option value="created_at">创建时间</option>
-              </select>
-              <select value={filters.sortDir} onChange={(event) => setFilters({ ...filters, sortDir: event.target.value as UserFilters['sortDir'] })} aria-label="排序方向">
-                <option value="desc">降序</option>
-                <option value="asc">升序</option>
-              </select>
-              <button className={adminButton.base} type="submit">筛选</button>
-              <button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => { setFilters(initialFilters); setAppliedFilters(initialFilters); setPage(1) }}>清空</button>
-            </form>
-            <span>第 {page} 页 / 共 {total} 条</span>
-          </div>
+      <MetricStrip metrics={summaryMetrics} />
+      <ListPage
+        filters={(
+          <form onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedFilters(filters) }}>
+            <FilterToolbar
+              fields={[
+                { key: 'query', label: '关键词', primary: true, control: <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="用户名 / 邮箱" /> },
+                { key: 'status', label: '状态', primary: true, control: <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} aria-label="状态筛选">{adminUserStatusFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select> },
+                { key: 'group', label: '分组', control: <GroupSelect value={filters.group} groups={groups} includeAll onChange={(value) => setFilters({ ...filters, group: value })} /> },
+                { key: 'sortBy', label: '排序字段', control: <select value={filters.sortBy} onChange={(event) => setFilters({ ...filters, sortBy: event.target.value as UserFilters['sortBy'] })} aria-label="排序字段"><option value="points">积分</option><option value="last_seen_at">最后活跃</option><option value="created_at">创建时间</option></select> },
+                { key: 'sortDir', label: '排序方向', control: <select value={filters.sortDir} onChange={(event) => setFilters({ ...filters, sortDir: event.target.value as UserFilters['sortDir'] })} aria-label="排序方向"><option value="desc">降序</option><option value="asc">升序</option></select> },
+              ]}
+              actions={(
+                <>
+                  <button className={cn(adminButton.base, adminButton.primary, adminButton.small, 'gap-1.5')} type="submit" aria-label="筛选" title="筛选"><FilterIcon className="size-4" /><span>筛选</span></button>
+                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'gap-1.5')} type="button" aria-label="清空" title="清空" onClick={() => { setFilters(initialFilters); setAppliedFilters(initialFilters); setPage(1) }}><XIcon className="size-4" /><span>清空</span></button>
+                </>
+              )}
+              resultSummary={`共 ${total} 位用户 · 当前显示 ${rows.length} 位`}
+            />
+          </form>
+        )}
+        pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
+      >
           {!rows.length ? <EmptyBlock title="没有匹配用户" detail="尝试换一个关键词。" /> : (
-            <div className={userClasses.tableWrap}>
-              <table className={userClasses.table}>
-                <thead>
-                  <tr>
-                    <th className={userClasses.th}>用户信息</th>
-                    <th className={userClasses.th}>所属分组</th>
-                    <th className={userClasses.th}>账户余额</th>
-                    <th className={userClasses.th}>最后活跃</th>
-                    <th className={userClasses.th}>状态</th>
-                    <th className={userClasses.th}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((rawRow) => (
-                    <UserTableRow
-                      key={rawRow.id}
-                      row={adminUserRowView(rawRow)}
-                      saving={saving}
-                      groups={groups}
-                      onOpenDetail={openDetail}
-                      onUpdateStatus={updateStatus}
-                      onAction={setAction}
-                    />
-                  ))}
-                </tbody>
-              </table>
-              <div className={userClasses.pager}>
-                <span>显示 {(page - 1) * pageSize + 1} 到 {Math.min(page * pageSize, total)} 共 {total} 条记录</span>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button>
-                  <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" disabled>{page}</button>
-                  <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
-                </div>
-              </div>
-            </div>
+            <DataTable
+              columns={userColumns(groups, openDetail, setAction)}
+              rows={rows}
+              rowKey={(row) => row.id}
+            />
           )}
-        </section>
-      </section>
-      {action ? (
-        <Modal title={actionTitle(action)} detail={actionDetail(action)} onClose={() => setAction(null)} footer={<><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={saving} onClick={() => setAction(null)}>取消</button><button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={saving || !canSave(action)} onClick={() => void saveAction()}>{saving ? '保存中...' : '保存'}</button></>}>
-          {renderActionForm(action, groups, setAction)}
-        </Modal>
-      ) : null}
-      {detailTarget ? (
-        <Modal
-          title={`${detailTarget.display_name} · 用户详情`}
-          detail={detailTarget.email}
-          onClose={() => { setDetailTarget(null); setDetail(null); setDetailError(null) }}
-          footer={<button type="button" className={adminButton.base} onClick={() => { setDetailTarget(null); setDetail(null); setDetailError(null) }}>关闭</button>}
+      </ListPage>
+      {detailTarget && !action ? (
+        <Drawer
+          title={`${adminUserRowView(detailTarget).name} · 用户详情`}
+          description={`${detailTarget.email} · ${detailTarget.id}`}
+          onClose={closeDetail}
+          footer={<button type="button" className={adminButton.base} onClick={closeDetail}>关闭</button>}
         >
           {detailLoading ? <LoadingBlock label="载入用户详情" /> : null}
           {detailError ? <ErrorBlock message={detailError} onRetry={() => void openDetail(detailTarget)} /> : null}
-          {detail && !detailLoading && !detailError ? <UserDetailView detail={detail} /> : null}
+          {detailFeedback ? <InlineFeedback tone="success" message={detailFeedback} /> : null}
+          {detail && !detailLoading && !detailError ? <UserDetailView detail={detail} groups={groups} onAction={setAction} /> : null}
+        </Drawer>
+      ) : null}
+      {action ? (
+        <Modal title={actionTitle(action)} detail={actionDetail(action)} onClose={closeAction} footer={<><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={saving} onClick={closeAction}>取消</button><button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={saving || !canSave(action)} onClick={() => void saveAction()}>{saving ? '保存中...' : '保存'}</button></>}>
+          {actionError ? <InlineFeedback tone="danger" message={actionError} /> : null}
+          {renderActionForm(action, groups, setAction)}
         </Modal>
       ) : null}
     </section>
   )
 }
 
-function UserTableRow({
-  row,
-  groups,
-  saving,
-  onOpenDetail,
-  onUpdateStatus,
-  onAction,
-}: {
-  row: ReturnType<typeof adminUserRowView>
-  groups: UserGroup[]
-  saving: boolean
-  onOpenDetail: (user: AdminUser) => Promise<void>
-  onUpdateStatus: (user: AdminUser, status: string) => Promise<void>
-  onAction: (action: UserAction) => void
-}) {
-  return (
-    <tr className={userClasses.tr}>
-      <td className={userClasses.td}>
-        <div className={userClasses.userCell}>
-          <div className={userClasses.avatar}>{row.name.slice(0, 1).toUpperCase()}</div>
-          <div className="min-w-0">
-            <div className={userClasses.userName}>{row.name}</div>
-            <div className={userClasses.userMeta}>{row.subtitle}</div>
+function userColumns(
+  groups: UserGroup[],
+  onOpenDetail: (user: AdminUser) => Promise<void>,
+  onAction: (action: UserAction) => void,
+): ColumnDef<AdminUser>[] {
+  return [
+    {
+      key: 'user',
+      title: '用户信息',
+      width: 'minmax(240px,2.5fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        return (
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--canvas)] text-sm font-black text-[var(--muted-strong)]">{row.name.slice(0, 1).toUpperCase()}</div>
+            <div className="min-w-0">
+              <div className="font-bold text-[var(--text)]">{row.name}</div>
+              <div className="mt-1 text-xs text-[var(--muted-strong)] [overflow-wrap:anywhere]">{row.subtitle}</div>
+            </div>
           </div>
-        </div>
-      </td>
-      <td className={userClasses.td}>{row.groupLabel}</td>
-      <td className={userClasses.td}>
-        <div className="flex items-baseline gap-1">
-          <span className={userClasses.balance}>{row.balanceLabel}</span>
-          <span className={userClasses.balanceUnit}>POINTS</span>
-        </div>
-      </td>
-      <td className={userClasses.td}>{row.lastActiveAtLabel}</td>
-      <td className={userClasses.td}><Badge tone={row.statusTone}>{row.statusLabel}</Badge></td>
-      <td className={userClasses.td}>
-        <div className={userClasses.actionRow}>
-          <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => void onOpenDetail(row.raw)}>详情</button>
-          {row.raw.status === 'active' ? <button className={cn(adminButton.base, adminButton.danger, adminButton.small)} type="button" disabled={saving} onClick={() => void onUpdateStatus(row.raw, 'disabled')}>禁用</button> : null}
-          {row.raw.status === 'disabled' ? <button className={cn(adminButton.base, adminButton.success, adminButton.small)} type="button" disabled={saving} onClick={() => void onUpdateStatus(row.raw, 'active')}>启用</button> : null}
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'group', user: row.raw, groupIds: currentGroupIds(row.raw, groups) })}>分组</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'points', user: row.raw, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(row.raw.id) })}>积分</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'limits', user: row.raw, rpmLimit: String(row.raw.rpm_limit ?? 0), concurrencyLimit: String(row.raw.concurrency_limit ?? 0) })}>限额</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'password', user: row.raw, password: '' })}>密码</button>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, dangerTextClass)} type="button" onClick={() => onAction({ type: 'delete', user: row.raw, confirmEmail: '' })}>删除</button>
-        </div>
-      </td>
-    </tr>
-  )
+        )
+      },
+    },
+    {
+      key: 'group',
+      title: '所属分组',
+      width: 'minmax(100px,1fr)',
+      render: (rawRow) => adminUserRowView(rawRow).groupLabel,
+    },
+    {
+      key: 'balance',
+      title: '账户余额',
+      width: 'minmax(120px,1fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        return (
+          <div className="flex items-baseline gap-1">
+            <span className="font-mono font-bold text-[var(--text)]">{row.balanceLabel}</span>
+            <span className="text-xs text-[var(--muted-strong)]">积分</span>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'last_seen',
+      title: '最后活跃',
+      width: 'minmax(120px,1fr)',
+      render: (rawRow) => adminUserRowView(rawRow).lastActiveAtLabel,
+    },
+    {
+      key: 'status',
+      title: '状态',
+      width: 'minmax(90px,0.8fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        return <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
+      },
+    },
+    {
+      key: 'actions',
+      title: '操作',
+      width: 'minmax(180px,1.5fr)',
+      render: (rawRow) => {
+        const row = adminUserRowView(rawRow)
+        const actions = adminUserRowActions(rawRow)
+        const overflowActions = actions.overflow.map((action) => ({
+          ...action,
+          run: () => {
+            if (action.id === 'disable') onAction({ type: 'status', user: rawRow, status: 'disabled' })
+            if (action.id === 'enable') onAction({ type: 'status', user: rawRow, status: 'active' })
+            if (action.id === 'group') onAction({ type: 'group', user: rawRow, groupIds: currentGroupIds(rawRow, groups) })
+            if (action.id === 'points') onAction({ type: 'points', user: rawRow, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(rawRow.id) })
+            if (action.id === 'limits') onAction({ type: 'limits', user: rawRow, rpmLimit: String(rawRow.rpm_limit ?? 0), concurrencyLimit: String(rawRow.concurrency_limit ?? 0) })
+            if (action.id === 'password') onAction({ type: 'password', user: rawRow, password: '' })
+            if (action.id === 'delete') onAction({ type: 'delete', user: rawRow, confirmEmail: '' })
+          },
+        }))
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => void onOpenDetail(rawRow)}>{actions.primary.label}</button>
+            <ActionMenu actions={overflowActions} />
+          </div>
+        )
+      },
+    },
+  ]
 }
 
-function UserDetailView({ detail }: { detail: AdminUserDetail }) {
+function UserDetailView({ detail, groups, onAction }: { detail: AdminUserDetail; groups: UserGroup[]; onAction: (action: UserAction) => void }) {
   const buckets = detail.balance?.buckets ?? []
+  const user = detail.user
+  const row = adminUserRowView(user)
+  const hasResources = Boolean(detail.recent_orders?.length || detail.recent_tasks?.length || detail.api_keys?.length)
   return (
     <section className={adminPage.detailStack}>
-      <StatusStrip columns={4}>
-        <StatusCell label="可用积分" value={detail.balance?.available_points ?? detail.user.balance} />
-        <StatusCell label="体验额度" value={detail.balance?.trial_points ?? '0.00000'} />
-        <StatusCell label="充值余额" value={detail.balance?.recharge_points ?? '0.00000'} />
-        <StatusCell label="冻结积分" value={detail.balance?.frozen_points ?? '0.00000'} />
-      </StatusStrip>
-      <DetailSection title="余额桶" empty="暂无余额桶">
-        {buckets.length ? <BucketGrid buckets={buckets} /> : null}
+      <DetailSection dataSection="profile" title="基础资料" empty="暂无基础资料">
+        <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+          <DetailFact label="用户" value={row.name} />
+          <DetailFact label="状态" value={<Badge tone={row.statusTone}>{row.statusLabel}</Badge>} />
+          <DetailFact label="用户 ID" value={<code className={adminDataGrid.code}>{user.id}</code>} />
+          <DetailFact label="所属分组" value={row.groupLabel} />
+          <DetailFact label="创建时间" value={row.createdAtLabel} />
+          <DetailFact label="最后活跃" value={row.lastActiveAtLabel} />
+        </dl>
       </DetailSection>
-      <DetailSection title="最近流水" empty="暂无流水">
+
+      <DetailSection dataSection="ledger" title="积分与流水" empty="暂无积分记录">
+        <MetricStrip metrics={[
+          { label: '可用积分', value: detail.balance?.available_points ?? user.balance, trend: '当前可用', tone: 'neutral' },
+          { label: '体验额度', value: detail.balance?.trial_points ?? '0.00000', trend: '试用与赠送', tone: 'neutral' },
+          { label: '充值余额', value: detail.balance?.recharge_points ?? '0.00000', trend: '付费充值', tone: 'good' },
+          { label: '冻结积分', value: detail.balance?.frozen_points ?? '0.00000', trend: '暂不可用', tone: 'warn' },
+        ]} />
+        {buckets.length ? <BucketGrid buckets={buckets} /> : null}
         {detail.recent_ledger?.length ? <LedgerGrid items={detail.recent_ledger} /> : null}
       </DetailSection>
-      <DetailSection title="最近订单" empty="暂无订单">
-        {detail.recent_orders?.length ? <OrderGrid items={detail.recent_orders} /> : null}
+
+      <DetailSection dataSection="resources" title="关联资源" empty="暂无关联资源">
+        {hasResources ? (
+          <div className="grid gap-4">
+            {detail.recent_orders?.length ? <OrderGrid items={detail.recent_orders} /> : null}
+            {detail.recent_tasks?.length ? <TaskGrid items={detail.recent_tasks} /> : null}
+            {detail.api_keys?.length ? <APIKeyGrid items={detail.api_keys} /> : null}
+          </div>
+        ) : <EmptyBlock title="暂无关联资源" detail="该用户暂无订单、生成任务或 API Key。" />}
       </DetailSection>
-      <DetailSection title="最近任务" empty="暂无任务">
-        {detail.recent_tasks?.length ? <TaskGrid items={detail.recent_tasks} /> : null}
+
+      <DetailSection dataSection="limits" title="限额与权限" empty="暂无限额信息">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <dl className="grid flex-1 gap-x-5 gap-y-3 sm:grid-cols-2">
+            <DetailFact label="RPM 限额" value={<code className={adminDataGrid.code}>{String(user.rpm_limit ?? 0)}</code>} />
+            <DetailFact label="并发限额" value={<code className={adminDataGrid.code}>{String(user.concurrency_limit ?? 0)}</code>} />
+          </dl>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'limits', user, rpmLimit: String(user.rpm_limit ?? 0), concurrencyLimit: String(user.concurrency_limit ?? 0) })}>调整限额</button>
+        </div>
       </DetailSection>
-      <DetailSection title="API Key" empty="暂无 API Key">
-        {detail.api_keys?.length ? <APIKeyGrid items={detail.api_keys} /> : null}
+
+      <DetailSection dataSection="danger" title="账户与安全操作" empty="暂无可用操作">
+        <div className="flex flex-wrap gap-2">
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'group', user, groupIds: currentGroupIds(user, groups) })}>调整分组</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'points', user, changePoints: '0.00000', reason: '', idempotencyKey: newUserPointAdjustmentKey(user.id) })}>调整积分</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'password', user, password: '' })}>重置密码</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onAction({ type: 'status', user, status: user.status === 'disabled' ? 'active' : 'disabled' })}>{user.status === 'disabled' ? '启用账户' : '禁用账户'}</button>
+          <button className={cn(adminButton.base, adminButton.danger, adminButton.small)} type="button" onClick={() => onAction({ type: 'delete', user, confirmEmail: '' })}>删除用户</button>
+        </div>
       </DetailSection>
     </section>
   )
 }
 
-function DetailSection({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+function DetailSection({ dataSection, title, empty, children }: { dataSection: 'profile' | 'ledger' | 'resources' | 'limits' | 'danger'; title: string; empty: string; children: React.ReactNode }) {
   return (
-    <section className={adminPage.detailSection}>
+    <section className={adminPage.detailSection} data-admin-user-section={dataSection}>
       <div className={adminPage.sectionHead}><div className={adminPage.sectionTitle}>{title}</div></div>
       {children || <EmptyBlock title={empty} detail="该用户暂无对应记录。" />}
     </section>
+  )
+}
+
+function DetailFact({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="grid gap-1 border-b border-[var(--border)] pb-3">
+      <dt className="text-[11px] font-semibold text-[var(--dim)]">{label}</dt>
+      <dd className="min-w-0 text-sm font-medium text-[var(--text)] [overflow-wrap:anywhere]">{value}</dd>
+    </div>
   )
 }
 

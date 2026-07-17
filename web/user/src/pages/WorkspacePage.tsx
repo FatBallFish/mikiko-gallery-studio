@@ -48,14 +48,24 @@ function ratioOptions(model: CapabilityModelGroup | undefined, capability: Capab
   return model.aspect_ratios?.length ? model.aspect_ratios : capability?.aspect_ratios ?? []
 }
 
+function sizeModeOptions(model: CapabilityModelGroup | undefined): WorkspaceSizeMode[] {
+  const modes = model?.size_modes?.filter((mode): mode is WorkspaceSizeMode => mode === 'ratio' || mode === 'pixel') ?? []
+  return modes.length ? Array.from(new Set(modes)) : ['ratio']
+}
+
+function pixelOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
+  if (!model) return []
+  return model.pixel_sizes?.length ? model.pixel_sizes : capability?.pixel_sizes ?? []
+}
+
 function countOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
   if (!model) return []
   const maxCount = Number(model.max_output_image_count ?? capability?.max_image_count ?? 0)
   return Array.from({ length: Math.max(0, maxCount) }, (_, index) => index + 1)
 }
 
-function isTerminalStatus(status: ImageTaskStatus | string) {
-  return ['succeeded', 'partial_failed', 'failed', 'cancelled', 'rejected', 'deleted'].includes(status)
+function workspaceQualityLabel(value: string) {
+  return ({ auto: '自动', low: '低', medium: '中', high: '高' } as Record<string, string>)[value] ?? value
 }
 
 function displayTaskPoints(task: ImageTask) {
@@ -252,6 +262,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [model, setModel] = useState('')
   const [baseResolution, setBaseResolution] = useState('')
   const [ratio, setRatio] = useState('')
+  const [pixelSize, setPixelSize] = useState('')
   const [count, setCount] = useState(0)
   const [estimateSnapshot, setEstimateSnapshot] = useState<WorkspaceEstimateSnapshot>({ key: '', estimate: null, error: '' })
   const [records, setRecords] = useState<ImageTask[]>([])
@@ -303,6 +314,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     selectedTaskIdRef.current = selectedTaskId
   }, [selectedTaskId])
 
+  useEffect(() => {
+    selectedTaskIdRef.current = selectedTaskId
+  }, [selectedTaskId])
+
   // Load capability and refs on mount only (not on mode change)
   useEffect(() => {
     let mounted = true
@@ -321,6 +336,36 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     void load()
     return () => { mounted = false }
+  }, [])
+
+  useEffect(() => {
+    const taskId = initialTaskId?.trim() || ''
+    setSelectedTaskId(taskId || null)
+    setInitialTaskError('')
+    if (!taskId) {
+      setInitialTaskLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    setInitialTaskLoading(true)
+    async function loadInitialTask() {
+      try {
+        const task = await userApi.getTask(taskId)
+        if (cancelled) return
+        setRecords((items) => mergeWorkspaceTaskRecords(items, task, { limit: 20, preserveIds: [taskId] }))
+      } catch (err) {
+        if (!cancelled) setInitialTaskError(errorMessage(err))
+      } finally {
+        if (!cancelled) setInitialTaskLoading(false)
+      }
+    }
+    void loadInitialTask()
+    return () => { cancelled = true }
+  }, [initialTaskId, initialTaskReloadKey])
+
+  useEffect(() => () => {
+    if (sheetClickResetRef.current !== null) window.clearTimeout(sheetClickResetRef.current)
+    sheetDragRef.current = null
   }, [])
 
   useEffect(() => {
@@ -545,7 +590,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const selectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
   const ratios = useMemo(() => ratioOptions(selectedModel, capability), [selectedModel, capability])
+  const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
   const counts = useMemo(() => countOptions(selectedModel, capability), [selectedModel, capability])
+  const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
+  const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
   const maxOutputCount = counts[counts.length - 1] ?? 1
 
   useEffect(() => {
@@ -560,6 +608,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
     setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
+    setPixelSize((current) => current && pixelSizes.includes(current) ? current : pixelSizes[0] ?? '')
     setCount((current) => {
       const restored = current > 0 && counts.includes(current) ? current : counts[0] ?? 0
       return Math.max(0, Math.min(restored, counts[counts.length - 1] ?? restored))
@@ -1097,7 +1146,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               ) : null}
 
               {/* Aspect Ratio */}
-              {ratios.length ? (
+              {sizeMode === 'ratio' && ratios.length ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>比例</label>
                   <div className={workspaceClasses.selectGridThree}>
@@ -1110,6 +1159,109 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                       >
                         <AspectRatioIcon ratio={r} active={ratio === r} />
                         <span className={rdWorkspace.itemLabel}>{r}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Pixel Size */}
+              {sizeMode === 'pixel' && pixelSizes.length ? (
+                <div className={workspaceClasses.fieldBlock}>
+                  <label className={workspaceClasses.fieldLabel}>像素尺寸</label>
+                  <div className={workspaceClasses.selectGridThree}>
+                    {pixelSizes.map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        className={cn(workspaceClasses.selectItem, pixelSize === size && workspaceClasses.selectItemActive)}
+                        onClick={() => setPixelSize(size)}
+                      >
+                        <span className={rdWorkspace.itemLabel}>{size}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Quality */}
+              {outputOptions.quality.length ? (
+                <div className={workspaceClasses.fieldBlock}>
+                  <label className={workspaceClasses.fieldLabel}>质量</label>
+                  <div className={workspaceClasses.selectGridThree}>
+                    {outputOptions.quality.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={cn(workspaceClasses.selectItem, quality === value && workspaceClasses.selectItemActive)}
+                        onClick={() => setQuality(value)}
+                      >
+                        <span className={rdWorkspace.itemLabel}>{workspaceQualityLabel(value)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Output format */}
+              {outputOptions.outputFormat.length ? (
+                <div className={workspaceClasses.fieldBlock}>
+                  <label className={workspaceClasses.fieldLabel}>输出格式</label>
+                  <div className={workspaceClasses.selectGridThree}>
+                    {outputOptions.outputFormat.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={cn(workspaceClasses.selectItem, outputFormat === value && workspaceClasses.selectItemActive)}
+                        onClick={() => setOutputFormat(value)}
+                      >
+                        <span className={rdWorkspace.itemLabel}>{value.toUpperCase()}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Compression */}
+              {compressionVisible ? (
+                <div className={workspaceClasses.fieldBlock}>
+                  <label className={workspaceClasses.fieldLabel}>压缩质量</label>
+                  <div className="grid grid-cols-[minmax(0,1fr)_72px] items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-3">
+                    <input
+                      className="w-full accent-[var(--accent)]"
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={outputCompression}
+                      aria-label="压缩质量"
+                      onChange={(event) => setOutputCompression(Number(event.target.value))}
+                    />
+                    <input
+                      className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 text-center font-vault-mono text-sm font-bold text-[var(--fg)]"
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={outputCompression}
+                      aria-label="压缩质量数值"
+                      onChange={(event) => setOutputCompression(Math.max(1, Math.min(100, Number(event.target.value) || 100)))}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Moderation */}
+              {outputOptions.moderation.length ? (
+                <div className={workspaceClasses.fieldBlock}>
+                  <label className={workspaceClasses.fieldLabel}>审核等级</label>
+                  <div className={workspaceClasses.selectGridThree}>
+                    {outputOptions.moderation.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={cn(workspaceClasses.selectItem, moderation === value && workspaceClasses.selectItemActive)}
+                        onClick={() => setModeration(value)}
+                      >
+                        <span className={rdWorkspace.itemLabel}>{workspaceModerationLabel(value)}</span>
                       </button>
                     ))}
                   </div>
@@ -1800,7 +1952,7 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
           ) : null}
           <div className={workspaceClasses.outputMetaRow}>
             <span>模型: {task.route_model_name || task.route_model_code || task.model_group}</span>
-            <span>比例: {task.aspect_ratio}</span>
+            <span>{task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`}</span>
             <span>数量: {task.image_count}</span>
             <span>耗时: {formatCompactDuration(taskElapsedMs(task))}</span>
             <span>消耗: {displayTaskPoints(task)} ◈</span>

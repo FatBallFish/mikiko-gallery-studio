@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -184,7 +185,7 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected provider update 200, got %d body=%s", updateProviderRec.Code, updateProviderRec.Body.String())
 	}
 
-	createProviderModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/provider-models", bytes.NewBufferString(`{"provider_code":"openai","model_code":"gpt-image-1","compat_mode":"openai_images","supports_image_input":true,"supports_mask":true,"supported_qualities":["1k","2k"],"supported_ratios":["1:1","16:9"],"max_image_count":4,"max_reference_image_count":2,"timeout_ms":45000,"input_cost":"0.12","output_cost":"0.34","currency":"USD","health_status":"healthy","enabled":true}`))
+	createProviderModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/provider-models", bytes.NewBufferString(`{"provider_code":"openai","model_code":"gpt-image-1","compat_mode":"openai_images","supports_image_input":true,"supports_mask":true,"supported_base_resolution":["1k","2k"],"supported_ratios":["1:1","16:9"],"max_image_count":4,"max_reference_image_count":2,"timeout_ms":45000,"input_cost":"0.12","output_cost":"0.34","currency":"USD","health_status":"healthy","enabled":true}`))
 	createProviderModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	createProviderModelReq.Header.Set("Content-Type", "application/json")
 	createProviderModelRec := httptest.NewRecorder()
@@ -255,7 +256,7 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("expected route update 200, got %d body=%s", updateRouteRec.Code, updateRouteRec.Body.String())
 	}
 
-	updateProviderModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/provider-models/"+jsonNumber(providerModelResp.Data.ID), bytes.NewBufferString(`{"provider_code":"openai","model_code":"gpt-image-1","compat_mode":"openai_images","supports_image_input":true,"supports_mask":true,"supported_qualities":["1k","2k","4k"],"supported_ratios":["1:1","16:9"],"max_image_count":5,"max_reference_image_count":2,"timeout_ms":50000,"input_cost":"0.22","output_cost":"0.44","currency":"USD","health_status":"degraded","enabled":false}`))
+	updateProviderModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/provider-models/"+jsonNumber(providerModelResp.Data.ID), bytes.NewBufferString(`{"provider_code":"openai","model_code":"gpt-image-1","compat_mode":"openai_images","supports_image_input":true,"supports_mask":true,"supported_base_resolution":["1k","2k","4k"],"supported_ratios":["1:1","16:9"],"max_image_count":5,"max_reference_image_count":2,"timeout_ms":50000,"input_cost":"0.22","output_cost":"0.44","currency":"USD","health_status":"degraded","enabled":false}`))
 	updateProviderModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	updateProviderModelReq.Header.Set("Content-Type", "application/json")
 	updateProviderModelRec := httptest.NewRecorder()
@@ -315,10 +316,13 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 
 func TestAdminModelAccountTestImageUsesDirectAccountAndActualParams(t *testing.T) {
 	var upstreamReq struct {
-		Model   string `json:"model"`
-		Prompt  string `json:"prompt"`
-		Size    string `json:"size"`
-		Quality string `json:"quality"`
+		Model             string `json:"model"`
+		Prompt            string `json:"prompt"`
+		Size              string `json:"size"`
+		Quality           string `json:"quality"`
+		OutputFormat      string `json:"output_format"`
+		OutputCompression int    `json:"output_compression"`
+		Moderation        string `json:"moderation"`
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/images/generations" {
@@ -367,14 +371,18 @@ func TestAdminModelAccountTestImageUsesDirectAccountAndActualParams(t *testing.T
 		t.Fatalf("CreateModelAccount: %v", err)
 	}
 	model, err := modelAdminSvc.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
-		AccountID:    account.ID,
-		ModelCode:    "gpt-image-2",
-		DisplayName:  "GPT Image 2",
-		TaskTypes:    []string{"text_to_image"},
-		Qualities:    []string{"1k", "2k", "4k"},
-		CostPerImage: "0.00000",
-		Currency:     "USD",
-		Enabled:      true,
+		AccountID:                 account.ID,
+		ModelCode:                 "gpt-image-2",
+		DisplayName:               "GPT Image 2",
+		TaskTypes:                 []string{"text_to_image"},
+		BaseResolution:            []string{"1k", "2k", "4k"},
+		Quality:                   []string{"auto", "high"},
+		OutputFormat:              []string{"png", "webp"},
+		SupportsOutputCompression: true,
+		Moderation:                []string{"auto", "low"},
+		CostPerImage:              "0.00000",
+		Currency:                  "USD",
+		Enabled:                   true,
 	})
 	if err != nil {
 		t.Fatalf("CreateModelAccountModel: %v", err)
@@ -383,7 +391,7 @@ func TestAdminModelAccountTestImageUsesDirectAccountAndActualParams(t *testing.T
 	handler := NewWithAPI(api)
 	adminToken := loginAdminForModelTest(t, handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/test-image", bytes.NewBufferString(`{"model_id":`+jsonNumber(model.ID)+`,"prompt":"admin smoke image","source_mode":"codex_responses"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/test-image", bytes.NewBufferString(`{"model_id":`+jsonNumber(model.ID)+`,"prompt":"admin smoke image","source_mode":"codex_responses","quality":"high","output_format":"webp","output_compression":72,"moderation":"low"}`))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -404,17 +412,96 @@ func TestAdminModelAccountTestImageUsesDirectAccountAndActualParams(t *testing.T
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if upstreamReq.Model != "gpt-image-2" || upstreamReq.Quality != "auto" || upstreamReq.Size != "1024x1024" {
+	if upstreamReq.Model != "gpt-image-2" || upstreamReq.Quality != "auto" || upstreamReq.Size != "1024x1024" || upstreamReq.OutputFormat != "webp" || upstreamReq.OutputCompression != 72 || upstreamReq.Moderation != "low" {
 		t.Fatalf("unexpected upstream params %#v", upstreamReq)
 	}
 	if resp.Data.Status != "succeeded" || resp.Data.ProviderRequestID != "req-admin-model-test" || resp.Data.Width != 1 || resp.Data.Height != 1 {
 		t.Fatalf("unexpected response data %#v", resp.Data)
 	}
-	if resp.Data.ActualParams["quality"] != "auto" || resp.Data.ActualParams["size"] != "1024x1024" {
+	if resp.Data.ActualParams["quality"] != "auto" || resp.Data.ActualParams["size"] != "1024x1024" || resp.Data.ActualParams["output_format"] != "webp" || resp.Data.ActualParams["output_compression"] != "72" || resp.Data.ActualParams["moderation"] != "low" {
 		t.Fatalf("unexpected actual params %#v", resp.Data.ActualParams)
 	}
 	if resp.Data.ImageURL == "" || !bytes.Contains([]byte(resp.Data.ImageURL), []byte("/api/ops/admin/v1/image-reviews/")) {
 		t.Fatalf("expected admin preview image url, got %q", resp.Data.ImageURL)
+	}
+}
+
+func TestAdminModelAccountTestImageMapsUpstreamTransportError(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatalf("response writer does not support hijacking")
+		}
+		conn, _, err := hijacker.Hijack()
+		if err != nil {
+			t.Fatalf("hijack upstream connection: %v", err)
+		}
+		_ = conn.Close()
+	}))
+	defer upstream.Close()
+
+	cfg := adminConfigAPIConfig()
+	cfg.Storage.LocalRoot = t.TempDir()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-model-test-image-upstream-error?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	authSvc := authservice.NewServiceWithStore(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client))
+	adminStore := entstore.NewAdminAuthStore(client)
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-model@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	billingStore := entstore.NewBillingStore(client, 5)
+	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
+	modelAdminSvc := modeladminservice.NewServiceWithStore(entstore.NewModelAdminStore(client))
+	account, err := modelAdminSvc.CreateModelAccount(t.Context(), domainmodeladmin.ModelAccountWriteRequest{
+		Name:             "OpenAI Test",
+		AdapterType:      domainmodeladmin.AdapterTypeOpenAICompatible,
+		AuthType:         domainmodeladmin.AuthTypeAPIKey,
+		BaseURL:          upstream.URL,
+		Credentials:      map[string]string{"api_key": "test-key"},
+		Status:           domainmodeladmin.ModelAccountStatusEnabled,
+		ConcurrencyLimit: 1,
+		TimeoutMS:        120000,
+		Extra:            map[string]any{"source_mode": "codex_responses"},
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	model, err := modelAdminSvc.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID:      account.ID,
+		ModelCode:      "gpt-image-2",
+		DisplayName:    "GPT Image 2",
+		TaskTypes:      []string{"text_to_image"},
+		BaseResolution: []string{"1k", "2k", "4k"},
+		CostPerImage:   "0.00000",
+		Currency:       "USD",
+		Enabled:        true,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccountModel: %v", err)
+	}
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, nil, nil, nil, nil, modelAdminSvc)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForModelTest(t, handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/test-image", bytes.NewBufferString(`{"model_id":`+jsonNumber(model.ID)+`,"prompt":"admin smoke image","source_mode":"codex_responses"}`))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected upstream unavailable 503, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body, _ := io.ReadAll(rec.Body)
+	if !bytes.Contains(body, []byte(`"code":"UPSTREAM_UNAVAILABLE"`)) || bytes.Contains(body, []byte(`"code":"INTERNAL_ERROR"`)) {
+		t.Fatalf("expected upstream unavailable error body, got %s", string(body))
 	}
 }
 

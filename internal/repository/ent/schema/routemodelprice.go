@@ -15,7 +15,7 @@ func (RouteModelPrice) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("route_model_id"),
 		field.String("task_type").MaxLen(64).NotEmpty(),
-		field.String("quality").MaxLen(32).NotEmpty(),
+		field.String("base_resolution").MaxLen(32).NotEmpty(),
 		field.String("base_points").SchemaType(map[string]string{dialect.Postgres: "numeric(18,5)"}).Default("0.00000"),
 		field.String("reference_multiplier").SchemaType(map[string]string{dialect.Postgres: "numeric(18,5)"}).Default("1.00000"),
 		field.Bool("enabled").Default(true),
@@ -24,7 +24,7 @@ func (RouteModelPrice) Fields() []ent.Field {
 
 func (RouteModelPrice) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("route_model_id", "task_type", "quality").Unique(),
+		index.Fields("route_model_id", "task_type", "base_resolution").Unique(),
 	}
 }
 

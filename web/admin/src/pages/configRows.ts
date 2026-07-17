@@ -5,6 +5,9 @@ export type ConfigFieldType = 'number' | 'boolean' | 'text' | 'map' | 'list'
 export type ConfigFieldMeta = { label: string; hint: string; type?: ConfigFieldType }
 export type ConfigTabMeta = { label: string; detail: string }
 
+export const generalConfigCategories = ['site', 'docs', 'public_gallery'] as const
+export const forbiddenGeneralConfigCategories = ['auth_security', 'generation_limits', 'moderation', 'payments'] as const
+
 const tabMeta: Record<string, ConfigTabMeta> = {
   auth_security: { label: '认证安全', detail: '登录令牌、刷新 Cookie 和会话安全相关配置。' },
   generation_limits: { label: '生成限制', detail: '控制提示词、参考图和单次生成数量的安全上限。' },
@@ -26,7 +29,7 @@ const itemMeta: Record<string, ConfigFieldMeta> = {
   prompt_max_chars: { label: '提示词字数上限', hint: '用户主提示词允许输入的最大字符数。', type: 'number' },
   negative_prompt_max_chars: { label: '负面提示词字数上限', hint: '负面提示词允许输入的最大字符数。', type: 'number' },
   cny_per_point: { label: '人民币积分汇率', hint: '每积分对应的人民币金额，用于成本和充值核算。', type: 'text' },
-  auto_quality_default_by_group: { label: '自动质量默认值', hint: '不同模型分组在 auto 质量下默认解析到的质量档位。', type: 'map' },
+  auto_base_resolution_default_by_group: { label: '自动基础分辨率默认值', hint: '不同模型分组在 auto 基础分辨率下默认解析到的 1K/2K/4K 档位。', type: 'map' },
   task_multipliers: { label: '任务类型倍率', hint: '文生图、图生图、参考图等任务类型的计费倍率。', type: 'map' },
   reference_image_extra: { label: '参考图附加费用', hint: '第一张和后续参考图额外计费系数。', type: 'map' },
   openai_compat_model_map: { label: '兼容模型映射', hint: '把 OpenAI 兼容接口中的模型名映射到平台模型分组。', type: 'map' },

@@ -16,6 +16,7 @@ run "go vet" go vet ./...
 run "local build service startup scripts" ./scripts/local/pgctl_contract_test.sh
 
 run "frontend/shared contracts" ./scripts/workflow/verify-contracts.sh
+run "docs web deployment contract" ./scripts/workflow/docs-web-contract-test.sh
 
 if [ -f web/user/package.json ]; then
   run "web/user typecheck" npm --prefix web/user run typecheck
@@ -25,6 +26,11 @@ fi
 if [ -f web/admin/package.json ]; then
   run "web/admin typecheck" npm --prefix web/admin run typecheck
   run "web/admin build" npm --prefix web/admin run build
+fi
+
+if [ -f web/docs/package.json ]; then
+  run "web/docs typecheck" npm --prefix web/docs run typecheck
+  run "web/docs build" npm --prefix web/docs run build
 fi
 
 printf '\nOK: verification passed\n'

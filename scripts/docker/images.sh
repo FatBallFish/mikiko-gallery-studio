@@ -24,6 +24,7 @@ Images:
   pic-gallery-worker
   pic-gallery-user-web
   pic-gallery-admin-web
+  pic-gallery-docs-web
 USAGE
 }
 
@@ -65,11 +66,12 @@ build_all() {
   build_one pic-gallery-worker Dockerfile.worker "$tag"
   build_one pic-gallery-user-web Dockerfile.user-web "$tag"
   build_one pic-gallery-admin-web Dockerfile.admin-web "$tag"
+  build_one pic-gallery-docs-web Dockerfile.docs-web "$tag"
 }
 
 push_all() {
   local tag=$1
-  for name in pic-gallery-api pic-gallery-worker pic-gallery-user-web pic-gallery-admin-web; do
+  for name in pic-gallery-api pic-gallery-worker pic-gallery-user-web pic-gallery-admin-web pic-gallery-docs-web; do
     docker push "$(image_ref "$name" "$tag")"
   done
 }
@@ -141,7 +143,7 @@ case "$cmd" in
     PUSH=true
     build_all "$TAG"
     if [[ "$LATEST" == true ]]; then
-      for name in pic-gallery-api pic-gallery-worker pic-gallery-user-web pic-gallery-admin-web; do
+      for name in pic-gallery-api pic-gallery-worker pic-gallery-user-web pic-gallery-admin-web pic-gallery-docs-web; do
         docker tag "$(image_ref "$name" "$TAG")" "$(image_ref "$name" latest)"
         docker push "$(image_ref "$name" latest)"
       done

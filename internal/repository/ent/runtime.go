@@ -469,7 +469,7 @@ func init() {
 	// imageresult.ImageRoleValidator is a validator for the "image_role" field. It is called by the builders before save.
 	imageresult.ImageRoleValidator = imageresultDescImageRole.Validators[0].(func(string) error)
 	// imageresultDescStorageDriver is the schema descriptor for storage_driver field.
-	imageresultDescStorageDriver := imageresultFields[4].Descriptor()
+	imageresultDescStorageDriver := imageresultFields[5].Descriptor()
 	// imageresult.DefaultStorageDriver holds the default value on creation for the storage_driver field.
 	imageresult.DefaultStorageDriver = imageresultDescStorageDriver.Default.(string)
 	// imageresult.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
@@ -605,8 +605,18 @@ func init() {
 	imagetask.DefaultStatus = imagetaskDescStatus.Default.(string)
 	// imagetask.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	imagetask.StatusValidator = imagetaskDescStatus.Validators[0].(func(string) error)
+	// imagetaskDescProgressStage is the schema descriptor for progress_stage field.
+	imagetaskDescProgressStage := imagetaskFields[6].Descriptor()
+	// imagetask.DefaultProgressStage holds the default value on creation for the progress_stage field.
+	imagetask.DefaultProgressStage = imagetaskDescProgressStage.Default.(string)
+	// imagetask.ProgressStageValidator is a validator for the "progress_stage" field. It is called by the builders before save.
+	imagetask.ProgressStageValidator = imagetaskDescProgressStage.Validators[0].(func(string) error)
+	// imagetaskDescProgressMessage is the schema descriptor for progress_message field.
+	imagetaskDescProgressMessage := imagetaskFields[7].Descriptor()
+	// imagetask.DefaultProgressMessage holds the default value on creation for the progress_message field.
+	imagetask.DefaultProgressMessage = imagetaskDescProgressMessage.Default.(string)
 	// imagetaskDescAbstractModel is the schema descriptor for abstract_model field.
-	imagetaskDescAbstractModel := imagetaskFields[8].Descriptor()
+	imagetaskDescAbstractModel := imagetaskFields[10].Descriptor()
 	// imagetask.AbstractModelValidator is a validator for the "abstract_model" field. It is called by the builders before save.
 	imagetask.AbstractModelValidator = func() func(string) error {
 		validators := imagetaskDescAbstractModel.Validators
@@ -623,98 +633,120 @@ func init() {
 			return nil
 		}
 	}()
-	// imagetaskDescRequestedQuality is the schema descriptor for requested_quality field.
-	imagetaskDescRequestedQuality := imagetaskFields[9].Descriptor()
-	// imagetask.DefaultRequestedQuality holds the default value on creation for the requested_quality field.
-	imagetask.DefaultRequestedQuality = imagetaskDescRequestedQuality.Default.(string)
-	// imagetask.RequestedQualityValidator is a validator for the "requested_quality" field. It is called by the builders before save.
-	imagetask.RequestedQualityValidator = imagetaskDescRequestedQuality.Validators[0].(func(string) error)
-	// imagetaskDescResolvedQualityBucket is the schema descriptor for resolved_quality_bucket field.
-	imagetaskDescResolvedQualityBucket := imagetaskFields[10].Descriptor()
-	// imagetask.DefaultResolvedQualityBucket holds the default value on creation for the resolved_quality_bucket field.
-	imagetask.DefaultResolvedQualityBucket = imagetaskDescResolvedQualityBucket.Default.(string)
-	// imagetask.ResolvedQualityBucketValidator is a validator for the "resolved_quality_bucket" field. It is called by the builders before save.
-	imagetask.ResolvedQualityBucketValidator = imagetaskDescResolvedQualityBucket.Validators[0].(func(string) error)
+	// imagetaskDescSizeMode is the schema descriptor for size_mode field.
+	imagetaskDescSizeMode := imagetaskFields[11].Descriptor()
+	// imagetask.DefaultSizeMode holds the default value on creation for the size_mode field.
+	imagetask.DefaultSizeMode = imagetaskDescSizeMode.Default.(string)
+	// imagetask.SizeModeValidator is a validator for the "size_mode" field. It is called by the builders before save.
+	imagetask.SizeModeValidator = imagetaskDescSizeMode.Validators[0].(func(string) error)
+	// imagetaskDescBaseResolution is the schema descriptor for base_resolution field.
+	imagetaskDescBaseResolution := imagetaskFields[12].Descriptor()
+	// imagetask.DefaultBaseResolution holds the default value on creation for the base_resolution field.
+	imagetask.DefaultBaseResolution = imagetaskDescBaseResolution.Default.(string)
+	// imagetask.BaseResolutionValidator is a validator for the "base_resolution" field. It is called by the builders before save.
+	imagetask.BaseResolutionValidator = imagetaskDescBaseResolution.Validators[0].(func(string) error)
+	// imagetaskDescQuality is the schema descriptor for quality field.
+	imagetaskDescQuality := imagetaskFields[13].Descriptor()
+	// imagetask.DefaultQuality holds the default value on creation for the quality field.
+	imagetask.DefaultQuality = imagetaskDescQuality.Default.(string)
+	// imagetask.QualityValidator is a validator for the "quality" field. It is called by the builders before save.
+	imagetask.QualityValidator = imagetaskDescQuality.Validators[0].(func(string) error)
 	// imagetaskDescRequestedSize is the schema descriptor for requested_size field.
-	imagetaskDescRequestedSize := imagetaskFields[11].Descriptor()
+	imagetaskDescRequestedSize := imagetaskFields[14].Descriptor()
 	// imagetask.RequestedSizeValidator is a validator for the "requested_size" field. It is called by the builders before save.
 	imagetask.RequestedSizeValidator = imagetaskDescRequestedSize.Validators[0].(func(string) error)
 	// imagetaskDescAspectRatio is the schema descriptor for aspect_ratio field.
-	imagetaskDescAspectRatio := imagetaskFields[14].Descriptor()
+	imagetaskDescAspectRatio := imagetaskFields[17].Descriptor()
 	// imagetask.DefaultAspectRatio holds the default value on creation for the aspect_ratio field.
 	imagetask.DefaultAspectRatio = imagetaskDescAspectRatio.Default.(string)
 	// imagetask.AspectRatioValidator is a validator for the "aspect_ratio" field. It is called by the builders before save.
 	imagetask.AspectRatioValidator = imagetaskDescAspectRatio.Validators[0].(func(string) error)
+	// imagetaskDescOutputFormat is the schema descriptor for output_format field.
+	imagetaskDescOutputFormat := imagetaskFields[18].Descriptor()
+	// imagetask.DefaultOutputFormat holds the default value on creation for the output_format field.
+	imagetask.DefaultOutputFormat = imagetaskDescOutputFormat.Default.(string)
+	// imagetask.OutputFormatValidator is a validator for the "output_format" field. It is called by the builders before save.
+	imagetask.OutputFormatValidator = imagetaskDescOutputFormat.Validators[0].(func(string) error)
+	// imagetaskDescOutputCompression is the schema descriptor for output_compression field.
+	imagetaskDescOutputCompression := imagetaskFields[19].Descriptor()
+	// imagetask.DefaultOutputCompression holds the default value on creation for the output_compression field.
+	imagetask.DefaultOutputCompression = imagetaskDescOutputCompression.Default.(int)
+	// imagetaskDescModeration is the schema descriptor for moderation field.
+	imagetaskDescModeration := imagetaskFields[20].Descriptor()
+	// imagetask.DefaultModeration holds the default value on creation for the moderation field.
+	imagetask.DefaultModeration = imagetaskDescModeration.Default.(string)
+	// imagetask.ModerationValidator is a validator for the "moderation" field. It is called by the builders before save.
+	imagetask.ModerationValidator = imagetaskDescModeration.Validators[0].(func(string) error)
 	// imagetaskDescRequestedOutputImageCount is the schema descriptor for requested_output_image_count field.
-	imagetaskDescRequestedOutputImageCount := imagetaskFields[15].Descriptor()
+	imagetaskDescRequestedOutputImageCount := imagetaskFields[21].Descriptor()
 	// imagetask.DefaultRequestedOutputImageCount holds the default value on creation for the requested_output_image_count field.
 	imagetask.DefaultRequestedOutputImageCount = imagetaskDescRequestedOutputImageCount.Default.(int)
 	// imagetaskDescSuccessOutputImageCount is the schema descriptor for success_output_image_count field.
-	imagetaskDescSuccessOutputImageCount := imagetaskFields[16].Descriptor()
+	imagetaskDescSuccessOutputImageCount := imagetaskFields[22].Descriptor()
 	// imagetask.DefaultSuccessOutputImageCount holds the default value on creation for the success_output_image_count field.
 	imagetask.DefaultSuccessOutputImageCount = imagetaskDescSuccessOutputImageCount.Default.(int)
 	// imagetaskDescReferenceImageCount is the schema descriptor for reference_image_count field.
-	imagetaskDescReferenceImageCount := imagetaskFields[17].Descriptor()
+	imagetaskDescReferenceImageCount := imagetaskFields[23].Descriptor()
 	// imagetask.DefaultReferenceImageCount holds the default value on creation for the reference_image_count field.
 	imagetask.DefaultReferenceImageCount = imagetaskDescReferenceImageCount.Default.(int)
 	// imagetaskDescMaskPresent is the schema descriptor for mask_present field.
-	imagetaskDescMaskPresent := imagetaskFields[18].Descriptor()
+	imagetaskDescMaskPresent := imagetaskFields[24].Descriptor()
 	// imagetask.DefaultMaskPresent holds the default value on creation for the mask_present field.
 	imagetask.DefaultMaskPresent = imagetaskDescMaskPresent.Default.(bool)
 	// imagetaskDescResponseMode is the schema descriptor for response_mode field.
-	imagetaskDescResponseMode := imagetaskFields[21].Descriptor()
+	imagetaskDescResponseMode := imagetaskFields[27].Descriptor()
 	// imagetask.DefaultResponseMode holds the default value on creation for the response_mode field.
 	imagetask.DefaultResponseMode = imagetaskDescResponseMode.Default.(string)
 	// imagetask.ResponseModeValidator is a validator for the "response_mode" field. It is called by the builders before save.
 	imagetask.ResponseModeValidator = imagetaskDescResponseMode.Validators[0].(func(string) error)
 	// imagetaskDescSavePolicy is the schema descriptor for save_policy field.
-	imagetaskDescSavePolicy := imagetaskFields[22].Descriptor()
+	imagetaskDescSavePolicy := imagetaskFields[28].Descriptor()
 	// imagetask.DefaultSavePolicy holds the default value on creation for the save_policy field.
 	imagetask.DefaultSavePolicy = imagetaskDescSavePolicy.Default.(string)
 	// imagetask.SavePolicyValidator is a validator for the "save_policy" field. It is called by the builders before save.
 	imagetask.SavePolicyValidator = imagetaskDescSavePolicy.Validators[0].(func(string) error)
 	// imagetaskDescEstimatedPoints is the schema descriptor for estimated_points field.
-	imagetaskDescEstimatedPoints := imagetaskFields[23].Descriptor()
+	imagetaskDescEstimatedPoints := imagetaskFields[29].Descriptor()
 	// imagetask.DefaultEstimatedPoints holds the default value on creation for the estimated_points field.
 	imagetask.DefaultEstimatedPoints = imagetaskDescEstimatedPoints.Default.(string)
 	// imagetaskDescActualPoints is the schema descriptor for actual_points field.
-	imagetaskDescActualPoints := imagetaskFields[24].Descriptor()
+	imagetaskDescActualPoints := imagetaskFields[30].Descriptor()
 	// imagetask.DefaultActualPoints holds the default value on creation for the actual_points field.
 	imagetask.DefaultActualPoints = imagetaskDescActualPoints.Default.(string)
 	// imagetaskDescRouteModelCode is the schema descriptor for route_model_code field.
-	imagetaskDescRouteModelCode := imagetaskFields[26].Descriptor()
+	imagetaskDescRouteModelCode := imagetaskFields[32].Descriptor()
 	// imagetask.DefaultRouteModelCode holds the default value on creation for the route_model_code field.
 	imagetask.DefaultRouteModelCode = imagetaskDescRouteModelCode.Default.(string)
 	// imagetask.RouteModelCodeValidator is a validator for the "route_model_code" field. It is called by the builders before save.
 	imagetask.RouteModelCodeValidator = imagetaskDescRouteModelCode.Validators[0].(func(string) error)
 	// imagetaskDescUpstreamModelCode is the schema descriptor for upstream_model_code field.
-	imagetaskDescUpstreamModelCode := imagetaskFields[29].Descriptor()
+	imagetaskDescUpstreamModelCode := imagetaskFields[35].Descriptor()
 	// imagetask.DefaultUpstreamModelCode holds the default value on creation for the upstream_model_code field.
 	imagetask.DefaultUpstreamModelCode = imagetaskDescUpstreamModelCode.Default.(string)
 	// imagetask.UpstreamModelCodeValidator is a validator for the "upstream_model_code" field. It is called by the builders before save.
 	imagetask.UpstreamModelCodeValidator = imagetaskDescUpstreamModelCode.Validators[0].(func(string) error)
 	// imagetaskDescEffectiveMultiplier is the schema descriptor for effective_multiplier field.
-	imagetaskDescEffectiveMultiplier := imagetaskFields[30].Descriptor()
+	imagetaskDescEffectiveMultiplier := imagetaskFields[36].Descriptor()
 	// imagetask.DefaultEffectiveMultiplier holds the default value on creation for the effective_multiplier field.
 	imagetask.DefaultEffectiveMultiplier = imagetaskDescEffectiveMultiplier.Default.(string)
 	// imagetaskDescChargedPoints is the schema descriptor for charged_points field.
-	imagetaskDescChargedPoints := imagetaskFields[31].Descriptor()
+	imagetaskDescChargedPoints := imagetaskFields[37].Descriptor()
 	// imagetask.DefaultChargedPoints holds the default value on creation for the charged_points field.
 	imagetask.DefaultChargedPoints = imagetaskDescChargedPoints.Default.(string)
 	// imagetaskDescProviderCost is the schema descriptor for provider_cost field.
-	imagetaskDescProviderCost := imagetaskFields[33].Descriptor()
+	imagetaskDescProviderCost := imagetaskFields[39].Descriptor()
 	// imagetask.DefaultProviderCost holds the default value on creation for the provider_cost field.
 	imagetask.DefaultProviderCost = imagetaskDescProviderCost.Default.(string)
 	// imagetaskDescGrossMargin is the schema descriptor for gross_margin field.
-	imagetaskDescGrossMargin := imagetaskFields[34].Descriptor()
+	imagetaskDescGrossMargin := imagetaskFields[40].Descriptor()
 	// imagetask.DefaultGrossMargin holds the default value on creation for the gross_margin field.
 	imagetask.DefaultGrossMargin = imagetaskDescGrossMargin.Default.(string)
 	// imagetaskDescFallbackCount is the schema descriptor for fallback_count field.
-	imagetaskDescFallbackCount := imagetaskFields[35].Descriptor()
+	imagetaskDescFallbackCount := imagetaskFields[41].Descriptor()
 	// imagetask.DefaultFallbackCount holds the default value on creation for the fallback_count field.
 	imagetask.DefaultFallbackCount = imagetaskDescFallbackCount.Default.(int)
 	// imagetaskDescRouteSnapshotVersion is the schema descriptor for route_snapshot_version field.
-	imagetaskDescRouteSnapshotVersion := imagetaskFields[36].Descriptor()
+	imagetaskDescRouteSnapshotVersion := imagetaskFields[42].Descriptor()
 	// imagetask.DefaultRouteSnapshotVersion holds the default value on creation for the route_snapshot_version field.
 	imagetask.DefaultRouteSnapshotVersion = imagetaskDescRouteSnapshotVersion.Default.(string)
 	// imagetask.RouteSnapshotVersionValidator is a validator for the "route_snapshot_version" field. It is called by the builders before save.
@@ -1664,44 +1696,48 @@ func init() {
 	providermodelDescSupportsMask := providermodelFields[4].Descriptor()
 	// providermodel.DefaultSupportsMask holds the default value on creation for the supports_mask field.
 	providermodel.DefaultSupportsMask = providermodelDescSupportsMask.Default.(bool)
+	// providermodelDescOutputCompression is the schema descriptor for output_compression field.
+	providermodelDescOutputCompression := providermodelFields[9].Descriptor()
+	// providermodel.DefaultOutputCompression holds the default value on creation for the output_compression field.
+	providermodel.DefaultOutputCompression = providermodelDescOutputCompression.Default.(int)
 	// providermodelDescMaxImageCount is the schema descriptor for max_image_count field.
-	providermodelDescMaxImageCount := providermodelFields[7].Descriptor()
+	providermodelDescMaxImageCount := providermodelFields[11].Descriptor()
 	// providermodel.DefaultMaxImageCount holds the default value on creation for the max_image_count field.
 	providermodel.DefaultMaxImageCount = providermodelDescMaxImageCount.Default.(int)
 	// providermodelDescMaxReferenceImageCount is the schema descriptor for max_reference_image_count field.
-	providermodelDescMaxReferenceImageCount := providermodelFields[8].Descriptor()
+	providermodelDescMaxReferenceImageCount := providermodelFields[12].Descriptor()
 	// providermodel.DefaultMaxReferenceImageCount holds the default value on creation for the max_reference_image_count field.
 	providermodel.DefaultMaxReferenceImageCount = providermodelDescMaxReferenceImageCount.Default.(int)
 	// providermodelDescTimeoutMs is the schema descriptor for timeout_ms field.
-	providermodelDescTimeoutMs := providermodelFields[9].Descriptor()
+	providermodelDescTimeoutMs := providermodelFields[13].Descriptor()
 	// providermodel.DefaultTimeoutMs holds the default value on creation for the timeout_ms field.
 	providermodel.DefaultTimeoutMs = providermodelDescTimeoutMs.Default.(int)
 	// providermodelDescInputCost is the schema descriptor for input_cost field.
-	providermodelDescInputCost := providermodelFields[10].Descriptor()
+	providermodelDescInputCost := providermodelFields[14].Descriptor()
 	// providermodel.DefaultInputCost holds the default value on creation for the input_cost field.
 	providermodel.DefaultInputCost = providermodelDescInputCost.Default.(string)
 	// providermodel.InputCostValidator is a validator for the "input_cost" field. It is called by the builders before save.
 	providermodel.InputCostValidator = providermodelDescInputCost.Validators[0].(func(string) error)
 	// providermodelDescOutputCost is the schema descriptor for output_cost field.
-	providermodelDescOutputCost := providermodelFields[11].Descriptor()
+	providermodelDescOutputCost := providermodelFields[15].Descriptor()
 	// providermodel.DefaultOutputCost holds the default value on creation for the output_cost field.
 	providermodel.DefaultOutputCost = providermodelDescOutputCost.Default.(string)
 	// providermodel.OutputCostValidator is a validator for the "output_cost" field. It is called by the builders before save.
 	providermodel.OutputCostValidator = providermodelDescOutputCost.Validators[0].(func(string) error)
 	// providermodelDescCurrency is the schema descriptor for currency field.
-	providermodelDescCurrency := providermodelFields[12].Descriptor()
+	providermodelDescCurrency := providermodelFields[16].Descriptor()
 	// providermodel.DefaultCurrency holds the default value on creation for the currency field.
 	providermodel.DefaultCurrency = providermodelDescCurrency.Default.(string)
 	// providermodel.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	providermodel.CurrencyValidator = providermodelDescCurrency.Validators[0].(func(string) error)
 	// providermodelDescHealthStatus is the schema descriptor for health_status field.
-	providermodelDescHealthStatus := providermodelFields[13].Descriptor()
+	providermodelDescHealthStatus := providermodelFields[17].Descriptor()
 	// providermodel.DefaultHealthStatus holds the default value on creation for the health_status field.
 	providermodel.DefaultHealthStatus = providermodelDescHealthStatus.Default.(string)
 	// providermodel.HealthStatusValidator is a validator for the "health_status" field. It is called by the builders before save.
 	providermodel.HealthStatusValidator = providermodelDescHealthStatus.Validators[0].(func(string) error)
 	// providermodelDescEnabled is the schema descriptor for enabled field.
-	providermodelDescEnabled := providermodelFields[15].Descriptor()
+	providermodelDescEnabled := providermodelFields[19].Descriptor()
 	// providermodel.DefaultEnabled holds the default value on creation for the enabled field.
 	providermodel.DefaultEnabled = providermodelDescEnabled.Default.(bool)
 	publicimageinteractionMixin := schema.PublicImageInteraction{}.Mixin()
@@ -1843,7 +1879,7 @@ func init() {
 	// referenceasset.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	referenceasset.StatusValidator = referenceassetDescStatus.Validators[0].(func(string) error)
 	// referenceassetDescStorageDriver is the schema descriptor for storage_driver field.
-	referenceassetDescStorageDriver := referenceassetFields[5].Descriptor()
+	referenceassetDescStorageDriver := referenceassetFields[6].Descriptor()
 	// referenceasset.DefaultStorageDriver holds the default value on creation for the storage_driver field.
 	referenceasset.DefaultStorageDriver = referenceassetDescStorageDriver.Default.(string)
 	// referenceasset.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
@@ -2084,18 +2120,18 @@ func init() {
 			return nil
 		}
 	}()
-	// routemodelpriceDescQuality is the schema descriptor for quality field.
-	routemodelpriceDescQuality := routemodelpriceFields[2].Descriptor()
-	// routemodelprice.QualityValidator is a validator for the "quality" field. It is called by the builders before save.
-	routemodelprice.QualityValidator = func() func(string) error {
-		validators := routemodelpriceDescQuality.Validators
+	// routemodelpriceDescBaseResolution is the schema descriptor for base_resolution field.
+	routemodelpriceDescBaseResolution := routemodelpriceFields[2].Descriptor()
+	// routemodelprice.BaseResolutionValidator is a validator for the "base_resolution" field. It is called by the builders before save.
+	routemodelprice.BaseResolutionValidator = func() func(string) error {
+		validators := routemodelpriceDescBaseResolution.Validators
 		fns := [...]func(string) error{
 			validators[0].(func(string) error),
 			validators[1].(func(string) error),
 		}
-		return func(quality string) error {
+		return func(base_resolution string) error {
 			for _, fn := range fns {
-				if err := fn(quality); err != nil {
+				if err := fn(base_resolution); err != nil {
 					return err
 				}
 			}

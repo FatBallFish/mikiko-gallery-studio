@@ -1,4 +1,4 @@
-import type { ID, RouteModelCandidate, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
+import type { ID, RouteModelCandidate, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 
 export type RoutingTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary'
 
@@ -6,6 +6,8 @@ export type RoutingBadge = {
   label: string
   tone: RoutingTone
 }
+
+export type RouteReadiness = 'ready' | 'missing_candidate' | 'missing_price' | 'disabled'
 
 export const routeVisibilityOptions = [
   { value: 'public', label: '全员可见' },
@@ -58,6 +60,21 @@ export function routeCandidateSummary(candidates: Pick<RouteModelCandidate, 'ena
 export function routeCandidateLabel(candidate: Pick<RouteModelCandidate, 'account_name' | 'model_code' | 'account_model_id'>) {
   const model = candidate.model_code ?? String(candidate.account_model_id)
   return candidate.account_name ? `${candidate.account_name} / ${model}` : model
+}
+
+export function routeReadinessBadge(input: {
+  enabled: boolean
+  visibility?: RouteModelVisibility
+  groupCount?: number
+  candidates: Pick<RouteModelCandidate, 'enabled'>[]
+  prices?: Pick<RouteModelPrice, 'enabled'>[]
+}): RoutingBadge & { state: RouteReadiness } {
+  if (!input.enabled) return { state: 'disabled', label: '不可用 · 已停用', tone: 'warning' }
+  if (input.visibility === 'hidden') return { state: 'disabled', label: '不可用 · 已隐藏', tone: 'warning' }
+  if (input.visibility === 'groups' && !input.groupCount) return { state: 'disabled', label: '不可用 · 未绑定分组', tone: 'warning' }
+  if (!input.candidates.some((candidate) => candidate.enabled)) return { state: 'missing_candidate', label: '不可用 · 缺候选', tone: 'danger' }
+  if (input.prices && !input.prices.some((price) => price.enabled)) return { state: 'missing_price', label: '不可用 · 缺价格', tone: 'warning' }
+  return { state: 'ready', label: '可被用户使用', tone: 'success' }
 }
 
 function normalize(value?: string | null) {

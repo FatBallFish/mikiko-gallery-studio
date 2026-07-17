@@ -10,6 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@gsap/react": "^2.1.2",
+    "gsap": "^3.15.0",
+    "lucide-react": "^1.23.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

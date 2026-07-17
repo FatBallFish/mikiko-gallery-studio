@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -41,6 +42,18 @@ func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provi
 		"quality":         req.Quality,
 		"response_format": string(req.ResponseFormat),
 	}
+	if req.OutputImageCount > 0 {
+		payload["n"] = req.OutputImageCount
+	}
+	if req.OutputFormat != "" {
+		payload["output_format"] = req.OutputFormat
+	}
+	if req.OutputCompression > 0 && (strings.EqualFold(req.OutputFormat, "jpeg") || strings.EqualFold(req.OutputFormat, "webp")) {
+		payload["output_compression"] = req.OutputCompression
+	}
+	if req.Moderation != "" {
+		payload["moderation"] = req.Moderation
+	}
 	if req.User != "" {
 		payload["user"] = req.User
 	}
@@ -71,6 +84,22 @@ func (c *Client) Edit(ctx context.Context, req provider.ImageRequest) (provider.
 	}
 	if err := writeField("response_format", string(req.ResponseFormat)); err != nil {
 		return provider.ImageResponse{}, err
+	}
+	if err := writeField("output_format", req.OutputFormat); err != nil {
+		return provider.ImageResponse{}, err
+	}
+	if req.OutputCompression > 0 && (strings.EqualFold(req.OutputFormat, "jpeg") || strings.EqualFold(req.OutputFormat, "webp")) {
+		if err := writeField("output_compression", fmt.Sprintf("%d", req.OutputCompression)); err != nil {
+			return provider.ImageResponse{}, err
+		}
+	}
+	if err := writeField("moderation", req.Moderation); err != nil {
+		return provider.ImageResponse{}, err
+	}
+	if req.OutputImageCount > 0 {
+		if err := writeField("n", fmt.Sprintf("%d", req.OutputImageCount)); err != nil {
+			return provider.ImageResponse{}, err
+		}
 	}
 
 	for _, image := range req.ReferenceImages {
@@ -115,7 +144,7 @@ func (c *Client) doJSON(ctx context.Context, method string, requestPath string, 
 func (c *Client) do(httpReq *http.Request) (provider.ImageResponse, error) {
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return provider.ImageResponse{}, err
+		return provider.ImageResponse{}, provider.NewTransportError(provider.ProviderTypeOpenAI, err)
 	}
 	defer resp.Body.Close()
 
@@ -125,10 +154,34 @@ func (c *Client) do(httpReq *http.Request) (provider.ImageResponse, error) {
 
 	var result provider.ImageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return provider.ImageResponse{}, err
+		if responseBodyReadTimedOut(httpReq, err) {
+			return provider.ImageResponse{}, newResponseReadTimeoutError(err)
+		}
+		return provider.ImageResponse{}, provider.NewInvalidResponseError(provider.ProviderTypeOpenAI, err)
 	}
 	result.ProviderRequestID = resp.Header.Get("x-request-id")
 	return result, nil
+}
+
+func responseBodyReadTimedOut(req *http.Request, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if req != nil && req.Context() != nil && errors.Is(req.Context().Err(), context.DeadlineExceeded) {
+		return true
+	}
+	return false
+}
+
+func newResponseReadTimeoutError(err error) *provider.UpstreamError {
+	upstream := provider.NewTransportError(provider.ProviderTypeOpenAI, err)
+	upstream.Code = "timeout"
+	upstream.Type = "timeout"
+	upstream.Message = err.Error()
+	return upstream
 }
 
 func (c *Client) endpoint(requestPath string) string {

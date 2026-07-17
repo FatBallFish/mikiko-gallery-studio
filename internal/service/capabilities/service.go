@@ -10,7 +10,7 @@ import (
 type Item struct {
 	AbstractModel          string   `json:"abstract_model"`
 	TaskTypes              []string `json:"task_types"`
-	Qualities              []string `json:"qualities"`
+	BaseResolution         []string `json:"base_resolution"`
 	AspectRatios           []string `json:"aspect_ratios"`
 	MaxOutputImageCount    int      `json:"max_output_image_count"`
 	MaxReferenceImageCount int      `json:"max_reference_image_count"`
@@ -55,7 +55,7 @@ func (s *Service) List() Response {
 		items = append(items, Item{
 			AbstractModel:          item.AbstractModel,
 			TaskTypes:              item.TaskTypes,
-			Qualities:              item.Qualities,
+			BaseResolution:         item.BaseResolution,
 			AspectRatios:           item.AspectRatios,
 			MaxOutputImageCount:    item.MaxOutputImageCount,
 			MaxReferenceImageCount: item.MaxReferenceImageCount,

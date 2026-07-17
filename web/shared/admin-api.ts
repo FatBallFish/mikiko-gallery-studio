@@ -1,6 +1,7 @@
 import type {
   AdminLoginResult,
   AdminDashboard,
+  AdminMonitoringSnapshot,
   AdminMetric,
   AdminPermission,
   AdminSession,
@@ -19,6 +20,7 @@ import type {
   ConfigTab,
   LedgerEntry,
   ModelProvider,
+  MonitoringWindow,
   ModelRoute,
   ModelAccount,
   ModelAccountModel,
@@ -157,6 +159,8 @@ export const adminApi = {
       audit: (raw.audit ?? []).map(toAudit),
     }
   },
+  getMonitoringSnapshot: (window: MonitoringWindow): Promise<AdminMonitoringSnapshot> =>
+    sharedApiClient.request<AdminMonitoringSnapshot>(API_PATHS.ops.monitoringSnapshot, { query: { window } }),
   getReadiness: async () => toReadinessReport(await sharedApiClient.request(API_PATHS.ops.readiness)),
   listConfig: async () => {
     const tabs = (await sharedApiClient.request<{ items: any[] }>(API_PATHS.ops.configTabs)).items ?? []
@@ -532,7 +536,7 @@ function toRouteModelPrice(raw: any): RouteModelPrice {
     route_model_code: raw.route_model_code ?? raw.route_model?.code,
     route_model_name: raw.route_model_name ?? raw.route_model?.name,
     task_type: raw.task_type ?? 'text_to_image',
-    quality: raw.quality ?? 'auto',
+    base_resolution: raw.base_resolution ?? 'auto',
     base_points: String(raw.base_points ?? '0.00000'),
     reference_multiplier: String(raw.reference_multiplier ?? '1.00000'),
     enabled: Boolean(raw.enabled ?? true),

@@ -699,8 +699,16 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 	sessionID := uuid.NewString()
 	refreshToken := randomToken()
 	refreshHash := hashToken(refreshToken)
-	accessExp := time.Now().Add(s.cfg.AccessTokenTTL)
-	refreshExp := time.Now().Add(s.cfg.RefreshTokenTTL)
+	accessTTL := s.cfg.AccessTokenTTL
+	if accessTTL <= 0 {
+		accessTTL = 10 * time.Minute
+	}
+	refreshTTL := s.cfg.RefreshTokenTTL
+	if refreshTTL <= 0 {
+		refreshTTL = 30 * time.Minute
+	}
+	accessExp := time.Now().Add(accessTTL)
+	refreshExp := time.Now().Add(refreshTTL)
 	claims := Claims{
 		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", user.ID), ExpiresAt: jwt.NewNumericDate(accessExp), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: s.cfg.Issuer},
@@ -726,7 +734,7 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 func (s *Service) revokeFamilyLocked(familyID string) {
 	familyTTL := s.cfg.RefreshTokenTTL
 	if familyTTL <= 0 {
-		familyTTL = 2 * time.Hour
+		familyTTL = 30 * time.Minute
 	}
 	if s.redisRuntime != nil {
 		if err := s.redisRuntime.MarkRefreshFamilyReplayBlocked(context.Background(), familyID, familyTTL); err != nil {

@@ -119,6 +119,7 @@ func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 		mux.HandleFunc("/api/ops/admin/v1/model-routes", api.HandleAdminModelRoutes)
 		mux.HandleFunc("/api/ops/admin/v1/model-routes/", api.HandleAdminModelRouteDetail)
 		mux.HandleFunc("/api/ops/admin/v1/metrics/dashboard", api.HandleAdminDashboard)
+		mux.HandleFunc("/api/ops/admin/v1/monitoring/snapshot", api.HandleAdminMonitoringSnapshot)
 		mux.HandleFunc("/api/ops/admin/v1/readiness", api.HandleAdminReadiness)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/overview", api.HandleAdminCashierOverview)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/plans", api.HandleAdminCashierPlans)
@@ -146,8 +147,8 @@ func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 	}
 
 	handler := middleware.Recovery(mux)
-	handler = middleware.RequestID(handler)
 	handler = middleware.Metrics(handler)
+	handler = middleware.RequestID(handler)
 	handler = middleware.CORSWithAllowedOrigins(corsAllowedOrigins, handler)
 	handler = observability.RequestLogger(handler)
 	return handler

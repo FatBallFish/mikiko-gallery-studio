@@ -94,9 +94,101 @@ func (_c *ModelAccountModelCreate) SetTaskTypes(v []string) *ModelAccountModelCr
 	return _c
 }
 
-// SetQualities sets the "qualities" field.
-func (_c *ModelAccountModelCreate) SetQualities(v []string) *ModelAccountModelCreate {
-	_c.mutation.SetQualities(v)
+// SetBaseResolution sets the "base_resolution" field.
+func (_c *ModelAccountModelCreate) SetBaseResolution(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetBaseResolution(v)
+	return _c
+}
+
+// SetQuality sets the "quality" field.
+func (_c *ModelAccountModelCreate) SetQuality(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetQuality(v)
+	return _c
+}
+
+// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
+func (_c *ModelAccountModelCreate) SetMaxReferenceImageCount(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMaxReferenceImageCount(v)
+	return _c
+}
+
+// SetNillableMaxReferenceImageCount sets the "max_reference_image_count" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMaxReferenceImageCount(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMaxReferenceImageCount(*v)
+	}
+	return _c
+}
+
+// SetMaxImageCount sets the "max_image_count" field.
+func (_c *ModelAccountModelCreate) SetMaxImageCount(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMaxImageCount(v)
+	return _c
+}
+
+// SetNillableMaxImageCount sets the "max_image_count" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMaxImageCount(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMaxImageCount(*v)
+	}
+	return _c
+}
+
+// SetSizeModes sets the "size_modes" field.
+func (_c *ModelAccountModelCreate) SetSizeModes(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetSizeModes(v)
+	return _c
+}
+
+// SetSupportedRatios sets the "supported_ratios" field.
+func (_c *ModelAccountModelCreate) SetSupportedRatios(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetSupportedRatios(v)
+	return _c
+}
+
+// SetSupportedPixelSizes sets the "supported_pixel_sizes" field.
+func (_c *ModelAccountModelCreate) SetSupportedPixelSizes(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetSupportedPixelSizes(v)
+	return _c
+}
+
+// SetOutputFormat sets the "output_format" field.
+func (_c *ModelAccountModelCreate) SetOutputFormat(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetOutputFormat(v)
+	return _c
+}
+
+// SetOutputCompression sets the "output_compression" field.
+func (_c *ModelAccountModelCreate) SetOutputCompression(v int) *ModelAccountModelCreate {
+	_c.mutation.SetOutputCompression(v)
+	return _c
+}
+
+// SetNillableOutputCompression sets the "output_compression" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableOutputCompression(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetOutputCompression(*v)
+	}
+	return _c
+}
+
+// SetSupportsOutputCompression sets the "supports_output_compression" field.
+func (_c *ModelAccountModelCreate) SetSupportsOutputCompression(v bool) *ModelAccountModelCreate {
+	_c.mutation.SetSupportsOutputCompression(v)
+	return _c
+}
+
+// SetNillableSupportsOutputCompression sets the "supports_output_compression" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableSupportsOutputCompression(v *bool) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetSupportsOutputCompression(*v)
+	}
+	return _c
+}
+
+// SetModeration sets the "moderation" field.
+func (_c *ModelAccountModelCreate) SetModeration(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetModeration(v)
 	return _c
 }
 
@@ -356,9 +448,49 @@ func (_c *ModelAccountModelCreate) createSpec() (*ModelAccountModel, *sqlgraph.C
 		_spec.SetField(modelaccountmodel.FieldTaskTypes, field.TypeJSON, value)
 		_node.TaskTypes = value
 	}
-	if value, ok := _c.mutation.Qualities(); ok {
-		_spec.SetField(modelaccountmodel.FieldQualities, field.TypeJSON, value)
-		_node.Qualities = value
+	if value, ok := _c.mutation.BaseResolution(); ok {
+		_spec.SetField(modelaccountmodel.FieldBaseResolution, field.TypeJSON, value)
+		_node.BaseResolution = value
+	}
+	if value, ok := _c.mutation.Quality(); ok {
+		_spec.SetField(modelaccountmodel.FieldQuality, field.TypeJSON, value)
+		_node.Quality = value
+	}
+	if value, ok := _c.mutation.MaxReferenceImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+		_node.MaxReferenceImageCount = value
+	}
+	if value, ok := _c.mutation.MaxImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+		_node.MaxImageCount = value
+	}
+	if value, ok := _c.mutation.SizeModes(); ok {
+		_spec.SetField(modelaccountmodel.FieldSizeModes, field.TypeJSON, value)
+		_node.SizeModes = value
+	}
+	if value, ok := _c.mutation.SupportedRatios(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON, value)
+		_node.SupportedRatios = value
+	}
+	if value, ok := _c.mutation.SupportedPixelSizes(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON, value)
+		_node.SupportedPixelSizes = value
+	}
+	if value, ok := _c.mutation.OutputFormat(); ok {
+		_spec.SetField(modelaccountmodel.FieldOutputFormat, field.TypeJSON, value)
+		_node.OutputFormat = value
+	}
+	if value, ok := _c.mutation.OutputCompression(); ok {
+		_spec.SetField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
+		_node.OutputCompression = value
+	}
+	if value, ok := _c.mutation.SupportsOutputCompression(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsOutputCompression, field.TypeBool, value)
+		_node.SupportsOutputCompression = value
+	}
+	if value, ok := _c.mutation.Moderation(); ok {
+		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)
+		_node.Moderation = value
 	}
 	if value, ok := _c.mutation.SupportedRatios(); ok {
 		_spec.SetField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON, value)

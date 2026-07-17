@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
+import type { AdminMetric, ModelAccount, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, LoadingBlock, Modal } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
+import { FilterToolbar } from '../ui/dataTable'
+import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
-  routeEnabledBadge,
   routeEnabledOptions,
   routingFieldHints,
   routingFieldLabels,
   routeGroupNames,
+  routeReadinessBadge,
   routeVisibilityBadge,
   routeVisibilityOptions,
 } from './routingRows'
@@ -22,72 +24,67 @@ type CandidateDialog = { route: RouteModel; row?: RouteModelCandidate; accountMo
 
 const routingClasses = {
   actionRow: 'flex flex-wrap items-center gap-2',
-  surface: adminPage.fullSurface,
-  toolbar: 'flex flex-wrap items-end justify-between gap-4',
-  toolbarActions: 'flex flex-wrap items-center gap-4',
-  searchInput: 'w-64 max-w-full rounded-xl border border-[var(--line)] bg-white/5 px-4 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--soft)] focus:border-[var(--accent)]/50 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/50',
-  statDetails: 'rounded-2xl border border-[var(--line)] bg-white/[0.015] px-4 py-3',
-  statSummary: 'cursor-pointer text-xs font-extrabold uppercase tracking-[.14em] text-[var(--muted-strong)]',
-  statGrid: 'mt-3 grid grid-cols-4 gap-3 max-[860px]:grid-cols-2 max-[520px]:grid-cols-1',
-  statCell: 'rounded-xl border border-[var(--line)] bg-white/[0.025] p-3',
-  statLabel: 'block text-[10px] font-extrabold uppercase tracking-[.12em] text-[var(--soft)]',
-  statValue: 'mt-1 block text-xl font-black text-[var(--text)]',
-  checkboxCell: 'w-10 px-6 py-4 text-center',
-  checkbox: 'size-3.5 accent-[var(--accent)]',
-  stackCell: cn(adminDataGrid.stackCell, 'gap-0.5'),
-  paragraph: 'm-0 text-xs text-[var(--soft)] [overflow-wrap:anywhere]',
-  textCell: 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[var(--soft)]',
-  tableWrap: 'min-w-0 overflow-x-auto rounded-3xl border border-[var(--line)] bg-white/[0.01] shadow-[0_20px_70px_rgba(0,0,0,.18)] backdrop-blur-sm',
-  table: 'w-full min-w-[920px] border-collapse text-left',
-  th: 'border-b border-[var(--line)] bg-white/[0.02] px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  tr: 'border-b border-[var(--line)]/60 transition-colors hover:bg-white/[0.03]',
-  trExpanded: 'bg-white/[0.025]',
-  td: 'px-6 py-4 align-middle text-sm text-[var(--muted)]',
-  routeTitle: 'font-bold text-[var(--text)]',
-  routeCode: 'font-mono text-[10px] font-bold tracking-tight text-[var(--muted-strong)]',
-  candidateButton: 'inline-flex items-center gap-2 text-xs font-extrabold text-[var(--accent)] transition-colors hover:text-[var(--text)]',
-  chevron: 'size-4 transition-transform',
-  expandedRow: 'border-b border-[var(--line)]/60 bg-black/[0.08] dark:bg-black/30',
-  expandedCell: 'p-6 pl-20',
-  candidatePanel: 'overflow-hidden rounded-2xl border border-[var(--line)] bg-white/[0.02]',
-  candidateTable: 'w-full min-w-[680px] border-collapse text-left',
-  candidateTh: 'border-b border-[var(--line)] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-[var(--muted-strong)]',
-  candidateTd: 'px-4 py-3 text-xs text-[var(--muted)]',
-  candidateName: 'font-bold text-[var(--text)]',
-  candidateCode: 'font-mono text-[var(--soft)]',
+  workspace: 'grid min-h-[560px] min-w-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] lg:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]',
+  master: 'min-w-0 border-b border-[var(--border)] bg-[var(--surface)] lg:border-b-0 lg:border-r',
+  masterHead: 'border-b border-[var(--border)] p-4',
+  masterList: 'grid max-h-[640px] overflow-y-auto p-2',
+  masterItem: 'grid min-h-[64px] w-full gap-1 rounded-lg border border-transparent px-3 py-2 text-left transition-colors duration-[var(--admin-motion-fast)] hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
+  masterItemActive: 'border-[var(--border-strong)] bg-[var(--surface-solid)]',
+  detail: 'min-w-0 p-4 sm:p-5',
+  detailHead: 'flex flex-wrap items-start justify-between gap-4 border-b border-[var(--border)] pb-4',
+  paragraph: 'm-0 text-xs leading-5 text-[var(--soft)] [overflow-wrap:anywhere]',
+  routeTitle: 'text-sm font-semibold text-[var(--text)]',
+  routeCode: 'font-[family-name:var(--admin-font-mono)] text-xs text-[var(--dim)]',
+  statusGrid: 'grid gap-3 py-4 sm:grid-cols-2 xl:grid-cols-4',
+  statusRow: 'grid gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3',
+  statusLabel: 'text-[11px] font-semibold text-[var(--dim)]',
+  candidatePanel: 'min-w-0 overflow-hidden rounded-lg border border-[var(--border)]',
+  candidateTable: 'admin-table min-w-[760px]',
+  candidateTd: 'px-3 py-3 text-xs text-[var(--muted)]',
+  candidateName: 'font-semibold text-[var(--text)]',
+  candidateCode: 'font-[family-name:var(--admin-font-mono)] text-[var(--soft)]',
   activeDot: 'size-2 rounded-full',
 }
 
 export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [routes, setRoutes] = useState<RouteModel[]>([])
   const [groups, setGroups] = useState<UserGroup[]>([])
+  const [modelAccounts, setModelAccounts] = useState<ModelAccount[]>([])
   const [accountModels, setAccountModels] = useState<ModelAccountModel[]>([])
   const [candidates, setCandidates] = useState<Record<string, RouteModelCandidate[]>>({})
+  const [prices, setPrices] = useState<RouteModelPrice[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState('路由模型可设置全员可见、按分组可见或隐藏，并绑定多个真实模型候选。')
   const [routeDialog, setRouteDialog] = useState<RouteDialog | null>(null)
   const [candidateDialog, setCandidateDialog] = useState<CandidateDialog | null>(null)
-  const [expandedRoutes, setExpandedRoutes] = useState<Record<string, boolean>>({})
-  const [selectedRoutes, setSelectedRoutes] = useState<Record<string, boolean>>({})
+  const [selectedRouteId, setSelectedRouteId] = useState('')
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
-  const load = async () => {
+  const load = async (preferredRouteId?: string) => {
     setLoading(true)
     setError(null)
     try {
-      const [nextRoutes, nextGroups, nextAccounts] = await Promise.all([
+      const [nextRoutes, nextGroups, nextAccounts, nextPrices] = await Promise.all([
         adminApi.listRouteModels({ page_size: 100 }),
         adminApi.listUserGroups(),
         adminApi.listModelAccounts({ page_size: 100 }),
+        loadAllRouteModelPrices((priceQuery) => adminApi.listRouteModelPrices(priceQuery)),
       ])
       const modelLists = await Promise.all(nextAccounts.map((account) => adminApi.listModelAccountModels(account.id)))
       const candidatePairs = await Promise.all(nextRoutes.map(async (route) => [String(route.id), await adminApi.listRouteModelCandidates(route.id)] as const))
       setRoutes(nextRoutes)
       setGroups(nextGroups)
+      setModelAccounts(nextAccounts)
       setAccountModels(modelLists.flat())
       setCandidates(Object.fromEntries(candidatePairs))
+      setPrices(nextPrices)
+      setSelectedRouteId((current) => {
+        const preferred = preferredRouteId || current
+        return nextRoutes.some((route) => String(route.id) === preferred) ? preferred : String(nextRoutes[0]?.id ?? '')
+      })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '路由载入失败')
     } finally {
@@ -101,7 +98,20 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
     enabled: routes.filter((row) => row.enabled).length,
     groupVisible: routes.filter((row) => row.visibility === 'groups').length,
     candidateCount: Object.values(candidates).flat().length,
-  }), [routes, candidates])
+    blocked: routes.filter((route) => routeReadinessBadge({
+      enabled: route.enabled,
+      visibility: route.visibility,
+      groupCount: route.group_ids?.length ?? 0,
+      candidates: effectiveRouteCandidates(candidates[String(route.id)] ?? route.candidates ?? [], accountModels, modelAccounts),
+      prices: prices.filter((price) => String(price.route_model_id) === String(route.id)),
+    }).state !== 'ready').length,
+  }), [routes, candidates, prices, accountModels, modelAccounts])
+  const summaryMetrics = useMemo<AdminMetric[]>(() => [
+    { label: '路由模型', value: String(routes.length), trend: `${totals.enabled} 个启用`, tone: 'neutral' },
+    { label: '候选模型', value: String(totals.candidateCount), trend: '已绑定真实模型', tone: 'neutral' },
+    { label: '分组可见', value: String(totals.groupVisible), trend: '受权益分组约束', tone: 'neutral' },
+    { label: '阻断项', value: String(totals.blocked), trend: totals.blocked ? '需要完成配置' : '全部可用', tone: totals.blocked ? 'warn' : 'good' },
+  ], [routes.length, totals])
   const visibleRoutes = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     if (!keyword) return routes
@@ -112,19 +122,17 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
       routeGroupNames(row.group_ids, groups),
     ].filter(Boolean).some((value) => String(value).toLowerCase().includes(keyword)))
   }, [groups, query, routes])
-  const selectedCount = useMemo(() => visibleRoutes.filter((row) => selectedRoutes[String(row.id)]).length, [selectedRoutes, visibleRoutes])
-  const allVisibleSelected = Boolean(visibleRoutes.length) && selectedCount === visibleRoutes.length
-  const toggleAllVisible = (checked: boolean) => {
-    setSelectedRoutes((current) => {
-      const next = { ...current }
-      visibleRoutes.forEach((row) => { next[String(row.id)] = checked })
-      return next
-    })
-  }
+  useEffect(() => {
+    if (visibleRoutes.length && !visibleRoutes.some((route) => String(route.id) === selectedRouteId)) {
+      setSelectedRouteId(String(visibleRoutes[0].id))
+    }
+  }, [selectedRouteId, visibleRoutes])
+  const selectedRoute = useMemo(() => visibleRoutes.find((route) => String(route.id) === selectedRouteId), [visibleRoutes, selectedRouteId])
 
   async function saveRoute() {
     if (!routeDialog) return
     setSaving(true)
+    setMutationError(null)
     try {
       const groupIds = routeDialog.visibility === 'groups' ? routeDialog.groupIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : []
       const payload = {
@@ -137,10 +145,17 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         group_ids: groupIds,
       }
       const saved = routeDialog.row ? await adminApi.updateRouteModel(routeDialog.row.id, payload) : await adminApi.createRouteModel(payload)
+      const created = !routeDialog.row
       setRouteDialog(null)
+      setMutationError(null)
       setNotice(`${saved.name} 路由模型已保存。`)
       onFeedback('路由模型已保存', saved.code)
-      await load()
+      setSelectedRouteId(String(saved.id))
+      if (created) setQuery('')
+      await load(String(saved.id))
+      if (created) setCandidateDialog(newCandidateDialog(saved, accountModels))
+    } catch (caught) {
+      setMutationError(caught instanceof Error ? caught.message : '路由模型保存失败')
     } finally {
       setSaving(false)
     }
@@ -149,6 +164,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
   async function saveCandidate() {
     if (!candidateDialog) return
     setSaving(true)
+    setMutationError(null)
     try {
       const payload = {
         account_model_id: Number(candidateDialog.accountModelId),
@@ -160,11 +176,34 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
       if (candidateDialog.row) await adminApi.updateRouteModelCandidate(candidateDialog.route.id, candidateDialog.row.id, payload)
       else await adminApi.createRouteModelCandidate(candidateDialog.route.id, payload)
       setCandidateDialog(null)
+      setMutationError(null)
       setNotice(`${candidateDialog.route.code} 候选已保存。`)
       await load()
+    } catch (caught) {
+      setMutationError(caught instanceof Error ? caught.message : '候选模型保存失败')
     } finally {
       setSaving(false)
     }
+  }
+
+  const openRouteDialog = (dialog: RouteDialog) => {
+    setMutationError(null)
+    setRouteDialog(dialog)
+  }
+
+  const openCandidateDialog = (dialog: CandidateDialog) => {
+    setMutationError(null)
+    setCandidateDialog(dialog)
+  }
+
+  const closeRouteDialog = () => {
+    setMutationError(null)
+    setRouteDialog(null)
+  }
+
+  const closeCandidateDialog = () => {
+    setMutationError(null)
+    setCandidateDialog(null)
   }
 
   if (loading) return <LoadingBlock label="载入模型路由" />
@@ -172,67 +211,76 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
 
   return (
     <section className={adminPage.stack}>
-      <div className={routingClasses.toolbar}>
-        <div className={routingClasses.toolbarActions}>
-          <button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => setRouteDialog(newRouteDialog(groups))}>新增路由</button>
-          <button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => onFeedback('已选择路由模型', selectedCount ? `${selectedCount} 个` : '请先勾选路由模型')}>批量操作</button>
-          <button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => void load()}>刷新</button>
-        </div>
-        <input className={routingClasses.searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索路由名称或代码..." aria-label="搜索路由名称或代码" />
-      </div>
-      <details className={routingClasses.statDetails}>
-        <summary className={routingClasses.statSummary}>路由模型运行摘要 · 候选模型</summary>
-        <div className={routingClasses.statGrid}>
-          <span className={routingClasses.statCell}><em className={routingClasses.statLabel}>路由模型</em><strong className={routingClasses.statValue}>{routes.length}</strong></span>
-          <span className={routingClasses.statCell}><em className={routingClasses.statLabel}>启用</em><strong className={routingClasses.statValue}>{totals.enabled}</strong></span>
-          <span className={routingClasses.statCell}><em className={routingClasses.statLabel}>分组可见</em><strong className={routingClasses.statValue}>{totals.groupVisible}</strong></span>
-          <span className={routingClasses.statCell}><em className={routingClasses.statLabel}>候选模型</em><strong className={routingClasses.statValue}>{totals.candidateCount}</strong></span>
-        </div>
-        <p className={routingClasses.paragraph}>{notice}</p>
-      </details>
-      {!routes.length ? <EmptyBlock title="暂无路由模型" detail="创建 Basic / Plus / Pro 后配置候选真实模型。" /> : null}
+      <PageHeader
+        title="路由模型"
+        description="创建用户可见的路由模型，并完成候选模型、可见范围和价格状态配置。"
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog(newRouteDialog(groups))}>新增路由模型</button>}
+        secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => void load()}>刷新</button>}
+      />
+      <MetricStrip metrics={summaryMetrics} />
+      <FilterToolbar
+        fields={[{
+          key: 'query',
+          label: '搜索路由',
+          primary: true,
+          minWidth: '240px',
+          maxWidth: '420px',
+          control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、代码或分组" aria-label="搜索路由名称或代码" />,
+        }]}
+        resultSummary={`共 ${routes.length} 个路由 · 当前显示 ${visibleRoutes.length} 个`}
+      />
+      <InlineFeedback tone={totals.blocked ? 'warning' : 'success'} message={notice} />
+      {!routes.length ? <EmptyBlock title="暂无路由模型" detail="创建路由模型后继续配置候选真实模型、可见范围和价格。" action={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog(newRouteDialog(groups))}>新增路由模型</button>} /> : null}
       {routes.length && !visibleRoutes.length ? <EmptyBlock title="未找到路由模型" detail="换一个名称、代码或分组关键词再试。" /> : null}
       {visibleRoutes.length ? (
-        <div className={routingClasses.tableWrap}>
-          <table className={routingClasses.table}>
-            <thead>
-              <tr>
-                <th className={routingClasses.checkboxCell}>
-                  <input className={routingClasses.checkbox} type="checkbox" checked={allVisibleSelected} onChange={(event) => toggleAllVisible(event.target.checked)} aria-label="选择当前路由模型" />
-                </th>
-                <th className={routingClasses.th}>路由模型</th>
-                <th className={routingClasses.th}>可见性</th>
-                <th className={routingClasses.th}>状态</th>
-                <th className={routingClasses.th}>已绑候选账号数</th>
-                <th className={routingClasses.th}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRoutes.map((row) => {
-                const routeCandidates = candidates[String(row.id)] ?? row.candidates ?? []
-                const expanded = Boolean(expandedRoutes[String(row.id)])
+        <section className={routingClasses.workspace} data-admin-routing-workspace>
+          <aside className={routingClasses.master} aria-label="路由模型列表">
+            <div className={routingClasses.masterHead}>
+              <strong className="text-sm font-semibold text-[var(--text)]">路由模型</strong>
+              <p className={routingClasses.paragraph}>选择路由后检查候选、能力与价格完整性。</p>
+            </div>
+            <div className={routingClasses.masterList}>
+              {visibleRoutes.map((route) => {
+                const routeCandidates = candidates[String(route.id)] ?? route.candidates ?? []
+                const routePrices = prices.filter((price) => String(price.route_model_id) === String(route.id))
+                const readiness = routeReadinessBadge({ enabled: route.enabled, visibility: route.visibility, groupCount: route.group_ids?.length ?? 0, candidates: effectiveRouteCandidates(routeCandidates, accountModels, modelAccounts), prices: routePrices })
+                const active = String(route.id) === selectedRouteId
                 return (
-                  <RouteTableRow
-                    key={String(row.id)}
-                    row={row}
-                    groups={groups}
-                    candidates={routeCandidates}
-                    expanded={expanded}
-                    selected={Boolean(selectedRoutes[String(row.id)])}
-                    onSelect={(checked) => setSelectedRoutes((current) => ({ ...current, [String(row.id)]: checked }))}
-                    onToggle={() => setExpandedRoutes((current) => ({ ...current, [String(row.id)]: !expanded }))}
-                    onEditRoute={() => setRouteDialog(editRouteDialog(row))}
-                    onAddCandidate={() => setCandidateDialog(newCandidateDialog(row, accountModels))}
-                    onEditCandidate={(candidate) => setCandidateDialog(editCandidateDialog(row, candidate))}
-                  />
+                  <button
+                    key={String(route.id)}
+                    className={cn(routingClasses.masterItem, active && routingClasses.masterItemActive)}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setSelectedRouteId(String(route.id))}
+                  >
+                    <span className="flex min-w-0 items-center justify-between gap-2">
+                      <strong className="truncate text-sm text-[var(--text)]">{route.name}</strong>
+                      <RouteBadge badge={readiness} />
+                    </span>
+                    <span className={routingClasses.routeCode}>{route.code}</span>
+                  </button>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </aside>
+          {selectedRoute ? (
+            <RouteDetailWorkspace
+              route={selectedRoute}
+              groups={groups}
+              candidates={candidates[String(selectedRoute.id)] ?? selectedRoute.candidates ?? []}
+              prices={prices.filter((price) => String(price.route_model_id) === String(selectedRoute.id))}
+              accountModels={accountModels}
+              modelAccounts={modelAccounts}
+              onEditRoute={() => openRouteDialog(editRouteDialog(selectedRoute))}
+              onAddCandidate={() => openCandidateDialog(newCandidateDialog(selectedRoute, accountModels))}
+              onEditCandidate={(candidate) => openCandidateDialog(editCandidateDialog(selectedRoute, candidate))}
+            />
+          ) : <EmptyBlock title="选择路由模型" detail="从左侧选择一个路由，查看候选、能力与价格状态。" />}
+        </section>
       ) : null}
       {routeDialog ? (
-        <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="隐藏不会出现在用户工作台；按分组可见需要至少绑定一个分组。" onClose={() => setRouteDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={() => setRouteDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存'}</button></>}>
+        <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="保存后需要继续配置候选真实模型和价格，完成后才会对用户可用。" onClose={closeRouteDialog} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={closeRouteDialog}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存并继续配置候选'}</button></>}>
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
           <div className={adminPage.formGrid}>
             <Field label={routingFieldLabels.code}><input value={routeDialog.code} onChange={(event) => setRouteDialog({ ...routeDialog, code: event.target.value })} placeholder="basic" /></Field>
             <Field label="名称"><input value={routeDialog.name} onChange={(event) => setRouteDialog({ ...routeDialog, name: event.target.value })} /></Field>
@@ -247,7 +295,8 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         </Modal>
       ) : null}
       {candidateDialog ? (
-        <Modal title={candidateDialog.row ? '编辑候选真实模型' : '新增候选真实模型'} detail={candidateDialog.route.name} onClose={() => setCandidateDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={() => setCandidateDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !candidateDialog.accountModelId} onClick={() => void saveCandidate()}>{saving ? '保存中...' : '保存'}</button></>}>
+        <Modal title={candidateDialog.row ? '编辑候选真实模型' : '新增候选真实模型'} detail={candidateDialog.route.name} onClose={closeCandidateDialog} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={closeCandidateDialog}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !candidateDialog.accountModelId} onClick={() => void saveCandidate()}>{saving ? '保存中...' : '保存'}</button></>}>
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
           <div className={adminPage.formGrid}>
             <Field label="真实模型"><select value={candidateDialog.accountModelId} onChange={(event) => setCandidateDialog({ ...candidateDialog, accountModelId: event.target.value })}>{accountModels.map((model) => <option key={String(model.id)} value={String(model.id)}>{model.account_name ? `${model.account_name} / ` : ''}{model.model_code}</option>)}</select></Field>
             <Field label={routingFieldLabels.priority} hint={routingFieldHints.priority}><input type="number" min="1" value={candidateDialog.priority} onChange={(event) => setCandidateDialog({ ...candidateDialog, priority: event.target.value })} /></Field>
@@ -281,79 +330,107 @@ function RouteBadge({ badge }: { badge: { label: string; tone: 'success' | 'warn
   return <Badge tone={badge.tone}>{badge.label}</Badge>
 }
 
-function RouteTableRow({
-  row,
+function RouteDetailWorkspace({
+  route,
   groups,
-  candidates,
-  expanded,
-  selected,
-  onSelect,
-  onToggle,
+  candidates: routeCandidates,
+  prices: routePrices,
+  accountModels,
+  modelAccounts,
   onEditRoute,
   onAddCandidate,
   onEditCandidate,
 }: {
-  row: RouteModel
+  route: RouteModel
   groups: UserGroup[]
   candidates: RouteModelCandidate[]
-  expanded: boolean
-  selected: boolean
-  onSelect: (checked: boolean) => void
-  onToggle: () => void
+  prices: RouteModelPrice[]
+  accountModels: ModelAccountModel[]
+  modelAccounts: ModelAccount[]
   onEditRoute: () => void
   onAddCandidate: () => void
   onEditCandidate: (candidate: RouteModelCandidate) => void
 }) {
+  const readiness = routeReadinessBadge({
+    enabled: route.enabled,
+    visibility: route.visibility,
+    groupCount: route.group_ids?.length ?? 0,
+    candidates: effectiveRouteCandidates(routeCandidates, accountModels, modelAccounts),
+    prices: routePrices,
+  })
+  const enabledPrices = routePrices.filter((price) => price.enabled)
   return (
-    <>
-      <tr className={cn(routingClasses.tr, expanded && routingClasses.trExpanded)}>
-        <td className={routingClasses.checkboxCell}>
-          <input className={routingClasses.checkbox} type="checkbox" checked={selected} onChange={(event) => onSelect(event.target.checked)} aria-label={`选择 ${row.name}`} />
-        </td>
-        <td className={routingClasses.td}>
-          <div className="flex min-w-0 flex-col gap-1">
-            <span className={routingClasses.routeTitle}>{row.name}</span>
-            <span className={routingClasses.routeCode}>{row.code}</span>
-            <p className={routingClasses.paragraph}>{row.description || '无描述'}</p>
-          </div>
-        </td>
-        <td className={routingClasses.td}>
-          <div className="flex min-w-0 flex-col gap-2">
-            <RouteBadge badge={routeVisibilityBadge(row.visibility)} />
-            <span className={routingClasses.textCell}>{routeGroupNames(row.group_ids, groups)}</span>
-          </div>
-        </td>
-        <td className={routingClasses.td}><RouteBadge badge={routeEnabledBadge(row.enabled)} /></td>
-        <td className={routingClasses.td}>
-          <button type="button" className={routingClasses.candidateButton} onClick={onToggle}>
-            {routeCandidateSummary(candidates)}
-            <ChevronIcon className={cn(routingClasses.chevron, expanded && 'rotate-180')} />
-          </button>
-        </td>
-        <td className={routingClasses.td}>
-          <div className={routingClasses.actionRow}>
-            <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onEditRoute}>编辑</button>
-            <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onAddCandidate}>加候选</button>
-          </div>
-        </td>
-      </tr>
-      {expanded ? (
-        <tr className={routingClasses.expandedRow}>
-          <td colSpan={6} className={routingClasses.expandedCell}>
-            <CandidatePanel candidates={candidates} onAddCandidate={onAddCandidate} onEditCandidate={onEditCandidate} />
-          </td>
-        </tr>
+    <article className={routingClasses.detail} aria-label={`${route.name} 路由详情`}>
+      <header className={routingClasses.detailHead}>
+        <div className="grid min-w-0 gap-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <strong className="text-base font-semibold text-[var(--text)]">{route.name}</strong>
+            <RouteBadge badge={readiness} />
+          </span>
+          <code className={routingClasses.routeCode}>{route.code}</code>
+          <p className={routingClasses.paragraph}>{route.description || '暂无路由描述。'}</p>
+        </div>
+        <div className={routingClasses.actionRow}>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onEditRoute}>编辑路由</button>
+          <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={onAddCandidate}>配置候选</button>
+        </div>
+      </header>
+
+      <section className={routingClasses.statusGrid} aria-label="路由完整性">
+        <StatusFact label="可见范围" value={<RouteBadge badge={routeVisibilityBadge(route.visibility)} />} detail={routeGroupNames(route.group_ids, groups)} />
+        <StatusFact label="候选模型" value={routeCandidateSummary(routeCandidates)} detail={`${routeCandidates.filter((candidate) => candidate.enabled).length} 个可参与路由`} />
+        <StatusFact label="价格配置" value={`${enabledPrices.length} 个启用价格`} detail={routePrices.length ? `共 ${routePrices.length} 条价格策略` : '尚未配置价格'} />
+        <StatusFact label="排序顺序" value={<code className={adminDataGrid.code}>{String(route.sort_order)}</code>} detail="数值越小展示越靠前" />
+      </section>
+
+      {readiness.state !== 'ready' ? (
+        <InlineFeedback
+          tone={readiness.tone === 'danger' ? 'danger' : 'warning'}
+          message={routeReadinessMessage(route, readiness.state)}
+        />
       ) : null}
-    </>
+
+      <div className="my-4 flex flex-wrap gap-2">
+        {readiness.state === 'missing_candidate' ? <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={onAddCandidate}>配置候选</button> : null}
+        {readiness.state === 'missing_price' ? <a className={cn(adminButton.base, adminButton.primary, adminButton.small)} href="#/pricing">配置价格</a> : null}
+        {readiness.state === 'disabled' ? <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={onEditRoute}>{route.enabled ? '调整可见性' : '启用路由'}</button> : null}
+        <a className={cn(adminButton.base, adminButton.ghost, adminButton.small)} href="#/pricing">查看价格</a>
+      </div>
+
+      <section className="grid gap-3 border-t border-[var(--border)] pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <strong className="text-sm font-semibold text-[var(--text)]">候选与模型能力</strong>
+            <p className={routingClasses.paragraph}>按优先级、权重和兜底顺序执行；能力来自真实模型配置。</p>
+          </div>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onAddCandidate}>新增候选</button>
+        </div>
+        <CandidatePanel candidates={routeCandidates} accountModels={accountModels} modelAccounts={modelAccounts} onAddCandidate={onAddCandidate} onEditCandidate={onEditCandidate} />
+      </section>
+    </article>
+  )
+}
+
+function StatusFact({ label, value, detail }: { label: string; value: React.ReactNode; detail: string }) {
+  return (
+    <div className={routingClasses.statusRow}>
+      <span className={routingClasses.statusLabel}>{label}</span>
+      <strong className="text-sm font-semibold text-[var(--text)]">{value}</strong>
+      <span className={routingClasses.paragraph}>{detail}</span>
+    </div>
   )
 }
 
 function CandidatePanel({
   candidates,
+  accountModels,
+  modelAccounts,
   onAddCandidate,
   onEditCandidate,
 }: {
   candidates: RouteModelCandidate[]
+  accountModels: ModelAccountModel[]
+  modelAccounts: ModelAccount[]
   onAddCandidate: () => void
   onEditCandidate: (candidate: RouteModelCandidate) => void
 }) {
@@ -373,35 +450,63 @@ function CandidatePanel({
       <table className={routingClasses.candidateTable}>
         <thead>
           <tr>
-            <th className={routingClasses.candidateTh}>真实账号</th>
-            <th className={routingClasses.candidateTh}>底层模型</th>
-            <th className={routingClasses.candidateTh}>{routingFieldLabels.priority}</th>
-            <th className={routingClasses.candidateTh}>{routingFieldLabels.weight}</th>
-            <th className={routingClasses.candidateTh}>{routingFieldLabels.fallbackOrder}</th>
-            <th className={routingClasses.candidateTh}>状态</th>
-            <th className={routingClasses.candidateTh}>操作</th>
+            <th>真实账号</th>
+            <th>底层模型</th>
+            <th>{routingFieldLabels.priority}</th>
+            <th>{routingFieldLabels.weight}</th>
+            <th>{routingFieldLabels.fallbackOrder}</th>
+            <th>模型能力</th>
+            <th>状态</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          {candidates.map((candidate) => (
-            <tr key={String(candidate.id)} className="border-b border-[var(--line)]/60 last:border-b-0 hover:bg-white/[0.02]">
+          {candidates.map((candidate) => {
+            const model = accountModels.find((item) => String(item.id) === String(candidate.account_model_id))
+            const account = modelAccounts.find((item) => String(item.id) === String(model?.account_id))
+            const effective = candidate.enabled && Boolean(model?.enabled) && Boolean(account && account.status === 'enabled')
+            return (
+            <tr key={String(candidate.id)} className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--surface)]">
               <td className={routingClasses.candidateTd}><span className={routingClasses.candidateName}>{candidate.account_name || '未命名账号'}</span></td>
               <td className={routingClasses.candidateTd}><span className={routingClasses.candidateCode}>{candidate.model_code || routeCandidateLabel(candidate)}</span></td>
               <td className={routingClasses.candidateTd}><code className={adminDataGrid.code}>{candidate.priority}</code></td>
               <td className={routingClasses.candidateTd}><code className={adminDataGrid.code}>{candidate.weight}</code></td>
               <td className={routingClasses.candidateTd}><code className={adminDataGrid.code}>{candidate.fallback_order}</code></td>
-              <td className={routingClasses.candidateTd}>
-                <span className={cn(routingClasses.activeDot, candidate.enabled ? 'bg-[var(--green)]' : 'bg-white/20')} />
-              </td>
+              <td className={routingClasses.candidateTd}>{candidateCapabilitySummary(model)}</td>
+              <td className={routingClasses.candidateTd}><Badge tone={effective ? 'success' : 'warning'}>{effective ? '可路由' : candidate.enabled ? '底层不可用' : '候选停用'}</Badge></td>
               <td className={routingClasses.candidateTd}>
                 <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onEditCandidate(candidate)}>编辑</button>
               </td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
     </div>
   )
 }
 
-const ChevronIcon = ({ className }: { className?: string }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+function candidateCapabilitySummary(model?: ModelAccountModel) {
+  if (!model) return '能力配置不可用'
+  const tasks = model.task_types ?? []
+  const resolutions = model.base_resolution ?? []
+  const formats = model.output_format ?? []
+  const compression = model.supports_output_compression ? '支持压缩' : '不支持压缩'
+  return `${tasks.length ? `${tasks.length} 类任务` : '缺任务类型'} · ${resolutions.length ? resolutions.join('/') : '缺分辨率'} · ${formats.length ? formats.join('/') : '缺输出格式'} · ${compression}`
+}
+
+function routeReadinessMessage(route: RouteModel, state: ReturnType<typeof routeReadinessBadge>['state']) {
+  if (state === 'missing_candidate') return '当前路由缺少启用候选，配置候选后才能接收用户请求。'
+  if (state === 'missing_price') return '当前路由缺少启用价格，生成请求会被计费校验阻断。'
+  if (route.visibility === 'hidden') return '当前路由已隐藏，不会向用户展示或接收请求。'
+  if (route.visibility === 'groups' && !route.group_ids?.length) return '当前路由尚未绑定可见分组，不会对任何用户生效。'
+  return '当前路由已停用，不会向用户展示或接收请求。'
+}
+
+function effectiveRouteCandidates(candidates: RouteModelCandidate[], models: ModelAccountModel[], accounts: ModelAccount[]) {
+  return candidates.map((candidate) => {
+    const model = models.find((item) => String(item.id) === String(candidate.account_model_id))
+    const account = accounts.find((item) => String(item.id) === String(model?.account_id))
+    const accountEnabled = account ? account.status === 'enabled' : false
+    return { enabled: candidate.enabled && Boolean(model?.enabled) && accountEnabled }
+  })
+}

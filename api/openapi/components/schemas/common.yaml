@@ -111,7 +111,13 @@ components:
           description: Legacy model field retained for older clients. Use route_model_code for new integrations.
         requested_quality:
           type: string
-        resolved_quality_bucket:
+        quality:
+          type: string
+        output_format:
+          type: string
+        output_compression:
+          type: integer
+        moderation:
           type: string
         requested_output_image_count:
           type: integer
@@ -168,6 +174,8 @@ components:
         task_type:
           type: string
         task_status:
+          type: string
+        base_resolution:
           type: string
         quality:
           type: string
@@ -253,6 +261,8 @@ components:
           type: string
         task_status:
           type: string
+        base_resolution:
+          type: string
         quality:
           type: string
         aspect_ratio:
@@ -314,6 +324,8 @@ components:
         task_type:
           type: string
         task_status:
+          type: string
+        base_resolution:
           type: string
         quality:
           type: string

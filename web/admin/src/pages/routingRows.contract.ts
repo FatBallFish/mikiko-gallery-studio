@@ -1,15 +1,65 @@
 import type { RouteModelCandidate, UserGroup } from '../../../shared/api-types'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
   routeEnabledBadge,
   routeEnabledOptions,
+  routeReadinessBadge,
   routingFieldHints,
   routingFieldLabels,
   routeGroupNames,
   routeVisibilityBadge,
   routeVisibilityOptions,
 } from './routingRows'
+
+const routingPageSource = readFileSync(new URL('./RoutingPage.tsx', import.meta.url), 'utf8')
+
+for (const workspaceContract of [
+  'data-admin-routing-workspace',
+  'selectedRouteId',
+  'function RouteDetailWorkspace',
+  'listRouteModelPrices',
+  'MetricStrip',
+  'FilterToolbar',
+  '配置候选',
+  '配置价格',
+  '启用路由',
+  '调整可见性',
+  '当前路由已隐藏',
+  '当前路由尚未绑定可见分组',
+  'model.output_format',
+  'model.supports_output_compression',
+  'effectiveRouteCandidates',
+  "account.status === 'enabled'",
+  'visibleRoutes.find',
+  'message={mutationError}',
+]) {
+  if (!routingPageSource.includes(workspaceContract)) {
+    throw new Error(`routing workspace must implement ${workspaceContract}`)
+  }
+}
+
+if (!routingPageSource.includes('prices: routePrices')) {
+  throw new Error('selected route readiness must include persisted price configuration')
+}
+
+for (const continuationContract of [
+  'setSelectedRouteId(String(saved.id))',
+  "if (created) setQuery('')",
+  'setCandidateDialog(newCandidateDialog(saved, accountModels))',
+]) {
+  if (!routingPageSource.includes(continuationContract)) {
+    throw new Error(`route creation should preserve context with ${continuationContract}`)
+  }
+}
+
+for (const disconnectedPattern of ['<details', 'expandedRoutes', 'selectedRoutes']) {
+  if (routingPageSource.includes(disconnectedPattern)) {
+    throw new Error(`routing workspace should replace disconnected expandable-table pattern ${disconnectedPattern}`)
+  }
+}
 
 const publicBadge = routeVisibilityBadge('public')
 const groupsBadge = routeVisibilityBadge('groups')
@@ -90,6 +140,22 @@ if (routeCandidateLabel(candidate({ account_name: 'OpenAI 主账号', model_code
 
 if (routeCandidateLabel(candidate({ account_name: '', model_code: undefined, account_model_id: 88 })) !== '88') {
   throw new Error('candidate label should fall back to account model id when model code is absent')
+}
+
+const ready = routeReadinessBadge({ enabled: true, candidates: [candidate({ enabled: true })], prices: [{ enabled: true }] })
+const missingCandidate = routeReadinessBadge({ enabled: true, candidates: [], prices: [{ enabled: true }] })
+const missingPrice = routeReadinessBadge({ enabled: true, candidates: [candidate({ enabled: true })], prices: [{ enabled: false }] })
+const routeDisabled = routeReadinessBadge({ enabled: false, candidates: [candidate({ enabled: true })], prices: [{ enabled: true }] })
+const hiddenRoute = routeReadinessBadge({ enabled: true, visibility: 'hidden', candidates: [candidate({ enabled: true })], prices: [{ enabled: true }] })
+const unboundGroupRoute = routeReadinessBadge({ enabled: true, visibility: 'groups', groupCount: 0, candidates: [candidate({ enabled: true })], prices: [{ enabled: true }] })
+if (ready.state !== 'ready' || ready.label !== '可被用户使用' || ready.tone !== 'success') {
+  throw new Error(`ready route should show user-availability status, got ${JSON.stringify(ready)}`)
+}
+if (missingCandidate.state !== 'missing_candidate' || missingPrice.state !== 'missing_price' || routeDisabled.state !== 'disabled') {
+  throw new Error(`route readiness should expose concrete blocking states, got ${JSON.stringify({ missingCandidate, missingPrice, routeDisabled })}`)
+}
+if (hiddenRoute.state !== 'disabled' || !hiddenRoute.label.includes('隐藏') || unboundGroupRoute.state !== 'disabled' || !unboundGroupRoute.label.includes('分组')) {
+  throw new Error(`hidden or unbound group routes must not be reported as user-available, got ${JSON.stringify({ hiddenRoute, unboundGroupRoute })}`)
 }
 
 function group(patch: Partial<UserGroup>): UserGroup {

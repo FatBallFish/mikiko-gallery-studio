@@ -1,0 +1,803 @@
+components:
+  schemas:
+    SendEmailCodeRequest:
+      type: object
+      required: [email, scene]
+      properties:
+        email:
+          type: string
+          format: email
+        scene:
+          type: string
+          enum: [login, register, forgot_password]
+    EmailCodeLoginRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+        redirect_to:
+          type: string
+    SessionResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            access_token:
+              type: string
+            expires_in_seconds:
+              type: integer
+            user_id:
+              type: integer
+            signup_grant:
+              $ref: '#/components/schemas/SignupGrant'
+    PasswordLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    PasswordChangeRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password:
+          type: string
+        new_password:
+          type: string
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    PasswordResetConfirmRequest:
+      type: object
+      required: [email, code, new_password]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+        new_password:
+          type: string
+    StatusMessageResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        nickname:
+          type: string
+        bio:
+          type: string
+        avatar_object_key:
+          type: string
+        user_group_code:
+          type: string
+        theme:
+          type: string
+        default_locale:
+          type: string
+    UserProfileResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/UserProfile'
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+        bio:
+          type: string
+        avatar_object_key:
+          type: string
+        default_locale:
+          type: string
+        theme:
+          type: string
+    BalanceSummary:
+      type: object
+      properties:
+        available_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        frozen_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        trial_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        subscription_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        gift_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        recharge_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/BalanceBucket'
+        user_group_multiplier:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        cny_per_point:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        active_subscription:
+          $ref: '#/components/schemas/UserSubscription'
+        next_expiring_grant:
+          $ref: '#/components/schemas/GrantExpirySummary'
+    SignupGrant:
+      type: object
+      required: [granted, balance]
+      properties:
+        granted:
+          type: boolean
+        grant_id:
+          type: integer
+        grant_type:
+          type: string
+          enum: [trial]
+        points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        expires_at:
+          type: string
+          format: date-time
+        balance:
+          $ref: '#/components/schemas/BalanceSummary'
+    BalanceBucket:
+      type: object
+      required: [bucket, available_points, expire_warning]
+      properties:
+        bucket:
+          type: string
+          enum: [trial, subscription, recharge]
+        label:
+          type: string
+        available_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        frozen_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        expire_warning:
+          type: boolean
+        source_type:
+          type: string
+        sort_order:
+          type: integer
+    BalanceResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/BalanceSummary'
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    PointLedgerEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: string
+        order_id:
+          type: integer
+          format: int64
+        redeem_code_id:
+          type: integer
+          format: int64
+        ledger_type:
+          type: string
+        change_points:
+          type: string
+          pattern: '^-?\d+\.\d{5}$'
+        balance_after:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        frozen_after:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        balance_bucket:
+          type: string
+          enum: [trial, subscription, recharge]
+        bucket_type:
+          type: string
+          enum: [trial, subscription, recharge]
+        source_type:
+          type: string
+        source_id:
+          oneOf:
+            - type: string
+            - type: integer
+              format: int64
+        bucket_balance_after:
+          type: string
+          pattern: '^-?\d+\.\d{5}$'
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        title:
+          type: string
+        occurred_at:
+          type: string
+        amount:
+          type: string
+        type:
+          type: string
+        detail:
+          type: string
+    PointLedgerPageResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PointLedgerEntry'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    EstimateResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            base_resolution:
+              type: string
+            estimated_points:
+              type: string
+            user_group_multiplier:
+              type: string
+            requested_output_image_count:
+              type: integer
+            reference_image_count:
+              type: integer
+    GrantExpirySummary:
+      type: object
+      properties:
+        grant_id:
+          type: integer
+          format: int64
+        grant_type:
+          type: string
+          enum: [trial, subscription, recharge]
+        available_points:
+          type: string
+          pattern: '^\d+\.\d{5}$'
+        source_type:
+          type: string
+        remaining_points:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    SubscriptionPlan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        points_grant:
+          type: string
+        price_cny:
+          type: string
+        duration_days:
+          type: integer
+        active:
+          type: boolean
+    SubscriptionPlanListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SubscriptionPlan'
+    UserSubscription:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        auto_renew:
+          type: boolean
+    UserSubscriptionResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            item:
+              $ref: '#/components/schemas/UserSubscription'
+    PaymentOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_no:
+          type: string
+        user_id:
+          type: integer
+          format: int64
+        plan_id:
+          type: integer
+          format: int64
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        provider:
+          type: string
+        purchase_type:
+          type: string
+          enum: [plan, custom_amount]
+        visible_method:
+          type: string
+          enum: [alipay, wxpay, mock]
+        provider_type:
+          type: string
+          enum: [alipay_direct, wxpay_direct, easypay_alipay, easypay_wxpay, mock, jeepay_alipay, jeepay_wxpay]
+        provider_instance_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        amount_cny:
+          type: string
+        points_grant:
+          type: string
+        points:
+          type: string
+        bonus_points:
+          type: string
+        status:
+          type: string
+          enum: [pending, paid, completed, partially_refunded, canceled, expired, failed, refunded]
+        channel_trade_no:
+          type: string
+        trade_no:
+          type: string
+        refund_trade_no:
+          type: string
+        refunded_amount_cny:
+          type: string
+        refunded_points:
+          type: string
+        chargeback_points:
+          type: string
+          description: Last confirmed channel dispute or chargeback deduction points.
+        chargeback_reason:
+          type: string
+          description: Operator reason for the last confirmed channel dispute or chargeback deduction.
+        chargeback_at:
+          type: string
+          format: date-time
+        chargeback_idempotency_key:
+          type: string
+        payment_url:
+          type: string
+        qr_code:
+          type: string
+        client_token:
+          type: string
+        payment_display:
+          $ref: '#/components/schemas/PaymentDisplay'
+        failure_reason:
+          type: string
+        ledger_id:
+          type: integer
+          format: int64
+        paid_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+        refunded_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PaymentOrderCreateRequest:
+      type: object
+      required: [plan_code, provider]
+      properties:
+        plan_code:
+          type: string
+        provider:
+          type: string
+          enum: [alipay, wxpay]
+    CashierPlan:
+      allOf:
+        - $ref: '#/components/schemas/SubscriptionPlan'
+        - type: object
+          properties:
+            plan_type:
+              type: string
+              enum: [points_package, subscription]
+            purchase_enabled:
+              type: boolean
+            points:
+              type: string
+            bonus_points:
+              type: string
+            currency:
+              type: string
+            sort_order:
+              type: integer
+    CashierCustomAmountConfig:
+      type: object
+      required: [enabled, min_amount_cny, max_amount_cny, cny_per_point]
+      properties:
+        enabled:
+          type: boolean
+        min_amount_cny:
+          type: string
+        max_amount_cny:
+          type: string
+        cny_per_point:
+          type: string
+        bonus_rule:
+          type: object
+          nullable: true
+          additionalProperties: true
+    CashierVisibleMethod:
+      type: object
+      required: [method, label, enabled, display_order]
+      properties:
+        method:
+          type: string
+          enum: [alipay, wxpay, mock]
+        label:
+          type: string
+        enabled:
+          type: boolean
+        source_provider_type:
+          type: string
+        scheduler_strategy:
+          type: string
+          enum: [round_robin, random]
+        display_order:
+          type: integer
+        description:
+          type: string
+    CashierOptionsResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [plans, custom_amount, visible_methods, order_timeout_seconds]
+          properties:
+            plans:
+              type: array
+              items:
+                $ref: '#/components/schemas/CashierPlan'
+            custom_amount:
+              $ref: '#/components/schemas/CashierCustomAmountConfig'
+            visible_methods:
+              type: array
+              items:
+                $ref: '#/components/schemas/CashierVisibleMethod'
+            order_timeout_seconds:
+              type: integer
+    PaymentDisplay:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [qr_code, redirect, form_html, form, jsapi, mock, none]
+        qr_code:
+          type: string
+        payment_url:
+          type: string
+        client_token:
+          type: string
+        form_html:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    CashierOrderCreateRequest:
+      type: object
+      required: [purchase_type, visible_method]
+      properties:
+        purchase_type:
+          type: string
+          enum: [plan, custom_amount]
+        plan_code:
+          type: string
+        amount_cny:
+          type: string
+          pattern: '^[0-9]+(\.[0-9]{1,5})?$'
+        visible_method:
+          type: string
+        client_return_url:
+          type: string
+          format: uri
+    CashierOrderResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PaymentOrder'
+    PaymentOrderResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PaymentOrder'
+    PaymentOrderListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PaymentOrder'
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    CapabilityItem:
+      type: object
+      properties:
+        abstract_model:
+          type: string
+        task_types:
+          type: array
+          items:
+            type: string
+        base_resolution:
+          type: array
+          items:
+            type: string
+        quality:
+          type: array
+          items:
+            type: string
+        output_format:
+          type: array
+          items:
+            type: string
+        moderation:
+          type: array
+          items:
+            type: string
+        output_compression:
+          type: integer
+        supports_output_compression:
+          type: boolean
+          description: Whether this model supports user-selected JPEG/WebP compression quality.
+        size_modes:
+          type: array
+          items:
+            type: string
+        aspect_ratios:
+          type: array
+          items:
+            type: string
+        pixel_sizes:
+          type: array
+          items:
+            type: string
+        max_output_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
+    CapabilitiesResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CapabilityItem'
+            model_groups:
+              type: array
+              items:
+                $ref: '#/components/schemas/CapabilityModelGroup'
+            unavailable_reason:
+              type: object
+              properties:
+                code:
+                  type: string
+                  example: NO_ROUTE_MODEL
+                message:
+                  type: string
+    CapabilityModelGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        task_types:
+          type: array
+          items: { type: string }
+        base_resolution:
+          type: array
+          items: { type: string }
+        quality:
+          type: array
+          items: { type: string }
+        size_modes:
+          type: array
+          items: { type: string }
+        aspect_ratios:
+          type: array
+          items: { type: string }
+        pixel_sizes:
+          type: array
+          items: { type: string }
+        output_format:
+          type: array
+          items: { type: string }
+        supports_output_compression:
+          type: boolean
+        moderation:
+          type: array
+          items: { type: string }
+        max_output_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
+        effective_multiplier:
+          type: string
+        prices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ReferenceAssetUploadRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+    ReferenceAssetResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./common.yaml#/components/schemas/ReferenceAsset
+    CreateImageTaskRequest:
+      type: object
+      required: [task_type, prompt, route_model_code, base_resolution, requested_output_image_count]
+      properties:
+        task_type:
+          type: string
+          enum: [text_to_image, image_edit, reference_generate]
+        prompt:
+          type: string
+        negative_prompt:
+          type: string
+        abstract_model:
+          type: string
+          enum: [basic, plus, pro]
+        route_model_code:
+          type: string
+        size_mode:
+          type: string
+          enum: [ratio, pixel]
+        base_resolution:
+          type: string
+          enum: [auto, 1k, 2k, 4k]
+        quality:
+          type: string
+          enum: [auto, low, medium, high]
+        output_format:
+          type: string
+          enum: [png, jpeg, webp]
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          type: string
+          enum: [auto, low]
+        requested_size:
+          type: string
+        aspect_ratio:
+          type: string
+        requested_output_image_count:
+          type: integer
+          minimum: 1
+          maximum: 5
+        reference_image_count:
+          type: integer
+          minimum: 0
+          maximum: 4
+        reference_asset_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        mask_asset_id:
+          type: string
+          format: uuid
+        response_mode:
+          type: string
+          enum: [async]
+          description: Native Agent/Open API task creation is async-only; omit the field or send async, then poll task detail.
+    ImageTaskResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./common.yaml#/components/schemas/ImageTask

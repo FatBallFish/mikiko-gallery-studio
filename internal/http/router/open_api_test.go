@@ -24,7 +24,7 @@ import (
 func TestOpenImageEstimateTaskAndReferenceUploadUseAPIKeyAuth(t *testing.T) {
 	handler, creds, billingSvc := newOpenAPIHandler(t)
 
-	estimateReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=0", nil)
+	estimateReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_size=1536x1024&requested_output_image_count=2&reference_image_count=0", nil)
 	signNativeRequest(estimateReq, creds)
 	estimateRec := httptest.NewRecorder()
 	handler.ServeHTTP(estimateRec, estimateReq)
@@ -70,7 +70,7 @@ func TestOpenImageEstimateTaskAndReferenceUploadUseAPIKeyAuth(t *testing.T) {
 		t.Fatalf("unexpected upload response %#v", uploadResp)
 	}
 
-	taskBody := `{"task_type":"reference_generate","prompt":"use reference","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_asset_ids":["` + uploadResp.Data.AssetID + `"],"response_mode":"async"}`
+	taskBody := `{"task_type":"reference_generate","prompt":"use reference","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_asset_ids":["` + uploadResp.Data.AssetID + `"],"response_mode":"async"}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
 	firstReq.Header.Set("Content-Type", "application/json")
 	firstReq.Header.Set("Idempotency-Key", "open-idem")
@@ -117,14 +117,14 @@ func TestOpenImageEstimateTaskAndReferenceUploadUseAPIKeyAuth(t *testing.T) {
 func TestOpenImageAPIRejectsMissingAccessKeyInvalidSignatureAndInvalidParams(t *testing.T) {
 	handler, creds, _ := newOpenAPIHandler(t)
 
-	missingReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
+	missingReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_output_image_count=1", nil)
 	missingRec := httptest.NewRecorder()
 	handler.ServeHTTP(missingRec, missingReq)
 	if missingRec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected missing key 401, got %d body=%s", missingRec.Code, missingRec.Body.String())
 	}
 
-	badSigReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
+	badSigReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_output_image_count=1", nil)
 	signNativeRequest(badSigReq, creds)
 	badSigReq.Header.Set("X-Signature", "wrong")
 	badSigRec := httptest.NewRecorder()
@@ -133,7 +133,7 @@ func TestOpenImageAPIRejectsMissingAccessKeyInvalidSignatureAndInvalidParams(t *
 		t.Fatalf("expected bad signature 401, got %d body=%s", badSigRec.Code, badSigRec.Body.String())
 	}
 
-	invalidReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=oops", nil)
+	invalidReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_output_image_count=oops", nil)
 	signNativeRequest(invalidReq, creds)
 	invalidRec := httptest.NewRecorder()
 	handler.ServeHTTP(invalidRec, invalidReq)
@@ -164,7 +164,7 @@ func TestOpenImageTaskRejectsAPIKeyQuotaExceeded(t *testing.T) {
 		DailyQuotaPoints: &dailyQuota,
 	})
 
-	taskBody := `{"task_type":"text_to_image","prompt":"cat","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
+	taskBody := `{"task_type":"text_to_image","prompt":"cat","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "quota-limit")
@@ -179,7 +179,7 @@ func TestOpenImageTaskRejectsAPIKeyQuotaExceeded(t *testing.T) {
 func TestOpenImageTaskRejectsSyncResponseMode(t *testing.T) {
 	handler, creds, _ := newOpenAPIHandler(t)
 
-	taskBody := `{"task_type":"text_to_image","prompt":"cat","abstract_model":"plus","requested_quality":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"sync"}`
+	taskBody := `{"task_type":"text_to_image","prompt":"cat","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"sync"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "open-sync-rejected")
@@ -202,7 +202,7 @@ func TestOpenAndCompatAPIRejectDisabledUserAPIKey(t *testing.T) {
 	})
 	authSvc.DisableUserForTest(creds.UserID)
 
-	openReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&requested_quality=auto&requested_output_image_count=1", nil)
+	openReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=plus&base_resolution=auto&requested_output_image_count=1", nil)
 	signNativeRequest(openReq, creds)
 	openRec := httptest.NewRecorder()
 	handler.ServeHTTP(openRec, openReq)

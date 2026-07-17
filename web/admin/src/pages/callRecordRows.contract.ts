@@ -1,5 +1,38 @@
 import type { CallRecord } from '../../../shared/api-types'
-import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
+import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRepair, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
+
+const callRecordsPageSource = readFileSync(new URL('./CallRecordsPage.tsx', import.meta.url), 'utf8')
+
+for (const workbenchContract of ['MetricStrip', 'FilterToolbar', 'InlineFeedback', 'refreshing', 'loading && !rows.length', 'error && rows.length', 'callRecordRepair', 'requestGenerationRef']) {
+  if (!callRecordsPageSource.includes(workbenchContract)) {
+    throw new Error(`call-record workbench should implement ${workbenchContract}`)
+  }
+}
+
+for (const fakeTimeControl of ['快捷时间范围', '自定义区间', 'timePills']) {
+  if (callRecordsPageSource.includes(fakeTimeControl)) {
+    throw new Error(`call-record workbench must not expose non-functional time control ${fakeTimeControl}`)
+  }
+}
+
+const priceRepair = callRecordRepair('ROUTE_MODEL_PRICE_MISSING')
+const candidateRepair = callRecordRepair('MODEL_ROUTE_NO_CANDIDATE')
+const userRepair = callRecordRepair('BILLING_INSUFFICIENT_POINTS')
+const upstreamRepair = callRecordRepair('UPSTREAM_UNAVAILABLE')
+if (priceRepair?.href !== '#/pricing' || candidateRepair?.href !== '#/routing' || userRepair?.href !== '#/users') {
+  throw new Error(`call-record failures should expose direct repair routes, got ${JSON.stringify({ priceRepair, candidateRepair, userRepair })}`)
+}
+if (upstreamRepair?.href !== '#/access-accounts' || !callRecordCommonErrorCodes.includes('UPSTREAM_UNAVAILABLE')) {
+  throw new Error(`real upstream failures should link to access accounts, got ${JSON.stringify({ upstreamRepair, callRecordCommonErrorCodes })}`)
+}
+if (callRecordCommonErrorCodes.includes('PROVIDER_UNAVAILABLE' as never)) {
+  throw new Error('call-record suggestions must not use the non-existent PROVIDER_UNAVAILABLE code')
+}
+if (callRecordRepair('PROVIDER_TIMEOUT') !== null) {
+  throw new Error('unknown call-record failures should not expose an unrelated repair route')
+}
 
 const rows = callRecordRows([
   {
@@ -12,7 +45,8 @@ const rows = callRecordRows([
     status: 'failed',
     provider: '',
     abstract_model: 'plus',
-    quality: '2k',
+    base_resolution: '2k',
+    quality: 'auto',
     requested_output_image_count: 2,
     success_output_image_count: 0,
     reference_image_count: 0,
@@ -42,7 +76,8 @@ const rows = callRecordRows([
     model_account_id: 2201,
     upstream_model_code: 'gpt-image-1',
     abstract_model: 'basic',
-    quality: '1k',
+    base_resolution: '1k',
+    quality: 'auto',
     requested_output_image_count: 1,
     success_output_image_count: 1,
     reference_image_count: 1,
@@ -107,8 +142,8 @@ if (!callRecordCommonErrorCodes.includes('BILLING_INSUFFICIENT_POINTS') || callR
   throw new Error(`call record common error code suggestions should use backend billing code and drop legacy balance code, got ${JSON.stringify(callRecordCommonErrorCodes)}`)
 }
 
-if (rows[0]?.routeDetail !== '2k · Open API') {
-  throw new Error(`call record route detail should localize source channel labels, got ${rows[0]?.routeDetail}`)
+if (rows[0]?.routeDetail !== '2k · auto · Open API') {
+  throw new Error(`call record route detail should show base resolution, true quality and localized source channel, got ${rows[0]?.routeDetail}`)
 }
 
 if (rows[0]?.userDetail !== 'API Key #7') {

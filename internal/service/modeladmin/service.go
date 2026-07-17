@@ -312,7 +312,7 @@ func (s *Service) DeleteRouteModelCandidate(ctx context.Context, candidateID int
 func (s *Service) ListRouteModelPrices(ctx context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error) {
 	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
 	req.TaskType = normalizeCode(req.TaskType)
-	req.Quality = normalizeCode(req.Quality)
+	req.BaseResolution = normalizeCode(req.BaseResolution)
 	return s.store.ListRouteModelPrices(ctx, req)
 }
 
@@ -473,11 +473,11 @@ func normalizeRouteModelCandidateWrite(req domainmodeladmin.RouteModelCandidateW
 
 func normalizeRouteModelPriceWrite(req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPriceWriteRequest, error) {
 	req.TaskType = normalizeCode(req.TaskType)
-	req.Quality = normalizeCode(req.Quality)
+	req.BaseResolution = normalizeCode(req.BaseResolution)
 	req.BasePoints = strings.TrimSpace(req.BasePoints)
 	req.ReferenceMultiplier = strings.TrimSpace(req.ReferenceMultiplier)
-	if req.RouteModelID <= 0 || req.TaskType == "" || req.Quality == "" {
-		return domainmodeladmin.RouteModelPriceWriteRequest{}, errs.BadRequest("route_model_id, task_type and quality are required")
+	if req.RouteModelID <= 0 || req.TaskType == "" || req.BaseResolution == "" {
+		return domainmodeladmin.RouteModelPriceWriteRequest{}, errs.BadRequest("route_model_id, task_type and base_resolution are required")
 	}
 	if req.BasePoints == "" {
 		req.BasePoints = "0.00000"
@@ -534,8 +534,27 @@ func normalizeProviderModelWrite(req domainmodeladmin.ProviderModelWriteRequest)
 	if req.TimeoutMS <= 0 {
 		req.TimeoutMS = 60000
 	}
-	req.SupportedQualities = cloneNormalizedStrings(req.SupportedQualities)
-	req.SupportedRatios = cloneNormalizedStrings(req.SupportedRatios)
+	capability, err := modelhub.NormalizeCapability(modelhub.ImageModelCapability{
+		MaxReferenceImageCount: req.MaxReferenceImageCount,
+		MaxImageCount:          req.MaxImageCount,
+		BaseResolution:         req.SupportedBaseResolution,
+		Quality:                req.Quality,
+		SupportedRatios:        req.SupportedRatios,
+		OutputFormat:           req.OutputFormat,
+		OutputCompression:      req.OutputCompression,
+		Moderation:             req.Moderation,
+	})
+	if err != nil {
+		return domainmodeladmin.ProviderModelWriteRequest{}, err
+	}
+	req.SupportedBaseResolution = capability.BaseResolution
+	req.Quality = capability.Quality
+	req.SupportedRatios = capability.SupportedRatios
+	req.OutputFormat = capability.OutputFormat
+	req.OutputCompression = capability.OutputCompression
+	req.Moderation = capability.Moderation
+	req.MaxImageCount = capability.MaxImageCount
+	req.MaxReferenceImageCount = capability.MaxReferenceImageCount
 	return req, nil
 }
 

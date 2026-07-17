@@ -45,7 +45,7 @@ func TestRunnerProcessOnceExecutesQueuedTask(t *testing.T) {
 		TaskType:         string(provider.TaskTypeTextToImage),
 		Prompt:           "worker task",
 		RequestedSize:    "auto",
-		RequestedQuality: "auto",
+		BaseResolution:   "auto",
 		OutputImageCount: 1,
 	})
 	if err != nil {
@@ -93,6 +93,10 @@ func (s *countingStore) Save(ctx context.Context, task domainimagetask.Task) err
 
 func (s *countingStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
 	return s.base.SaveIfOwned(ctx, task, owner, now)
+}
+
+func (s *countingStore) UpdateProgressIfOwned(ctx context.Context, taskID, owner, stage, message string, now time.Time) error {
+	return s.base.UpdateProgressIfOwned(ctx, taskID, owner, stage, message, now)
 }
 
 func (s *countingStore) SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
@@ -204,7 +208,7 @@ func TestRunnerProcessOnceHeartbeatsLongRunningTask(t *testing.T) {
 		TaskType:         string(provider.TaskTypeTextToImage),
 		Prompt:           "heartbeat task",
 		RequestedSize:    "auto",
-		RequestedQuality: "auto",
+		BaseResolution:   "auto",
 		OutputImageCount: 1,
 	})
 	if err != nil {
@@ -270,7 +274,7 @@ func TestRunnerStopsWhenHeartbeatFails(t *testing.T) {
 		TaskType:         string(provider.TaskTypeTextToImage),
 		Prompt:           "heartbeat conflict",
 		RequestedSize:    "auto",
-		RequestedQuality: "auto",
+		BaseResolution:   "auto",
 		OutputImageCount: 1,
 	})
 	if err != nil {
@@ -379,6 +383,53 @@ func TestProcessOnceTreatsTransientStoreLockAsNoWork(t *testing.T) {
 	}
 	if !processed {
 		t.Fatal("expected runner to keep processing after transient lock")
+	}
+}
+
+func TestProcessOnceTreatsTransientCompensationLockAsNoWork(t *testing.T) {
+	var acquireCalls atomic.Int64
+	task := domainimagetask.Task{ID: "sqlite-compensation-lock-retry-task", Status: domainimagetask.StatusRunning}
+	runner := NewRunner(fakeTaskService{
+		acquireFunc: func(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
+			acquireCalls.Add(1)
+			return task, true, nil
+		},
+		heartbeatFunc: func(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+		executeFunc: func(ctx context.Context, claimed domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error) {
+			return domainimagetask.ExecuteResult{
+				Task: domainimagetask.Task{ID: claimed.ID, Status: domainimagetask.StatusSucceeded},
+			}, nil
+		},
+	}, Config{Owner: "worker-sqlite-compensation-lock", LeaseTTL: 30 * time.Second, HeartbeatInterval: time.Hour})
+	var compensationCalls atomic.Int64
+	runner.SetCompensationService(&fakeCompensationService{
+		fn: func(ctx context.Context, limit int) (int, error) {
+			if compensationCalls.Add(1) == 1 {
+				return 0, errors.New("database table is locked: payment_webhook_events")
+			}
+			return 0, nil
+		},
+	})
+
+	processed, err := runner.ProcessOnce(context.Background())
+	if err != nil {
+		t.Fatalf("expected transient compensation lock to be swallowed, got %v", err)
+	}
+	if processed {
+		t.Fatal("expected transient compensation lock to count as no work for this poll")
+	}
+	if acquireCalls.Load() != 0 {
+		t.Fatalf("expected task acquisition to wait for next poll after compensation lock, got %d calls", acquireCalls.Load())
+	}
+
+	processed, err = runner.ProcessOnce(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOnce after transient compensation lock: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected runner to keep processing after transient compensation lock")
 	}
 }
 
@@ -636,8 +687,8 @@ func TestProcessClaimedTaskPreservesHeartbeatInfrastructureFailure(t *testing.T)
 
 func workerTestConfig() config.Config {
 	cfg := config.Config{}
-	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"plus": "2k"}
-	cfg.Billing.QualityPointsByModel = map[string]map[string]string{
+	cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"plus": "2k"}
+	cfg.Billing.BaseResolutionPointsByModel = map[string]map[string]string{
 		"plus": {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 	}
 	cfg.GenerationLimits.MaxImageCount = 5
@@ -645,15 +696,15 @@ func workerTestConfig() config.Config {
 	cfg.Providers.OpenRouter.Enabled = true
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
 		"openrouter": {
-			SupportedModels:        []string{"plus"},
-			SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
-			SupportedQualities:     []string{"1k", "2k", "4k"},
-			SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
-			MaxImageCount:          5,
-			MaxReferenceImageCount: 4,
-			SupportsImageInput:     true,
-			SupportsMask:           false,
-			Priority:               1,
+			SupportedModels:         []string{"plus"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedBaseResolution: []string{"1k", "2k", "4k"},
+			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
+			MaxImageCount:           5,
+			MaxReferenceImageCount:  4,
+			SupportsImageInput:      true,
+			SupportsMask:            false,
+			Priority:                1,
 		},
 	}
 	cfg.Routing.ProviderModelMap = map[string]map[string]string{

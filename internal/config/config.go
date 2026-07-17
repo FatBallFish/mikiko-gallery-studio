@@ -94,14 +94,14 @@ type HTTPConfig struct {
 }
 
 type BillingConfig struct {
-	CNYPerPoint               string                       `yaml:"cny_per_point"`
-	PointsScale               int                          `yaml:"points_scale"`
-	SignupTrial               SignupTrialConfig            `yaml:"signup_trial"`
-	AutoQualityDefaultByGroup map[string]string            `yaml:"auto_quality_default_by_group"`
-	QualityPointsByModel      map[string]map[string]string `yaml:"quality_points_by_model"`
-	UserGroupMultipliers      map[string]string            `yaml:"user_group_multipliers"`
-	TaskMultipliers           map[string]string            `yaml:"task_multipliers"`
-	ReferenceImageExtra       ReferenceExtra               `yaml:"reference_image_extra"`
+	CNYPerPoint                      string                       `yaml:"cny_per_point"`
+	PointsScale                      int                          `yaml:"points_scale"`
+	SignupTrial                      SignupTrialConfig            `yaml:"signup_trial"`
+	AutoBaseResolutionDefaultByGroup map[string]string            `yaml:"auto_base_resolution_default_by_group"`
+	BaseResolutionPointsByModel      map[string]map[string]string `yaml:"base_resolution_points_by_model"`
+	UserGroupMultipliers             map[string]string            `yaml:"user_group_multipliers"`
+	TaskMultipliers                  map[string]string            `yaml:"task_multipliers"`
+	ReferenceImageExtra              ReferenceExtra               `yaml:"reference_image_extra"`
 }
 
 type SignupTrialConfig struct {
@@ -162,15 +162,19 @@ type RoutingConfig struct {
 }
 
 type ProviderCapabilityConfig struct {
-	SupportedModels        []string `yaml:"supported_models"`
-	SupportedTaskTypes     []string `yaml:"supported_task_types"`
-	SupportedQualities     []string `yaml:"supported_qualities"`
-	SupportedAspectRatios  []string `yaml:"supported_aspect_ratios"`
-	MaxImageCount          int      `yaml:"max_image_count"`
-	MaxReferenceImageCount int      `yaml:"max_reference_image_count"`
-	SupportsImageInput     bool     `yaml:"supports_image_input"`
-	SupportsMask           bool     `yaml:"supports_mask"`
-	Priority               int      `yaml:"priority"`
+	SupportedModels         []string `yaml:"supported_models"`
+	SupportedTaskTypes      []string `yaml:"supported_task_types"`
+	SupportedBaseResolution []string `yaml:"supported_base_resolution"`
+	Quality                 []string `yaml:"quality"`
+	SupportedAspectRatios   []string `yaml:"supported_aspect_ratios"`
+	OutputFormat            []string `yaml:"output_format"`
+	OutputCompression       int      `yaml:"output_compression"`
+	Moderation              []string `yaml:"moderation"`
+	MaxImageCount           int      `yaml:"max_image_count"`
+	MaxReferenceImageCount  int      `yaml:"max_reference_image_count"`
+	SupportsImageInput      bool     `yaml:"supports_image_input"`
+	SupportsMask            bool     `yaml:"supports_mask"`
+	Priority                int      `yaml:"priority"`
 }
 
 type DocsConfig struct {

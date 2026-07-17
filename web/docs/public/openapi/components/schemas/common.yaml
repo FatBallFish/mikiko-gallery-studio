@@ -1,0 +1,384 @@
+components:
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    ReferenceAsset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+    ImageResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          description: Frontend-usable image URL. For local generated images this may be the authenticated download endpoint.
+        download_url:
+          type: string
+          description: Authenticated local download URL. Present for locally stored generated images.
+        b64_json:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        sha256:
+          type: string
+        object_key:
+          type: string
+        storage_driver:
+          type: string
+        visibility_status:
+          type: string
+        review_reason:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+    ImageTask:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_type:
+          type: string
+        status:
+          type: string
+        progress_stage:
+          type: string
+          enum: [queued, provider, persisting, settling, completed, failed]
+          description: Latest persisted coarse execution stage. Providers do not expose a reliable numeric percentage.
+        progress_message:
+          type: string
+          description: User-facing detail for the latest persisted execution stage.
+        abstract_model:
+          type: string
+        base_resolution:
+          type: string
+        quality:
+          type: string
+        output_format:
+          type: string
+        output_compression:
+          type: integer
+        moderation:
+          type: string
+        requested_output_image_count:
+          type: integer
+        reference_image_count:
+          type: integer
+        estimated_points:
+          type: string
+          description: Decimal string with up to 5 fraction digits.
+        actual_points:
+          type: string
+          description: Decimal string with up to 5 fraction digits.
+        provider_model_id:
+          type: integer
+          format: int64
+          nullable: true
+        provider_cost:
+          type: string
+        gross_margin:
+          type: string
+        fallback_count:
+          type: integer
+        route_snapshot_version:
+          type: integer
+          format: int64
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageResult'
+    GalleryImage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        user_id:
+          type: integer
+          format: int64
+        prompt:
+          type: string
+          nullable: true
+          description: Full prompt. Present on authenticated detail responses; public list responses must use prompt_excerpt instead.
+        prompt_excerpt:
+          type: string
+          description: Redacted public prompt preview for list cards and search.
+        abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        route_model_name:
+          type: string
+        task_type:
+          type: string
+        task_status:
+          type: string
+        base_resolution:
+          type: string
+        quality:
+          type: string
+        aspect_ratio:
+          type: string
+        actual_points:
+          type: string
+        reference_asset_ids:
+          type: array
+          items:
+            type: string
+        reference_assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReferenceAsset'
+        url:
+          type: string
+        download_url:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        sha256:
+          type: string
+        object_key:
+          type: string
+        storage_driver:
+          type: string
+        image_group:
+          type: string
+        visibility_status:
+          type: string
+        review_reason:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        author_name:
+          type: string
+        like_count:
+          type: integer
+        favorite_count:
+          type: integer
+        liked_by_viewer:
+          type: boolean
+        favorited_by_viewer:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        image:
+          $ref: '#/components/schemas/ImageResult'
+    PublicGalleryListImage:
+      type: object
+      required: [id, prompt, prompt_excerpt, width, height, visibility_status, like_count, favorite_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        prompt:
+          nullable: true
+          enum: [null]
+          description: Always null in public gallery list responses. Use the authenticated detail endpoint for the full prompt.
+        prompt_excerpt:
+          type: string
+          description: Redacted prompt preview for public list cards and search.
+        abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        route_model_name:
+          type: string
+        task_type:
+          type: string
+        task_status:
+          type: string
+        base_resolution:
+          type: string
+        quality:
+          type: string
+        aspect_ratio:
+          type: string
+        url:
+          type: string
+        download_url:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        visibility_status:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        author_name:
+          type: string
+        like_count:
+          type: integer
+        favorite_count:
+          type: integer
+        liked_by_viewer:
+          type: boolean
+        favorited_by_viewer:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    PublicGalleryDetailImage:
+      type: object
+      required: [id, prompt, prompt_excerpt, width, height, visibility_status, like_count, favorite_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        prompt:
+          type: string
+          nullable: true
+          description: Full prompt. Present for authenticated public gallery detail responses.
+        prompt_excerpt:
+          type: string
+          description: Redacted prompt preview for public list cards and search.
+        abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        route_model_name:
+          type: string
+        task_type:
+          type: string
+        task_status:
+          type: string
+        base_resolution:
+          type: string
+        quality:
+          type: string
+        aspect_ratio:
+          type: string
+        url:
+          type: string
+        download_url:
+          type: string
+        mime_type:
+          type: string
+        file_size_bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        visibility_status:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        author_name:
+          type: string
+        like_count:
+          type: integer
+        favorite_count:
+          type: integer
+        liked_by_viewer:
+          type: boolean
+        favorited_by_viewer:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    PublicGalleryListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PublicGalleryListImage'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+    PublicGalleryDetailResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicGalleryDetailImage'

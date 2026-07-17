@@ -1,0 +1,80 @@
+[
+  {
+    "route": "users",
+    "buttonName": "新增用户",
+    "count": 1,
+    "captured": true,
+    "info": {
+      "buttons": [
+        "详情",
+        "禁用",
+        "分组",
+        "积分",
+        "限额",
+        "密码",
+        "删除",
+        "详情",
+        "禁用",
+        "分组",
+        "积分",
+        "限额",
+        "密码",
+        "删除",
+        "上一页",
+        "1",
+        "下一页",
+        "关闭",
+        "取消",
+        "保存"
+      ],
+      "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n用户管理\nCURRENT VIEW\n用户管理\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\nUSERS\n用户管理\n\n按用户名、状态和分组定位用户，并支持按积分、最后活跃、创建时间排序。\n\n新增用户\n正常\n2\n待验证\n0\n禁用\n0\n权益分组\n1\n全部状态\n正常\n待验证\n禁用\n已关闭\n全部分组\nbasic\n积分\n最后活跃\n创建时间\n降序\n升序\n筛选\n清空\n第 1 页 / 共 2 条\n用户信息\t所属分组\t账户余额\t最后活跃\t状态\t操作\n\nU\nuser-1\ndebug-settings@example.com · 2\n\tbasic\t\n0.00000\nPOINTS\n\t2026/07/03 04:06\t正常\t\n详情\n禁用\n分组\n积分\n限额\n密码\n删除\n\n\n8\n89\n893721708@qq.com · 1\n\tbasic\t\n0.00000\nPOINTS\n\t2026/07/03 03:33\t正常\t\n详情\n禁用\n分组\n积分\n限额\n密码\n删除\n显示 1 到 2 共 2 条记录\n上一页\n1\n下一页\n新增用户\n\n管理后台创建用户不需要邮箱验证码。\n\n关闭\n邮箱\n昵称\n状态\n正常\n待验证\n禁用\n默认分组\nbasic\nRPM 限额\n并发限额\n初始密码\n取消\n保存",
+      "url": "http://127.0.0.1:8088/admin/#/users"
+    }
+  },
+  {
+    "route": "routing",
+    "buttonName": "新增路由",
+    "count": 1,
+    "captured": true,
+    "info": {
+      "buttons": [
+        "退出",
+        "新增路由",
+        "批量操作",
+        "刷新",
+        "关闭",
+        "取消",
+        "保存"
+      ],
+      "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n路由模型\nCURRENT VIEW\n路由模型\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n新增路由\n批量操作\n刷新\n路由模型运行摘要 · 候选模型\n暂无路由模型\n\n创建 Basic / Plus / Pro 后配置候选真实模型。\n\n新增路由模型\n\n隐藏不会出现在用户工作台；按分组可见需要至少绑定一个分组。\n\n关闭\n路由代码\n名称\n描述\n可见性\n全员可见\n按分组可见\n隐藏\n排序\n状态\n启用\n停用\n取消\n保存",
+      "url": "http://127.0.0.1:8088/admin/#/routing"
+    }
+  },
+  {
+    "route": "system-settings/storage",
+    "buttonName": "编辑存储配置",
+    "count": 0,
+    "captured": false
+  },
+  {
+    "route": "cashier-config",
+    "buttonName": "添加通道",
+    "count": 1,
+    "captured": true,
+    "info": {
+      "buttons": [
+        "退出",
+        "概览",
+        "支付方式",
+        "渠道实例",
+        "添加通道",
+        "保存体验额度",
+        "关闭",
+        "取消",
+        "保存"
+      ],
+      "text": "M\nMikiko Admin\n\n概览 / OVERVIEW\n\n运营大盘\n运维监控\n\n业务管理 / BUSINESS\n\n用户管理\n用户分组\n调用记录\n兑换码\n审核队列\n\n商业化 / COMMERCIAL\n\n订单管理\n套餐管理\n收银台配置\n\n路由与模型 / MODELS\n\n路由模型\n接入账号\n价格配置\n\n系统 / SYSTEM\n\n审计日志\n系统账户\n系统设置\nAD\nadmin@example.com\nSuper Administrator\n退出\nPROVIDERS\n0\n待审\n0\n草稿\n0\nA\nadmin@example.com\n收银台配置\nCURRENT VIEW\n收银台配置\nADMIN ROLE\nsuper_admin\nQUEUE ALERTS\n0 issues\nPENDING REVIEW\n0\n概览\n支付方式\n渠道实例\n支付通道管理 / PAYMENT PROVIDERS\n添加通道\nMock Payment\nMOCK 测试 · MOCK 测试\n启用\n收银台展示设置 / UI SETTINGS\n允许自定义充值金额\n开启后用户可输入任意金额按比例兑换积分\nMock 支付\nMOCK · MOCK 测试\n风控与对账 / RISK & SYNC\n订单同步频率\nManual\n单日支付上限\n未设置\n异常订单阻断\nEnabled\n注册送体验额度\n\n注册赠送 20.00000 积分，有效期 7 天，提前 2 天提醒，每个用户仅领取一次。\n\n停用\n保存体验额度\n启用注册送体验额度\n赠送积分\n有效天数\n提醒阈值\n每个用户仅领取一次\n新增支付渠道实例\n\n配置 JSON 中可填写商户号、密钥、网关地址等渠道参数；保存后不会回显密钥明文。\n\n关闭\nMock 测试配置\n\n用于测试环境快速跑通下单、模拟支付、到账和流水链路，线上环境不会对用户展示。\n\n密钥、私钥和证书类字段保存后不会回显明文，请在轮换时重新填写。\n\n必填：mock\n可选：query_status / query_trade_no / query_amount_cny\n实例名称\n渠道类型\nMock 测试\n支付宝直连\n微信直连\n易支付 · 支付宝\n易支付 · 微信\nJeePay · 支付宝\nJeePay · 微信\n支持方式\nMOCK 测试\n排序\nI\n调度权重\nI\n最小金额\nI\n最大金额\nI\n日限额\nI\n启用实例\n渠道字段配置\n\n普通字段会同步写入渠道配置 JSON；密钥字段会写入密钥 JSON，保存后不回显明文。\n\n默认支付结果\nI\n交易号前缀\nI\n密钥配置\n\n密钥只写不读；编辑已有实例时留空表示保留旧密钥。若上方配置 JSON 中包含敏感字段，保存时会自动拆入 secrets。\n\n密钥 JSON\nI\n清空密钥字段\nI\n渠道配置 JSON\nI\n取消\n保存",
+      "url": "http://127.0.0.1:8088/admin/#/cashier-config"
+    }
+  }
+]

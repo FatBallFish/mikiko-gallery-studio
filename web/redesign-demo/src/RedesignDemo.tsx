@@ -10,7 +10,7 @@ const models = [
 ]
 
 const ratios = ['1:1', '4:3', '16:9', '9:16', '3:4']
-const qualities = ['Standard', 'High', 'Ultra']
+const base_resolution = ['Standard', 'High', 'Ultra']
 
 export function RedesignDemo() {
   const [accent, setAccent] = useState('oklch(65% 0.18 280)') // Default Blue-Purple
@@ -144,7 +144,7 @@ export function RedesignDemo() {
               <div>
                 <label className="text-[10px] text-[var(--muted)] uppercase tracking-widest mb-3 block">质量 / Quality</label>
                 <div className={rdWorkspace.grid}>
-                  {qualities.map(q => (
+                  {base_resolution.map(q => (
                     <button 
                       key={q}
                       className={cn(rdWorkspace.selectItem, selectedQuality === q && rdWorkspace.selectItemActive)}

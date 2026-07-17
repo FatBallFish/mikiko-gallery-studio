@@ -18,6 +18,7 @@ func (ImageResult) Fields() []ent.Field {
 		field.UUID("task_id", uuid.UUID{}),
 		field.Int64("user_id"),
 		field.String("image_role").MaxLen(16).Default("output"),
+		field.UUID("storage_config_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("storage_driver").MaxLen(16).Default("local"),
 		field.UUID("storage_config_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("object_key").MaxLen(255).NotEmpty(),
@@ -33,7 +34,7 @@ func (ImageResult) Fields() []ent.Field {
 	}
 }
 func (ImageResult) Indexes() []ent.Index {
-	return []ent.Index{index.Fields("task_id"), index.Fields("user_id"), index.Fields("image_role"), index.Fields("object_key").Unique(), index.Fields("sha256"), index.Fields("visibility_status")}
+	return []ent.Index{index.Fields("task_id"), index.Fields("user_id"), index.Fields("image_role"), index.Fields("storage_config_id"), index.Fields("object_key").Unique(), index.Fields("sha256"), index.Fields("visibility_status")}
 }
 func (ImageResult) Annotations() []schema.Annotation {
 	return []schema.Annotation{entsql.Annotation{Table: "task_images"}}

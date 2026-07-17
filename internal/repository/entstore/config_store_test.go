@@ -72,12 +72,12 @@ func testAdminConfig() config.Config {
 			RefreshCookieName: "pg_refresh",
 		},
 		Billing: config.BillingConfig{
-			CNYPerPoint:               "0.3125",
-			AutoQualityDefaultByGroup: map[string]string{"basic": "1k"},
-			QualityPointsByModel:      map[string]map[string]string{"basic": {"1k": "2.00000"}},
-			UserGroupMultipliers:      map[string]string{"basic": "1.00000"},
-			TaskMultipliers:           map[string]string{"text_to_image": "1.00000"},
-			ReferenceImageExtra:       config.ReferenceExtra{First: "0.10000", Additional: "0.05000"},
+			CNYPerPoint:                      "0.3125",
+			AutoBaseResolutionDefaultByGroup: map[string]string{"basic": "1k"},
+			BaseResolutionPointsByModel:      map[string]map[string]string{"basic": {"1k": "2.00000"}},
+			UserGroupMultipliers:             map[string]string{"basic": "1.00000"},
+			TaskMultipliers:                  map[string]string{"text_to_image": "1.00000"},
+			ReferenceImageExtra:              config.ReferenceExtra{First: "0.10000", Additional: "0.05000"},
 		},
 		GenerationLimits: config.GenerationLimitsConfig{
 			MaxImageCount:          5,

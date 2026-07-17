@@ -1,4 +1,6 @@
 import type { AuditLog } from '../../../shared/api-types'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
 import {
   auditActionLabel,
   auditActionOptions,
@@ -11,6 +13,26 @@ import {
   auditSearchText,
   auditSubjectLabel,
 } from './auditRows'
+
+const auditPageSource = readFileSync(new URL('./AuditPage.tsx', import.meta.url), 'utf8')
+
+for (const primitive of ['PageHeader', 'FilterToolbar', 'ListPage', 'DataTable', 'Badge']) {
+  if (!auditPageSource.includes(`<${primitive}`)) {
+    throw new Error(`audit list must use the shared ${primitive} primitive`)
+  }
+}
+
+for (const behavior of ['adminApi.listAudit', 'auditRowsCSV(visibleRows)', 'auditExportFilename()', 'resultSummary=']) {
+  if (!auditPageSource.includes(behavior)) {
+    throw new Error(`audit list must preserve ${behavior}`)
+  }
+}
+
+for (const legacyPattern of ['AuditTimelineItem', '<FilterBar', 'rounded-xl', 'tracking-widest', 'uppercase']) {
+  if (auditPageSource.includes(legacyPattern)) {
+    throw new Error(`audit list must remove legacy page-local pattern ${legacyPattern}`)
+  }
+}
 
 const knownAction = auditActionLabel('user.points_adjust')
 if (knownAction !== '调整用户积分') {

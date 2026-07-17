@@ -284,7 +284,7 @@ components:
         data:
           type: object
           properties:
-            resolved_quality_bucket:
+            base_resolution:
               type: string
             estimated_points:
               type: string
@@ -617,7 +617,36 @@ components:
           type: array
           items:
             type: string
-        qualities:
+        base_resolution:
+          type: array
+          items:
+            type: string
+        quality:
+          type: array
+          items:
+            type: string
+        output_format:
+          type: array
+          items:
+            type: string
+        moderation:
+          type: array
+          items:
+            type: string
+        output_compression:
+          type: integer
+        supports_output_compression:
+          type: boolean
+          description: Whether this model supports user-selected JPEG/WebP compression quality.
+        size_modes:
+          type: array
+          items:
+            type: string
+        aspect_ratios:
+          type: array
+          items:
+            type: string
+        pixel_sizes:
           type: array
           items:
             type: string
@@ -638,8 +667,7 @@ components:
             model_groups:
               type: array
               items:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/CapabilityModelGroup'
             unavailable_reason:
               type: object
               properties:
@@ -648,6 +676,55 @@ components:
                   example: NO_ROUTE_MODEL
                 message:
                   type: string
+    CapabilityModelGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        task_types:
+          type: array
+          items: { type: string }
+        base_resolution:
+          type: array
+          items: { type: string }
+        quality:
+          type: array
+          items: { type: string }
+        size_modes:
+          type: array
+          items: { type: string }
+        aspect_ratios:
+          type: array
+          items: { type: string }
+        pixel_sizes:
+          type: array
+          items: { type: string }
+        output_format:
+          type: array
+          items: { type: string }
+        supports_output_compression:
+          type: boolean
+        moderation:
+          type: array
+          items: { type: string }
+        max_output_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
+        effective_multiplier:
+          type: string
+        prices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     ReferenceAssetUploadRequest:
       type: object
       required: [file]
@@ -684,6 +761,19 @@ components:
         requested_quality:
           type: string
           enum: [auto, 1k, 2k, 4k]
+        quality:
+          type: string
+          enum: [auto, low, medium, high]
+        output_format:
+          type: string
+          enum: [png, jpeg, webp]
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          type: string
+          enum: [auto, low]
         requested_size:
           type: string
         aspect_ratio:

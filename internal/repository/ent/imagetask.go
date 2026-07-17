@@ -35,16 +35,22 @@ type ImageTask struct {
 	TaskType string `json:"task_type,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
+	// ProgressStage holds the value of the "progress_stage" field.
+	ProgressStage string `json:"progress_stage,omitempty"`
+	// ProgressMessage holds the value of the "progress_message" field.
+	ProgressMessage string `json:"progress_message,omitempty"`
 	// Prompt holds the value of the "prompt" field.
 	Prompt string `json:"prompt,omitempty"`
 	// NegativePrompt holds the value of the "negative_prompt" field.
 	NegativePrompt *string `json:"negative_prompt,omitempty"`
 	// AbstractModel holds the value of the "abstract_model" field.
 	AbstractModel string `json:"abstract_model,omitempty"`
-	// RequestedQuality holds the value of the "requested_quality" field.
-	RequestedQuality string `json:"requested_quality,omitempty"`
-	// ResolvedQualityBucket holds the value of the "resolved_quality_bucket" field.
-	ResolvedQualityBucket string `json:"resolved_quality_bucket,omitempty"`
+	// SizeMode holds the value of the "size_mode" field.
+	SizeMode string `json:"size_mode,omitempty"`
+	// BaseResolution holds the value of the "base_resolution" field.
+	BaseResolution string `json:"base_resolution,omitempty"`
+	// Quality holds the value of the "quality" field.
+	Quality string `json:"quality,omitempty"`
 	// RequestedSize holds the value of the "requested_size" field.
 	RequestedSize *string `json:"requested_size,omitempty"`
 	// ResolvedWidth holds the value of the "resolved_width" field.
@@ -53,6 +59,12 @@ type ImageTask struct {
 	ResolvedHeight *int `json:"resolved_height,omitempty"`
 	// AspectRatio holds the value of the "aspect_ratio" field.
 	AspectRatio string `json:"aspect_ratio,omitempty"`
+	// OutputFormat holds the value of the "output_format" field.
+	OutputFormat string `json:"output_format,omitempty"`
+	// OutputCompression holds the value of the "output_compression" field.
+	OutputCompression int `json:"output_compression,omitempty"`
+	// Moderation holds the value of the "moderation" field.
+	Moderation string `json:"moderation,omitempty"`
 	// RequestedOutputImageCount holds the value of the "requested_output_image_count" field.
 	RequestedOutputImageCount int `json:"requested_output_image_count,omitempty"`
 	// SuccessOutputImageCount holds the value of the "success_output_image_count" field.
@@ -228,6 +240,18 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Status = value.String
 			}
+		case imagetask.FieldProgressStage:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field progress_stage", values[i])
+			} else if value.Valid {
+				_m.ProgressStage = value.String
+			}
+		case imagetask.FieldProgressMessage:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field progress_message", values[i])
+			} else if value.Valid {
+				_m.ProgressMessage = value.String
+			}
 		case imagetask.FieldPrompt:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field prompt", values[i])
@@ -247,17 +271,23 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.AbstractModel = value.String
 			}
-		case imagetask.FieldRequestedQuality:
+		case imagetask.FieldSizeMode:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field requested_quality", values[i])
+				return fmt.Errorf("unexpected type %T for field size_mode", values[i])
 			} else if value.Valid {
-				_m.RequestedQuality = value.String
+				_m.SizeMode = value.String
 			}
-		case imagetask.FieldResolvedQualityBucket:
+		case imagetask.FieldBaseResolution:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field resolved_quality_bucket", values[i])
+				return fmt.Errorf("unexpected type %T for field base_resolution", values[i])
 			} else if value.Valid {
-				_m.ResolvedQualityBucket = value.String
+				_m.BaseResolution = value.String
+			}
+		case imagetask.FieldQuality:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field quality", values[i])
+			} else if value.Valid {
+				_m.Quality = value.String
 			}
 		case imagetask.FieldRequestedSize:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -285,6 +315,24 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field aspect_ratio", values[i])
 			} else if value.Valid {
 				_m.AspectRatio = value.String
+			}
+		case imagetask.FieldOutputFormat:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field output_format", values[i])
+			} else if value.Valid {
+				_m.OutputFormat = value.String
+			}
+		case imagetask.FieldOutputCompression:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field output_compression", values[i])
+			} else if value.Valid {
+				_m.OutputCompression = int(value.Int64)
+			}
+		case imagetask.FieldModeration:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field moderation", values[i])
+			} else if value.Valid {
+				_m.Moderation = value.String
 			}
 		case imagetask.FieldRequestedOutputImageCount:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -623,6 +671,12 @@ func (_m *ImageTask) String() string {
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
 	builder.WriteString(", ")
+	builder.WriteString("progress_stage=")
+	builder.WriteString(_m.ProgressStage)
+	builder.WriteString(", ")
+	builder.WriteString("progress_message=")
+	builder.WriteString(_m.ProgressMessage)
+	builder.WriteString(", ")
 	builder.WriteString("prompt=")
 	builder.WriteString(_m.Prompt)
 	builder.WriteString(", ")
@@ -634,11 +688,14 @@ func (_m *ImageTask) String() string {
 	builder.WriteString("abstract_model=")
 	builder.WriteString(_m.AbstractModel)
 	builder.WriteString(", ")
-	builder.WriteString("requested_quality=")
-	builder.WriteString(_m.RequestedQuality)
+	builder.WriteString("size_mode=")
+	builder.WriteString(_m.SizeMode)
 	builder.WriteString(", ")
-	builder.WriteString("resolved_quality_bucket=")
-	builder.WriteString(_m.ResolvedQualityBucket)
+	builder.WriteString("base_resolution=")
+	builder.WriteString(_m.BaseResolution)
+	builder.WriteString(", ")
+	builder.WriteString("quality=")
+	builder.WriteString(_m.Quality)
 	builder.WriteString(", ")
 	if v := _m.RequestedSize; v != nil {
 		builder.WriteString("requested_size=")
@@ -657,6 +714,15 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("aspect_ratio=")
 	builder.WriteString(_m.AspectRatio)
+	builder.WriteString(", ")
+	builder.WriteString("output_format=")
+	builder.WriteString(_m.OutputFormat)
+	builder.WriteString(", ")
+	builder.WriteString("output_compression=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OutputCompression))
+	builder.WriteString(", ")
+	builder.WriteString("moderation=")
+	builder.WriteString(_m.Moderation)
 	builder.WriteString(", ")
 	builder.WriteString("requested_output_image_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RequestedOutputImageCount))

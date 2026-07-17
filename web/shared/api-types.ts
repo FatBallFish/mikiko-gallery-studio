@@ -134,6 +134,7 @@ export const API_PATHS = {
     imageReviewReject: '/api/ops/admin/v1/image-reviews/{image_id}:reject',
     imageReviewUnpublish: '/api/ops/admin/v1/image-reviews/{image_id}:unpublish',
     dashboard: '/api/ops/admin/v1/metrics/dashboard',
+    monitoringSnapshot: '/api/ops/admin/v1/monitoring/snapshot',
     readiness: '/api/ops/admin/v1/readiness',
     cashierOverview: '/api/ops/admin/v1/cashier/overview',
     cashierPlans: '/api/ops/admin/v1/cashier/plans',
@@ -709,6 +710,69 @@ export type AdminSession = { token: string; access_token?: string; expires_in_se
 export type AdminLoginResult = { access_token: string; expires_in_seconds: number; admin_id: number; email: string; role: string; permissions?: AdminPermission[] }
 export type AdminMetric = { key?: string; label: string; value: string; trend: string; detail?: string; tone: 'good' | 'warn' | 'bad' | 'danger' | 'neutral' }
 export type ProviderHealth = { provider: string; provider_code?: string; provider_type?: string; status: 'healthy' | 'degraded' | 'down' | string; health_status?: string; latency_ms: number; error_rate: string; note: string; enabled?: boolean }
+export type MonitoringWindow = '5m' | '15m' | '30m' | '60m'
+export type AdminMonitoringCurrent = {
+  inflight: number
+  peak_inflight: number
+  qps: number
+  p50_ms: number
+  p95_ms: number
+  p99_ms: number
+  server_error_rate: number
+  cpu_percent: number | null
+  heap_bytes: number
+  sys_bytes: number
+  goroutines: number
+  gc_pause_ms: number
+}
+export type AdminMonitoringPoint = {
+  at: string
+  qps: number
+  peak_inflight: number
+  p50_ms: number
+  p95_ms: number
+  p99_ms: number
+  server_error_rate: number
+  cpu_percent: number | null
+  heap_bytes: number
+  sys_bytes: number
+  goroutines: number
+}
+export type AdminMonitoringStatuses = {
+  total: number
+  success: number
+  redirect: number
+  client_error: number
+  server_error: number
+}
+export type AdminMonitoringRoute = {
+  route: string
+  requests: number
+  qps: number
+  p95_ms: number
+  client_error_rate: number
+  server_error_rate: number
+}
+export type AdminMonitoringProvider = {
+  provider_code: string
+  provider_type: string
+  status: string
+  enabled: boolean
+}
+export type AdminMonitoringSnapshot = {
+  generated_at: string
+  window: MonitoringWindow
+  sample_interval_seconds: number
+  collecting: boolean
+  uptime_seconds: number
+  state: 'collecting' | 'healthy' | 'pressured' | 'critical' | string
+  state_reasons: string[]
+  current: AdminMonitoringCurrent
+  series: AdminMonitoringPoint[]
+  statuses: AdminMonitoringStatuses
+  routes: AdminMonitoringRoute[]
+  providers: AdminMonitoringProvider[]
+}
 export type AdminDashboardOperations = {
   today_order_count: number
   payment_success_rate: string
@@ -753,8 +817,12 @@ export type ProviderModel = {
   compat_mode: string
   supports_image_input: boolean
   supports_mask: boolean
-  supported_qualities: string[]
+  supported_base_resolution: string[]
+  quality: string[]
   supported_ratios: string[]
+  output_format: string[]
+  output_compression: number
+  moderation: string[]
   max_image_count: number
   max_reference_image_count: number
   timeout_ms: number
@@ -885,14 +953,14 @@ export type RouteModelPrice = {
   route_model_code?: string
   route_model_name?: string
   task_type: ImageTaskType
-  quality: string
+  base_resolution: string
   base_points: string
   reference_multiplier: string
   enabled: boolean
   created_at?: string
   updated_at?: string
 }
-export type RouteModelPriceWriteRequest = { route_model_id: ID; task_type: ImageTaskType; quality: string; base_points: string; reference_multiplier: string; enabled: boolean }
+export type RouteModelPriceWriteRequest = { route_model_id: ID; task_type: ImageTaskType; base_resolution: string; base_points: string; reference_multiplier: string; enabled: boolean }
 export type RedeemCode = { id: number; batch_id: number; code: string; status: string; reward_type: string; reward_value: string; valid_from: string; valid_until: string; max_redemptions: number; redeemed_count: number; last_redeemed_by?: number | null; created_at: string; updated_at: string }
 export type RedeemCodeCreateRequest = { code: string; batch_id: number; status: string; reward_type: string; reward_value: string; valid_from?: string; valid_until: string; max_redemptions: number }
 export type RedeemCodeBatchCreateRequest = Omit<RedeemCodeCreateRequest, 'code'> & { count: number }

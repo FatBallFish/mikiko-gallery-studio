@@ -9,10 +9,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/provider/openai"
 )
+
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestGenerateUsesImagesEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,8 +36,8 @@ func TestGenerateUsesImagesEndpoint(t *testing.T) {
 		if got := body["model"]; got != "gpt-image-2" {
 			t.Fatalf("unexpected model %#v", got)
 		}
-		if _, ok := body["n"]; ok {
-			t.Fatalf("generation request must not send unsupported n field: %#v", body["n"])
+		if got := body["n"]; got != float64(3) {
+			t.Fatalf("unexpected n %#v", got)
 		}
 		if got := body["response_format"]; got != "b64_json" {
 			t.Fatalf("unexpected response_format %#v", got)
@@ -63,6 +70,104 @@ func TestGenerateUsesImagesEndpoint(t *testing.T) {
 	}
 }
 
+func TestGenerateParsesOpenAICompatibleB64JSONWithUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"created": 1783531969,
+			"model": "gpt-image-2",
+			"data": [
+				{"b64_json": "ZmFrZS1pbWFnZQ=="}
+			],
+			"usage": {
+				"prompt_tokens": 16,
+				"completion_tokens": 1756,
+				"total_tokens": 1772
+			}
+		}`)
+	}))
+	defer server.Close()
+
+	client := openai.NewClient(openai.Config{BaseURL: server.URL, APIKey: "test-key", HTTPClient: server.Client()})
+	resp, err := client.Generate(context.Background(), provider.ImageRequest{
+		Model:          "gpt-image-2",
+		Prompt:         "A small product photo of a ceramic coffee cup on a clean desk",
+		Size:           "1024x1024",
+		Quality:        "auto",
+		ResponseFormat: provider.ResponseFormatB64JSON,
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if resp.Created != 1783531969 || len(resp.Data) != 1 || resp.Data[0].B64JSON != "ZmFrZS1pbWFnZQ==" {
+		t.Fatalf("unexpected response %#v", resp)
+	}
+}
+
+func TestGenerateMapsTransportEOFToUpstreamUnavailable(t *testing.T) {
+	client := openai.NewClient(openai.Config{
+		BaseURL: "https://api.example.test",
+		APIKey:  "test-key",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, io.ErrUnexpectedEOF
+		})},
+	})
+
+	_, err := client.Generate(context.Background(), provider.ImageRequest{
+		Model:          "gpt-image-2",
+		Prompt:         "test",
+		Size:           "1024x1024",
+		Quality:        "auto",
+		ResponseFormat: provider.ResponseFormatB64JSON,
+	})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	upstream, ok := provider.AsUpstreamError(err)
+	if !ok {
+		t.Fatalf("expected upstream error, got %T %[1]v", err)
+	}
+	if upstream.Family != provider.UpstreamErrorFamilyUnavailable || upstream.Code != "transport_error" {
+		t.Fatalf("unexpected upstream classification %#v", upstream)
+	}
+}
+
+func TestGenerateMapsResponseBodyReadTimeoutToTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+		_, _ = io.WriteString(w, `{"created":1770000000,"data":[{"b64_json":"ZmFrZQ=="}]}`)
+	}))
+	defer server.Close()
+
+	client := openai.NewClient(openai.Config{
+		BaseURL:    server.URL,
+		APIKey:     "test-key",
+		HTTPClient: &http.Client{Timeout: 10 * time.Millisecond},
+	})
+	_, err := client.Generate(context.Background(), provider.ImageRequest{
+		Model:          "gpt-image-2",
+		Prompt:         "test",
+		Size:           "1024x1024",
+		Quality:        "auto",
+		ResponseFormat: provider.ResponseFormatB64JSON,
+	})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	upstream, ok := provider.AsUpstreamError(err)
+	if !ok {
+		t.Fatalf("expected upstream error, got %T %[1]v", err)
+	}
+	if upstream.Code != "timeout" || upstream.Type != "timeout" || upstream.Family != provider.UpstreamErrorFamilyUnavailable {
+		t.Fatalf("unexpected upstream classification %#v", upstream)
+	}
+}
+
 func TestEditUsesMultipartImagesEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/images/edits" {
@@ -81,8 +186,8 @@ func TestEditUsesMultipartImagesEndpoint(t *testing.T) {
 		if got := r.FormValue("model"); got != "gpt-image-2" {
 			t.Fatalf("unexpected model %q", got)
 		}
-		if got := r.FormValue("n"); got != "" {
-			t.Fatalf("edit request must not send unsupported n field, got %q", got)
+		if got := r.FormValue("n"); got != "2" {
+			t.Fatalf("unexpected n %q", got)
 		}
 		images := r.MultipartForm.File["image"]
 		if len(images) != 2 {

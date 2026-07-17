@@ -195,11 +195,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.Worker.MaxConcurrentTasks > 64 {
 		cfg.Worker.MaxConcurrentTasks = 64
 	}
-	if len(cfg.Billing.AutoQualityDefaultByGroup) == 0 {
-		cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
+	if len(cfg.Billing.AutoBaseResolutionDefaultByGroup) == 0 {
+		cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
 	}
-	if len(cfg.Billing.QualityPointsByModel) == 0 {
-		cfg.Billing.QualityPointsByModel = map[string]map[string]string{
+	if len(cfg.Billing.BaseResolutionPointsByModel) == 0 {
+		cfg.Billing.BaseResolutionPointsByModel = map[string]map[string]string{
 			"basic": {"1k": "2.00000", "2k": "4.00000", "4k": "8.00000"},
 			"plus":  {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 			"pro":   {"1k": "8.00000", "2k": "12.00000", "4k": "20.00000"},
@@ -236,11 +236,23 @@ func applyDefaults(cfg *Config) {
 		if len(capability.SupportedTaskTypes) == 0 {
 			capability.SupportedTaskTypes = []string{"text_to_image", "image_edit", "reference_generate"}
 		}
-		if len(capability.SupportedQualities) == 0 {
-			capability.SupportedQualities = []string{"1k", "2k", "4k"}
+		if len(capability.SupportedBaseResolution) == 0 {
+			capability.SupportedBaseResolution = []string{"1k", "2k", "4k"}
+		}
+		if len(capability.Quality) == 0 {
+			capability.Quality = []string{"auto", "low", "medium", "high"}
 		}
 		if len(capability.SupportedAspectRatios) == 0 {
 			capability.SupportedAspectRatios = []string{"1:1", "4:3", "16:9"}
+		}
+		if len(capability.OutputFormat) == 0 {
+			capability.OutputFormat = []string{"png"}
+		}
+		if capability.OutputCompression == 0 {
+			capability.OutputCompression = 100
+		}
+		if len(capability.Moderation) == 0 {
+			capability.Moderation = []string{"auto"}
 		}
 		if capability.MaxImageCount == 0 {
 			capability.MaxImageCount = cfg.GenerationLimits.MaxImageCount
@@ -267,15 +279,19 @@ func applyDefaults(cfg *Config) {
 
 func defaultProviderCapability(cfg *Config, models []string, supportsImageInput bool, supportsMask bool, priority int) ProviderCapabilityConfig {
 	return ProviderCapabilityConfig{
-		SupportedModels:        models,
-		SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
-		SupportedQualities:     []string{"1k", "2k", "4k"},
-		SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
-		MaxImageCount:          cfg.GenerationLimits.MaxImageCount,
-		MaxReferenceImageCount: cfg.GenerationLimits.ReferenceImageMaxCount,
-		SupportsImageInput:     supportsImageInput,
-		SupportsMask:           supportsMask,
-		Priority:               priority,
+		SupportedModels:         models,
+		SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+		SupportedBaseResolution: []string{"1k", "2k", "4k"},
+		Quality:                 []string{"auto", "low", "medium", "high"},
+		SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
+		OutputFormat:            []string{"png"},
+		OutputCompression:       100,
+		Moderation:              []string{"auto"},
+		MaxImageCount:           cfg.GenerationLimits.MaxImageCount,
+		MaxReferenceImageCount:  cfg.GenerationLimits.ReferenceImageMaxCount,
+		SupportsImageInput:      supportsImageInput,
+		SupportsMask:            supportsMask,
+		Priority:                priority,
 	}
 }
 

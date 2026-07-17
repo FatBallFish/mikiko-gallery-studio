@@ -170,7 +170,7 @@ func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimage
 		}
 		return err
 	}
-	if entity.Status != domainimagetask.StatusRunning {
+	if entity.Status != domainimagetask.StatusRunning || entity.LeaseOwner == nil || *entity.LeaseOwner != owner {
 		return repoerr.ErrConflict
 	}
 
@@ -192,6 +192,32 @@ func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimage
 	}
 
 	return tx.Commit()
+}
+
+func (s *ImageTaskStore) UpdateProgressIfOwned(ctx context.Context, taskID, owner, stage, message string, now time.Time) error {
+	taskUUID, err := uuid.Parse(taskID)
+	if err != nil {
+		return err
+	}
+	affected, err := s.client.ImageTask.Update().
+		Where(
+			imagetask.IDEQ(taskUUID),
+			imagetask.DeletedAtIsNil(),
+			imagetask.StatusEQ(domainimagetask.StatusRunning),
+			imagetask.LeaseOwnerEQ(owner),
+			imagetask.Or(imagetask.LeaseExpiresAtIsNil(), imagetask.LeaseExpiresAtGTE(now)),
+		).
+		SetProgressStage(stage).
+		SetProgressMessage(message).
+		SetUpdatedAt(now).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return repoerr.ErrConflict
+	}
+	return nil
 }
 
 func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
@@ -734,6 +760,8 @@ func (s *ImageTaskStore) AcquireNextQueuedTask(ctx context.Context, owner string
 	update := tx.ImageTask.Update().
 		Where(imagetask.IDEQ(entity.ID), imagetask.DeletedAtIsNil(), acquireEligiblePredicate(now)).
 		SetStatus(domainimagetask.StatusRunning).
+		SetProgressStage(domainimagetask.ProgressStageProvider).
+		SetProgressMessage("正在调用模型生成图片").
 		SetLeaseOwner(owner).
 		SetLeaseExpiresAt(expiresAt)
 	if entity.StartedAt == nil {
@@ -838,13 +866,18 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetSourceChannel(defaultString(task.SourceChannel, "web")).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, "ratio")).
 		SetAspectRatio(defaultString(task.AspectRatio, "1:1")).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, "auto")).
+		SetOutputFormat(defaultString(task.OutputFormat, "png")).
+		SetOutputCompression(defaultPositive(task.OutputCompression, 100)).
+		SetModeration(defaultString(task.Moderation, "auto")).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
-		SetAspectRatio("1:1").
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
@@ -930,11 +963,17 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
 		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, entity.Quality)).
+		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
+		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
+		SetModeration(defaultString(task.Moderation, entity.Moderation)).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
@@ -1071,11 +1110,17 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
 		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, entity.Quality)).
+		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
+		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
+		SetModeration(defaultString(task.Moderation, entity.Moderation)).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
@@ -1181,7 +1226,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 	return builder.Save(ctx)
 }
 
-func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, _ string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {
+func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, owner string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {
 	pricingSnapshot, err := buildPricingSnapshot(task)
 	if err != nil {
 		return 0, err
@@ -1191,16 +1236,23 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 			imagetask.IDEQ(entity.ID),
 			imagetask.DeletedAtIsNil(),
 			imagetask.StatusEQ(domainimagetask.StatusRunning),
+			imagetask.LeaseOwnerEQ(owner),
 		).
 		SetUserID(task.UserID).
 		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
 		SetTaskType(defaultTaskType(task.TaskType)).
 		SetStatus(defaultTaskStatus(task.Status)).
+		SetProgressStage(task.ProgressStage).
+		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
+		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
 		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetRequestedQuality(defaultString(task.RequestedQuality, "auto")).
-		SetResolvedQualityBucket(defaultString(task.ResolvedQualityBucket, "1k")).
+		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetQuality(defaultString(task.Quality, entity.Quality)).
+		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
+		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
+		SetModeration(defaultString(task.Moderation, entity.Moderation)).
 		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
@@ -1437,6 +1489,13 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 		SetSha256(shaValue).
 		SetImageGroup(strings.TrimSpace(result.ImageGroup)).
 		SetVisibilityStatus(defaultString(result.VisibilityStatus, "private"))
+	if strings.TrimSpace(result.StorageConfigID) != "" {
+		storageConfigID, parseErr := uuid.Parse(strings.TrimSpace(result.StorageConfigID))
+		if parseErr != nil {
+			return parseErr
+		}
+		builder.SetStorageConfigID(storageConfigID)
+	}
 	if strings.TrimSpace(result.ReviewReason) != "" {
 		builder.SetReviewReason(strings.TrimSpace(result.ReviewReason))
 	}
@@ -1661,6 +1720,7 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 		Width:            entity.Width,
 		Height:           entity.Height,
 		SHA256:           entity.Sha256,
+		StorageConfigID:  "",
 		ObjectKey:        entity.ObjectKey,
 		StorageDriver:    entity.StorageDriver,
 		ImageGroup:       entity.ImageGroup,
@@ -1674,6 +1734,9 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 	if entity.StorageDriver == "remote" {
 		item.URL = entity.ObjectKey
 		return item
+	}
+	if entity.StorageConfigID != nil {
+		item.StorageConfigID = entity.StorageConfigID.String()
 	}
 	if strings.TrimSpace(entity.StorageDriver) != "" {
 		item.DownloadURL = "/api/agent/image/v1/images/" + entity.ID.String()
@@ -1870,7 +1933,8 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		RouteModelCode:    taskEntity.RouteModelCode,
 		TaskType:          taskEntity.TaskType,
 		TaskStatus:        taskEntity.Status,
-		Quality:           taskEntity.ResolvedQualityBucket,
+		BaseResolution:    taskEntity.BaseResolution,
+		Quality:           taskEntity.Quality,
 		AspectRatio:       taskEntity.AspectRatio,
 		ActualPoints:      taskEntity.ActualPoints,
 		ReferenceAssetIDs: decodeReferenceAssetIDs(taskEntity.RoutingSnapshot),
@@ -1882,6 +1946,7 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		Width:             item.Width,
 		Height:            item.Height,
 		SHA256:            item.SHA256,
+		StorageConfigID:   item.StorageConfigID,
 		ObjectKey:         item.ObjectKey,
 		StorageDriver:     item.StorageDriver,
 		StorageConfigID:   item.StorageConfigID,

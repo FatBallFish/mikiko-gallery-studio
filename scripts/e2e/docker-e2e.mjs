@@ -11,6 +11,8 @@ const BASE_URL = envUrl('BASE_URL', 'http://127.0.0.1:18080')
 const USER_WEB_URL = envUrl('USER_WEB_URL', 'http://127.0.0.1:5173')
 const ADMIN_WEB_URL = envUrl('ADMIN_WEB_URL', 'http://127.0.0.1:5174')
 const NGINX_URL = envUrl('NGINX_URL', 'http://127.0.0.1:18081')
+const MINIO_URL = envUrl('MINIO_URL', `http://127.0.0.1:${process.env.MINIO_API_PORT || '9000'}`)
+const MAILPIT_URL = envUrl('MAILPIT_URL', `http://127.0.0.1:${process.env.MAILPIT_UI_PORT || '8025'}`)
 const REPORT_DIR = path.join(ROOT_DIR, 'tmp/e2e')
 const RUN_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
 const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII='
@@ -36,6 +38,8 @@ const state = {
     storageConfigId: 'missing-storage-config',
     providerCode: `e2e-provider-${RUN_ID}`.toLowerCase(),
     groupCode: `e2e-group-${RUN_ID}`.toLowerCase(),
+    storageConfigId: '1',
+    storageConfigVersion: 1,
   },
 }
 
@@ -245,11 +249,11 @@ async function ensureRouteModel(code, name, sortOrder) {
 
 async function ensureRoutePrice(routeModelId) {
   const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-model-prices?page=1&page_size=100&route_model_id=${routeModelId}&task_type=text_to_image`, 200, { headers: bearer(state.admin.token) })
-  const existing = (data(list).items || []).find(item => item.quality === '1k')
+  const existing = (data(list).items || []).find(item => item.base_resolution === '1k')
   const body = {
     route_model_id: Number(routeModelId),
     task_type: 'text_to_image',
-    quality: '1k',
+    base_resolution: '1k',
     base_points: '1.00000',
     reference_multiplier: '1.00000',
     enabled: true,
@@ -306,7 +310,7 @@ async function seedGenerationRoute() {
       model_code: 'openrouter/imagen',
       display_name: 'Docker E2E Image Model',
       task_types: ['text_to_image'],
-      qualities: ['1k'],
+      base_resolution: ['1k'],
       cost_per_image: '0.00000',
       currency: 'USD',
       enabled: true,
@@ -593,7 +597,7 @@ async function happyPathAgentBilling() {
   if (!findLedgerItem(data(signupLedger).items, 'trial_grant', 'trial', 'signup')) {
     fail('Ledger did not include signup trial grant bucket metadata', { body: signupLedger.text })
   }
-  const estimate = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0`, 200, {
+  const estimate = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0`, 200, {
     headers: bearer(state.user.token),
   })
   if (!data(estimate).estimated_points) fail('Estimate response did not include estimated_points')
@@ -770,6 +774,13 @@ async function signedOk(method, pathWithQuery) {
 async function happyPathAdmin() {
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/metrics/dashboard`, 200, { headers: bearer(state.admin.token) })
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/config-tabs`, 200, { headers: bearer(state.admin.token) })
+  const storageConfigs = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/storage-configs`, 200, { headers: bearer(state.admin.token) })
+  const defaultStorageConfig = (data(storageConfigs).items || []).find(item => item.is_default) || data(storageConfigs).items?.[0]
+  if (!defaultStorageConfig?.id) {
+    fail('Admin storage config list did not expose a config id for OpenAPI sweep', { body: storageConfigs.text })
+  }
+  state.ids.storageConfigId = String(defaultStorageConfig.id)
+  state.ids.storageConfigVersion = Number(defaultStorageConfig.version || 1)
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/users?page=1&page_size=20`, 200, { headers: bearer(state.admin.token) })
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/users/${state.ids.userId}`, 200, { headers: bearer(state.admin.token) })
   const manualEmail = `manual-${RUN_ID}@example.com`
@@ -849,7 +860,7 @@ async function happyPathAdmin() {
       compat_mode: 'openai_images',
       supports_image_input: true,
       supports_mask: true,
-      supported_qualities: ['1k'],
+      supported_base_resolution: ['1k'],
       supported_ratios: ['1:1'],
       max_image_count: 1,
       max_reference_image_count: 1,
@@ -884,7 +895,7 @@ async function happyPathAdmin() {
       task_type: 'text_to_image',
       prompt: 'docker e2e route preflight failure',
       route_model_code: missingRouteCode,
-      requested_quality: 'auto',
+      base_resolution: 'auto',
       requested_size: '1024x1024',
       requested_output_image_count: 1,
       response_mode: 'async',
@@ -971,6 +982,7 @@ async function openapiRouteSweep(openapi) {
         body: result.text.slice(0, 600),
       })
     }
+    rememberStorageConfigVersion(template, result)
   }
   if (failures.length > 0) {
     fail('OpenAPI route sweep found contract failures', { failures })
@@ -979,6 +991,14 @@ async function openapiRouteSweep(openapi) {
     warn('OpenAPI route sweep hit endpoints with expected missing preconditions', { warnings })
   }
   return { checked, semanticNotFoundWarnings: warnings.length }
+}
+
+function rememberStorageConfigVersion(template, result) {
+  if (!template.includes('/api/ops/admin/v1/storage-configs/{storage_config_id}')) return
+  const version = Number(result.json?.data?.version)
+  if (result.status >= 200 && result.status < 300 && Number.isFinite(version) && version > 0) {
+    state.ids.storageConfigVersion = version
+  }
 }
 
 function isExpectedProviderUnavailable(result) {
@@ -1101,6 +1121,11 @@ function defaultBody(method, template) {
     '/api/ops/admin/v1/redeem-codes': { code: `SWEEP-${RUN_ID}`, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
     '/api/ops/admin/v1/redeem-codes/{code_id}/status': { status: 'disabled' },
     '/api/ops/admin/v1/redeem-codes:batch-create': { count: 1, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
+    '/api/ops/admin/v1/storage-configs': { code: `sweep-local-${RUN_ID}`.toLowerCase(), name: `Sweep Local ${RUN_ID}`, driver: 'local', provider: 'local', local_root: '/var/lib/pic-gallery/storage', read_enabled: true, write_enabled: false },
+    '/api/ops/admin/v1/storage-configs:probe': { name: `Sweep Probe ${RUN_ID}`, driver: 'local', provider: 'local', local_root: '/var/lib/pic-gallery/storage', read_enabled: true, write_enabled: true },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}': { version: state.ids.storageConfigVersion, name: `Sweep Default ${RUN_ID}`, driver: 'local', provider: 'local', local_root: '/var/lib/pic-gallery/storage', read_enabled: true, write_enabled: true },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-default': { version: state.ids.storageConfigVersion },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-status': { version: state.ids.storageConfigVersion, status: 'enabled', read_enabled: true, write_enabled: true },
     '/api/ops/admin/v1/user-groups': { group_code: `sweep-group-${RUN_ID}`.toLowerCase(), group_name: `Sweep ${RUN_ID}`, multiplier: '1.00000', status: 'active' },
     '/api/ops/admin/v1/user-groups/{group_code}': { group_code: state.ids.groupCode, group_name: `Sweep Updated ${RUN_ID}`, multiplier: '1.20000', status: 'active' },
     '/api/ops/admin/v1/users/{user_id}/group': { user_group_code: state.ids.groupCode },
@@ -1155,8 +1180,8 @@ async function main() {
       await waitFor(`${USER_WEB_URL}/`)
       await waitFor(`${ADMIN_WEB_URL}/`)
       await waitFor(`${NGINX_URL}/readyz`)
-      await waitFor('http://127.0.0.1:9000/minio/health/live')
-      await waitFor('http://127.0.0.1:8025/api/v1/info')
+      await waitFor(`${MINIO_URL}/minio/health/live`)
+      await waitFor(`${MAILPIT_URL}/api/v1/info`)
     })
     const openapi = await loadOpenAPI()
     await step('user and admin web routes return app shell', async () => {

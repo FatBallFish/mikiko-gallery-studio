@@ -62,16 +62,16 @@ func (_u *RouteModelPriceUpdate) SetNillableTaskType(v *string) *RouteModelPrice
 	return _u
 }
 
-// SetQuality sets the "quality" field.
-func (_u *RouteModelPriceUpdate) SetQuality(v string) *RouteModelPriceUpdate {
-	_u.mutation.SetQuality(v)
+// SetBaseResolution sets the "base_resolution" field.
+func (_u *RouteModelPriceUpdate) SetBaseResolution(v string) *RouteModelPriceUpdate {
+	_u.mutation.SetBaseResolution(v)
 	return _u
 }
 
-// SetNillableQuality sets the "quality" field if the given value is not nil.
-func (_u *RouteModelPriceUpdate) SetNillableQuality(v *string) *RouteModelPriceUpdate {
+// SetNillableBaseResolution sets the "base_resolution" field if the given value is not nil.
+func (_u *RouteModelPriceUpdate) SetNillableBaseResolution(v *string) *RouteModelPriceUpdate {
 	if v != nil {
-		_u.SetQuality(*v)
+		_u.SetBaseResolution(*v)
 	}
 	return _u
 }
@@ -157,9 +157,9 @@ func (_u *RouteModelPriceUpdate) check() error {
 			return &ValidationError{Name: "task_type", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.task_type": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Quality(); ok {
-		if err := routemodelprice.QualityValidator(v); err != nil {
-			return &ValidationError{Name: "quality", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.quality": %w`, err)}
+	if v, ok := _u.mutation.BaseResolution(); ok {
+		if err := routemodelprice.BaseResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "base_resolution", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.base_resolution": %w`, err)}
 		}
 	}
 	return nil
@@ -186,8 +186,8 @@ func (_u *RouteModelPriceUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if value, ok := _u.mutation.TaskType(); ok {
 		_spec.SetField(routemodelprice.FieldTaskType, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Quality(); ok {
-		_spec.SetField(routemodelprice.FieldQuality, field.TypeString, value)
+	if value, ok := _u.mutation.BaseResolution(); ok {
+		_spec.SetField(routemodelprice.FieldBaseResolution, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.BasePoints(); ok {
 		_spec.SetField(routemodelprice.FieldBasePoints, field.TypeString, value)
@@ -253,16 +253,16 @@ func (_u *RouteModelPriceUpdateOne) SetNillableTaskType(v *string) *RouteModelPr
 	return _u
 }
 
-// SetQuality sets the "quality" field.
-func (_u *RouteModelPriceUpdateOne) SetQuality(v string) *RouteModelPriceUpdateOne {
-	_u.mutation.SetQuality(v)
+// SetBaseResolution sets the "base_resolution" field.
+func (_u *RouteModelPriceUpdateOne) SetBaseResolution(v string) *RouteModelPriceUpdateOne {
+	_u.mutation.SetBaseResolution(v)
 	return _u
 }
 
-// SetNillableQuality sets the "quality" field if the given value is not nil.
-func (_u *RouteModelPriceUpdateOne) SetNillableQuality(v *string) *RouteModelPriceUpdateOne {
+// SetNillableBaseResolution sets the "base_resolution" field if the given value is not nil.
+func (_u *RouteModelPriceUpdateOne) SetNillableBaseResolution(v *string) *RouteModelPriceUpdateOne {
 	if v != nil {
-		_u.SetQuality(*v)
+		_u.SetBaseResolution(*v)
 	}
 	return _u
 }
@@ -361,9 +361,9 @@ func (_u *RouteModelPriceUpdateOne) check() error {
 			return &ValidationError{Name: "task_type", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.task_type": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Quality(); ok {
-		if err := routemodelprice.QualityValidator(v); err != nil {
-			return &ValidationError{Name: "quality", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.quality": %w`, err)}
+	if v, ok := _u.mutation.BaseResolution(); ok {
+		if err := routemodelprice.BaseResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "base_resolution", err: fmt.Errorf(`ent: validator failed for field "RouteModelPrice.base_resolution": %w`, err)}
 		}
 	}
 	return nil
@@ -407,8 +407,8 @@ func (_u *RouteModelPriceUpdateOne) sqlSave(ctx context.Context) (_node *RouteMo
 	if value, ok := _u.mutation.TaskType(); ok {
 		_spec.SetField(routemodelprice.FieldTaskType, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Quality(); ok {
-		_spec.SetField(routemodelprice.FieldQuality, field.TypeString, value)
+	if value, ok := _u.mutation.BaseResolution(); ok {
+		_spec.SetField(routemodelprice.FieldBaseResolution, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.BasePoints(); ok {
 		_spec.SetField(routemodelprice.FieldBasePoints, field.TypeString, value)

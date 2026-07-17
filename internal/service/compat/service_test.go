@@ -139,8 +139,8 @@ func TestOpenAICompatEditWithMaskRoutesToOpenAI(t *testing.T) {
 		if got := r.FormValue("model"); got != "gpt-image-1" {
 			t.Fatalf("unexpected upstream model %q", got)
 		}
-		if got := r.FormValue("quality"); got != "4k" {
-			t.Fatalf("unexpected normalized quality %q", got)
+		if got := r.FormValue("quality"); got != "high" {
+			t.Fatalf("unexpected upstream quality %q", got)
 		}
 		if len(r.MultipartForm.File["image"]) != 1 {
 			t.Fatalf("expected one image file")
@@ -321,8 +321,8 @@ func TestOpenAICompatGenerateEnforcesAPIKeyQuotaBeforeUpstream(t *testing.T) {
 
 func compatTestConfig() config.Config {
 	cfg := config.Config{}
-	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
-	cfg.Billing.QualityPointsByModel = map[string]map[string]string{
+	cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
+	cfg.Billing.BaseResolutionPointsByModel = map[string]map[string]string{
 		"basic": {"1k": "2.00000", "2k": "4.00000", "4k": "8.00000"},
 		"plus":  {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 	}
@@ -336,26 +336,34 @@ func compatTestConfig() config.Config {
 	cfg.Providers.OpenRouter.APIKey = "test-openrouter"
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
 		"openrouter": {
-			SupportedModels:        []string{"plus"},
-			SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
-			SupportedQualities:     []string{"1k", "2k", "4k"},
-			SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
-			MaxImageCount:          5,
-			MaxReferenceImageCount: 4,
-			SupportsImageInput:     true,
-			SupportsMask:           false,
-			Priority:               1,
+			SupportedModels:         []string{"plus"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedBaseResolution: []string{"1k", "2k", "4k"},
+			Quality:                 []string{"auto", "low", "medium", "high"},
+			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
+			OutputFormat:            []string{"png"},
+			OutputCompression:       100,
+			Moderation:              []string{"auto"},
+			MaxImageCount:           5,
+			MaxReferenceImageCount:  4,
+			SupportsImageInput:      true,
+			SupportsMask:            false,
+			Priority:                1,
 		},
 		"openai": {
-			SupportedModels:        []string{"plus"},
-			SupportedTaskTypes:     []string{"text_to_image", "image_edit", "reference_generate"},
-			SupportedQualities:     []string{"1k", "2k", "4k"},
-			SupportedAspectRatios:  []string{"1:1", "4:3", "16:9"},
-			MaxImageCount:          5,
-			MaxReferenceImageCount: 4,
-			SupportsImageInput:     true,
-			SupportsMask:           true,
-			Priority:               2,
+			SupportedModels:         []string{"plus"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedBaseResolution: []string{"1k", "2k", "4k"},
+			Quality:                 []string{"auto", "low", "medium", "high"},
+			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
+			OutputFormat:            []string{"png"},
+			OutputCompression:       100,
+			Moderation:              []string{"auto"},
+			MaxImageCount:           5,
+			MaxReferenceImageCount:  4,
+			SupportsImageInput:      true,
+			SupportsMask:            true,
+			Priority:                2,
 		},
 	}
 	return cfg

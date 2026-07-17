@@ -40,8 +40,8 @@ export const AccessAccountPage: React.FC = () => {
               timeout={120000}
               status="enabled"
               models={[
-                { code: "flux-1-pro", name: "Flux 1.0 Pro", tasks: ["T2I", "R2I"], qualities: ["Auto", "1K", "2K"], cost: "0.15", currency: "CNY", status: "enabled" },
-                { code: "flux-1-schnell", name: "Flux Schnell", tasks: ["T2I"], qualities: ["Auto"], cost: "0.02", currency: "CNY", status: "enabled" }
+                { code: "flux-1-pro", name: "Flux 1.0 Pro", tasks: ["T2I", "R2I"], base_resolution: ["Auto", "1K", "2K"], cost: "0.15", currency: "CNY", status: "enabled" },
+                { code: "flux-1-schnell", name: "Flux Schnell", tasks: ["T2I"], base_resolution: ["Auto"], cost: "0.02", currency: "CNY", status: "enabled" }
               ]}
             />
             <AccountTableRow 
@@ -55,7 +55,7 @@ export const AccessAccountPage: React.FC = () => {
               timeout={60000}
               status="enabled"
               models={[
-                { code: "mj-v6", name: "Midjourney v6", tasks: ["T2I", "R2I", "Edit"], qualities: ["Auto", "1K", "2K", "4K"], cost: "0.25", currency: "USD", status: "enabled" }
+                { code: "mj-v6", name: "Midjourney v6", tasks: ["T2I", "R2I", "Edit"], base_resolution: ["Auto", "1K", "2K", "4K"], cost: "0.25", currency: "USD", status: "enabled" }
               ]}
             />
           </tbody>
@@ -146,7 +146,7 @@ const AccountTableRow = ({ name, adapter, auth, baseUrl, priority, weight, concu
                            ))}
                          </div>
                        </td>
-                       <td className="px-4 py-3 text-xs text-white/60">{m.qualities.join(', ')}</td>
+                       <td className="px-4 py-3 text-xs text-white/60">{m.base_resolution.join(', ')}</td>
                        <td className="px-4 py-3">
                          <div className="flex items-baseline gap-1">
                            <span className="text-xs text-emerald-400 font-bold">{m.cost}</span>

@@ -3,6 +3,7 @@ import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, Publish
 import { cn } from '../../shared/classnames'
 import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
 import { BrandMark, siteBrand } from './brand'
+import { openDocsEntry } from './docsUrl'
 import { publicEngagementStats } from './publicEngagementModel'
 import type { AppContextValue, RouteId, Toast } from './types'
 import { userShell, userButton, userForm, userState, userPill, userCard, userText } from './ui/classes'
@@ -434,7 +435,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
         <div className={publicDetailClasses.meta}>
           <span className={publicDetailClasses.metaItem}>作者 <b className={publicDetailClasses.metaValue}>{authorName}</b></span>
           <span className={publicDetailClasses.metaItem}>模型 <b className={publicDetailClasses.metaValue}>{image.route_model_code || image.abstract_model || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>清晰度 <b className={publicDetailClasses.metaValue}>{image.quality || '-'}</b></span>
+          <span className={publicDetailClasses.metaItem}>基础分辨率 <b className={publicDetailClasses.metaValue}>{image.base_resolution || '-'}</b></span>
           <span className={publicDetailClasses.metaItem}>比例 <b className={publicDetailClasses.metaValue}>{image.aspect_ratio || '-'}</b></span>
         </div>
         {showPublicStats ? (
@@ -598,7 +599,8 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
                       data-permission={item.permission}
                       onClick={() => {
                         setMenuOpen(false)
-                        app.navigate(item.route)
+                        if (item.external) openDocsEntry('account-menu')
+                        else app.navigate(item.route)
                       }}
                       className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2 text-left text-sm font-bold text-[var(--fg)] transition-colors hover:bg-[var(--accent)]/10 hover:text-[var(--accent)]"
                     >

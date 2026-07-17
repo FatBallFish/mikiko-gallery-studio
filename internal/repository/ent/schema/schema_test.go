@@ -24,6 +24,7 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 		"modelroute.go",
 		"providererrorpolicy.go",
 		"configitem.go",
+		"objectstorageconfig.go",
 		"referenceasset.go",
 		"imagetask.go",
 		"imageresult.go",

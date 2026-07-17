@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -78,6 +79,40 @@ func ClassifyUpstreamError(err *UpstreamError) {
 		err.Action = UpstreamErrorActionInternal
 		err.Family = UpstreamErrorFamilyUnknown
 	}
+}
+
+func NewTransportError(providerType ProviderType, err error) *UpstreamError {
+	upstream := &UpstreamError{
+		Provider: providerType,
+		Code:     "transport_error",
+		Type:     "transport_error",
+		Message:  "provider request failed",
+		Action:   UpstreamErrorActionRetry,
+		Family:   UpstreamErrorFamilyUnavailable,
+	}
+	if err != nil {
+		upstream.Message = err.Error()
+		if errors.Is(err, context.DeadlineExceeded) {
+			upstream.Code = "timeout"
+			upstream.Type = "timeout"
+		}
+	}
+	return upstream
+}
+
+func NewInvalidResponseError(providerType ProviderType, err error) *UpstreamError {
+	upstream := &UpstreamError{
+		Provider: providerType,
+		Code:     "invalid_response",
+		Type:     "invalid_response",
+		Message:  "provider returned invalid response",
+		Action:   UpstreamErrorActionRetry,
+		Family:   UpstreamErrorFamilyUnavailable,
+	}
+	if err != nil {
+		upstream.Message = err.Error()
+	}
+	return upstream
 }
 
 func AsUpstreamError(err error) (*UpstreamError, bool) {

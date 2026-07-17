@@ -52,43 +52,45 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 
 	taskStore := entstore.NewImageTaskStore(client)
 	if err := taskStore.Save(t.Context(), domainimagetask.Task{
-		UserID:                77,
-		APIKeyID:              13,
-		SourceChannel:         "openapi",
-		ID:                    "cccccccc-cccc-cccc-cccc-cccccccccccc",
-		Status:                domainimagetask.StatusSucceeded,
-		Provider:              "openai",
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "admin list",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		OutputImageCount:      2,
-		ReferenceImageCount:   1,
-		EstimatedPoints:       "8.00000",
-		ActualPoints:          "8.00000",
-		Attempts:              []domainimagetask.Attempt{{Provider: "openai", Status: domainimagetask.StatusSucceeded}},
+		UserID:        77,
+		APIKeyID:      13,
+		SourceChannel: "openapi",
+		ID:            "cccccccc-cccc-cccc-cccc-cccccccccccc",
+		Status:        domainimagetask.StatusSucceeded,
+		Provider:      "openai",
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "admin list",
+
+		BaseResolution:      "2k",
+		Quality:             "auto",
+		OutputImageCount:    2,
+		ReferenceImageCount: 1,
+		EstimatedPoints:     "8.00000",
+		ActualPoints:        "8.00000",
+		Attempts:            []domainimagetask.Attempt{{Provider: "openai", Status: domainimagetask.StatusSucceeded}},
 	}); err != nil {
 		t.Fatalf("Save task: %v", err)
 	}
 	if err := taskStore.Save(t.Context(), domainimagetask.Task{
-		UserID:                77,
-		APIKeyID:              14,
-		SourceChannel:         "web",
-		ID:                    "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-		Status:                domainimagetask.StatusFailed,
-		Provider:              "openrouter",
-		AbstractModel:         "plus",
-		TaskType:              string(provider.TaskTypeTextToImage),
-		Prompt:                "admin failed list",
-		RequestedQuality:      "auto",
-		ResolvedQualityBucket: "2k",
-		OutputImageCount:      1,
-		ReferenceImageCount:   0,
-		EstimatedPoints:       "8.00000",
-		ActualPoints:          "0.00000",
-		ErrorCode:             "provider_error",
-		ErrorMessage:          "upstream failed",
+		UserID:        77,
+		APIKeyID:      14,
+		SourceChannel: "web",
+		ID:            "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+		Status:        domainimagetask.StatusFailed,
+		Provider:      "openrouter",
+		AbstractModel: "plus",
+		TaskType:      string(provider.TaskTypeTextToImage),
+		Prompt:        "admin failed list",
+
+		BaseResolution:      "2k",
+		Quality:             "auto",
+		OutputImageCount:    1,
+		ReferenceImageCount: 0,
+		EstimatedPoints:     "8.00000",
+		ActualPoints:        "0.00000",
+		ErrorCode:           "provider_error",
+		ErrorMessage:        "upstream failed",
 	}); err != nil {
 		t.Fatalf("Save failed task: %v", err)
 	}
@@ -129,6 +131,7 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 				Status                    string  `json:"status"`
 				Provider                  string  `json:"provider"`
 				AbstractModel             string  `json:"abstract_model"`
+				BaseResolution            string  `json:"base_resolution"`
 				Quality                   string  `json:"quality"`
 				RequestedOutputImageCount int     `json:"requested_output_image_count"`
 				SuccessOutputImageCount   int     `json:"success_output_image_count"`
@@ -166,7 +169,7 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	if item.SourceChannel != "openapi" || item.TaskType != string(provider.TaskTypeTextToImage) || item.Status != domainimagetask.StatusSucceeded {
 		t.Fatalf("unexpected classification fields %#v", item)
 	}
-	if item.Provider != "openai" || item.AbstractModel != "plus" || item.Quality != "2k" {
+	if item.Provider != "openai" || item.AbstractModel != "plus" || item.BaseResolution != "2k" || item.Quality != "auto" {
 		t.Fatalf("unexpected model fields %#v", item)
 	}
 	if item.RequestedOutputImageCount != 2 || item.SuccessOutputImageCount != 0 || item.ReferenceImageCount != 1 || item.EstimatedPoints != "8.00000" || item.ActualPoints != "8.00000" || item.AttemptCount != 1 {

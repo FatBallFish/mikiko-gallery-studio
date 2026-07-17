@@ -18,6 +18,15 @@ const (
 )
 
 const (
+	ProgressStageQueued     = "queued"
+	ProgressStageProvider   = "provider"
+	ProgressStagePersisting = "persisting"
+	ProgressStageSettling   = "settling"
+	ProgressStageCompleted  = "completed"
+	ProgressStageFailed     = "failed"
+)
+
+const (
 	VisibilityPrivate       = "private"
 	VisibilityPendingReview = "pending_review"
 	VisibilityApproved      = "approved"
@@ -37,8 +46,14 @@ type ExecuteRequest struct {
 	RouteModelCode      string
 	TaskType            string
 	Prompt              string
+	SizeMode            string
 	RequestedSize       string
-	RequestedQuality    string
+	BaseResolution      string
+	Quality             string
+	OutputFormat        string
+	OutputCompression   int
+	Moderation          string
+	AspectRatio         string
 	OutputImageCount    int
 	ResponseFormat      string
 	ReferenceImages     []provider.ImageInput
@@ -57,8 +72,13 @@ type CreateRequest struct {
 	TaskType            string
 	Prompt              string
 	NegativePrompt      string
+	SizeMode            string
 	RequestedSize       string
-	RequestedQuality    string
+	BaseResolution      string
+	Quality             string
+	OutputFormat        string
+	OutputCompression   int
+	Moderation          string
 	AspectRatio         string
 	OutputImageCount    int
 	ReferenceImageCount int
@@ -80,11 +100,19 @@ type RetryRequest struct {
 }
 
 type TestModelAccountRequest struct {
-	AccountID  int64
-	ModelID    int64
-	ModelCode  string
-	Prompt     string
-	SourceMode string
+	AccountID         int64
+	ModelID           int64
+	ModelCode         string
+	Prompt            string
+	SourceMode        string
+	SizeMode          string
+	RequestedSize     string
+	BaseResolution    string
+	Quality           string
+	OutputFormat      string
+	OutputCompression int
+	Moderation        string
+	AspectRatio       string
 }
 
 type TestModelAccountResult struct {
@@ -211,6 +239,7 @@ type GalleryImage struct {
 	RouteModelCode    string                  `json:"route_model_code,omitempty"`
 	TaskType          string                  `json:"task_type,omitempty"`
 	TaskStatus        string                  `json:"task_status,omitempty"`
+	BaseResolution    string                  `json:"base_resolution,omitempty"`
 	Quality           string                  `json:"quality,omitempty"`
 	AspectRatio       string                  `json:"aspect_ratio,omitempty"`
 	ActualPoints      string                  `json:"actual_points,omitempty"`
@@ -223,6 +252,7 @@ type GalleryImage struct {
 	Width             int                     `json:"width"`
 	Height            int                     `json:"height"`
 	SHA256            string                  `json:"sha256,omitempty"`
+	StorageConfigID   string                  `json:"storage_config_id,omitempty"`
 	ObjectKey         string                  `json:"object_key,omitempty"`
 	StorageDriver     string                  `json:"storage_driver,omitempty"`
 	StorageConfigID   string                  `json:"storage_config_id,omitempty"`

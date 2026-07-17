@@ -32,6 +32,10 @@ if [ "${#CONTRACTS[@]}" -eq 0 ]; then
 fi
 
 for contract in "${CONTRACTS[@]}"; do
+  case " ${LANDING_CONTRACTS[*]} ${AUTH_CONTRACTS[*]} " in
+    *" $contract "*) continue ;;
+  esac
+
   prefix="web/user"
   if [[ "$contract" == web/admin/* ]]; then
     prefix="web/admin"

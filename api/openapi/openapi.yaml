@@ -595,7 +595,11 @@ paths:
       parameters:
         - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
-        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedQuality
+        - $ref: ./components/parameters/common.yaml#/components/parameters/BaseResolution
+        - $ref: ./components/parameters/common.yaml#/components/parameters/Quality
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputFormat
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputCompression
+        - $ref: ./components/parameters/common.yaml#/components/parameters/Moderation
         - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
         - $ref: ./components/parameters/common.yaml#/components/parameters/OutputImageCount
         - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceImageCount
@@ -860,7 +864,11 @@ paths:
       parameters:
         - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
-        - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedQuality
+        - $ref: ./components/parameters/common.yaml#/components/parameters/BaseResolution
+        - $ref: ./components/parameters/common.yaml#/components/parameters/Quality
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputFormat
+        - $ref: ./components/parameters/common.yaml#/components/parameters/OutputCompression
+        - $ref: ./components/parameters/common.yaml#/components/parameters/Moderation
         - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
         - $ref: ./components/parameters/common.yaml#/components/parameters/OutputImageCount
         - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceImageCount

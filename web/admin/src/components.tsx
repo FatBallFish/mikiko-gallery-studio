@@ -6,23 +6,54 @@ import { navGroups, normalizeRoute, protectedRoutes, routeHref, routeTitles } fr
 import { useAdminTheme } from './layout/useAdminTheme'
 import { filterAdminNavGroups } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId, ToastMessage, ToastTone } from './types'
-import { adminButton, adminShell } from './ui/classes'
+import { adminButton, adminFeedback, adminMetric, adminPill, adminShell, adminState, adminType } from './ui/classes'
+import { useAdminLayerMotion } from './ui/adminMotion'
+import {
+  AccessAccountsIcon,
+  AlertIcon,
+  AuditIcon,
+  BellIcon,
+  CallRecordsIcon,
+  CashierIcon,
+  ChevronRightIcon,
+  DashboardIcon,
+  EmptyIcon,
+  ImageEmptyIcon,
+  LoaderIcon,
+  LogOutIcon,
+  MenuIcon,
+  MonitoringIcon,
+  MoonIcon,
+  OrdersIcon,
+  PackageIcon,
+  PricingIcon,
+  RedeemIcon,
+  ReviewIcon,
+  RoutingIcon,
+  SunIcon,
+  SystemSettingsIcon,
+  SystemUsersIcon,
+  UserGroupsIcon,
+  UserMenuIcon,
+  UsersIcon,
+  XIcon,
+} from './ui/icons'
 
 export { navGroups, normalizeRoute, protectedRoutes, routeHref } from './layout/admin-navigation'
 
 const badgeToneClass: Record<ToastTone | 'success' | 'primary' | 'neutral', string> = {
-  success: 'bg-[rgba(90,149,114,.12)] text-[var(--green)]',
-  warning: 'bg-[rgba(184,135,64,.13)] text-[var(--amber)]',
-  danger: 'bg-[rgba(184,95,84,.13)] text-[var(--red)]',
-  primary: 'bg-[rgba(87,117,185,.12)] text-[var(--blue)]',
-  neutral: 'bg-[rgba(104,120,139,.12)] text-[var(--soft)]',
+  success: 'border-[color-mix(in_oklch,var(--green)_22%,transparent)] bg-[color-mix(in_oklch,var(--green)_10%,transparent)] text-[var(--green)]',
+  warning: 'border-[color-mix(in_oklch,var(--amber)_24%,transparent)] bg-[color-mix(in_oklch,var(--amber)_10%,transparent)] text-[var(--amber)]',
+  danger: 'border-[color-mix(in_oklch,var(--red)_24%,transparent)] bg-[color-mix(in_oklch,var(--red)_10%,transparent)] text-[var(--red)]',
+  primary: 'border-[color-mix(in_oklch,var(--accent)_24%,transparent)] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] text-[var(--accent)]',
+  neutral: 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]',
 }
 
 const feedbackToneClass: Record<ToastTone, string> = {
-  success: 'border-[rgba(90,149,114,.28)] bg-[rgba(90,149,114,.08)] text-[var(--green)]',
-  warning: 'border-[rgba(184,135,64,.3)] bg-[rgba(184,135,64,.08)] text-[var(--amber)]',
-  danger: 'border-[rgba(184,95,84,.3)] bg-[rgba(184,95,84,.08)] text-[var(--red)]',
-  neutral: 'border-[rgba(87,117,185,.24)] bg-[rgba(87,117,185,.07)] text-[var(--blue)]',
+  success: badgeToneClass.success,
+  warning: badgeToneClass.warning,
+  danger: badgeToneClass.danger,
+  neutral: badgeToneClass.primary,
 }
 
 const toastToneClass: Record<ToastTone, string> = {
@@ -40,11 +71,12 @@ const dotToneClass = {
 }
 
 const navIconClass = 'size-5 opacity-70 transition-opacity group-hover:opacity-100'
-const stateBlockBase = 'grid min-h-[260px] place-items-center content-center gap-2.5 rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-7 text-center text-white/70'
-const fieldLabelClass = 'flex items-center justify-between gap-2 text-[10px] font-extrabold uppercase tracking-[.14em] text-[var(--soft)]'
-const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-2xl border border-[var(--line)] bg-white/[0.02] p-2'
+const stateBlockBase = adminState.block
+const stateBlockIcon = adminState.iconWrap
+const fieldLabelClass = 'flex items-center justify-between gap-2 text-[11px] font-semibold text-[var(--soft)]'
+const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-2'
 const checkGridEmptyClass = 'grid-cols-1 text-sm font-bold text-[var(--soft)]'
-const checkOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
+const checkOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
 const checkOptionNameClass = 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap'
 const checkOptionMetaClass = 'text-xs not-italic font-extrabold text-[var(--soft)]'
 const metricToneClass: Record<string, string> = {
@@ -52,6 +84,55 @@ const metricToneClass: Record<string, string> = {
   warn: '[&_span]:text-[var(--amber)]',
   bad: '[&_span]:text-[var(--red)]',
   danger: '[&_span]:text-[var(--red)]',
+}
+
+const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+function focusableElements(root: HTMLElement) {
+  return Array.from(root.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+}
+
+function useDialogFocus(onClose: () => void, dialogRef: React.RefObject<HTMLElement | null>) {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return undefined
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    ;(focusableElements(dialog)[0] ?? dialog).focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = focusableElements(dialog)
+      if (!focusable.length) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.body.style.overflow = previousOverflow
+      previousFocus?.focus()
+    }
+  }, [dialogRef])
 }
 
 export function useHashRoute() {
@@ -113,70 +194,187 @@ export function AdminLayout({
 }) {
   const visibleNavGroups = filterAdminNavGroups(navGroups, session)
   const { theme, setTheme } = useAdminTheme()
+  const [navOpen, setNavOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const navTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const mobileDrawerRef = useRef<HTMLElement | null>(null)
+  const accountButtonRef = useRef<HTMLButtonElement | null>(null)
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const navBadges = {
     review_count: reviewCount > 0 ? String(reviewCount) : '',
     failed_webhook_count: '',
     config_drafts: configDrafts > 0 ? String(configDrafts) : '',
   }
+  const currentTitle = routeTitles[route]
+
+  useEffect(() => {
+    if (!navOpen) return undefined
+    const drawer = mobileDrawerRef.current
+    if (!drawer) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    ;(focusableElements(drawer)[0] ?? drawer).focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setNavOpen(false)
+        return
+      }
+      if (event.key === 'Tab') {
+        const focusable = focusableElements(drawer)
+        if (!focusable.length) {
+          event.preventDefault()
+          drawer.focus()
+          return
+        }
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.body.style.overflow = previousOverflow
+      navTriggerRef.current?.focus()
+    }
+  }, [navOpen])
+
+  useEffect(() => {
+    if (!accountOpen) return undefined
+    const menu = accountMenuRef.current
+    window.requestAnimationFrame(() => menu?.querySelector<HTMLElement>('[role="menuitem"]')?.focus())
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (accountButtonRef.current?.contains(target) || menu?.contains(target)) return
+      setAccountOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setAccountOpen(false)
+        accountButtonRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [accountOpen])
+
+  const renderNav = (onItemClick?: (route: ProtectedAdminRouteId) => void) => (
+    <nav className={adminShell.nav} aria-label="后台主导航">
+      {visibleNavGroups.map((group) => (
+        <section key={group.label} className={adminShell.navGroup}>
+          <p className={adminShell.navLabel}>{group.label}</p>
+          {group.items.map((item) => {
+            const badge = item.badgeKey ? navBadges[item.badgeKey] : ''
+            return (
+              <a
+                key={item.id}
+                href={routeHref(item.id)}
+                className={cn(adminShell.navLink, route === item.id && adminShell.navLinkActive)}
+                onClick={() => {
+                  onNavigate(item.id)
+                  onItemClick?.(item.id)
+                }}
+                aria-current={route === item.id ? 'page' : undefined}
+              >
+                <span className={adminShell.navIcon}>{routeIcon(item.id)}</span>
+                <span>{item.label}</span>
+                {badge ? <em className={adminShell.navBadge}>{badge}</em> : null}
+              </a>
+            )
+          })}
+        </section>
+      ))}
+    </nav>
+  )
 
   return (
     <main className={adminShell.root} data-theme={theme}>
+      <header className={adminShell.mobileTopbar}>
+        <button
+          ref={navTriggerRef}
+          className={adminShell.iconButton}
+          type="button"
+          aria-label="打开导航"
+          title="打开导航"
+          onClick={() => setNavOpen(true)}
+        >
+          <MenuIcon className="size-5" />
+        </button>
+        <strong className={adminShell.mobileTitle}>{currentTitle}</strong>
+        <button
+          className={adminShell.iconButton}
+          type="button"
+          aria-label={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+          title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+          onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+        >
+          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
+      </header>
+
+      {navOpen ? (
+        <>
+          <button className={adminShell.mobileDrawerBackdrop} type="button" aria-label="关闭导航" onClick={() => setNavOpen(false)} />
+          <aside ref={mobileDrawerRef} tabIndex={-1} className={adminShell.mobileDrawer} aria-label="移动端后台导航">
+            <header className={adminShell.mobileDrawerHead}>
+              <span className={adminShell.brandOrb}>M</span>
+              <strong className={adminShell.brandText}>Mikiko Admin</strong>
+              <button className={adminShell.iconButton} type="button" aria-label="关闭导航" title="关闭导航" onClick={() => setNavOpen(false)}><XIcon className="size-5" /></button>
+            </header>
+            {renderNav(() => setNavOpen(false))}
+            <div className={adminShell.sideNote}>
+              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}><LogOutIcon className="size-4" />退出</button>
+            </div>
+          </aside>
+        </>
+      ) : null}
+
       <aside className={adminShell.sidebar} aria-label="Pic Gallery Admin Navigation">
         <a className={adminShell.brand} href={routeHref('dashboard')} onClick={() => onNavigate('dashboard')}>
           <span className={adminShell.brandOrb}>M</span>
           <strong className={adminShell.brandText}>Mikiko Admin</strong>
         </a>
 
-        <nav className={adminShell.nav} aria-label="后台主导航">
-          {visibleNavGroups.map((group) => (
-            <section key={group.label} className={adminShell.navGroup}>
-              <p className={adminShell.navLabel}>{group.label}</p>
-              {group.items.map((item) => {
-                const badge = item.badgeKey ? navBadges[item.badgeKey] : ''
-                return (
-                  <a
-                    key={item.id}
-                    href={routeHref(item.id)}
-                    className={cn(adminShell.navLink, route === item.id && adminShell.navLinkActive)}
-                    onClick={() => onNavigate(item.id)}
-                    aria-current={route === item.id ? 'page' : undefined}
-                  >
-                    <span className={adminShell.navIcon}>{routeIcon(item.id)}</span>
-                    <span>{item.label}</span>
-                    {badge ? <em className={adminShell.navBadge}>{badge}</em> : null}
-                  </a>
-                )
-              })}
-            </section>
-          ))}
-        </nav>
+        {renderNav()}
 
         <div className={adminShell.sideNote}>
-          <span className={adminShell.avatarOrb}>AD</span>
-          <div className="grid min-w-0 flex-1 gap-0.5">
-            <strong className="truncate text-sm text-[var(--text)]">Admin</strong>
-            <span className="truncate text-[10px] text-[var(--muted-strong)]">Super Administrator</span>
+          <div className={adminShell.sideNoteIdentity}>
+            <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 2).toUpperCase()}</span>
+            <div className="grid min-w-0 flex-1 gap-0.5">
+              <strong className="truncate text-sm text-[var(--text)]">{session.admin_name}</strong>
+              <span className="truncate text-xs text-[var(--muted-strong)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
+            </div>
           </div>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'shrink-0')} type="button" onClick={onLogout}>退出</button>
+          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}><LogOutIcon className="size-4" />退出</button>
         </div>
       </aside>
 
       <section className={adminShell.main}>
         <header className={adminShell.topbar}>
-          <div className={adminShell.titleBlock}>
-            <h1 className={adminShell.pageTitle}>{routeTitles[route]}</h1>
-            <div className={adminShell.breadcrumb}>
-              <span>Admin</span>
-              <ChevronRightIcon className="size-3" />
-              <strong>{routeTitles[route]}</strong>
+          <div className={adminShell.topbarMeta}>
+            <div className={adminShell.providerPill} title="Provider 状态">
+              <span className={cn('inline-block size-2 rounded-full', providers.some((item) => item.status !== 'healthy') ? dotToneClass.warning : dotToneClass.success)} />
+              <span>上游状态</span>
+              <strong>{providers.length}</strong>
             </div>
+            <StatusChip tone={reviewCount > 0 ? 'warning' : 'success'} label="待审" value={String(reviewCount)} />
+            <StatusChip tone={configDrafts > 0 ? 'primary' : 'neutral'} label="草稿" value={String(configDrafts)} />
           </div>
 
           <div className={adminShell.metaRow}>
-            <div className={adminShell.providerPill} title="系统状态">
-              <span className={cn('inline-block size-2 rounded-full', dotToneClass.success)} />
-              <em>System Online</em>
-            </div>
             <button
               className={adminShell.iconButton}
               type="button"
@@ -189,6 +387,34 @@ export function AdminLayout({
             <button className={adminShell.iconButton} type="button" aria-label="通知" title="通知">
               <BellIcon />
             </button>
+            <div className={adminShell.avatarWidget}>
+              <button
+                ref={accountButtonRef}
+                type="button"
+                className="flex min-h-10 items-center gap-2 rounded-lg border border-transparent px-2 text-left transition-colors hover:border-[var(--border)] hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25"
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                onClick={() => setAccountOpen((current) => !current)}
+              >
+                <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 1).toUpperCase()}</span>
+                <span className="grid text-right">
+                  <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
+                  <span className="text-xs text-[var(--dim)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
+                </span>
+                <UserMenuIcon className="size-4 text-[var(--dim)]" />
+              </button>
+              {accountOpen ? (
+                <div ref={accountMenuRef} className="absolute right-0 top-[calc(100%+8px)] z-[70] grid min-w-52 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-1.5 shadow-[var(--pg-shadow-lg)]" role="menu" aria-label="管理员账户菜单">
+                  <div className="grid gap-0.5 border-b border-[var(--border)] px-3 py-2">
+                    <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
+                    <span className="text-xs text-[var(--dim)]">{session.email}</span>
+                  </div>
+                  <button className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25" type="button" role="menuitem" onClick={onLogout}>
+                    <LogOutIcon className="size-4" />退出后台
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
 
@@ -211,19 +437,19 @@ export function StatusItem({ label, value, warn = false }: { label: string; valu
 
 export function StatusChip({ tone, label, value }: { tone: ToastTone | 'primary' | 'success'; label: string; value: string }) {
   return (
-    <button type="button" className={cn(adminShell.chip, badgeToneClass[tone])}>
+    <span className={cn(adminShell.chip, badgeToneClass[tone])}>
       <span className={cn('inline-block size-2 rounded-full', dotToneClass[tone === 'neutral' ? 'primary' : tone])} />
       <em>{label}</em>
       <strong>{value}</strong>
-    </button>
+    </span>
   )
 }
 
 export function StatusCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="relative grid min-h-[118px] content-center gap-2 overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:border-white/10 hover:bg-white/[0.04]">
-      <label className="m-0 text-xs font-medium uppercase tracking-wider text-[var(--muted-strong)]">{label}</label>
-      <strong className="block truncate text-3xl font-black tracking-tighter text-[var(--text)]">{value}</strong>
+    <div className="relative grid min-h-[112px] content-center gap-2 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-5 transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]">
+      <label className="m-0 text-[11px] font-semibold text-[var(--dim)]">{label}</label>
+      <strong className="block truncate text-[1.75rem] font-black text-[var(--fg)]">{value}</strong>
     </div>
   )
 }
@@ -253,25 +479,479 @@ export function ToastRail({ toasts, onDismiss }: { toasts: ToastMessage[]; onDis
   )
 }
 
-export function PageHeader({ eyebrow, title, detail, actions }: { eyebrow: string; title: string; detail?: string; actions?: React.ReactNode }) {
+export function PageHeader({
+  title,
+  description,
+  detail,
+  meta,
+  primaryAction,
+  secondaryActions,
+  actions,
+}: {
+  eyebrow?: string
+  title: string
+  description?: string
+  detail?: string
+  meta?: React.ReactNode
+  primaryAction?: React.ReactNode
+  secondaryActions?: React.ReactNode
+  actions?: React.ReactNode
+}) {
+  const resolvedDescription = description ?? detail
+  const resolvedActions = actions ?? (
+    primaryAction || secondaryActions ? (
+      <>
+        {secondaryActions}
+        {primaryAction}
+      </>
+    ) : null
+  )
+
   return (
-    <section className="flex items-end justify-between gap-4 max-[920px]:flex-col max-[920px]:items-start">
-      <div>
-        <label className="m-0 text-[10px] font-extrabold uppercase tracking-[.18em] text-[var(--muted-strong)]">{eyebrow}</label>
-        <strong className="mt-2 flex items-center gap-3 text-sm font-bold uppercase tracking-[0.15em] text-[var(--muted-strong)] before:h-px before:w-6 before:bg-[var(--accent)]">{title}</strong>
-        {detail ? <p className="mt-1 max-w-[76ch] text-sm text-[var(--soft)]">{detail}</p> : null}
+    <header className="flex min-h-16 w-full max-w-none items-end justify-between gap-4 max-[920px]:min-h-0 max-[920px]:flex-col max-[920px]:items-start">
+      <div className="min-w-0">
+        <h1 className={cn('m-0', adminType.pageTitle)}>{title}</h1>
+        {resolvedDescription ? <p className={cn('mt-1 max-w-[76ch]', adminType.pageDescription)}>{resolvedDescription}</p> : null}
+        {meta ? <div className="mt-2">{meta}</div> : null}
       </div>
+      {resolvedActions ? <div className="flex flex-wrap items-center gap-2">{resolvedActions}</div> : null}
+    </header>
+  )
+}
+
+export function PageToolbar({ children, actions }: { children: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <section className="flex flex-wrap items-end justify-between gap-3 rounded-lg bg-[var(--surface-solid)] px-3 py-3">
+      <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">{children}</div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </section>
+  )
+}
+
+export type AdminTabItem<T extends string> = {
+  id: T
+  label: string
+  description?: string
+  disabled?: boolean
+  badge?: React.ReactNode
+}
+
+export function AdminTabs<T extends string>({
+  items,
+  value,
+  onChange,
+  orientation = 'horizontal',
+  ariaLabel,
+  className,
+}: {
+  items: AdminTabItem<T>[]
+  value: T
+  onChange: (value: T) => void
+  orientation?: 'horizontal' | 'vertical'
+  ariaLabel: string
+  className?: string
+}) {
+  const vertical = orientation === 'vertical'
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const moveFocus = (currentIndex: number, key: string) => {
+    const enabledIndexes = items.flatMap((item, index) => item.disabled ? [] : [index])
+    if (!enabledIndexes.length) return false
+    const enabledPosition = enabledIndexes.indexOf(currentIndex)
+    let nextIndex: number | undefined
+    if (key === 'Home') nextIndex = enabledIndexes[0]
+    if (key === 'End') nextIndex = enabledIndexes[enabledIndexes.length - 1]
+    if (key === 'ArrowRight' || key === 'ArrowDown') nextIndex = enabledIndexes[(enabledPosition + 1) % enabledIndexes.length]
+    if (key === 'ArrowLeft' || key === 'ArrowUp') nextIndex = enabledIndexes[(enabledPosition - 1 + enabledIndexes.length) % enabledIndexes.length]
+    if (nextIndex === undefined) return false
+    tabRefs.current[nextIndex]?.focus()
+    onChange(items[nextIndex].id)
+    return true
+  }
+
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      aria-orientation={orientation}
+      className={cn(
+        'rounded-lg bg-[var(--surface-solid)] p-1',
+        vertical ? 'grid gap-1' : 'flex flex-wrap items-center gap-1',
+        className,
+      )}
+    >
+      {items.map((item, index) => {
+        const active = value === item.id
+        return (
+          <button
+            ref={(node) => { tabRefs.current[index] = node }}
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-disabled={item.disabled || undefined}
+            tabIndex={active ? 0 : -1}
+            disabled={item.disabled}
+            className={cn(
+              'min-h-9 rounded-md px-3 py-2 text-sm font-bold text-[var(--muted)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklch,var(--accent)_28%,transparent)] disabled:cursor-not-allowed disabled:opacity-45',
+              vertical ? 'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-left' : 'inline-flex items-center justify-center gap-2',
+              !item.disabled && 'hover:bg-[var(--elevated)] hover:text-[var(--fg)]',
+              active && 'bg-[var(--elevated)] text-[var(--fg)] shadow-[var(--pg-shadow-sm)]',
+            )}
+            onClick={() => onChange(item.id)}
+            onKeyDown={(event) => {
+              if (moveFocus(index, event.key)) event.preventDefault()
+            }}
+          >
+            <span className="min-w-0 truncate">{item.label}</span>
+            {item.badge ? <span className="shrink-0">{item.badge}</span> : null}
+            {vertical && item.description ? <span className="col-span-2 text-xs font-medium text-[var(--soft)]">{item.description}</span> : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** @deprecated 使用 `ui/dataTable.tsx` 中的 `FilterBar` 替代。第二阶段迁移完成后将移除。 */
+export type FilterField = {
+  key: string
+  label?: string
+  primary?: boolean
+  control: React.ReactNode
+}
+
+/** @deprecated 使用 `ui/dataTable.tsx` 中的 `FilterBar` 替代。第二阶段迁移完成后将移除。 */
+export function ListFilterBar({
+  fields,
+  actions,
+  advancedOpen,
+  onAdvancedOpenChange,
+}: {
+  fields: FilterField[]
+  actions?: React.ReactNode
+  advancedOpen?: boolean
+  onAdvancedOpenChange?: (open: boolean) => void
+}) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = advancedOpen ?? internalOpen
+  const advancedFields = fields.filter((field) => !field.primary)
+  const setOpen = (next: boolean) => {
+    setInternalOpen(next)
+    onAdvancedOpenChange?.(next)
+  }
+  const visibleFields = fields.filter((field) => field.primary || open)
+
+  return (
+    <section className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
+        {visibleFields.map((field) => (
+          <label key={field.key} className="grid min-w-[180px] max-w-full flex-[1_1_180px] gap-1 text-xs font-bold text-[var(--muted)]">
+            {field.label ? <span>{field.label}</span> : null}
+            {field.control}
+          </label>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {advancedFields.length ? (
+          <button
+            type="button"
+            className={cn(adminButton.base, adminButton.ghost, adminButton.small)}
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? '收起筛选' : `更多筛选 ${advancedFields.length}`}
+          </button>
+        ) : null}
+        {actions}
+      </div>
+    </section>
+  )
+}
+
+/** @deprecated 使用 `ui/dataTable.tsx` 中的 `ListPage` 替代。第二阶段迁移完成后将移除。 */
+export function AdminListPage({
+  filters,
+  actions,
+  children,
+  pagination,
+  resultSummary,
+  className,
+}: {
+  filters?: React.ReactNode
+  actions?: React.ReactNode
+  children: React.ReactNode
+  pagination?: React.ReactNode
+  defaultFiltersOpen?: boolean
+  collapsibleFilters?: boolean
+  resultSummary?: React.ReactNode
+  className?: string
+}) {
+  return (
+    <section className={cn('grid min-h-0 gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4 shadow-[var(--pg-shadow-sm)]', className)}>
+      {(filters || actions || resultSummary) ? (
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0 flex-1">{filters}</div>
+          {(actions || resultSummary) ? <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs font-semibold text-[var(--muted)]">{resultSummary}{actions}</div> : null}
+        </header>
+      ) : null}
+      <div className="min-w-0 overflow-hidden">
+        {children}
+      </div>
+      {pagination ? <footer className="flex flex-wrap items-center justify-between gap-3 pt-3 text-xs text-[var(--muted)]">{pagination}</footer> : null}
+    </section>
+  )
+}
+
+export function PageSection({
+  title,
+  description,
+  children,
+  variant = 'plain',
+}: {
+  title?: string
+  description?: string
+  children: React.ReactNode
+  variant?: 'plain' | 'panel'
+}) {
+  return (
+    <section className={variant === 'panel' ? 'rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4' : 'grid gap-3'}>
+      {title || description ? (
+        <header className="grid gap-1">
+          {title ? <h2 className="m-0 text-base font-semibold text-[var(--fg)]">{title}</h2> : null}
+          {description ? <p className="text-sm text-[var(--soft)]">{description}</p> : null}
+        </header>
+      ) : null}
+      {children}
+    </section>
+  )
+}
+
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'text'
+  size?: 'sm' | 'md'
+  icon?: React.ReactNode
+}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button({
+  variant = 'secondary',
+  size = 'md',
+  icon,
+  children,
+  className,
+  ...props
+}, ref) {
+  const variantClass = {
+    primary: adminButton.primary,
+    secondary: adminButton.secondary,
+    ghost: adminButton.ghost,
+    danger: adminButton.danger,
+    text: adminButton.text,
+  }[variant]
+  return (
+    <button ref={ref} className={cn(adminButton.base, variantClass, size === 'sm' && adminButton.small, className)} type="button" {...props}>
+      {icon}
+      {children}
+    </button>
+  )
+})
+
+export function IconButton({
+  label,
+  title,
+  children,
+  className,
+  ...props
+}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> & {
+  label: string
+}) {
+  return (
+    <button className={cn(adminShell.iconButton, className)} type="button" aria-label={label} title={title ?? label} {...props}>
+      {children ?? '·'}
+    </button>
+  )
+}
+
+export function SegmentedControl<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: Array<{ value: T; label: string; disabled?: boolean }>
+  onChange: (value: T) => void
+}) {
+  return (
+    <div role="tablist" className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={value === option.value}
+          disabled={option.disabled}
+          className={cn(
+            'min-h-8 rounded-md px-3 text-sm font-bold text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-45',
+            value === option.value && 'bg-[var(--elevated)] text-[var(--fg)]',
+          )}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function StatusBadge({ tone = 'neutral', children }: { tone?: ToastTone | 'success' | 'primary'; children: React.ReactNode }) {
+  return <Badge tone={tone}>{children}</Badge>
+}
+
+export type ActionMenuItem = {
+  id: string
+  label: string
+  tone?: 'neutral' | 'danger'
+  confirm?: { title: string; expectedValue?: string }
+  run: () => Promise<void> | void
+}
+
+export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
+  const [open, setOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLSpanElement | null>(null)
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null)
+  const [theme, setTheme] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!open) return
+    const updatePosition = () => {
+      const button = buttonRef.current
+      if (!button) return
+      const rect = button.getBoundingClientRect()
+      const menuWidth = Math.max(menuRef.current?.offsetWidth ?? 144, 144)
+      const viewportPadding = 12
+      const left = Math.min(
+        Math.max(viewportPadding, rect.right - menuWidth),
+        window.innerWidth - menuWidth - viewportPadding,
+      )
+      const preferredTop = rect.bottom + 6
+      const menuHeight = menuRef.current?.offsetHeight ?? 0
+      const top = preferredTop + menuHeight > window.innerHeight - viewportPadding
+        ? Math.max(viewportPadding, rect.top - menuHeight - 6)
+        : preferredTop
+      setMenuStyle({ left, top })
+      setTheme(button.closest('[data-theme]')?.getAttribute('data-theme') ?? undefined)
+    }
+    updatePosition()
+    window.requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        buttonRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const runAction = async (action: ActionMenuItem) => {
+    if (action.confirm) {
+      const ok = action.confirm.expectedValue
+        ? window.prompt(action.confirm.title) === action.confirm.expectedValue
+        : window.confirm(action.confirm.title)
+      if (!ok) return
+    }
+    setOpen(false)
+    buttonRef.current?.focus()
+    await action.run()
+  }
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement)
+    let nextIndex: number | undefined
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % items.length
+    if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + items.length) % items.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = items.length - 1
+    if (nextIndex === undefined || !items.length) return
+    event.preventDefault()
+    items[nextIndex]?.focus()
+  }
+
+  return (
+    <span className="relative inline-flex">
+      <Button
+        ref={buttonRef}
+        variant="ghost"
+        size="sm"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >更多</Button>
+      {open ? createPortal(
+        <span
+          ref={menuRef}
+          className="fixed z-[120] grid min-w-36 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-1 shadow-[var(--pg-shadow-sm)]"
+          data-theme={theme}
+          role="menu"
+          style={menuStyle ?? undefined}
+          onKeyDown={handleMenuKeyDown}
+        >
+          {actions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              role="menuitem"
+              className={cn('rounded-md px-3 py-2 text-left text-sm font-bold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--fg)]', action.tone === 'danger' && 'text-[var(--red)]')}
+              onClick={() => void runAction(action)}
+            >
+              {action.label}
+            </button>
+          ))}
+        </span>,
+        document.body,
+      ) : null}
+    </span>
   )
 }
 
 export function LoadingBlock({ label = '载入运营数据中' }: { label?: string }) {
   return (
     <section className={stateBlockBase}>
-      <span className="size-4 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--blue)]" />
-      <strong>{label}</strong>
-      <p>正在请求真实后台 API。</p>
+      <span className={stateBlockIcon}><LoaderIcon className="size-6 animate-spin" /></span>
+      <strong className={adminState.title}>{label}</strong>
+      <p className={adminState.detail}>正在请求真实后台 API，并同步构建管理端骨架数据。</p>
+      <div className="grid w-full max-w-[360px] gap-2">
+        <div className="pg-skeleton h-4 rounded-md" />
+        <div className="pg-skeleton h-4 w-4/5 rounded-md" />
+        <div className="pg-skeleton h-12 rounded-xl" />
+      </div>
     </section>
   )
 }
@@ -279,28 +959,31 @@ export function LoadingBlock({ label = '载入运营数据中' }: { label?: stri
 export function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <section className={stateBlockBase}>
-      <strong>加载失败</strong>
-      <p>{message}</p>
+      <span className={cn(stateBlockIcon, 'bg-[var(--red)]/10 text-[var(--red)]')}><AlertIcon className="size-6" /></span>
+      <strong className={adminState.title}>加载失败</strong>
+      <p className={adminState.detail}>{message}</p>
       <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={onRetry}>重试</button>
     </section>
   )
 }
 
-export function EmptyBlock({ title, detail }: { title: string; detail: string }) {
+export function EmptyBlock({ title, detail, action, icon = <EmptyIcon className="size-6" />, variant = 'framed' }: { title: string; detail: string; action?: React.ReactNode; icon?: React.ReactNode; variant?: 'framed' | 'inline' }) {
   return (
-    <section className={stateBlockBase}>
-      <strong>{title}</strong>
-      <p>{detail}</p>
+    <section className={variant === 'inline' ? 'grid min-h-[140px] place-items-center content-center gap-3 p-5 text-center' : stateBlockBase}>
+      <span className={stateBlockIcon}>{icon}</span>
+      <strong className={adminState.title}>{title}</strong>
+      <p className={adminState.detail}>{detail}</p>
+      {action}
     </section>
   )
 }
 
 export function Badge({ tone = 'neutral', children }: { tone?: ToastTone | 'success' | 'primary'; children: React.ReactNode }) {
-  return <span className={cn('inline-flex w-fit items-center rounded-full px-2 py-1 text-[11px] font-extrabold', badgeToneClass[tone])}>{children}</span>
+  return <span className={cn(adminPill.base, 'border', badgeToneClass[tone])}>{children}</span>
 }
 
 export function InlineFeedback({ tone, message }: { tone: ToastTone; message: string }) {
-  return <div className={cn('rounded-[10px] border px-3 py-2 text-sm', feedbackToneClass[tone])}>{message}</div>
+  return <div className={cn(adminFeedback.inline, feedbackToneClass[tone])} role={tone === 'danger' ? 'alert' : 'status'}>{message}</div>
 }
 
 export function GroupOptionGrid({
@@ -352,20 +1035,17 @@ export function Modal({
   footer: React.ReactNode
   onClose: () => void
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  const dialogRef = useRef<HTMLElement | null>(null)
+  const layerRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(onClose, dialogRef)
+  useAdminLayerMotion(layerRef)
 
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-6 backdrop-blur-md" role="presentation" onMouseDown={onClose}>
-      <section className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.45)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+    <div ref={layerRef} className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-6 backdrop-blur-md" role="presentation" onMouseDown={onClose}>
+      <section ref={dialogRef} tabIndex={-1} data-admin-motion-panel className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.28)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <strong>{title}</strong>
+            <strong className="font-[family-name:var(--font-admin-display)] text-lg font-semibold">{title}</strong>
             {detail ? <p>{detail}</p> : null}
           </div>
           <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={onClose}>关闭</button>
@@ -377,47 +1057,71 @@ export function Modal({
   )
 }
 
+export function Drawer({
+  title,
+  description,
+  children,
+  footer,
+  onClose,
+}: {
+  title: string
+  description?: string
+  children: React.ReactNode
+  footer?: React.ReactNode
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLElement | null>(null)
+  const layerRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(onClose, dialogRef)
+  useAdminLayerMotion(layerRef)
+
+  return (
+    <div ref={layerRef} className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm" role="presentation" onMouseDown={onClose}>
+      <aside
+        ref={dialogRef}
+        tabIndex={-1}
+        data-admin-motion-panel
+        className="ml-auto grid h-full w-[min(760px,100vw)] grid-rows-[auto_minmax(0,1fr)_auto] border-l border-[var(--border)] bg-[var(--surface-solid)] shadow-[0_24px_90px_rgba(0,0,0,.34)]"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] p-5">
+          <div className="grid gap-1">
+            <strong className="text-lg font-semibold">{title}</strong>
+            {description ? <p className="max-w-[62ch] text-sm text-[var(--soft)]">{description}</p> : null}
+          </div>
+          <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={onClose}>关闭</button>
+        </header>
+        <section className="min-h-0 overflow-y-auto p-5">{children}</section>
+        {footer ? <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-[var(--border)] p-4">{footer}</footer> : null}
+      </aside>
+    </div>
+  )
+}
+
 function routeIcon(route: ProtectedAdminRouteId) {
   const icons: Record<ProtectedAdminRouteId, React.ReactNode> = {
-    dashboard: <ChartIcon />,
-    monitoring: <ActivityIcon />,
+    dashboard: <DashboardIcon className={navIconClass} />,
+    monitoring: <MonitoringIcon className={navIconClass} />,
     users: <UsersIcon />,
-    'user-groups': <GroupIcon />,
-    'call-records': <ListIcon />,
-    redeem: <TicketIcon />,
-    reviews: <ShieldIcon />,
-    orders: <CreditCardIcon />,
-    packages: <BoxIcon />,
-    'cashier-config': <LayoutIcon />,
-    routing: <ZapIcon />,
-    'access-accounts': <CloudIcon />,
-    pricing: <CoinsIcon />,
-    audit: <FileTextIcon />,
-    'system-users': <SystemUserIcon />,
-    'system-settings': <SettingsIcon />,
+    'user-groups': <UserGroupsIcon className={navIconClass} />,
+    'call-records': <CallRecordsIcon className={navIconClass} />,
+    redeem: <RedeemIcon className={navIconClass} />,
+    reviews: <ReviewIcon className={navIconClass} />,
+    orders: <OrdersIcon className={navIconClass} />,
+    packages: <PackageIcon className={navIconClass} />,
+    'cashier-config': <CashierIcon className={navIconClass} />,
+    routing: <RoutingIcon className={navIconClass} />,
+    'access-accounts': <AccessAccountsIcon className={navIconClass} />,
+    pricing: <PricingIcon className={navIconClass} />,
+    audit: <AuditIcon className={navIconClass} />,
+    'system-users': <SystemUsersIcon className={navIconClass} />,
+    'system-settings': <SystemSettingsIcon className={navIconClass} />,
   }
   return icons[route]
 }
-
-const ChartIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
-const ActivityIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-const UsersIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-const GroupIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-const ListIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" x2="21" y1="6" y2="6" /><line x1="8" x2="21" y1="12" y2="12" /><line x1="8" x2="21" y1="18" y2="18" /><line x1="3" x2="3.01" y1="6" y2="6" /><line x1="3" x2="3.01" y1="12" y2="12" /><line x1="3" x2="3.01" y1="18" y2="18" /></svg>
-const TicketIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" /><path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" /></svg>
-const ShieldIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-const CreditCardIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" x2="22" y1="10" y2="10" /></svg>
-const BoxIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg>
-const LayoutIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><line x1="3" x2="21" y1="9" y2="9" /><line x1="9" x2="9" y1="21" y2="9" /></svg>
-const ZapIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-const CloudIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19c.1 0 .2 0 .3 0A5.5 5.5 0 0 0 16 8.1l-1.3-.1A7.5 7.5 0 0 0 2 12a7.5 7.5 0 0 0 12.3 5.8l1.2 1.2M17.5 19h.3" /><path d="M12 12l2 2 4-4" /></svg>
-const CoinsIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6" /><path d="M18.09 10.37A6 6 0 1 1 10.34 18" /><path d="M7 6h1v4" /><path d="m16.71 13.88.7.71-2.82 2.82" /></svg>
-const FileTextIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" x2="8" y1="13" y2="13" /><line x1="16" x2="8" y1="17" y2="17" /></svg>
-const SystemUserIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><circle cx="12" cy="11" r="3" /></svg>
-const SettingsIcon = () => <svg className={navIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
-const SunIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
-const MoonIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
-const BellIcon = () => <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
 
 export function Field({ label, children, error, hint }: { label: string; children: React.ReactNode; error?: string | null; hint?: string }) {
   return (
@@ -464,7 +1168,7 @@ function FieldHint({ text }: { text: string }) {
     <>
       <span
         ref={anchorRef}
-        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[10px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
+        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[11px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
         tabIndex={0}
         aria-label={text}
         onMouseEnter={() => setOpen(true)}
@@ -504,7 +1208,7 @@ export function ConfirmDrawer({
   onConfirm: () => void
 }) {
   return (
-    <aside className="grid min-h-full content-start gap-3 border-l border-[var(--line)] bg-white/[0.02] p-4" role="dialog" aria-modal="false" aria-label={title}>
+    <aside className="grid min-h-full content-start gap-3 border-l border-[var(--border)] bg-[var(--surface)] p-4" role="dialog" aria-modal="false" aria-label={title}>
       <div>
         <label>审核原因</label>
         <strong>{title}</strong>
@@ -521,30 +1225,22 @@ export function ConfirmDrawer({
   )
 }
 
-export function MetricGrid({ metrics }: { metrics: AdminMetric[] }) {
+export function MetricStrip({ metrics }: { metrics: AdminMetric[] }) {
   return (
-    <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <section className={adminMetric.strip} aria-label="关键运营指标">
       {metrics.map((metric) => (
-        <div key={metric.label} className={cn('relative grid min-h-[130px] content-center gap-2 overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:border-white/10 hover:bg-white/[0.04]', metricToneClass[metric.tone])}>
-          <div>
-            <label className="m-0 text-xs font-medium uppercase tracking-wider text-[var(--muted-strong)]">{metric.label}</label>
-          </div>
-          <div>
-            <strong className="my-1 block text-3xl font-black tracking-tighter text-[var(--text)]">{metric.value}</strong>
-            <span className="text-xs font-extrabold text-[var(--soft)]">{metric.trend}</span>
-          </div>
+        <div key={metric.label} className={cn(adminMetric.item, 'transition-colors duration-[var(--admin-motion-base)] hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]', metricToneClass[metric.tone])}>
+          <span className={adminType.label}>{metric.label}</span>
+          <strong className={adminMetric.value}>{metric.value}</strong>
+          <span className={adminType.support}>{metric.trend}</span>
         </div>
       ))}
     </section>
   )
 }
 
-function ChevronRightIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m9 18 6-6-6-6" />
-    </svg>
-  )
+export function MetricGrid({ metrics }: { metrics: AdminMetric[] }) {
+  return <MetricStrip metrics={metrics} />
 }
 
 export function useFilteredTabs<T extends { tab?: string }>(rows: T[]) {

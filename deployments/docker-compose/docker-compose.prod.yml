@@ -52,7 +52,7 @@ services:
       STORAGE_SHARED_VOLUME: ${STORAGE_SHARED_VOLUME:-true}
       AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
       AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-10m}
-      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-2h}
+      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-30m}
       AUTH_ISSUER: ${AUTH_ISSUER:-pic-gallery}
       AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:-pg_refresh_token}
       AUTH_ADMIN_REFRESH_COOKIE_NAME: ${AUTH_ADMIN_REFRESH_COOKIE_NAME:-pg_admin_refresh_token}
@@ -98,7 +98,7 @@ services:
       STORAGE_SHARED_VOLUME: ${STORAGE_SHARED_VOLUME:-true}
       AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
       AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-10m}
-      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-2h}
+      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-30m}
       AUTH_ISSUER: ${AUTH_ISSUER:-pic-gallery}
       AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:-pg_refresh_token}
       AUTH_ADMIN_REFRESH_COOKIE_NAME: ${AUTH_ADMIN_REFRESH_COOKIE_NAME:-pg_admin_refresh_token}
@@ -113,9 +113,20 @@ services:
   user-web:
     image: ${PIC_GALLERY_IMAGE_REGISTRY:-docker.io/your-org}/pic-gallery-user-web:${PIC_GALLERY_IMAGE_TAG:-latest}
     restart: unless-stopped
+    environment:
+      PIC_GALLERY_DOCS_URL: ${PIC_GALLERY_DOCS_URL:-/developer-docs/}
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  docs-web:
+    image: ${PIC_GALLERY_IMAGE_REGISTRY:-docker.io/your-org}/pic-gallery-docs-web:${PIC_GALLERY_IMAGE_TAG:-latest}
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 15s
@@ -145,6 +156,9 @@ services:
         condition: service_healthy
         restart: true
       admin-web:
+        condition: service_healthy
+        restart: true
+      docs-web:
         condition: service_healthy
         restart: true
     ports:

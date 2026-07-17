@@ -139,9 +139,25 @@ services:
         VITE_BASE_PATH: /
     image: pic-gallery-user-web:${IMAGE_TAG:-dev}
     restart: unless-stopped
+    environment:
+      PIC_GALLERY_DOCS_URL: ${PIC_GALLERY_DOCS_URL:-/developer-docs/}
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  docs-web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.docs-web
+      args:
+        VITE_BASE_PATH: /developer-docs/
+    image: pic-gallery-docs-web:${IMAGE_TAG:-dev}
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 15s
@@ -177,6 +193,9 @@ services:
         condition: service_healthy
         restart: true
       admin-web:
+        condition: service_healthy
+        restart: true
+      docs-web:
         condition: service_healthy
         restart: true
     ports:

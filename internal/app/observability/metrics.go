@@ -12,12 +12,16 @@ type Metrics struct {
 	publicGalleryListViewsTotal        atomic.Uint64
 	publicGalleryDetailLoginBlockTotal atomic.Uint64
 	processStartUnix                   int64
+	runtime                            *RuntimeMetrics
 }
 
 var defaultMetrics = NewMetrics()
 
 func NewMetrics() *Metrics {
-	return &Metrics{processStartUnix: time.Now().Unix()}
+	return &Metrics{
+		processStartUnix: time.Now().Unix(),
+		runtime:          NewRuntimeMetrics(RuntimeMetricsOptions{}),
+	}
 }
 
 func DefaultMetrics() *Metrics {
@@ -46,6 +50,10 @@ func (m *Metrics) PublicGalleryListViewsTotal() uint64 {
 
 func (m *Metrics) PublicGalleryDetailLoginBlockTotal() uint64 {
 	return m.publicGalleryDetailLoginBlockTotal.Load()
+}
+
+func (m *Metrics) Runtime() *RuntimeMetrics {
+	return m.runtime
 }
 
 func (m *Metrics) Handler() http.Handler {

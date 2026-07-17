@@ -1,4 +1,4 @@
-import { formatDate, imagePixelsLabel, imageRatioLabel, navItems } from './components'
+import { componentPrimitiveNames, formatDate, imageFrameActionsClass, imagePixelsLabel, imageRatioLabel, navItems, protectedRoutes } from './components'
 import { siteBrand } from './brand'
 
 const formatted = formatDate('2026-06-05T13:45:30Z')
@@ -35,6 +35,32 @@ const expectedNavigation = [
 const actualNavigation = navItems.map((item) => [item.route, item.label])
 if (JSON.stringify(actualNavigation) !== JSON.stringify(expectedNavigation)) {
   throw new Error(`user shell navigation drifted, got ${JSON.stringify(actualNavigation)}`)
+}
+
+const expectedPrimitives = [
+  'Button',
+  'IconButton',
+  'SegmentedControl',
+  'Field',
+  'Toolbar',
+  'StatusRail',
+  'Surface',
+  'EmptyState',
+  'Modal',
+  'Drawer',
+  'ImageFrame',
+  'LocalFeedback',
+]
+if (JSON.stringify(componentPrimitiveNames) !== JSON.stringify(expectedPrimitives)) {
+  throw new Error(`shared component primitive inventory drifted, got ${JSON.stringify(componentPrimitiveNames)}`)
+}
+
+if (protectedRoutes.includes('docs')) {
+  throw new Error('the external documentation route must not require a user session')
+}
+
+if (imageFrameActionsClass !== 'pg-image-frame-actions') {
+  throw new Error(`image frame actions need a stable coarse-pointer CSS hook, got ${imageFrameActionsClass}`)
 }
 
 const navCopy = navItems.map((item) => item.label).join(' ')

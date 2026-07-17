@@ -85,6 +85,11 @@ func ImageRole(v string) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldEQ(FieldImageRole, v))
 }
 
+// StorageConfigID applies equality check predicate on the "storage_config_id" field. It's identical to StorageConfigIDEQ.
+func StorageConfigID(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldEQ(FieldStorageConfigID, v))
+}
+
 // StorageDriver applies equality check predicate on the "storage_driver" field. It's identical to StorageDriverEQ.
 func StorageDriver(v string) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldEQ(FieldStorageDriver, v))
@@ -418,6 +423,56 @@ func ImageRoleEqualFold(v string) predicate.ImageResult {
 // ImageRoleContainsFold applies the ContainsFold predicate on the "image_role" field.
 func ImageRoleContainsFold(v string) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldContainsFold(FieldImageRole, v))
+}
+
+// StorageConfigIDEQ applies the EQ predicate on the "storage_config_id" field.
+func StorageConfigIDEQ(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldEQ(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDNEQ applies the NEQ predicate on the "storage_config_id" field.
+func StorageConfigIDNEQ(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNEQ(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDIn applies the In predicate on the "storage_config_id" field.
+func StorageConfigIDIn(vs ...uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldIn(FieldStorageConfigID, vs...))
+}
+
+// StorageConfigIDNotIn applies the NotIn predicate on the "storage_config_id" field.
+func StorageConfigIDNotIn(vs ...uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNotIn(FieldStorageConfigID, vs...))
+}
+
+// StorageConfigIDGT applies the GT predicate on the "storage_config_id" field.
+func StorageConfigIDGT(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldGT(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDGTE applies the GTE predicate on the "storage_config_id" field.
+func StorageConfigIDGTE(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldGTE(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDLT applies the LT predicate on the "storage_config_id" field.
+func StorageConfigIDLT(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldLT(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDLTE applies the LTE predicate on the "storage_config_id" field.
+func StorageConfigIDLTE(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldLTE(FieldStorageConfigID, v))
+}
+
+// StorageConfigIDIsNil applies the IsNil predicate on the "storage_config_id" field.
+func StorageConfigIDIsNil() predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldIsNull(FieldStorageConfigID))
+}
+
+// StorageConfigIDNotNil applies the NotNil predicate on the "storage_config_id" field.
+func StorageConfigIDNotNil() predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNotNull(FieldStorageConfigID))
 }
 
 // StorageDriverEQ applies the EQ predicate on the "storage_driver" field.

@@ -43,19 +43,19 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 		t.Fatalf("expected default provider model, got %#v", providerModels)
 	}
 	explicitModel, err := store.CreateProviderModel(ctx, domainmodeladmin.ProviderModelWriteRequest{
-		ProviderCode:           "openrouter",
-		ModelCode:              "openrouter/vision",
-		CompatMode:             "openrouter_chat_image",
-		SupportsImageInput:     true,
-		SupportedQualities:     []string{"1k", "2k"},
-		MaxImageCount:          4,
-		MaxReferenceImageCount: 2,
-		TimeoutMS:              45000,
-		InputCost:              "0.12",
-		OutputCost:             "0.34",
-		Currency:               "USD",
-		HealthStatus:           "healthy",
-		Enabled:                true,
+		ProviderCode:            "openrouter",
+		ModelCode:               "openrouter/vision",
+		CompatMode:              "openrouter_chat_image",
+		SupportsImageInput:      true,
+		SupportedBaseResolution: []string{"1k", "2k"},
+		MaxImageCount:           4,
+		MaxReferenceImageCount:  2,
+		TimeoutMS:               45000,
+		InputCost:               "0.12",
+		OutputCost:              "0.34",
+		Currency:                "USD",
+		HealthStatus:            "healthy",
+		Enabled:                 true,
 	})
 	if err != nil {
 		t.Fatalf("CreateProviderModel explicit: %v", err)
@@ -63,7 +63,6 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 	if explicitModel.ID == 0 || explicitModel.ModelCode != "openrouter/vision" {
 		t.Fatalf("unexpected explicit model %#v", explicitModel)
 	}
-
 	route, err := store.CreateRoute(ctx, domainmodeladmin.RouteWriteRequest{
 		GroupCode:       "plus",
 		TaskType:        "text_to_image",

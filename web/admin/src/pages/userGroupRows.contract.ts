@@ -1,5 +1,33 @@
 import type { UserGroup } from '../../../shared/api-types'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
 import { userGroupRows, userGroupStatusLabel, userGroupStatusTone, userGroupSummary } from './userGroupRows'
+
+const userGroupsPageSource = readFileSync(new URL('./UserGroupsPage.tsx', import.meta.url), 'utf8')
+
+for (const primitive of ['PageHeader', 'MetricStrip', 'FilterToolbar', 'ListPage', 'DataTable', 'Badge', 'ActionMenu', 'InlineFeedback', 'Modal']) {
+  if (!userGroupsPageSource.includes(`<${primitive}`)) {
+    throw new Error(`user group list must use the shared ${primitive} primitive`)
+  }
+}
+
+for (const operation of ['adminApi.listUserGroups', 'adminApi.createUserGroup', 'adminApi.updateUserGroup', 'adminApi.deleteUserGroup']) {
+  if (!userGroupsPageSource.includes(operation)) {
+    throw new Error(`user group list must preserve ${operation}`)
+  }
+}
+
+for (const stateContract of ['mutationError', 'resultSummary=', 'userGroupStatusTone', 'userGroupSummary']) {
+  if (!userGroupsPageSource.includes(stateContract)) {
+    throw new Error(`user group list must expose ${stateContract}`)
+  }
+}
+
+for (const legacyPattern of ['<details', 'rounded-xl', 'tracking-[', 'uppercase', 'groupClasses.summary']) {
+  if (userGroupsPageSource.includes(legacyPattern)) {
+    throw new Error(`user group list must remove legacy page-local pattern ${legacyPattern}`)
+  }
+}
 
 const group = (override: Partial<UserGroup>): UserGroup => ({
   id: override.code ?? 'basic',

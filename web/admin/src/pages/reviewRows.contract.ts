@@ -7,6 +7,10 @@ import {
   reviewStatusTabs,
   reviewTerminalActionLabel,
 } from './reviewRows'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
+
+const reviewPageSource = readFileSync(new URL('./ReviewPage.tsx', import.meta.url), 'utf8')
 
 const pendingActions = reviewActionsForStatus('pending_review')
 if (pendingActions.map((action) => action.decision).join(',') !== 'approve,reject') {
@@ -87,4 +91,61 @@ if (invalidDateRow.createdAtLabel !== 'not-a-date') {
 const rejectedRow = reviewRowView({ ...pendingRow.raw, status: 'rejected' })
 if (rejectedRow.actions.length || rejectedRow.terminalActionLabel !== '已驳回') {
   throw new Error(`rejected review row should expose terminal label without write actions, got ${JSON.stringify(rejectedRow)}`)
+}
+
+for (const region of ['queue', 'preview', 'action']) {
+  if (!reviewPageSource.includes(`data-review-region="${region}"`)) {
+    throw new Error(`review workbench must keep a stable ${region} region`)
+  }
+}
+
+for (const keyboardContract of [
+  'role="listbox"',
+  'onKeyDown={handleQueueKeyDown}',
+  "event.key !== 'ArrowDown' && event.key !== 'ArrowUp'",
+  'tabIndex={active ? 0 : -1}',
+  'aria-selected={active}',
+  'focus-visible:outline-[var(--focus-ring)]',
+]) {
+  if (!reviewPageSource.includes(keyboardContract)) {
+    throw new Error(`review queue needs keyboard selection and visible focus: ${keyboardContract}`)
+  }
+}
+
+for (const reasonContract of [
+  'reasonPresets.map((preset)',
+  'setDraftReason(preset)',
+  '补充说明（可选）',
+  'value={draftReason}',
+]) {
+  if (!reviewPageSource.includes(reasonContract)) {
+    throw new Error(`review rejection reasons must be interactive: ${reasonContract}`)
+  }
+}
+
+for (const behaviorContract of [
+  'adminApi.decideReview',
+  'setMutationError(',
+  '<InlineFeedback tone="danger" message={mutationError}',
+  'useAdminPreviewMotion',
+  'refreshing',
+  'requestGenerationRef',
+  'loading && !rows.length',
+  'error && rows.length',
+  'decisionTriggerRef',
+  "querySelector<HTMLElement>('textarea, button')",
+  'decisionTriggerRef.current?.focus()',
+  'disabled={refreshing || Boolean(drawer) || busy}',
+  'interactionLocked={refreshing}',
+  'requestGenerationRef.current += 1',
+]) {
+  if (!reviewPageSource.includes(behaviorContract)) {
+    throw new Error(`review workbench must preserve bounded local behavior: ${behaviorContract}`)
+  }
+}
+
+for (const visualDrift of ['rounded-2xl', 'rounded-3xl', 'hover:scale-105', 'shadow-lg']) {
+  if (reviewPageSource.includes(visualDrift)) {
+    throw new Error(`review workbench must remove visual drift: ${visualDrift}`)
+  }
 }
