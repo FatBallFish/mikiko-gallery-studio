@@ -71,9 +71,13 @@ func TestArtifactRecoveryRetriesThreeTimesWithoutSecondProviderCall(t *testing.T
 func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.T) {
 	now := time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC)
 	providerCalls := 0
-	providers := map[string]provider.ImageProvider{"openai": artifactTestProvider{generate: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+	providers := map[string]provider.ImageProvider{"openai": artifactTestProvider{generate: func(_ context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
 		providerCalls++
-		return provider.ImageResponse{ProviderRequestID: fmt.Sprintf("paid-fanout-%d", providerCalls), Data: []provider.ImageResult{{URL: fmt.Sprintf("https://cdn.example.com/result-%d.png?sig=secret", providerCalls)}}}, nil
+		results := make([]provider.ImageResult, 0, req.OutputImageCount)
+		for index := 0; index < req.OutputImageCount; index++ {
+			results = append(results, provider.ImageResult{URL: fmt.Sprintf("https://cdn.example.com/result-%d-%d.png?sig=secret", providerCalls, index)})
+		}
+		return provider.ImageResponse{ProviderRequestID: fmt.Sprintf("paid-fanout-%d", providerCalls), Data: results}, nil
 	}}}
 	backend := &countingArtifactBackend{failWrites: 1, objects: map[string][]byte{}}
 	store := NewMemoryStore()
@@ -82,7 +86,7 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	cfg.Providers.OpenRouter.Enabled = false
 	cfg.Providers.OpenAI.Enabled = true
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{"openai": {
-		SupportedModels: []string{"basic"}, SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}, SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 2, Priority: 1,
+		SupportedModels: []string{"basic"}, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 2, Priority: 1,
 	}}
 	cfg.Routing.ProviderModelMap = map[string]map[string]string{"basic": {"openai": "gpt-image"}}
 	svc := NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, nil, &trackingArtifactBilling{}, storage.NewStaticRouter(backend))
@@ -91,7 +95,7 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	svc.SetHTTPClient(&http.Client{Transport: artifactRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
 	})})
-	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{UserID: 502, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover fanout", RequestedQuality: "1k", RequestedSize: "1024x1024", OutputImageCount: 2})
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{UserID: 502, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover fanout", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", RequestedSize: "auto", OutputImageCount: 2})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -103,7 +107,7 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	if err != nil {
 		t.Fatalf("initial fanout execution: %v", err)
 	}
-	if pending.Task.ArtifactRecovery.Status != artifactRecoveryPending || pending.Task.ArtifactRecovery.AttemptCount != 1 || providerCalls != 2 {
+	if pending.Task.ArtifactRecovery.Status != artifactRecoveryPending || pending.Task.ArtifactRecovery.AttemptCount != 1 || providerCalls != 1 {
 		t.Fatalf("expected paid fanout checkpoint and pending recovery, task=%#v provider_calls=%d", pending.Task, providerCalls)
 	}
 	now = pending.Task.ArtifactRecovery.NextRetryAt.Add(time.Millisecond)
@@ -115,7 +119,7 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	if err != nil {
 		t.Fatalf("recover fanout: %v", err)
 	}
-	if recovered.Task.Status != domainimagetask.StatusSucceeded || len(recovered.Task.Results) != 2 || providerCalls != 2 {
+	if recovered.Task.Status != domainimagetask.StatusSucceeded || len(recovered.Task.Results) != 2 || providerCalls != 1 {
 		t.Fatalf("expected two recovered results without provider replay, task=%#v provider_calls=%d", recovered.Task, providerCalls)
 	}
 	if recovered.Task.Results[0].ID == recovered.Task.Results[1].ID || recovered.Task.Results[0].ObjectKey == recovered.Task.Results[1].ObjectKey {
@@ -243,13 +247,13 @@ func artifactRecoveryTestConfig() config.Config {
 	cfg.Security.SecureConfigEncryptionKey = "artifact-recovery-key"
 	cfg.GenerationLimits.MaxImageCount = 1
 	cfg.Billing.PointsScale = 5
-	cfg.Billing.AutoQualityDefaultByGroup = map[string]string{"basic": "1k"}
-	cfg.Billing.QualityPointsByModel = map[string]map[string]string{"basic": {"1k": "1.00000"}}
+	cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"basic": "1k"}
+	cfg.Billing.BaseResolutionPointsByModel = map[string]map[string]string{"basic": {"1k": "1.00000"}}
 	cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000"}
 	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000"}
 	cfg.Providers.OpenRouter.Enabled = true
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{"openrouter": {
-		SupportedModels: []string{"basic"}, SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"},
+		SupportedModels: []string{"basic"}, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"},
 		SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 1, Priority: 1,
 	}}
 	cfg.Routing.ProviderModelMap = map[string]map[string]string{"basic": {"openrouter": "image-model"}}
@@ -257,7 +261,7 @@ func artifactRecoveryTestConfig() config.Config {
 }
 
 func artifactRecoveryCreateRequest() domainimagetask.CreateRequest {
-	return domainimagetask.CreateRequest{UserID: 501, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover me", RequestedQuality: "1k", RequestedSize: "1024x1024", OutputImageCount: 1}
+	return domainimagetask.CreateRequest{UserID: 501, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover me", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", RequestedSize: "auto", OutputImageCount: 1}
 }
 
 type artifactTestProvider struct {
@@ -290,8 +294,8 @@ type trackingArtifactBilling struct {
 
 func (b *trackingArtifactBilling) Estimate(domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
 	return domainbilling.EstimateResult{
-		ResolvedQualityBucket: "1k", EstimatedPoints: "1.00000", ChargedPoints: "1.00000", UserGroupMultiplier: "1.00000",
-		PricingSnapshot: domainbilling.PricingSnapshot{EstimatedPoints: "1.00000"},
+		BaseResolution: "1k", EstimatedPoints: "1.00000", ChargedPoints: "1.00000", UserGroupMultiplier: "1.00000",
+		PricingSnapshot: domainbilling.PricingSnapshot{BaseResolution: "1k", EstimatedPoints: "1.00000"},
 	}, nil
 }
 

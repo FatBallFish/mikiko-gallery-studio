@@ -154,7 +154,8 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	moderation := map[string]struct{}{}
 	maxOutputCount := 0
 	maxReferenceCount := 0
-	hasConfiguredCandidate := false
+	supportsOutputCompression := false
+	hasCandidate := false
 	for _, route := range routing.Candidates {
 		if !route.Enabled || route.RouteModelID != routeModel.ID {
 			continue
@@ -163,7 +164,13 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 		if !ok {
 			continue
 		}
-		hasConfiguredCandidate = true
+		hasCandidate = true
+		candidate = normalizeProviderCandidate(candidate)
+		for _, mode := range candidate.SizeModes {
+			if trimmed := strings.TrimSpace(mode); trimmed != "" {
+				sizeModes[trimmed] = struct{}{}
+			}
+		}
 		for _, ratio := range candidate.SupportedAspectRatios {
 			if trimmed := strings.TrimSpace(ratio); trimmed != "" {
 				ratios[trimmed] = struct{}{}
@@ -202,7 +209,7 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	if maxOutputCount <= 0 {
 		maxOutputCount = r.cfg.GenerationLimits.MaxImageCount
 	}
-	if !hasConfiguredCandidate {
+	if !hasCandidate && maxReferenceCount <= 0 {
 		maxReferenceCount = r.cfg.GenerationLimits.ReferenceImageMaxCount
 	}
 	if len(sizeModes) == 0 {
@@ -616,13 +623,7 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 			if !candidateHealthUsable(candidate.HealthStatus) {
 				continue
 			}
-			if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, req.TaskType) {
-				continue
-			}
-			if len(candidate.SupportedQualities) > 0 && !containsString(candidate.SupportedQualities, quality) {
-				continue
-			}
-			if !candidateSupportsGenerationRequest(candidate, req) {
+			if !CandidateSupportsRequest(candidate, req, baseResolution) {
 				continue
 			}
 			candidates = append(candidates, candidate)
@@ -704,6 +705,9 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 		return false
 	}
 	if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, req.TaskType) {
+		return false
+	}
+	if candidate.MaxImageCount > 0 && req.RequestedOutputImageCount > candidate.MaxImageCount {
 		return false
 	}
 	if req.ReferenceImageCount > candidate.MaxReferenceImageCount {
@@ -863,9 +867,6 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		if !CandidateSupportsRequest(candidate, req, baseResolution) {
 			continue
 		}
-		if !candidateSupportsGenerationRequest(candidate, req) {
-			continue
-		}
 		candidate.RouteModelID = routeModel.ID
 		candidate.RouteModelCode = routeModel.Code
 		candidate.Priority = item.Priority
@@ -898,45 +899,8 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 	}, nil
 }
 
-func candidateSupportsGenerationRequest(candidate ProviderCandidate, req ResolveRequest) bool {
-	if candidate.MaxImageCount > 0 && req.RequestedOutputImageCount > candidate.MaxImageCount {
-		return false
-	}
-	if req.ReferenceImageCount > 0 {
-		if !candidate.SupportsImageInput || candidate.MaxReferenceImageCount <= 0 || req.ReferenceImageCount > candidate.MaxReferenceImageCount {
-			return false
-		}
-	}
-	if req.MaskPresent && !candidate.SupportsMask {
-		return false
-	}
-	return candidateSupportsRequestedSize(candidate, req.RequestedSize)
-}
-
-func candidateSupportsRequestedSize(candidate ProviderCandidate, requestedSize string) bool {
-	requestedSize = strings.TrimSpace(requestedSize)
-	if requestedSize == "" || strings.EqualFold(requestedSize, "auto") || len(candidate.SupportedAspectRatios) == 0 {
-		return true
-	}
-	requestedWidth, requestedHeight, ok := ParseImageSize(requestedSize)
-	if !ok {
-		requestedWidth, requestedHeight, ok = parseRatio(requestedSize)
-		if !ok {
-			return false
-		}
-	}
-	requestedRatio := simplifiedRatioKey(requestedWidth, requestedHeight)
-	for _, ratio := range candidate.SupportedAspectRatios {
-		supportedWidth, supportedHeight, valid := parseRatio(ratio)
-		if valid && simplifiedRatioKey(supportedWidth, supportedHeight) == requestedRatio {
-			return true
-		}
-	}
-	return false
-}
-
-func firstRouteQuality(routeModelID int64, taskType string, prices []RoutePriceConfig) string {
-	qualities := []string{}
+func firstRouteBaseResolution(routeModelID int64, taskType string, prices []RoutePriceConfig) string {
+	baseResolution := []string{}
 	for _, price := range prices {
 		if price.Enabled && price.RouteModelID == routeModelID && strings.EqualFold(price.TaskType, taskType) {
 			baseResolution = append(baseResolution, strings.ToLower(price.BaseResolution))

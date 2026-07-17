@@ -103,6 +103,10 @@ components:
           type: string
         status:
           type: string
+        progress_stage:
+          type: string
+        progress_message:
+          type: string
         route_model_code:
           type: string
         abstract_model:

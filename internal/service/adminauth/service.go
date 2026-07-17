@@ -349,65 +349,6 @@ func (s *Service) LogoutAccessToken(accessToken string) {
 	s.LogoutAccessSession(claims.SessionID)
 }
 
-func (s *Service) Refresh(ctx context.Context, refreshToken string) (domainadminauth.Session, error) {
-	s.mu.Lock()
-	hash := hashToken(refreshToken)
-	current, ok := s.refreshesByHash[hash]
-	if !ok {
-		s.mu.Unlock()
-		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
-	}
-	if current.Status != "active" {
-		s.revokeRefreshFamilyLocked(current.FamilyID)
-		s.mu.Unlock()
-		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshReplayBlocked, "admin refresh token replay detected")
-	}
-	if time.Now().After(current.ExpiresAt) {
-		current.Status = "expired"
-		s.mu.Unlock()
-		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
-	}
-	adminID := current.AdminID
-	familyID := current.FamilyID
-	s.mu.Unlock()
-
-	admin, err := s.store.GetAdminByID(ctx, current.AdminID)
-	if err != nil || admin.Status != "active" {
-		s.mu.Lock()
-		current.Status = "revoked"
-		s.mu.Unlock()
-		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
-	}
-	if admin.ID != adminID {
-		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "admin refresh token expired")
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if current.Status != "active" {
-		s.revokeRefreshFamilyLocked(current.FamilyID)
-		return domainadminauth.Session{}, errs.New(401, errs.CodeAuthRefreshReplayBlocked, "admin refresh token replay detected")
-	}
-	current.Status = "rotated"
-	next, err := s.issueSessionWithFamilyLocked(admin, familyID)
-	if err != nil {
-		return domainadminauth.Session{}, err
-	}
-	current.ReplacedBySessionID = next.SessionID
-	return next, nil
-}
-
-func (s *Service) LogoutRefresh(refreshToken string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if strings.TrimSpace(refreshToken) == "" {
-		return
-	}
-	if current, ok := s.refreshesByHash[hashToken(refreshToken)]; ok {
-		current.Status = "revoked"
-	}
-}
-
 func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (*Claims, error) {
 	claims, err := s.parseAccessTokenClaims(accessToken)
 	if err != nil {

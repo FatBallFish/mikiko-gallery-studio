@@ -25,7 +25,6 @@ import type {
   UserProfile,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { resolveGenerationResolution } from './generation-resolution'
 import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
 
 export { resolveGenerationResolution } from './generation-resolution'
@@ -189,10 +188,18 @@ export function toTask(raw: any): ImageTask {
 }
 
 export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateRequest {
+  const sizeMode = req.size_mode === 'pixel' ? 'pixel' : 'ratio'
   return {
     task_type: toBackendTaskType(req.task_type),
     route_model_code: req.route_model_code,
-    ...resolveGenerationResolution(req),
+    size_mode: sizeMode,
+    aspect_ratio: sizeMode === 'ratio' ? req.aspect_ratio : undefined,
+    base_resolution: sizeMode === 'ratio' ? req.base_resolution : 'auto',
+    quality: req.quality ?? 'auto',
+    output_format: req.output_format ?? 'png',
+    output_compression: req.output_compression ?? 100,
+    moderation: req.moderation ?? 'auto',
+    requested_size: sizeMode === 'pixel' ? req.pixel_size ?? '' : 'auto',
     requested_output_image_count: req.image_count,
     reference_image_count: req.reference_asset_ids?.length ?? 0,
   }
@@ -213,7 +220,7 @@ export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: Back
 
 export function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
   const points = raw.display_points ?? raw.charged_points ?? raw.estimated_points ?? raw.points ?? '0.00000'
-  const requestBaseResolution = req ? resolveGenerationResolution(req).requested_quality : 'auto'
+  const requestBaseResolution = req?.base_resolution ?? 'auto'
   const baseResolution = responseResolution(raw, requestBaseResolution)
   return {
     ...raw,
@@ -258,9 +265,9 @@ function optionalOutputCapabilities(source: any) {
   const result: {
     quality?: string[]
     output_format?: string[]
-    supports_output_compression?: boolean
+    supports_output_compression: boolean
     moderation?: string[]
-  } = {}
+  } = { supports_output_compression: false }
   const quality = pick<string[]>(source, 'quality', 'Quality')
   const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
   const supportsCompression = pick<boolean>(source, 'supports_output_compression', 'SupportsOutputCompression')

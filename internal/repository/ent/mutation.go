@@ -4629,7 +4629,6 @@ type ImageResultMutation struct {
 	image_role         *string
 	storage_config_id  *uuid.UUID
 	storage_driver     *string
-	storage_config_id  *uuid.UUID
 	object_key         *string
 	mime_type          *string
 	file_size_bytes    *int64
@@ -5085,55 +5084,6 @@ func (m *ImageResultMutation) OldStorageDriver(ctx context.Context) (v string, e
 // ResetStorageDriver resets all changes to the "storage_driver" field.
 func (m *ImageResultMutation) ResetStorageDriver() {
 	m.storage_driver = nil
-}
-
-// SetStorageConfigID sets the "storage_config_id" field.
-func (m *ImageResultMutation) SetStorageConfigID(u uuid.UUID) {
-	m.storage_config_id = &u
-}
-
-// StorageConfigID returns the value of the "storage_config_id" field in the mutation.
-func (m *ImageResultMutation) StorageConfigID() (r uuid.UUID, exists bool) {
-	v := m.storage_config_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldStorageConfigID returns the old "storage_config_id" field's value of the ImageResult entity.
-// If the ImageResult object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ImageResultMutation) OldStorageConfigID(ctx context.Context) (v *uuid.UUID, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldStorageConfigID is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldStorageConfigID requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldStorageConfigID: %w", err)
-	}
-	return oldValue.StorageConfigID, nil
-}
-
-// ClearStorageConfigID clears the value of the "storage_config_id" field.
-func (m *ImageResultMutation) ClearStorageConfigID() {
-	m.storage_config_id = nil
-	m.clearedFields[imageresult.FieldStorageConfigID] = struct{}{}
-}
-
-// StorageConfigIDCleared returns if the "storage_config_id" field was cleared in this mutation.
-func (m *ImageResultMutation) StorageConfigIDCleared() bool {
-	_, ok := m.clearedFields[imageresult.FieldStorageConfigID]
-	return ok
-}
-
-// ResetStorageConfigID resets all changes to the "storage_config_id" field.
-func (m *ImageResultMutation) ResetStorageConfigID() {
-	m.storage_config_id = nil
-	delete(m.clearedFields, imageresult.FieldStorageConfigID)
 }
 
 // SetObjectKey sets the "object_key" field.
@@ -5641,9 +5591,6 @@ func (m *ImageResultMutation) Fields() []string {
 	if m.storage_driver != nil {
 		fields = append(fields, imageresult.FieldStorageDriver)
 	}
-	if m.storage_config_id != nil {
-		fields = append(fields, imageresult.FieldStorageConfigID)
-	}
 	if m.object_key != nil {
 		fields = append(fields, imageresult.FieldObjectKey)
 	}
@@ -5698,8 +5645,6 @@ func (m *ImageResultMutation) Field(name string) (ent.Value, bool) {
 		return m.StorageConfigID()
 	case imageresult.FieldStorageDriver:
 		return m.StorageDriver()
-	case imageresult.FieldStorageConfigID:
-		return m.StorageConfigID()
 	case imageresult.FieldObjectKey:
 		return m.ObjectKey()
 	case imageresult.FieldMimeType:
@@ -5745,8 +5690,6 @@ func (m *ImageResultMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldStorageConfigID(ctx)
 	case imageresult.FieldStorageDriver:
 		return m.OldStorageDriver(ctx)
-	case imageresult.FieldStorageConfigID:
-		return m.OldStorageConfigID(ctx)
 	case imageresult.FieldObjectKey:
 		return m.OldObjectKey(ctx)
 	case imageresult.FieldMimeType:
@@ -5831,13 +5774,6 @@ func (m *ImageResultMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStorageDriver(v)
-		return nil
-	case imageresult.FieldStorageConfigID:
-		v, ok := value.(uuid.UUID)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetStorageConfigID(v)
 		return nil
 	case imageresult.FieldObjectKey:
 		v, ok := value.(string)
@@ -6059,9 +5995,6 @@ func (m *ImageResultMutation) ResetField(name string) error {
 		return nil
 	case imageresult.FieldStorageDriver:
 		m.ResetStorageDriver()
-		return nil
-	case imageresult.FieldStorageConfigID:
-		m.ResetStorageConfigID()
 		return nil
 	case imageresult.FieldObjectKey:
 		m.ResetObjectKey()
@@ -9393,7 +9326,7 @@ func (m *ImageTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImageTaskMutation) Fields() []string {
-	fields := make([]string, 0, 58)
+	fields := make([]string, 0, 64)
 	if m.created_at != nil {
 		fields = append(fields, imagetask.FieldCreatedAt)
 	}
@@ -12425,14 +12358,27 @@ type ModelAccountModelMutation struct {
 	display_name                 *string
 	task_types                   *[]string
 	appendtask_types             []string
-	qualities                    *[]string
-	appendqualities              []string
-	supported_ratios             *[]string
-	appendsupported_ratios       []string
-	max_image_count              *int
-	addmax_image_count           *int
+	base_resolution              *[]string
+	appendbase_resolution        []string
+	quality                      *[]string
+	appendquality                []string
 	max_reference_image_count    *int
 	addmax_reference_image_count *int
+	max_image_count              *int
+	addmax_image_count           *int
+	size_modes                   *[]string
+	appendsize_modes             []string
+	supported_ratios             *[]string
+	appendsupported_ratios       []string
+	supported_pixel_sizes        *[]string
+	appendsupported_pixel_sizes  []string
+	output_format                *[]string
+	appendoutput_format          []string
+	output_compression           *int
+	addoutput_compression        *int
+	supports_output_compression  *bool
+	moderation                   *[]string
+	appendmoderation             []string
 	cost_per_image               *string
 	currency                     *string
 	enabled                      *bool
@@ -13514,183 +13460,6 @@ func (m *ModelAccountModelMutation) ResetModeration() {
 	delete(m.clearedFields, modelaccountmodel.FieldModeration)
 }
 
-// SetSupportedRatios sets the "supported_ratios" field.
-func (m *ModelAccountModelMutation) SetSupportedRatios(s []string) {
-	m.supported_ratios = &s
-	m.appendsupported_ratios = nil
-}
-
-// SupportedRatios returns the value of the "supported_ratios" field in the mutation.
-func (m *ModelAccountModelMutation) SupportedRatios() (r []string, exists bool) {
-	v := m.supported_ratios
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldSupportedRatios returns the old "supported_ratios" field's value of the ModelAccountModel entity.
-// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ModelAccountModelMutation) OldSupportedRatios(ctx context.Context) (v []string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSupportedRatios is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSupportedRatios requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSupportedRatios: %w", err)
-	}
-	return oldValue.SupportedRatios, nil
-}
-
-// AppendSupportedRatios adds s to the "supported_ratios" field.
-func (m *ModelAccountModelMutation) AppendSupportedRatios(s []string) {
-	m.appendsupported_ratios = append(m.appendsupported_ratios, s...)
-}
-
-// AppendedSupportedRatios returns the list of values that were appended to the "supported_ratios" field in this mutation.
-func (m *ModelAccountModelMutation) AppendedSupportedRatios() ([]string, bool) {
-	if len(m.appendsupported_ratios) == 0 {
-		return nil, false
-	}
-	return m.appendsupported_ratios, true
-}
-
-// ClearSupportedRatios clears the value of the "supported_ratios" field.
-func (m *ModelAccountModelMutation) ClearSupportedRatios() {
-	m.supported_ratios = nil
-	m.appendsupported_ratios = nil
-	m.clearedFields[modelaccountmodel.FieldSupportedRatios] = struct{}{}
-}
-
-// SupportedRatiosCleared returns if the "supported_ratios" field was cleared in this mutation.
-func (m *ModelAccountModelMutation) SupportedRatiosCleared() bool {
-	_, ok := m.clearedFields[modelaccountmodel.FieldSupportedRatios]
-	return ok
-}
-
-// ResetSupportedRatios resets all changes to the "supported_ratios" field.
-func (m *ModelAccountModelMutation) ResetSupportedRatios() {
-	m.supported_ratios = nil
-	m.appendsupported_ratios = nil
-	delete(m.clearedFields, modelaccountmodel.FieldSupportedRatios)
-}
-
-// SetMaxImageCount sets the "max_image_count" field.
-func (m *ModelAccountModelMutation) SetMaxImageCount(i int) {
-	m.max_image_count = &i
-	m.addmax_image_count = nil
-}
-
-// MaxImageCount returns the value of the "max_image_count" field in the mutation.
-func (m *ModelAccountModelMutation) MaxImageCount() (r int, exists bool) {
-	v := m.max_image_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldMaxImageCount returns the old "max_image_count" field's value of the ModelAccountModel entity.
-// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ModelAccountModelMutation) OldMaxImageCount(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldMaxImageCount is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldMaxImageCount requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldMaxImageCount: %w", err)
-	}
-	return oldValue.MaxImageCount, nil
-}
-
-// AddMaxImageCount adds i to the "max_image_count" field.
-func (m *ModelAccountModelMutation) AddMaxImageCount(i int) {
-	if m.addmax_image_count != nil {
-		*m.addmax_image_count += i
-	} else {
-		m.addmax_image_count = &i
-	}
-}
-
-// AddedMaxImageCount returns the value that was added to the "max_image_count" field in this mutation.
-func (m *ModelAccountModelMutation) AddedMaxImageCount() (r int, exists bool) {
-	v := m.addmax_image_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetMaxImageCount resets all changes to the "max_image_count" field.
-func (m *ModelAccountModelMutation) ResetMaxImageCount() {
-	m.max_image_count = nil
-	m.addmax_image_count = nil
-}
-
-// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
-func (m *ModelAccountModelMutation) SetMaxReferenceImageCount(i int) {
-	m.max_reference_image_count = &i
-	m.addmax_reference_image_count = nil
-}
-
-// MaxReferenceImageCount returns the value of the "max_reference_image_count" field in the mutation.
-func (m *ModelAccountModelMutation) MaxReferenceImageCount() (r int, exists bool) {
-	v := m.max_reference_image_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldMaxReferenceImageCount returns the old "max_reference_image_count" field's value of the ModelAccountModel entity.
-// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ModelAccountModelMutation) OldMaxReferenceImageCount(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldMaxReferenceImageCount is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldMaxReferenceImageCount requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldMaxReferenceImageCount: %w", err)
-	}
-	return oldValue.MaxReferenceImageCount, nil
-}
-
-// AddMaxReferenceImageCount adds i to the "max_reference_image_count" field.
-func (m *ModelAccountModelMutation) AddMaxReferenceImageCount(i int) {
-	if m.addmax_reference_image_count != nil {
-		*m.addmax_reference_image_count += i
-	} else {
-		m.addmax_reference_image_count = &i
-	}
-}
-
-// AddedMaxReferenceImageCount returns the value that was added to the "max_reference_image_count" field in this mutation.
-func (m *ModelAccountModelMutation) AddedMaxReferenceImageCount() (r int, exists bool) {
-	v := m.addmax_reference_image_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetMaxReferenceImageCount resets all changes to the "max_reference_image_count" field.
-func (m *ModelAccountModelMutation) ResetMaxReferenceImageCount() {
-	m.max_reference_image_count = nil
-	m.addmax_reference_image_count = nil
-}
-
 // SetCostPerImage sets the "cost_per_image" field.
 func (m *ModelAccountModelMutation) SetCostPerImage(s string) {
 	m.cost_per_image = &s
@@ -13882,7 +13651,7 @@ func (m *ModelAccountModelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ModelAccountModelMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 22)
 	if m.created_at != nil {
 		fields = append(fields, modelaccountmodel.FieldCreatedAt)
 	}
@@ -13937,15 +13706,6 @@ func (m *ModelAccountModelMutation) Fields() []string {
 	if m.moderation != nil {
 		fields = append(fields, modelaccountmodel.FieldModeration)
 	}
-	if m.supported_ratios != nil {
-		fields = append(fields, modelaccountmodel.FieldSupportedRatios)
-	}
-	if m.max_image_count != nil {
-		fields = append(fields, modelaccountmodel.FieldMaxImageCount)
-	}
-	if m.max_reference_image_count != nil {
-		fields = append(fields, modelaccountmodel.FieldMaxReferenceImageCount)
-	}
 	if m.cost_per_image != nil {
 		fields = append(fields, modelaccountmodel.FieldCostPerImage)
 	}
@@ -13980,14 +13740,28 @@ func (m *ModelAccountModelMutation) Field(name string) (ent.Value, bool) {
 		return m.DisplayName()
 	case modelaccountmodel.FieldTaskTypes:
 		return m.TaskTypes()
-	case modelaccountmodel.FieldQualities:
-		return m.Qualities()
-	case modelaccountmodel.FieldSupportedRatios:
-		return m.SupportedRatios()
-	case modelaccountmodel.FieldMaxImageCount:
-		return m.MaxImageCount()
+	case modelaccountmodel.FieldBaseResolution:
+		return m.BaseResolution()
+	case modelaccountmodel.FieldQuality:
+		return m.Quality()
 	case modelaccountmodel.FieldMaxReferenceImageCount:
 		return m.MaxReferenceImageCount()
+	case modelaccountmodel.FieldMaxImageCount:
+		return m.MaxImageCount()
+	case modelaccountmodel.FieldSizeModes:
+		return m.SizeModes()
+	case modelaccountmodel.FieldSupportedRatios:
+		return m.SupportedRatios()
+	case modelaccountmodel.FieldSupportedPixelSizes:
+		return m.SupportedPixelSizes()
+	case modelaccountmodel.FieldOutputFormat:
+		return m.OutputFormat()
+	case modelaccountmodel.FieldOutputCompression:
+		return m.OutputCompression()
+	case modelaccountmodel.FieldSupportsOutputCompression:
+		return m.SupportsOutputCompression()
+	case modelaccountmodel.FieldModeration:
+		return m.Moderation()
 	case modelaccountmodel.FieldCostPerImage:
 		return m.CostPerImage()
 	case modelaccountmodel.FieldCurrency:
@@ -14019,14 +13793,28 @@ func (m *ModelAccountModelMutation) OldField(ctx context.Context, name string) (
 		return m.OldDisplayName(ctx)
 	case modelaccountmodel.FieldTaskTypes:
 		return m.OldTaskTypes(ctx)
-	case modelaccountmodel.FieldQualities:
-		return m.OldQualities(ctx)
-	case modelaccountmodel.FieldSupportedRatios:
-		return m.OldSupportedRatios(ctx)
-	case modelaccountmodel.FieldMaxImageCount:
-		return m.OldMaxImageCount(ctx)
+	case modelaccountmodel.FieldBaseResolution:
+		return m.OldBaseResolution(ctx)
+	case modelaccountmodel.FieldQuality:
+		return m.OldQuality(ctx)
 	case modelaccountmodel.FieldMaxReferenceImageCount:
 		return m.OldMaxReferenceImageCount(ctx)
+	case modelaccountmodel.FieldMaxImageCount:
+		return m.OldMaxImageCount(ctx)
+	case modelaccountmodel.FieldSizeModes:
+		return m.OldSizeModes(ctx)
+	case modelaccountmodel.FieldSupportedRatios:
+		return m.OldSupportedRatios(ctx)
+	case modelaccountmodel.FieldSupportedPixelSizes:
+		return m.OldSupportedPixelSizes(ctx)
+	case modelaccountmodel.FieldOutputFormat:
+		return m.OldOutputFormat(ctx)
+	case modelaccountmodel.FieldOutputCompression:
+		return m.OldOutputCompression(ctx)
+	case modelaccountmodel.FieldSupportsOutputCompression:
+		return m.OldSupportsOutputCompression(ctx)
+	case modelaccountmodel.FieldModeration:
+		return m.OldModeration(ctx)
 	case modelaccountmodel.FieldCostPerImage:
 		return m.OldCostPerImage(ctx)
 	case modelaccountmodel.FieldCurrency:
@@ -14170,27 +13958,6 @@ func (m *ModelAccountModelMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetModeration(v)
 		return nil
-	case modelaccountmodel.FieldSupportedRatios:
-		v, ok := value.([]string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetSupportedRatios(v)
-		return nil
-	case modelaccountmodel.FieldMaxImageCount:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetMaxImageCount(v)
-		return nil
-	case modelaccountmodel.FieldMaxReferenceImageCount:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetMaxReferenceImageCount(v)
-		return nil
 	case modelaccountmodel.FieldCostPerImage:
 		v, ok := value.(string)
 		if !ok {
@@ -14230,11 +13997,14 @@ func (m *ModelAccountModelMutation) AddedFields() []string {
 	if m.addaccount_id != nil {
 		fields = append(fields, modelaccountmodel.FieldAccountID)
 	}
+	if m.addmax_reference_image_count != nil {
+		fields = append(fields, modelaccountmodel.FieldMaxReferenceImageCount)
+	}
 	if m.addmax_image_count != nil {
 		fields = append(fields, modelaccountmodel.FieldMaxImageCount)
 	}
-	if m.addmax_reference_image_count != nil {
-		fields = append(fields, modelaccountmodel.FieldMaxReferenceImageCount)
+	if m.addoutput_compression != nil {
+		fields = append(fields, modelaccountmodel.FieldOutputCompression)
 	}
 	return fields
 }
@@ -14246,10 +14016,12 @@ func (m *ModelAccountModelMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case modelaccountmodel.FieldAccountID:
 		return m.AddedAccountID()
-	case modelaccountmodel.FieldMaxImageCount:
-		return m.AddedMaxImageCount()
 	case modelaccountmodel.FieldMaxReferenceImageCount:
 		return m.AddedMaxReferenceImageCount()
+	case modelaccountmodel.FieldMaxImageCount:
+		return m.AddedMaxImageCount()
+	case modelaccountmodel.FieldOutputCompression:
+		return m.AddedOutputCompression()
 	}
 	return nil, false
 }
@@ -14266,6 +14038,13 @@ func (m *ModelAccountModelMutation) AddField(name string, value ent.Value) error
 		}
 		m.AddAccountID(v)
 		return nil
+	case modelaccountmodel.FieldMaxReferenceImageCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxReferenceImageCount(v)
+		return nil
 	case modelaccountmodel.FieldMaxImageCount:
 		v, ok := value.(int)
 		if !ok {
@@ -14273,12 +14052,12 @@ func (m *ModelAccountModelMutation) AddField(name string, value ent.Value) error
 		}
 		m.AddMaxImageCount(v)
 		return nil
-	case modelaccountmodel.FieldMaxReferenceImageCount:
+	case modelaccountmodel.FieldOutputCompression:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddMaxReferenceImageCount(v)
+		m.AddOutputCompression(v)
 		return nil
 	}
 	return fmt.Errorf("unknown ModelAccountModel numeric field %s", name)
@@ -14314,9 +14093,6 @@ func (m *ModelAccountModelMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(modelaccountmodel.FieldModeration) {
 		fields = append(fields, modelaccountmodel.FieldModeration)
-	}
-	if m.FieldCleared(modelaccountmodel.FieldSupportedRatios) {
-		fields = append(fields, modelaccountmodel.FieldSupportedRatios)
 	}
 	if m.FieldCleared(modelaccountmodel.FieldExtra) {
 		fields = append(fields, modelaccountmodel.FieldExtra)
@@ -14361,9 +14137,6 @@ func (m *ModelAccountModelMutation) ClearField(name string) error {
 		return nil
 	case modelaccountmodel.FieldModeration:
 		m.ClearModeration()
-		return nil
-	case modelaccountmodel.FieldSupportedRatios:
-		m.ClearSupportedRatios()
 		return nil
 	case modelaccountmodel.FieldExtra:
 		m.ClearExtra()
@@ -14429,15 +14202,6 @@ func (m *ModelAccountModelMutation) ResetField(name string) error {
 		return nil
 	case modelaccountmodel.FieldModeration:
 		m.ResetModeration()
-		return nil
-	case modelaccountmodel.FieldSupportedRatios:
-		m.ResetSupportedRatios()
-		return nil
-	case modelaccountmodel.FieldMaxImageCount:
-		m.ResetMaxImageCount()
-		return nil
-	case modelaccountmodel.FieldMaxReferenceImageCount:
-		m.ResetMaxReferenceImageCount()
 		return nil
 	case modelaccountmodel.FieldCostPerImage:
 		m.ResetCostPerImage()
@@ -29386,7 +29150,6 @@ type ReferenceAssetMutation struct {
 	status             *string
 	storage_config_id  *uuid.UUID
 	storage_driver     *string
-	storage_config_id  *uuid.UUID
 	object_key         *string
 	mime_type          *string
 	file_size_bytes    *int64
@@ -29912,55 +29675,6 @@ func (m *ReferenceAssetMutation) ResetStorageDriver() {
 	m.storage_driver = nil
 }
 
-// SetStorageConfigID sets the "storage_config_id" field.
-func (m *ReferenceAssetMutation) SetStorageConfigID(u uuid.UUID) {
-	m.storage_config_id = &u
-}
-
-// StorageConfigID returns the value of the "storage_config_id" field in the mutation.
-func (m *ReferenceAssetMutation) StorageConfigID() (r uuid.UUID, exists bool) {
-	v := m.storage_config_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldStorageConfigID returns the old "storage_config_id" field's value of the ReferenceAsset entity.
-// If the ReferenceAsset object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ReferenceAssetMutation) OldStorageConfigID(ctx context.Context) (v *uuid.UUID, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldStorageConfigID is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldStorageConfigID requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldStorageConfigID: %w", err)
-	}
-	return oldValue.StorageConfigID, nil
-}
-
-// ClearStorageConfigID clears the value of the "storage_config_id" field.
-func (m *ReferenceAssetMutation) ClearStorageConfigID() {
-	m.storage_config_id = nil
-	m.clearedFields[referenceasset.FieldStorageConfigID] = struct{}{}
-}
-
-// StorageConfigIDCleared returns if the "storage_config_id" field was cleared in this mutation.
-func (m *ReferenceAssetMutation) StorageConfigIDCleared() bool {
-	_, ok := m.clearedFields[referenceasset.FieldStorageConfigID]
-	return ok
-}
-
-// ResetStorageConfigID resets all changes to the "storage_config_id" field.
-func (m *ReferenceAssetMutation) ResetStorageConfigID() {
-	m.storage_config_id = nil
-	delete(m.clearedFields, referenceasset.FieldStorageConfigID)
-}
-
 // SetObjectKey sets the "object_key" field.
 func (m *ReferenceAssetMutation) SetObjectKey(s string) {
 	m.object_key = &s
@@ -30412,9 +30126,6 @@ func (m *ReferenceAssetMutation) Fields() []string {
 	if m.storage_driver != nil {
 		fields = append(fields, referenceasset.FieldStorageDriver)
 	}
-	if m.storage_config_id != nil {
-		fields = append(fields, referenceasset.FieldStorageConfigID)
-	}
 	if m.object_key != nil {
 		fields = append(fields, referenceasset.FieldObjectKey)
 	}
@@ -30465,8 +30176,6 @@ func (m *ReferenceAssetMutation) Field(name string) (ent.Value, bool) {
 		return m.StorageConfigID()
 	case referenceasset.FieldStorageDriver:
 		return m.StorageDriver()
-	case referenceasset.FieldStorageConfigID:
-		return m.StorageConfigID()
 	case referenceasset.FieldObjectKey:
 		return m.ObjectKey()
 	case referenceasset.FieldMimeType:
@@ -30510,8 +30219,6 @@ func (m *ReferenceAssetMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldStorageConfigID(ctx)
 	case referenceasset.FieldStorageDriver:
 		return m.OldStorageDriver(ctx)
-	case referenceasset.FieldStorageConfigID:
-		return m.OldStorageConfigID(ctx)
 	case referenceasset.FieldObjectKey:
 		return m.OldObjectKey(ctx)
 	case referenceasset.FieldMimeType:
@@ -30599,13 +30306,6 @@ func (m *ReferenceAssetMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStorageDriver(v)
-		return nil
-	case referenceasset.FieldStorageConfigID:
-		v, ok := value.(uuid.UUID)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetStorageConfigID(v)
 		return nil
 	case referenceasset.FieldObjectKey:
 		v, ok := value.(string)
@@ -30840,9 +30540,6 @@ func (m *ReferenceAssetMutation) ResetField(name string) error {
 		return nil
 	case referenceasset.FieldStorageDriver:
 		m.ResetStorageDriver()
-		return nil
-	case referenceasset.FieldStorageConfigID:
-		m.ResetStorageConfigID()
 		return nil
 	case referenceasset.FieldObjectKey:
 		m.ResetObjectKey()

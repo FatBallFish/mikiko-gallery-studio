@@ -15,25 +15,6 @@ function formatPoints(value: number): string {
   return value.toFixed(5)
 }
 
-function mockBaseResolutionBucket(pixelSize?: string) {
-  const [width, height] = String(pixelSize ?? '').split('x').map((item) => Number(item.trim()))
-  const longest = Math.max(width || 0, height || 0)
-  if (longest > 2048) return '4K'
-  if (longest > 1024) return '2K'
-  return '1K'
-}
-
-function mockRatioFromPixelSize(pixelSize?: string) {
-  const [width, height] = String(pixelSize ?? '').split('x').map((item) => Number(item.trim()))
-  if (!width || !height) return '1:1'
-  const divisor = gcd(width, height)
-  return `${width / divisor}:${height / divisor}`
-}
-
-function gcd(a: number, b: number): number {
-  return b === 0 ? a : gcd(b, a % b)
-}
-
 class MockPicGalleryApi {
   private profile: UserProfile = clone(demoProfile)
   private balanceValue = 182.5
@@ -143,7 +124,7 @@ class MockPicGalleryApi {
     const modelBase = routeCode.includes('pro') ? 8 : routeCode.includes('plus') ? 5.125 : 2
     const qualityMulti = requestedQuality === '4k' ? 2 : requestedQuality === '2k' ? 1.45 : requestedQuality === 'auto' ? 1.25 : 1
     const refMulti = req.task_type === 'reference_to_image' || req.task_type === 'image_edit' ? 1.2 : 1
-    const points = modelBase * baseResolutionMultiplier * refMulti * req.image_count
+    const points = modelBase * qualityMulti * refMulti * req.image_count
     return {
       points: points.toFixed(2),
       charged_points: formatPoints(points),

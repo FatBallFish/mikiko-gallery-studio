@@ -176,10 +176,17 @@ func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domai
 		SetModelCode(req.ModelCode).
 		SetDisplayName(req.DisplayName).
 		SetTaskTypes(req.TaskTypes).
-		SetQualities(req.Qualities).
-		SetSupportedRatios(req.SupportedRatios).
-		SetMaxImageCount(req.MaxImageCount).
+		SetBaseResolution(req.BaseResolution).
+		SetQuality(req.Quality).
 		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
+		SetMaxImageCount(req.MaxImageCount).
+		SetSizeModes(req.SizeModes).
+		SetSupportedRatios(req.SupportedRatios).
+		SetSupportedPixelSizes(req.SupportedPixelSizes).
+		SetOutputFormat(req.OutputFormat).
+		SetOutputCompression(req.OutputCompression).
+		SetSupportsOutputCompression(req.SupportsOutputCompression).
+		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
 		SetEnabled(req.Enabled).
@@ -200,10 +207,17 @@ func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountMo
 		SetModelCode(req.ModelCode).
 		SetDisplayName(req.DisplayName).
 		SetTaskTypes(req.TaskTypes).
-		SetQualities(req.Qualities).
-		SetSupportedRatios(req.SupportedRatios).
-		SetMaxImageCount(req.MaxImageCount).
+		SetBaseResolution(req.BaseResolution).
+		SetQuality(req.Quality).
 		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
+		SetMaxImageCount(req.MaxImageCount).
+		SetSizeModes(req.SizeModes).
+		SetSupportedRatios(req.SupportedRatios).
+		SetSupportedPixelSizes(req.SupportedPixelSizes).
+		SetOutputFormat(req.OutputFormat).
+		SetOutputCompression(req.OutputCompression).
+		SetSupportsOutputCompression(req.SupportsOutputCompression).
+		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
 		SetEnabled(req.Enabled).
@@ -1004,27 +1018,42 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 		if model.UpdatedAt.After(latestVersionAt) {
 			latestVersionAt = model.UpdatedAt
 		}
-		supportedRatios, maxImageCount, maxReferenceImageCount := accountModelCapabilities(model)
+		supportedRatios := append([]string(nil), model.SupportedRatios...)
+		if len(supportedRatios) == 0 {
+			supportedRatios = []string{"1:1"}
+		}
+		maxImageCount := model.MaxImageCount
+		if maxImageCount <= 0 {
+			maxImageCount = 1
+		}
 		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{
-			AccountModelID:         int64(model.ID),
-			ModelAccountID:         model.AccountID,
-			Provider:               account.AdapterType,
-			AdapterType:            account.AdapterType,
-			AuthType:               account.AuthType,
-			BaseURL:                account.BaseURL,
-			Credentials:            account.CredentialsEncrypted,
-			ModelCode:              model.ModelCode,
-			SupportedTaskTypes:     append([]string(nil), model.TaskTypes...),
-			SupportedQualities:     append([]string(nil), model.Qualities...),
-			SupportedAspectRatios:  supportedRatios,
-			MaxImageCount:          maxImageCount,
-			MaxReferenceImageCount: maxReferenceImageCount,
-			SupportsImageInput:     maxReferenceImageCount > 0,
-			HealthStatus:           account.Status,
-			OutputCost:             model.CostPerImage,
-			Currency:               model.Currency,
-			AccountExtra:           cloneModelAdminExtra(account.Extra),
-			ModelExtra:             cloneModelAdminExtra(model.Extra),
+			AccountModelID:            int64(model.ID),
+			ModelAccountID:            model.AccountID,
+			Provider:                  account.AdapterType,
+			AdapterType:               account.AdapterType,
+			AuthType:                  account.AuthType,
+			BaseURL:                   account.BaseURL,
+			Credentials:               account.CredentialsEncrypted,
+			ModelCode:                 model.ModelCode,
+			SupportedTaskTypes:        append([]string(nil), model.TaskTypes...),
+			SupportedBaseResolution:   append([]string(nil), model.BaseResolution...),
+			Quality:                   append([]string(nil), model.Quality...),
+			SizeModes:                 append([]string(nil), model.SizeModes...),
+			SupportedAspectRatios:     supportedRatios,
+			SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
+			MaxImageCount:             maxImageCount,
+			MaxReferenceImageCount:    model.MaxReferenceImageCount,
+			SupportsImageInput:        model.MaxReferenceImageCount > 0,
+			OutputFormat:              append([]string(nil), model.OutputFormat...),
+			OutputCompression:         model.OutputCompression,
+			SupportsOutputCompression: model.SupportsOutputCompression,
+			Moderation:                append([]string(nil), model.Moderation...),
+			HealthStatus:              account.Status,
+			TimeoutMS:                 account.TimeoutMs,
+			OutputCost:                model.CostPerImage,
+			Currency:                  model.Currency,
+			AccountExtra:              cloneModelAdminExtra(account.Extra),
+			ModelExtra:                cloneModelAdminExtra(model.Extra),
 		})
 	}
 	for _, model := range routeModels {
@@ -1207,41 +1236,31 @@ func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repo
 	if account, err := s.client.ModelAccount.Get(ctx, int(entity.AccountID)); err == nil {
 		accountName = account.Name
 	}
-	supportedRatios, maxImageCount, maxReferenceImageCount := accountModelCapabilities(entity)
 	return domainmodeladmin.ModelAccountModel{
-		ID:                     int64(entity.ID),
-		AccountID:              entity.AccountID,
-		AccountName:            accountName,
-		ModelCode:              entity.ModelCode,
-		DisplayName:            entity.DisplayName,
-		TaskTypes:              append([]string(nil), entity.TaskTypes...),
-		Qualities:              append([]string(nil), entity.Qualities...),
-		SupportedRatios:        supportedRatios,
-		MaxImageCount:          maxImageCount,
-		MaxReferenceImageCount: maxReferenceImageCount,
-		CostPerImage:           entity.CostPerImage,
-		Currency:               entity.Currency,
-		Enabled:                entity.Enabled,
-		Extra:                  entity.Extra,
-		CreatedAt:              entity.CreatedAt,
-		UpdatedAt:              entity.UpdatedAt,
+		ID:                        int64(entity.ID),
+		AccountID:                 entity.AccountID,
+		AccountName:               accountName,
+		ModelCode:                 entity.ModelCode,
+		DisplayName:               entity.DisplayName,
+		TaskTypes:                 append([]string(nil), entity.TaskTypes...),
+		BaseResolution:            append([]string(nil), entity.BaseResolution...),
+		Quality:                   append([]string(nil), entity.Quality...),
+		MaxReferenceImageCount:    entity.MaxReferenceImageCount,
+		MaxImageCount:             entity.MaxImageCount,
+		SizeModes:                 append([]string(nil), entity.SizeModes...),
+		SupportedRatios:           append([]string(nil), entity.SupportedRatios...),
+		SupportedPixelSizes:       append([]string(nil), entity.SupportedPixelSizes...),
+		OutputFormat:              append([]string(nil), entity.OutputFormat...),
+		OutputCompression:         entity.OutputCompression,
+		SupportsOutputCompression: entity.SupportsOutputCompression,
+		Moderation:                append([]string(nil), entity.Moderation...),
+		CostPerImage:              entity.CostPerImage,
+		Currency:                  entity.Currency,
+		Enabled:                   entity.Enabled,
+		Extra:                     entity.Extra,
+		CreatedAt:                 entity.CreatedAt,
+		UpdatedAt:                 entity.UpdatedAt,
 	}
-}
-
-func accountModelCapabilities(entity *repoent.ModelAccountModel) ([]string, int, int) {
-	ratios := append([]string(nil), entity.SupportedRatios...)
-	if len(ratios) == 0 {
-		ratios = []string{"1:1"}
-	}
-	maxImageCount := entity.MaxImageCount
-	if maxImageCount <= 0 {
-		maxImageCount = 1
-	}
-	maxReferenceImageCount := entity.MaxReferenceImageCount
-	if maxReferenceImageCount < 0 {
-		maxReferenceImageCount = 0
-	}
-	return ratios, maxImageCount, maxReferenceImageCount
 }
 
 func mapRouteModel(entity *repoent.RouteModel, groupIDs []int64) domainmodeladmin.RouteModel {

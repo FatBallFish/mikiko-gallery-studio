@@ -67,6 +67,7 @@ func (s *Service) checkpointProviderSuccess(
 	}
 	decorated := s.decorateTaskProvider(*task, candidate)
 	decorated.Status = domainimagetask.StatusRunning
+	setTaskProgress(&decorated, domainimagetask.ProgressStagePersisting, "图片生成完成，正在保存结果")
 	decorated.ProviderRequestID = strings.TrimSpace(response.ProviderRequestID)
 	completedAt := finishedAt.UTC()
 	decorated.UpstreamSucceededAt = &completedAt
@@ -91,6 +92,8 @@ func (s *Service) checkpointProviderSuccess(
 }
 
 func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimagetask.Task, owner string) (domainimagetask.ExecuteResult, error) {
+	task.Status = domainimagetask.StatusRunning
+	setTaskProgress(&task, domainimagetask.ProgressStagePersisting, "正在恢复并保存生成结果")
 	results, err := s.decryptArtifactResults(task.ArtifactRecovery.EncryptedPayload)
 	if err != nil {
 		failure := newArtifactFailure(s, errs.CodeArtifactRecoveryPayloadInvalid, "decode", false, err)
@@ -108,6 +111,7 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 	}
 	task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
 	task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
+	setTaskProgress(&task, domainimagetask.ProgressStageSettling, "结果已恢复，正在结算积分")
 	if err := s.saveOwnedTask(ctx, task, owner); err != nil {
 		return domainimagetask.ExecuteResult{}, err
 	}
@@ -118,6 +122,7 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 	if len(persisted) < normalizedCount(task.OutputImageCount) {
 		task.Status = domainimagetask.StatusPartialFailed
 	}
+	setCompletedTaskProgress(&task)
 	task.LeaseOwner = ""
 	task.LeaseExpiresAt = nil
 	if err := s.saveOwnedTask(ctx, task, owner); err != nil {

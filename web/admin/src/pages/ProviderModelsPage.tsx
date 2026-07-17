@@ -18,8 +18,8 @@ import {
 } from './providerModelRows'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
-type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; qualities: string[]; qualityInput: string; supportedRatios: string; maxImageCount: string; maxReferenceImageCount: string; costPerImage: string; currency: string; enabled: boolean }
-type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; result?: ModelAccountTestImageResult; error?: string }
+type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportedPixelSizes: string[]; pixelInput: string; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
+type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
 
 const baseResolutionOptions = ['auto', '1K', '2K', '4K']
 const qualityOptions = ['auto', 'low', 'medium', 'high']
@@ -150,10 +150,16 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         model_code: modelDialog.modelCode,
         display_name: modelDialog.displayName,
         task_types: modelDialog.taskTypes,
-        qualities: modelDialog.qualities,
-        supported_ratios: normalizedCommaSeparated(modelDialog.supportedRatios),
-        max_image_count: Number(modelDialog.maxImageCount),
+        base_resolution: modelDialog.base_resolution,
+        quality: modelDialog.quality,
         max_reference_image_count: Number(modelDialog.maxReferenceImageCount),
+        max_image_count: Number(modelDialog.maxImageCount),
+        size_modes: modelDialog.sizeModes,
+        supported_ratios: modelDialog.supportedRatios,
+        supported_pixel_sizes: modelDialog.supportedPixelSizes,
+        output_format: modelDialog.outputFormat,
+        supports_output_compression: modelDialog.supportsOutputCompression,
+        moderation: modelDialog.moderation,
         cost_per_image: modelDialog.costPerImage,
         currency: modelDialog.currency,
         enabled: modelDialog.enabled,
@@ -312,10 +318,21 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             <Field label="模型代码"><input value={modelDialog.modelCode} onChange={(event) => setModelDialog({ ...modelDialog, modelCode: event.target.value })} placeholder="gpt-image-1" /></Field>
             <Field label="展示名称"><input value={modelDialog.displayName} onChange={(event) => setModelDialog({ ...modelDialog, displayName: event.target.value })} /></Field>
             <Field label="任务类型"><div className={providerModelTaskTypeGridClass}>{adminTaskTypeOptions.map((option) => <label key={option.value} className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.taskTypes.includes(option.value)} onChange={(event) => setModelDialog({ ...modelDialog, taskTypes: event.target.checked ? [...modelDialog.taskTypes, option.value] : modelDialog.taskTypes.filter((item) => item !== option.value) })} /><span>{option.label}</span></label>)}</div></Field>
-            <Field label="质量列表"><QualityTagInput draft={modelDialog} onChange={setModelDialog} /></Field>
-            <Field label="支持比例" hint="用英文逗号分隔；只填写上游真实支持的比例。"><input value={modelDialog.supportedRatios} onChange={(event) => setModelDialog({ ...modelDialog, supportedRatios: event.target.value })} placeholder="1:1, 16:9" /></Field>
-            <Field label="单次最大出图数"><input type="number" min="1" value={modelDialog.maxImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxImageCount: event.target.value })} /></Field>
-            <Field label="最大参考图数" hint="填 0 表示该模型不支持参考图输入。"><input type="number" min="0" value={modelDialog.maxReferenceImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxReferenceImageCount: event.target.value })} /></Field>
+            <Field label="基础分辨率"><BaseResolutionTagInput draft={modelDialog} onChange={setModelDialog} /></Field>
+            <Field label="质量参数"><TagInput values={modelDialog.quality} input={modelDialog.qualityInput} placeholder="auto / low / medium / high" options={qualityOptions} normalize={normalizeLowerEnum} onInput={(qualityInput) => setModelDialog({ ...modelDialog, qualityInput })} onChange={(quality, qualityInput = '') => setModelDialog({ ...modelDialog, quality, qualityInput })} /></Field>
+            <Field label="最大参考图"><input type="number" min="0" max="64" value={modelDialog.maxReferenceImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxReferenceImageCount: event.target.value })} /></Field>
+            <Field label="最大出图数"><input type="number" min="1" max="64" value={modelDialog.maxImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxImageCount: event.target.value })} /></Field>
+            <Field label="尺寸模式">
+              <div className={providerModelTaskTypeGridClass}>
+                <label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('ratio')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'ratio', event.target.checked))} /><span>支持图片比例</span></label>
+                <label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('pixel')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'pixel', event.target.checked))} /><span>支持像素大小</span></label>
+              </div>
+            </Field>
+            {modelDialog.sizeModes.includes('ratio') ? <Field label="支持比例"><TagInput values={modelDialog.supportedRatios} input={modelDialog.ratioInput} placeholder="例如 3:2，回车添加" options={defaultRatios} normalize={normalizeRatio} onInput={(ratioInput) => setModelDialog({ ...modelDialog, ratioInput })} onChange={(supportedRatios, ratioInput = '') => setModelDialog({ ...modelDialog, supportedRatios, ratioInput })} /></Field> : null}
+            {modelDialog.sizeModes.includes('pixel') ? <Field label="支持像素"><TagInput values={modelDialog.supportedPixelSizes} input={modelDialog.pixelInput} placeholder="例如 2048x2048，回车添加" options={defaultPixelSizes} normalize={normalizePixelSize} onInput={(pixelInput) => setModelDialog({ ...modelDialog, pixelInput })} onChange={(supportedPixelSizes, pixelInput = '') => setModelDialog({ ...modelDialog, supportedPixelSizes, pixelInput })} /></Field> : null}
+            <Field label="输出格式"><TagInput values={modelDialog.outputFormat} input={modelDialog.outputFormatInput} placeholder="png / jpeg / webp" options={outputFormatOptions} normalize={normalizeLowerEnum} onInput={(outputFormatInput) => setModelDialog({ ...modelDialog, outputFormatInput })} onChange={(outputFormat, outputFormatInput = '') => setModelDialog({ ...modelDialog, outputFormat, outputFormatInput })} /></Field>
+            <Field label="是否支持压缩质量" hint="启用后，用户可在 JPEG/WebP 输出格式下配置 1-100 的压缩质量。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsOutputCompression} onChange={(event) => setModelDialog({ ...modelDialog, supportsOutputCompression: event.target.checked })} /><span>{modelDialog.supportsOutputCompression ? '支持' : '不支持'}</span></label></Field>
+            <Field label="审核等级"><TagInput values={modelDialog.moderation} input={modelDialog.moderationInput} placeholder="auto / low" options={moderationOptions} normalize={normalizeLowerEnum} onInput={(moderationInput) => setModelDialog({ ...modelDialog, moderationInput })} onChange={(moderation, moderationInput = '') => setModelDialog({ ...modelDialog, moderation, moderationInput })} /></Field>
             <Field label="单图成本"><input value={modelDialog.costPerImage} onChange={(event) => setModelDialog({ ...modelDialog, costPerImage: event.target.value })} /></Field>
             <Field label="币种"><input value={modelDialog.currency} onChange={(event) => setModelDialog({ ...modelDialog, currency: event.target.value })} /></Field>
             <Field label="状态"><select value={modelDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setModelDialog({ ...modelDialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
@@ -481,11 +498,11 @@ function editAccountDraft(row: ModelAccount): AccountDraft {
 }
 
 function newModelDraft(account: ModelAccount): ModelDraft {
-  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], qualities: ['auto', '1K', '2K'], qualityInput: '', supportedRatios: '1:1', maxImageCount: '1', maxReferenceImageCount: '0', costPerImage: '0.00000', currency: 'USD', enabled: true }
+  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['auto', '1K', '2K'], baseResolutionInput: '', quality: ['auto'], qualityInput: '', maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, ratioInput: '', supportedPixelSizes: defaultPixelSizes, pixelInput: '', outputFormat: ['png'], outputFormatInput: '', supportsOutputCompression: false, moderation: ['auto'], moderationInput: '', costPerImage: '0.00000', currency: 'USD', enabled: true }
 }
 
 function editModelDraft(account: ModelAccount, row: ModelAccountModel): ModelDraft {
-  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, qualities: normalizeQualities(row.qualities), qualityInput: '', supportedRatios: (row.supported_ratios?.length ? row.supported_ratios : ['1:1']).join(', '), maxImageCount: String(row.max_image_count || 1), maxReferenceImageCount: String(Math.max(0, row.max_reference_image_count || 0)), costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
+  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), baseResolutionInput: '', quality: normalizeLowerEnums(row.quality ?? ['auto']), qualityInput: '', maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, ratioInput: '', supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, pixelInput: '', outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), outputFormatInput: '', supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), moderationInput: '', costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
 }
 
 function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]): TestImageDialog {
@@ -576,11 +593,7 @@ function normalizeBaseResolution(values: string[]) {
   return values.map(normalizeBaseResolutionValue).filter(Boolean)
 }
 
-function normalizedCommaSeparated(value: string) {
-  return Array.from(new Set(value.split(',').map((item) => item.trim()).filter(Boolean)))
-}
-
-function normalizeQuality(value: string) {
+function normalizeBaseResolutionValue(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return ''
   if (trimmed.toLowerCase() === 'auto') return 'auto'

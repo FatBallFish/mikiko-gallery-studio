@@ -80,7 +80,7 @@ func (ImageTask) Fields() []ent.Field {
 func (ImageTask) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),
-		index.Fields("status"), index.Fields("abstract_model"), index.Fields("route_model_code"), index.Fields("resolved_quality_bucket"), index.Fields("provider_model_id"), index.Fields("account_model_id"), index.Fields("model_account_id"), index.Fields("lease_owner"),
+		index.Fields("status"), index.Fields("abstract_model"), index.Fields("route_model_code"), index.Fields("base_resolution"), index.Fields("provider_model_id"), index.Fields("account_model_id"), index.Fields("model_account_id"), index.Fields("lease_owner"),
 		index.Fields("lease_expires_at"), index.Fields("artifact_recovery_status", "artifact_next_retry_at"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("deleted_at"),
 	}
 }

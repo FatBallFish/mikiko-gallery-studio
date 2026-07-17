@@ -424,17 +424,33 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 		req.Currency = "USD"
 	}
 	req.TaskTypes = cloneNormalizedStrings(req.TaskTypes)
-	req.Qualities = cloneNormalizedStrings(req.Qualities)
-	req.SupportedRatios = cloneNormalizedStrings(req.SupportedRatios)
-	if len(req.SupportedRatios) == 0 {
-		req.SupportedRatios = []string{"1:1"}
+	capability, err := modelhub.NormalizeCapability(modelhub.ImageModelCapability{
+		MaxReferenceImageCount:    req.MaxReferenceImageCount,
+		MaxImageCount:             req.MaxImageCount,
+		BaseResolution:            req.BaseResolution,
+		Quality:                   req.Quality,
+		SizeModes:                 req.SizeModes,
+		SupportedRatios:           req.SupportedRatios,
+		SupportedPixelSizes:       req.SupportedPixelSizes,
+		OutputFormat:              req.OutputFormat,
+		OutputCompression:         req.OutputCompression,
+		SupportsOutputCompression: req.SupportsOutputCompression,
+		Moderation:                req.Moderation,
+	})
+	if err != nil {
+		return domainmodeladmin.ModelAccountModelWriteRequest{}, err
 	}
-	if req.MaxImageCount <= 0 {
-		req.MaxImageCount = 1
-	}
-	if req.MaxReferenceImageCount < 0 {
-		return domainmodeladmin.ModelAccountModelWriteRequest{}, errs.BadRequest("max_reference_image_count must be non-negative")
-	}
+	req.BaseResolution = capability.BaseResolution
+	req.Quality = capability.Quality
+	req.MaxReferenceImageCount = capability.MaxReferenceImageCount
+	req.MaxImageCount = capability.MaxImageCount
+	req.SizeModes = capability.SizeModes
+	req.SupportedRatios = capability.SupportedRatios
+	req.SupportedPixelSizes = capability.SupportedPixelSizes
+	req.OutputFormat = capability.OutputFormat
+	req.OutputCompression = capability.OutputCompression
+	req.SupportsOutputCompression = capability.SupportsOutputCompression
+	req.Moderation = capability.Moderation
 	if req.Extra == nil {
 		req.Extra = map[string]any{}
 	}

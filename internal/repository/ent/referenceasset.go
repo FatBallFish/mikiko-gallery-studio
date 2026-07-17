@@ -36,8 +36,6 @@ type ReferenceAsset struct {
 	StorageConfigID *uuid.UUID `json:"storage_config_id,omitempty"`
 	// StorageDriver holds the value of the "storage_driver" field.
 	StorageDriver string `json:"storage_driver,omitempty"`
-	// StorageConfigID holds the value of the "storage_config_id" field.
-	StorageConfigID *uuid.UUID `json:"storage_config_id,omitempty"`
 	// ObjectKey holds the value of the "object_key" field.
 	ObjectKey string `json:"object_key,omitempty"`
 	// MimeType holds the value of the "mime_type" field.
@@ -149,13 +147,6 @@ func (_m *ReferenceAsset) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field storage_driver", values[i])
 			} else if value.Valid {
 				_m.StorageDriver = value.String
-			}
-		case referenceasset.FieldStorageConfigID:
-			if value, ok := values[i].(*sql.NullScanner); !ok {
-				return fmt.Errorf("unexpected type %T for field storage_config_id", values[i])
-			} else if value.Valid {
-				_m.StorageConfigID = new(uuid.UUID)
-				*_m.StorageConfigID = *value.S.(*uuid.UUID)
 			}
 		case referenceasset.FieldObjectKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -276,11 +267,6 @@ func (_m *ReferenceAsset) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("storage_driver=")
 	builder.WriteString(_m.StorageDriver)
-	builder.WriteString(", ")
-	if v := _m.StorageConfigID; v != nil {
-		builder.WriteString("storage_config_id=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
 	builder.WriteString(", ")
 	builder.WriteString("object_key=")
 	builder.WriteString(_m.ObjectKey)

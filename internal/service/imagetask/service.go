@@ -136,19 +136,6 @@ func NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg config.Config, provi
 	if router == nil {
 		router = storage.NewStaticRouter(storage.NewLocalBackend(cfg.Storage.LocalRoot))
 	}
-	return NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, assets, billing, storage.NewStaticRouter(backend))
-}
-
-func NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg config.Config, providers map[string]provider.ImageProvider, store Store, assets AssetLoader, billing BillingManager, router storage.Router) *Service {
-	if store == nil {
-		store = NewMemoryStore()
-	}
-	if providers == nil {
-		providers = defaultProviders(cfg)
-	}
-	if router == nil {
-		router = storage.NewStaticRouter(storage.NewLocalBackend(cfg.Storage.LocalRoot))
-	}
 	return &Service{
 		cfg:           cfg,
 		resolver:      modelhub.NewResolver(cfg),
@@ -515,7 +502,7 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 	}
 
 	startedAt := s.nowUTC()
-	resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
+	resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task, providerReq)
 	finishedAt := s.nowUTC()
 	task.Provider = candidate.Provider
 	task.ProviderModelID = candidate.ProviderModelID
@@ -614,7 +601,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		attemptStarted := s.nowUTC()
 		openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
 		if openAIFormat && normalizedCount(task.OutputImageCount) > 1 {
-			progress, progressErr := s.executeOpenAIFanout(ctx, providerClient, task, providerReq)
+			progress, progressErr := s.executeOpenAIFanout(ctx, providerClient, candidate, task, providerReq)
 			attemptFinished := s.nowUTC()
 			if progressErr != nil {
 				task = s.decorateTaskProvider(task, candidate)
@@ -673,7 +660,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			return domainimagetask.ExecuteResult{Task: task, Response: resp}, nil
 		}
 
-		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task.TaskType, providerReq)
+		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task, providerReq)
 		attemptFinished := s.nowUTC()
 		if err == nil {
 			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
@@ -761,7 +748,7 @@ func (s *Service) decorateTaskProvider(task domainimagetask.Task, candidate mode
 	return task
 }
 
-func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.ImageProvider, task domainimagetask.Task, req provider.ImageRequest) (openAIFanoutProgress, error) {
+func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, req provider.ImageRequest) (openAIFanoutProgress, error) {
 	call := func(ctx context.Context, singleReq provider.ImageRequest) (provider.ImageResponse, error) {
 		if task.TaskType == string(provider.TaskTypeImageEdit) {
 			return client.Edit(ctx, singleReq)
@@ -1265,7 +1252,6 @@ func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string)
 		StorageConfigID:  image.StorageConfigID,
 		ObjectKey:        image.ObjectKey,
 		StorageDriver:    image.StorageDriver,
-		StorageConfigID:  image.StorageConfigID,
 		ImageGroup:       image.ImageGroup,
 		VisibilityStatus: image.VisibilityStatus,
 		ReviewReason:     image.ReviewReason,

@@ -252,63 +252,30 @@ components:
           type: string
     AdminStorageConfig:
       type: object
-      required:
-        - id
-        - code
-        - name
-        - driver
-        - provider
-        - status
-        - read_enabled
-        - write_enabled
-        - is_default
-        - force_path_style
-        - secret_status
-        - last_probe
-        - version
+      required: [id, code, name, driver, provider, status, read_enabled, write_enabled, is_default, force_path_style, secret_status, last_probe, version]
       properties:
-        id:
-          type: string
-          description: Stable storage configuration ID persisted on generated images and reference assets.
-        code:
-          type: string
-          description: Unique operator-facing code such as bootstrap-s3 or r2-prod.
-        name:
-          type: string
+        id: { type: string }
+        code: { type: string }
+        name: { type: string }
         driver:
           type: string
           enum: [local, s3]
         provider:
           type: string
           enum: [local, aws_s3, minio, r2, custom_s3]
-          description: Cloudflare R2 uses driver=s3 and provider=r2.
         status:
           type: string
           enum: [enabled, disabled, deleted]
-        read_enabled:
-          type: boolean
-          description: Whether historical objects may still be read through this configuration.
-        write_enabled:
-          type: boolean
-          description: Whether new generated images and reference assets may be written here.
-        is_default:
-          type: boolean
-          description: True for the current default writer.
-        endpoint:
-          type: string
-        region:
-          type: string
-          description: R2 should use auto.
-        bucket:
-          type: string
-        prefix:
-          type: string
-        force_path_style:
-          type: boolean
-        public_base_url:
-          type: string
-        local_root:
-          type: string
+        read_enabled: { type: boolean }
+        write_enabled: { type: boolean }
+        is_default: { type: boolean }
+        endpoint: { type: string }
+        region: { type: string }
+        bucket: { type: string }
+        prefix: { type: string }
+        force_path_style: { type: boolean }
+        public_base_url: { type: string }
+        local_root: { type: string }
         secret_status:
           $ref: '#/components/schemas/SecretStatus'
         last_probe:
@@ -319,25 +286,15 @@ components:
         updated_by:
           type: integer
           format: int64
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     AdminStorageConfigWriteRequest:
       type: object
       required: [name, driver, provider]
       properties:
-        version:
-          type: integer
-          format: int64
-          description: Optimistic concurrency version. Omit or send 0 when creating.
-        code:
-          type: string
-          description: Required on create and immutable afterwards.
-        name:
-          type: string
+        version: { type: integer, format: int64 }
+        code: { type: string }
+        name: { type: string }
         driver:
           type: string
           enum: [local, s3]
@@ -348,40 +305,21 @@ components:
           type: string
           enum: [enabled, disabled]
           default: enabled
-        read_enabled:
-          type: boolean
-          default: true
-        write_enabled:
-          type: boolean
-          default: true
-        endpoint:
-          type: string
-          description: S3-compatible endpoint, for example https://<ACCOUNT_ID>.r2.cloudflarestorage.com.
-        region:
-          type: string
-          description: Use auto for Cloudflare R2.
-        bucket:
-          type: string
-        prefix:
-          type: string
-        force_path_style:
-          type: boolean
-          default: false
-        public_base_url:
-          type: string
-          description: Reserved for future direct delivery; current downloads remain proxied by the API.
-        local_root:
-          type: string
+        read_enabled: { type: boolean, default: true }
+        write_enabled: { type: boolean, default: true }
+        endpoint: { type: string }
+        region: { type: string }
+        bucket: { type: string }
+        prefix: { type: string }
+        force_path_style: { type: boolean, default: false }
+        public_base_url: { type: string }
+        local_root: { type: string }
         secrets:
           type: object
-          description: Optional write-only storage secrets. Omit fields to preserve existing secrets; masked placeholders are rejected.
+          writeOnly: true
           properties:
-            access_key_id:
-              type: string
-              format: password
-            secret_access_key:
-              type: string
-              format: password
+            access_key_id: { type: string, format: password }
+            secret_access_key: { type: string, format: password }
         clear_secrets:
           type: array
           items:
@@ -390,23 +328,17 @@ components:
     AdminStorageSetDefaultRequest:
       type: object
       properties:
-        version:
-          type: integer
-          format: int64
+        version: { type: integer, format: int64 }
     AdminStorageStatusRequest:
       type: object
       required: [status, read_enabled, write_enabled]
       properties:
-        version:
-          type: integer
-          format: int64
+        version: { type: integer, format: int64 }
         status:
           type: string
           enum: [enabled, disabled]
-        read_enabled:
-          type: boolean
-        write_enabled:
-          type: boolean
+        read_enabled: { type: boolean }
+        write_enabled: { type: boolean }
     AdminStorageConfigResponse:
       type: object
       properties:
@@ -415,8 +347,7 @@ components:
         meta:
           type: object
           properties:
-            request_id:
-              type: string
+            request_id: { type: string }
     AdminStorageConfigListResponse:
       type: object
       properties:
@@ -430,8 +361,7 @@ components:
         meta:
           type: object
           properties:
-            request_id:
-              type: string
+            request_id: { type: string }
     AdminStorageProbeResponse:
       type: object
       properties:
@@ -440,8 +370,7 @@ components:
         meta:
           type: object
           properties:
-            request_id:
-              type: string
+            request_id: { type: string }
     SystemAdminUser:
       type: object
       properties:
@@ -1000,6 +929,8 @@ components:
           type: string
         actual_points:
           type: string
+        provider_request_id:
+          type: string
         provider_model_id:
           type: integer
           format: int64
@@ -1018,6 +949,17 @@ components:
           type: string
         gross_margin:
           type: string
+        upstream_succeeded_at:
+          type: string
+          format: date-time
+          nullable: true
+        failure_phase:
+          type: string
+          enum: [preflight, upstream, artifact_persistence]
+        platform_loss:
+          type: boolean
+        artifact_recovery:
+          $ref: '#/components/schemas/AdminArtifactRecoverySummary'
         fallback_count:
           type: integer
         route_snapshot_version:
@@ -1054,6 +996,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminCallRecordAttempt'
+    AdminArtifactDiagnostic:
+      type: object
+      properties:
+        code: { type: string }
+        stage: { type: string }
+        attempt: { type: integer }
+        url_host: { type: string }
+        url_path:
+          type: string
+          description: URL path only; signed query parameters are never returned.
+        http_status: { type: integer }
+        content_type: { type: string }
+        content_length: { type: integer, format: int64 }
+        bytes_read: { type: integer, format: int64 }
+        duration_ms: { type: integer, format: int64 }
+        storage_config_id: { type: string }
+        storage_version: { type: integer, format: int64 }
+        retryable: { type: boolean }
+        cause: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    AdminArtifactRecoverySummary:
+      type: object
+      required: [status, attempt_count]
+      properties:
+        status: { type: string }
+        attempt_count: { type: integer }
+        last_diagnostic:
+          $ref: '#/components/schemas/AdminArtifactDiagnostic'
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminArtifactDiagnostic'
     AdminCallRecordAttempt:
       type: object
       properties:
@@ -1411,6 +1386,8 @@ components:
         - trial_expiring_user_count
         - preflight_failure_count
         - preflight_failures_by_error_code
+        - platform_loss_count
+        - platform_loss_provider_cost
         - public_gallery_list_views
         - public_gallery_detail_login_blocks
         - enabled_payment_methods
@@ -1441,6 +1418,10 @@ components:
           type: object
           additionalProperties:
             type: integer
+        platform_loss_count:
+          type: integer
+        platform_loss_provider_cost:
+          type: string
         public_gallery_list_views:
           type: integer
           format: int64
@@ -2063,7 +2044,21 @@ components:
               $ref: ./common.yaml#/components/schemas/Pagination
     AdminModelAccountModel:
       type: object
-      required: [id, account_id, model_code, display_name, task_types, base_resolution, quality, max_reference_image_count, max_image_count, size_modes, supported_ratios, supported_pixel_sizes, output_format, supports_output_compression, moderation, cost_per_image, currency, enabled]
+      required:
+        - id
+        - account_id
+        - model_code
+        - display_name
+        - task_types
+        - qualities
+        - supported_ratios
+        - max_image_count
+        - max_reference_image_count
+        - cost_per_image
+        - currency
+        - enabled
+        - created_at
+        - updated_at
       properties:
         id: { type: integer, format: int64 }
         account_id: { type: integer, format: int64 }
@@ -2073,38 +2068,15 @@ components:
         task_types:
           type: array
           items: { type: string }
-        base_resolution:
+        qualities:
           type: array
           items: { type: string }
-        quality:
-          type: array
-          items: { type: string }
-        max_reference_image_count: { type: integer, minimum: 0 }
-        max_image_count: { type: integer, minimum: 1 }
-        size_modes:
-          type: array
-          items: { type: string, enum: [ratio, pixel] }
         supported_ratios:
           type: array
+          minItems: 1
           items: { type: string }
-        supported_pixel_sizes:
-          type: array
-          items: { type: string }
-        output_format:
-          type: array
-          items: { type: string }
-        output_compression:
-          type: integer
-          minimum: 1
-          maximum: 100
-          deprecated: true
-          description: Legacy default value. Use supports_output_compression to declare configurable compression support.
-        supports_output_compression:
-          type: boolean
-          description: Whether user-selected JPEG/WebP compression quality is supported.
-        moderation:
-          type: array
-          items: { type: string }
+        max_image_count: { type: integer, minimum: 1 }
+        max_reference_image_count: { type: integer, minimum: 0 }
         cost_per_image: { type: string }
         currency: { type: string }
         enabled: { type: boolean }
@@ -2115,40 +2087,42 @@ components:
         updated_at: { type: string, format: date-time }
     AdminModelAccountModelWriteRequest:
       type: object
-      required: [model_code, display_name, task_types, base_resolution, quality, max_reference_image_count, max_image_count, size_modes, supported_ratios, supported_pixel_sizes, output_format, supports_output_compression, moderation, cost_per_image, currency, enabled]
+      required: [model_code]
       properties:
         model_code: { type: string }
-        display_name: { type: string }
+        display_name:
+          type: string
+          description: Defaults to model_code when omitted or blank.
         task_types:
           type: array
           items: { type: string }
-        base_resolution:
+          default: []
+        qualities:
           type: array
           items: { type: string }
-        quality:
-          type: array
-          items: { type: string }
-        max_reference_image_count: { type: integer, minimum: 0 }
-        max_image_count: { type: integer, minimum: 1 }
-        size_modes:
-          type: array
-          items: { type: string, enum: [ratio, pixel] }
+          default: []
         supported_ratios:
           type: array
+          minItems: 1
           items: { type: string }
-        supported_pixel_sizes:
-          type: array
-          items: { type: string }
-        output_format:
-          type: array
-          items: { type: string }
-        supports_output_compression: { type: boolean, default: false }
-        moderation:
-          type: array
-          items: { type: string }
-        cost_per_image: { type: string }
-        currency: { type: string }
-        enabled: { type: boolean }
+          default: ['1:1']
+        max_image_count:
+          type: integer
+          minimum: 1
+          default: 1
+        max_reference_image_count:
+          type: integer
+          minimum: 0
+          default: 0
+        cost_per_image:
+          type: string
+          default: '0.00000'
+        currency:
+          type: string
+          default: USD
+        enabled:
+          type: boolean
+          default: false
         extra:
           type: object
           additionalProperties: true

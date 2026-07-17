@@ -63,7 +63,6 @@ type ImageResult struct {
 	StorageConfigID  string     `json:"storage_config_id,omitempty"`
 	ObjectKey        string     `json:"object_key,omitempty"`
 	StorageDriver    string     `json:"storage_driver,omitempty"`
-	StorageConfigID  string     `json:"storage_config_id,omitempty"`
 	ImageGroup       string     `json:"image_group,omitempty"`
 	VisibilityStatus string     `json:"visibility_status,omitempty"`
 	ReviewReason     string     `json:"review_reason,omitempty"`

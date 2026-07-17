@@ -41,7 +41,7 @@ func TestAdminCallRecordStoreClassifiesExhaustedArtifactRecoveryAsPlatformLoss(t
 	task := domainimagetask.Task{
 		UserID: 7, ID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", Status: domainimagetask.StatusFailed,
 		Provider: "openrouter", AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage),
-		RequestedQuality: "auto", ResolvedQualityBucket: "2k", OutputImageCount: 1,
+		BaseResolution: "2k", Quality: "auto", OutputImageCount: 1,
 		ProviderRequestID: "paid-request-123", ProviderCost: "0.12345", GrossMargin: "-0.12345",
 		UpstreamSucceededAt: &upstreamSucceededAt, ErrorCode: "ARTIFACT_STORAGE_WRITE_FAILED", ErrorMessage: "artifact persistence failed after 4 attempts",
 		ArtifactRecovery: domainimagetask.ArtifactRecovery{
@@ -231,7 +231,7 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	if record.FailurePhase != "upstream" || record.PlatformLoss {
 		t.Fatalf("expected upstream failure without platform loss, got %#v", record)
 	}
-	if record.Provider != "openrouter" || record.AbstractModel != "plus" || record.Quality != "2k" {
+	if record.Provider != "openrouter" || record.AbstractModel != "plus" || record.BaseResolution != "2k" || record.Quality != "auto" {
 		t.Fatalf("unexpected model fields %#v", record)
 	}
 	if record.AccountModelID == nil || *record.AccountModelID != 1201 || record.ModelAccountID == nil || *record.ModelAccountID != 2201 || record.UpstreamModelCode != "google/gemini-2.5-flash-image" {

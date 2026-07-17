@@ -35,10 +35,21 @@ components:
       required: true
       schema:
         type: string
+    RouteModelCode:
+      name: route_model_code
+      in: query
+      required: true
+      description: Current database-backed route model code. When both model fields are sent, this field takes precedence.
+      schema:
+        type: string
+        minLength: 1
+        example: basic
     AbstractModel:
       name: abstract_model
       in: query
-      required: true
+      required: false
+      deprecated: true
+      description: Legacy static model selector retained for older clients. New clients must use route_model_code.
       schema:
         type: string
         enum: [basic, plus, pro]

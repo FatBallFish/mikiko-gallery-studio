@@ -74,7 +74,7 @@ func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 	}
 	model, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
-		TaskTypes: []string{"reference_to_image"}, Qualities: []string{"2k"},
+		TaskTypes: []string{"reference_to_image"}, Quality: []string{"high"},
 		SupportedRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
 		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
 	})
@@ -94,7 +94,7 @@ func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 
 	updated, err := svc.UpdateModelAccountModel(ctx, model.ID, domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
-		TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k"},
+		TaskTypes: []string{"text_to_image"}, Quality: []string{"auto"},
 		SupportedRatios: []string{"1:1"}, MaxImageCount: 1, MaxReferenceImageCount: 0,
 		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
 	})

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -444,10 +445,10 @@ func TestExecuteUsesRouteModelPricingForSynchronousTask(t *testing.T) {
 		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
 		ProviderModels: []modelhub.ProviderCandidate{{
 			AccountModelID: 11, Provider: "openrouter", ModelCode: "openrouter/vision",
-			SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}, HealthStatus: "enabled",
+			SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, HealthStatus: "enabled",
 		}},
 		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Priority: 1, Weight: 100, Enabled: true}},
-		Prices:     []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", Quality: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}},
+		Prices:     []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}},
 	}}
 	billingSvc := billingservice.NewService(cfg.Billing)
 	billingSvc.SetModelRoutingSource(routing)
@@ -463,7 +464,7 @@ func TestExecuteUsesRouteModelPricingForSynchronousTask(t *testing.T) {
 	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID: 13, UserGroupCode: "basic", UserGroupCodes: []string{"basic"}, UserGroupMultiplier: "1.00000",
 		AbstractModel: "plus", RouteModelCode: "plus", TaskType: string(provider.TaskTypeTextToImage),
-		Prompt: "Generate with route pricing", RequestedSize: "1024x1024", RequestedQuality: "1k", OutputImageCount: 1,
+		Prompt: "Generate with route pricing", SizeMode: "ratio", AspectRatio: "1:1", BaseResolution: "1k", Quality: "auto", RequestedSize: "auto", OutputImageCount: 1,
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -626,13 +627,13 @@ func TestExecuteLeasedTaskCalculatesGPTImage2CodexSizeFromQualityAndAspectRatio(
 	}
 }
 
-func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexFanout(t *testing.T) {
+func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexMultiOutput(t *testing.T) {
 	cfg := taskTestConfig()
 	captured := make(chan provider.ImageRequest, 3)
 	providers := map[string]provider.ImageProvider{
 		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
 			captured <- req
-			return provider.ImageResponse{Created: 1770000034, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+			return provider.ImageResponse{Created: 1770000034, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}, {B64JSON: tinyPNGBase64}, {B64JSON: tinyPNGBase64}}}, nil
 		}},
 	}
 	store := imagetask.NewMemoryStore()
@@ -645,7 +646,7 @@ func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexFanout(t *testing.T) {
 			ModelCode:               "gpt-image-2",
 			SupportedTaskTypes:      []string{"text_to_image"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
-			MaxImageCount:           1,
+			MaxImageCount:           3,
 			HealthStatus:            "enabled",
 			AccountExtra:            map[string]any{"source_mode": "codex_responses"},
 		}},
@@ -678,14 +679,12 @@ func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexFanout(t *testing.T) {
 	if len(result.Task.Results) != 3 {
 		t.Fatalf("expected 3 persisted results, got %d", len(result.Task.Results))
 	}
-	for i := 0; i < 3; i++ {
-		req := <-captured
-		if req.ResponseFormat != provider.ResponseFormatB64JSON {
-			t.Fatalf("fanout request %d should use b64_json, got %#v", i, req)
-		}
-		if req.OutputImageCount != 1 {
-			t.Fatalf("fanout request %d should request one image, got %#v", i, req)
-		}
+	req := <-captured
+	if req.ResponseFormat != provider.ResponseFormatB64JSON {
+		t.Fatalf("multi-output request should use b64_json, got %#v", req)
+	}
+	if req.OutputImageCount != 3 {
+		t.Fatalf("multi-output request should request three images, got %#v", req)
 	}
 }
 
@@ -886,6 +885,8 @@ type failingSaveStore struct {
 	failSaveIfOwnedError error
 	failAcquireError     error
 	ownedSnapshots       []domainimagetask.Task
+	progressMu           sync.Mutex
+	progressStages       []string
 }
 
 func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) error {
@@ -962,7 +963,7 @@ func TestProviderSuccessIsCheckpointedBeforeArtifactPersistence(t *testing.T) {
 
 	_, _ = svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID: 77, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "paid result",
-		RequestedSize: "auto", RequestedQuality: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
+		SizeMode: "ratio", AspectRatio: "1:1", BaseResolution: "1k", Quality: "auto", RequestedSize: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
 	})
 	if providerCalls != 1 {
 		t.Fatalf("expected one provider call, got %d", providerCalls)
@@ -1486,7 +1487,7 @@ func TestGeneratedImageStorageRouterPinsOriginalConfig(t *testing.T) {
 
 	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
 		UserID: 31, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "route it",
-		RequestedSize: "auto", RequestedQuality: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
+		SizeMode: "ratio", AspectRatio: "1:1", BaseResolution: "1k", Quality: "auto", RequestedSize: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)

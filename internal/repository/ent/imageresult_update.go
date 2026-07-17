@@ -138,26 +138,6 @@ func (_u *ImageResultUpdate) SetNillableStorageDriver(v *string) *ImageResultUpd
 	return _u
 }
 
-// SetStorageConfigID sets the "storage_config_id" field.
-func (_u *ImageResultUpdate) SetStorageConfigID(v uuid.UUID) *ImageResultUpdate {
-	_u.mutation.SetStorageConfigID(v)
-	return _u
-}
-
-// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
-func (_u *ImageResultUpdate) SetNillableStorageConfigID(v *uuid.UUID) *ImageResultUpdate {
-	if v != nil {
-		_u.SetStorageConfigID(*v)
-	}
-	return _u
-}
-
-// ClearStorageConfigID clears the value of the "storage_config_id" field.
-func (_u *ImageResultUpdate) ClearStorageConfigID() *ImageResultUpdate {
-	_u.mutation.ClearStorageConfigID()
-	return _u
-}
-
 // SetObjectKey sets the "object_key" field.
 func (_u *ImageResultUpdate) SetObjectKey(v string) *ImageResultUpdate {
 	_u.mutation.SetObjectKey(v)
@@ -459,12 +439,6 @@ func (_u *ImageResultUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	if value, ok := _u.mutation.StorageDriver(); ok {
 		_spec.SetField(imageresult.FieldStorageDriver, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.StorageConfigID(); ok {
-		_spec.SetField(imageresult.FieldStorageConfigID, field.TypeUUID, value)
-	}
-	if _u.mutation.StorageConfigIDCleared() {
-		_spec.ClearField(imageresult.FieldStorageConfigID, field.TypeUUID)
-	}
 	if value, ok := _u.mutation.ObjectKey(); ok {
 		_spec.SetField(imageresult.FieldObjectKey, field.TypeString, value)
 	}
@@ -636,26 +610,6 @@ func (_u *ImageResultUpdateOne) SetNillableStorageDriver(v *string) *ImageResult
 	if v != nil {
 		_u.SetStorageDriver(*v)
 	}
-	return _u
-}
-
-// SetStorageConfigID sets the "storage_config_id" field.
-func (_u *ImageResultUpdateOne) SetStorageConfigID(v uuid.UUID) *ImageResultUpdateOne {
-	_u.mutation.SetStorageConfigID(v)
-	return _u
-}
-
-// SetNillableStorageConfigID sets the "storage_config_id" field if the given value is not nil.
-func (_u *ImageResultUpdateOne) SetNillableStorageConfigID(v *uuid.UUID) *ImageResultUpdateOne {
-	if v != nil {
-		_u.SetStorageConfigID(*v)
-	}
-	return _u
-}
-
-// ClearStorageConfigID clears the value of the "storage_config_id" field.
-func (_u *ImageResultUpdateOne) ClearStorageConfigID() *ImageResultUpdateOne {
-	_u.mutation.ClearStorageConfigID()
 	return _u
 }
 
@@ -989,12 +943,6 @@ func (_u *ImageResultUpdateOne) sqlSave(ctx context.Context) (_node *ImageResult
 	}
 	if value, ok := _u.mutation.StorageDriver(); ok {
 		_spec.SetField(imageresult.FieldStorageDriver, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.StorageConfigID(); ok {
-		_spec.SetField(imageresult.FieldStorageConfigID, field.TypeUUID, value)
-	}
-	if _u.mutation.StorageConfigIDCleared() {
-		_spec.ClearField(imageresult.FieldStorageConfigID, field.TypeUUID)
 	}
 	if value, ok := _u.mutation.ObjectKey(); ok {
 		_spec.SetField(imageresult.FieldObjectKey, field.TypeString, value)

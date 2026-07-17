@@ -455,7 +455,7 @@ func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL str
 	}
 	accountModel, err := modelAdminSvc.CreateModelAccountModel(context.Background(), domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "openrouter/vision", DisplayName: "Route image model",
-		TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k"}, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
+		TaskTypes: []string{"text_to_image"}, BaseResolution: []string{"1k"}, Quality: []string{"auto"}, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateModelAccountModel: %v", err)
@@ -467,7 +467,7 @@ func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL str
 	if _, err := modelAdminSvc.CreateRouteModelCandidate(context.Background(), domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: routeModel.ID, AccountModelID: accountModel.ID, Priority: 1, Weight: 100, FallbackOrder: 1, Enabled: true}); err != nil {
 		t.Fatalf("CreateRouteModelCandidate: %v", err)
 	}
-	if _, err := modelAdminSvc.CreateRouteModelPrice(context.Background(), domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: routeModel.ID, TaskType: "text_to_image", Quality: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}); err != nil {
+	if _, err := modelAdminSvc.CreateRouteModelPrice(context.Background(), domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: routeModel.ID, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}); err != nil {
 		t.Fatalf("CreateRouteModelPrice: %v", err)
 	}
 

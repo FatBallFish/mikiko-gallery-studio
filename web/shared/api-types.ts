@@ -476,7 +476,7 @@ export type CapabilityItem = {
 }
 export type RouteModelPriceQuote = {
   task_type: ImageTaskType
-  quality: string
+  quality?: string
   base_resolution?: string
   base_points: string
   charged_points: string
@@ -524,20 +524,9 @@ export type Capability = {
   reference_image_max_bytes?: number
   task_types: ImageTaskType[]
 }
-export type EstimateRequest = {
-  task_type: ImageTaskType
-  route_model_code: string
-  size_mode?: 'ratio'
-  aspect_ratio: string
-  image_count: number
-  reference_asset_ids?: string[]
-  model_group?: string
-} & (
-  | { base_resolution: string; quality?: string }
-  | { base_resolution?: string; quality: string }
-)
+export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; size_mode?: 'ratio' | 'pixel' | string; base_resolution: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
 export type BackendImageTaskType = Exclude<ImageTaskType, 'reference_to_image'> | 'reference_generate'
-export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; requested_quality: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
+export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
 export type EstimateResult = {
   resolved_quality_bucket?: string
   base_resolution?: string
@@ -893,10 +882,17 @@ export type ModelAccountModel = {
   model_code: string
   display_name: string
   task_types: ImageTaskType[]
-  qualities: string[]
-  supported_ratios: string[]
-  max_image_count: number
+  base_resolution: string[]
+  quality: string[]
   max_reference_image_count: number
+  max_image_count: number
+  size_modes: string[]
+  supported_ratios: string[]
+  supported_pixel_sizes: string[]
+  output_format: string[]
+  output_compression?: number
+  supports_output_compression: boolean
+  moderation: string[]
   cost_per_image: string
   currency: string
   enabled: boolean
@@ -904,8 +900,8 @@ export type ModelAccountModel = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; qualities: string[]; supported_ratios: string[]; max_image_count: number; max_reference_image_count: number; cost_per_image: string; currency: string; enabled: boolean }
-export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string }
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; output_format: string[]; supports_output_compression: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio?: string }
 export type ModelAccountTestImageResult = {
   status: string
   image_url?: string
@@ -970,7 +966,7 @@ export type RedeemCodeExportResult = { items: RedeemCode[]; count: number; filte
 export type CallRecordAttempt = { provider?: string; adapter_type?: string; account_model_id?: number | null; model_account_id?: number | null; model_code?: string; status?: string; error?: string; error_code?: string; error_message?: string; error_detail?: Record<string, unknown>; started_at?: string | null; finished_at?: string | null }
 export type ArtifactDiagnostic = { code?: string; stage?: string; attempt?: number; url_host?: string; url_path?: string; http_status?: number; content_type?: string; content_length?: number; bytes_read?: number; duration_ms?: number; storage_config_id?: string; storage_version?: number; retryable: boolean; cause?: string; started_at?: string; finished_at?: string }
 export type ArtifactRecoverySummary = { status: string; attempt_count: number; last_diagnostic?: ArtifactDiagnostic; diagnostics?: ArtifactDiagnostic[] }
-export type CallRecord = { id?: number; task_id: string; user_id: number; api_key_id?: number | null; source_channel: string; task_type: ImageTaskType | string; status: string; provider: string; account_model_id?: number | null; model_account_id?: number | null; upstream_model_code?: string; abstract_model: string; quality: string; requested_output_image_count: number; success_output_image_count: number; reference_image_count: number; estimated_points: string; actual_points: string; provider_request_id?: string; provider_cost: string; gross_margin: string; upstream_succeeded_at?: string | null; failure_phase?: 'preflight' | 'upstream' | 'artifact_persistence' | string; platform_loss: boolean; artifact_recovery?: ArtifactRecoverySummary; error_code?: string | null; error_message?: string | null; error_detail?: Record<string, unknown>; attempts?: CallRecordAttempt[]; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; attempt_count: number }
+export type CallRecord = { id?: number; task_id: string; user_id: number; api_key_id?: number | null; source_channel: string; task_type: ImageTaskType | string; status: string; provider: string; account_model_id?: number | null; model_account_id?: number | null; upstream_model_code?: string; abstract_model: string; base_resolution: string; quality: string; requested_output_image_count: number; success_output_image_count: number; reference_image_count: number; estimated_points: string; actual_points: string; provider_request_id?: string; provider_cost: string; gross_margin: string; upstream_succeeded_at?: string | null; failure_phase?: 'preflight' | 'upstream' | 'artifact_persistence' | string; platform_loss: boolean; artifact_recovery?: ArtifactRecoverySummary; error_code?: string | null; error_message?: string | null; error_detail?: Record<string, unknown>; attempts?: CallRecordAttempt[]; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; attempt_count: number }
 export type AuditLog = { id: ID; actor: string; action: string; target: string; detail: string; created_at: string; actor_type?: string; actor_id?: string; target_type?: string; target_id?: string; result?: string; metadata?: Record<string, unknown>; ip_addr?: string; user_agent?: string; updated_at?: string }
 export type AdminDashboardQueueItem = { item: string; count: string; detail: string }
 export type AdminDashboard = { operations: AdminDashboardOperations; metrics: AdminMetric[]; providers: ProviderHealth[]; queue: AdminDashboardQueueItem[]; audit: AuditLog[] }

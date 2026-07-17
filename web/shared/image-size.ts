@@ -61,7 +61,7 @@ function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b)
 }
 
-function normalizeBaseResolutionBucket(value: string): SizeTier | null {
+function normalizeQualityBucket(value: string): SizeTier | null {
   switch (value.trim().toLowerCase()) {
     case '1k':
     case 'low':
@@ -101,8 +101,8 @@ export function isExplicitImageSize(value: string) {
   return SIZE_PATTERN.test(value.trim())
 }
 
-export function calculateImageSizeForBaseResolution(baseResolution: string, ratio: string) {
-  const tier = normalizeBaseResolutionBucket(baseResolution)
+export function calculateImageSizeForQuality(quality: string, ratio: string) {
+  const tier = normalizeQualityBucket(quality)
   if (!tier) return legacySizeMap[ratio] ?? ratio
 
   const parsed = parseRatio(ratio)
@@ -150,3 +150,5 @@ export function calculateImageSizeForBaseResolution(baseResolution: string, rati
   if (bestPixels === 0) return legacySizeMap[ratio] ?? ratio
   return `${bestWidth}x${bestHeight}`
 }
+
+export const calculateImageSizeForBaseResolution = calculateImageSizeForQuality

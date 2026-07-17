@@ -56,21 +56,19 @@ for (const required of [
   'markStreamHealthy()',
   'streamTokenRef.current !== token',
   "mergeReferenceAssets(items, [nextAsset], maxReferenceImages)",
-]) {
-  if (!source.includes(required)) throw new Error(`creative workspace should include ${required}`)
-}
-
-for (const unsupported of [
+  'workspaceOutputOptions(selectedModel)',
+  'normalizeWorkspaceOutputParameters',
   '按像素',
-  '像素尺寸',
+  '>基础分辨率</label>',
   '>质量</label>',
   '>输出格式</label>',
   '>压缩质量</label>',
   '>审核等级</label>',
+  'output_format: outputFormat',
+  'output_compression: compressionVisible ? outputCompression : 100',
+  'moderation,',
 ]) {
-  if (source.includes(unsupported)) {
-    throw new Error(`compatibility workspace must not expose unsupported control ${unsupported}`)
-  }
+  if (!source.includes(required)) throw new Error(`creative workspace should include ${required}`)
 }
 
 const estimatePayloadStart = source.indexOf('const estimatePayload')
@@ -82,22 +80,22 @@ const estimatePayloadSource = source.slice(estimatePayloadStart, estimatePayload
 const expectedPayloadKeys = [
   'task_type',
   'route_model_code',
+  'size_mode',
   'base_resolution',
+  'quality',
+  'output_format',
+  'output_compression',
+  'moderation',
   'aspect_ratio',
+  'pixel_size',
   'image_count',
   'reference_asset_ids',
 ]
 for (const key of expectedPayloadKeys) {
-  if (!new RegExp(`\\b${key}\\s*:`).test(estimatePayloadSource)) {
+  if (!new RegExp(`\\b${key}(?:\\s*:|\\s*,)`).test(estimatePayloadSource)) {
     throw new Error(`workspace estimate payload must include ${key}`)
   }
 }
-for (const key of ['size_mode', 'pixel_size', 'quality', 'output_format', 'output_compression', 'moderation']) {
-  if (new RegExp(`\\b${key}\\s*:`).test(estimatePayloadSource)) {
-    throw new Error(`workspace estimate payload must not include unsupported field ${key}`)
-  }
-}
-
 const parametersReadyStart = source.indexOf('const parametersReady')
 const parametersReadyEnd = source.indexOf('const estimatePayload', parametersReadyStart)
 const parametersReadySource = source.slice(parametersReadyStart, parametersReadyEnd)

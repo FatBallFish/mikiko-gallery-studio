@@ -21,7 +21,6 @@ func (ReferenceAsset) Fields() []ent.Field {
 		field.String("status").MaxLen(32).Default("uploading"),
 		field.UUID("storage_config_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("storage_driver").MaxLen(16).Default("local"),
-		field.UUID("storage_config_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("object_key").MaxLen(255).NotEmpty(),
 		field.String("mime_type").MaxLen(64).NotEmpty(),
 		field.Int64("file_size_bytes").Default(0),

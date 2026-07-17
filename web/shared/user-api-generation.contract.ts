@@ -77,14 +77,15 @@ assertDeepEqual(model.size_modes, ['ratio'], 'the current Go API should expose r
 assertDeepEqual(model.pixel_sizes, [], 'the current Go API should not invent pixel-size choices')
 assertDeepEqual(model.prices[0]?.base_resolution, '2k', 'price quality should become a base-resolution alias')
 assertDeepEqual(model.prices[0]?.quality, '2k', 'legacy price quality should remain available')
-assertAbsent(model, ['quality', 'output_format', 'supports_output_compression', 'moderation'], 'normalization must not advertise unsupported controls')
+assertDeepEqual(model.supports_output_compression, false, 'missing compression support should default to false')
+assertAbsent(model, ['quality', 'output_format', 'moderation'], 'normalization must not advertise unsupported option sets')
 
 const ratioRequest = {
   task_type: 'reference_to_image',
   route_model_code: 'plus-image',
   size_mode: 'ratio',
   base_resolution: '2K',
-  quality: 'legacy-should-not-win',
+  quality: 'high',
   aspect_ratio: '16:9',
   pixel_size: '999x999',
   output_format: 'webp',
@@ -101,34 +102,26 @@ const baseResolutionOnlyRequest: EstimateRequest = {
   aspect_ratio: '16:9',
   image_count: 1,
 }
-const legacyQualityOnlyRequest: EstimateRequest = {
-  task_type: 'text_to_image',
-  route_model_code: 'plus-image',
-  quality: '2K',
-  aspect_ratio: '16:9',
-  image_count: 1,
-}
-void [baseResolutionOnlyRequest, legacyQualityOnlyRequest]
+void baseResolutionOnlyRequest
 
 const estimateWire = buildEstimateWireRequest(ratioRequest)
 assertDeepEqual(estimateWire, {
   task_type: 'reference_generate',
   route_model_code: 'plus-image',
-  requested_quality: '2k',
-  requested_size: '2560x1440',
+  size_mode: 'ratio',
+  aspect_ratio: '16:9',
+  base_resolution: '2K',
+  quality: 'high',
+  output_format: 'webp',
+  output_compression: 42,
+  moderation: 'low',
+  requested_size: 'auto',
   requested_output_image_count: 2,
   reference_image_count: 1,
-}, 'estimate conversion should emit only the current Go wire contract')
+}, 'estimate conversion should emit the complete current Go wire contract')
 assertAbsent(estimateWire, [
-  'base_resolution',
-  'quality',
-  'size_mode',
-  'aspect_ratio',
   'pixel_size',
-  'output_format',
-  'output_compression',
-  'moderation',
-], 'estimate conversion must not leak unsupported UI fields')
+], 'estimate conversion must not leak UI-only fields')
 
 const createWire = buildCreateTaskWireRequest({
   ...ratioRequest,
@@ -142,8 +135,14 @@ assertDeepEqual(createWire, {
     task_type: 'reference_generate',
     prompt: 'Paint a quiet harbor\n\nNegative prompt: text, watermark',
     route_model_code: 'plus-image',
-    requested_quality: '2k',
-    requested_size: '2560x1440',
+    size_mode: 'ratio',
+    aspect_ratio: '16:9',
+    base_resolution: '2K',
+    quality: 'high',
+    output_format: 'webp',
+    output_compression: 42,
+    moderation: 'low',
+    requested_size: 'auto',
     requested_output_image_count: 2,
     reference_asset_ids: ['ref-1'],
     response_mode: 'async',
@@ -153,15 +152,8 @@ assertDeepEqual(createWire, {
 assertAbsent(createWire.body, [
   'idempotency_key',
   'negative_prompt',
-  'base_resolution',
-  'quality',
-  'size_mode',
-  'aspect_ratio',
   'pixel_size',
-  'output_format',
-  'output_compression',
-  'moderation',
-], 'create conversion must keep idempotency and unsupported UI fields out of the body')
+], 'create conversion must keep header-only and UI-only fields out of the body')
 
 const taskFromResolved = generationApi.toTask({ id: 'task-resolved', resolved_quality_bucket: '4k' })
 const taskFromRequested = generationApi.toTask({ id: 'task-requested', requested_quality: '2k' })
@@ -332,10 +324,6 @@ async function verifyBaseResolutionOnlyConsumers() {
     reference_asset_ids: ['ref-open-1'],
   }
   const baseResolutionEstimate = await mockApi.estimate(mockRequest)
-  const legacyEstimate = await mockApi.estimate({ ...mockRequest, base_resolution: undefined, quality: '2K' })
-  if (baseResolutionEstimate.charged_points !== legacyEstimate.charged_points) {
-    throw new Error(`mock estimates must use the same 2K multiplier for both aliases, base=${baseResolutionEstimate.charged_points} legacy=${legacyEstimate.charged_points}`)
-  }
   if (baseResolutionEstimate.base_resolution !== '2k' || baseResolutionEstimate.resolved_quality !== '2k') {
     throw new Error(`mock estimate should expose the selected resolution aliases, got ${JSON.stringify(baseResolutionEstimate)}`)
   }

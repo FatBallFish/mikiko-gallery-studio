@@ -217,24 +217,7 @@ func (s *MemoryStore) CreateModelAccountModel(_ context.Context, req domainmodel
 		return domainmodeladmin.ModelAccountModel{}, repoerr.ErrNotFound
 	}
 	now := time.Now().UTC()
-	item := domainmodeladmin.ModelAccountModel{
-		ID:                     s.nextID,
-		AccountID:              req.AccountID,
-		AccountName:            account.Name,
-		ModelCode:              req.ModelCode,
-		DisplayName:            req.DisplayName,
-		TaskTypes:              append([]string(nil), req.TaskTypes...),
-		Qualities:              append([]string(nil), req.Qualities...),
-		SupportedRatios:        append([]string(nil), req.SupportedRatios...),
-		MaxImageCount:          req.MaxImageCount,
-		MaxReferenceImageCount: req.MaxReferenceImageCount,
-		CostPerImage:           req.CostPerImage,
-		Currency:               req.Currency,
-		Enabled:                req.Enabled,
-		Extra:                  req.Extra,
-		CreatedAt:              now,
-		UpdatedAt:              now,
-	}
+	item := domainmodeladmin.ModelAccountModel{ID: s.nextID, AccountID: req.AccountID, AccountName: account.Name, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: append([]string(nil), req.TaskTypes...), BaseResolution: append([]string(nil), req.BaseResolution...), Quality: append([]string(nil), req.Quality...), MaxReferenceImageCount: req.MaxReferenceImageCount, MaxImageCount: req.MaxImageCount, SizeModes: append([]string(nil), req.SizeModes...), SupportedRatios: append([]string(nil), req.SupportedRatios...), SupportedPixelSizes: append([]string(nil), req.SupportedPixelSizes...), OutputFormat: append([]string(nil), req.OutputFormat...), OutputCompression: req.OutputCompression, SupportsOutputCompression: req.SupportsOutputCompression, Moderation: append([]string(nil), req.Moderation...), CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra, CreatedAt: now, UpdatedAt: now}
 	s.nextID++
 	s.accountModels[item.ID] = item
 	return item, nil
@@ -252,10 +235,17 @@ func (s *MemoryStore) UpdateModelAccountModel(_ context.Context, accountModelID 
 		return domainmodeladmin.ModelAccountModel{}, repoerr.ErrNotFound
 	}
 	item.AccountID, item.AccountName, item.ModelCode, item.DisplayName = req.AccountID, account.Name, req.ModelCode, req.DisplayName
-	item.TaskTypes, item.Qualities = append([]string(nil), req.TaskTypes...), append([]string(nil), req.Qualities...)
-	item.SupportedRatios = append([]string(nil), req.SupportedRatios...)
-	item.MaxImageCount = req.MaxImageCount
+	item.TaskTypes, item.BaseResolution = append([]string(nil), req.TaskTypes...), append([]string(nil), req.BaseResolution...)
+	item.Quality = append([]string(nil), req.Quality...)
 	item.MaxReferenceImageCount = req.MaxReferenceImageCount
+	item.MaxImageCount = req.MaxImageCount
+	item.SizeModes = append([]string(nil), req.SizeModes...)
+	item.SupportedRatios = append([]string(nil), req.SupportedRatios...)
+	item.SupportedPixelSizes = append([]string(nil), req.SupportedPixelSizes...)
+	item.OutputFormat = append([]string(nil), req.OutputFormat...)
+	item.OutputCompression = req.OutputCompression
+	item.SupportsOutputCompression = req.SupportsOutputCompression
+	item.Moderation = append([]string(nil), req.Moderation...)
 	item.CostPerImage, item.Currency, item.Enabled, item.Extra = req.CostPerImage, req.Currency, req.Enabled, req.Extra
 	item.UpdatedAt = time.Now().UTC()
 	s.accountModels[accountModelID] = item
@@ -831,27 +821,7 @@ func (s *MemoryStore) ModelRoutingConfig(_ context.Context) (modelhub.ModelRouti
 		if !item.Enabled || account.Status != domainmodeladmin.ModelAccountStatusEnabled {
 			continue
 		}
-		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{
-			AccountModelID:         item.ID,
-			ModelAccountID:         item.AccountID,
-			Provider:               account.AdapterType,
-			AdapterType:            account.AdapterType,
-			AuthType:               account.AuthType,
-			BaseURL:                account.BaseURL,
-			Credentials:            account.CredentialsEncrypted,
-			ModelCode:              item.ModelCode,
-			SupportedTaskTypes:     append([]string(nil), item.TaskTypes...),
-			SupportedQualities:     append([]string(nil), item.Qualities...),
-			SupportedAspectRatios:  append([]string(nil), item.SupportedRatios...),
-			MaxImageCount:          item.MaxImageCount,
-			MaxReferenceImageCount: item.MaxReferenceImageCount,
-			SupportsImageInput:     item.MaxReferenceImageCount > 0,
-			HealthStatus:           account.Status,
-			OutputCost:             item.CostPerImage,
-			Currency:               item.Currency,
-			AccountExtra:           cloneModelAdminExtra(account.Extra),
-			ModelExtra:             cloneModelAdminExtra(item.Extra),
-		})
+		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{AccountModelID: item.ID, ModelAccountID: item.AccountID, Provider: account.AdapterType, AdapterType: account.AdapterType, AuthType: account.AuthType, BaseURL: account.BaseURL, Credentials: account.CredentialsEncrypted, ModelCode: item.ModelCode, SupportedTaskTypes: append([]string(nil), item.TaskTypes...), SupportedBaseResolution: append([]string(nil), item.BaseResolution...), Quality: append([]string(nil), item.Quality...), SizeModes: append([]string(nil), item.SizeModes...), SupportedAspectRatios: append([]string(nil), item.SupportedRatios...), SupportedPixelSizes: append([]string(nil), item.SupportedPixelSizes...), MaxImageCount: item.MaxImageCount, MaxReferenceImageCount: item.MaxReferenceImageCount, SupportsImageInput: item.MaxReferenceImageCount > 0, OutputFormat: append([]string(nil), item.OutputFormat...), OutputCompression: item.OutputCompression, SupportsOutputCompression: item.SupportsOutputCompression, Moderation: append([]string(nil), item.Moderation...), HealthStatus: account.Status, TimeoutMS: account.TimeoutMS, InputCost: item.CostPerImage, Currency: item.Currency, AccountExtra: cloneModelAdminExtra(account.Extra), ModelExtra: cloneModelAdminExtra(item.Extra)})
 	}
 	return snapshot, nil
 }

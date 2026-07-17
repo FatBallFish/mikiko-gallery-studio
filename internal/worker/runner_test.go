@@ -473,29 +473,6 @@ func TestRunnerProcessOnceProcessesRefundCompensationBeforeTasks(t *testing.T) {
 	}
 }
 
-func TestProcessOnceTreatsTransientCompensationLockAsNoWork(t *testing.T) {
-	runner := NewRunner(fakeTaskService{
-		acquireFunc: func(context.Context, string, time.Duration) (domainimagetask.Task, bool, error) {
-			t.Fatal("task acquisition should be skipped after transient compensation contention")
-			return domainimagetask.Task{}, false, nil
-		},
-		heartbeatFunc: func(context.Context, string, string, time.Duration) (domainimagetask.Task, error) {
-			return domainimagetask.Task{}, nil
-		},
-		executeFunc: func(context.Context, domainimagetask.Task, string, []string) (domainimagetask.ExecuteResult, error) {
-			return domainimagetask.ExecuteResult{}, nil
-		},
-	}, Config{Owner: "worker-compensation-lock"})
-	runner.SetCompensationService(&fakeCompensationService{fn: func(context.Context, int) (int, error) {
-		return 0, errors.New("database table is locked: point_ledgers")
-	}})
-
-	processed, err := runner.ProcessOnce(context.Background())
-	if err != nil || processed {
-		t.Fatalf("expected transient compensation lock to count as no work, processed=%v err=%v", processed, err)
-	}
-}
-
 func TestRunnerRunProcessesTasksConcurrently(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

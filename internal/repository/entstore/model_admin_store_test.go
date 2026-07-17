@@ -116,7 +116,7 @@ func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create account: %v", err)
 	}
-	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{AccountID: account.ID, ModelCode: "paid/image", DisplayName: "Paid Image", TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k"}, CostPerImage: "0.12345", Currency: "USD", Enabled: true})
+	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{AccountID: account.ID, ModelCode: "paid/image", DisplayName: "Paid Image", TaskTypes: []string{"text_to_image"}, Quality: []string{"auto"}, CostPerImage: "0.12345", Currency: "USD", Enabled: true})
 	if err != nil {
 		t.Fatalf("create account model: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestModelAdminStoreMapsAccountModelGenerationLimitsToRuntimeSnapshot(t *tes
 	}
 	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "gpt-image-2", DisplayName: "GPT Image 2",
-		TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k", "2k"},
+		TaskTypes: []string{"text_to_image"}, Quality: []string{"auto", "high"},
 		SupportedRatios: []string{"1:1", "16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
 		CostPerImage: "0.04000", Currency: "USD", Enabled: true,
 	})

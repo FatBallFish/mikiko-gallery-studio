@@ -30,8 +30,6 @@ const (
 	FieldStorageConfigID = "storage_config_id"
 	// FieldStorageDriver holds the string denoting the storage_driver field in the database.
 	FieldStorageDriver = "storage_driver"
-	// FieldStorageConfigID holds the string denoting the storage_config_id field in the database.
-	FieldStorageConfigID = "storage_config_id"
 	// FieldObjectKey holds the string denoting the object_key field in the database.
 	FieldObjectKey = "object_key"
 	// FieldMimeType holds the string denoting the mime_type field in the database.
@@ -67,7 +65,6 @@ var Columns = []string{
 	FieldImageRole,
 	FieldStorageConfigID,
 	FieldStorageDriver,
-	FieldStorageConfigID,
 	FieldObjectKey,
 	FieldMimeType,
 	FieldFileSizeBytes,
@@ -177,11 +174,6 @@ func ByStorageConfigID(opts ...sql.OrderTermOption) OrderOption {
 // ByStorageDriver orders the results by the storage_driver field.
 func ByStorageDriver(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStorageDriver, opts...).ToFunc()
-}
-
-// ByStorageConfigID orders the results by the storage_config_id field.
-func ByStorageConfigID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldStorageConfigID, opts...).ToFunc()
 }
 
 // ByObjectKey orders the results by the object_key field.

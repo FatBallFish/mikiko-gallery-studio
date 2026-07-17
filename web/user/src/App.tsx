@@ -310,7 +310,7 @@ export default function App() {
       case 'profile':
         return <Shell scrollMode="document"><ProfilePage /></Shell>
       case 'docs':
-        return <Shell scrollMode="document"><DocsPage /></Shell>
+        return <DocsPage />
       case 'settings':
         return <Shell><SettingsPage /></Shell>
       case 'landing':

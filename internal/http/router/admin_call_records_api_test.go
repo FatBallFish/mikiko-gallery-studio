@@ -98,7 +98,7 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	if err := taskStore.Save(t.Context(), domainimagetask.Task{
 		UserID: 77, ID: "ffffffff-ffff-ffff-ffff-ffffffffffff", Status: domainimagetask.StatusFailed,
 		Provider: "openrouter", AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage),
-		RequestedQuality: "auto", ResolvedQualityBucket: "2k", OutputImageCount: 1,
+		BaseResolution: "2k", Quality: "auto", OutputImageCount: 1,
 		ProviderRequestID: "paid-request-api", ProviderCost: "0.34567", UpstreamSucceededAt: &upstreamSucceededAt,
 		ErrorCode: "IMAGE_STORAGE_FAILED", ErrorMessage: "ARTIFACT_STORAGE_WRITE_FAILED",
 		ArtifactRecovery: domainimagetask.ArtifactRecovery{

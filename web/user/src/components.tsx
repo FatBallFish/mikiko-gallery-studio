@@ -471,7 +471,7 @@ function DetailImageMedia({ src, alt, onOpen }: { src: string; alt: string; onOp
   )
 }
 
-export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'checkout', 'api-keys', 'profile', 'docs', 'settings']
+export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'checkout', 'api-keys', 'profile', 'settings']
 
 function HomeIcon() { return <Home size={22} strokeWidth={1.5} /> }
 function SparklesIcon() { return <Sparkles size={22} strokeWidth={1.5} /> }
@@ -628,7 +628,7 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
               <div className={rdShell.footerLinks}>
                 <span className={rdShell.footerLink}>服务协议</span>
                 <span className={rdShell.footerLink}>隐私条款</span>
-                <button className={cn(rdShell.footerLink, 'border-0 bg-transparent p-0 text-inherit')} type="button" onClick={() => app.navigate('docs')}>API 文档</button>
+                <button className={cn(rdShell.footerLink, 'border-0 bg-transparent p-0 text-inherit')} type="button" onClick={() => openDocsEntry('footer')}>API 文档</button>
               </div>
             </div>
           </footer>

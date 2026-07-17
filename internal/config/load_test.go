@@ -69,8 +69,8 @@ func TestLoadUsesEnvByDefault(t *testing.T) {
 	if cfg.Billing.PointsScale != 5 {
 		t.Fatalf("expected billing scale 5, got %d", cfg.Billing.PointsScale)
 	}
-	if cfg.Auth.AccessTokenTTL != 10*time.Minute || cfg.Auth.RefreshTokenTTL != 30*time.Minute {
-		t.Fatalf("expected auth TTL defaults 10m/30m, got access=%s refresh=%s", cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL)
+	if cfg.Auth.AccessTokenTTL != 10*time.Minute || cfg.Auth.RefreshTokenTTL != 2*time.Hour {
+		t.Fatalf("expected auth TTL defaults 10m/2h, got access=%s refresh=%s", cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL)
 	}
 	if cfg.Auth.RefreshCookieName != "pg_refresh_token" || cfg.Auth.AdminRefreshCookieName != "pg_admin_refresh_token" {
 		t.Fatalf("expected refresh cookie defaults, got user=%q admin=%q", cfg.Auth.RefreshCookieName, cfg.Auth.AdminRefreshCookieName)

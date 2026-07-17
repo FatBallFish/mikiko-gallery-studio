@@ -78,6 +78,7 @@ paths:
           accessBodySHA256: []
           accessSignature: []
       parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
         - $ref: ./components/parameters/common.yaml#/components/parameters/BaseResolution
         - $ref: ./components/parameters/common.yaml#/components/parameters/Quality

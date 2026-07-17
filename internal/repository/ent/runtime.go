@@ -752,29 +752,29 @@ func init() {
 	// imagetask.RouteSnapshotVersionValidator is a validator for the "route_snapshot_version" field. It is called by the builders before save.
 	imagetask.RouteSnapshotVersionValidator = imagetaskDescRouteSnapshotVersion.Validators[0].(func(string) error)
 	// imagetaskDescProviderRequestID is the schema descriptor for provider_request_id field.
-	imagetaskDescProviderRequestID := imagetaskFields[41].Descriptor()
+	imagetaskDescProviderRequestID := imagetaskFields[47].Descriptor()
 	// imagetask.ProviderRequestIDValidator is a validator for the "provider_request_id" field. It is called by the builders before save.
 	imagetask.ProviderRequestIDValidator = imagetaskDescProviderRequestID.Validators[0].(func(string) error)
 	// imagetaskDescArtifactRecoveryStatus is the schema descriptor for artifact_recovery_status field.
-	imagetaskDescArtifactRecoveryStatus := imagetaskFields[43].Descriptor()
+	imagetaskDescArtifactRecoveryStatus := imagetaskFields[49].Descriptor()
 	// imagetask.DefaultArtifactRecoveryStatus holds the default value on creation for the artifact_recovery_status field.
 	imagetask.DefaultArtifactRecoveryStatus = imagetaskDescArtifactRecoveryStatus.Default.(string)
 	// imagetask.ArtifactRecoveryStatusValidator is a validator for the "artifact_recovery_status" field. It is called by the builders before save.
 	imagetask.ArtifactRecoveryStatusValidator = imagetaskDescArtifactRecoveryStatus.Validators[0].(func(string) error)
 	// imagetaskDescArtifactAttemptCount is the schema descriptor for artifact_attempt_count field.
-	imagetaskDescArtifactAttemptCount := imagetaskFields[45].Descriptor()
+	imagetaskDescArtifactAttemptCount := imagetaskFields[51].Descriptor()
 	// imagetask.DefaultArtifactAttemptCount holds the default value on creation for the artifact_attempt_count field.
 	imagetask.DefaultArtifactAttemptCount = imagetaskDescArtifactAttemptCount.Default.(int)
 	// imagetaskDescArtifactStorageVersion is the schema descriptor for artifact_storage_version field.
-	imagetaskDescArtifactStorageVersion := imagetaskFields[49].Descriptor()
+	imagetaskDescArtifactStorageVersion := imagetaskFields[55].Descriptor()
 	// imagetask.DefaultArtifactStorageVersion holds the default value on creation for the artifact_storage_version field.
 	imagetask.DefaultArtifactStorageVersion = imagetaskDescArtifactStorageVersion.Default.(int64)
 	// imagetaskDescLeaseOwner is the schema descriptor for lease_owner field.
-	imagetaskDescLeaseOwner := imagetaskFields[50].Descriptor()
+	imagetaskDescLeaseOwner := imagetaskFields[56].Descriptor()
 	// imagetask.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	imagetask.LeaseOwnerValidator = imagetaskDescLeaseOwner.Validators[0].(func(string) error)
 	// imagetaskDescErrorCode is the schema descriptor for error_code field.
-	imagetaskDescErrorCode := imagetaskFields[52].Descriptor()
+	imagetaskDescErrorCode := imagetaskFields[58].Descriptor()
 	// imagetask.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
 	imagetask.ErrorCodeValidator = imagetaskDescErrorCode.Validators[0].(func(string) error)
 	// imagetaskDescID is the schema descriptor for id field.
@@ -935,30 +935,34 @@ func init() {
 	modelaccountmodel.DefaultDisplayName = modelaccountmodelDescDisplayName.Default.(string)
 	// modelaccountmodel.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
 	modelaccountmodel.DisplayNameValidator = modelaccountmodelDescDisplayName.Validators[0].(func(string) error)
-	// modelaccountmodelDescSupportedRatios is the schema descriptor for supported_ratios field.
-	modelaccountmodelDescSupportedRatios := modelaccountmodelFields[5].Descriptor()
-	// modelaccountmodel.DefaultSupportedRatios holds the default value on creation for the supported_ratios field.
-	modelaccountmodel.DefaultSupportedRatios = modelaccountmodelDescSupportedRatios.Default.([]string)
-	// modelaccountmodelDescMaxImageCount is the schema descriptor for max_image_count field.
-	modelaccountmodelDescMaxImageCount := modelaccountmodelFields[6].Descriptor()
-	// modelaccountmodel.DefaultMaxImageCount holds the default value on creation for the max_image_count field.
-	modelaccountmodel.DefaultMaxImageCount = modelaccountmodelDescMaxImageCount.Default.(int)
 	// modelaccountmodelDescMaxReferenceImageCount is the schema descriptor for max_reference_image_count field.
-	modelaccountmodelDescMaxReferenceImageCount := modelaccountmodelFields[7].Descriptor()
+	modelaccountmodelDescMaxReferenceImageCount := modelaccountmodelFields[6].Descriptor()
 	// modelaccountmodel.DefaultMaxReferenceImageCount holds the default value on creation for the max_reference_image_count field.
 	modelaccountmodel.DefaultMaxReferenceImageCount = modelaccountmodelDescMaxReferenceImageCount.Default.(int)
+	// modelaccountmodelDescMaxImageCount is the schema descriptor for max_image_count field.
+	modelaccountmodelDescMaxImageCount := modelaccountmodelFields[7].Descriptor()
+	// modelaccountmodel.DefaultMaxImageCount holds the default value on creation for the max_image_count field.
+	modelaccountmodel.DefaultMaxImageCount = modelaccountmodelDescMaxImageCount.Default.(int)
+	// modelaccountmodelDescOutputCompression is the schema descriptor for output_compression field.
+	modelaccountmodelDescOutputCompression := modelaccountmodelFields[12].Descriptor()
+	// modelaccountmodel.DefaultOutputCompression holds the default value on creation for the output_compression field.
+	modelaccountmodel.DefaultOutputCompression = modelaccountmodelDescOutputCompression.Default.(int)
+	// modelaccountmodelDescSupportsOutputCompression is the schema descriptor for supports_output_compression field.
+	modelaccountmodelDescSupportsOutputCompression := modelaccountmodelFields[13].Descriptor()
+	// modelaccountmodel.DefaultSupportsOutputCompression holds the default value on creation for the supports_output_compression field.
+	modelaccountmodel.DefaultSupportsOutputCompression = modelaccountmodelDescSupportsOutputCompression.Default.(bool)
 	// modelaccountmodelDescCostPerImage is the schema descriptor for cost_per_image field.
-	modelaccountmodelDescCostPerImage := modelaccountmodelFields[8].Descriptor()
+	modelaccountmodelDescCostPerImage := modelaccountmodelFields[15].Descriptor()
 	// modelaccountmodel.DefaultCostPerImage holds the default value on creation for the cost_per_image field.
 	modelaccountmodel.DefaultCostPerImage = modelaccountmodelDescCostPerImage.Default.(string)
 	// modelaccountmodelDescCurrency is the schema descriptor for currency field.
-	modelaccountmodelDescCurrency := modelaccountmodelFields[9].Descriptor()
+	modelaccountmodelDescCurrency := modelaccountmodelFields[16].Descriptor()
 	// modelaccountmodel.DefaultCurrency holds the default value on creation for the currency field.
 	modelaccountmodel.DefaultCurrency = modelaccountmodelDescCurrency.Default.(string)
 	// modelaccountmodel.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	modelaccountmodel.CurrencyValidator = modelaccountmodelDescCurrency.Validators[0].(func(string) error)
 	// modelaccountmodelDescEnabled is the schema descriptor for enabled field.
-	modelaccountmodelDescEnabled := modelaccountmodelFields[10].Descriptor()
+	modelaccountmodelDescEnabled := modelaccountmodelFields[17].Descriptor()
 	// modelaccountmodel.DefaultEnabled holds the default value on creation for the enabled field.
 	modelaccountmodel.DefaultEnabled = modelaccountmodelDescEnabled.Default.(bool)
 	modelproviderMixin := schema.ModelProvider{}.Mixin()
