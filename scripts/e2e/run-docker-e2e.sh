@@ -49,6 +49,7 @@ done
 cd "$ROOT_DIR"
 
 if [[ "$START_STACK" == true ]]; then
+  docker compose -f "$COMPOSE_FILE" config -q
   if [[ "$CLEAN_STACK" == true ]]; then
     docker compose -f "$COMPOSE_FILE" down -v --remove-orphans
   fi
