@@ -298,7 +298,7 @@ export default function App() {
       case 'home':
         return <Shell><HomePage /></Shell>
       case 'genpic':
-        return <Shell><WorkspacePage /></Shell>
+        return <Shell><WorkspacePage initialTaskId={routeTaskId} /></Shell>
       case 'gallery':
         return <Shell><GalleryPage /></Shell>
       case 'public-gallery':

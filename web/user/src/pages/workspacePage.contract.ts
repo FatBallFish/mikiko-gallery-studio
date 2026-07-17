@@ -5,6 +5,16 @@ const source = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'ut
 for (const required of [
   'createWorkspaceViewModel',
   '<WorkspaceStatusRail',
+  'initialTaskId',
+  'userApi.getTask(taskId)',
+  "app.navigate('genpic', { taskId: nextTask.id })",
+  'function selectRecentTask(task: ImageTask)',
+  'function openHistoryTaskDialog(task: ImageTask)',
+  'workspaceTaskHistoryInteraction',
+  "app.navigate('genpic', { taskId: task.id })",
+  'onSelectTask={selectRecentTask}',
+  'onOpenTaskDialog={openHistoryTaskDialog}',
+  'setHistoryTaskDialog(null)',
   'data-workspace-layout="creative"',
   'useCompactWorkspaceViewport()',
   'parametersExpanded',
@@ -36,18 +46,72 @@ for (const required of [
   'translate3d(0, ${sheetDragOffset}px, 0)',
   '<OverlayPortal>{parameterPanel}</OverlayPortal>',
   'singleReferenceAddition',
+  'const referenceCount =',
+  'const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)',
+  '&& requiredReferencesReady',
+  'if (!requiredReferencesReady) {',
+  'WORKSPACE_REFERENCE_REQUIRED_MESSAGE',
+  "source.addEventListener('open'",
+  'markWorkspaceStreamHealthy(generation)',
+  'markStreamHealthy()',
+  'streamTokenRef.current !== token',
   "mergeReferenceAssets(items, [nextAsset], maxReferenceImages)",
-  'workspaceOutputOptions(selectedModel)',
-  'normalizeWorkspaceOutputParameters',
-  'label className={workspaceClasses.fieldLabel}>质量</label>',
-  'label className={workspaceClasses.fieldLabel}>输出格式</label>',
-  'label className={workspaceClasses.fieldLabel}>压缩质量</label>',
-  'label className={workspaceClasses.fieldLabel}>审核等级</label>',
-  'output_format: outputFormat',
-  'output_compression: compressionVisible ? outputCompression : 100',
-  'moderation,',
 ]) {
   if (!source.includes(required)) throw new Error(`creative workspace should include ${required}`)
+}
+
+for (const unsupported of [
+  '按像素',
+  '像素尺寸',
+  '>质量</label>',
+  '>输出格式</label>',
+  '>压缩质量</label>',
+  '>审核等级</label>',
+]) {
+  if (source.includes(unsupported)) {
+    throw new Error(`compatibility workspace must not expose unsupported control ${unsupported}`)
+  }
+}
+
+const estimatePayloadStart = source.indexOf('const estimatePayload')
+const estimatePayloadEnd = source.indexOf('const estimateKey', estimatePayloadStart)
+if (!(estimatePayloadStart >= 0 && estimatePayloadEnd > estimatePayloadStart)) {
+  throw new Error('workspace must construct a stable estimate payload')
+}
+const estimatePayloadSource = source.slice(estimatePayloadStart, estimatePayloadEnd)
+const expectedPayloadKeys = [
+  'task_type',
+  'route_model_code',
+  'base_resolution',
+  'aspect_ratio',
+  'image_count',
+  'reference_asset_ids',
+]
+for (const key of expectedPayloadKeys) {
+  if (!new RegExp(`\\b${key}\\s*:`).test(estimatePayloadSource)) {
+    throw new Error(`workspace estimate payload must include ${key}`)
+  }
+}
+for (const key of ['size_mode', 'pixel_size', 'quality', 'output_format', 'output_compression', 'moderation']) {
+  if (new RegExp(`\\b${key}\\s*:`).test(estimatePayloadSource)) {
+    throw new Error(`workspace estimate payload must not include unsupported field ${key}`)
+  }
+}
+
+const parametersReadyStart = source.indexOf('const parametersReady')
+const parametersReadyEnd = source.indexOf('const estimatePayload', parametersReadyStart)
+const parametersReadySource = source.slice(parametersReadyStart, parametersReadyEnd)
+if (!parametersReadySource.includes('requiredReferencesReady')) {
+  throw new Error('missing required references must keep parameters unready and prevent estimate requests')
+}
+
+const createTaskStart = source.indexOf('async function createTask')
+const createTaskEnd = source.indexOf('async function applyAsEditSource', createTaskStart)
+const createTaskSource = source.slice(createTaskStart, createTaskEnd)
+const referenceGuard = createTaskSource.indexOf('if (!requiredReferencesReady)')
+const createRequest = createTaskSource.indexOf('userApi.createTask')
+if (!(referenceGuard >= 0 && createRequest > referenceGuard)) {
+  throw new Error('createTask must defensively reject missing references before issuing the API request')
 }
 
 const historyEditStart = source.indexOf('async function applyAsEditSource')
@@ -76,4 +140,19 @@ if (/hidden\s+group-hover:block/.test(source)) {
 
 if (/Math\.round\(task\.progress/.test(source) || /task\.progress\s*\?\?/.test(source)) {
   throw new Error('workspace history must not display synthetic or legacy numeric progress')
+}
+
+const recentHandlerStart = source.indexOf('function selectRecentTask')
+const dialogHandlerStart = source.indexOf('function openHistoryTaskDialog')
+const gestureHandlerStart = source.indexOf('function handleSheetPointerDown', dialogHandlerStart)
+const recentHandler = source.slice(recentHandlerStart, dialogHandlerStart)
+const dialogHandler = source.slice(dialogHandlerStart, gestureHandlerStart)
+for (const required of ['setSelectedTaskId(task.id)', "app.navigate('genpic', { taskId: task.id })", "setOutputTab('current')"]) {
+  if (!recentHandler.includes(required)) throw new Error(`recent history selection must include ${required}`)
+}
+if (recentHandler.includes('setHistoryTaskDialog(task)')) {
+  throw new Error('recent task selection must not open a task dialog')
+}
+if (!dialogHandler.includes('setHistoryTaskDialog(task)') || dialogHandler.includes('setSelectedTaskId') || dialogHandler.includes('app.navigate')) {
+  throw new Error('multi-image history dialog must not change selected task or hash state')
 }

@@ -1,4 +1,47 @@
-import { limitReferenceSelection, remainingReferenceCapacity, singleReferenceAddition } from './workspaceReferenceLimit'
+import * as referenceLimits from './workspaceReferenceLimit'
+
+const {
+  WORKSPACE_REFERENCE_MAX_COUNT,
+  limitReferenceSelection,
+  remainingReferenceCapacity,
+  singleReferenceAddition,
+  workspaceReferenceMaximum,
+} = referenceLimits
+const workspaceRequiredReferencesReady = (referenceLimits as Record<string, unknown>).workspaceRequiredReferencesReady
+if (typeof workspaceRequiredReferencesReady !== 'function') {
+  throw new Error('workspace reference model must expose workspaceRequiredReferencesReady')
+}
+
+const requiredReferenceCases = [
+  { taskType: 'text_to_image', count: 0, expected: true },
+  { taskType: 'reference_to_image', count: 0, expected: false },
+  { taskType: 'reference_to_image', count: 1, expected: true },
+  { taskType: 'image_edit', count: 0, expected: false },
+  { taskType: 'image_edit', count: 1, expected: true },
+] as const
+for (const testCase of requiredReferenceCases) {
+  const actual = workspaceRequiredReferencesReady(testCase.taskType, testCase.count)
+  if (actual !== testCase.expected) {
+    throw new Error(`required reference readiness mismatch for ${JSON.stringify(testCase)}, got ${actual}`)
+  }
+}
+
+if (WORKSPACE_REFERENCE_MAX_COUNT !== 4) {
+  throw new Error(`workspace current global reference limit should remain 4, got ${WORKSPACE_REFERENCE_MAX_COUNT}`)
+}
+
+const effectiveLimitCases = [
+  { model: 2, global: 4, expected: 2 },
+  { model: 6, global: 4, expected: 4 },
+  { model: undefined, global: 4, expected: 4 },
+  { model: 0, global: 4, expected: 0 },
+]
+for (const testCase of effectiveLimitCases) {
+  const actual = workspaceReferenceMaximum(testCase.model, testCase.global)
+  if (actual !== testCase.expected) {
+    throw new Error(`effective reference limit mismatch for ${JSON.stringify(testCase)}, got ${actual}`)
+  }
+}
 
 const capacityCases = [
   { max: 5, current: 2, expected: 3 },

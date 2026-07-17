@@ -93,6 +93,35 @@ function responseResolution(raw: any, fallback = 'auto') {
   return String(raw?.base_resolution ?? raw?.resolved_quality_bucket ?? raw?.resolved_quality ?? raw?.requested_quality ?? raw?.quality ?? fallback)
 }
 
+function reducedAspectRatio(width: number, height: number) {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) return null
+  let left = width
+  let right = height
+  while (right !== 0) {
+    const remainder = left % right
+    left = right
+    right = remainder
+  }
+  return `${width / left}:${height / left}`
+}
+
+export function inferTaskAspectRatio(raw: any) {
+  const requestedSize = String(raw?.requested_size ?? '').trim()
+  const sizeMatch = requestedSize.match(/^(\d+)\s*[xX]\s*(\d+)$/)
+  if (sizeMatch) {
+    const inferred = reducedAspectRatio(Number(sizeMatch[1]), Number(sizeMatch[2]))
+    if (inferred) return inferred
+  }
+
+  const aspectRatio = String(raw?.aspect_ratio ?? '').trim()
+  const ratioMatch = aspectRatio.match(/^(\d+)\s*:\s*(\d+)$/)
+  if (ratioMatch) {
+    const fallback = reducedAspectRatio(Number(ratioMatch[1]), Number(ratioMatch[2]))
+    if (fallback) return fallback
+  }
+  return '1:1'
+}
+
 export function toReferenceAsset(raw: any): ReferenceAsset {
   return {
     ...raw,
@@ -142,7 +171,7 @@ export function toTask(raw: any): ImageTask {
     base_resolution: baseResolution,
     size_mode: raw.size_mode ?? 'ratio',
     quality,
-    aspect_ratio: raw.aspect_ratio ?? raw.requested_size ?? '1:1',
+    aspect_ratio: inferTaskAspectRatio(raw),
     image_count: Number(raw.image_count ?? raw.requested_output_image_count ?? results.length ?? 1),
     estimate_points: raw.estimate_points ?? raw.estimated_points ?? raw.actual_points ?? '0.00000',
     progress: raw.progress == null ? undefined : Number(raw.progress),

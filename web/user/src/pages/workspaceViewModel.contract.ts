@@ -1,10 +1,19 @@
 import type { Capability, EstimateResult, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType } from '../../../shared/api-types'
-import { createWorkspaceViewModel } from './workspaceViewModel'
+import { createWorkspaceViewModel, matchWorkspaceCapabilityOption } from './workspaceViewModel'
+
+if (matchWorkspaceCapabilityOption(['auto', '1K', '2K'], '2k') !== '2K') {
+  throw new Error('legacy lowercase base resolution must match the live capability spelling')
+}
+if (matchWorkspaceCapabilityOption(['auto', '1K', '2K'], '4k') !== undefined) {
+  throw new Error('an unsupported restored base resolution must not bypass live capabilities')
+}
 
 const capability = capabilityFixture()
 const baseInput = {
   capability,
   taskType: 'text_to_image' as ImageTaskType,
+  referenceCount: 0,
+  requiredReferencesReady: true,
   selectedModelCode: 'plus',
   parametersReady: true,
   prompt: '一座雨夜中的未来城市，霓虹倒映在街道上',
@@ -30,7 +39,7 @@ const ready = createWorkspaceViewModel(baseInput)
 if (ready.capability.state !== 'ready' || ready.generate.disabled || ready.estimate.state !== 'ready') {
   throw new Error(`ready workspace should enable generation, got ${JSON.stringify(ready)}`)
 }
-if (ready.parameters.models.map((item) => item.value).join(',') !== 'plus,pixel-pro') {
+if (ready.parameters.models.map((item) => item.value).join(',') !== 'plus') {
   throw new Error(`models must come from live task capabilities, got ${JSON.stringify(ready.parameters.models)}`)
 }
 if (ready.parameters.baseResolutions.join(',') !== 'auto,2K' || ready.parameters.aspectRatios.join(',') !== '1:1,16:9') {
@@ -40,9 +49,10 @@ if (ready.parameters.referenceLimit !== 4 || ready.parameters.counts.join(',') !
   throw new Error(`limits and image counts must come from selected live model, got ${JSON.stringify(ready.parameters)}`)
 }
 
-const pixel = createWorkspaceViewModel({ ...baseInput, selectedModelCode: 'pixel-pro' })
-if (pixel.parameters.sizeModes.join(',') !== 'pixel' || pixel.parameters.pixelSizes.join(',') !== '1024x1536,1536x1024') {
-  throw new Error(`pixel sizes must come from selected live model, got ${JSON.stringify(pixel.parameters)}`)
+for (const unsupported of ['sizeModes', 'pixelSizes', 'quality', 'outputFormat', 'outputCompression', 'moderation']) {
+  if (unsupported in ready.parameters) {
+    throw new Error(`workspace parameters must not expose unsupported field ${unsupported}`)
+  }
 }
 
 const insufficient = createWorkspaceViewModel({ ...baseInput, estimate: estimateFixture({ sufficient: false, insufficient_points: '3.25000' }) })
@@ -58,6 +68,19 @@ if (estimating.estimate.state !== 'loading' || !estimating.generate.disabled) {
 const estimateFailure = createWorkspaceViewModel({ ...baseInput, estimate: null, estimateError: '当前组合暂不支持' })
 if (estimateFailure.estimate.state !== 'error' || estimateFailure.estimate.detail !== '当前组合暂不支持' || !estimateFailure.generate.disabled) {
   throw new Error(`estimate failure should stay local and block submit, got ${JSON.stringify(estimateFailure)}`)
+}
+
+const missingReference = createWorkspaceViewModel({
+  ...baseInput,
+  taskType: 'reference_to_image',
+  referenceCount: 0,
+  requiredReferencesReady: false,
+  selectedModelCode: 'plus',
+  parametersReady: false,
+  estimate: null,
+})
+if (!missingReference.generate.disabled || !missingReference.generate.reason.includes('至少1张参考图')) {
+  throw new Error(`view model must keep reference generation blocked until a reference exists, got ${JSON.stringify(missingReference.generate)}`)
 }
 
 assertTaskState('queued', 'queued', '排队中')
@@ -84,7 +107,6 @@ function capabilityFixture(): Capability {
     task_types: ['text_to_image', 'reference_to_image', 'image_edit'],
     base_resolution: ['auto', '2K'],
     aspect_ratios: ['1:1', '16:9'],
-    pixel_sizes: ['1024x1536', '1536x1024'],
     max_image_count: 4,
     reference_image_max_bytes: 8 * 1024 * 1024,
     model_groups: [
@@ -92,11 +114,6 @@ function capabilityFixture(): Capability {
         id: 'plus', code: 'plus', name: 'Plus', task_types: ['text_to_image', 'reference_to_image', 'image_edit'],
         base_resolution: ['auto', '2K'], size_modes: ['ratio'], aspect_ratios: ['1:1', '16:9'],
         max_output_image_count: 3, max_reference_image_count: 4, prices: [], supports_reference: true,
-      },
-      {
-        id: 'pixel-pro', code: 'pixel-pro', name: 'Pixel Pro', task_types: ['text_to_image'],
-        base_resolution: [], size_modes: ['pixel'], pixel_sizes: ['1024x1536', '1536x1024'],
-        max_output_image_count: 2, max_reference_image_count: 2, prices: [], supports_reference: false,
       },
       {
         id: 'reference-only', code: 'reference-only', name: 'Reference', task_types: ['reference_to_image'],

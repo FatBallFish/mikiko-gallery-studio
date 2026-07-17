@@ -4,6 +4,9 @@ import { publicUnavailableReason, workspaceGenerateReadiness } from './workspace
 const noModel = workspaceGenerateReadiness({
   busy: false,
   hasModel: false,
+  taskType: 'text_to_image',
+  referenceCount: 0,
+  requiredReferencesReady: true,
   unavailableReason: { code: 'NO_ROUTE_MODEL', message: '平台模型配置中，暂不可生成。' },
   parametersReady: false,
   prompt: '一张未来城市里的雨夜街景',
@@ -26,6 +29,9 @@ if (/后台|route|provider|model account/i.test(unsafeUnavailableReason)) {
 const insufficient = workspaceGenerateReadiness({
   busy: false,
   hasModel: true,
+  taskType: 'text_to_image',
+  referenceCount: 0,
+  requiredReferencesReady: true,
   parametersReady: true,
   prompt: '一张未来城市里的雨夜街景',
   estimate: {
@@ -45,6 +51,9 @@ if (!insufficient.disabled || !insufficient.reason.includes('积分不足') || !
 const shortPrompt = workspaceGenerateReadiness({
   busy: false,
   hasModel: true,
+  taskType: 'text_to_image',
+  referenceCount: 0,
+  requiredReferencesReady: true,
   parametersReady: true,
   prompt: '太短',
   estimate: {
@@ -62,6 +71,9 @@ if (!shortPrompt.disabled || !shortPrompt.reason.includes('至少需要 8 个字
 const unsupportedEstimate = workspaceGenerateReadiness({
   busy: false,
   hasModel: true,
+  taskType: 'text_to_image',
+  referenceCount: 0,
+  requiredReferencesReady: true,
   parametersReady: true,
   prompt: '一张未来城市里的雨夜街景',
   estimate: null,
@@ -75,6 +87,9 @@ if (!unsupportedEstimate.disabled || !unsupportedEstimate.reason.includes('暂�
 const ready = workspaceGenerateReadiness({
   busy: false,
   hasModel: true,
+  taskType: 'text_to_image',
+  referenceCount: 0,
+  requiredReferencesReady: true,
   parametersReady: true,
   prompt: '一张未来城市里的雨夜街景',
   estimate: {
@@ -87,4 +102,38 @@ const ready = workspaceGenerateReadiness({
 
 if (ready.disabled || ready.reason) {
   throw new Error(`workspace should enable generation when all readiness checks pass, got ${JSON.stringify(ready)}`)
+}
+
+for (const taskType of ['reference_to_image', 'image_edit'] as const) {
+  const missingReference = workspaceGenerateReadiness({
+    busy: false,
+    hasModel: true,
+    taskType,
+    referenceCount: 0,
+    requiredReferencesReady: false,
+    parametersReady: false,
+    prompt: '一张未来城市里的雨夜街景',
+    estimate: null,
+  })
+  if (!missingReference.disabled || !missingReference.reason.includes('至少1张参考图')) {
+    throw new Error(`${taskType} without references must explain the required input, got ${JSON.stringify(missingReference)}`)
+  }
+}
+
+const referenceReady = workspaceGenerateReadiness({
+  busy: false,
+  hasModel: true,
+  taskType: 'reference_to_image',
+  referenceCount: 1,
+  requiredReferencesReady: true,
+  parametersReady: true,
+  prompt: '一张未来城市里的雨夜街景',
+  estimate: {
+    points: '2.00000',
+    formula: 'plus x auto',
+    sufficient: true,
+  },
+})
+if (referenceReady.disabled || referenceReady.reason) {
+  throw new Error(`reference generation with one reference should be ready, got ${JSON.stringify(referenceReady)}`)
 }
