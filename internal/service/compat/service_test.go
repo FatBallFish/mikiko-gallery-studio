@@ -14,12 +14,14 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	apphttp "github.com/fatballfish/pic-gallery/internal/http/router"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 )
 
 func TestOpenAICompatGenerateRoutesToOpenRouter(t *testing.T) {
@@ -85,6 +87,44 @@ func TestOpenAICompatGenerateRoutesToOpenRouter(t *testing.T) {
 	}
 	if len(resp.Data) != 1 || resp.Data[0].URL == "" {
 		t.Fatalf("unexpected response %#v", resp)
+	}
+}
+
+func TestOpenAICompatGenerateUsesCurrentRouteModelConfiguration(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="
+	imageBytes, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(pngBase64)))
+	if err != nil {
+		t.Fatalf("decode image fixture: %v", err)
+	}
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"images":[{"image_url":{"url":"`+upstream.URL+`/result.png"}}]}}]}`)
+		case "/result.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(imageBytes)
+		default:
+			t.Fatalf("unexpected upstream path %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := compatTestConfig()
+	cfg.Providers.OpenAI.Enabled = false
+	cfg.Providers.OpenRouter.Enabled = false
+	handler, apiSecret := newRouteModelCompatHandler(t, cfg, upstream.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(`{"model":"basic","prompt":"Generate through the current route model","size":"1024x1024","n":1}`))
+	req.Header.Set("Authorization", "Bearer "+apiSecret)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected current route model generation to return 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -367,6 +407,65 @@ func newCompatHandlerWithKey(t *testing.T, cfg config.Config, email, balance str
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc)
 	return apphttp.NewWithAPI(api), created.Secret, billingSvc, user.ID
+}
+
+func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL string) (http.Handler, string) {
+	t.Helper()
+	const email = "compat-route-model@example.com"
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	if err := authSvc.SendEmailCode(email, "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, _, err := authSvc.LoginWithEmailCode(email, "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: user.ID, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	keySvc := apikeyservice.NewService(nil)
+	created, err := keySvc.CreateKey(context.Background(), apikeyservice.CreateRequest{UserID: user.ID, Name: "compat-route-model", GroupCode: "basic", Secret: "sk-compat-route-model"})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+
+	modelAdminSvc := modeladminservice.NewServiceWithStore(modeladminservice.NewMemoryStore())
+	account, err := modelAdminSvc.CreateModelAccount(context.Background(), domainmodeladmin.ModelAccountWriteRequest{
+		Name: "Route OpenRouter", AdapterType: "openrouter", AuthType: "api_key", BaseURL: upstreamURL,
+		Credentials: map[string]string{"api_key": "test-route-key"}, Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	accountModel, err := modelAdminSvc.CreateModelAccountModel(context.Background(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "openrouter/vision", DisplayName: "Route image model",
+		TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k"}, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccountModel: %v", err)
+	}
+	routeModel, err := modelAdminSvc.CreateRouteModel(context.Background(), domainmodeladmin.RouteModelWriteRequest{Code: "basic", Name: "Basic", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateRouteModel: %v", err)
+	}
+	if _, err := modelAdminSvc.CreateRouteModelCandidate(context.Background(), domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: routeModel.ID, AccountModelID: accountModel.ID, Priority: 1, Weight: 100, FallbackOrder: 1, Enabled: true}); err != nil {
+		t.Fatalf("CreateRouteModelCandidate: %v", err)
+	}
+	if _, err := modelAdminSvc.CreateRouteModelPrice(context.Background(), domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: routeModel.ID, TaskType: "text_to_image", Quality: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}); err != nil {
+		t.Fatalf("CreateRouteModelPrice: %v", err)
+	}
+
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc, nil, nil, nil, nil, nil, modelAdminSvc)
+	return apphttp.NewWithAPI(api), created.Secret
 }
 
 func TestOpenAICompatRejectsMissingAndInvalidBearerKey(t *testing.T) {

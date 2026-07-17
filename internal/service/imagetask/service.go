@@ -302,6 +302,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		UserGroupCodes:      append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier: req.UserGroupMultiplier,
 		AbstractModel:       req.AbstractModel,
+		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
 		RequestedSize:       req.RequestedSize,

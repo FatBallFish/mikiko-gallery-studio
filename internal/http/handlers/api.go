@@ -288,6 +288,7 @@ func NewAPIWithModelAdminService(cfg config.Config, authSvc *authservice.Service
 	api.caps.SetModelRoutingSource(modelAdminSvc)
 	api.tasks.SetModelRoutingSource(modelAdminSvc)
 	api.billing.SetModelRoutingSource(modelAdminSvc)
+	api.compat.SetModelRoutingSource(modelAdminSvc)
 	return api
 }
 
@@ -6566,13 +6567,20 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	modelSelection, err := a.compat.ResolveModel(r.Context(), req.Model)
+	if err != nil {
+		a.writeCompatError(w, compatservice.MapError(err))
+		return
+	}
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
-		AbstractModel:             a.compatAbstractModel(req.Model),
+		AbstractModel:             modelSelection.AbstractModel,
+		RouteModelCode:            modelSelection.RouteModelCode,
 		RequestedQuality:          compatQuality(req.Quality),
 		RequestedSize:             req.Size,
 		RequestedOutputImageCount: req.N,
 		UserGroupCode:             identity.GroupCode,
+		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
 	})
 	if err != nil {
@@ -6591,6 +6599,8 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		UserGroupCode:       identity.GroupCode,
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
 		Model:               req.Model,
+		AbstractModel:       modelSelection.AbstractModel,
+		RouteModelCode:      modelSelection.RouteModelCode,
 		Prompt:              req.Prompt,
 		Size:                req.Size,
 		N:                   req.N,
@@ -6653,14 +6663,21 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	modelSelection, err := a.compat.ResolveModel(r.Context(), r.FormValue("model"))
+	if err != nil {
+		a.writeCompatError(w, compatservice.MapError(err))
+		return
+	}
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeImageEdit),
-		AbstractModel:             a.compatAbstractModel(r.FormValue("model")),
+		AbstractModel:             modelSelection.AbstractModel,
+		RouteModelCode:            modelSelection.RouteModelCode,
 		RequestedQuality:          compatQuality(r.FormValue("quality")),
 		RequestedSize:             r.FormValue("size"),
 		RequestedOutputImageCount: count,
 		ReferenceImageCount:       len(images),
 		UserGroupCode:             identity.GroupCode,
+		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
 	})
 	if err != nil {
@@ -6679,6 +6696,8 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 		UserGroupCode:       identity.GroupCode,
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
 		Model:               r.FormValue("model"),
+		AbstractModel:       modelSelection.AbstractModel,
+		RouteModelCode:      modelSelection.RouteModelCode,
 		Prompt:              r.FormValue("prompt"),
 		Size:                r.FormValue("size"),
 		N:                   count,
@@ -9409,17 +9428,6 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func (a *API) compatAbstractModel(model string) string {
-	model = strings.ToLower(strings.TrimSpace(model))
-	if value := strings.ToLower(strings.TrimSpace(a.cfg.Routing.OpenAICompatModelMap[model])); value != "" {
-		return value
-	}
-	if _, ok := a.cfg.Billing.QualityPointsByModel[model]; ok {
-		return model
-	}
-	return ""
 }
 
 func compatQuality(value string) string {

@@ -390,6 +390,42 @@ func TestExecuteUsesRuntimeModelRoutingProviderOrder(t *testing.T) {
 	}
 }
 
+func TestExecuteUsesRouteModelPricingForSynchronousTask(t *testing.T) {
+	cfg := taskTestConfig()
+	routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "route-price-v1",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 11, Provider: "openrouter", ModelCode: "openrouter/vision",
+			SupportedTaskTypes: []string{"text_to_image"}, SupportedQualities: []string{"1k"}, HealthStatus: "enabled",
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Priority: 1, Weight: 100, Enabled: true}},
+		Prices:     []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", Quality: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}},
+	}}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	billingSvc.SetModelRoutingSource(routing)
+	seedBalance(t, billingSvc, 13, "100.00000")
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000005, Data: []provider.ImageResult{{URL: "https://cdn.example.com/route-price.png"}}}, nil
+		}},
+	}
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, imagetask.NewMemoryStore(), nil, billingSvc))
+	svc.SetModelRoutingSource(routing)
+
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 13, UserGroupCode: "basic", UserGroupCodes: []string{"basic"}, UserGroupMultiplier: "1.00000",
+		AbstractModel: "plus", RouteModelCode: "plus", TaskType: string(provider.TaskTypeTextToImage),
+		Prompt: "Generate with route pricing", RequestedSize: "1024x1024", RequestedQuality: "1k", OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Task.EstimatedPoints != "1.00000" || result.Task.ChargedPoints != "1.00000" || result.Task.PricingSnapshot.RouteModelCode != "plus" {
+		t.Fatalf("expected synchronous task to keep route-model pricing, got %#v", result.Task)
+	}
+}
+
 func TestExecuteUsesRuntimeModelRoutingFallbackOrder(t *testing.T) {
 	cfg := taskTestConfig()
 	calls := []string{}
