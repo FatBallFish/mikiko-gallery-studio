@@ -81,6 +81,7 @@ services:
       AUTH_ACCESS_TOKEN_SECRET: local-e2e-access-token-secret-change-me
       AUTH_FIXED_EMAIL_CODE: "123456"
       AUTH_DEV_EMAIL_CODES: "true"
+      CORS_ALLOWED_ORIGINS: http://localhost:${USER_WEB_PORT:-5173},http://127.0.0.1:${USER_WEB_PORT:-5173},http://localhost:${ADMIN_WEB_PORT:-5174},http://127.0.0.1:${ADMIN_WEB_PORT:-5174}
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-e2e-api-key-signing-secret-encryption-key
       CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-e2e-cashier-provider-config-encryption-key
       PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-e2e-secure-config-secret-change-me
