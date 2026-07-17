@@ -470,6 +470,9 @@ var (
 		{Name: "display_name", Type: field.TypeString, Size: 128, Default: ""},
 		{Name: "task_types", Type: field.TypeJSON, Nullable: true},
 		{Name: "qualities", Type: field.TypeJSON, Nullable: true},
+		{Name: "supported_ratios", Type: field.TypeJSON, Nullable: true},
+		{Name: "max_image_count", Type: field.TypeInt, Default: 1},
+		{Name: "max_reference_image_count", Type: field.TypeInt, Default: 4},
 		{Name: "cost_per_image", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "USD"},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
@@ -494,7 +497,7 @@ var (
 			{
 				Name:    "modelaccountmodel_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{ModelAccountModelsColumns[11]},
+				Columns: []*schema.Column{ModelAccountModelsColumns[14]},
 			},
 		},
 	}

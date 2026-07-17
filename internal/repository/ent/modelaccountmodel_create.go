@@ -100,6 +100,40 @@ func (_c *ModelAccountModelCreate) SetQualities(v []string) *ModelAccountModelCr
 	return _c
 }
 
+// SetSupportedRatios sets the "supported_ratios" field.
+func (_c *ModelAccountModelCreate) SetSupportedRatios(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetSupportedRatios(v)
+	return _c
+}
+
+// SetMaxImageCount sets the "max_image_count" field.
+func (_c *ModelAccountModelCreate) SetMaxImageCount(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMaxImageCount(v)
+	return _c
+}
+
+// SetNillableMaxImageCount sets the "max_image_count" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMaxImageCount(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMaxImageCount(*v)
+	}
+	return _c
+}
+
+// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
+func (_c *ModelAccountModelCreate) SetMaxReferenceImageCount(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMaxReferenceImageCount(v)
+	return _c
+}
+
+// SetNillableMaxReferenceImageCount sets the "max_reference_image_count" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMaxReferenceImageCount(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMaxReferenceImageCount(*v)
+	}
+	return _c
+}
+
 // SetCostPerImage sets the "cost_per_image" field.
 func (_c *ModelAccountModelCreate) SetCostPerImage(v string) *ModelAccountModelCreate {
 	_c.mutation.SetCostPerImage(v)
@@ -195,6 +229,18 @@ func (_c *ModelAccountModelCreate) defaults() {
 		v := modelaccountmodel.DefaultDisplayName
 		_c.mutation.SetDisplayName(v)
 	}
+	if _, ok := _c.mutation.SupportedRatios(); !ok {
+		v := modelaccountmodel.DefaultSupportedRatios
+		_c.mutation.SetSupportedRatios(v)
+	}
+	if _, ok := _c.mutation.MaxImageCount(); !ok {
+		v := modelaccountmodel.DefaultMaxImageCount
+		_c.mutation.SetMaxImageCount(v)
+	}
+	if _, ok := _c.mutation.MaxReferenceImageCount(); !ok {
+		v := modelaccountmodel.DefaultMaxReferenceImageCount
+		_c.mutation.SetMaxReferenceImageCount(v)
+	}
 	if _, ok := _c.mutation.CostPerImage(); !ok {
 		v := modelaccountmodel.DefaultCostPerImage
 		_c.mutation.SetCostPerImage(v)
@@ -235,6 +281,12 @@ func (_c *ModelAccountModelCreate) check() error {
 		if err := modelaccountmodel.DisplayNameValidator(v); err != nil {
 			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.display_name": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.MaxImageCount(); !ok {
+		return &ValidationError{Name: "max_image_count", err: errors.New(`ent: missing required field "ModelAccountModel.max_image_count"`)}
+	}
+	if _, ok := _c.mutation.MaxReferenceImageCount(); !ok {
+		return &ValidationError{Name: "max_reference_image_count", err: errors.New(`ent: missing required field "ModelAccountModel.max_reference_image_count"`)}
 	}
 	if _, ok := _c.mutation.CostPerImage(); !ok {
 		return &ValidationError{Name: "cost_per_image", err: errors.New(`ent: missing required field "ModelAccountModel.cost_per_image"`)}
@@ -307,6 +359,18 @@ func (_c *ModelAccountModelCreate) createSpec() (*ModelAccountModel, *sqlgraph.C
 	if value, ok := _c.mutation.Qualities(); ok {
 		_spec.SetField(modelaccountmodel.FieldQualities, field.TypeJSON, value)
 		_node.Qualities = value
+	}
+	if value, ok := _c.mutation.SupportedRatios(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON, value)
+		_node.SupportedRatios = value
+	}
+	if value, ok := _c.mutation.MaxImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+		_node.MaxImageCount = value
+	}
+	if value, ok := _c.mutation.MaxReferenceImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+		_node.MaxReferenceImageCount = value
 	}
 	if value, ok := _c.mutation.CostPerImage(); ok {
 		_spec.SetField(modelaccountmodel.FieldCostPerImage, field.TypeString, value)

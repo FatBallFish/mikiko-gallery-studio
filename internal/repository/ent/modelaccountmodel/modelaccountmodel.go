@@ -29,6 +29,12 @@ const (
 	FieldTaskTypes = "task_types"
 	// FieldQualities holds the string denoting the qualities field in the database.
 	FieldQualities = "qualities"
+	// FieldSupportedRatios holds the string denoting the supported_ratios field in the database.
+	FieldSupportedRatios = "supported_ratios"
+	// FieldMaxImageCount holds the string denoting the max_image_count field in the database.
+	FieldMaxImageCount = "max_image_count"
+	// FieldMaxReferenceImageCount holds the string denoting the max_reference_image_count field in the database.
+	FieldMaxReferenceImageCount = "max_reference_image_count"
 	// FieldCostPerImage holds the string denoting the cost_per_image field in the database.
 	FieldCostPerImage = "cost_per_image"
 	// FieldCurrency holds the string denoting the currency field in the database.
@@ -52,6 +58,9 @@ var Columns = []string{
 	FieldDisplayName,
 	FieldTaskTypes,
 	FieldQualities,
+	FieldSupportedRatios,
+	FieldMaxImageCount,
+	FieldMaxReferenceImageCount,
 	FieldCostPerImage,
 	FieldCurrency,
 	FieldEnabled,
@@ -81,6 +90,12 @@ var (
 	DefaultDisplayName string
 	// DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
 	DisplayNameValidator func(string) error
+	// DefaultSupportedRatios holds the default value on creation for the "supported_ratios" field.
+	DefaultSupportedRatios []string
+	// DefaultMaxImageCount holds the default value on creation for the "max_image_count" field.
+	DefaultMaxImageCount int
+	// DefaultMaxReferenceImageCount holds the default value on creation for the "max_reference_image_count" field.
+	DefaultMaxReferenceImageCount int
 	// DefaultCostPerImage holds the default value on creation for the "cost_per_image" field.
 	DefaultCostPerImage string
 	// DefaultCurrency holds the default value on creation for the "currency" field.
@@ -127,6 +142,16 @@ func ByModelCode(opts ...sql.OrderTermOption) OrderOption {
 // ByDisplayName orders the results by the display_name field.
 func ByDisplayName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDisplayName, opts...).ToFunc()
+}
+
+// ByMaxImageCount orders the results by the max_image_count field.
+func ByMaxImageCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxImageCount, opts...).ToFunc()
+}
+
+// ByMaxReferenceImageCount orders the results by the max_reference_image_count field.
+func ByMaxReferenceImageCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxReferenceImageCount, opts...).ToFunc()
 }
 
 // ByCostPerImage orders the results by the cost_per_image field.

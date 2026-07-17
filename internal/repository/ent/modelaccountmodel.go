@@ -34,6 +34,12 @@ type ModelAccountModel struct {
 	TaskTypes []string `json:"task_types,omitempty"`
 	// Qualities holds the value of the "qualities" field.
 	Qualities []string `json:"qualities,omitempty"`
+	// SupportedRatios holds the value of the "supported_ratios" field.
+	SupportedRatios []string `json:"supported_ratios,omitempty"`
+	// MaxImageCount holds the value of the "max_image_count" field.
+	MaxImageCount int `json:"max_image_count,omitempty"`
+	// MaxReferenceImageCount holds the value of the "max_reference_image_count" field.
+	MaxReferenceImageCount int `json:"max_reference_image_count,omitempty"`
 	// CostPerImage holds the value of the "cost_per_image" field.
 	CostPerImage string `json:"cost_per_image,omitempty"`
 	// Currency holds the value of the "currency" field.
@@ -50,11 +56,11 @@ func (*ModelAccountModel) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case modelaccountmodel.FieldTaskTypes, modelaccountmodel.FieldQualities, modelaccountmodel.FieldExtra:
+		case modelaccountmodel.FieldTaskTypes, modelaccountmodel.FieldQualities, modelaccountmodel.FieldSupportedRatios, modelaccountmodel.FieldExtra:
 			values[i] = new([]byte)
 		case modelaccountmodel.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case modelaccountmodel.FieldID, modelaccountmodel.FieldAccountID:
+		case modelaccountmodel.FieldID, modelaccountmodel.FieldAccountID, modelaccountmodel.FieldMaxImageCount, modelaccountmodel.FieldMaxReferenceImageCount:
 			values[i] = new(sql.NullInt64)
 		case modelaccountmodel.FieldModelCode, modelaccountmodel.FieldDisplayName, modelaccountmodel.FieldCostPerImage, modelaccountmodel.FieldCurrency:
 			values[i] = new(sql.NullString)
@@ -133,6 +139,26 @@ func (_m *ModelAccountModel) assignValues(columns []string, values []any) error 
 				if err := json.Unmarshal(*value, &_m.Qualities); err != nil {
 					return fmt.Errorf("unmarshal field qualities: %w", err)
 				}
+			}
+		case modelaccountmodel.FieldSupportedRatios:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field supported_ratios", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SupportedRatios); err != nil {
+					return fmt.Errorf("unmarshal field supported_ratios: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldMaxImageCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field max_image_count", values[i])
+			} else if value.Valid {
+				_m.MaxImageCount = int(value.Int64)
+			}
+		case modelaccountmodel.FieldMaxReferenceImageCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field max_reference_image_count", values[i])
+			} else if value.Valid {
+				_m.MaxReferenceImageCount = int(value.Int64)
 			}
 		case modelaccountmodel.FieldCostPerImage:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -221,6 +247,15 @@ func (_m *ModelAccountModel) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("qualities=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Qualities))
+	builder.WriteString(", ")
+	builder.WriteString("supported_ratios=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportedRatios))
+	builder.WriteString(", ")
+	builder.WriteString("max_image_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MaxImageCount))
+	builder.WriteString(", ")
+	builder.WriteString("max_reference_image_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MaxReferenceImageCount))
 	builder.WriteString(", ")
 	builder.WriteString("cost_per_image=")
 	builder.WriteString(_m.CostPerImage)

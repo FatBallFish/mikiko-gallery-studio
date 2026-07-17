@@ -140,6 +140,66 @@ func (_u *ModelAccountModelUpdate) ClearQualities() *ModelAccountModelUpdate {
 	return _u
 }
 
+// SetSupportedRatios sets the "supported_ratios" field.
+func (_u *ModelAccountModelUpdate) SetSupportedRatios(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetSupportedRatios(v)
+	return _u
+}
+
+// AppendSupportedRatios appends value to the "supported_ratios" field.
+func (_u *ModelAccountModelUpdate) AppendSupportedRatios(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendSupportedRatios(v)
+	return _u
+}
+
+// ClearSupportedRatios clears the value of the "supported_ratios" field.
+func (_u *ModelAccountModelUpdate) ClearSupportedRatios() *ModelAccountModelUpdate {
+	_u.mutation.ClearSupportedRatios()
+	return _u
+}
+
+// SetMaxImageCount sets the "max_image_count" field.
+func (_u *ModelAccountModelUpdate) SetMaxImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMaxImageCount()
+	_u.mutation.SetMaxImageCount(v)
+	return _u
+}
+
+// SetNillableMaxImageCount sets the "max_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMaxImageCount(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMaxImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxImageCount adds value to the "max_image_count" field.
+func (_u *ModelAccountModelUpdate) AddMaxImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMaxImageCount(v)
+	return _u
+}
+
+// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdate) SetMaxReferenceImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMaxReferenceImageCount()
+	_u.mutation.SetMaxReferenceImageCount(v)
+	return _u
+}
+
+// SetNillableMaxReferenceImageCount sets the "max_reference_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMaxReferenceImageCount(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMaxReferenceImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxReferenceImageCount adds value to the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdate) AddMaxReferenceImageCount(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMaxReferenceImageCount(v)
+	return _u
+}
+
 // SetCostPerImage sets the "cost_per_image" field.
 func (_u *ModelAccountModelUpdate) SetCostPerImage(v string) *ModelAccountModelUpdate {
 	_u.mutation.SetCostPerImage(v)
@@ -310,6 +370,29 @@ func (_u *ModelAccountModelUpdate) sqlSave(ctx context.Context) (_node int, err 
 	if _u.mutation.QualitiesCleared() {
 		_spec.ClearField(modelaccountmodel.FieldQualities, field.TypeJSON)
 	}
+	if value, ok := _u.mutation.SupportedRatios(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedRatios(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedRatios, value)
+		})
+	}
+	if _u.mutation.SupportedRatiosCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.MaxImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxReferenceImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxReferenceImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.CostPerImage(); ok {
 		_spec.SetField(modelaccountmodel.FieldCostPerImage, field.TypeString, value)
 	}
@@ -453,6 +536,66 @@ func (_u *ModelAccountModelUpdateOne) AppendQualities(v []string) *ModelAccountM
 // ClearQualities clears the value of the "qualities" field.
 func (_u *ModelAccountModelUpdateOne) ClearQualities() *ModelAccountModelUpdateOne {
 	_u.mutation.ClearQualities()
+	return _u
+}
+
+// SetSupportedRatios sets the "supported_ratios" field.
+func (_u *ModelAccountModelUpdateOne) SetSupportedRatios(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSupportedRatios(v)
+	return _u
+}
+
+// AppendSupportedRatios appends value to the "supported_ratios" field.
+func (_u *ModelAccountModelUpdateOne) AppendSupportedRatios(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendSupportedRatios(v)
+	return _u
+}
+
+// ClearSupportedRatios clears the value of the "supported_ratios" field.
+func (_u *ModelAccountModelUpdateOne) ClearSupportedRatios() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearSupportedRatios()
+	return _u
+}
+
+// SetMaxImageCount sets the "max_image_count" field.
+func (_u *ModelAccountModelUpdateOne) SetMaxImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMaxImageCount()
+	_u.mutation.SetMaxImageCount(v)
+	return _u
+}
+
+// SetNillableMaxImageCount sets the "max_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMaxImageCount(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMaxImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxImageCount adds value to the "max_image_count" field.
+func (_u *ModelAccountModelUpdateOne) AddMaxImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMaxImageCount(v)
+	return _u
+}
+
+// SetMaxReferenceImageCount sets the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdateOne) SetMaxReferenceImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMaxReferenceImageCount()
+	_u.mutation.SetMaxReferenceImageCount(v)
+	return _u
+}
+
+// SetNillableMaxReferenceImageCount sets the "max_reference_image_count" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMaxReferenceImageCount(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMaxReferenceImageCount(*v)
+	}
+	return _u
+}
+
+// AddMaxReferenceImageCount adds value to the "max_reference_image_count" field.
+func (_u *ModelAccountModelUpdateOne) AddMaxReferenceImageCount(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMaxReferenceImageCount(v)
 	return _u
 }
 
@@ -655,6 +798,29 @@ func (_u *ModelAccountModelUpdateOne) sqlSave(ctx context.Context) (_node *Model
 	}
 	if _u.mutation.QualitiesCleared() {
 		_spec.ClearField(modelaccountmodel.FieldQualities, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.SupportedRatios(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedRatios(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedRatios, value)
+		})
+	}
+	if _u.mutation.SupportedRatiosCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedRatios, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.MaxImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxReferenceImageCount(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxReferenceImageCount(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxReferenceImageCount, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.CostPerImage(); ok {
 		_spec.SetField(modelaccountmodel.FieldCostPerImage, field.TypeString, value)

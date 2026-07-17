@@ -903,18 +903,30 @@ func init() {
 	modelaccountmodel.DefaultDisplayName = modelaccountmodelDescDisplayName.Default.(string)
 	// modelaccountmodel.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
 	modelaccountmodel.DisplayNameValidator = modelaccountmodelDescDisplayName.Validators[0].(func(string) error)
+	// modelaccountmodelDescSupportedRatios is the schema descriptor for supported_ratios field.
+	modelaccountmodelDescSupportedRatios := modelaccountmodelFields[5].Descriptor()
+	// modelaccountmodel.DefaultSupportedRatios holds the default value on creation for the supported_ratios field.
+	modelaccountmodel.DefaultSupportedRatios = modelaccountmodelDescSupportedRatios.Default.([]string)
+	// modelaccountmodelDescMaxImageCount is the schema descriptor for max_image_count field.
+	modelaccountmodelDescMaxImageCount := modelaccountmodelFields[6].Descriptor()
+	// modelaccountmodel.DefaultMaxImageCount holds the default value on creation for the max_image_count field.
+	modelaccountmodel.DefaultMaxImageCount = modelaccountmodelDescMaxImageCount.Default.(int)
+	// modelaccountmodelDescMaxReferenceImageCount is the schema descriptor for max_reference_image_count field.
+	modelaccountmodelDescMaxReferenceImageCount := modelaccountmodelFields[7].Descriptor()
+	// modelaccountmodel.DefaultMaxReferenceImageCount holds the default value on creation for the max_reference_image_count field.
+	modelaccountmodel.DefaultMaxReferenceImageCount = modelaccountmodelDescMaxReferenceImageCount.Default.(int)
 	// modelaccountmodelDescCostPerImage is the schema descriptor for cost_per_image field.
-	modelaccountmodelDescCostPerImage := modelaccountmodelFields[5].Descriptor()
+	modelaccountmodelDescCostPerImage := modelaccountmodelFields[8].Descriptor()
 	// modelaccountmodel.DefaultCostPerImage holds the default value on creation for the cost_per_image field.
 	modelaccountmodel.DefaultCostPerImage = modelaccountmodelDescCostPerImage.Default.(string)
 	// modelaccountmodelDescCurrency is the schema descriptor for currency field.
-	modelaccountmodelDescCurrency := modelaccountmodelFields[6].Descriptor()
+	modelaccountmodelDescCurrency := modelaccountmodelFields[9].Descriptor()
 	// modelaccountmodel.DefaultCurrency holds the default value on creation for the currency field.
 	modelaccountmodel.DefaultCurrency = modelaccountmodelDescCurrency.Default.(string)
 	// modelaccountmodel.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	modelaccountmodel.CurrencyValidator = modelaccountmodelDescCurrency.Validators[0].(func(string) error)
 	// modelaccountmodelDescEnabled is the schema descriptor for enabled field.
-	modelaccountmodelDescEnabled := modelaccountmodelFields[7].Descriptor()
+	modelaccountmodelDescEnabled := modelaccountmodelFields[10].Descriptor()
 	// modelaccountmodel.DefaultEnabled holds the default value on creation for the enabled field.
 	modelaccountmodel.DefaultEnabled = modelaccountmodelDescEnabled.Default.(bool)
 	modelproviderMixin := schema.ModelProvider{}.Mixin()

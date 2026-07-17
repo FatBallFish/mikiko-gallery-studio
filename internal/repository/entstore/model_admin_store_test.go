@@ -2,6 +2,7 @@ package entstore_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"entgo.io/ent/dialect"
@@ -131,6 +132,55 @@ func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
 			}
 			return
 		}
+	}
+	t.Fatalf("runtime snapshot missing account model %d: %#v", model.ID, snapshot.ProviderModels)
+}
+
+func TestModelAdminStoreMapsAccountModelGenerationLimitsToRuntimeSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:modeladmin-account-capabilities?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "image-account", AdapterType: "openai_compatible", AuthType: "api_key",
+		BaseURL: "https://example.com", Status: "enabled", Priority: 1, Weight: 100,
+		ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-2", DisplayName: "GPT Image 2",
+		TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k", "2k"},
+		CostPerImage: "0.04000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create account model: %v", err)
+	}
+
+	snapshot, err := store.ModelRoutingConfig(ctx)
+	if err != nil {
+		t.Fatalf("runtime snapshot: %v", err)
+	}
+	for _, candidate := range snapshot.ProviderModels {
+		if candidate.AccountModelID != model.ID {
+			continue
+		}
+		wantRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
+		if !reflect.DeepEqual(candidate.SupportedAspectRatios, wantRatios) {
+			t.Fatalf("runtime candidate ratios = %#v, want %#v", candidate.SupportedAspectRatios, wantRatios)
+		}
+		if candidate.MaxImageCount != 1 || candidate.MaxReferenceImageCount != 4 {
+			t.Fatalf("runtime candidate limits = output:%d reference:%d, want output:1 reference:4", candidate.MaxImageCount, candidate.MaxReferenceImageCount)
+		}
+		return
 	}
 	t.Fatalf("runtime snapshot missing account model %d: %#v", model.ID, snapshot.ProviderModels)
 }
