@@ -64,4 +64,3 @@
 5. Rebuild only the API service so the already-running newer admin frontend is not downgraded.
 6. Verify a valid refresh cookie replaces an invalid access token and allows dashboard/config requests.
 7. Verify a missing/invalid refresh cookie returns 401 and the admin UI stops at login without repeated calls.
-
