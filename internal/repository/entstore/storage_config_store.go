@@ -36,7 +36,7 @@ func (s *StorageConfigStore) List(ctx context.Context) ([]domainstorageconfig.Co
 func (s *StorageConfigStore) GetByID(ctx context.Context, id string) (domainstorageconfig.ConfigRecord, bool, error) {
 	parsed, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
-		return domainstorageconfig.ConfigRecord{}, false, repoerr.ErrNotFound
+		return domainstorageconfig.ConfigRecord{}, false, nil
 	}
 	row, err := s.client.ObjectStorageConfig.Query().Where(objectstorageconfig.IDEQ(parsed), objectstorageconfig.StatusNEQ(domainstorageconfig.StatusDeleted)).Only(ctx)
 	if err != nil {

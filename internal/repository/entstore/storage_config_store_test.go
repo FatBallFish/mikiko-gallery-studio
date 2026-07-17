@@ -12,6 +12,14 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+func TestStorageConfigStoreTreatsMalformedIDAsNotFound(t *testing.T) {
+	store := entstore.NewStorageConfigStore(nil)
+	_, ok, err := store.GetByID(context.Background(), "{storage_config_id}")
+	if err != nil || ok {
+		t.Fatalf("malformed storage config id must be a not-found result: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestStorageConfigStorePersistsAndSwitchesDefault(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:storage-config-store?mode=memory&cache=shared&_fk=1")
