@@ -59,6 +59,92 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 
 	adminToken := loginAdminForModelTest(t, handler)
 
+	createAccountReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts", bytes.NewBufferString(`{"name":"Current Image Account","adapter_type":"openai_compatible","auth_type":"api_key","base_url":"https://images.example.com","credentials":{"api_key":"test-key"},"status":"enabled","priority":1,"weight":100,"concurrency_limit":2,"timeout_ms":45000}`))
+	createAccountReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createAccountReq.Header.Set("Content-Type", "application/json")
+	createAccountRec := httptest.NewRecorder()
+	handler.ServeHTTP(createAccountRec, createAccountReq)
+	if createAccountRec.Code != http.StatusCreated {
+		t.Fatalf("expected model account create 201, got %d body=%s", createAccountRec.Code, createAccountRec.Body.String())
+	}
+	var accountResp struct {
+		Data struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(createAccountRec.Body).Decode(&accountResp); err != nil {
+		t.Fatalf("decode model account response: %v", err)
+	}
+
+	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","reference_to_image"],"qualities":["1k","2k"],"supported_ratios":["1:1","16:9"],"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
+	createAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createAccountModelReq.Header.Set("Content-Type", "application/json")
+	createAccountModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(createAccountModelRec, createAccountModelReq)
+	if createAccountModelRec.Code != http.StatusCreated {
+		t.Fatalf("expected account model create 201, got %d body=%s", createAccountModelRec.Code, createAccountModelRec.Body.String())
+	}
+	var accountModelResp struct {
+		Data struct {
+			ID                     int64    `json:"id"`
+			SupportedRatios        []string `json:"supported_ratios"`
+			MaxImageCount          int      `json:"max_image_count"`
+			MaxReferenceImageCount int      `json:"max_reference_image_count"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(createAccountModelRec.Body).Decode(&accountModelResp); err != nil {
+		t.Fatalf("decode account model response: %v", err)
+	}
+	if len(accountModelResp.Data.SupportedRatios) != 2 || accountModelResp.Data.SupportedRatios[1] != "16:9" || accountModelResp.Data.MaxImageCount != 2 || accountModelResp.Data.MaxReferenceImageCount != 3 {
+		t.Fatalf("account model capabilities were not preserved: %#v", accountModelResp.Data)
+	}
+
+	listAccountModelsReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", nil)
+	listAccountModelsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	listAccountModelsRec := httptest.NewRecorder()
+	handler.ServeHTTP(listAccountModelsRec, listAccountModelsReq)
+	if listAccountModelsRec.Code != http.StatusOK {
+		t.Fatalf("expected account model list 200, got %d body=%s", listAccountModelsRec.Code, listAccountModelsRec.Body.String())
+	}
+	var accountModelListResp struct {
+		Data struct {
+			Items []struct {
+				ID                     int64    `json:"id"`
+				SupportedRatios        []string `json:"supported_ratios"`
+				MaxImageCount          int      `json:"max_image_count"`
+				MaxReferenceImageCount int      `json:"max_reference_image_count"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(listAccountModelsRec.Body).Decode(&accountModelListResp); err != nil {
+		t.Fatalf("decode account model list response: %v", err)
+	}
+	if len(accountModelListResp.Data.Items) != 1 || accountModelListResp.Data.Items[0].ID != accountModelResp.Data.ID || len(accountModelListResp.Data.Items[0].SupportedRatios) != 2 || accountModelListResp.Data.Items[0].MaxImageCount != 2 || accountModelListResp.Data.Items[0].MaxReferenceImageCount != 3 {
+		t.Fatalf("account model list lost capabilities: %#v", accountModelListResp.Data.Items)
+	}
+
+	updateAccountModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models/"+jsonNumber(accountModelResp.Data.ID), bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image"],"qualities":["2k"],"supported_ratios":["9:16"],"max_image_count":1,"max_reference_image_count":0,"cost_per_image":"0.05000","currency":"USD","enabled":true}`))
+	updateAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
+	updateAccountModelReq.Header.Set("Content-Type", "application/json")
+	updateAccountModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(updateAccountModelRec, updateAccountModelReq)
+	if updateAccountModelRec.Code != http.StatusOK {
+		t.Fatalf("expected account model update 200, got %d body=%s", updateAccountModelRec.Code, updateAccountModelRec.Body.String())
+	}
+	var updatedAccountModelResp struct {
+		Data struct {
+			SupportedRatios        []string `json:"supported_ratios"`
+			MaxImageCount          int      `json:"max_image_count"`
+			MaxReferenceImageCount int      `json:"max_reference_image_count"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(updateAccountModelRec.Body).Decode(&updatedAccountModelResp); err != nil {
+		t.Fatalf("decode updated account model response: %v", err)
+	}
+	if len(updatedAccountModelResp.Data.SupportedRatios) != 1 || updatedAccountModelResp.Data.SupportedRatios[0] != "9:16" || updatedAccountModelResp.Data.MaxImageCount != 1 || updatedAccountModelResp.Data.MaxReferenceImageCount != 0 {
+		t.Fatalf("account model update lost capabilities: %#v", updatedAccountModelResp.Data)
+	}
+
 	createProviderReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-providers", bytes.NewBufferString(`{"provider_code":"OpenAI","provider_type":"openai","auth_config_encrypted":"cipher","health_status":"healthy","enabled":true}`))
 	createProviderReq.Header.Set("Authorization", "Bearer "+adminToken)
 	createProviderReq.Header.Set("Content-Type", "application/json")

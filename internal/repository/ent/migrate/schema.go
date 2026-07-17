@@ -472,7 +472,7 @@ var (
 		{Name: "qualities", Type: field.TypeJSON, Nullable: true},
 		{Name: "supported_ratios", Type: field.TypeJSON, Nullable: true},
 		{Name: "max_image_count", Type: field.TypeInt, Default: 1},
-		{Name: "max_reference_image_count", Type: field.TypeInt, Default: 4},
+		{Name: "max_reference_image_count", Type: field.TypeInt, Default: 0},
 		{Name: "cost_per_image", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "USD"},
 		{Name: "enabled", Type: field.TypeBool, Default: true},

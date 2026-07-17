@@ -16,7 +16,7 @@ import {
 } from './providerModelRows'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
-type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; qualities: string[]; qualityInput: string; costPerImage: string; currency: string; enabled: boolean }
+type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; qualities: string[]; qualityInput: string; supportedRatios: string; maxImageCount: string; maxReferenceImageCount: string; costPerImage: string; currency: string; enabled: boolean }
 type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; result?: ModelAccountTestImageResult; error?: string }
 
 const qualityOptions = ['auto', '1K', '2K', '4K']
@@ -142,6 +142,9 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         display_name: modelDialog.displayName,
         task_types: modelDialog.taskTypes,
         qualities: modelDialog.qualities,
+        supported_ratios: normalizedCommaSeparated(modelDialog.supportedRatios),
+        max_image_count: Number(modelDialog.maxImageCount),
+        max_reference_image_count: Number(modelDialog.maxReferenceImageCount),
         cost_per_image: modelDialog.costPerImage,
         currency: modelDialog.currency,
         enabled: modelDialog.enabled,
@@ -250,6 +253,9 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             <Field label="展示名称"><input value={modelDialog.displayName} onChange={(event) => setModelDialog({ ...modelDialog, displayName: event.target.value })} /></Field>
             <Field label="任务类型"><div className={providerModelTaskTypeGridClass}>{adminTaskTypeOptions.map((option) => <label key={option.value} className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.taskTypes.includes(option.value)} onChange={(event) => setModelDialog({ ...modelDialog, taskTypes: event.target.checked ? [...modelDialog.taskTypes, option.value] : modelDialog.taskTypes.filter((item) => item !== option.value) })} /><span>{option.label}</span></label>)}</div></Field>
             <Field label="质量列表"><QualityTagInput draft={modelDialog} onChange={setModelDialog} /></Field>
+            <Field label="支持比例" hint="用英文逗号分隔；只填写上游真实支持的比例。"><input value={modelDialog.supportedRatios} onChange={(event) => setModelDialog({ ...modelDialog, supportedRatios: event.target.value })} placeholder="1:1, 16:9" /></Field>
+            <Field label="单次最大出图数"><input type="number" min="1" value={modelDialog.maxImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxImageCount: event.target.value })} /></Field>
+            <Field label="最大参考图数" hint="填 0 表示该模型不支持参考图输入。"><input type="number" min="0" value={modelDialog.maxReferenceImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxReferenceImageCount: event.target.value })} /></Field>
             <Field label="单图成本"><input value={modelDialog.costPerImage} onChange={(event) => setModelDialog({ ...modelDialog, costPerImage: event.target.value })} /></Field>
             <Field label="币种"><input value={modelDialog.currency} onChange={(event) => setModelDialog({ ...modelDialog, currency: event.target.value })} /></Field>
             <Field label="状态"><select value={modelDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setModelDialog({ ...modelDialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
@@ -421,11 +427,11 @@ function editAccountDraft(row: ModelAccount): AccountDraft {
 }
 
 function newModelDraft(account: ModelAccount): ModelDraft {
-  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], qualities: ['auto', '1K', '2K'], qualityInput: '', costPerImage: '0.00000', currency: 'USD', enabled: true }
+  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], qualities: ['auto', '1K', '2K'], qualityInput: '', supportedRatios: '1:1', maxImageCount: '1', maxReferenceImageCount: '0', costPerImage: '0.00000', currency: 'USD', enabled: true }
 }
 
 function editModelDraft(account: ModelAccount, row: ModelAccountModel): ModelDraft {
-  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, qualities: normalizeQualities(row.qualities), qualityInput: '', costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
+  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, qualities: normalizeQualities(row.qualities), qualityInput: '', supportedRatios: (row.supported_ratios?.length ? row.supported_ratios : ['1:1']).join(', '), maxImageCount: String(row.max_image_count || 1), maxReferenceImageCount: String(Math.max(0, row.max_reference_image_count || 0)), costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
 }
 
 function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]): TestImageDialog {
@@ -468,6 +474,10 @@ function QualityTagInput({ draft, onChange }: { draft: ModelDraft; onChange: (ne
 
 function normalizeQualities(values: string[]) {
   return values.map(normalizeQuality).filter(Boolean)
+}
+
+function normalizedCommaSeparated(value: string) {
+  return Array.from(new Set(value.split(',').map((item) => item.trim()).filter(Boolean)))
 }
 
 function normalizeQuality(value: string) {

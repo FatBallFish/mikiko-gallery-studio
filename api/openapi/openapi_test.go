@@ -73,6 +73,7 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/ops/admin/v1/model-accounts",
 		"/api/ops/admin/v1/model-accounts/{account_id}",
 		"/api/ops/admin/v1/model-accounts/{account_id}/models",
+		"/api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}",
 		"/api/ops/admin/v1/route-models",
 		"/api/ops/admin/v1/route-models/{route_model_id}",
 		"/api/ops/admin/v1/route-models/{route_model_id}/candidates",
@@ -449,6 +450,105 @@ func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
 				t.Fatalf("expected %s to require %q", schemaName, field)
 			}
 		}
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminModelAccountCapabilitiesContract(t *testing.T) {
+	type schemaNode struct {
+		Type       string                `yaml:"type"`
+		Ref        string                `yaml:"$ref"`
+		Required   []string              `yaml:"required"`
+		Properties map[string]schemaNode `yaml:"properties"`
+		Items      *schemaNode           `yaml:"items"`
+		Default    any                   `yaml:"default"`
+		Minimum    *int                  `yaml:"minimum"`
+	}
+	type operation struct {
+		RequestBody struct {
+			Content map[string]struct {
+				Schema schemaNode `yaml:"schema"`
+			} `yaml:"content"`
+		} `yaml:"requestBody"`
+		Responses map[string]struct {
+			Content map[string]struct {
+				Schema schemaNode `yaml:"schema"`
+			} `yaml:"content"`
+		} `yaml:"responses"`
+	}
+
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var doc struct {
+		Paths map[string]map[string]operation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	const (
+		collectionPath = "/api/ops/admin/v1/model-accounts/{account_id}/models"
+		detailPath     = collectionPath + "/{model_id}"
+		writeRef       = "./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest"
+		responseRef    = "./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse"
+		listRef        = "./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelListResponse"
+	)
+	if got := doc.Paths[collectionPath]["get"].Responses["200"].Content["application/json"].Schema.Ref; got != listRef {
+		t.Fatalf("expected account model list response ref %q, got %q", listRef, got)
+	}
+	if got := doc.Paths[collectionPath]["post"].RequestBody.Content["application/json"].Schema.Ref; got != writeRef {
+		t.Fatalf("expected account model create request ref %q, got %q", writeRef, got)
+	}
+	if got := doc.Paths[collectionPath]["post"].Responses["201"].Content["application/json"].Schema.Ref; got != responseRef {
+		t.Fatalf("expected account model create response ref %q, got %q", responseRef, got)
+	}
+	if got := doc.Paths[detailPath]["put"].RequestBody.Content["application/json"].Schema.Ref; got != writeRef {
+		t.Fatalf("expected account model update request ref %q, got %q", writeRef, got)
+	}
+	if got := doc.Paths[detailPath]["put"].Responses["200"].Content["application/json"].Schema.Ref; got != responseRef {
+		t.Fatalf("expected account model update response ref %q, got %q", responseRef, got)
+	}
+	if _, ok := doc.Paths[detailPath]["delete"].Responses["204"]; !ok {
+		t.Fatal("expected account model delete to document 204 response")
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]schemaNode `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+
+	for _, name := range []string{"AdminModelAccountModel", "AdminModelAccountModelWriteRequest", "AdminModelAccountModelResponse", "AdminModelAccountModelListResponse"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin account model schema %q", name)
+		}
+	}
+	for _, schemaName := range []string{"AdminModelAccountModel", "AdminModelAccountModelWriteRequest"} {
+		schema := schemasDoc.Components.Schemas[schemaName]
+		for _, field := range []string{"supported_ratios", "max_image_count", "max_reference_image_count"} {
+			if _, ok := schema.Properties[field]; !ok {
+				t.Fatalf("expected %s to document %q", schemaName, field)
+			}
+		}
+	}
+
+	write := schemasDoc.Components.Schemas["AdminModelAccountModelWriteRequest"]
+	if field := write.Properties["supported_ratios"]; field.Type != "array" || field.Items == nil || field.Items.Type != "string" {
+		t.Fatalf("expected supported_ratios to be a string array, got %#v", field)
+	}
+	if field := write.Properties["max_image_count"]; field.Type != "integer" || field.Minimum == nil || *field.Minimum != 1 || field.Default != 1 {
+		t.Fatalf("expected max_image_count minimum/default 1, got %#v", field)
+	}
+	if field := write.Properties["max_reference_image_count"]; field.Type != "integer" || field.Minimum == nil || *field.Minimum != 0 || field.Default != 0 {
+		t.Fatalf("expected max_reference_image_count minimum/default 0, got %#v", field)
 	}
 }
 

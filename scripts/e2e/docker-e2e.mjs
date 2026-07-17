@@ -1029,6 +1029,8 @@ function materializePath(template) {
     .replace('{provider_code}', state.ids.providerCode)
     .replace('{route_id}', state.ids.routeId)
     .replace('{provider_model_id}', state.ids.providerModelId)
+    .replace('{account_id}', state.ids.modelAccountId)
+    .replace('{model_id}', state.ids.accountModelId)
     .replace('{storage_config_id}', state.ids.storageConfigId)
 }
 
@@ -1080,6 +1082,7 @@ function defaultBody(method, template) {
     '/api/ops/admin/v1/model-routes/{route_id}': { group_code: state.ids.groupCode, task_type: 'text_to_image', provider_code: state.ids.providerCode, priority: 3, weight_percent: 100, fallback_order: 1, enabled: true },
     '/api/ops/admin/v1/provider-models': { provider_code: state.ids.providerCode, model_code: `sweep-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
     '/api/ops/admin/v1/provider-models/{provider_model_id}': { provider_code: state.ids.providerCode, model_code: `e2e-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
+    '/api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}': { model_code: 'openrouter/imagen', display_name: 'Docker E2E Image Model', task_types: ['text_to_image'], qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 0, cost_per_image: '0.00000', currency: 'USD', enabled: true },
     '/api/ops/admin/v1/storage-configs/{storage_config_id}': {
       version: 0,
       code: state.storageConfig.code,

@@ -72,31 +72,37 @@ type ModelAccountListPage struct {
 }
 
 type ModelAccountModel struct {
-	ID           int64          `json:"id"`
-	AccountID    int64          `json:"account_id"`
-	AccountName  string         `json:"account_name,omitempty"`
-	ModelCode    string         `json:"model_code"`
-	DisplayName  string         `json:"display_name"`
-	TaskTypes    []string       `json:"task_types"`
-	Qualities    []string       `json:"qualities"`
-	CostPerImage string         `json:"cost_per_image"`
-	Currency     string         `json:"currency"`
-	Enabled      bool           `json:"enabled"`
-	Extra        map[string]any `json:"extra,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID                     int64          `json:"id"`
+	AccountID              int64          `json:"account_id"`
+	AccountName            string         `json:"account_name,omitempty"`
+	ModelCode              string         `json:"model_code"`
+	DisplayName            string         `json:"display_name"`
+	TaskTypes              []string       `json:"task_types"`
+	Qualities              []string       `json:"qualities"`
+	SupportedRatios        []string       `json:"supported_ratios"`
+	MaxImageCount          int            `json:"max_image_count"`
+	MaxReferenceImageCount int            `json:"max_reference_image_count"`
+	CostPerImage           string         `json:"cost_per_image"`
+	Currency               string         `json:"currency"`
+	Enabled                bool           `json:"enabled"`
+	Extra                  map[string]any `json:"extra,omitempty"`
+	CreatedAt              time.Time      `json:"created_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
 }
 
 type ModelAccountModelWriteRequest struct {
-	AccountID    int64
-	ModelCode    string
-	DisplayName  string
-	TaskTypes    []string
-	Qualities    []string
-	CostPerImage string
-	Currency     string
-	Enabled      bool
-	Extra        map[string]any
+	AccountID              int64
+	ModelCode              string
+	DisplayName            string
+	TaskTypes              []string
+	Qualities              []string
+	SupportedRatios        []string
+	MaxImageCount          int
+	MaxReferenceImageCount int
+	CostPerImage           string
+	Currency               string
+	Enabled                bool
+	Extra                  map[string]any
 }
 
 type ModelAccountModelListRequest struct {

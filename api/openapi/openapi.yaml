@@ -2109,28 +2109,87 @@ paths:
     get:
       tags: [Admin Model Routing]
       summary: List real upstream models
+      operationId: listAdminModelAccountModels
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: account_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
       responses:
-        '200': { description: Account model page }
+        '200':
+          description: Account model page
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelListResponse
     post:
       tags: [Admin Model Routing]
       summary: Create real upstream model
+      operationId: createAdminModelAccountModel
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: account_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { type: object }
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest
       responses:
-        '201': { description: Account model created }
+        '201':
+          description: Account model created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse
+  /api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}:
+    put:
+      tags: [Admin Model Routing]
+      summary: Update a real upstream model
+      operationId: updateAdminModelAccountModel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+        - name: model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest
+      responses:
+        '200':
+          description: Account model updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse
+    delete:
+      tags: [Admin Model Routing]
+      summary: Delete a real upstream model
+      operationId: deleteAdminModelAccountModel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+        - name: model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '204': { description: Deleted }
   /api/ops/admin/v1/route-models:
     get:
       tags: [Admin Model Routing]

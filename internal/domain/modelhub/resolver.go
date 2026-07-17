@@ -137,6 +137,7 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	ratios := map[string]struct{}{}
 	maxOutputCount := 0
 	maxReferenceCount := 0
+	hasConfiguredCandidate := false
 	for _, route := range routing.Candidates {
 		if !route.Enabled || route.RouteModelID != routeModel.ID {
 			continue
@@ -145,6 +146,7 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 		if !ok {
 			continue
 		}
+		hasConfiguredCandidate = true
 		for _, ratio := range candidate.SupportedAspectRatios {
 			if trimmed := strings.TrimSpace(ratio); trimmed != "" {
 				ratios[trimmed] = struct{}{}
@@ -160,7 +162,7 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	if maxOutputCount <= 0 {
 		maxOutputCount = r.cfg.GenerationLimits.MaxImageCount
 	}
-	if maxReferenceCount <= 0 {
+	if !hasConfiguredCandidate {
 		maxReferenceCount = r.cfg.GenerationLimits.ReferenceImageMaxCount
 	}
 	return sortedSet(ratios), maxOutputCount, maxReferenceCount
@@ -523,16 +525,7 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 			if len(candidate.SupportedQualities) > 0 && !containsString(candidate.SupportedQualities, quality) {
 				continue
 			}
-			if candidate.MaxImageCount > 0 && req.RequestedOutputImageCount > candidate.MaxImageCount {
-				continue
-			}
-			if candidate.MaxReferenceImageCount > 0 && req.ReferenceImageCount > candidate.MaxReferenceImageCount {
-				continue
-			}
-			if req.ReferenceImageCount > 0 && !candidate.SupportsImageInput {
-				continue
-			}
-			if req.MaskPresent && !candidate.SupportsMask {
+			if !candidateSupportsGenerationRequest(candidate, req) {
 				continue
 			}
 			candidates = append(candidates, candidate)
@@ -668,6 +661,9 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		if len(candidate.SupportedQualities) > 0 && !containsString(candidate.SupportedQualities, quality) {
 			continue
 		}
+		if !candidateSupportsGenerationRequest(candidate, req) {
+			continue
+		}
 		candidate.RouteModelID = routeModel.ID
 		candidate.RouteModelCode = routeModel.Code
 		candidate.Priority = item.Priority
@@ -698,6 +694,43 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		MaxReferenceImageCount: r.cfg.GenerationLimits.ReferenceImageMaxCount,
 		RuntimeRoutingApplied:  true,
 	}, nil
+}
+
+func candidateSupportsGenerationRequest(candidate ProviderCandidate, req ResolveRequest) bool {
+	if candidate.MaxImageCount > 0 && req.RequestedOutputImageCount > candidate.MaxImageCount {
+		return false
+	}
+	if req.ReferenceImageCount > 0 {
+		if !candidate.SupportsImageInput || candidate.MaxReferenceImageCount <= 0 || req.ReferenceImageCount > candidate.MaxReferenceImageCount {
+			return false
+		}
+	}
+	if req.MaskPresent && !candidate.SupportsMask {
+		return false
+	}
+	return candidateSupportsRequestedSize(candidate, req.RequestedSize)
+}
+
+func candidateSupportsRequestedSize(candidate ProviderCandidate, requestedSize string) bool {
+	requestedSize = strings.TrimSpace(requestedSize)
+	if requestedSize == "" || strings.EqualFold(requestedSize, "auto") || len(candidate.SupportedAspectRatios) == 0 {
+		return true
+	}
+	requestedWidth, requestedHeight, ok := ParseImageSize(requestedSize)
+	if !ok {
+		requestedWidth, requestedHeight, ok = parseRatio(requestedSize)
+		if !ok {
+			return false
+		}
+	}
+	requestedRatio := simplifiedRatioKey(requestedWidth, requestedHeight)
+	for _, ratio := range candidate.SupportedAspectRatios {
+		supportedWidth, supportedHeight, valid := parseRatio(ratio)
+		if valid && simplifiedRatioKey(supportedWidth, supportedHeight) == requestedRatio {
+			return true
+		}
+	}
+	return false
 }
 
 func firstRouteQuality(routeModelID int64, taskType string, prices []RoutePriceConfig) string {

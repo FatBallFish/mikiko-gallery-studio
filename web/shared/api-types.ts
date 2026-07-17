@@ -826,6 +826,9 @@ export type ModelAccountModel = {
   display_name: string
   task_types: ImageTaskType[]
   qualities: string[]
+  supported_ratios: string[]
+  max_image_count: number
+  max_reference_image_count: number
   cost_per_image: string
   currency: string
   enabled: boolean
@@ -833,7 +836,7 @@ export type ModelAccountModel = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; qualities: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; qualities: string[]; supported_ratios: string[]; max_image_count: number; max_reference_image_count: number; cost_per_image: string; currency: string; enabled: boolean }
 export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string }
 export type ModelAccountTestImageResult = {
   status: string

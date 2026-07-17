@@ -1551,11 +1551,17 @@ model_account_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-ac
     "display_name":"Smoke GPT Image",
     "task_types":["text_to_image"],
     "qualities":["1k"],
+    "supported_ratios":["1:1","16:9"],
+    "max_image_count":2,
+    "max_reference_image_count":0,
     "cost_per_image":"0.12345",
     "currency":"USD",
     "enabled":true
   }')"
 assert_json_field "$model_account_model_body" "data.id" >/dev/null
+[[ "$(assert_json_field "$model_account_model_body" "data.supported_ratios.1")" == "16:9" ]]
+[[ "$(assert_json_field "$model_account_model_body" "data.max_image_count")" == "2" ]]
+[[ "$(assert_json_field "$model_account_model_body" "data.max_reference_image_count")" == "0" ]]
 
 open_task_body='{"task_type":"text_to_image","prompt":"smoke prompt","abstract_model":"basic","requested_quality":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}'
 open_task_path="/api/open/image/v1/tasks"

@@ -130,6 +130,9 @@ func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
 			if candidate.OutputCost != "0.12345" {
 				t.Fatalf("account model cost must be runtime output cost, got %#v", candidate)
 			}
+			if !reflect.DeepEqual(candidate.SupportedAspectRatios, []string{"1:1"}) || candidate.MaxImageCount != 1 || candidate.MaxReferenceImageCount != 0 || candidate.SupportsImageInput {
+				t.Fatalf("account model safe capability defaults were not preserved: %#v", candidate)
+			}
 			return
 		}
 	}
@@ -159,6 +162,7 @@ func TestModelAdminStoreMapsAccountModelGenerationLimitsToRuntimeSnapshot(t *tes
 	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "gpt-image-2", DisplayName: "GPT Image 2",
 		TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k", "2k"},
+		SupportedRatios: []string{"1:1", "16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
 		CostPerImage: "0.04000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {
@@ -173,12 +177,12 @@ func TestModelAdminStoreMapsAccountModelGenerationLimitsToRuntimeSnapshot(t *tes
 		if candidate.AccountModelID != model.ID {
 			continue
 		}
-		wantRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
+		wantRatios := []string{"1:1", "16:9"}
 		if !reflect.DeepEqual(candidate.SupportedAspectRatios, wantRatios) {
 			t.Fatalf("runtime candidate ratios = %#v, want %#v", candidate.SupportedAspectRatios, wantRatios)
 		}
-		if candidate.MaxImageCount != 1 || candidate.MaxReferenceImageCount != 4 {
-			t.Fatalf("runtime candidate limits = output:%d reference:%d, want output:1 reference:4", candidate.MaxImageCount, candidate.MaxReferenceImageCount)
+		if candidate.MaxImageCount != 2 || candidate.MaxReferenceImageCount != 3 || !candidate.SupportsImageInput {
+			t.Fatalf("runtime candidate limits = output:%d reference:%d supports_input:%t, want output:2 reference:3 supports_input:true", candidate.MaxImageCount, candidate.MaxReferenceImageCount, candidate.SupportsImageInput)
 		}
 		return
 	}

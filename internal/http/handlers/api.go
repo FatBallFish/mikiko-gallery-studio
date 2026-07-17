@@ -7930,20 +7930,23 @@ func decodeModelAccountWriteRequest(w http.ResponseWriter, r *http.Request) (dom
 
 func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request, accountID int64) (domainmodeladmin.ModelAccountModelWriteRequest, bool) {
 	var req struct {
-		ModelCode    string         `json:"model_code"`
-		DisplayName  string         `json:"display_name"`
-		TaskTypes    []string       `json:"task_types"`
-		Qualities    []string       `json:"qualities"`
-		CostPerImage string         `json:"cost_per_image"`
-		Currency     string         `json:"currency"`
-		Enabled      bool           `json:"enabled"`
-		Extra        map[string]any `json:"extra"`
+		ModelCode              string         `json:"model_code"`
+		DisplayName            string         `json:"display_name"`
+		TaskTypes              []string       `json:"task_types"`
+		Qualities              []string       `json:"qualities"`
+		SupportedRatios        []string       `json:"supported_ratios"`
+		MaxImageCount          int            `json:"max_image_count"`
+		MaxReferenceImageCount int            `json:"max_reference_image_count"`
+		CostPerImage           string         `json:"cost_per_image"`
+		Currency               string         `json:"currency"`
+		Enabled                bool           `json:"enabled"`
+		Extra                  map[string]any `json:"extra"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.ModelAccountModelWriteRequest{}, false
 	}
-	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, Qualities: req.Qualities, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
+	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, Qualities: req.Qualities, SupportedRatios: req.SupportedRatios, MaxImageCount: req.MaxImageCount, MaxReferenceImageCount: req.MaxReferenceImageCount, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
 }
 
 func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) (domainimagetask.TestModelAccountRequest, bool) {

@@ -42,6 +42,9 @@ func RunWorker() error {
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
+	if _, err := db.BackfillLegacyModelAccountCapabilities(context.Background(), client); err != nil {
+		return fmt.Errorf("backfill legacy model account capabilities: %w", err)
+	}
 	redisClient, _, err := newRedisClient(context.Background(), cfg)
 	if err != nil {
 		return err

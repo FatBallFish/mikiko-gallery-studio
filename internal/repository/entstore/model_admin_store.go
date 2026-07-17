@@ -177,6 +177,9 @@ func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domai
 		SetDisplayName(req.DisplayName).
 		SetTaskTypes(req.TaskTypes).
 		SetQualities(req.Qualities).
+		SetSupportedRatios(req.SupportedRatios).
+		SetMaxImageCount(req.MaxImageCount).
+		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
 		SetEnabled(req.Enabled).
@@ -198,6 +201,9 @@ func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountMo
 		SetDisplayName(req.DisplayName).
 		SetTaskTypes(req.TaskTypes).
 		SetQualities(req.Qualities).
+		SetSupportedRatios(req.SupportedRatios).
+		SetMaxImageCount(req.MaxImageCount).
+		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
 		SetEnabled(req.Enabled).
@@ -990,6 +996,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 		if model.UpdatedAt.After(latestVersionAt) {
 			latestVersionAt = model.UpdatedAt
 		}
+		supportedRatios, maxImageCount, maxReferenceImageCount := accountModelCapabilities(model)
 		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{
 			AccountModelID:         int64(model.ID),
 			ModelAccountID:         model.AccountID,
@@ -1001,9 +1008,10 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			ModelCode:              model.ModelCode,
 			SupportedTaskTypes:     append([]string(nil), model.TaskTypes...),
 			SupportedQualities:     append([]string(nil), model.Qualities...),
-			SupportedAspectRatios:  append([]string(nil), model.SupportedRatios...),
-			MaxImageCount:          model.MaxImageCount,
-			MaxReferenceImageCount: model.MaxReferenceImageCount,
+			SupportedAspectRatios:  supportedRatios,
+			MaxImageCount:          maxImageCount,
+			MaxReferenceImageCount: maxReferenceImageCount,
+			SupportsImageInput:     maxReferenceImageCount > 0,
 			HealthStatus:           account.Status,
 			OutputCost:             model.CostPerImage,
 			Currency:               model.Currency,
@@ -1191,21 +1199,41 @@ func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repo
 	if account, err := s.client.ModelAccount.Get(ctx, int(entity.AccountID)); err == nil {
 		accountName = account.Name
 	}
+	supportedRatios, maxImageCount, maxReferenceImageCount := accountModelCapabilities(entity)
 	return domainmodeladmin.ModelAccountModel{
-		ID:           int64(entity.ID),
-		AccountID:    entity.AccountID,
-		AccountName:  accountName,
-		ModelCode:    entity.ModelCode,
-		DisplayName:  entity.DisplayName,
-		TaskTypes:    append([]string(nil), entity.TaskTypes...),
-		Qualities:    append([]string(nil), entity.Qualities...),
-		CostPerImage: entity.CostPerImage,
-		Currency:     entity.Currency,
-		Enabled:      entity.Enabled,
-		Extra:        entity.Extra,
-		CreatedAt:    entity.CreatedAt,
-		UpdatedAt:    entity.UpdatedAt,
+		ID:                     int64(entity.ID),
+		AccountID:              entity.AccountID,
+		AccountName:            accountName,
+		ModelCode:              entity.ModelCode,
+		DisplayName:            entity.DisplayName,
+		TaskTypes:              append([]string(nil), entity.TaskTypes...),
+		Qualities:              append([]string(nil), entity.Qualities...),
+		SupportedRatios:        supportedRatios,
+		MaxImageCount:          maxImageCount,
+		MaxReferenceImageCount: maxReferenceImageCount,
+		CostPerImage:           entity.CostPerImage,
+		Currency:               entity.Currency,
+		Enabled:                entity.Enabled,
+		Extra:                  entity.Extra,
+		CreatedAt:              entity.CreatedAt,
+		UpdatedAt:              entity.UpdatedAt,
 	}
+}
+
+func accountModelCapabilities(entity *repoent.ModelAccountModel) ([]string, int, int) {
+	ratios := append([]string(nil), entity.SupportedRatios...)
+	if len(ratios) == 0 {
+		ratios = []string{"1:1"}
+	}
+	maxImageCount := entity.MaxImageCount
+	if maxImageCount <= 0 {
+		maxImageCount = 1
+	}
+	maxReferenceImageCount := entity.MaxReferenceImageCount
+	if maxReferenceImageCount < 0 {
+		maxReferenceImageCount = 0
+	}
+	return ratios, maxImageCount, maxReferenceImageCount
 }
 
 func mapRouteModel(entity *repoent.RouteModel, groupIDs []int64) domainmodeladmin.RouteModel {

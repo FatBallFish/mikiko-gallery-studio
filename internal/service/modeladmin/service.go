@@ -425,6 +425,16 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 	}
 	req.TaskTypes = cloneNormalizedStrings(req.TaskTypes)
 	req.Qualities = cloneNormalizedStrings(req.Qualities)
+	req.SupportedRatios = cloneNormalizedStrings(req.SupportedRatios)
+	if len(req.SupportedRatios) == 0 {
+		req.SupportedRatios = []string{"1:1"}
+	}
+	if req.MaxImageCount <= 0 {
+		req.MaxImageCount = 1
+	}
+	if req.MaxReferenceImageCount < 0 {
+		return domainmodeladmin.ModelAccountModelWriteRequest{}, errs.BadRequest("max_reference_image_count must be non-negative")
+	}
 	if req.Extra == nil {
 		req.Extra = map[string]any{}
 	}

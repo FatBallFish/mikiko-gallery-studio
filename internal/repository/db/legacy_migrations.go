@@ -4,8 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
+
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 )
+
+const (
+	modelAccountCapabilityMigrationCategory = "system_migration"
+	modelAccountCapabilityMigrationKey      = "model_account_capability_defaults_v1"
+)
+
+var legacyModelAccountSupportedRatios = []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
 
 const backfillRouteModelPriceQualitySQL = `
 DO $$
@@ -88,6 +101,81 @@ func PrepareLegacyData(ctx context.Context, url string) error {
 		return fmt.Errorf("backfill route model price quality: %w", err)
 	}
 	return nil
+}
+
+func BackfillLegacyModelAccountCapabilities(ctx context.Context, client *repoent.Client) (int, error) {
+	if client == nil {
+		return 0, fmt.Errorf("model account capability migration client is required")
+	}
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("start model account capability migration: %w", err)
+	}
+	rollback := func(cause error) (int, error) {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return 0, fmt.Errorf("%w (rollback: %v)", cause, rollbackErr)
+		}
+		return 0, cause
+	}
+
+	applied, err := tx.ConfigItem.Query().Where(
+		configitem.ConfigCategoryEQ(modelAccountCapabilityMigrationCategory),
+		configitem.ConfigKeyEQ(modelAccountCapabilityMigrationKey),
+		configitem.ScopeEQ("global"),
+	).Exist(ctx)
+	if err != nil {
+		return rollback(fmt.Errorf("check model account capability migration marker: %w", err))
+	}
+	if applied {
+		_ = tx.Rollback()
+		return 0, nil
+	}
+	if _, err := tx.ConfigItem.Create().
+		SetConfigCategory(modelAccountCapabilityMigrationCategory).
+		SetConfigKey(modelAccountCapabilityMigrationKey).
+		SetConfigValue(map[string]any{"applied": true}).
+		SetScope("global").
+		SetUpdatedAt(time.Now().UTC()).
+		Save(ctx); err != nil {
+		_, rollbackErr := rollback(fmt.Errorf("create model account capability migration marker: %w", err))
+		if repoent.IsConstraintError(err) {
+			markerExists, queryErr := client.ConfigItem.Query().Where(
+				configitem.ConfigCategoryEQ(modelAccountCapabilityMigrationCategory),
+				configitem.ConfigKeyEQ(modelAccountCapabilityMigrationKey),
+				configitem.ScopeEQ("global"),
+			).Exist(ctx)
+			if queryErr == nil && markerExists {
+				return 0, nil
+			}
+		}
+		return 0, rollbackErr
+	}
+
+	models, err := tx.ModelAccountModel.Query().Where(
+		modelaccountmodel.DeletedAtIsNil(),
+		modelaccountmodel.MaxImageCountEQ(1),
+		modelaccountmodel.MaxReferenceImageCountEQ(4),
+	).All(ctx)
+	if err != nil {
+		return rollback(fmt.Errorf("query legacy model account capabilities: %w", err))
+	}
+	updated := 0
+	for _, model := range models {
+		if len(model.SupportedRatios) > 0 && !slices.Equal(model.SupportedRatios, legacyModelAccountSupportedRatios) {
+			continue
+		}
+		if _, err := tx.ModelAccountModel.UpdateOneID(model.ID).
+			SetSupportedRatios([]string{"1:1"}).
+			SetMaxReferenceImageCount(0).
+			Save(ctx); err != nil {
+			return rollback(fmt.Errorf("backfill model account %d capabilities: %w", model.ID, err))
+		}
+		updated++
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit model account capability migration: %w", err)
+	}
+	return updated, nil
 }
 
 func isPostgresURL(url string) bool {

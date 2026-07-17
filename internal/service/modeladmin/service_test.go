@@ -60,3 +60,55 @@ func TestServiceValidatesProviderAndRouteCRUD(t *testing.T) {
 		t.Fatalf("unexpected route page %#v", page)
 	}
 }
+
+func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	account, err := svc.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "memory image account", AdapterType: "openai_compatible", AuthType: "api_key",
+		BaseURL: "https://images.example.com", Credentials: map[string]string{"api_key": "test-key"},
+		Status: "enabled", Priority: 1, Weight: 100, ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	model, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
+		TaskTypes: []string{"reference_to_image"}, Qualities: []string{"2k"},
+		SupportedRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
+		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccountModel: %v", err)
+	}
+	if len(model.SupportedRatios) != 1 || model.SupportedRatios[0] != "16:9" || model.MaxImageCount != 2 || model.MaxReferenceImageCount != 3 {
+		t.Fatalf("memory create lost generation capabilities: %#v", model)
+	}
+	snapshot, err := svc.ModelRoutingConfig(ctx)
+	if err != nil {
+		t.Fatalf("ModelRoutingConfig after create: %v", err)
+	}
+	if len(snapshot.ProviderModels) != 1 || len(snapshot.ProviderModels[0].SupportedAspectRatios) != 1 || snapshot.ProviderModels[0].SupportedAspectRatios[0] != "16:9" || snapshot.ProviderModels[0].MaxImageCount != 2 || snapshot.ProviderModels[0].MaxReferenceImageCount != 3 || !snapshot.ProviderModels[0].SupportsImageInput {
+		t.Fatalf("memory snapshot lost generation capabilities: %#v", snapshot.ProviderModels)
+	}
+
+	updated, err := svc.UpdateModelAccountModel(ctx, model.ID, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
+		TaskTypes: []string{"text_to_image"}, Qualities: []string{"1k"},
+		SupportedRatios: []string{"1:1"}, MaxImageCount: 1, MaxReferenceImageCount: 0,
+		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateModelAccountModel: %v", err)
+	}
+	if len(updated.SupportedRatios) != 1 || updated.SupportedRatios[0] != "1:1" || updated.MaxImageCount != 1 || updated.MaxReferenceImageCount != 0 {
+		t.Fatalf("memory update lost generation capabilities: %#v", updated)
+	}
+	snapshot, err = svc.ModelRoutingConfig(ctx)
+	if err != nil {
+		t.Fatalf("ModelRoutingConfig after update: %v", err)
+	}
+	if len(snapshot.ProviderModels) != 1 || snapshot.ProviderModels[0].MaxReferenceImageCount != 0 || snapshot.ProviderModels[0].SupportsImageInput {
+		t.Fatalf("memory snapshot must preserve explicit no-reference support: %#v", snapshot.ProviderModels)
+	}
+}
