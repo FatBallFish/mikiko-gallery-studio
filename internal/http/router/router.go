@@ -25,6 +25,7 @@ func NewWithAPIAndConfig(api *handlers.API, cfg config.Config) http.Handler {
 func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Root)
+	mux.HandleFunc("/api/", handlers.APINotFound)
 	mux.HandleFunc("/healthz", handlers.Healthz)
 	mux.HandleFunc("/readyz", handlers.Readyz)
 	mux.Handle("/metrics", handlers.Metrics())

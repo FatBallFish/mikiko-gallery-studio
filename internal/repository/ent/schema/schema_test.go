@@ -124,6 +124,67 @@ func TestWalletBucketSchemaCarriesReservationIndexes(t *testing.T) {
 	}
 }
 
+func TestImageArtifactRecoveryAndStorageConfigSchema(t *testing.T) {
+	requiredTaskFields := map[string]bool{
+		"provider_request_id":        false,
+		"upstream_succeeded_at":      false,
+		"artifact_recovery_status":   false,
+		"artifact_recovery_payload":  false,
+		"artifact_attempt_count":     false,
+		"artifact_next_retry_at":     false,
+		"artifact_last_diagnostic":   false,
+		"artifact_storage_config_id": false,
+		"artifact_storage_version":   false,
+	}
+	for _, schemaField := range (ImageTask{}).Fields() {
+		name := schemaField.Descriptor().Name
+		if _, ok := requiredTaskFields[name]; ok {
+			requiredTaskFields[name] = true
+		}
+	}
+	for name, found := range requiredTaskFields {
+		if !found {
+			t.Fatalf("image_tasks should expose %s", name)
+		}
+	}
+
+	for name, fields := range map[string][]ent.Field{
+		"task_images":      (ImageResult{}).Fields(),
+		"reference_assets": (ReferenceAsset{}).Fields(),
+	} {
+		found := false
+		for _, schemaField := range fields {
+			if schemaField.Descriptor().Name == "storage_config_id" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s should expose storage_config_id", name)
+		}
+	}
+
+	if _, err := os.Stat("objectstorageconfig.go"); err != nil {
+		t.Fatalf("expected object storage config schema: %v", err)
+	}
+	migrationBytes, err := os.ReadFile(filepath.Join("..", "migrations", "000001_init.sql"))
+	if err != nil {
+		t.Fatalf("read initial migration: %v", err)
+	}
+	migration := string(migrationBytes)
+	for _, snippet := range []string{
+		"create table if not exists object_storage_configs",
+		"artifact_recovery_status",
+		"artifact_recovery_payload",
+		"artifact_next_retry_at",
+		"storage_config_id uuid",
+	} {
+		if !strings.Contains(migration, snippet) {
+			t.Fatalf("expected initial migration to contain %q", snippet)
+		}
+	}
+}
+
 func hasIndexFields(indexes []ent.Index, fields []string, unique bool) bool {
 	for _, idx := range indexes {
 		descriptor := idx.Descriptor()

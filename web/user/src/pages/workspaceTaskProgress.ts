@@ -15,6 +15,9 @@ export type GenerationSlot =
 
 const baseResolutionLabelMap: Record<string, string> = {
   auto: '自动',
+  '1k': '1K',
+  '2k': '2K',
+  '4k': '4K',
   standard: '标准',
   low: '标准',
   medium: '高清',

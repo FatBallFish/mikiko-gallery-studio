@@ -7,6 +7,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -20,6 +21,8 @@ type GenerateRequest struct {
 	UserGroupCode       string
 	UserGroupMultiplier string
 	Model               string
+	AbstractModel       string
+	RouteModelCode      string
 	Prompt              string
 	Size                string
 	N                   int
@@ -36,6 +39,8 @@ type EditRequest struct {
 	UserGroupCode       string
 	UserGroupMultiplier string
 	Model               string
+	AbstractModel       string
+	RouteModelCode      string
 	Prompt              string
 	Size                string
 	N                   int
@@ -60,6 +65,12 @@ type ModelsResponse struct {
 type Service struct {
 	cfg     config.Config
 	taskSvc *imagetaskservice.Service
+	routing modelhub.ModelRoutingSource
+}
+
+type ModelSelection struct {
+	AbstractModel  string
+	RouteModelCode string
 }
 
 func NewService(cfg config.Config) *Service {
@@ -77,9 +88,36 @@ func NewServiceWithTaskService(cfg config.Config, taskSvc *imagetaskservice.Serv
 	return &Service{cfg: cfg, taskSvc: taskSvc}
 }
 
+func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
+	s.routing = source
+}
+
+func (s *Service) ResolveModel(ctx context.Context, model string) (ModelSelection, error) {
+	resolved := s.resolveModelCode(model)
+	if resolved == "" || s.routing == nil {
+		return ModelSelection{AbstractModel: resolved}, nil
+	}
+	snapshot, err := s.routing.ModelRoutingConfig(ctx)
+	if err != nil {
+		return ModelSelection{}, errs.Internal("failed to load model routing config")
+	}
+	if len(snapshot.RouteModels) == 0 {
+		return ModelSelection{AbstractModel: resolved}, nil
+	}
+	return ModelSelection{AbstractModel: resolved, RouteModelCode: resolved}, nil
+}
+
 func (s *Service) Generate(ctx context.Context, req GenerateRequest) (provider.ImageResponse, error) {
 	if strings.TrimSpace(req.Model) == "" || strings.TrimSpace(req.Prompt) == "" {
 		return provider.ImageResponse{}, errs.BadRequest("model and prompt are required")
+	}
+	selection := ModelSelection{AbstractModel: req.AbstractModel, RouteModelCode: req.RouteModelCode}
+	if strings.TrimSpace(selection.AbstractModel) == "" && strings.TrimSpace(selection.RouteModelCode) == "" {
+		var err error
+		selection, err = s.ResolveModel(ctx, req.Model)
+		if err != nil {
+			return provider.ImageResponse{}, err
+		}
 	}
 	result, err := s.taskSvc.Execute(ctx, domainimagetask.ExecuteRequest{
 		TaskID:              req.TaskID,
@@ -87,8 +125,10 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (provider.I
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,
 		UserGroupCode:       req.UserGroupCode,
+		UserGroupCodes:      []string{req.UserGroupCode},
 		UserGroupMultiplier: req.UserGroupMultiplier,
-		AbstractModel:       s.resolveAbstractModel(req.Model),
+		AbstractModel:       selection.AbstractModel,
+		RouteModelCode:      selection.RouteModelCode,
 		TaskType:            string(provider.TaskTypeTextToImage),
 		Prompt:              req.Prompt,
 		RequestedSize:       defaultString(req.Size, "auto"),
@@ -112,14 +152,24 @@ func (s *Service) Edit(ctx context.Context, req EditRequest) (provider.ImageResp
 	if len(req.Images) == 0 {
 		return provider.ImageResponse{}, errs.New(400, errs.CodeImageReferenceRequired, "image is required")
 	}
+	selection := ModelSelection{AbstractModel: req.AbstractModel, RouteModelCode: req.RouteModelCode}
+	if strings.TrimSpace(selection.AbstractModel) == "" && strings.TrimSpace(selection.RouteModelCode) == "" {
+		var err error
+		selection, err = s.ResolveModel(ctx, req.Model)
+		if err != nil {
+			return provider.ImageResponse{}, err
+		}
+	}
 	result, err := s.taskSvc.Execute(ctx, domainimagetask.ExecuteRequest{
 		TaskID:              req.TaskID,
 		UserID:              req.UserID,
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,
 		UserGroupCode:       req.UserGroupCode,
+		UserGroupCodes:      []string{req.UserGroupCode},
 		UserGroupMultiplier: req.UserGroupMultiplier,
-		AbstractModel:       s.resolveAbstractModel(req.Model),
+		AbstractModel:       selection.AbstractModel,
+		RouteModelCode:      selection.RouteModelCode,
 		TaskType:            string(provider.TaskTypeImageEdit),
 		Prompt:              req.Prompt,
 		RequestedSize:       defaultString(req.Size, "auto"),
@@ -178,7 +228,7 @@ func MapError(err error) *errs.Error {
 	return errs.Internal(err.Error())
 }
 
-func (s *Service) resolveAbstractModel(model string) string {
+func (s *Service) resolveModelCode(model string) string {
 	model = strings.ToLower(strings.TrimSpace(model))
 	if value := strings.ToLower(strings.TrimSpace(s.cfg.Routing.OpenAICompatModelMap[model])); value != "" {
 		return value

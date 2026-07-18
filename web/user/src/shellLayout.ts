@@ -28,7 +28,15 @@ export function shellActiveNavIndex(route: RouteId, items: ReadonlyArray<{ route
   return items.findIndex((item) => item.route === route)
 }
 
-export function resetShellScroll(target: { scrollTop: number } | null): void {
+export function resetShellScroll(
+  mode: ShellScrollMode,
+  target: { scrollTop: number } | null,
+  documentScroller: { scrollTo: (x: number, y: number) => void } | null,
+): void {
+  if (mode === 'document') {
+    documentScroller?.scrollTo(0, 0)
+    return
+  }
   if (target) target.scrollTop = 0
 }
 

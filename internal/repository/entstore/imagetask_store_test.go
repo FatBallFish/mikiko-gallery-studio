@@ -177,20 +177,32 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 
 	imageBytes := []byte("fake-png")
 	hash := sha256.Sum256(imageBytes)
+	upstreamSucceededAt := time.Now().UTC().Add(-time.Second)
+	nextRetryAt := time.Now().UTC().Add(time.Minute)
 	store := NewImageTaskStore(client)
 	task := domainimagetask.Task{
-		UserID:        41,
-		ID:            "12121212-1212-1212-1212-121212121212",
-		Status:        domainimagetask.StatusSucceeded,
-		Provider:      "openai",
-		AbstractModel: "plus",
-		TaskType:      string(provider.TaskTypeTextToImage),
-		Prompt:        "store local result",
-
-		BaseResolution:   "2k",
-		RequestedSize:    "1024x1024",
-		OutputImageCount: 1,
+		UserID:              41,
+		ID:                  "12121212-1212-1212-1212-121212121212",
+		Status:              domainimagetask.StatusSucceeded,
+		Provider:            "openai",
+		AbstractModel:       "plus",
+		TaskType:            string(provider.TaskTypeTextToImage),
+		Prompt:              "store local result",
+		SizeMode:            "ratio",
+		BaseResolution:      "2k",
+		Quality:             "auto",
+		RequestedSize:       "1024x1024",
+		OutputImageCount:    1,
+		ProviderRequestID:   "provider-request-1",
+		UpstreamSucceededAt: &upstreamSucceededAt,
+		ArtifactRecovery: domainimagetask.ArtifactRecovery{
+			Status: "pending", EncryptedPayload: `{"ciphertext":"v1:encrypted"}`, AttemptCount: 2, NextRetryAt: &nextRetryAt,
+			StorageConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", StorageVersion: 4,
+			LastDiagnostic: domainimagetask.ArtifactDiagnostic{Code: "ARTIFACT_STORAGE_WRITE_FAILED", Stage: "store", Attempt: 2, Retryable: true, BytesRead: 68},
+			Diagnostics:    []domainimagetask.ArtifactDiagnostic{{Code: "ARTIFACT_FETCH_TIMEOUT", Attempt: 1}, {Code: "ARTIFACT_STORAGE_WRITE_FAILED", Attempt: 2}},
+		},
 		Results: []provider.ImageResult{{
+			StorageConfigID:  "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			ObjectKey:        "generated-images/41/12121212-1212-1212-1212-121212121212/0.png",
 			MimeType:         "image/png",
 			FileSizeBytes:    int64(len(imageBytes)),
@@ -220,6 +232,9 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	if result.StorageDriver != "local" || result.ObjectKey != task.Results[0].ObjectKey {
 		t.Fatalf("expected local object key to round-trip, got %#v", result)
 	}
+	if result.StorageConfigID != task.Results[0].StorageConfigID {
+		t.Fatalf("expected storage config id to round-trip, got %#v", result)
+	}
 	if result.MimeType != "image/png" || result.FileSizeBytes != int64(len(imageBytes)) || result.Width != 2 || result.Height != 1 {
 		t.Fatalf("expected local image metadata to round-trip, got %#v", result)
 	}
@@ -228,6 +243,15 @@ func TestImageTaskStorePersistsLocalImageResultMetadata(t *testing.T) {
 	}
 	if result.DownloadURL == "" {
 		t.Fatalf("expected local result to expose download_url, got %#v", result)
+	}
+	if loaded.ProviderRequestID != task.ProviderRequestID || loaded.UpstreamSucceededAt == nil || !loaded.UpstreamSucceededAt.Equal(upstreamSucceededAt) {
+		t.Fatalf("expected provider success checkpoint to round-trip, got %#v", loaded)
+	}
+	if loaded.ArtifactRecovery.Status != "pending" || loaded.ArtifactRecovery.EncryptedPayload != task.ArtifactRecovery.EncryptedPayload || loaded.ArtifactRecovery.AttemptCount != 2 {
+		t.Fatalf("expected artifact recovery envelope to round-trip, got %#v", loaded.ArtifactRecovery)
+	}
+	if loaded.ArtifactRecovery.NextRetryAt == nil || loaded.ArtifactRecovery.LastDiagnostic.Code != "ARTIFACT_STORAGE_WRITE_FAILED" || len(loaded.ArtifactRecovery.Diagnostics) != 2 || loaded.ArtifactRecovery.StorageVersion != 4 {
+		t.Fatalf("expected artifact retry state to round-trip, got %#v", loaded.ArtifactRecovery)
 	}
 }
 

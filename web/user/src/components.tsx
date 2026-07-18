@@ -514,8 +514,8 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
   const activeNavIndex = shellActiveNavIndex(app.route, navItems)
 
   useLayoutEffect(() => {
-    resetShellScroll(mainScrollRef.current)
-  }, [app.route])
+    resetShellScroll(scrollMode, mainScrollRef.current, window)
+  }, [app.route, scrollMode])
 
   useEffect(() => {
     if (!menuOpen) return undefined

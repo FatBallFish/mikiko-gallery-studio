@@ -2,6 +2,7 @@ package entstore_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"entgo.io/ent/dialect"
@@ -100,9 +101,46 @@ func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) 
 	}
 }
 
-func TestModelAdminStorePersistsOutputCompressionCapability(t *testing.T) {
+func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
 	ctx := context.Background()
-	client, err := repoent.Open(dialect.SQLite, "file:modeladminstore-compression?mode=memory&cache=shared&_fk=1")
+	client, err := repoent.Open(dialect.SQLite, "file:modeladmin-account-cost?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{Name: "paid", AdapterType: "openrouter", AuthType: "api_key", BaseURL: "https://example.com", Status: "enabled", Priority: 1, Weight: 100, ConcurrencyLimit: 1, TimeoutMS: 30000})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{AccountID: account.ID, ModelCode: "paid/image", DisplayName: "Paid Image", TaskTypes: []string{"text_to_image"}, Quality: []string{"auto"}, CostPerImage: "0.12345", Currency: "USD", Enabled: true})
+	if err != nil {
+		t.Fatalf("create account model: %v", err)
+	}
+	snapshot, err := store.ModelRoutingConfig(ctx)
+	if err != nil {
+		t.Fatalf("runtime snapshot: %v", err)
+	}
+	for _, candidate := range snapshot.ProviderModels {
+		if candidate.AccountModelID == model.ID {
+			if candidate.OutputCost != "0.12345" {
+				t.Fatalf("account model cost must be runtime output cost, got %#v", candidate)
+			}
+			if !reflect.DeepEqual(candidate.SupportedAspectRatios, []string{"1:1"}) || candidate.MaxImageCount != 1 || candidate.MaxReferenceImageCount != 0 || candidate.SupportsImageInput {
+				t.Fatalf("account model safe capability defaults were not preserved: %#v", candidate)
+			}
+			return
+		}
+	}
+	t.Fatalf("runtime snapshot missing account model %d: %#v", model.ID, snapshot.ProviderModels)
+}
+
+func TestModelAdminStoreMapsAccountModelGenerationLimitsToRuntimeSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:modeladmin-account-capabilities?mode=memory&cache=shared&_fk=1")
 	if err != nil {
 		t.Fatalf("open ent client: %v", err)
 	}
@@ -113,50 +151,39 @@ func TestModelAdminStorePersistsOutputCompressionCapability(t *testing.T) {
 
 	store := entstore.NewModelAdminStore(client)
 	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
-		Name:        "OpenAI compatible",
-		AdapterType: "openai_compatible",
-		AuthType:    "api_key",
-		BaseURL:     "https://example.test/v1",
-		Credentials: map[string]string{"api_key": "test-key"},
-		Status:      "enabled",
+		Name: "image-account", AdapterType: "openai_compatible", AuthType: "api_key",
+		BaseURL: "https://example.com", Status: "enabled", Priority: 1, Weight: 100,
+		ConcurrencyLimit: 1, TimeoutMS: 30000,
 	})
 	if err != nil {
-		t.Fatalf("CreateModelAccount: %v", err)
+		t.Fatalf("create account: %v", err)
 	}
-	accountModel, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
-		AccountID:                 account.ID,
-		ModelCode:                 "image-compressible",
-		DisplayName:               "Image Compressible",
-		TaskTypes:                 []string{"text_to_image"},
-		BaseResolution:            []string{"1k"},
-		Quality:                   []string{"auto"},
-		MaxImageCount:             1,
-		SizeModes:                 []string{"ratio"},
-		SupportedRatios:           []string{"1:1"},
-		OutputFormat:              []string{"jpeg", "webp"},
-		OutputCompression:         100,
-		SupportsOutputCompression: true,
-		Moderation:                []string{"auto"},
-		CostPerImage:              "0.1",
-		Currency:                  "USD",
-		Enabled:                   true,
+	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-2", DisplayName: "GPT Image 2",
+		TaskTypes: []string{"text_to_image"}, Quality: []string{"auto", "high"},
+		SupportedRatios: []string{"1:1", "16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
+		CostPerImage: "0.04000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {
-		t.Fatalf("CreateModelAccountModel: %v", err)
-	}
-	persisted, err := store.GetModelAccountModel(ctx, accountModel.ID)
-	if err != nil {
-		t.Fatalf("GetModelAccountModel: %v", err)
-	}
-	if !persisted.SupportsOutputCompression {
-		t.Fatalf("expected compression capability to round-trip, got %#v", persisted)
+		t.Fatalf("create account model: %v", err)
 	}
 
 	snapshot, err := store.ModelRoutingConfig(ctx)
 	if err != nil {
-		t.Fatalf("ModelRoutingConfig: %v", err)
+		t.Fatalf("runtime snapshot: %v", err)
 	}
-	if len(snapshot.ProviderModels) != 1 || !snapshot.ProviderModels[0].SupportsOutputCompression {
-		t.Fatalf("expected compression capability in runtime snapshot, got %#v", snapshot.ProviderModels)
+	for _, candidate := range snapshot.ProviderModels {
+		if candidate.AccountModelID != model.ID {
+			continue
+		}
+		wantRatios := []string{"1:1", "16:9"}
+		if !reflect.DeepEqual(candidate.SupportedAspectRatios, wantRatios) {
+			t.Fatalf("runtime candidate ratios = %#v, want %#v", candidate.SupportedAspectRatios, wantRatios)
+		}
+		if candidate.MaxImageCount != 2 || candidate.MaxReferenceImageCount != 3 || !candidate.SupportsImageInput {
+			t.Fatalf("runtime candidate limits = output:%d reference:%d supports_input:%t, want output:2 reference:3 supports_input:true", candidate.MaxImageCount, candidate.MaxReferenceImageCount, candidate.SupportsImageInput)
+		}
+		return
 	}
+	t.Fatalf("runtime snapshot missing account model %d: %#v", model.ID, snapshot.ProviderModels)
 }

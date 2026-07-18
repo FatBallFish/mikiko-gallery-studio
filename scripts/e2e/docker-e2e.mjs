@@ -24,6 +24,7 @@ const state = {
   user: {},
   admin: {},
   apiKey: {},
+  storageConfig: {},
   ids: {
     userId: '1',
     keyId: '1',
@@ -34,6 +35,7 @@ const state = {
     codeId: '1',
     routeId: '1',
     providerModelId: '1',
+    storageConfigId: 'missing-storage-config',
     providerCode: `e2e-provider-${RUN_ID}`.toLowerCase(),
     groupCode: `e2e-group-${RUN_ID}`.toLowerCase(),
     storageConfigId: '1',
@@ -209,23 +211,27 @@ async function startFakeProvider() {
 }
 
 async function stopFakeProvider() {
-  if (!fakeProviderServer) return
   const server = fakeProviderServer
   fakeProviderServer = null
   fakeProviderPort = 0
-  await new Promise(resolve => server.close(() => resolve()))
+  if (!server) return
+
+  await new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve())
+    server.closeIdleConnections?.()
+  })
 }
 
-async function ensureBasicRouteModel() {
-  const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-models?page=1&page_size=100&keyword=basic`, 200, { headers: bearer(state.admin.token) })
-  const existing = (data(list).items || []).find(item => item.code === 'basic')
+async function ensureRouteModel(code, name, sortOrder) {
+  const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-models?page=1&page_size=100&keyword=${encodeURIComponent(code)}`, 200, { headers: bearer(state.admin.token) })
+  const existing = (data(list).items || []).find(item => item.code === code)
   const body = {
-    code: 'basic',
-    name: 'Basic',
-    description: 'Docker E2E basic route model',
+    code,
+    name,
+    description: `Docker E2E ${code} route model`,
     visibility: 'public',
     enabled: true,
-    sort_order: 1,
+    sort_order: sortOrder,
   }
   if (existing?.id) {
     const updated = await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/route-models/${existing.id}`, 200, {
@@ -241,7 +247,7 @@ async function ensureBasicRouteModel() {
   return data(created)
 }
 
-async function ensureBasicRoutePrice(routeModelId) {
+async function ensureRoutePrice(routeModelId) {
   const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-model-prices?page=1&page_size=100&route_model_id=${routeModelId}&task_type=text_to_image`, 200, { headers: bearer(state.admin.token) })
   const existing = (data(list).items || []).find(item => item.base_resolution === '1k')
   const body = {
@@ -264,6 +270,20 @@ async function ensureBasicRoutePrice(routeModelId) {
     body,
   })
   return data(created)
+}
+
+async function createRouteCandidate(routeModelId) {
+  const candidate = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/route-models/${routeModelId}/candidates`, 201, {
+    headers: bearer(state.admin.token),
+    body: {
+      account_model_id: Number(state.ids.accountModelId),
+      priority: 1,
+      weight: 100,
+      fallback_order: 1,
+      enabled: true,
+    },
+  })
+  return data(candidate)
 }
 
 async function seedGenerationRoute() {
@@ -297,32 +317,31 @@ async function seedGenerationRoute() {
     },
   })
   state.ids.accountModelId = String(data(accountModel).id)
-  const routeModel = await ensureBasicRouteModel()
+  const routeModel = await ensureRouteModel('basic', 'Basic', 1)
   state.ids.basicRouteModelId = String(routeModel.id)
-  const candidate = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/route-models/${state.ids.basicRouteModelId}/candidates`, 201, {
-    headers: bearer(state.admin.token),
-    body: {
-      account_model_id: Number(state.ids.accountModelId),
-      priority: 1,
-      weight: 100,
-      fallback_order: 1,
-      enabled: true,
-    },
-  })
-  state.ids.routeCandidateId = String(data(candidate).id)
-  const price = await ensureBasicRoutePrice(state.ids.basicRouteModelId)
+  const candidate = await createRouteCandidate(state.ids.basicRouteModelId)
+  state.ids.routeCandidateId = String(candidate.id)
+  const price = await ensureRoutePrice(state.ids.basicRouteModelId)
   state.ids.basicRoutePriceId = String(price.id)
 
+  const compatRouteModel = await ensureRouteModel('plus', 'Plus', 2)
+  state.ids.compatRouteModelId = String(compatRouteModel.id)
+  const compatCandidate = await createRouteCandidate(state.ids.compatRouteModelId)
+  state.ids.compatRouteCandidateId = String(compatCandidate.id)
+  const compatPrice = await ensureRoutePrice(state.ids.compatRouteModelId)
+  state.ids.compatRoutePriceId = String(compatPrice.id)
+
   const capabilities = await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/capabilities`, 200, { headers: bearer(state.user.token) })
-  const route = (data(capabilities).model_groups || []).find(item => firstField(item, 'abstract_model', 'code', 'Code') === 'basic')
-  if (!route) {
-    fail('Seeded basic route model was not visible in user capabilities', { body: capabilities.text })
+  const visibleRouteCodes = (data(capabilities).model_groups || []).map(item => firstField(item, 'route_model_code', 'abstract_model', 'code', 'Code'))
+  if (!visibleRouteCodes.includes('basic') || !visibleRouteCodes.includes('plus')) {
+    fail('Seeded route models were not visible in user capabilities', { visibleRouteCodes, body: capabilities.text })
   }
   return {
     routeModelId: state.ids.basicRouteModelId,
     accountModelId: state.ids.accountModelId,
     routeCandidateId: state.ids.routeCandidateId,
     routePriceId: state.ids.basicRoutePriceId,
+    compatRouteModelId: state.ids.compatRouteModelId,
     fakeProviderURL: fakeProvider.hostURL,
   }
 }
@@ -379,6 +398,29 @@ async function signedRequest(method, pathWithQuery, bodyObj) {
   const headers = signNative(method, pathWithQuery, body)
   if (body) headers['Content-Type'] = 'application/json'
   return request(method, `${BASE_URL}${pathWithQuery}`, { headers, body: body || undefined })
+}
+
+async function waitForSucceededTask(label, loadTask, timeoutMs = 90000) {
+  const started = Date.now()
+  let lastTask = null
+  while (Date.now() - started < timeoutMs) {
+    const result = await loadTask()
+    if (result.status !== 200) {
+      fail(`${label} detail request failed`, { status: result.status, body: result.text })
+    }
+    lastTask = data(result)
+    if (lastTask.status === 'succeeded') {
+      if (!Array.isArray(lastTask.results) || lastTask.results.length === 0) {
+        fail(`${label} succeeded without persisted image results`, { task: lastTask })
+      }
+      return { taskId: lastTask.id, status: lastTask.status, resultCount: lastTask.results.length }
+    }
+    if (lastTask.status === 'failed') {
+      fail(`${label} failed`, { task: lastTask })
+    }
+    await sleep(250)
+  }
+  fail(`${label} did not succeed before timeout`, { lastTask })
 }
 
 function uniqueEmail(prefix) {
@@ -481,33 +523,54 @@ async function bootstrapAdmin() {
   return { email: 'admin@example.com' }
 }
 
-async function configureSignupTrialCredits() {
-  const tabs = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/config-tabs`, 200, {
+async function enableSignupTrialCredits() {
+  const tabsResult = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/config-tabs`, 200, {
     headers: bearer(state.admin.token),
   })
-  const trialTab = data(tabs).items?.find(item => item.tab_key === 'trial_credits')
-  const version = Number(trialTab?.version ?? 1)
-  await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/config-tabs/trial_credits`, 200, {
+  const trialTab = (data(tabsResult).items || []).find(item => item.tab_key === 'trial_credits')
+  if (!trialTab) fail('Admin config did not expose the trial credits tab', { body: tabsResult.text })
+
+  const signupTrial = (trialTab.items || []).find(item => item.config_key === 'signup_trial')
+  if (!signupTrial) fail('Trial credits tab did not expose signup_trial', { trialTab })
+
+  const updated = await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/config-tabs/trial_credits`, 200, {
     headers: bearer(state.admin.token),
     body: {
-      version,
-      items: [{
-        config_category: 'billing_trial',
-        config_key: 'signup_trial',
-        config_value: {
-          value: {
-            enabled: true,
-            points: '20.00000',
-            valid_days: 7,
-            expiry_reminder_days: 2,
-            grant_once_per_user: true,
-          },
-        },
-        scope: 'global',
-      }],
+      version: trialTab.version,
+      items: trialTab.items.map(item => item.config_key === 'signup_trial'
+        ? {
+            ...item,
+            config_value: {
+              value: {
+                enabled: true,
+                points: '20.00000',
+                valid_days: 7,
+                expiry_reminder_days: 2,
+                grant_once_per_user: true,
+              },
+            },
+          }
+        : item),
     },
   })
-  return { points: '20.00000', validDays: 7 }
+  const updatedTrial = (data(updated).items || []).find(item => item.config_key === 'signup_trial')
+  if (updatedTrial?.config_value?.value?.enabled !== true) {
+    fail('Signup trial config was not enabled', { body: updated.text })
+  }
+  return { version: data(updated).version, points: updatedTrial.config_value.value.points }
+}
+
+async function captureDefaultStorageConfig() {
+  const result = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/storage-configs`, 200, {
+    headers: bearer(state.admin.token),
+  })
+  const storageConfig = (data(result).items || []).find(item => item.is_default)
+  if (!storageConfig?.id) {
+    fail('Storage config list did not expose a default config', { body: result.text })
+  }
+  state.storageConfig = storageConfig
+  state.ids.storageConfigId = String(storageConfig.id)
+  return { id: state.ids.storageConfigId, code: storageConfig.code, driver: storageConfig.driver }
 }
 
 async function seedPoints() {
@@ -632,9 +695,8 @@ async function happyPathAssetsAndTasks() {
     body: {
       task_type: 'text_to_image',
       prompt: 'docker e2e prompt',
-      abstract_model: 'basic',
       route_model_code: 'basic',
-      base_resolution: 'auto',
+      requested_quality: 'auto',
       requested_size: '1024x1024',
       requested_output_image_count: 1,
       reference_image_count: 0,
@@ -643,14 +705,14 @@ async function happyPathAssetsAndTasks() {
   })
   state.ids.taskId = data(task).id
   await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/tasks`, 200, { headers: bearer(state.user.token) })
-  await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/tasks/${state.ids.taskId}`, 200, { headers: bearer(state.user.token) })
+  const completedTask = await waitForSucceededTask('Agent image task', () => request('GET', `${BASE_URL}/api/agent/image/v1/tasks/${state.ids.taskId}`, { headers: bearer(state.user.token) }))
   await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/history/tasks`, 200, { headers: bearer(state.user.token) })
   await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/history/tasks/${state.ids.taskId}`, 200, { headers: bearer(state.user.token) })
-  return { assetId: state.ids.assetId, taskId: state.ids.taskId }
+  return { assetId: state.ids.assetId, taskId: state.ids.taskId, resultCount: completedTask.resultCount }
 }
 
 async function happyPathOpenAPI() {
-  const estimatePath = '/api/open/image/v1/estimate?task_type=text_to_image&abstract_model=basic&route_model_code=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
+  const estimatePath = '/api/open/image/v1/estimate?task_type=text_to_image&route_model_code=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
   const estimate = await signedRequest('GET', estimatePath)
   if (estimate.status !== 200) fail('Native Open API estimate failed', { status: estimate.status, body: estimate.text })
   await signedOk('GET', '/api/open/image/v1/capabilities')
@@ -670,31 +732,35 @@ async function happyPathOpenAPI() {
   const task = await signedRequest('POST', '/api/open/image/v1/tasks', {
     task_type: 'text_to_image',
     prompt: 'docker e2e open api prompt',
-    abstract_model: 'basic',
     route_model_code: 'basic',
-    base_resolution: 'auto',
+    requested_quality: 'auto',
     requested_size: '1024x1024',
     requested_output_image_count: 1,
     response_mode: 'async',
   })
   if (task.status !== 202) fail('Native Open API task create failed', { status: task.status, body: task.text })
   const taskId = data(task).id
-  if (taskId) await signedOk('GET', `/api/open/image/v1/tasks/${taskId}`)
+  const completedTask = await waitForSucceededTask('Native Open API image task', () => signedRequest('GET', `/api/open/image/v1/tasks/${taskId}`))
 
   const models = await expectStatus('GET', `${BASE_URL}/v1/models`, 200, {
     headers: { Authorization: `Bearer ${state.apiKey.secret}` },
   })
-  if (!Array.isArray(data(models))) fail('OpenAI-compatible models response data was not an array')
+  const compatModels = data(models)
+  if (!Array.isArray(compatModels)) fail('OpenAI-compatible models response data was not an array')
+  const compatModel = compatModels.find(item => item.id === 'gpt-image-2')?.id
+  if (!compatModel) fail('OpenAI-compatible models did not expose gpt-image-2', { models: compatModels })
   const generation = await request('POST', `${BASE_URL}/v1/images/generations`, {
     headers: { Authorization: `Bearer ${state.apiKey.secret}`, 'Content-Type': 'application/json' },
-    body: { prompt: 'docker e2e compat prompt', model: 'basic', n: 1, size: '1024x1024' },
+    body: { prompt: 'docker e2e compat prompt', model: compatModel, n: 1, size: '1024x1024' },
   })
-  if (isExpectedProviderUnavailable(generation)) {
-    warn('OpenAI-compatible generation returned expected provider-unavailable response', { status: generation.status })
-  } else if (generation.status >= 500 || [404, 405].includes(generation.status)) {
-    fail('OpenAI-compatible image generation route failed contract check', { status: generation.status, body: generation.text })
+  if (generation.status !== 200) {
+    fail('OpenAI-compatible image generation failed', { status: generation.status, body: generation.text })
   }
-  return { openAssetId, openTaskStatus: task.status, compatGenerationStatus: generation.status }
+  const generationImages = generation.json?.data
+  if (!generation.json?.created || !Array.isArray(generationImages) || generationImages.length !== 1 || (!generationImages[0]?.url && !generationImages[0]?.b64_json)) {
+    fail('OpenAI-compatible image generation returned an invalid success payload', { body: generation.text })
+  }
+  return { openAssetId, openTaskStatus: completedTask.status, openTaskResultCount: completedTask.resultCount, compatModel, compatGenerationStatus: generation.status }
 }
 
 async function signedOk(method, pathWithQuery) {
@@ -849,7 +915,12 @@ async function happyPathAdmin() {
 }
 
 async function corsSweep(openapi) {
-  const origins = [USER_WEB_URL.replace('127.0.0.1', 'localhost'), ADMIN_WEB_URL.replace('127.0.0.1', 'localhost')]
+  const origins = [...new Set([
+    USER_WEB_URL,
+    USER_WEB_URL.replace('127.0.0.1', 'localhost'),
+    ADMIN_WEB_URL,
+    ADMIN_WEB_URL.replace('127.0.0.1', 'localhost'),
+  ])]
   let checked = 0
   for (const [template, ops] of Object.entries(openapi.paths)) {
     for (const method of Object.keys(ops)) {
@@ -978,12 +1049,14 @@ function materializePath(template) {
     .replace('{provider_code}', state.ids.providerCode)
     .replace('{route_id}', state.ids.routeId)
     .replace('{provider_model_id}', state.ids.providerModelId)
+    .replace('{account_id}', state.ids.modelAccountId)
+    .replace('{model_id}', state.ids.accountModelId)
     .replace('{storage_config_id}', state.ids.storageConfigId)
 }
 
 function defaultQuery(template) {
   if (template.includes('/estimate')) {
-    return '?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
+    return '?task_type=text_to_image&route_model_code=basic&requested_quality=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0'
   }
   if (template.endsWith('/users')) return '?page=1&page_size=20'
   if (template.endsWith('/audit-logs')) return '?page=1&page_size=20'
@@ -1011,13 +1084,13 @@ function defaultBody(method, template) {
     '/api/agent/billing/v1/orders': { plan_code: 'basic-monthly', provider: 'mock' },
     '/api/agent/cashier/v1/orders': { purchase_type: 'plan', plan_code: 'basic-monthly', visible_method: 'mock' },
     '/api/agent/image/v1/reference-assets': { filename: `sweep-${RUN_ID}.png`, mime_type: 'image/png', content_base64: TINY_PNG_BASE64 },
-    '/api/agent/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep prompt', abstract_model: 'basic', base_resolution: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
+    '/api/agent/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep prompt', route_model_code: 'basic', requested_quality: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
     '/api/agent/user/v1/profile': { display_name: `E2E ${RUN_ID}` },
     '/api/agent/user/v1/account/close': { reason: 'sweep' },
     '/api/open/image/v1/payments/webhooks/{channel}': { order_no: `missing-${RUN_ID}`, trade_no: `trade-${RUN_ID}` },
     '/api/open/image/v1/reference-assets': { filename: `open-sweep-${RUN_ID}.png`, mime_type: 'image/png' },
     '/api/open/image/v1/reference-assets/uploads': { filename: `open-sweep-${RUN_ID}.png`, mime_type: 'image/png', content_base64: TINY_PNG_BASE64 },
-    '/api/open/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep open prompt', abstract_model: 'basic', base_resolution: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
+    '/api/open/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep open prompt', route_model_code: 'basic', requested_quality: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
     '/api/ops/admin/v1/auth/login': { email: 'admin@example.com', password: 'admin123456' },
     '/api/ops/admin/v1/cashier/custom-amount-config': { enabled: true, min_amount_cny: '1.00000', max_amount_cny: '500.00000', cny_per_point: '1.00000' },
     '/api/ops/admin/v1/cashier/visible-methods': { items: [mockVisibleMethod()] },
@@ -1027,8 +1100,24 @@ function defaultBody(method, template) {
     '/api/ops/admin/v1/model-providers/{provider_code}': { provider_code: state.ids.providerCode, provider_type: 'openai', auth_config_encrypted: 'cipher', health_status: 'healthy', enabled: true },
     '/api/ops/admin/v1/model-routes': { group_code: state.ids.groupCode, task_type: 'image_to_image', provider_code: state.ids.providerCode, priority: 5, weight_percent: 100, fallback_order: 1, enabled: true },
     '/api/ops/admin/v1/model-routes/{route_id}': { group_code: state.ids.groupCode, task_type: 'text_to_image', provider_code: state.ids.providerCode, priority: 3, weight_percent: 100, fallback_order: 1, enabled: true },
-    '/api/ops/admin/v1/provider-models': { provider_code: state.ids.providerCode, model_code: `sweep-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_base_resolution: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
-    '/api/ops/admin/v1/provider-models/{provider_model_id}': { provider_code: state.ids.providerCode, model_code: `e2e-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_base_resolution: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
+    '/api/ops/admin/v1/provider-models': { provider_code: state.ids.providerCode, model_code: `sweep-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
+    '/api/ops/admin/v1/provider-models/{provider_model_id}': { provider_code: state.ids.providerCode, model_code: `e2e-model-${RUN_ID}`, compat_mode: 'openai_images', supports_image_input: true, supports_mask: true, supported_qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 1, timeout_ms: 30000, input_cost: '0.01000', output_cost: '0.02000', currency: 'USD', health_status: 'healthy', enabled: true },
+    '/api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}': { model_code: 'openrouter/imagen', display_name: 'Docker E2E Image Model', task_types: ['text_to_image'], qualities: ['1k'], supported_ratios: ['1:1'], max_image_count: 1, max_reference_image_count: 0, cost_per_image: '0.00000', currency: 'USD', enabled: true },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}': {
+      version: 0,
+      code: state.storageConfig.code,
+      name: state.storageConfig.name,
+      driver: state.storageConfig.driver,
+      provider: state.storageConfig.provider,
+      status: state.storageConfig.status,
+      read_enabled: true,
+      write_enabled: true,
+      prefix: state.storageConfig.prefix || '',
+      public_base_url: state.storageConfig.public_base_url || '',
+      local_root: state.storageConfig.local_root || '',
+    },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-default': { version: 0 },
+    '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-status': { version: 0, status: 'enabled', read_enabled: true, write_enabled: true },
     '/api/ops/admin/v1/redeem-codes': { code: `SWEEP-${RUN_ID}`, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
     '/api/ops/admin/v1/redeem-codes/{code_id}/status': { status: 'disabled' },
     '/api/ops/admin/v1/redeem-codes:batch-create': { count: 1, status: 'available', reward_type: 'points', reward_value: '1.00000', valid_until: new Date(Date.now() + 86400000).toISOString(), max_redemptions: 1 },
@@ -1102,7 +1191,8 @@ async function main() {
     await step('frontend shared API client unwraps auth tokens', frontendApiClientSmoke)
     await step('CORS preflight sweep for browser origins', async () => corsSweep(openapi))
     await step('bootstrap admin session', bootstrapAdmin)
-    await step('configure signup trial credits', configureSignupTrialCredits)
+    await step('enable signup trial credits through admin config', enableSignupTrialCredits)
+    await step('capture default storage config from the admin API', captureDefaultStorageConfig)
     await step('bootstrap user session', bootstrapUser)
     await step('seed user points through admin API', seedPoints)
     await step('ensure mock cashier payment method is visible', ensureMockCashierVisible)
@@ -1134,7 +1224,12 @@ async function main() {
     if (error.detail) console.error(JSON.stringify(error.detail, null, 2))
     process.exitCode = 1
   } finally {
-    await stopFakeProvider()
+    try {
+      await stopFakeProvider()
+    } catch (error) {
+      console.error(`Failed to stop the Docker E2E fake provider: ${error.message}`)
+      process.exitCode = 1
+    }
   }
 }
 

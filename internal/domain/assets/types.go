@@ -12,8 +12,8 @@ type ReferenceAsset struct {
 	Width           int       `json:"width"`
 	Height          int       `json:"height"`
 	SHA256          string    `json:"sha256"`
-	StorageConfigID string    `json:"storage_config_id,omitempty"`
 	StorageDriver   string    `json:"storage_driver"`
+	StorageConfigID string    `json:"storage_config_id,omitempty"`
 	ObjectKey       string    `json:"object_key"`
 	PreviewURL      string    `json:"preview_url,omitempty"`
 	DownloadURL     string    `json:"download_url,omitempty"`

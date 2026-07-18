@@ -23,6 +23,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -437,6 +438,42 @@ func TestExecuteUsesRuntimeModelRoutingProviderOrder(t *testing.T) {
 	}
 }
 
+func TestExecuteUsesRouteModelPricingForSynchronousTask(t *testing.T) {
+	cfg := taskTestConfig()
+	routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "route-price-v1",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 11, Provider: "openrouter", ModelCode: "openrouter/vision",
+			SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, HealthStatus: "enabled",
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Priority: 1, Weight: 100, Enabled: true}},
+		Prices:     []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}},
+	}}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	billingSvc.SetModelRoutingSource(routing)
+	seedBalance(t, billingSvc, 13, "100.00000")
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Created: 1770000005, Data: []provider.ImageResult{{URL: "https://cdn.example.com/route-price.png"}}}, nil
+		}},
+	}
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, imagetask.NewMemoryStore(), nil, billingSvc))
+	svc.SetModelRoutingSource(routing)
+
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 13, UserGroupCode: "basic", UserGroupCodes: []string{"basic"}, UserGroupMultiplier: "1.00000",
+		AbstractModel: "plus", RouteModelCode: "plus", TaskType: string(provider.TaskTypeTextToImage),
+		Prompt: "Generate with route pricing", SizeMode: "ratio", AspectRatio: "1:1", BaseResolution: "1k", Quality: "auto", RequestedSize: "auto", OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Task.EstimatedPoints != "1.00000" || result.Task.ChargedPoints != "1.00000" || result.Task.PricingSnapshot.RouteModelCode != "plus" {
+		t.Fatalf("expected synchronous task to keep route-model pricing, got %#v", result.Task)
+	}
+}
+
 func TestExecuteUsesRuntimeModelRoutingFallbackOrder(t *testing.T) {
 	cfg := taskTestConfig()
 	calls := []string{}
@@ -590,13 +627,13 @@ func TestExecuteLeasedTaskCalculatesGPTImage2CodexSizeFromQualityAndAspectRatio(
 	}
 }
 
-func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexFanout(t *testing.T) {
+func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexMultiOutput(t *testing.T) {
 	cfg := taskTestConfig()
 	captured := make(chan provider.ImageRequest, 3)
 	providers := map[string]provider.ImageProvider{
 		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
 			captured <- req
-			return provider.ImageResponse{Created: 1770000034, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+			return provider.ImageResponse{Created: 1770000034, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}, {B64JSON: tinyPNGBase64}, {B64JSON: tinyPNGBase64}}}, nil
 		}},
 	}
 	store := imagetask.NewMemoryStore()
@@ -609,7 +646,7 @@ func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexFanout(t *testing.T) {
 			ModelCode:               "gpt-image-2",
 			SupportedTaskTypes:      []string{"text_to_image"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
-			MaxImageCount:           1,
+			MaxImageCount:           3,
 			HealthStatus:            "enabled",
 			AccountExtra:            map[string]any{"source_mode": "codex_responses"},
 		}},
@@ -642,14 +679,12 @@ func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexFanout(t *testing.T) {
 	if len(result.Task.Results) != 3 {
 		t.Fatalf("expected 3 persisted results, got %d", len(result.Task.Results))
 	}
-	for i := 0; i < 3; i++ {
-		req := <-captured
-		if req.ResponseFormat != provider.ResponseFormatB64JSON {
-			t.Fatalf("fanout request %d should use b64_json, got %#v", i, req)
-		}
-		if req.OutputImageCount != 1 {
-			t.Fatalf("fanout request %d should request one image, got %#v", i, req)
-		}
+	req := <-captured
+	if req.ResponseFormat != provider.ResponseFormatB64JSON {
+		t.Fatalf("multi-output request should use b64_json, got %#v", req)
+	}
+	if req.OutputImageCount != 3 {
+		t.Fatalf("multi-output request should request three images, got %#v", req)
 	}
 }
 
@@ -849,6 +884,7 @@ type failingSaveStore struct {
 	failSaveIfOwned      bool
 	failSaveIfOwnedError error
 	failAcquireError     error
+	ownedSnapshots       []domainimagetask.Task
 	progressMu           sync.Mutex
 	progressStages       []string
 }
@@ -866,8 +902,8 @@ func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) 
 }
 
 func (s *failingSaveStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
-	progressOnly := task.ProgressStage == domainimagetask.ProgressStageProvider || task.ProgressStage == domainimagetask.ProgressStagePersisting
-	if s.failSaveIfOwned && !progressOnly {
+	s.ownedSnapshots = append(s.ownedSnapshots, task)
+	if s.failSaveIfOwned {
 		s.failSaveIfOwned = false
 		if s.failSaveIfOwnedError != nil {
 			return s.failSaveIfOwnedError
@@ -905,6 +941,62 @@ func (s *failingSaveStore) progressHistory() []string {
 	defer s.progressMu.Unlock()
 	return append([]string(nil), s.progressStages...)
 }
+
+func TestProviderSuccessIsCheckpointedBeforeArtifactPersistence(t *testing.T) {
+	cfg := taskTestConfig()
+	cfg.Security.SecureConfigEncryptionKey = "artifact-recovery-test-key"
+	providerCalls := 0
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+			providerCalls++
+			return provider.ImageResponse{ProviderRequestID: "req-paid-1", Data: []provider.ImageResult{{URL: "https://cdn.example.com/result.png?signature=top-secret"}}}, nil
+		}},
+	}
+	store := &failingSaveStore{base: imagetask.NewMemoryStore()}
+	failingRef := storage.BackendRef{ConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Version: 3, Driver: "local", Backend: alwaysFailingArtifactBackend{}}
+	router := &switchingImageRouter{defaultRef: failingRef, refs: map[string]storage.BackendRef{failingRef.ConfigID: failingRef}}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, nil, nil, router)
+	svc.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		imageBytes, _ := base64.StdEncoding.DecodeString(tinyPNGBase64)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
+	})})
+
+	_, _ = svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 77, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "paid result",
+		SizeMode: "ratio", AspectRatio: "1:1", BaseResolution: "1k", Quality: "auto", RequestedSize: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
+	})
+	if providerCalls != 1 {
+		t.Fatalf("expected one provider call, got %d", providerCalls)
+	}
+	checkpointFound := false
+	for _, snapshot := range store.ownedSnapshots {
+		if snapshot.ProviderRequestID != "req-paid-1" || snapshot.ArtifactRecovery.EncryptedPayload == "" {
+			continue
+		}
+		checkpointFound = true
+		if snapshot.UpstreamSucceededAt == nil || len(snapshot.Attempts) != 1 || snapshot.Attempts[0].Status != domainimagetask.StatusSucceeded {
+			t.Fatalf("provider success metadata missing from checkpoint: %#v", snapshot)
+		}
+		if strings.Contains(snapshot.ArtifactRecovery.EncryptedPayload, "top-secret") || strings.Contains(snapshot.ArtifactRecovery.EncryptedPayload, "cdn.example.com") {
+			t.Fatalf("recovery payload was not encrypted: %s", snapshot.ArtifactRecovery.EncryptedPayload)
+		}
+		break
+	}
+	if !checkpointFound {
+		t.Fatalf("expected provider success checkpoint before artifact failure, snapshots=%#v", store.ownedSnapshots)
+	}
+}
+
+type alwaysFailingArtifactBackend struct{}
+
+func (alwaysFailingArtifactBackend) Driver() string { return "local" }
+func (alwaysFailingArtifactBackend) Put(context.Context, string, string, []byte) error {
+	return errors.New("storage write unavailable")
+}
+func (alwaysFailingArtifactBackend) Get(context.Context, string) ([]byte, error) {
+	return nil, errors.New("storage read unavailable")
+}
+func (alwaysFailingArtifactBackend) Delete(context.Context, string) error { return nil }
 
 func (s *failingSaveStore) SaveTerminalState(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
 	return s.base.SaveTerminalState(ctx, task, owner, now)
@@ -1168,58 +1260,7 @@ func TestExecuteOpenAIFormatMultiImageFansOutAndChargesActualSuccesses(t *testin
 	}
 }
 
-func TestExecuteOpenAIFormatUsesCandidateMaxImageCountChunk(t *testing.T) {
-	cfg := taskTestConfig()
-	var (
-		mu            sync.Mutex
-		calls         int
-		requestCounts []int
-	)
-	providers := map[string]provider.ImageProvider{
-		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
-			mu.Lock()
-			calls++
-			requestCounts = append(requestCounts, req.OutputImageCount)
-			mu.Unlock()
-			results := make([]provider.ImageResult, 0, req.OutputImageCount)
-			for i := 0; i < req.OutputImageCount; i++ {
-				results = append(results, provider.ImageResult{B64JSON: tinyPNGBase64})
-			}
-			return provider.ImageResponse{Created: 1770000020, Data: results}, nil
-		}},
-	}
-	billingSvc := billingservice.NewService(cfg.Billing)
-	seedBalance(t, billingSvc, 177, "40.00000")
-	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, imagetask.NewMemoryStore(), nil, billingSvc))
-	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
-		UserID:             177,
-		AbstractModel:      "plus",
-		TaskType:           string(provider.TaskTypeTextToImage),
-		Prompt:             "Generate a three image batch",
-		RequestedSize:      "1536x1024",
-		BaseResolution:     "2k",
-		OutputImageCount:   3,
-		ResponseFormat:     string(provider.ResponseFormatB64JSON),
-		PreferredProviders: []string{"openai"},
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if calls != 1 || len(requestCounts) != 1 || requestCounts[0] != 3 {
-		t.Fatalf("expected one chunk requesting 3 images, calls=%d counts=%v", calls, requestCounts)
-	}
-	if result.Task.Status != domainimagetask.StatusSucceeded {
-		t.Fatalf("expected succeeded, got %s", result.Task.Status)
-	}
-	if len(result.Task.Results) != 3 {
-		t.Fatalf("expected 3 persisted images, got %d", len(result.Task.Results))
-	}
-	if result.Task.ActualPoints != "24.00000" {
-		t.Fatalf("expected actual charge for 3 successful images, got %s", result.Task.ActualPoints)
-	}
-}
-
-func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testing.T) {
+func TestExecuteLeasedTaskWaitsToCheckpointOpenAIFanoutBeforePersistence(t *testing.T) {
 	cfg := taskTestConfig()
 	openaiCapability := cfg.Routing.ProviderCapabilities["openai"]
 	openaiCapability.MaxImageCount = 1
@@ -1287,7 +1328,6 @@ func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testin
 		resultCh <- result
 	}()
 
-	var progressTask domainimagetask.Task
 	deadline := time.After(2 * time.Second)
 	for {
 		select {
@@ -1296,9 +1336,17 @@ func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testin
 		case <-deadline:
 			t.Fatal("timed out waiting for partial running snapshot")
 		default:
-			loaded, loadErr := svc.GetByID(context.Background(), 278, created.ID)
-			if loadErr == nil && loaded.Status == domainimagetask.StatusRunning && len(loaded.Results) == 1 {
-				progressTask = loaded
+			mu.Lock()
+			startedCalls := calls
+			mu.Unlock()
+			if startedCalls == 3 {
+				loaded, loadErr := svc.GetByID(context.Background(), 278, created.ID)
+				if loadErr != nil {
+					t.Fatalf("GetByID before checkpoint: %v", loadErr)
+				}
+				if len(loaded.Results) != 0 || loaded.ArtifactRecovery.EncryptedPayload != "" {
+					t.Fatalf("fanout must not persist artifacts before all paid responses are gathered: %#v", loaded)
+				}
 				close(releaseLaterCalls)
 				goto waitFinal
 			}
@@ -1307,10 +1355,6 @@ func TestExecuteLeasedTaskPersistsOpenAIFanoutProgressBeforeCompletion(t *testin
 	}
 
 waitFinal:
-	if progressTask.ActualPoints != "8.00000" {
-		t.Fatalf("expected partial actual points 8.00000 after first success, got %s", progressTask.ActualPoints)
-	}
-
 	var result domainimagetask.ExecuteResult
 	select {
 	case err := <-errCh:
@@ -1422,6 +1466,56 @@ func TestExecuteWithStorePersistsThroughStoreBackend(t *testing.T) {
 	if loaded.ID != result.Task.ID || len(loaded.Results) != 1 {
 		t.Fatalf("unexpected persisted task %#v", loaded)
 	}
+}
+
+func TestGeneratedImageStorageRouterPinsOriginalConfig(t *testing.T) {
+	cfg := taskTestConfig()
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+			return provider.ImageResponse{Data: []provider.ImageResult{{URL: "https://cdn.example.com/routed.png"}}}, nil
+		}},
+	}
+	original := storage.BackendRef{ConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Version: 2, Driver: "local", Backend: storage.NewLocalBackend(t.TempDir())}
+	replacement := storage.BackendRef{ConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Version: 1, Driver: "local", Backend: storage.NewLocalBackend(t.TempDir())}
+	router := &switchingImageRouter{defaultRef: original, refs: map[string]storage.BackendRef{original.ConfigID: original, replacement.ConfigID: replacement}}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, providers, store, nil, nil, router)
+	imageBytes, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")
+	svc.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
+	})})
+
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 31, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "route it",
+		SizeMode: "ratio", AspectRatio: "1:1", BaseResolution: "1k", Quality: "auto", RequestedSize: "auto", OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatURL), PreferredProviders: []string{"openrouter"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(result.Task.Results) != 1 || result.Task.Results[0].StorageConfigID != original.ConfigID {
+		t.Fatalf("expected result pinned to original config, got %#v", result.Task.Results)
+	}
+	router.defaultRef = replacement
+	_, downloaded, err := svc.DownloadImageResult(context.Background(), 31, result.Task.Results[0].ID)
+	if err != nil {
+		t.Fatalf("DownloadImageResult after switch: %v", err)
+	}
+	if len(downloaded) == 0 {
+		t.Fatal("expected historical image bytes")
+	}
+}
+
+type switchingImageRouter struct {
+	defaultRef storage.BackendRef
+	refs       map[string]storage.BackendRef
+}
+
+func (r *switchingImageRouter) DefaultWriter(context.Context) (storage.BackendRef, error) {
+	return r.defaultRef, nil
+}
+
+func (r *switchingImageRouter) BackendFor(_ context.Context, configID string, _ string) (storage.BackendRef, error) {
+	return r.refs[configID], nil
 }
 
 func TestCreateTaskQueuesResolvedTask(t *testing.T) {

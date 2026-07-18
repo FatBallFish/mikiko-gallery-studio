@@ -18,14 +18,10 @@ var (
 	ErrStorageUnreadable = errors.New("storage config is not readable")
 )
 
-const (
-	storageProbeTimeout        = 10 * time.Second
-	storageProbeCleanupTimeout = 5 * time.Second
-)
-
 type BackendRef struct {
 	ConfigID string
 	Driver   string
+	Version  int64
 	Backend  Backend
 }
 
@@ -40,9 +36,7 @@ type ConfigSource interface {
 	ResolveLegacyByDriver(ctx context.Context, driver string) (domainstorageconfig.ResolvedConfig, error)
 }
 
-type StaticRouter struct {
-	ref BackendRef
-}
+type StaticRouter struct{ ref BackendRef }
 
 func NewStaticRouter(backend Backend) *StaticRouter {
 	if backend == nil {
@@ -51,9 +45,7 @@ func NewStaticRouter(backend Backend) *StaticRouter {
 	return &StaticRouter{ref: BackendRef{Driver: backend.Driver(), Backend: backend}}
 }
 
-func (r *StaticRouter) DefaultWriter(context.Context) (BackendRef, error) {
-	return r.ref, nil
-}
+func (r *StaticRouter) DefaultWriter(context.Context) (BackendRef, error) { return r.ref, nil }
 
 func (r *StaticRouter) BackendFor(_ context.Context, configID string, legacyDriver string) (BackendRef, error) {
 	ref := r.ref
@@ -71,12 +63,13 @@ type Registry struct {
 	ttl    time.Duration
 	now    func() time.Time
 
-	mu    sync.Mutex
-	cache map[string]cachedBackend
+	mu       sync.Mutex
+	resolved map[string]cachedResolved
+	backends map[string]BackendRef
 }
 
-type cachedBackend struct {
-	ref       BackendRef
+type cachedResolved struct {
+	config    domainstorageconfig.ResolvedConfig
 	expiresAt time.Time
 }
 
@@ -84,14 +77,14 @@ func NewRegistry(source ConfigSource, ttl time.Duration) *Registry {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
-	return &Registry{source: source, ttl: ttl, now: time.Now, cache: map[string]cachedBackend{}}
+	return &Registry{source: source, ttl: ttl, now: time.Now, resolved: map[string]cachedResolved{}, backends: map[string]BackendRef{}}
 }
 
 func (r *Registry) DefaultWriter(ctx context.Context) (BackendRef, error) {
 	if r == nil || r.source == nil {
 		return BackendRef{}, ErrNoDefaultStorage
 	}
-	resolved, err := r.source.ResolveDefaultWritable(ctx)
+	resolved, err := r.resolveCached(ctx, "default", r.source.ResolveDefaultWritable)
 	if err != nil {
 		return BackendRef{}, err
 	}
@@ -105,14 +98,19 @@ func (r *Registry) BackendFor(ctx context.Context, configID string, legacyDriver
 	if r == nil || r.source == nil {
 		return BackendRef{}, ErrStorageUnreadable
 	}
+	configID, legacyDriver = strings.TrimSpace(configID), strings.TrimSpace(legacyDriver)
 	var (
 		resolved domainstorageconfig.ResolvedConfig
 		err      error
 	)
-	if strings.TrimSpace(configID) != "" {
-		resolved, err = r.source.ResolveByID(ctx, strings.TrimSpace(configID))
+	if configID != "" {
+		resolved, err = r.resolveCached(ctx, "id:"+configID, func(ctx context.Context) (domainstorageconfig.ResolvedConfig, error) {
+			return r.source.ResolveByID(ctx, configID)
+		})
 	} else {
-		resolved, err = r.source.ResolveLegacyByDriver(ctx, strings.TrimSpace(legacyDriver))
+		resolved, err = r.resolveCached(ctx, "legacy:"+legacyDriver, func(ctx context.Context) (domainstorageconfig.ResolvedConfig, error) {
+			return r.source.ResolveLegacyByDriver(ctx, legacyDriver)
+		})
 	}
 	if err != nil {
 		return BackendRef{}, err
@@ -123,93 +121,120 @@ func (r *Registry) BackendFor(ctx context.Context, configID string, legacyDriver
 	return r.backendForResolved(resolved)
 }
 
+func (r *Registry) resolveCached(ctx context.Context, key string, resolve func(context.Context) (domainstorageconfig.ResolvedConfig, error)) (domainstorageconfig.ResolvedConfig, error) {
+	now := r.now()
+	r.mu.Lock()
+	if cached, ok := r.resolved[key]; ok && cached.expiresAt.After(now) {
+		r.mu.Unlock()
+		return cached.config, nil
+	}
+	r.mu.Unlock()
+
+	resolved, err := resolve(ctx)
+	if err != nil {
+		return domainstorageconfig.ResolvedConfig{}, err
+	}
+	if strings.TrimSpace(resolved.ID) == "" {
+		return domainstorageconfig.ResolvedConfig{}, ErrStorageUnreadable
+	}
+	r.mu.Lock()
+	r.resolved[key] = cachedResolved{config: resolved, expiresAt: now.Add(r.ttl)}
+	r.mu.Unlock()
+	return resolved, nil
+}
+
+func (r *Registry) Invalidate(event StorageInvalidation) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if event.DefaultChanged {
+		delete(r.resolved, "default")
+	}
+	if event.ConfigID == "" {
+		return
+	}
+	delete(r.resolved, "id:"+event.ConfigID)
+	for key, cached := range r.resolved {
+		if cached.config.ID == event.ConfigID {
+			delete(r.resolved, key)
+		}
+	}
+	for key, ref := range r.backends {
+		if ref.ConfigID == event.ConfigID {
+			delete(r.backends, key)
+		}
+	}
+}
+
 func (r *Registry) Probe(ctx context.Context, resolved domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {
 	start := r.now()
 	backend, err := NewBackend(StorageConfigFromResolved(resolved))
 	if err != nil {
 		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), Message: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(ctx, storageProbeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	key := ".pic-gallery-probe/" + start.UTC().Format("20060102150405.000000000") + ".txt"
-	return r.probeBackend(ctx, backend, key, start)
-}
-
-func (r *Registry) probeBackend(ctx context.Context, backend Backend, key string, start time.Time) domainstorageconfig.ProbeResult {
 	content := []byte("pic-gallery-storage-probe")
 	if err := backend.Put(ctx, key, "text/plain", content); err != nil {
-		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: err.Error()}
-	}
-	cleanup := func() string {
-		if err := cleanupProbeObject(backend, key); err != nil {
-			return "; cleanup failed: " + err.Error()
-		}
-		return ""
+		return probeFailure(r, start, err)
 	}
 	got, err := backend.Get(ctx, key)
 	if err != nil {
-		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: err.Error() + cleanup()}
+		_ = backend.Delete(context.Background(), key)
+		return probeFailure(r, start, err)
 	}
 	if !bytes.Equal(got, content) {
-		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: "probe object content mismatch" + cleanup()}
+		_ = backend.Delete(context.Background(), key)
+		return probeFailure(r, start, errors.New("probe object content mismatch"))
 	}
-	if err := cleanupProbeObject(backend, key); err != nil {
-		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: err.Error()}
+	if err := backend.Delete(ctx, key); err != nil && !errors.Is(err, ErrNotFound) {
+		return probeFailure(r, start, err)
 	}
-	return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusSuccess, CheckedAt: r.now().UTC(), LatencyMS: int64(r.now().Sub(start) / time.Millisecond), Message: "put/get/delete probe object succeeded"}
+	return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusSuccess, CheckedAt: r.now().UTC(), LatencyMS: r.now().Sub(start).Milliseconds(), Message: "put/get/delete probe object succeeded"}
 }
 
-func cleanupProbeObject(backend Backend, key string) error {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), storageProbeCleanupTimeout)
-	defer cancel()
-	if err := backend.Delete(cleanupCtx, key); err != nil && !errors.Is(err, ErrNotFound) {
-		return fmt.Errorf("delete probe object %q: %w", key, err)
-	}
-	return nil
+func probeFailure(r *Registry, start time.Time, err error) domainstorageconfig.ProbeResult {
+	return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), LatencyMS: r.now().Sub(start).Milliseconds(), Message: err.Error()}
 }
 
 func (r *Registry) backendForResolved(resolved domainstorageconfig.ResolvedConfig) (BackendRef, error) {
-	if strings.TrimSpace(resolved.ID) == "" {
-		return BackendRef{}, fmt.Errorf("storage config id is required")
-	}
-	cacheKey := strings.Join([]string{resolved.ID, fmt.Sprintf("%d", resolved.Version), resolved.SecretFingerprint}, ":")
-	now := r.now()
+	key := strings.Join([]string{resolved.ID, fmt.Sprintf("%d", resolved.Version), resolved.SecretFingerprint}, ":")
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if cached, ok := r.cache[cacheKey]; ok && cached.expiresAt.After(now) {
-		return cached.ref, nil
+	if ref, ok := r.backends[key]; ok {
+		r.mu.Unlock()
+		return ref, nil
 	}
+	r.mu.Unlock()
 	backend, err := NewBackend(StorageConfigFromResolved(resolved))
 	if err != nil {
 		return BackendRef{}, err
 	}
-	ref := BackendRef{ConfigID: resolved.ID, Driver: backend.Driver(), Backend: backend}
-	for key, cached := range r.cache {
-		if cached.ref.ConfigID == resolved.ID {
-			delete(r.cache, key)
+	ref := BackendRef{ConfigID: resolved.ID, Driver: backend.Driver(), Version: resolved.Version, Backend: backend}
+	r.mu.Lock()
+	for cachedKey, cached := range r.backends {
+		if cached.ConfigID == resolved.ID {
+			delete(r.backends, cachedKey)
 		}
 	}
-	r.cache[cacheKey] = cachedBackend{ref: ref, expiresAt: now.Add(r.ttl)}
+	r.backends[key] = ref
+	r.mu.Unlock()
 	return ref, nil
 }
 
 func StorageConfigFromResolved(resolved domainstorageconfig.ResolvedConfig) config.StorageConfig {
 	cfg := config.StorageConfig{
-		Driver:        strings.TrimSpace(resolved.Driver),
-		LocalRoot:     strings.TrimSpace(resolved.LocalRoot),
-		PublicBaseURL: strings.TrimSpace(resolved.PublicBaseURL),
+		Driver: resolved.Driver, LocalRoot: resolved.LocalRoot, PublicBaseURL: resolved.PublicBaseURL,
 		S3: config.StorageS3Config{
-			Endpoint:        strings.TrimSpace(resolved.Endpoint),
-			Region:          strings.TrimSpace(resolved.Region),
-			Bucket:          strings.TrimSpace(resolved.Bucket),
-			ForcePathStyle:  resolved.ForcePathStyle,
-			Prefix:          strings.Trim(strings.TrimSpace(resolved.Prefix), "/"),
-			AccessKeyID:     strings.TrimSpace(fmt.Sprint(resolved.Secrets["access_key_id"])),
+			Endpoint: resolved.Endpoint, Region: resolved.Region, Bucket: resolved.Bucket, Prefix: strings.Trim(resolved.Prefix, "/"),
+			ForcePathStyle: resolved.ForcePathStyle, AccessKeyID: strings.TrimSpace(fmt.Sprint(resolved.Secrets["access_key_id"])),
 			SecretAccessKey: strings.TrimSpace(fmt.Sprint(resolved.Secrets["secret_access_key"])),
 		},
 	}
-	if cfg.Driver == "" {
-		cfg.Driver = "local"
+	if strings.TrimSpace(cfg.Driver) == "" {
+		cfg.Driver = domainstorageconfig.DriverLocal
 	}
 	return cfg
 }

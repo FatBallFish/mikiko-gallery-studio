@@ -57,8 +57,8 @@ export function HomePage() {
     setImagePreview({
       url: userApi.imageAssetUrl(source, null),
       downloadUrl: userApi.imageAssetUrl(image.download_url || source, null),
-      alt: image.prompt || image.prompt_excerpt || image.id,
-      prompt: image.prompt || image.prompt_excerpt,
+      alt: image.prompt_excerpt || image.id,
+      prompt: image.prompt_excerpt,
       width: image.width,
       height: image.height,
       ratio: image.aspect_ratio,

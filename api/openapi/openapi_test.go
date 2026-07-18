@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -73,6 +74,7 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 		"/api/ops/admin/v1/model-accounts",
 		"/api/ops/admin/v1/model-accounts/{account_id}",
 		"/api/ops/admin/v1/model-accounts/{account_id}/models",
+		"/api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}",
 		"/api/ops/admin/v1/route-models",
 		"/api/ops/admin/v1/route-models/{route_model_id}",
 		"/api/ops/admin/v1/route-models/{route_model_id}/candidates",
@@ -476,6 +478,105 @@ func TestOpenAPISpecDocumentsAdminModelRoutingContract(t *testing.T) {
 				t.Fatalf("expected %s to require %q", schemaName, field)
 			}
 		}
+	}
+}
+
+func TestOpenAPISpecDocumentsAdminModelAccountCapabilitiesContract(t *testing.T) {
+	type schemaNode struct {
+		Type       string                `yaml:"type"`
+		Ref        string                `yaml:"$ref"`
+		Required   []string              `yaml:"required"`
+		Properties map[string]schemaNode `yaml:"properties"`
+		Items      *schemaNode           `yaml:"items"`
+		Default    any                   `yaml:"default"`
+		Minimum    *int                  `yaml:"minimum"`
+	}
+	type operation struct {
+		RequestBody struct {
+			Content map[string]struct {
+				Schema schemaNode `yaml:"schema"`
+			} `yaml:"content"`
+		} `yaml:"requestBody"`
+		Responses map[string]struct {
+			Content map[string]struct {
+				Schema schemaNode `yaml:"schema"`
+			} `yaml:"content"`
+		} `yaml:"responses"`
+	}
+
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var doc struct {
+		Paths map[string]map[string]operation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+
+	const (
+		collectionPath = "/api/ops/admin/v1/model-accounts/{account_id}/models"
+		detailPath     = collectionPath + "/{model_id}"
+		writeRef       = "./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest"
+		responseRef    = "./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse"
+		listRef        = "./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelListResponse"
+	)
+	if got := doc.Paths[collectionPath]["get"].Responses["200"].Content["application/json"].Schema.Ref; got != listRef {
+		t.Fatalf("expected account model list response ref %q, got %q", listRef, got)
+	}
+	if got := doc.Paths[collectionPath]["post"].RequestBody.Content["application/json"].Schema.Ref; got != writeRef {
+		t.Fatalf("expected account model create request ref %q, got %q", writeRef, got)
+	}
+	if got := doc.Paths[collectionPath]["post"].Responses["201"].Content["application/json"].Schema.Ref; got != responseRef {
+		t.Fatalf("expected account model create response ref %q, got %q", responseRef, got)
+	}
+	if got := doc.Paths[detailPath]["put"].RequestBody.Content["application/json"].Schema.Ref; got != writeRef {
+		t.Fatalf("expected account model update request ref %q, got %q", writeRef, got)
+	}
+	if got := doc.Paths[detailPath]["put"].Responses["200"].Content["application/json"].Schema.Ref; got != responseRef {
+		t.Fatalf("expected account model update response ref %q, got %q", responseRef, got)
+	}
+	if _, ok := doc.Paths[detailPath]["delete"].Responses["204"]; !ok {
+		t.Fatal("expected account model delete to document 204 response")
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/admin.yaml")
+	if err != nil {
+		t.Fatalf("read admin schema: %v", err)
+	}
+	var schemasDoc struct {
+		Components struct {
+			Schemas map[string]schemaNode `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemasDoc); err != nil {
+		t.Fatalf("unmarshal admin schema: %v", err)
+	}
+
+	for _, name := range []string{"AdminModelAccountModel", "AdminModelAccountModelWriteRequest", "AdminModelAccountModelResponse", "AdminModelAccountModelListResponse"} {
+		if _, ok := schemasDoc.Components.Schemas[name]; !ok {
+			t.Fatalf("expected admin account model schema %q", name)
+		}
+	}
+	for _, schemaName := range []string{"AdminModelAccountModel", "AdminModelAccountModelWriteRequest"} {
+		schema := schemasDoc.Components.Schemas[schemaName]
+		for _, field := range []string{"supported_ratios", "max_image_count", "max_reference_image_count"} {
+			if _, ok := schema.Properties[field]; !ok {
+				t.Fatalf("expected %s to document %q", schemaName, field)
+			}
+		}
+	}
+
+	write := schemasDoc.Components.Schemas["AdminModelAccountModelWriteRequest"]
+	if field := write.Properties["supported_ratios"]; field.Type != "array" || field.Items == nil || field.Items.Type != "string" {
+		t.Fatalf("expected supported_ratios to be a string array, got %#v", field)
+	}
+	if field := write.Properties["max_image_count"]; field.Type != "integer" || field.Minimum == nil || *field.Minimum != 1 || field.Default != 1 {
+		t.Fatalf("expected max_image_count minimum/default 1, got %#v", field)
+	}
+	if field := write.Properties["max_reference_image_count"]; field.Type != "integer" || field.Minimum == nil || *field.Minimum != 0 || field.Default != 0 {
+		t.Fatalf("expected max_reference_image_count minimum/default 0, got %#v", field)
 	}
 }
 
@@ -1418,6 +1519,188 @@ func TestOpenAPISpecDocumentsNativeTaskAsyncOnlyContract(t *testing.T) {
 	responseMode := schemaDoc.Components.Schemas["CreateImageTaskRequest"].Properties["response_mode"]
 	if len(responseMode.Enum) != 1 || responseMode.Enum[0] != "async" {
 		t.Fatalf("expected native CreateImageTaskRequest response_mode enum to be async-only, got %#v", responseMode.Enum)
+	}
+}
+
+func TestOpenAPISpecDocumentsCurrentImageTaskRequestContract(t *testing.T) {
+	content, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string       `yaml:"required"`
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+	request := doc.Components.Schemas["CreateImageTaskRequest"]
+	for _, field := range []string{
+		"size_mode", "base_resolution", "quality", "output_format", "output_compression",
+		"moderation", "aspect_ratio", "requested_size", "requested_output_image_count",
+	} {
+		if _, ok := request.Properties[field]; !ok {
+			t.Errorf("CreateImageTaskRequest must document %s", field)
+		}
+	}
+	for _, legacy := range []string{"requested_quality", "resolved_quality_bucket"} {
+		if _, ok := request.Properties[legacy]; ok {
+			t.Errorf("CreateImageTaskRequest must not expose legacy field %s", legacy)
+		}
+		for _, required := range request.Required {
+			if required == legacy {
+				t.Errorf("CreateImageTaskRequest must not require legacy field %s", legacy)
+			}
+		}
+	}
+
+	commonContent, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schema: %v", err)
+	}
+	if err := yaml.Unmarshal(commonContent, &doc); err != nil {
+		t.Fatalf("unmarshal common schema: %v", err)
+	}
+	imageTask := doc.Components.Schemas["ImageTask"]
+	for _, field := range []string{"size_mode", "base_resolution", "quality", "output_format", "output_compression", "moderation", "aspect_ratio", "requested_size", "requested_output_image_count"} {
+		if _, ok := imageTask.Properties[field]; !ok {
+			t.Errorf("ImageTask must document %s", field)
+		}
+	}
+	for _, legacy := range []string{"requested_quality", "resolved_quality_bucket"} {
+		if _, ok := imageTask.Properties[legacy]; ok {
+			t.Errorf("ImageTask must not expose legacy field %s", legacy)
+		}
+	}
+}
+
+func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var rootDoc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Ref string `yaml:"$ref"`
+			} `yaml:"parameters"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &rootDoc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+	for _, path := range []string{"/api/agent/billing/v1/estimate", "/api/open/image/v1/estimate"} {
+		parameters := rootDoc.Paths[path]["get"].Parameters
+		if len(parameters) < 2 || parameters[0].Ref != "./components/parameters/common.yaml#/components/parameters/RouteModelCode" {
+			t.Fatalf("expected %s to prefer RouteModelCode, got %#v", path, parameters)
+		}
+		found := map[string]bool{}
+		for _, parameter := range parameters {
+			found[parameter.Ref] = true
+		}
+		if !found["./components/parameters/common.yaml#/components/parameters/AbstractModel"] {
+			t.Fatalf("expected %s to retain deprecated AbstractModel compatibility", path)
+		}
+		for _, name := range []string{"SizeMode", "AspectRatio"} {
+			ref := "./components/parameters/common.yaml#/components/parameters/" + name
+			if !found[ref] {
+				t.Errorf("expected %s to document %s", path, ref)
+			}
+		}
+	}
+
+	parameterContent, err := os.ReadFile("components/parameters/common.yaml")
+	if err != nil {
+		t.Fatalf("read common parameters: %v", err)
+	}
+	var parameterDoc struct {
+		Components struct {
+			Parameters map[string]struct {
+				Name       string `yaml:"name"`
+				Required   bool   `yaml:"required"`
+				Deprecated bool   `yaml:"deprecated"`
+				Schema     struct {
+					Type      string   `yaml:"type"`
+					MinLength int      `yaml:"minLength"`
+					Enum      []string `yaml:"enum"`
+				} `yaml:"schema"`
+			} `yaml:"parameters"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(parameterContent, &parameterDoc); err != nil {
+		t.Fatalf("unmarshal common parameters: %v", err)
+	}
+	routeParameter := parameterDoc.Components.Parameters["RouteModelCode"]
+	if routeParameter.Name != "route_model_code" || !routeParameter.Required || routeParameter.Schema.Type != "string" || routeParameter.Schema.MinLength != 1 {
+		t.Fatalf("unexpected RouteModelCode parameter %#v", routeParameter)
+	}
+	legacyParameter := parameterDoc.Components.Parameters["AbstractModel"]
+	if legacyParameter.Required || !legacyParameter.Deprecated {
+		t.Fatalf("expected AbstractModel to be optional and deprecated, got %#v", legacyParameter)
+	}
+	sizeModeParameter := parameterDoc.Components.Parameters["SizeMode"]
+	if sizeModeParameter.Name != "size_mode" || sizeModeParameter.Required || sizeModeParameter.Schema.Type != "string" || strings.Join(sizeModeParameter.Schema.Enum, ",") != "ratio,pixel" {
+		t.Fatalf("unexpected SizeMode parameter %#v", sizeModeParameter)
+	}
+	aspectRatioParameter := parameterDoc.Components.Parameters["AspectRatio"]
+	if aspectRatioParameter.Name != "aspect_ratio" || aspectRatioParameter.Required || aspectRatioParameter.Schema.Type != "string" {
+		t.Fatalf("unexpected AspectRatio parameter %#v", aspectRatioParameter)
+	}
+
+	agentContent, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	var agentDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `yaml:"required"`
+				Properties map[string]struct {
+					Type       string `yaml:"type"`
+					Deprecated bool   `yaml:"deprecated"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(agentContent, &agentDoc); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+	createTask := agentDoc.Components.Schemas["CreateImageTaskRequest"]
+	required := map[string]bool{}
+	for _, field := range createTask.Required {
+		required[field] = true
+	}
+	if !required["route_model_code"] || required["abstract_model"] {
+		t.Fatalf("expected route_model_code, not abstract_model, to be required: %#v", createTask.Required)
+	}
+	if createTask.Properties["route_model_code"].Type != "string" || !createTask.Properties["abstract_model"].Deprecated {
+		t.Fatalf("unexpected task model properties %#v", createTask.Properties)
+	}
+
+	commonContent, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schema: %v", err)
+	}
+	var commonDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Type       string `yaml:"type"`
+					Deprecated bool   `yaml:"deprecated"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(commonContent, &commonDoc); err != nil {
+		t.Fatalf("unmarshal common schema: %v", err)
+	}
+	imageTask := commonDoc.Components.Schemas["ImageTask"]
+	if imageTask.Properties["route_model_code"].Type != "string" || !imageTask.Properties["abstract_model"].Deprecated {
+		t.Fatalf("unexpected ImageTask model properties %#v", imageTask.Properties)
 	}
 }
 

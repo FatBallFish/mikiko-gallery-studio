@@ -280,6 +280,46 @@ func RouteSnapshotVersion(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldRouteSnapshotVersion, v))
 }
 
+// ProviderRequestID applies equality check predicate on the "provider_request_id" field. It's identical to ProviderRequestIDEQ.
+func ProviderRequestID(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProviderRequestID, v))
+}
+
+// UpstreamSucceededAt applies equality check predicate on the "upstream_succeeded_at" field. It's identical to UpstreamSucceededAtEQ.
+func UpstreamSucceededAt(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldUpstreamSucceededAt, v))
+}
+
+// ArtifactRecoveryStatus applies equality check predicate on the "artifact_recovery_status" field. It's identical to ArtifactRecoveryStatusEQ.
+func ArtifactRecoveryStatus(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryPayload applies equality check predicate on the "artifact_recovery_payload" field. It's identical to ArtifactRecoveryPayloadEQ.
+func ArtifactRecoveryPayload(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactAttemptCount applies equality check predicate on the "artifact_attempt_count" field. It's identical to ArtifactAttemptCountEQ.
+func ArtifactAttemptCount(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactAttemptCount, v))
+}
+
+// ArtifactNextRetryAt applies equality check predicate on the "artifact_next_retry_at" field. It's identical to ArtifactNextRetryAtEQ.
+func ArtifactNextRetryAt(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactNextRetryAt, v))
+}
+
+// ArtifactStorageConfigID applies equality check predicate on the "artifact_storage_config_id" field. It's identical to ArtifactStorageConfigIDEQ.
+func ArtifactStorageConfigID(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageVersion applies equality check predicate on the "artifact_storage_version" field. It's identical to ArtifactStorageVersionEQ.
+func ArtifactStorageVersion(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageVersion, v))
+}
+
 // LeaseOwner applies equality check predicate on the "lease_owner" field. It's identical to LeaseOwnerEQ.
 func LeaseOwner(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldLeaseOwner, v))
@@ -2888,6 +2928,461 @@ func ProviderTraceIsNil() predicate.ImageTask {
 // ProviderTraceNotNil applies the NotNil predicate on the "provider_trace" field.
 func ProviderTraceNotNil() predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldNotNull(FieldProviderTrace))
+}
+
+// ProviderRequestIDEQ applies the EQ predicate on the "provider_request_id" field.
+func ProviderRequestIDEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDNEQ applies the NEQ predicate on the "provider_request_id" field.
+func ProviderRequestIDNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDIn applies the In predicate on the "provider_request_id" field.
+func ProviderRequestIDIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldProviderRequestID, vs...))
+}
+
+// ProviderRequestIDNotIn applies the NotIn predicate on the "provider_request_id" field.
+func ProviderRequestIDNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldProviderRequestID, vs...))
+}
+
+// ProviderRequestIDGT applies the GT predicate on the "provider_request_id" field.
+func ProviderRequestIDGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDGTE applies the GTE predicate on the "provider_request_id" field.
+func ProviderRequestIDGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDLT applies the LT predicate on the "provider_request_id" field.
+func ProviderRequestIDLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDLTE applies the LTE predicate on the "provider_request_id" field.
+func ProviderRequestIDLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDContains applies the Contains predicate on the "provider_request_id" field.
+func ProviderRequestIDContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDHasPrefix applies the HasPrefix predicate on the "provider_request_id" field.
+func ProviderRequestIDHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDHasSuffix applies the HasSuffix predicate on the "provider_request_id" field.
+func ProviderRequestIDHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDIsNil applies the IsNil predicate on the "provider_request_id" field.
+func ProviderRequestIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldProviderRequestID))
+}
+
+// ProviderRequestIDNotNil applies the NotNil predicate on the "provider_request_id" field.
+func ProviderRequestIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldProviderRequestID))
+}
+
+// ProviderRequestIDEqualFold applies the EqualFold predicate on the "provider_request_id" field.
+func ProviderRequestIDEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldProviderRequestID, v))
+}
+
+// ProviderRequestIDContainsFold applies the ContainsFold predicate on the "provider_request_id" field.
+func ProviderRequestIDContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldProviderRequestID, v))
+}
+
+// UpstreamSucceededAtEQ applies the EQ predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtEQ(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldUpstreamSucceededAt, v))
+}
+
+// UpstreamSucceededAtNEQ applies the NEQ predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtNEQ(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldUpstreamSucceededAt, v))
+}
+
+// UpstreamSucceededAtIn applies the In predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtIn(vs ...time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldUpstreamSucceededAt, vs...))
+}
+
+// UpstreamSucceededAtNotIn applies the NotIn predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtNotIn(vs ...time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldUpstreamSucceededAt, vs...))
+}
+
+// UpstreamSucceededAtGT applies the GT predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtGT(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldUpstreamSucceededAt, v))
+}
+
+// UpstreamSucceededAtGTE applies the GTE predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtGTE(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldUpstreamSucceededAt, v))
+}
+
+// UpstreamSucceededAtLT applies the LT predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtLT(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldUpstreamSucceededAt, v))
+}
+
+// UpstreamSucceededAtLTE applies the LTE predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtLTE(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldUpstreamSucceededAt, v))
+}
+
+// UpstreamSucceededAtIsNil applies the IsNil predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldUpstreamSucceededAt))
+}
+
+// UpstreamSucceededAtNotNil applies the NotNil predicate on the "upstream_succeeded_at" field.
+func UpstreamSucceededAtNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldUpstreamSucceededAt))
+}
+
+// ArtifactRecoveryStatusEQ applies the EQ predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusNEQ applies the NEQ predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusIn applies the In predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactRecoveryStatus, vs...))
+}
+
+// ArtifactRecoveryStatusNotIn applies the NotIn predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactRecoveryStatus, vs...))
+}
+
+// ArtifactRecoveryStatusGT applies the GT predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusGTE applies the GTE predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusLT applies the LT predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusLTE applies the LTE predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusContains applies the Contains predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusHasPrefix applies the HasPrefix predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusHasSuffix applies the HasSuffix predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusEqualFold applies the EqualFold predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryStatusContainsFold applies the ContainsFold predicate on the "artifact_recovery_status" field.
+func ArtifactRecoveryStatusContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldArtifactRecoveryStatus, v))
+}
+
+// ArtifactRecoveryPayloadEQ applies the EQ predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadNEQ applies the NEQ predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadIn applies the In predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactRecoveryPayload, vs...))
+}
+
+// ArtifactRecoveryPayloadNotIn applies the NotIn predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactRecoveryPayload, vs...))
+}
+
+// ArtifactRecoveryPayloadGT applies the GT predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadGTE applies the GTE predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadLT applies the LT predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadLTE applies the LTE predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadContains applies the Contains predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadHasPrefix applies the HasPrefix predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadHasSuffix applies the HasSuffix predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadIsNil applies the IsNil predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldArtifactRecoveryPayload))
+}
+
+// ArtifactRecoveryPayloadNotNil applies the NotNil predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldArtifactRecoveryPayload))
+}
+
+// ArtifactRecoveryPayloadEqualFold applies the EqualFold predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactRecoveryPayloadContainsFold applies the ContainsFold predicate on the "artifact_recovery_payload" field.
+func ArtifactRecoveryPayloadContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldArtifactRecoveryPayload, v))
+}
+
+// ArtifactAttemptCountEQ applies the EQ predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactAttemptCount, v))
+}
+
+// ArtifactAttemptCountNEQ applies the NEQ predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountNEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactAttemptCount, v))
+}
+
+// ArtifactAttemptCountIn applies the In predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactAttemptCount, vs...))
+}
+
+// ArtifactAttemptCountNotIn applies the NotIn predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountNotIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactAttemptCount, vs...))
+}
+
+// ArtifactAttemptCountGT applies the GT predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountGT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactAttemptCount, v))
+}
+
+// ArtifactAttemptCountGTE applies the GTE predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountGTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactAttemptCount, v))
+}
+
+// ArtifactAttemptCountLT applies the LT predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountLT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactAttemptCount, v))
+}
+
+// ArtifactAttemptCountLTE applies the LTE predicate on the "artifact_attempt_count" field.
+func ArtifactAttemptCountLTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactAttemptCount, v))
+}
+
+// ArtifactNextRetryAtEQ applies the EQ predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtEQ(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactNextRetryAt, v))
+}
+
+// ArtifactNextRetryAtNEQ applies the NEQ predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtNEQ(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactNextRetryAt, v))
+}
+
+// ArtifactNextRetryAtIn applies the In predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtIn(vs ...time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactNextRetryAt, vs...))
+}
+
+// ArtifactNextRetryAtNotIn applies the NotIn predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtNotIn(vs ...time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactNextRetryAt, vs...))
+}
+
+// ArtifactNextRetryAtGT applies the GT predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtGT(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactNextRetryAt, v))
+}
+
+// ArtifactNextRetryAtGTE applies the GTE predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtGTE(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactNextRetryAt, v))
+}
+
+// ArtifactNextRetryAtLT applies the LT predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtLT(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactNextRetryAt, v))
+}
+
+// ArtifactNextRetryAtLTE applies the LTE predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtLTE(v time.Time) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactNextRetryAt, v))
+}
+
+// ArtifactNextRetryAtIsNil applies the IsNil predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldArtifactNextRetryAt))
+}
+
+// ArtifactNextRetryAtNotNil applies the NotNil predicate on the "artifact_next_retry_at" field.
+func ArtifactNextRetryAtNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldArtifactNextRetryAt))
+}
+
+// ArtifactLastDiagnosticIsNil applies the IsNil predicate on the "artifact_last_diagnostic" field.
+func ArtifactLastDiagnosticIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldArtifactLastDiagnostic))
+}
+
+// ArtifactLastDiagnosticNotNil applies the NotNil predicate on the "artifact_last_diagnostic" field.
+func ArtifactLastDiagnosticNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldArtifactLastDiagnostic))
+}
+
+// ArtifactStorageConfigIDEQ applies the EQ predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDEQ(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageConfigIDNEQ applies the NEQ predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDNEQ(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageConfigIDIn applies the In predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDIn(vs ...uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactStorageConfigID, vs...))
+}
+
+// ArtifactStorageConfigIDNotIn applies the NotIn predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDNotIn(vs ...uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactStorageConfigID, vs...))
+}
+
+// ArtifactStorageConfigIDGT applies the GT predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDGT(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageConfigIDGTE applies the GTE predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDGTE(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageConfigIDLT applies the LT predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDLT(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageConfigIDLTE applies the LTE predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDLTE(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageConfigIDIsNil applies the IsNil predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldArtifactStorageConfigID))
+}
+
+// ArtifactStorageConfigIDNotNil applies the NotNil predicate on the "artifact_storage_config_id" field.
+func ArtifactStorageConfigIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldArtifactStorageConfigID))
+}
+
+// ArtifactStorageVersionEQ applies the EQ predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageVersion, v))
+}
+
+// ArtifactStorageVersionNEQ applies the NEQ predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionNEQ(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactStorageVersion, v))
+}
+
+// ArtifactStorageVersionIn applies the In predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactStorageVersion, vs...))
+}
+
+// ArtifactStorageVersionNotIn applies the NotIn predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionNotIn(vs ...int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactStorageVersion, vs...))
+}
+
+// ArtifactStorageVersionGT applies the GT predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionGT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactStorageVersion, v))
+}
+
+// ArtifactStorageVersionGTE applies the GTE predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionGTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactStorageVersion, v))
+}
+
+// ArtifactStorageVersionLT applies the LT predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionLT(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactStorageVersion, v))
+}
+
+// ArtifactStorageVersionLTE applies the LTE predicate on the "artifact_storage_version" field.
+func ArtifactStorageVersionLTE(v int64) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactStorageVersion, v))
 }
 
 // LeaseOwnerEQ applies the EQ predicate on the "lease_owner" field.

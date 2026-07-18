@@ -5,7 +5,51 @@ if (!existsSync(modelURL)) {
   throw new Error('workspace task history needs an executable merge model with pinned task support')
 }
 
-const { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords } = await import('./workspaceTaskHistory')
+const historyModel = await import('./workspaceTaskHistory')
+const { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords } = historyModel
+const workspaceTaskHistoryInteraction = (historyModel as Record<string, unknown>).workspaceTaskHistoryInteraction
+if (typeof workspaceTaskHistoryInteraction !== 'function') {
+  throw new Error('workspace task history must expose a pure interaction model')
+}
+
+const recentExpected = {
+  selectTask: true,
+  navigateHash: true,
+  outputTab: 'current',
+  openDialog: false,
+  openLightbox: false,
+}
+for (const input of [
+  { surface: 'recent', status: 'queued', resultCount: 0 },
+  { surface: 'recent', status: 'failed', resultCount: 0 },
+  { surface: 'recent', status: 'succeeded', resultCount: 0 },
+]) {
+  const actual = workspaceTaskHistoryInteraction(input)
+  if (JSON.stringify(actual) !== JSON.stringify(recentExpected)) {
+    throw new Error(`recent task selection must never open an empty dialog for ${JSON.stringify(input)}, got ${JSON.stringify(actual)}`)
+  }
+}
+
+const historyCases = [
+  {
+    input: { surface: 'history', status: 'succeeded', resultCount: 2 },
+    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: true, openLightbox: false },
+  },
+  {
+    input: { surface: 'history', status: 'succeeded', resultCount: 1 },
+    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: true },
+  },
+  {
+    input: { surface: 'history', status: 'failed', resultCount: 0 },
+    expected: { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: false },
+  },
+] as const
+for (const testCase of historyCases) {
+  const actual = workspaceTaskHistoryInteraction(testCase.input)
+  if (JSON.stringify(actual) !== JSON.stringify(testCase.expected)) {
+    throw new Error(`history card interaction mismatch for ${JSON.stringify(testCase.input)}, got ${JSON.stringify(actual)}`)
+  }
+}
 
 type Task = {
   id: string

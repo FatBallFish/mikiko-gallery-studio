@@ -28,12 +28,7 @@ type Service struct {
 }
 
 func NewService(store Store, encryptionKey string, bootstrap config.StorageConfig, environment string) *Service {
-	return &Service{
-		store:       store,
-		codec:       secretcodec.New(encryptionKey),
-		bootstrap:   bootstrap,
-		environment: strings.TrimSpace(environment),
-	}
+	return &Service{store: store, codec: secretcodec.New(encryptionKey), bootstrap: bootstrap, environment: strings.TrimSpace(environment)}
 }
 
 func (s *Service) Bootstrap(ctx context.Context, updatedBy int64) error {
@@ -105,6 +100,20 @@ func (s *Service) Update(ctx context.Context, req domainstorageconfig.WriteReque
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
 	}
+	backendChanged := storageBackendChanged(current, record)
+	if current.IsDefault {
+		if current.Status != record.Status || current.ReadEnabled != record.ReadEnabled || current.WriteEnabled != record.WriteEnabled {
+			return domainstorageconfig.ConfigView{}, errs.BadRequest("default storage config must remain enabled for read and write")
+		}
+		if backendChanged {
+			return domainstorageconfig.ConfigView{}, errs.BadRequest("switch default storage before changing its backend settings")
+		}
+	}
+	if backendChanged {
+		record.LastProbeStatus = domainstorageconfig.ProbeStatusNever
+		record.LastProbeMessage = ""
+		record.LastProbeAt = nil
+	}
 	saved, err := s.store.Save(ctx, record)
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
@@ -114,25 +123,19 @@ func (s *Service) Update(ctx context.Context, req domainstorageconfig.WriteReque
 
 func (s *Service) SetStatus(ctx context.Context, req domainstorageconfig.StatusRequest) (domainstorageconfig.ConfigView, error) {
 	current, ok, err := s.store.GetByID(ctx, strings.TrimSpace(req.ID))
-	if err != nil {
-		return domainstorageconfig.ConfigView{}, err
-	}
-	if !ok {
+	if err != nil || !ok {
+		if err != nil {
+			return domainstorageconfig.ConfigView{}, err
+		}
 		return domainstorageconfig.ConfigView{}, errs.New(404, errs.CodeNotFound, "storage config not found")
 	}
 	if req.Version > 0 && req.Version != current.Version {
 		return domainstorageconfig.ConfigView{}, errs.New(409, errs.CodeConflict, "storage config version conflict")
 	}
-	status := normalizeStatus(req.Status)
-	if status == domainstorageconfig.StatusDeleted {
-		return domainstorageconfig.ConfigView{}, errs.BadRequest("storage config cannot be deleted through status update")
-	}
-	current.Status = status
-	current.ReadEnabled = req.ReadEnabled
-	current.WriteEnabled = req.WriteEnabled
-	current.UpdatedBy = req.UpdatedBy
-	current.Version++
-	if current.IsDefault && (!current.ReadEnabled || !current.WriteEnabled || current.Status != domainstorageconfig.StatusEnabled) {
+	current.Status = normalizeStatus(req.Status)
+	current.ReadEnabled, current.WriteEnabled = req.ReadEnabled, req.WriteEnabled
+	current.UpdatedBy, current.Version = req.UpdatedBy, current.Version+1
+	if current.IsDefault && (current.Status != domainstorageconfig.StatusEnabled || !current.ReadEnabled || !current.WriteEnabled) {
 		return domainstorageconfig.ConfigView{}, errs.BadRequest("default storage config must remain enabled for read and write")
 	}
 	saved, err := s.store.Save(ctx, current)
@@ -144,10 +147,10 @@ func (s *Service) SetStatus(ctx context.Context, req domainstorageconfig.StatusR
 
 func (s *Service) SetDefault(ctx context.Context, req domainstorageconfig.SetDefaultRequest) (domainstorageconfig.ConfigView, error) {
 	current, ok, err := s.store.GetByID(ctx, strings.TrimSpace(req.ID))
-	if err != nil {
-		return domainstorageconfig.ConfigView{}, err
-	}
-	if !ok {
+	if err != nil || !ok {
+		if err != nil {
+			return domainstorageconfig.ConfigView{}, err
+		}
 		return domainstorageconfig.ConfigView{}, errs.New(404, errs.CodeNotFound, "storage config not found")
 	}
 	if req.Version > 0 && req.Version != current.Version {
@@ -159,17 +162,18 @@ func (s *Service) SetDefault(ctx context.Context, req domainstorageconfig.SetDef
 	if current.LastProbeStatus != domainstorageconfig.ProbeStatusSuccess {
 		return domainstorageconfig.ConfigView{}, errs.BadRequest("storage config must pass probe before becoming default")
 	}
-	if err := s.store.ClearDefault(ctx); err != nil {
-		return domainstorageconfig.ConfigView{}, err
-	}
-	current.IsDefault = true
-	current.UpdatedBy = req.UpdatedBy
-	current.Version++
-	saved, err := s.store.Save(ctx, current)
+	saved, err := s.store.SetDefault(ctx, current.ID, current.Version, req.UpdatedBy)
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
 	}
 	return viewFromRecord(saved), nil
+}
+
+func storageBackendChanged(before, after domainstorageconfig.ConfigRecord) bool {
+	return before.Driver != after.Driver || before.Provider != after.Provider || before.Endpoint != after.Endpoint ||
+		before.Region != after.Region || before.Bucket != after.Bucket || before.Prefix != after.Prefix ||
+		before.ForcePathStyle != after.ForcePathStyle || before.LocalRoot != after.LocalRoot ||
+		before.SecretFingerprint != after.SecretFingerprint
 }
 
 func (s *Service) ResolveDefaultWritable(ctx context.Context) (domainstorageconfig.ResolvedConfig, error) {
@@ -207,10 +211,10 @@ func (s *Service) ResolveLegacyByDriver(ctx context.Context, driver string) (dom
 
 func (s *Service) UpdateProbe(ctx context.Context, id string, result domainstorageconfig.ProbeResult, updatedBy int64) (domainstorageconfig.ConfigView, error) {
 	current, ok, err := s.store.GetByID(ctx, strings.TrimSpace(id))
-	if err != nil {
-		return domainstorageconfig.ConfigView{}, err
-	}
-	if !ok {
+	if err != nil || !ok {
+		if err != nil {
+			return domainstorageconfig.ConfigView{}, err
+		}
 		return domainstorageconfig.ConfigView{}, errs.New(404, errs.CodeNotFound, "storage config not found")
 	}
 	current.LastProbeStatus = normalizeProbeStatus(result.Status)
@@ -219,14 +223,25 @@ func (s *Service) UpdateProbe(ctx context.Context, id string, result domainstora
 	if checkedAt.IsZero() {
 		checkedAt = time.Now().UTC()
 	}
-	current.LastProbeAt = &checkedAt
-	current.UpdatedBy = updatedBy
-	current.Version++
+	current.LastProbeAt, current.UpdatedBy, current.Version = &checkedAt, updatedBy, current.Version+1
 	saved, err := s.store.Save(ctx, current)
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
 	}
-	return viewFromRecord(saved), nil
+	view := viewFromRecord(saved)
+	view.LastProbe.LatencyMS = result.LatencyMS
+	return view, nil
+}
+
+func (s *Service) ResolveForProbe(ctx context.Context, id string) (domainstorageconfig.ResolvedConfig, error) {
+	record, ok, err := s.store.GetByID(ctx, strings.TrimSpace(id))
+	if err != nil || !ok {
+		if err != nil {
+			return domainstorageconfig.ResolvedConfig{}, err
+		}
+		return domainstorageconfig.ResolvedConfig{}, errs.New(404, errs.CodeNotFound, "storage config not found")
+	}
+	return s.resolveRecord(record)
 }
 
 func (s *Service) resolveRecord(record domainstorageconfig.ConfigRecord) (domainstorageconfig.ResolvedConfig, error) {
@@ -234,18 +249,14 @@ func (s *Service) resolveRecord(record domainstorageconfig.ConfigRecord) (domain
 	if err != nil {
 		return domainstorageconfig.ResolvedConfig{}, err
 	}
-	resolved := domainstorageconfig.ResolvedConfig{ConfigRecord: record, Secrets: secrets}
-	return resolved, nil
+	return domainstorageconfig.ResolvedConfig{ConfigRecord: record, Secrets: secrets}, nil
 }
 
 func (s *Service) recordForWrite(ctx context.Context, current domainstorageconfig.ConfigRecord, updating bool, req domainstorageconfig.WriteRequest) (domainstorageconfig.ConfigRecord, error) {
 	now := time.Now().UTC()
 	record := current
 	if !updating {
-		record.Code = strings.TrimSpace(req.Code)
-		record.CreatedAt = now
-		record.Version = 1
-		record.LastProbeStatus = domainstorageconfig.ProbeStatusNever
+		record.Code, record.CreatedAt, record.Version, record.LastProbeStatus = strings.TrimSpace(req.Code), now, 1, domainstorageconfig.ProbeStatusNever
 		if record.Code == "" {
 			return domainstorageconfig.ConfigRecord{}, errs.BadRequest("storage config code is required")
 		}
@@ -257,21 +268,13 @@ func (s *Service) recordForWrite(ctx context.Context, current domainstorageconfi
 	} else {
 		record.Version++
 	}
-	record.Name = strings.TrimSpace(req.Name)
-	record.Driver = normalizeDriver(req.Driver)
-	record.Provider = normalizeProvider(req.Provider, record.Driver)
-	record.Status = normalizeStatus(req.Status)
-	record.ReadEnabled = req.ReadEnabled
-	record.WriteEnabled = req.WriteEnabled
-	record.Endpoint = strings.TrimSpace(req.Endpoint)
-	record.Region = strings.TrimSpace(req.Region)
-	record.Bucket = strings.TrimSpace(req.Bucket)
-	record.Prefix = strings.Trim(strings.TrimSpace(req.Prefix), "/")
-	record.ForcePathStyle = req.ForcePathStyle
-	record.PublicBaseURL = strings.TrimSpace(req.PublicBaseURL)
-	record.LocalRoot = strings.TrimSpace(req.LocalRoot)
-	record.UpdatedAt = now
-	record.UpdatedBy = req.UpdatedBy
+	record.Name, record.Driver = strings.TrimSpace(req.Name), normalizeDriver(req.Driver)
+	record.Provider, record.Status = normalizeProvider(req.Provider, record.Driver), normalizeStatus(req.Status)
+	record.ReadEnabled, record.WriteEnabled = req.ReadEnabled, req.WriteEnabled
+	record.Endpoint, record.Region, record.Bucket = strings.TrimSpace(req.Endpoint), strings.TrimSpace(req.Region), strings.TrimSpace(req.Bucket)
+	record.Prefix, record.ForcePathStyle = strings.Trim(strings.TrimSpace(req.Prefix), "/"), req.ForcePathStyle
+	record.PublicBaseURL, record.LocalRoot = strings.TrimSpace(req.PublicBaseURL), strings.TrimSpace(req.LocalRoot)
+	record.UpdatedAt, record.UpdatedBy = now, req.UpdatedBy
 	if record.Name == "" {
 		record.Name = record.Code
 	}
@@ -285,11 +288,10 @@ func (s *Service) recordForWrite(ctx context.Context, current domainstorageconfi
 	if err := s.validate(record, secrets); err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
-	encrypted, err := s.codec.EncryptJSON(secrets)
+	record.SecretEncrypted, err = s.codec.EncryptJSON(secrets)
 	if err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
-	record.SecretEncrypted = encrypted
 	record.SecretFields = sortedSecretFields(secrets)
 	record.SecretFingerprint = secretcodec.Fingerprint(secrets, record.SecretFields)
 	return record, nil
@@ -310,8 +312,7 @@ func (s *Service) secretsForWrite(current domainstorageconfig.ConfigRecord, req 
 		delete(secrets, strings.TrimSpace(key))
 	}
 	for key, value := range req.Secrets {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 		if key == "" {
 			continue
 		}
@@ -346,46 +347,26 @@ func (s *Service) validate(record domainstorageconfig.ConfigRecord, secrets map[
 	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
 		return errs.BadRequest("s3 endpoint must include scheme and host")
 	}
-	if strings.EqualFold(s.environment, "local") {
-		return nil
-	}
-	if endpoint.Scheme != "https" && !hostLooksLocal(endpoint.Hostname()) {
+	if !strings.EqualFold(s.environment, "local") && endpoint.Scheme != "https" && !hostLooksLocal(endpoint.Hostname()) {
 		return errs.BadRequest("s3 endpoint must use https outside local environment")
 	}
 	return nil
 }
 
 func (s *Service) bootstrapRecord(updatedBy int64) (domainstorageconfig.ConfigRecord, error) {
-	driver := normalizeDriver(s.bootstrap.Driver)
-	now := time.Now().UTC()
+	driver, now := normalizeDriver(s.bootstrap.Driver), time.Now().UTC()
 	record := domainstorageconfig.ConfigRecord{
-		Code:             "bootstrap-" + driver,
-		Name:             "Bootstrap " + strings.ToUpper(driver),
-		Driver:           driver,
-		Provider:         normalizeProvider("", driver),
-		Status:           domainstorageconfig.StatusEnabled,
-		ReadEnabled:      true,
-		WriteEnabled:     true,
-		IsDefault:        true,
-		PublicBaseURL:    strings.TrimSpace(s.bootstrap.PublicBaseURL),
-		LocalRoot:        strings.TrimSpace(s.bootstrap.LocalRoot),
-		LastProbeStatus:  domainstorageconfig.ProbeStatusSuccess,
-		LastProbeMessage: "bootstrap config",
-		Version:          1,
-		UpdatedBy:        updatedBy,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		Code: "bootstrap-" + driver, Name: "Bootstrap " + strings.ToUpper(driver), Driver: driver,
+		Provider: normalizeProvider("", driver), Status: domainstorageconfig.StatusEnabled,
+		ReadEnabled: true, WriteEnabled: true, IsDefault: true, PublicBaseURL: strings.TrimSpace(s.bootstrap.PublicBaseURL),
+		LocalRoot: strings.TrimSpace(s.bootstrap.LocalRoot), LastProbeStatus: domainstorageconfig.ProbeStatusSuccess,
+		LastProbeMessage: "bootstrap config", Version: 1, UpdatedBy: updatedBy, CreatedAt: now, UpdatedAt: now,
 	}
 	secrets := map[string]any{}
 	if driver == domainstorageconfig.DriverS3 {
-		record.Provider = domainstorageconfig.ProviderCustomS3
-		record.Endpoint = strings.TrimSpace(s.bootstrap.S3.Endpoint)
-		record.Region = strings.TrimSpace(s.bootstrap.S3.Region)
-		record.Bucket = strings.TrimSpace(s.bootstrap.S3.Bucket)
-		record.Prefix = strings.Trim(strings.TrimSpace(s.bootstrap.S3.Prefix), "/")
-		record.ForcePathStyle = s.bootstrap.S3.ForcePathStyle
-		secrets[secretAccessKeyID] = strings.TrimSpace(s.bootstrap.S3.AccessKeyID)
-		secrets[secretSecretAccessKey] = strings.TrimSpace(s.bootstrap.S3.SecretAccessKey)
+		record.Provider, record.Endpoint, record.Region = domainstorageconfig.ProviderCustomS3, strings.TrimSpace(s.bootstrap.S3.Endpoint), strings.TrimSpace(s.bootstrap.S3.Region)
+		record.Bucket, record.Prefix, record.ForcePathStyle = strings.TrimSpace(s.bootstrap.S3.Bucket), strings.Trim(strings.TrimSpace(s.bootstrap.S3.Prefix), "/"), s.bootstrap.S3.ForcePathStyle
+		secrets[secretAccessKeyID], secrets[secretSecretAccessKey] = strings.TrimSpace(s.bootstrap.S3.AccessKeyID), strings.TrimSpace(s.bootstrap.S3.SecretAccessKey)
 	}
 	if err := s.validate(record, secrets); err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
@@ -394,63 +375,40 @@ func (s *Service) bootstrapRecord(updatedBy int64) (domainstorageconfig.ConfigRe
 	if err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
-	record.SecretEncrypted = encrypted
-	record.SecretFields = sortedSecretFields(secrets)
+	record.SecretEncrypted, record.SecretFields = encrypted, sortedSecretFields(secrets)
 	record.SecretFingerprint = secretcodec.Fingerprint(secrets, record.SecretFields)
 	return record, nil
 }
 
 func viewFromRecord(record domainstorageconfig.ConfigRecord) domainstorageconfig.ConfigView {
-	return domainstorageconfig.ConfigView{
-		ID:             record.ID,
-		Code:           record.Code,
-		Name:           record.Name,
-		Driver:         record.Driver,
-		Provider:       record.Provider,
-		Status:         record.Status,
-		ReadEnabled:    record.ReadEnabled,
-		WriteEnabled:   record.WriteEnabled,
-		IsDefault:      record.IsDefault,
-		Endpoint:       record.Endpoint,
-		Region:         record.Region,
-		Bucket:         record.Bucket,
-		Prefix:         record.Prefix,
-		ForcePathStyle: record.ForcePathStyle,
-		PublicBaseURL:  record.PublicBaseURL,
-		LocalRoot:      record.LocalRoot,
-		SecretStatus: domainstorageconfig.SecretStatus{
-			HasSecret:    record.SecretFingerprint != "",
-			Fingerprint:  record.SecretFingerprint,
-			UpdatedAt:    timePtrIfSecret(record.SecretFingerprint, record.UpdatedAt),
-			SecretFields: append([]string{}, record.SecretFields...),
-		},
-		LastProbe: domainstorageconfig.ProbeView{
-			Status:    normalizeProbeStatus(record.LastProbeStatus),
-			CheckedAt: record.LastProbeAt,
-			Message:   record.LastProbeMessage,
-		},
-		Version:   record.Version,
-		UpdatedBy: record.UpdatedBy,
-		CreatedAt: record.CreatedAt,
-		UpdatedAt: record.UpdatedAt,
+	view := domainstorageconfig.ConfigView{
+		ID: record.ID, Code: record.Code, Name: record.Name, Driver: record.Driver, Provider: record.Provider, Status: record.Status,
+		ReadEnabled: record.ReadEnabled, WriteEnabled: record.WriteEnabled, IsDefault: record.IsDefault,
+		Endpoint: record.Endpoint, Region: record.Region, Bucket: record.Bucket, Prefix: record.Prefix, ForcePathStyle: record.ForcePathStyle,
+		PublicBaseURL: record.PublicBaseURL, LocalRoot: record.LocalRoot,
+		SecretStatus: domainstorageconfig.SecretStatus{HasSecret: record.SecretFingerprint != "", Fingerprint: record.SecretFingerprint, SecretFields: append([]string{}, record.SecretFields...)},
+		LastProbe:    domainstorageconfig.ProbeView{Status: normalizeProbeStatus(record.LastProbeStatus), CheckedAt: record.LastProbeAt, Message: record.LastProbeMessage},
+		Version:      record.Version, UpdatedBy: record.UpdatedBy, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}
+	if record.SecretFingerprint != "" {
+		updated := record.UpdatedAt
+		view.SecretStatus.UpdatedAt = &updated
+	}
+	return view
 }
 
 func normalizeDriver(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", domainstorageconfig.DriverLocal:
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
 		return domainstorageconfig.DriverLocal
-	case domainstorageconfig.DriverS3:
-		return domainstorageconfig.DriverS3
-	default:
-		return strings.ToLower(strings.TrimSpace(value))
 	}
+	return value
 }
 
 func normalizeProvider(value, driver string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case domainstorageconfig.ProviderAWSS3, domainstorageconfig.ProviderMinIO, domainstorageconfig.ProviderR2, domainstorageconfig.ProviderCustomS3:
-		return strings.ToLower(strings.TrimSpace(value))
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value != "" {
+		return value
 	}
 	if normalizeDriver(driver) == domainstorageconfig.DriverS3 {
 		return domainstorageconfig.ProviderCustomS3
@@ -459,16 +417,11 @@ func normalizeProvider(value, driver string) string {
 }
 
 func normalizeStatus(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", domainstorageconfig.StatusEnabled:
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
 		return domainstorageconfig.StatusEnabled
-	case domainstorageconfig.StatusDisabled:
-		return domainstorageconfig.StatusDisabled
-	case domainstorageconfig.StatusDeleted:
-		return domainstorageconfig.StatusDeleted
-	default:
-		return strings.ToLower(strings.TrimSpace(value))
 	}
+	return value
 }
 
 func normalizeProbeStatus(value string) string {
@@ -495,10 +448,7 @@ func sortedSecretFields(secrets map[string]any) []string {
 
 func isMaskedSecretPlaceholder(value string) bool {
 	trimmed := strings.TrimSpace(value)
-	if len(trimmed) < 4 {
-		return false
-	}
-	return strings.Trim(trimmed, "*•") == ""
+	return len(trimmed) >= 4 && strings.Trim(trimmed, "*•") == ""
 }
 
 func hostLooksLocal(host string) bool {
@@ -507,18 +457,7 @@ func hostLooksLocal(host string) bool {
 		return true
 	}
 	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback()
-}
-
-func timePtrIfSecret(fingerprint string, updatedAt time.Time) *time.Time {
-	if strings.TrimSpace(fingerprint) == "" || updatedAt.IsZero() {
-		return nil
-	}
-	value := updatedAt
-	return &value
+	return ip != nil && ip.IsLoopback()
 }
 
 func truncate(value string, max int) string {

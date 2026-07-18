@@ -91,8 +91,14 @@ func Run() error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer client.Close()
+	if err := db.PrepareLegacyData(context.Background(), cfg.Database.URL); err != nil {
+		return fmt.Errorf("prepare legacy database data: %w", err)
+	}
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
+	}
+	if _, err := db.BackfillLegacyModelAccountCapabilities(context.Background(), client); err != nil {
+		return fmt.Errorf("backfill legacy model account capabilities: %w", err)
 	}
 	redisClient, allowRedisFallback, err := newRedisClient(context.Background(), cfg)
 	if err != nil {
@@ -112,15 +118,21 @@ func Run() error {
 	if err := storageConfigSvc.Bootstrap(context.Background(), 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
-	storageRouter := storage.NewRegistry(storageConfigSvc, 30*time.Second)
+	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
+	var storageInvalidationBus *storage.RedisInvalidationBus
+	if redisClient != nil {
+		storageInvalidationBus = storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)
+		subscriber := startStorageInvalidationSubscriber(context.Background(), storageInvalidationBus, storageRegistry.Invalidate, time.Second, 30*time.Second)
+		defer subscriber.Stop()
+	}
 	authSvc := authservice.NewServiceWithStoreAndRedis(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client), authRedisRuntime, allowRedisFallback)
 	authSvc.SetSMTPConfigResolver(secureConfigSvc)
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	billingSvc.SetAdminConfigResolver(adminSvc)
-	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRouter)
-	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageRouter)
+	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRegistry)
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageRegistry)
 	modelAdminStore := entstore.NewModelAdminStore(client)
 	taskSvc.SetModelRoutingSource(modelAdminStore)
 	apiKeySvc, err := newRuntimeAPIKeyService(cfg, entstore.NewAPIKeyStore(client))
@@ -140,7 +152,7 @@ func Run() error {
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)
-	api.SetStorageConfigService(storageConfigSvc, storageRouter)
+	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 
 	srv := &http.Server{
 		Addr:              cfg.App.Addr,

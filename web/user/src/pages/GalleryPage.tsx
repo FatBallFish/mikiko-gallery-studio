@@ -9,7 +9,8 @@ import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
 import { Check, Copy, Download, Edit, FolderPlus, Globe, Trash2 } from '../ui/icons'
 import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
-import { galleryImageAspect, selectVisibleGalleryImages, toggleGalleryImageSelection } from './galleryExperience'
+import { runGalleryBatch } from './galleryBatchActions'
+import { areAllVisibleGalleryItemsSelected, galleryImageAspect, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
 import { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState } from './galleryPagination'
 import { filterGalleryImages, galleryImageCard } from './galleryRows'
 
@@ -291,7 +292,8 @@ export function GalleryPage() {
 
   const filtered = useMemo(() => filterGalleryImages(typeRows, { type: 'all', status, publishStatus, imageGroup, query }), [typeRows, query, status, publishStatus, imageGroup])
 
-  const selectedImages = useMemo(() => rows.filter((image) => selectedIds.has(image.id)), [rows, selectedIds])
+  const selectedImages = useMemo(() => selectedVisibleGalleryItems(filtered, selectedIds), [filtered, selectedIds])
+  const allVisibleSelected = useMemo(() => areAllVisibleGalleryItemsSelected(filtered, selectedIds), [filtered, selectedIds])
 
   async function publishImage(image: GalleryImage) {
     setBusyId(image.id)
@@ -310,11 +312,11 @@ export function GalleryPage() {
     if (!images.length) return
     setBusyId('batch')
     try {
-      await Promise.all(images.map((image) => userApi.publishImage(image.id)))
-      app.notify('success', `已提交 ${images.length} 张图片公开审核`)
+      const result = await runGalleryBatch(images, (image) => userApi.publishImage(image.id))
       await reloadLoadedPages()
-    } catch (err) {
-      app.notify('error', errorMessage(err))
+      const succeeded = new Set(result.succeeded.map(({ item }) => item.id))
+      clearSucceededSelection(succeeded)
+      reportGalleryBatchResult('提交公开审核', result.succeeded.length, result.failed.length)
     } finally {
       setBusyId(null)
     }
@@ -330,15 +332,12 @@ export function GalleryPage() {
     if (!images.length) return
     setBusyId(images.length === 1 ? images[0].id : 'batch')
     try {
-      await Promise.all(images.map((image) => userApi.deleteGalleryImage(image.id)))
-      const deleted = new Set(images.map((image) => image.id))
-      setSelectedIds((current) => new Set(Array.from(current).filter((id) => !deleted.has(id))))
-      if (selected && deleted.has(selected.id)) setSelected(null)
-      setDeleteDialog(null)
-      app.notify('success', `已永久删除 ${images.length} 张图片`)
+      const result = await runGalleryBatch(images, (image) => userApi.deleteGalleryImage(image.id))
       await reloadLoadedPages()
-    } catch (err) {
-      app.notify('error', errorMessage(err))
+      const succeeded = new Set(result.succeeded.map(({ item }) => item.id))
+      clearSucceededSelection(succeeded)
+      setDeleteDialog(result.failed.length ? { images: result.failed.map(({ item }) => item) } : null)
+      reportGalleryBatchResult('永久删除', result.succeeded.length, result.failed.length)
     } finally {
       setBusyId(null)
     }
@@ -407,20 +406,33 @@ export function GalleryPage() {
     if (!groupDialog) return
     setBusyId('group')
     try {
-      const updated = await Promise.all(groupDialog.ids.map((id) => userApi.updateGalleryImageGroup(id, name)))
+      const result = await runGalleryBatch(groupDialog.ids, (id) => userApi.updateGalleryImageGroup(id, name))
       await reloadLoadedPages()
-      if (selected) {
-        const nextSelected = updated.find((image) => image.id === selected.id)
-        if (nextSelected) setSelected(nextSelected)
-      }
-      setGroupDialog(null)
-      setGroupDraft('')
-      app.notify('success', name ? '已设置图片分组' : '已清除图片分组')
-    } catch (err) {
-      app.notify('error', errorMessage(err))
+      const succeeded = new Set(result.succeeded.map(({ item }) => item))
+      clearSucceededSelection(succeeded)
+      setGroupDialog(result.failed.length ? { ids: result.failed.map(({ item }) => item) } : null)
+      if (!result.failed.length) setGroupDraft('')
+      reportGalleryBatchResult(name ? '设置图片分组' : '清除图片分组', result.succeeded.length, result.failed.length)
     } finally {
       setBusyId(null)
     }
+  }
+
+  function clearSucceededSelection(succeeded: ReadonlySet<string>) {
+    setSelectedIds((current) => new Set(Array.from(current).filter((id) => !succeeded.has(id))))
+    setSelected((current) => current && succeeded.has(current.id) ? null : current)
+  }
+
+  function reportGalleryBatchResult(action: string, succeeded: number, failed: number) {
+    if (!failed) {
+      app.notify('success', `${action}成功 ${succeeded} 项`)
+      return
+    }
+    if (!succeeded) {
+      app.notify('error', `${action}失败 ${failed} 项，失败项已保留，可重试`)
+      return
+    }
+    app.notify('error', `${action}成功 ${succeeded} 项，失败 ${failed} 项；失败项已保留，可重试`)
   }
 
   return (
@@ -466,13 +478,13 @@ export function GalleryPage() {
               <div className={rdGallery.batchCount}>已选择 {selectedImages.length} 项</div>
               <div className="flex items-center gap-1 pl-2">
                 <button
-                  className={cn(galleryClasses.batchSelectAll, filtered.length > 0 && selectedImages.length === filtered.length && galleryClasses.batchSelectAllActive)}
+                  className={cn(galleryClasses.batchSelectAll, allVisibleSelected && galleryClasses.batchSelectAllActive)}
                   type="button"
-                  aria-pressed={filtered.length > 0 && selectedImages.length === filtered.length}
-                  onClick={() => selectAllVisible(!(filtered.length > 0 && selectedImages.length === filtered.length))}
+                  aria-pressed={allVisibleSelected}
+                  onClick={() => selectAllVisible(!allVisibleSelected)}
                 >
-                  <span className={cn(rdGallery.itemCheckbox, filtered.length > 0 && selectedImages.length === filtered.length && rdGallery.itemCheckboxChecked)}>
-                    {filtered.length > 0 && selectedImages.length === filtered.length ? '✓' : ''}
+                  <span className={cn(rdGallery.itemCheckbox, allVisibleSelected && rdGallery.itemCheckboxChecked)}>
+                    {allVisibleSelected ? '✓' : ''}
                   </span>
                   全选
                 </button>

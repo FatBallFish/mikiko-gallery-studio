@@ -140,10 +140,10 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 	case SizeModeRatio:
 		ratio := NormalizeRatio(req.AspectRatio)
 		if ratio == "" {
+			if strings.TrimSpace(req.AspectRatio) != "" {
+				return req, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported aspect ratio")
+			}
 			ratio = "1:1"
-		}
-		if ratio == "" {
-			return req, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported aspect ratio")
 		}
 		req.SizeMode = SizeModeRatio
 		req.AspectRatio = ratio

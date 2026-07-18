@@ -68,26 +68,71 @@ import type {
 import { API_PATHS } from './api-types'
 import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
 
+const adminSessionMutationLock = 'pic-gallery-admin-session-mutation'
+const adminSessionMutationTimeoutMs = 10_000
+let adminSessionMutationTail: Promise<void> = Promise.resolve()
+
+function serializeAdminSessionMutation<T>(mutation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const operation = adminSessionMutationTail.then(() => runAdminSessionMutation(mutation))
+  adminSessionMutationTail = operation.then(() => undefined, () => undefined)
+  return operation
+}
+
+async function runAdminSessionMutation<T>(mutation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController()
+  const timeout = globalThis.setTimeout(() => controller.abort(), adminSessionMutationTimeoutMs)
+  try {
+    return await withAdminSessionMutationLock(controller.signal, mutation)
+  } finally {
+    globalThis.clearTimeout(timeout)
+  }
+}
+
+async function withAdminSessionMutationLock<T>(signal: AbortSignal, mutation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const locks = globalThis.navigator?.locks
+  if (!locks) return mutation(signal)
+  return await locks.request(adminSessionMutationLock, { signal }, () => mutation(signal))
+}
+
 function normalizeGroupIds(ids: Array<string | number>) {
   return ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
 }
 
 function toAdminSession(result: AdminLoginResult): AdminSession {
+  const accessToken = typeof result?.access_token === 'string' ? result.access_token.trim() : ''
+  const adminId = Number(result?.admin_id)
+  if (!accessToken || !Number.isFinite(adminId) || adminId <= 0 || typeof result?.role !== 'string' || !result.role) {
+    throw new Error('后台会话刷新响应无效')
+  }
   const permissions = (result as AdminLoginResult & { permissions?: AdminPermission[] }).permissions
-  return { token: result.access_token, admin_name: result.email || `Admin ${result.admin_id}`, role: result.role, email: result.email, admin_id: result.admin_id, permissions }
+  return {
+    token: accessToken,
+    access_token: accessToken,
+    expires_in_seconds: Number(result.expires_in_seconds ?? 0),
+    admin_name: result.email || `Admin ${adminId}`,
+    role: result.role,
+    email: result.email,
+    admin_id: adminId,
+    permissions,
+  }
 }
 
 export const adminApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
-  login: async (email: string, password: string): Promise<AdminSession> => {
-    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.login, { method: 'POST', body: { email, password }, auth: false })
+  login: (email: string, password: string): Promise<AdminSession> => serializeAdminSessionMutation(async (signal) => {
+    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.login, { method: 'POST', body: { email, password }, auth: false, retryUnauthorized: false, signal })
     return toAdminSession(result)
-  },
-  refreshSession: async (): Promise<AdminSession> => {
-    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.refreshSession, { method: 'POST', auth: false, retryUnauthorized: false })
+  }),
+  refreshSession: (): Promise<AdminSession> => serializeAdminSessionMutation(async (signal) => {
+    const result = await sharedApiClient.request<AdminLoginResult>(API_PATHS.ops.refreshSession, {
+      method: 'POST',
+      auth: false,
+      retryUnauthorized: false,
+      signal,
+    })
     return toAdminSession(result)
-  },
-  logout: () => sharedApiClient.request<void>(API_PATHS.ops.logout, { method: 'POST' }),
+  }),
+  logout: () => serializeAdminSessionMutation((signal) => sharedApiClient.request<void>(API_PATHS.ops.logout, { method: 'POST', retryUnauthorized: false, signal })),
   systemAdmins: {
     list: async (query: Record<string, string | number | undefined> = {}): Promise<PageResult<SystemAdminUser>> => {
       const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.adminUsers, { query }))
@@ -170,7 +215,7 @@ export const adminApi = {
   exportRedeemCodes: (input: RedeemCodeExportRequest) => sharedApiClient.request<RedeemCodeExportResult>(API_PATHS.ops.redeemCodesExport, { method: 'POST', body: input }),
   updateRedeemCodeStatus: (code_id: string | number, status: string) => sharedApiClient.request<RedeemCode>(API_PATHS.ops.redeemCodeStatus, { method: 'POST', pathParams: { code_id }, body: { status } }),
   listRedeemCodeRedemptions: async (code_id: string | number, page = 1, page_size = 20) => normalizePage<LedgerEntry>(await sharedApiClient.request(API_PATHS.ops.redeemCodeRedemptions, { pathParams: { code_id }, query: { page, page_size } })),
-  listCallRecords: async (query: Record<string, string | number | undefined> = {}) => normalizePage<CallRecord>(await sharedApiClient.request(API_PATHS.ops.callRecords, { query })),
+  listCallRecords: async (query: Record<string, string | number | boolean | undefined> = {}) => normalizePage<CallRecord>(await sharedApiClient.request(API_PATHS.ops.callRecords, { query })),
   getCashierOverview: () => sharedApiClient.request<CashierOverview>(API_PATHS.ops.cashierOverview),
   listCashierPlans: async (query: Record<string, string | number | boolean | undefined> = {}) => normalizePage<CashierPlan>(await sharedApiClient.request(API_PATHS.ops.cashierPlans, { query })),
   createCashierPlan: (input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlans, { method: 'POST', body: input }),
@@ -274,6 +319,8 @@ function toDashboardOperations(raw: any) {
     trial_expiring_user_count: Number(raw?.trial_expiring_user_count ?? 0),
     preflight_failure_count: Number(raw?.preflight_failure_count ?? 0),
     preflight_failures_by_error_code: raw?.preflight_failures_by_error_code ?? {},
+    platform_loss_count: Number(raw?.platform_loss_count ?? 0),
+    platform_loss_provider_cost: String(raw?.platform_loss_provider_cost ?? '0.00000'),
     public_gallery_list_views: Number(raw?.public_gallery_list_views ?? 0),
     public_gallery_detail_login_blocks: Number(raw?.public_gallery_detail_login_blocks ?? 0),
     enabled_payment_methods: Array.isArray(raw?.enabled_payment_methods) ? raw.enabled_payment_methods : [],
@@ -430,16 +477,10 @@ function toModelAccountModel(raw: any, accountId?: string | number): ModelAccoun
     model_code: raw.model_code ?? '',
     display_name: raw.display_name ?? raw.name ?? raw.model_code ?? '',
     task_types: raw.task_types ?? ['text_to_image'],
-    base_resolution: raw.base_resolution ?? raw.supported_base_resolution ?? ['auto'],
-    quality: raw.quality ?? ['auto'],
-    max_reference_image_count: Number(raw.max_reference_image_count ?? 5),
-    max_image_count: Number(raw.max_image_count ?? 1),
-    size_modes: raw.size_modes ?? ['ratio'],
-    supported_ratios: raw.supported_ratios ?? ['1:1', '16:9', '9:16', '4:3', '3:4'],
-    supported_pixel_sizes: raw.supported_pixel_sizes ?? ['1024x1024'],
-    output_format: raw.output_format ?? ['png'],
-    output_compression: Number(raw.output_compression ?? 100),
-    moderation: raw.moderation ?? ['auto'],
+    qualities: raw.qualities ?? raw.supported_qualities ?? ['auto'],
+    supported_ratios: Array.isArray(raw.supported_ratios) && raw.supported_ratios.length ? raw.supported_ratios : ['1:1'],
+    max_image_count: Math.max(1, Number(raw.max_image_count ?? 1) || 1),
+    max_reference_image_count: Math.max(0, Number(raw.max_reference_image_count ?? 0) || 0),
     cost_per_image: String(raw.cost_per_image ?? raw.output_cost ?? '0.00000'),
     currency: raw.currency ?? 'USD',
     enabled: Boolean(raw.enabled ?? true),

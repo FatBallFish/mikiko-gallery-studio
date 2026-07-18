@@ -12,8 +12,47 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+func TestStorageRouterPinsReferenceAssetToOriginalConfig(t *testing.T) {
+	data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")
+	original := storage.BackendRef{ConfigID: "original", Version: 2, Driver: "local", Backend: storage.NewLocalBackend(t.TempDir())}
+	replacement := storage.BackendRef{ConfigID: "replacement", Version: 1, Driver: "local", Backend: storage.NewLocalBackend(t.TempDir())}
+	router := &switchingAssetRouter{defaultRef: original, refs: map[string]storage.BackendRef{"original": original, "replacement": replacement}}
+	store := newMemoryAssetStore()
+	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{ReferenceImageMaxMB: 10}, store, router)
+
+	asset, err := svc.Upload(9, "tiny.png", "image/png", data)
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if asset.StorageConfigID != "original" {
+		t.Fatalf("expected original storage config, got %#v", asset)
+	}
+	router.defaultRef = replacement
+	_, downloaded, err := svc.Download(9, asset.ID)
+	if err != nil {
+		t.Fatalf("Download after default switch: %v", err)
+	}
+	if string(downloaded) != string(data) {
+		t.Fatal("downloaded historical asset content mismatch")
+	}
+}
+
+type switchingAssetRouter struct {
+	defaultRef storage.BackendRef
+	refs       map[string]storage.BackendRef
+}
+
+func (r *switchingAssetRouter) DefaultWriter(context.Context) (storage.BackendRef, error) {
+	return r.defaultRef, nil
+}
+
+func (r *switchingAssetRouter) BackendFor(_ context.Context, configID string, _ string) (storage.BackendRef, error) {
+	return r.refs[configID], nil
+}
 
 func TestUploadDeduplicatesByHash(t *testing.T) {
 	data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")

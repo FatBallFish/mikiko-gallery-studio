@@ -2,136 +2,124 @@ package storage
 
 import (
 	"context"
-	"errors"
-	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 )
 
-func TestRegistryRoutesDefaultAndLegacyLocalBackends(t *testing.T) {
-	oldRoot := t.TempDir()
-	newRoot := t.TempDir()
-	source := fakeConfigSource{
-		defaultConfig: domainstorageconfig.ResolvedConfig{ConfigRecord: domainstorageconfig.ConfigRecord{
-			ID: "new", Code: "r2-local", Driver: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: true, IsDefault: true, LocalRoot: newRoot, Version: 1,
-		}},
-		legacyConfig: domainstorageconfig.ResolvedConfig{ConfigRecord: domainstorageconfig.ConfigRecord{
-			ID: "old", Code: "bootstrap-local", Driver: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: false, LocalRoot: oldRoot, Version: 1,
-		}},
-	}
-	registry := NewRegistry(source, 0)
+func TestRegistryInvalidationSynchronizesDefaultAcrossInstances(t *testing.T) {
+	source := &mutableConfigSource{records: map[string]domainstorageconfig.ResolvedConfig{}}
+	source.setDefault(localResolved("one", 1, t.TempDir()))
+	first := NewRegistry(source, time.Hour)
+	second := NewRegistry(source, time.Hour)
 
-	writer, err := registry.DefaultWriter(context.Background())
+	firstBefore, err := first.DefaultWriter(context.Background())
 	if err != nil {
-		t.Fatalf("DefaultWriter returned error: %v", err)
+		t.Fatalf("first default: %v", err)
 	}
-	if writer.ConfigID != "new" {
-		t.Fatalf("expected default config new, got %q", writer.ConfigID)
-	}
-	if err := writer.Backend.Put(context.Background(), "generated-images/new.png", "image/png", []byte("new")); err != nil {
-		t.Fatalf("put new object: %v", err)
-	}
-
-	legacyBackend := NewLocalBackend(oldRoot)
-	if err := legacyBackend.Put(context.Background(), "generated-images/old.png", "image/png", []byte("old")); err != nil {
-		t.Fatalf("seed legacy object: %v", err)
-	}
-	reader, err := registry.BackendFor(context.Background(), "", "local")
+	secondBefore, err := second.DefaultWriter(context.Background())
 	if err != nil {
-		t.Fatalf("BackendFor legacy returned error: %v", err)
+		t.Fatalf("second default: %v", err)
 	}
-	got, err := reader.Backend.Get(context.Background(), "generated-images/old.png")
+	if firstBefore.ConfigID != "one" || secondBefore.ConfigID != "one" {
+		t.Fatalf("expected initial config one, got first=%q second=%q", firstBefore.ConfigID, secondBefore.ConfigID)
+	}
+
+	source.setDefault(localResolved("two", 1, t.TempDir()))
+	first.Invalidate(StorageInvalidation{ConfigID: "two", Version: 1, DefaultChanged: true})
+	second.Invalidate(StorageInvalidation{ConfigID: "two", Version: 1, DefaultChanged: true})
+
+	firstAfter, err := first.DefaultWriter(context.Background())
 	if err != nil {
-		t.Fatalf("get legacy object: %v", err)
+		t.Fatalf("first refreshed default: %v", err)
 	}
-	if string(got) != "old" {
-		t.Fatalf("unexpected legacy content %q", got)
+	secondAfter, err := second.DefaultWriter(context.Background())
+	if err != nil {
+		t.Fatalf("second refreshed default: %v", err)
 	}
-	if _, err := NewLocalBackend(newRoot).Get(context.Background(), filepath.ToSlash("generated-images/old.png")); err == nil {
-		t.Fatal("legacy object should not be read from default backend")
-	}
-}
-
-func TestRegistryProbeDeletesProbeObjectOnSuccess(t *testing.T) {
-	root := t.TempDir()
-	registry := NewRegistry(nil, 0)
-	result := registry.probeBackend(context.Background(), NewLocalBackend(root), ".pic-gallery-probe/success.txt", time.Now())
-	if result.Status != domainstorageconfig.ProbeStatusSuccess {
-		t.Fatalf("expected successful probe, got %#v", result)
-	}
-	if _, err := NewLocalBackend(root).Get(context.Background(), ".pic-gallery-probe/success.txt"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected probe object to be deleted, got %v", err)
+	if firstAfter.ConfigID != "two" || secondAfter.ConfigID != "two" {
+		t.Fatalf("expected invalidated config two, got first=%q second=%q", firstAfter.ConfigID, secondAfter.ConfigID)
 	}
 }
 
-func TestRegistryProbeCleanupIgnoresCanceledProbeContext(t *testing.T) {
-	backend := &cancelSensitiveBackend{content: map[string][]byte{}}
-	registry := NewRegistry(nil, 0)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+func TestRegistryTTLConvergesWithoutInvalidation(t *testing.T) {
+	now := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
+	source := &mutableConfigSource{records: map[string]domainstorageconfig.ResolvedConfig{}}
+	source.setDefault(localResolved("one", 1, t.TempDir()))
+	registry := NewRegistry(source, time.Minute)
+	registry.now = func() time.Time { return now }
 
-	result := registry.probeBackend(ctx, backend, ".pic-gallery-probe/canceled.txt", time.Now())
-	if result.Status != domainstorageconfig.ProbeStatusFailed {
-		t.Fatalf("expected failed probe after canceled get, got %#v", result)
+	if ref, err := registry.DefaultWriter(context.Background()); err != nil || ref.ConfigID != "one" {
+		t.Fatalf("initial default ref=%#v err=%v", ref, err)
 	}
-	if !backend.deleted {
-		t.Fatal("expected cleanup to delete probe object with an independent context")
+	source.setDefault(localResolved("two", 1, t.TempDir()))
+	if ref, err := registry.DefaultWriter(context.Background()); err != nil || ref.ConfigID != "one" {
+		t.Fatalf("default should remain cached before TTL, ref=%#v err=%v", ref, err)
 	}
-	if _, exists := backend.content[".pic-gallery-probe/canceled.txt"]; exists {
-		t.Fatal("expected probe object to be removed from backend")
+	now = now.Add(time.Minute + time.Second)
+	if ref, err := registry.DefaultWriter(context.Background()); err != nil || ref.ConfigID != "two" {
+		t.Fatalf("default should converge after TTL, ref=%#v err=%v", ref, err)
 	}
 }
 
-type fakeConfigSource struct {
-	defaultConfig domainstorageconfig.ResolvedConfig
-	legacyConfig  domainstorageconfig.ResolvedConfig
-}
+func TestRegistryRoutesHistoricalResourceByStorageConfigID(t *testing.T) {
+	source := &mutableConfigSource{records: map[string]domainstorageconfig.ResolvedConfig{}}
+	old := localResolved("old", 2, t.TempDir())
+	current := localResolved("current", 4, t.TempDir())
+	source.records[old.ID] = old
+	source.setDefault(current)
+	registry := NewRegistry(source, time.Minute)
 
-func (s fakeConfigSource) ResolveDefaultWritable(context.Context) (domainstorageconfig.ResolvedConfig, error) {
-	return s.defaultConfig, nil
-}
-
-func (s fakeConfigSource) ResolveByID(_ context.Context, id string) (domainstorageconfig.ResolvedConfig, error) {
-	if id == s.defaultConfig.ID {
-		return s.defaultConfig, nil
+	ref, err := registry.BackendFor(context.Background(), "old", "local")
+	if err != nil {
+		t.Fatalf("historical backend: %v", err)
 	}
-	return s.legacyConfig, nil
-}
-
-func (s fakeConfigSource) ResolveLegacyByDriver(context.Context, string) (domainstorageconfig.ResolvedConfig, error) {
-	return s.legacyConfig, nil
-}
-
-type cancelSensitiveBackend struct {
-	content map[string][]byte
-	deleted bool
-}
-
-func (b *cancelSensitiveBackend) Driver() string { return "test" }
-
-func (b *cancelSensitiveBackend) Put(_ context.Context, key string, _ string, content []byte) error {
-	b.content[key] = append([]byte{}, content...)
-	return nil
-}
-
-func (b *cancelSensitiveBackend) Get(ctx context.Context, key string) ([]byte, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if ref.ConfigID != "old" || ref.Version != 2 {
+		t.Fatalf("expected historical old v2, got %#v", ref)
 	}
-	content, ok := b.content[key]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	return append([]byte{}, content...), nil
 }
 
-func (b *cancelSensitiveBackend) Delete(ctx context.Context, key string) error {
-	if err := ctx.Err(); err != nil {
-		return err
+func localResolved(id string, version int64, root string) domainstorageconfig.ResolvedConfig {
+	return domainstorageconfig.ResolvedConfig{ConfigRecord: domainstorageconfig.ConfigRecord{
+		ID: id, Code: id, Name: id, Driver: "local", Provider: "local", Status: "enabled",
+		ReadEnabled: true, WriteEnabled: true, IsDefault: true, LocalRoot: root, Version: version,
+	}}
+}
+
+type mutableConfigSource struct {
+	mu        sync.Mutex
+	defaultID string
+	records   map[string]domainstorageconfig.ResolvedConfig
+}
+
+func (s *mutableConfigSource) setDefault(config domainstorageconfig.ResolvedConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, item := range s.records {
+		item.IsDefault = false
+		s.records[id] = item
 	}
-	b.deleted = true
-	delete(b.content, key)
-	return nil
+	config.IsDefault = true
+	s.records[config.ID] = config
+	s.defaultID = config.ID
+}
+
+func (s *mutableConfigSource) ResolveDefaultWritable(context.Context) (domainstorageconfig.ResolvedConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.records[s.defaultID], nil
+}
+
+func (s *mutableConfigSource) ResolveByID(_ context.Context, id string) (domainstorageconfig.ResolvedConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.records[id], nil
+}
+
+func (s *mutableConfigSource) ResolveLegacyByDriver(context.Context, string) (domainstorageconfig.ResolvedConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.records[s.defaultID], nil
 }

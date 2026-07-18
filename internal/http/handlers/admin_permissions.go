@@ -14,7 +14,7 @@ func (a *API) requireAdminPermission(r *http.Request, permission domainadminauth
 		return nil, appErr
 	}
 	if !a.adminHasPermission(admin, permission) {
-		return nil, errs.New(http.StatusForbidden, errs.CodeForbidden, "admin permission denied")
+		return admin, errs.New(http.StatusForbidden, errs.CodeForbidden, "admin permission denied")
 	}
 	return admin, nil
 }

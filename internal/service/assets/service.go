@@ -34,7 +34,6 @@ type storedAsset struct {
 type Service struct {
 	mu           sync.Mutex
 	store        Store
-	backend      storage.Backend
 	router       storage.Router
 	maxBytes     int64
 	assetsByID   map[string]storedAsset

@@ -1,11 +1,14 @@
 import type { Capability, CapabilityModelGroup, EstimateResult, ImageTask, ImageTaskType } from '../../../shared/api-types'
 import { displayPoints, publicUnavailableReason, workspaceGenerateReadiness } from './workspaceGenerateReadiness'
+import { workspaceReferenceMaximum } from './workspaceReferenceLimit'
 import { workspaceTaskFailureView, workspaceTaskPendingView } from './workspaceTaskFailure'
 import { generationSlots, workspaceProgressNodes, type WorkspaceProgressNode } from './workspaceTaskProgress'
 
 type WorkspaceViewModelInput = {
   capability: Capability | null
   taskType: ImageTaskType
+  referenceCount: number
+  requiredReferencesReady: boolean
   selectedModelCode: string
   parametersReady: boolean
   prompt: string
@@ -21,10 +24,8 @@ export type WorkspaceParameterOption = { value: string; label: string; detail?: 
 export type WorkspaceParameterModel = {
   taskTypes: ImageTaskType[]
   models: WorkspaceParameterOption[]
-  sizeModes: Array<'ratio' | 'pixel'>
   baseResolutions: string[]
   aspectRatios: string[]
-  pixelSizes: string[]
   counts: number[]
   referenceLimit: number
 }
@@ -38,17 +39,22 @@ export type WorkspaceTaskView = {
   requestedCount: number
 }
 
+export function matchWorkspaceCapabilityOption(options: string[], candidate?: string) {
+  const normalized = candidate?.trim().toLowerCase()
+  if (!normalized) return undefined
+  return options.find((option) => option.toLowerCase() === normalized)
+}
+
 function taskModels(capability: Capability | null, taskType: ImageTaskType) {
-  return capability?.model_groups.filter((model) => model.task_types.includes(taskType)) ?? []
+  return capability?.model_groups.filter((model) => (
+    model.task_types.includes(taskType)
+    && Boolean(model.base_resolution?.length)
+    && Boolean(model.aspect_ratios?.length || capability.aspect_ratios.length)
+  )) ?? []
 }
 
 function selectedModel(models: CapabilityModelGroup[], code: string) {
   return models.find((model) => model.code === code)
-}
-
-function normalizedSizeModes(model?: CapabilityModelGroup): Array<'ratio' | 'pixel'> {
-  const modes = model?.size_modes?.filter((mode): mode is 'ratio' | 'pixel' => mode === 'ratio' || mode === 'pixel') ?? []
-  return modes.length ? Array.from(new Set(modes)) : ['ratio']
 }
 
 function taskView(task: ImageTask | null): WorkspaceTaskView {
@@ -80,6 +86,9 @@ export function createWorkspaceViewModel(input: WorkspaceViewModelInput) {
   const readiness = workspaceGenerateReadiness({
     busy: input.busy,
     hasModel: Boolean(model),
+    taskType: input.taskType,
+    referenceCount: input.referenceCount,
+    requiredReferencesReady: input.requiredReferencesReady,
     unavailableReason: input.capability?.unavailable_reason,
     parametersReady: input.parametersReady,
     prompt: input.prompt,
@@ -103,12 +112,10 @@ export function createWorkspaceViewModel(input: WorkspaceViewModelInput) {
     parameters: {
       taskTypes: input.capability?.task_types ?? [],
       models: models.map((item) => ({ value: item.code, label: item.name, detail: item.description })),
-      sizeModes: normalizedSizeModes(model),
       baseResolutions: model?.base_resolution?.length ? model.base_resolution : [],
       aspectRatios: model?.aspect_ratios?.length ? model.aspect_ratios : input.capability?.aspect_ratios ?? [],
-      pixelSizes: model?.pixel_sizes?.length ? model.pixel_sizes : input.capability?.pixel_sizes ?? [],
       counts: Array.from({ length: Math.max(0, Number(model?.max_output_image_count ?? input.capability?.max_image_count ?? 0)) }, (_, index) => index + 1),
-      referenceLimit: Number(model?.max_reference_image_count ?? 0),
+      referenceLimit: workspaceReferenceMaximum(model?.max_reference_image_count),
     } satisfies WorkspaceParameterModel,
     estimate,
     generate: readiness,

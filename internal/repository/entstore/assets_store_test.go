@@ -26,17 +26,19 @@ func TestAssetsStorePersistsAndQueriesByHash(t *testing.T) {
 
 	store := NewAssetsStore(client)
 	asset := domainassets.ReferenceAsset{
-		ID:            "11111111-1111-1111-1111-111111111111",
-		APIKeyID:      ptrInt64(33),
-		UploadSource:  "openapi",
-		Status:        "ready",
-		MimeType:      "image/png",
-		FileSizeBytes: 68,
-		Width:         1,
-		Height:        1,
-		SHA256:        "hash-asset",
-		ObjectKey:     "reference-assets/11111111-1111-1111-1111-111111111111.png",
-		CreatedAt:     time.Now(),
+		ID:              "11111111-1111-1111-1111-111111111111",
+		APIKeyID:        ptrInt64(33),
+		UploadSource:    "openapi",
+		Status:          "ready",
+		StorageConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		StorageDriver:   "local",
+		MimeType:        "image/png",
+		FileSizeBytes:   68,
+		Width:           1,
+		Height:          1,
+		SHA256:          "hash-asset",
+		ObjectKey:       "reference-assets/11111111-1111-1111-1111-111111111111.png",
+		CreatedAt:       time.Now(),
 	}
 	if err := store.Save(ctx, 7, asset); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -51,6 +53,9 @@ func TestAssetsStorePersistsAndQueriesByHash(t *testing.T) {
 	}
 	if loaded.APIKeyID == nil || *loaded.APIKeyID != 33 || loaded.UploadSource != "openapi" {
 		t.Fatalf("expected api key upload metadata to round-trip, got %#v", loaded)
+	}
+	if loaded.StorageConfigID != asset.StorageConfigID {
+		t.Fatalf("expected storage config id to round-trip, got %#v", loaded)
 	}
 
 	loadedByID, err := store.GetByUserAndID(ctx, 7, asset.ID)

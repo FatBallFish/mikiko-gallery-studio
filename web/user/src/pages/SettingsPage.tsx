@@ -1,4 +1,3 @@
-import type { AccentTheme, ThemeMode } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { useApp } from '../components'
 import { button as btn, card } from '../ui/redesign-classes'
@@ -7,10 +6,6 @@ import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { settingsAccentThemeOptions, settingsThemeModeOptions } from './settingsThemeModel'
 
 const settingsClasses = {
-  page: 'w-full flex-1 p-6 md:p-10',
-  header: 'mb-10',
-  title: 'm-0 text-4xl font-black leading-none md:text-6xl',
-  detail: 'mt-4 max-w-2xl text-base leading-relaxed text-[var(--muted)]',
   grid: 'grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr_1.1fr]',
   card: card.padded,
   cardHead: 'mb-6 flex items-start justify-between gap-4',
@@ -26,7 +21,6 @@ const settingsClasses = {
   swatch: 'grid size-12 shrink-0 place-items-center rounded-2xl border border-[color-mix(in_oklch,var(--fg)_12%,transparent)] shadow-[var(--pg-shadow-md)]',
   swatchDot: 'size-4 rounded-full bg-[var(--surface-solid)]',
   syncPanel: 'rounded-3xl border border-[var(--border)] bg-[var(--bg)]/50 p-6',
-  // Accent preview mini-card
   previewCard: 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4',
   previewRow: 'flex items-center justify-between gap-3',
   previewLabel: 'text-xs text-[var(--muted)]',

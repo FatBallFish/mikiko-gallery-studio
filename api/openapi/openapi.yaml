@@ -593,7 +593,10 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
+        - $ref: ./components/parameters/common.yaml#/components/parameters/SizeMode
+        - $ref: ./components/parameters/common.yaml#/components/parameters/AspectRatio
         - $ref: ./components/parameters/common.yaml#/components/parameters/BaseResolution
         - $ref: ./components/parameters/common.yaml#/components/parameters/Quality
         - $ref: ./components/parameters/common.yaml#/components/parameters/OutputFormat
@@ -861,7 +864,10 @@ paths:
           accessBodySHA256: []
           accessSignature: []
       parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/RouteModelCode
         - $ref: ./components/parameters/common.yaml#/components/parameters/AbstractModel
+        - $ref: ./components/parameters/common.yaml#/components/parameters/SizeMode
+        - $ref: ./components/parameters/common.yaml#/components/parameters/AspectRatio
         - $ref: ./components/parameters/common.yaml#/components/parameters/BaseResolution
         - $ref: ./components/parameters/common.yaml#/components/parameters/Quality
         - $ref: ./components/parameters/common.yaml#/components/parameters/OutputFormat
@@ -1079,8 +1085,7 @@ paths:
       tags: [Admin Storage Config]
       summary: List object storage configurations without plaintext secrets
       operationId: getAdminStorageConfigs
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       responses:
         '200':
           description: Storage configuration list
@@ -1092,8 +1097,7 @@ paths:
       tags: [Admin Storage Config]
       summary: Create an object storage configuration
       operationId: postAdminStorageConfig
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
@@ -1110,10 +1114,9 @@ paths:
   /api/ops/admin/v1/storage-configs:probe:
     post:
       tags: [Admin Storage Config]
-      summary: Probe a draft object storage configuration before saving it
+      summary: Probe a draft object storage configuration
       operationId: postAdminStorageConfigDraftProbe
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
@@ -1122,13 +1125,13 @@ paths:
               $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigWriteRequest
       responses:
         '200':
-          description: Draft storage probe succeeded
+          description: Probe succeeded
           content:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageProbeResponse
         '400':
-          description: Draft storage probe failed
+          description: Probe failed
           content:
             application/json:
               schema:
@@ -1136,35 +1139,31 @@ paths:
   /api/ops/admin/v1/storage-configs/{storage_config_id}:
     get:
       tags: [Admin Storage Config]
-      summary: Get an object storage configuration without plaintext secrets
+      summary: Get an object storage configuration
       operationId: getAdminStorageConfig
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: storage_config_id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       responses:
         '200':
-          description: Storage configuration view
+          description: Storage configuration
           content:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
     put:
       tags: [Admin Storage Config]
-      summary: Update an object storage configuration and optionally rotate write-only secrets
+      summary: Update an object storage configuration
       operationId: putAdminStorageConfig
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: storage_config_id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -1178,34 +1177,26 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
-        '409':
-          description: Version conflict
-          content:
-            application/json:
-              schema:
-                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/ops/admin/v1/storage-configs/{storage_config_id}:probe:
     post:
       tags: [Admin Storage Config]
-      summary: Probe a saved object storage configuration and persist the probe result
+      summary: Probe a saved storage configuration
       operationId: postAdminStorageConfigProbe
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: storage_config_id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       responses:
         '200':
-          description: Probe succeeded and storage configuration was updated
+          description: Probe succeeded and result persisted
           content:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageConfigResponse
         '400':
-          description: Probe failed and failure was recorded on the storage configuration
+          description: Probe failed and result persisted
           content:
             application/json:
               schema:
@@ -1213,16 +1204,14 @@ paths:
   /api/ops/admin/v1/storage-configs/{storage_config_id}:set-default:
     post:
       tags: [Admin Storage Config]
-      summary: Set a probed readable/writable storage configuration as the default writer
+      summary: Set a probed readable and writable storage configuration as default
       operationId: postAdminStorageConfigSetDefault
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: storage_config_id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       requestBody:
         required: false
         content:
@@ -1239,16 +1228,14 @@ paths:
   /api/ops/admin/v1/storage-configs/{storage_config_id}:set-status:
     post:
       tags: [Admin Storage Config]
-      summary: Change storage configuration read/write availability
+      summary: Change storage read and write availability
       operationId: postAdminStorageConfigSetStatus
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: storage_config_id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -1257,7 +1244,7 @@ paths:
               $ref: ./components/schemas/admin.yaml#/components/schemas/AdminStorageStatusRequest
       responses:
         '200':
-          description: Storage configuration status changed
+          description: Storage status changed
           content:
             application/json:
               schema:
@@ -2061,6 +2048,10 @@ paths:
         - name: created_to
           in: query
           schema: { type: string, format: date-time }
+        - name: platform_loss
+          in: query
+          description: When true, return only terminal upstream-success/platform-artifact-failure records.
+          schema: { type: boolean }
       responses:
         '200':
           description: Image task call record page
@@ -2130,72 +2121,85 @@ paths:
     get:
       tags: [Admin Model Routing]
       summary: List real upstream models
+      operationId: listAdminModelAccountModels
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: account_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
       responses:
         '200':
           description: Account model page
           content:
             application/json:
-              schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelListResponse }
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelListResponse
     post:
       tags: [Admin Model Routing]
       summary: Create real upstream model
+      operationId: createAdminModelAccountModel
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: account_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest }
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest
       responses:
         '201':
           description: Account model created
           content:
             application/json:
-              schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse }
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse
   /api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}:
     put:
       tags: [Admin Model Routing]
-      summary: Update real upstream model
+      summary: Update a real upstream model
+      operationId: updateAdminModelAccountModel
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: account_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
         - name: model_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest }
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelWriteRequest
       responses:
         '200':
           description: Account model updated
           content:
             application/json:
-              schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse }
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminModelAccountModelResponse
     delete:
       tags: [Admin Model Routing]
-      summary: Delete real upstream model
+      summary: Delete a real upstream model
+      operationId: deleteAdminModelAccountModel
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: account_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
         - name: model_id
           in: path
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: integer, format: int64, minimum: 1 }
       responses:
         '204': { description: Deleted }
   /api/ops/admin/v1/route-models:
@@ -3472,6 +3476,18 @@ paths:
       responses:
         '200':
           description: Admin session with resolved page/action permissions
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminLoginResponse
+  /api/ops/admin/v1/auth/session/refresh:
+    post:
+      tags: [Admin Auth]
+      summary: Rotate the admin refresh session and issue a new access token
+      operationId: postOpsAdminSessionRefresh
+      responses:
+        '200':
+          description: Admin session refreshed
           content:
             application/json:
               schema:

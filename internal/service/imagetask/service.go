@@ -33,21 +33,23 @@ import (
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/fatballfish/pic-gallery/internal/service/secretcodec"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type Service struct {
-	cfg        config.Config
-	resolver   *modelhub.Resolver
-	providers  map[string]provider.ImageProvider
-	store      Store
-	assets     AssetLoader
-	billing    BillingManager
-	apiKeys    APIKeyUsageManager
-	backend    storage.Backend
-	router     storage.Router
-	httpClient *http.Client
+	cfg           config.Config
+	resolver      *modelhub.Resolver
+	providers     map[string]provider.ImageProvider
+	store         Store
+	assets        AssetLoader
+	billing       BillingManager
+	apiKeys       APIKeyUsageManager
+	router        storage.Router
+	recoveryCodec *secretcodec.Codec
+	httpClient    *http.Client
+	now           func() time.Time
 }
 
 type executionOptions struct {
@@ -118,12 +120,6 @@ func NewServiceWithProvidersStoreAssetsAndBilling(cfg config.Config, providers m
 }
 
 func NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg config.Config, providers map[string]provider.ImageProvider, store Store, assets AssetLoader, billing BillingManager, backend storage.Backend) *Service {
-	if store == nil {
-		store = NewMemoryStore()
-	}
-	if providers == nil {
-		providers = defaultProviders(cfg)
-	}
 	if backend == nil {
 		backend = storage.NewLocalBackend(cfg.Storage.LocalRoot)
 	}
@@ -141,14 +137,16 @@ func NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg config.Config, provi
 		router = storage.NewStaticRouter(storage.NewLocalBackend(cfg.Storage.LocalRoot))
 	}
 	return &Service{
-		cfg:        cfg,
-		resolver:   modelhub.NewResolver(cfg),
-		providers:  providers,
-		store:      store,
-		assets:     assets,
-		billing:    billing,
-		router:     router,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		cfg:           cfg,
+		resolver:      modelhub.NewResolver(cfg),
+		providers:     providers,
+		store:         store,
+		assets:        assets,
+		billing:       billing,
+		router:        router,
+		recoveryCodec: secretcodec.New(cfg.Security.SecureConfigEncryptionKey),
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		now:           time.Now,
 	}
 }
 
@@ -172,6 +170,13 @@ func (s *Service) SetHTTPClient(client *http.Client) {
 		return
 	}
 	s.httpClient = client
+}
+
+func (s *Service) nowUTC() time.Time {
+	if s == nil || s.now == nil {
+		return time.Now().UTC()
+	}
+	return s.now().UTC()
 }
 
 func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequest) (domainimagetask.Task, error) {
@@ -239,7 +244,7 @@ func (s *Service) persistPreflightFailedTask(ctx context.Context, task domainima
 }
 
 func (s *Service) AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
-	task, err := s.store.AcquireNextQueuedTask(ctx, owner, time.Now().UTC(), leaseTTL)
+	task, err := s.store.AcquireNextQueuedTask(ctx, owner, s.nowUTC(), leaseTTL)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return domainimagetask.Task{}, false, nil
@@ -253,7 +258,7 @@ func (s *Service) AcquireNextTask(ctx context.Context, owner string, leaseTTL ti
 }
 
 func (s *Service) HeartbeatTask(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error) {
-	task, err := s.store.RenewTaskLease(ctx, taskID, owner, time.Now().UTC(), leaseTTL)
+	task, err := s.store.RenewTaskLease(ctx, taskID, owner, s.nowUTC(), leaseTTL)
 	if err != nil {
 		switch {
 		case errors.Is(err, repoerr.ErrNotFound):
@@ -306,7 +311,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		SavePolicy:          "private",
 	}, resolved, domainimagetask.StatusRunning)
 	leaseOwner := "inline-executor"
-	leaseExpiresAt := time.Now().UTC().Add(2 * time.Minute)
+	leaseExpiresAt := s.nowUTC().Add(2 * time.Minute)
 	task.LeaseOwner = leaseOwner
 	task.LeaseExpiresAt = &leaseExpiresAt
 	if err := s.applyTaskEstimate(ctx, &task, domainimagetask.CreateRequest{
@@ -317,6 +322,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		UserGroupCodes:      append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier: req.UserGroupMultiplier,
 		AbstractModel:       req.AbstractModel,
+		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
 		SizeMode:            req.SizeMode,
@@ -364,8 +370,11 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 	if stored, ok, err := terminalTaskResult(task); err != nil || ok {
 		return stored, err
 	}
-	if !leaseOwnedBy(task, owner, time.Now().UTC()) {
+	if !leaseOwnedBy(task, owner, s.nowUTC()) {
 		return domainimagetask.ExecuteResult{}, errs.New(409, errs.CodeConflict, "image task lease conflict")
+	}
+	if task.ArtifactRecovery.EncryptedPayload != "" {
+		return s.executeArtifactRecovery(ctx, task, owner)
 	}
 
 	if recovered, ok, err := s.resumeTerminalization(ctx, task, owner); err != nil || ok {
@@ -492,9 +501,9 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 		return domainimagetask.TestModelAccountResult{}, compatErr
 	}
 
-	startedAt := time.Now().UTC()
+	startedAt := s.nowUTC()
 	resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task, providerReq)
-	finishedAt := time.Now().UTC()
+	finishedAt := s.nowUTC()
 	task.Provider = candidate.Provider
 	task.ProviderModelID = candidate.ProviderModelID
 	task.RouteModelID = candidate.RouteModelID
@@ -589,11 +598,11 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			return s.failOwnedTask(ctx, task, owner, compatErr)
 		}
 
-		attemptStarted := time.Now().UTC()
+		attemptStarted := s.nowUTC()
 		openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
 		if openAIFormat && normalizedCount(task.OutputImageCount) > 1 {
-			progress, progressErr := s.executeOpenAIFanoutWithProgress(ctx, providerClient, candidate, task, owner, providerReq)
-			attemptFinished := time.Now().UTC()
+			progress, progressErr := s.executeOpenAIFanout(ctx, providerClient, candidate, task, providerReq)
+			attemptFinished := s.nowUTC()
 			if progressErr != nil {
 				task = s.decorateTaskProvider(task, candidate)
 				task.FallbackCount = len(task.Attempts)
@@ -602,20 +611,26 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			}
 			resp := progress.Response
 			resp.Data = append([]provider.ImageResult(nil), progress.Results...)
-			persistedResults := append([]provider.ImageResult(nil), progress.Results...)
-			finalStatus := domainimagetask.StatusSucceeded
-			if len(progress.Failures) > 0 && len(persistedResults) > 0 {
-				finalStatus = domainimagetask.StatusPartialFailed
-			}
 			task = s.decorateTaskProvider(task, candidate)
-			task.Status = domainimagetask.StatusRunning
-			task.FallbackCount = len(task.Attempts)
-			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, attemptStarted, attemptFinished))
-			task.Results = persistedResults
 			if len(progress.Failures) > 0 {
 				task.ErrorCode = errorCode(progress.Failures[0])
 				task.ErrorMessage = errorMessage(progress.Failures[0])
 			}
+			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
+				return s.handleProviderSuccessCheckpointFailure(ctx, task, owner, checkpointErr)
+			}
+			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
+			if persistErr != nil {
+				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
+			}
+			finalStatus := domainimagetask.StatusSucceeded
+			if len(progress.Failures) > 0 && len(persistedResults) > 0 {
+				finalStatus = domainimagetask.StatusPartialFailed
+			}
+			task.Status = domainimagetask.StatusRunning
+			task.FallbackCount = len(task.Attempts)
+			task.Results = persistedResults
+			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
 			}
@@ -646,26 +661,23 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		}
 
 		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task, providerReq)
-		attemptFinished := time.Now().UTC()
+		attemptFinished := s.nowUTC()
 		if err == nil {
-			task = s.decorateTaskProvider(task, candidate)
-			setTaskProgress(&task, domainimagetask.ProgressStagePersisting, "图片生成完成，正在保存结果")
-			if saveErr := s.updateOwnedProgress(ctx, task, owner); saveErr != nil && !isTaskLeaseConflict(saveErr) {
-				return domainimagetask.ExecuteResult{}, saveErr
+			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
+				return s.handleProviderSuccessCheckpointFailure(ctx, task, owner, checkpointErr)
 			}
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
-				return s.failOwnedTask(ctx, task, owner, persistErr)
+				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
 			}
 			finalStatus := domainimagetask.StatusSucceeded
 			if openAIFormat && len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
 			}
-			task = s.decorateTaskProvider(task, candidate)
 			task.Status = domainimagetask.StatusRunning
 			task.FallbackCount = len(task.Attempts)
-			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, attemptStarted, attemptFinished))
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
+			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
 				return s.failOwnedTask(ctx, task, owner, billingErr)
 			}
@@ -736,7 +748,7 @@ func (s *Service) decorateTaskProvider(task domainimagetask.Task, candidate mode
 	return task
 }
 
-func (s *Service) executeOpenAIFanoutWithProgress(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, owner string, req provider.ImageRequest) (openAIFanoutProgress, error) {
+func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, req provider.ImageRequest) (openAIFanoutProgress, error) {
 	call := func(ctx context.Context, singleReq provider.ImageRequest) (provider.ImageResponse, error) {
 		if task.TaskType == string(provider.TaskTypeImageEdit) {
 			return client.Edit(ctx, singleReq)
@@ -799,42 +811,7 @@ func (s *Service) executeOpenAIFanoutWithProgress(ctx context.Context, client pr
 				progress.Failures = append(progress.Failures, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images"))
 				return nil
 			}
-			persistingSnapshot := s.decorateTaskProvider(task, candidate)
-			persistingSnapshot.Status = domainimagetask.StatusRunning
-			setTaskProgress(&persistingSnapshot, domainimagetask.ProgressStagePersisting, "图片生成完成，正在保存结果")
-			if saveErr := s.updateOwnedProgress(ctx, persistingSnapshot, owner); saveErr != nil && !isTaskLeaseConflict(saveErr) {
-				return saveErr
-			}
-			persisted, persistErr := s.persistImageResults(ctx, task, resp.Data)
-			if persistErr != nil {
-				slog.Warn("image fanout persist failed", append(attrs,
-					"duration_ms", durationMs,
-					"image_count", len(resp.Data),
-					"error", persistErr.Error(),
-					"error_code", errorCode(persistErr),
-					"context_error", contextErrorString(ctx),
-				)...)
-				progress.Failures = append(progress.Failures, persistErr)
-				return nil
-			}
-			progress.Results = append(progress.Results, persisted...)
-			snapshot := s.decorateTaskProvider(task, candidate)
-			snapshot.Status = domainimagetask.StatusRunning
-			setTaskProgress(&snapshot, domainimagetask.ProgressStagePersisting, "图片生成完成，正在保存结果")
-			snapshot.Results = append([]provider.ImageResult(nil), progress.Results...)
-			if len(progress.Failures) > 0 {
-				snapshot.ErrorCode = errorCode(progress.Failures[0])
-				snapshot.ErrorMessage = errorMessage(progress.Failures[0])
-			}
-			if billingErr := s.applyActualPoints(&snapshot, len(snapshot.Results)); billingErr != nil {
-				progress.Failures = append(progress.Failures, billingErr)
-				return nil
-			}
-			snapshot.ProviderCost = calculateProviderCost(candidate, len(snapshot.Results))
-			snapshot.GrossMargin = calculateGrossMargin(snapshot.ActualPoints, snapshot.ProviderCost)
-			if saveErr := s.saveOwnedTask(ctx, snapshot, owner); saveErr != nil && !isTaskLeaseConflict(saveErr) {
-				return saveErr
-			}
+			progress.Results = append(progress.Results, resp.Data...)
 			return nil
 		})
 	}
@@ -1224,8 +1201,8 @@ func (s *Service) DownloadImageResult(ctx context.Context, userID int64, imageID
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
-	if err != nil {
+	backend, routeErr := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if routeErr != nil {
 		return provider.ImageResult{}, nil, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
 	}
 	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
@@ -1246,8 +1223,8 @@ func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID strin
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
-	if err != nil {
+	backend, routeErr := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if routeErr != nil {
 		return provider.ImageResult{}, nil, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
 	}
 	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
@@ -1283,8 +1260,8 @@ func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string)
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
-	backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
-	if err != nil {
+	backend, routeErr := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if routeErr != nil {
 		return provider.ImageResult{}, nil, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
 	}
 	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
@@ -1361,8 +1338,8 @@ func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID s
 		return errs.Internal("failed to load image result")
 	}
 	if result.StorageDriver != "remote" && strings.TrimSpace(result.ObjectKey) != "" {
-		backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
-		if err != nil {
+		backend, routeErr := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+		if routeErr != nil {
 			return errs.Internal("failed to resolve image storage")
 		}
 		if err := backend.Backend.Delete(ctx, result.ObjectKey); err != nil {
@@ -1477,7 +1454,7 @@ func (s *Service) SetPublicImageInteraction(ctx context.Context, userID int64, i
 }
 
 func (s *Service) saveOwnedTask(ctx context.Context, task domainimagetask.Task, owner string) error {
-	if err := s.store.SaveIfOwned(ctx, task, owner, time.Now().UTC()); err != nil {
+	if err := s.store.SaveIfOwned(ctx, task, owner, s.nowUTC()); err != nil {
 		switch {
 		case errors.Is(err, repoerr.ErrNotFound):
 			return errs.New(404, errs.CodeNotFound, "image task not found")
@@ -1505,7 +1482,7 @@ func (s *Service) updateOwnedProgress(ctx context.Context, task domainimagetask.
 }
 
 func (s *Service) saveTerminalState(ctx context.Context, task domainimagetask.Task, owner string) error {
-	if err := s.store.SaveTerminalState(ctx, task, owner, time.Now().UTC()); err != nil {
+	if err := s.store.SaveTerminalState(ctx, task, owner, s.nowUTC()); err != nil {
 		switch {
 		case errors.Is(err, repoerr.ErrNotFound):
 			return errs.New(404, errs.CodeNotFound, "image task not found")
@@ -1612,40 +1589,67 @@ func isDataURL(value string) bool {
 }
 
 func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
+	startedAt := s.nowUTC()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, result.URL, nil)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image URL is invalid")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactSourceURLInvalid, "fetch", false, err)
 	}
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to fetch generated image")
+		failure := classifyFetchError(s, err)
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, nil, 0, startedAt)
+		return provider.ImageResult{}, failure
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to fetch generated image")
+		failure := newArtifactFailure(s, errs.CodeArtifactFetchHTTPStatus, "fetch", resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500, fmt.Errorf("upstream artifact returned status %d", resp.StatusCode))
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, 0, startedAt)
+		return provider.ImageResult{}, failure
 	}
-	content, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	if err != nil || len(content) == 0 {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read generated image")
+	content, err := io.ReadAll(io.LimitReader(resp.Body, maxGeneratedArtifactBytes+1))
+	if err != nil {
+		failure := newArtifactFailure(s, errs.CodeArtifactFetchReadFailed, "read", true, err)
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
+		return provider.ImageResult{}, failure
+	}
+	if int64(len(content)) > maxGeneratedArtifactBytes {
+		failure := newArtifactFailure(s, errs.CodeArtifactSizeLimitExceeded, "read", false, fmt.Errorf("generated artifact exceeds %d bytes", maxGeneratedArtifactBytes))
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
+		return provider.ImageResult{}, failure
+	}
+	if len(content) == 0 {
+		failure := newArtifactFailure(s, errs.CodeArtifactEmptyBody, "read", true, errors.New("generated artifact body is empty"))
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, 0, startedAt)
+		return provider.ImageResult{}, failure
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image has unsupported format")
+		failure := newArtifactFailure(s, errs.CodeArtifactFormatUnsupported, "validate", false, err)
+		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, resp, int64(len(content)), startedAt)
+		return provider.ImageResult{}, failure
 	}
 	mimeType := imageMimeType(format, provider.ImageResult{MimeType: defaultString(resp.Header.Get("Content-Type"), result.MimeType), Format: result.Format})
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])
 	resultID := strings.TrimSpace(result.ID)
 	if resultID == "" {
-		resultID = uuid.NewString()
+		resultID = deterministicImageResultID(task.ID, index)
 	}
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	writer, err := s.router.DefaultWriter(ctx)
+	writer, err := s.artifactWriter(ctx, task)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)
 	}
 	if err := writer.Backend.Put(ctx, objectKey, mimeType, content); err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageWriteFailed, "store", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		failure.diagnostic.BytesRead = int64(len(content))
+		return provider.ImageResult{}, failure
+	}
+	if err := verifyStoredArtifact(ctx, writer.Backend, objectKey, content); err != nil {
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageVerifyFailed, "verify", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		return provider.ImageResult{}, failure
 	}
 	result.ID = resultID
 	result.B64JSON = ""
@@ -1667,23 +1671,34 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int, result provider.ImageResult) (provider.ImageResult, error) {
 	content, err := decodeBase64ImageResult(result.B64JSON)
 	if err != nil {
-		return provider.ImageResult{}, err
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactRecoveryPayloadInvalid, "decode", false, err)
+	}
+	if int64(len(content)) > maxGeneratedArtifactBytes {
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactSizeLimitExceeded, "decode", false, fmt.Errorf("generated artifact exceeds %d bytes", maxGeneratedArtifactBytes))
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "generated image has unsupported format")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactFormatUnsupported, "validate", false, err)
 	}
 	mimeType := imageMimeType(format, result)
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])
-	resultID := uuid.NewString()
+	resultID := deterministicImageResultID(task.ID, index)
 	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
-	writer, err := s.router.DefaultWriter(context.Background())
+	writer, err := s.artifactWriter(context.Background(), task)
 	if err != nil {
-		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
+		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)
 	}
 	if err := writer.Backend.Put(context.Background(), objectKey, mimeType, content); err != nil {
-		return provider.ImageResult{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store generated image")
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageWriteFailed, "store", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		failure.diagnostic.BytesRead = int64(len(content))
+		return provider.ImageResult{}, failure
+	}
+	if err := verifyStoredArtifact(context.Background(), writer.Backend, objectKey, content); err != nil {
+		failure := newArtifactFailure(s, errs.CodeArtifactStorageVerifyFailed, "verify", true, err)
+		failure.diagnostic.StorageConfigID, failure.diagnostic.StorageVersion = writer.ConfigID, writer.Version
+		return provider.ImageResult{}, failure
 	}
 	result.ID = resultID
 	result.B64JSON = ""
@@ -1700,6 +1715,10 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	result.DownloadURL = "/api/agent/image/v1/images/" + resultID
 	result.URL = result.DownloadURL
 	return result, nil
+}
+
+func deterministicImageResultID(taskID string, index int) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("%s:%d", taskID, index))).String()
 }
 
 func decodeBase64ImageResult(value string) ([]byte, error) {
@@ -1897,7 +1916,7 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 
 	var apiKeyQuota domainbilling.APIKeyQuota
 	if s.apiKeys != nil && req.APIKeyID > 0 {
-		quota, err := s.apiKeys.CheckTaskAllowed(ctx, req.APIKeyID, req.UserID, estimate.EstimatedPoints, time.Now())
+		quota, err := s.apiKeys.CheckTaskAllowed(ctx, req.APIKeyID, req.UserID, estimate.EstimatedPoints, s.nowUTC())
 		if err != nil {
 			return err
 		}
@@ -2192,6 +2211,7 @@ func errorMessage(err error) string {
 func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	task.Attempts = append([]domainimagetask.Attempt(nil), task.Attempts...)
 	task.Results = append([]provider.ImageResult(nil), task.Results...)
+	task.ArtifactRecovery.Diagnostics = append([]domainimagetask.ArtifactDiagnostic(nil), task.ArtifactRecovery.Diagnostics...)
 	task.ReferenceAssetIDs = append([]string(nil), task.ReferenceAssetIDs...)
 	if task.Seed != nil {
 		seed := *task.Seed
@@ -2200,6 +2220,14 @@ func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	if task.LeaseExpiresAt != nil {
 		expiresAt := *task.LeaseExpiresAt
 		task.LeaseExpiresAt = &expiresAt
+	}
+	if task.UpstreamSucceededAt != nil {
+		succeededAt := *task.UpstreamSucceededAt
+		task.UpstreamSucceededAt = &succeededAt
+	}
+	if task.ArtifactRecovery.NextRetryAt != nil {
+		nextRetryAt := *task.ArtifactRecovery.NextRetryAt
+		task.ArtifactRecovery.NextRetryAt = &nextRetryAt
 	}
 	return task
 }

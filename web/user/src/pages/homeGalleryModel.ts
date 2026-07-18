@@ -82,7 +82,7 @@ function formatDateTime(date?: string) {
 export function homeGalleryCardView(image: ImageResult) {
   return {
     title: image.prompt_excerpt || '公开作品',
-    meta: `${taskTypeLabel(image.task_type ?? 'text_to_image')} · ${image.route_model_code || image.abstract_model || '-'} · ${image.base_resolution || '-'} · ${formatDateTime(image.created_at)}`,
+    meta: `${taskTypeLabel(image.task_type ?? 'text_to_image')} · ${image.route_model_code || image.abstract_model || '-'} · ${image.base_resolution || image.quality || '-'} · ${formatDateTime(image.created_at)}`,
   }
 }
 

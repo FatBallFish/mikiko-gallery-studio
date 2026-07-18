@@ -748,11 +748,16 @@ components:
           type: string
         negative_prompt:
           type: string
+        route_model_code:
+          type: string
+          minLength: 1
+          example: basic
+          description: Current database-backed route model code. Takes precedence when abstract_model is also sent.
         abstract_model:
           type: string
           enum: [basic, plus, pro]
-        route_model_code:
-          type: string
+          deprecated: true
+          description: Legacy static model selector retained for older clients.
         size_mode:
           type: string
           enum: [ratio, pixel]

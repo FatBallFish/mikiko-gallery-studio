@@ -9,6 +9,33 @@ export type WorkspaceTaskHistoryOptions = {
   preserveIds?: readonly string[]
 }
 
+export type WorkspaceTaskHistoryInteractionInput = {
+  surface: 'recent' | 'history'
+  status: string
+  resultCount: number
+}
+
+export type WorkspaceTaskHistoryInteraction = {
+  selectTask: boolean
+  navigateHash: boolean
+  outputTab: 'current' | null
+  openDialog: boolean
+  openLightbox: boolean
+}
+
+export function workspaceTaskHistoryInteraction(input: WorkspaceTaskHistoryInteractionInput): WorkspaceTaskHistoryInteraction {
+  if (input.surface === 'recent') {
+    return { selectTask: true, navigateHash: true, outputTab: 'current', openDialog: false, openLightbox: false }
+  }
+  if (input.resultCount > 1) {
+    return { selectTask: false, navigateHash: false, outputTab: null, openDialog: true, openLightbox: false }
+  }
+  if (input.resultCount === 1) {
+    return { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: true }
+  }
+  return { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: false }
+}
+
 function trimWorkspaceTaskRecords<T extends WorkspaceTaskRecord>(records: Iterable<T>, options: WorkspaceTaskHistoryOptions) {
   const preserveIds = new Set(options.preserveIds ?? [])
   const sorted = Array.from(records).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())

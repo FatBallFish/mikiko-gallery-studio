@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react'
-import type { Balance, GenerationPreferences, LedgerEntry, UserProfile } from '../../../shared/api-types'
+import type { Balance, LedgerEntry, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, Field, useApp } from '../components'
@@ -10,8 +10,6 @@ import { balanceBucketLabel, bucketExpiryText, normalizeBalanceBuckets, profileL
 
 const profileClasses = {
   content: 'w-full flex-1 p-6 md:p-10',
-  header: 'mb-12',
-  title: 'm-0 text-4xl font-black leading-none md:text-6xl',
   grid: 'grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]',
   stack: 'grid gap-8',
   compactStack: 'grid gap-3',
@@ -53,7 +51,6 @@ const profileClasses = {
   avatar: 'grid size-20 place-items-center rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] text-[32px] font-extrabold text-white shadow-[0_0_30px_rgba(var(--accent-rgb),0.3)]',
   profileName: 'text-xl font-bold',
   profileEmail: 'text-sm text-[var(--muted)]',
-  prefGrid: 'grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3',
 }
 
 export function ProfilePage() {
@@ -102,7 +99,7 @@ export function ProfilePage() {
       const next = await userApi.updateProfile(patch)
       setProfile(next)
       await app.refreshAccount()
-      app.notify('success', '账户偏好已保存')
+      app.notify('success', '个人资料已保存')
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -116,7 +113,7 @@ export function ProfilePage() {
     <SettingsWorkspace
       active="profile"
       title="个人资料"
-      detail="管理账户资料、积分余额、兑换记录与默认生成偏好。"
+      detail="管理账户资料、积分余额与兑换记录。"
     >
       <div className={profileClasses.grid}>
         <div className={profileClasses.stack}>
@@ -241,7 +238,6 @@ function BalanceBuckets({ balance }: { balance: Balance | null }) {
 function ProfileEditor({ profile, busy, onSave }: { profile: UserProfile; busy: boolean; onSave: (patch: Partial<UserProfile>) => Promise<void> }) {
   const [name, setName] = useState(profile.display_name)
   const [signature, setSignature] = useState(profile.signature)
-  const [preferences, setPreferences] = useState<GenerationPreferences>(profile.preferences)
 
   return (
     <div className={cn(profileClasses.card, 'pg-enter')}>
@@ -255,12 +251,7 @@ function ProfileEditor({ profile, busy, onSave }: { profile: UserProfile; busy: 
       </div>
       <Field label="显示昵称"><input className={form.input} value={name} onChange={(event) => setName(event.target.value)} /></Field>
       <Field label="签名"><textarea className={form.textarea} value={signature} onChange={(event) => setSignature(event.target.value)} rows={3} /></Field>
-      <div className={profileClasses.prefGrid}>
-        <Field label="默认模型"><select className={form.input} value={preferences.model_group} onChange={(event) => setPreferences({ ...preferences, model_group: event.target.value })}><option value="basic-image">Basic Image</option><option value="plus-image">Plus Image</option><option value="pro-image">Pro Studio</option></select></Field>
-        <Field label="默认比例"><select className={form.input} value={preferences.aspect_ratio} onChange={(event) => setPreferences({ ...preferences, aspect_ratio: event.target.value })}><option>1:1</option><option>16:9</option><option>9:16</option><option>4:3</option></select></Field>
-        <Field label="默认基础分辨率"><select className={form.input} value={preferences.base_resolution} onChange={(event) => setPreferences({ ...preferences, base_resolution: event.target.value })}><option>auto</option><option>1K</option><option>2K</option><option>4K</option></select></Field>
-      </div>
-      <button className={cn(btn.base, btn.primary)} type="button" disabled={busy} onClick={() => void onSave({ display_name: name, signature, preferences })}>{busy ? '保存中...' : '保存修改'}</button>
+      <button className={cn(btn.base, btn.primary)} type="button" disabled={busy} onClick={() => void onSave({ display_name: name, signature })}>{busy ? '保存中...' : '保存修改'}</button>
     </div>
   )
 }

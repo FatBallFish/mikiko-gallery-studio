@@ -2,8 +2,7 @@ import { FormEvent, useMemo, useState } from 'react'
 import type { ApiKey } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
-import { Button, CopyButton, EmptyState, Field, LoadingState, Modal, useApp } from '../components'
-import { openDocsEntry } from '../docsUrl'
+import { Button, CopyButton, EmptyState, Field, Modal, useApp } from '../components'
 import { userButton, userForm } from '../ui/classes'
 import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage, useApiResource } from '../useApiResource'
@@ -24,10 +23,6 @@ import {
 const allScopes = ['images:write', 'images:read', 'balance:read', 'profile:read']
 
 const apiKeyClasses = {
-  content: 'w-full flex-1 p-6 md:p-10',
-  header: 'mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between',
-  title: 'm-0 text-4xl font-black leading-none md:text-6xl',
-  detail: 'mt-4 max-w-2xl text-base leading-relaxed text-[var(--muted)]',
   createButton: 'h-12 rounded-2xl bg-[var(--accent)] px-6 text-sm font-bold text-white shadow-lg shadow-[var(--accent)]/20 transition-transform hover:scale-[1.03] active:scale-[0.98]',
   metricGrid: 'mb-8 grid grid-cols-1 gap-4 md:grid-cols-3',
   metric: 'rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6',
@@ -242,7 +237,7 @@ export function ApiKeysPage() {
             <pre className={apiKeyClasses.codePre}>{quickstart.code}</pre>
           </div>
         </div>
-        <p className={apiKeyClasses.docHint}>查看完整 <button type="button" className={cn(apiKeyClasses.docLink, 'border-0 bg-transparent p-0')} onClick={() => openDocsEntry('api-keys')}>开发文档</button> 获取更多语言示例。</p>
+        <p className={apiKeyClasses.docHint}>查看完整 <button type="button" className={cn(apiKeyClasses.docLink, 'border-0 bg-transparent p-0')} onClick={() => app.navigate('docs')}>开发文档</button> 获取更多语言示例。</p>
         </div>
         <div className={apiKeyClasses.securityCard}>
           <h3 className="mb-4 text-xl font-black">安全建议</h3>

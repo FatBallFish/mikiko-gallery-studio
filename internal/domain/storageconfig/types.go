@@ -61,33 +61,18 @@ type ConfigView struct {
 }
 
 type ConfigRecord struct {
-	ID                string
-	Code              string
-	Name              string
-	Driver            string
-	Provider          string
-	Status            string
-	ReadEnabled       bool
-	WriteEnabled      bool
-	IsDefault         bool
-	Endpoint          string
-	Region            string
-	Bucket            string
-	Prefix            string
-	ForcePathStyle    bool
-	PublicBaseURL     string
-	LocalRoot         string
-	PublicValue       map[string]any
-	SecretEncrypted   map[string]any
-	SecretFingerprint string
-	SecretFields      []string
-	LastProbeStatus   string
-	LastProbeMessage  string
-	LastProbeAt       *time.Time
-	Version           int64
-	UpdatedBy         int64
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID, Code, Name, Driver, Provider, Status string
+	ReadEnabled, WriteEnabled, IsDefault     bool
+	Endpoint, Region, Bucket, Prefix         string
+	ForcePathStyle                           bool
+	PublicBaseURL, LocalRoot                 string
+	PublicValue, SecretEncrypted             map[string]any
+	SecretFingerprint                        string
+	SecretFields                             []string
+	LastProbeStatus, LastProbeMessage        string
+	LastProbeAt                              *time.Time
+	Version, UpdatedBy                       int64
+	CreatedAt, UpdatedAt                     time.Time
 }
 
 type ResolvedConfig struct {
@@ -96,45 +81,32 @@ type ResolvedConfig struct {
 }
 
 type WriteRequest struct {
-	ID             string
-	Version        int64
-	Code           string
-	Name           string
-	Driver         string
-	Provider       string
-	Status         string
-	ReadEnabled    bool
-	WriteEnabled   bool
-	Endpoint       string
-	Region         string
-	Bucket         string
-	Prefix         string
-	ForcePathStyle bool
-	PublicBaseURL  string
-	LocalRoot      string
-	Secrets        map[string]string
-	ClearSecrets   []string
-	UpdatedBy      int64
+	ID, Code, Name, Driver, Provider, Status string
+	Version                                  int64
+	ReadEnabled, WriteEnabled                bool
+	Endpoint, Region, Bucket, Prefix         string
+	ForcePathStyle                           bool
+	PublicBaseURL, LocalRoot                 string
+	Secrets                                  map[string]string
+	ClearSecrets                             []string
+	UpdatedBy                                int64
 }
 
 type StatusRequest struct {
-	ID           string
-	Version      int64
-	Status       string
-	ReadEnabled  bool
-	WriteEnabled bool
-	UpdatedBy    int64
+	ID                        string
+	Version, UpdatedBy        int64
+	Status                    string
+	ReadEnabled, WriteEnabled bool
 }
 
 type SetDefaultRequest struct {
-	ID        string
-	Version   int64
-	UpdatedBy int64
+	ID                 string
+	Version, UpdatedBy int64
 }
 
 type ProbeResult struct {
 	Status    string    `json:"status"`
-	CheckedAt time.Time `json:"checked_at,omitempty"`
-	LatencyMS int64     `json:"latency_ms,omitempty"`
-	Message   string    `json:"message,omitempty"`
+	CheckedAt time.Time `json:"checked_at"`
+	LatencyMS int64     `json:"latency_ms"`
+	Message   string    `json:"message"`
 }

@@ -22,6 +22,7 @@ export type ApiClientOptions = {
   baseUrl?: string
   getToken?: () => string | null | undefined
   getAccessToken?: () => string | null | undefined
+  getSessionVersion?: () => string | number | null | undefined
   onUnauthorized?: () => Promise<string | null | undefined> | string | null | undefined
   onError?: (error: ApiError) => void
 }
@@ -196,12 +197,14 @@ export type RequestOptions = {
   pathParams?: Record<string, string | number>
   query?: Record<string, QueryValue>
   body?: unknown
+  serializedBody?: string
   formData?: FormData
   headers?: HeadersInit
   auth?: boolean
   retryUnauthorized?: boolean
   unwrapEnvelope?: boolean
   credentials?: RequestCredentials
+  signal?: AbortSignal
 }
 
 export function getDefaultBaseUrl() {
@@ -270,6 +273,7 @@ function errorFromPayload(payload: unknown, status: number) {
 export class ApiClient {
   private baseUrl: string
   private getToken?: ApiClientOptions['getToken']
+  private getSessionVersion?: ApiClientOptions['getSessionVersion']
   private onUnauthorized?: ApiClientOptions['onUnauthorized']
   private onError?: ApiClientOptions['onError']
   private refreshPromise: Promise<string | null | undefined> | null = null
@@ -277,12 +281,14 @@ export class ApiClient {
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? getDefaultBaseUrl()).replace(/\/$/, '')
     this.getToken = options.getToken ?? options.getAccessToken
+    this.getSessionVersion = options.getSessionVersion
     this.onUnauthorized = options.onUnauthorized
     this.onError = options.onError
   }
 
-  setAuth(options: Pick<ApiClientOptions, 'getToken' | 'onUnauthorized' | 'onError'>) {
+  setAuth(options: Pick<ApiClientOptions, 'getToken' | 'getSessionVersion' | 'onUnauthorized' | 'onError'>) {
     this.getToken = options.getToken
+    this.getSessionVersion = options.getSessionVersion
     this.onUnauthorized = options.onUnauthorized
     this.onError = options.onError
   }
@@ -323,10 +329,14 @@ export class ApiClient {
     const url = `${this.baseUrl}${withQuery(fillPath(path, options.pathParams), options.query)}`
     const headers = new Headers(options.headers)
     const token = options.auth === false ? undefined : this.getToken?.()
+    const sessionVersion = this.getSessionVersion?.()
     let body: BodyInit | undefined
 
     if (options.formData) {
       body = options.formData
+    } else if (options.serializedBody !== undefined) {
+      headers.set('Content-Type', 'application/json')
+      body = options.serializedBody
     } else if (options.body !== undefined) {
       headers.set('Content-Type', 'application/json')
       body = JSON.stringify(options.body)
@@ -339,22 +349,35 @@ export class ApiClient {
       credentials: options.credentials ?? 'include',
       headers,
       body,
+      signal: options.signal,
     })
     const payload = await readResponse(response)
     if (response.ok) return options.unwrapEnvelope === false ? payload as T : unwrap<T>(payload)
 
-    if (response.status === 401 && allowRefresh && this.onUnauthorized) {
-      if (!this.refreshPromise) {
-        this.refreshPromise = Promise.resolve(this.onUnauthorized()).finally(() => {
-          this.refreshPromise = null
-        })
+    if (this.getSessionVersion && this.getSessionVersion() !== sessionVersion) {
+      throw errorFromPayload(payload, response.status)
+    }
+
+    if (response.status === 401 && options.auth !== false && allowRefresh && this.onUnauthorized) {
+      const currentToken = this.getToken?.()
+      if (currentToken !== token) {
+        if (currentToken) return this.send<T>(path, options, false)
+      } else {
+        if (!this.refreshPromise) {
+          this.refreshPromise = Promise.resolve(this.onUnauthorized()).finally(() => {
+            this.refreshPromise = null
+          })
+        }
+        const nextToken = await this.refreshPromise
+        if (nextToken) return this.send<T>(path, options, false)
+        if (this.getSessionVersion && this.getSessionVersion() !== sessionVersion) {
+          throw errorFromPayload(payload, response.status)
+        }
       }
-      const nextToken = await this.refreshPromise
-      if (nextToken) return this.send<T>(path, options, false)
     }
 
     const error = errorFromPayload(payload, response.status)
-    this.onError?.(error)
+    if (!(options.auth === false && response.status === 401)) this.onError?.(error)
     throw error
   }
 }

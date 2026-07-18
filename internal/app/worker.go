@@ -36,8 +36,14 @@ func RunWorker() error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer client.Close()
+	if err := db.PrepareLegacyData(context.Background(), cfg.Database.URL); err != nil {
+		return fmt.Errorf("prepare legacy database data: %w", err)
+	}
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
+	}
+	if _, err := db.BackfillLegacyModelAccountCapabilities(context.Background(), client); err != nil {
+		return fmt.Errorf("backfill legacy model account capabilities: %w", err)
 	}
 	redisClient, _, err := newRedisClient(context.Background(), cfg)
 	if err != nil {
@@ -47,12 +53,18 @@ func RunWorker() error {
 		defer redisClient.Close()
 	}
 
-	assetSvc := entstore.NewAssetsStore(client)
 	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
 	if err := storageConfigSvc.Bootstrap(context.Background(), 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
-	storageRouter := storage.NewRegistry(storageConfigSvc, 30*time.Second)
+	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
+	if redisClient != nil {
+		storageInvalidationBus := storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)
+		subscriber := startStorageInvalidationSubscriber(context.Background(), storageInvalidationBus, storageRegistry.Invalidate, time.Second, 30*time.Second)
+		defer subscriber.Stop()
+	}
+
+	assetStore := entstore.NewAssetsStore(client)
 	adminCfgSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
 	billingSvc.SetAdminConfigResolver(adminCfgSvc)
@@ -60,9 +72,9 @@ func RunWorker() error {
 		cfg,
 		nil,
 		entstore.NewImageTaskStore(client),
-		assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, assetSvc, storageRouter),
+		assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, assetStore, storageRegistry),
 		billingSvc,
-		storageRouter,
+		storageRegistry,
 	)
 	taskSvc.SetModelRoutingSource(entstore.NewModelAdminStore(client))
 	slog.Info("database-backed task store enabled for worker")

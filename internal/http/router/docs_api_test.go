@@ -28,6 +28,14 @@ func TestDocsEndpointsReturnStructuredContract(t *testing.T) {
 	if openAPIResp.OpenAPI == "" || len(openAPIResp.Paths) == 0 {
 		t.Fatalf("expected non-empty openapi document, got openapi=%q paths=%d", openAPIResp.OpenAPI, len(openAPIResp.Paths))
 	}
+	for _, path := range []string{"/api/agent/billing/v1/estimate", "/api/open/image/v1/estimate"} {
+		operation := openAPIResp.Paths[path]["get"].(map[string]any)
+		parameters := operation["parameters"].([]any)
+		firstParameter := parameters[0].(map[string]any)
+		if firstParameter["$ref"] != "./components/parameters/common.yaml#/components/parameters/RouteModelCode" {
+			t.Fatalf("expected runtime OpenAPI JSON %s to prefer RouteModelCode, got %#v", path, parameters)
+		}
+	}
 
 	examplesReq := httptest.NewRequest(http.MethodGet, "/docs/examples", nil)
 	examplesRec := httptest.NewRecorder()

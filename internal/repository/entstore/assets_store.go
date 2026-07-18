@@ -2,6 +2,7 @@ package entstore
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,6 +66,13 @@ func (s *AssetsStore) SaveWithMetadata(ctx context.Context, userID int64, asset 
 	if metadata.APIKeyID != nil {
 		create.SetAPIKeyID(*metadata.APIKeyID)
 	}
+	if strings.TrimSpace(asset.StorageConfigID) != "" {
+		storageConfigID, err := uuid.Parse(asset.StorageConfigID)
+		if err != nil {
+			return err
+		}
+		create.SetStorageConfigID(storageConfigID)
+	}
 	return create.Exec(ctx)
 }
 
@@ -116,6 +124,9 @@ func mapReferenceAssetEntity(entity *repoent.ReferenceAsset) domainassets.Refere
 		SHA256:          entity.Sha256,
 		ObjectKey:       entity.ObjectKey,
 		CreatedAt:       entity.CreatedAt,
+	}
+	if entity.StorageConfigID != nil {
+		asset.StorageConfigID = entity.StorageConfigID.String()
 	}
 	if entity.Width != nil {
 		asset.Width = *entity.Width

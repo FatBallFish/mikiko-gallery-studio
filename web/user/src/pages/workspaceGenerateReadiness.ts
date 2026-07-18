@@ -1,8 +1,13 @@
-import type { EstimateResult } from '../../../shared/api-types'
+import type { EstimateResult, ImageTaskType } from '../../../shared/api-types'
+
+export const WORKSPACE_REFERENCE_REQUIRED_MESSAGE = '当前任务要求至少1张参考图。'
 
 export type WorkspaceGenerateReadinessInput = {
   busy: boolean
   hasModel: boolean
+  taskType: ImageTaskType
+  referenceCount: number
+  requiredReferencesReady: boolean
   unavailableReason?: { code: string; message: string } | null
   parametersReady: boolean
   prompt: string
@@ -19,6 +24,9 @@ export type WorkspaceGenerateReadiness = {
 export function workspaceGenerateReadiness(input: WorkspaceGenerateReadinessInput): WorkspaceGenerateReadiness {
   if (input.busy) return { disabled: true, reason: '任务正在提交，请稍候。', showRechargeAction: false }
   if (!input.hasModel) return { disabled: true, reason: publicUnavailableReason(input.unavailableReason), showRechargeAction: false }
+  if (input.taskType !== 'text_to_image' && (!input.requiredReferencesReady || input.referenceCount < 1)) {
+    return { disabled: true, reason: WORKSPACE_REFERENCE_REQUIRED_MESSAGE, showRechargeAction: false }
+  }
   if (!input.parametersReady) return { disabled: true, reason: '请选择完整的模型、基础分辨率、比例和图片数量。', showRechargeAction: false }
   if (input.prompt.trim().length < 8) return { disabled: true, reason: '提示词至少需要 8 个字符。', showRechargeAction: false }
   if (input.estimateError) return { disabled: true, reason: input.estimateError, showRechargeAction: false }

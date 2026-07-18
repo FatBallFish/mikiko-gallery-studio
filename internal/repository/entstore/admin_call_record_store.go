@@ -3,6 +3,7 @@ package entstore
 import (
 	"context"
 	"strings"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
@@ -74,6 +75,13 @@ func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicat
 	if !req.CreatedTo.IsZero() {
 		predicates = append(predicates, imagetask.CreatedAtLTE(req.CreatedTo))
 	}
+	if req.PlatformLossOnly {
+		predicates = append(predicates,
+			imagetask.StatusEQ(domainimagetask.StatusFailed),
+			imagetask.UpstreamSucceededAtNotNil(),
+			imagetask.ArtifactRecoveryStatusEQ("failed"),
+		)
+	}
 	return predicates
 }
 
@@ -96,6 +104,10 @@ func mapAdminCallRecord(entity *repoent.ImageTask) domainadmincallrecord.Record 
 		ReferenceImageCount:       entity.ReferenceImageCount,
 		EstimatedPoints:           entity.EstimatedPoints,
 		ActualPoints:              entity.ActualPoints,
+		ProviderRequestID:         nullableString(entity.ProviderRequestID),
+		ProviderCost:              entity.ProviderCost,
+		GrossMargin:               entity.GrossMargin,
+		UpstreamSucceededAt:       entity.UpstreamSucceededAt,
 		ErrorCode:                 entity.ErrorCode,
 		ErrorMessage:              entity.ErrorMessage,
 		CreatedAt:                 entity.CreatedAt,
@@ -113,7 +125,29 @@ func mapAdminCallRecord(entity *repoent.ImageTask) domainadmincallrecord.Record 
 			record.ErrorDetail = lastAttemptErrorDetail(attempts)
 		}
 	}
+	record.FailurePhase = adminCallRecordFailurePhase(record.Status, record.UpstreamSucceededAt, record.AttemptCount)
+	record.PlatformLoss = record.FailurePhase == "artifact_persistence" && entity.ArtifactRecoveryStatus == "failed"
+	if entity.ArtifactRecoveryStatus != "" || entity.ArtifactAttemptCount > 0 {
+		lastDiagnostic, diagnostics := decodeArtifactDiagnostics(entity.ArtifactLastDiagnostic)
+		record.ArtifactRecovery = &domainadmincallrecord.ArtifactRecoverySummary{
+			Status: entity.ArtifactRecoveryStatus, AttemptCount: entity.ArtifactAttemptCount,
+			LastDiagnostic: lastDiagnostic, Diagnostics: diagnostics,
+		}
+	}
 	return record
+}
+
+func adminCallRecordFailurePhase(status string, upstreamSucceededAt *time.Time, attemptCount int) string {
+	if status != domainimagetask.StatusFailed {
+		return ""
+	}
+	if upstreamSucceededAt != nil {
+		return "artifact_persistence"
+	}
+	if attemptCount > 0 {
+		return "upstream"
+	}
+	return "preflight"
 }
 
 func mapAdminCallRecordAttempts(attempts []domainimagetask.Attempt) []domainadmincallrecord.Attempt {

@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { ChevronUp, SlidersHorizontal } from 'lucide-react'
-import type { Capability, CapabilityModelGroup, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset } from '../../../shared/api-types'
+import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
@@ -11,17 +11,18 @@ import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
 import { errorMessage } from '../useApiResource'
 import { galleryEditContextKey, parseGalleryEditContext } from './galleryEditContext'
-import { displayPoints, publicUnavailableReason } from './workspaceGenerateReadiness'
+import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
 import { currentWorkspaceEstimate, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
 import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
 import { generationSlots, workspaceBaseResolutionLabel } from './workspaceTaskProgress'
-import { limitReferenceSelection, remainingReferenceCapacity, singleReferenceAddition } from './workspaceReferenceLimit'
-import { createWorkspaceViewModel } from './workspaceViewModel'
+import { limitReferenceSelection, remainingReferenceCapacity, singleReferenceAddition, workspaceReferenceMaximum, workspaceRequiredReferencesReady } from './workspaceReferenceLimit'
+import { createWorkspaceViewModel, matchWorkspaceCapabilityOption } from './workspaceViewModel'
 import { useCompactWorkspaceViewport, workspaceParametersHidden } from './workspaceResponsive'
 import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGesture'
-import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords } from './workspaceTaskHistory'
+import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
+import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions } from './workspaceParameters'
 
 type WorkspaceMode = 'reference' | 'text'
@@ -59,14 +60,6 @@ function countOptions(model: CapabilityModelGroup | undefined, capability: Capab
   if (!model) return []
   const maxCount = Number(model.max_output_image_count ?? capability?.max_image_count ?? 0)
   return Array.from({ length: Math.max(0, maxCount) }, (_, index) => index + 1)
-}
-
-function workspaceQualityLabel(value: string) {
-  return ({ auto: '自动', low: '低', medium: '中', high: '高' } as Record<string, string>)[value] ?? value
-}
-
-function workspaceModerationLabel(value: string) {
-  return ({ auto: '自动', low: '低强度' } as Record<string, string>)[value] ?? value
 }
 
 function isTerminalStatus(status: ImageTaskStatus | string) {
@@ -296,7 +289,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [parametersExpanded, setParametersExpanded] = useState(false)
   const [sheetDragOffset, setSheetDragOffset] = useState(0)
   const parametersHidden = workspaceParametersHidden(compactViewport, parametersExpanded)
+  const [streamRetryKey, setStreamRetryKey] = useState(0)
   const streamRef = useRef<EventSource | null>(null)
+  const streamGenerationRef = useRef<WorkspaceStreamGeneration | null>(null)
+  const streamTokenRef = useRef<string | null>(null)
+  const streamRetryCountRef = useRef(0)
+  const streamRecoveryTimerRef = useRef<number | null>(null)
+  const streamDisconnectNoticeRef = useRef(false)
+  const streamExhaustedNoticeRef = useRef(false)
+  const notifyRef = useRef(app.notify)
+  const refreshAccountRef = useRef(app.refreshAccount)
   const completedNoticeRef = useRef<Set<string>>(new Set())
   const feedEndRef = useRef<HTMLDivElement | null>(null)
   const skipNextModeResetRef = useRef(false)
@@ -305,6 +307,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const suppressSheetClickRef = useRef(false)
   const sheetClickResetRef = useRef<number | null>(null)
   const taskType: ImageTaskType = mode === 'reference' ? 'reference_to_image' : editRefs.length ? 'image_edit' : 'text_to_image'
+  const referenceCount = taskType === 'image_edit' ? editRefs.length : taskType === 'reference_to_image' ? refs.length : 0
+  const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)
+
+  notifyRef.current = app.notify
+  refreshAccountRef.current = app.refreshAccount
 
   useEffect(() => {
     selectedTaskIdRef.current = selectedTaskId
@@ -321,14 +328,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         setCapability(nextCapability)
         setRefs(nextRefs)
       } catch (err) {
-        if (mounted) app.notify('error', errorMessage(err))
+        if (mounted) notifyRef.current('error', errorMessage(err))
       } finally {
         if (mounted) setLoading(false)
       }
     }
     void load()
     return () => { mounted = false }
-  }, [app])
+  }, [])
 
   useEffect(() => {
     const taskId = initialTaskId?.trim() || ''
@@ -362,37 +369,110 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   useEffect(() => {
     const token = app.session?.token
-    if (!token) return undefined
     streamRef.current?.close()
+    if (streamRecoveryTimerRef.current !== null) {
+      window.clearTimeout(streamRecoveryTimerRef.current)
+      streamRecoveryTimerRef.current = null
+    }
+    if (!token) {
+      streamGenerationRef.current = null
+      streamTokenRef.current = null
+      streamRetryCountRef.current = 0
+      streamDisconnectNoticeRef.current = false
+      streamExhaustedNoticeRef.current = false
+      return undefined
+    }
+    const tokenChanged = streamTokenRef.current !== token
+    if (tokenChanged) {
+      streamTokenRef.current = token
+      streamRetryCountRef.current = 0
+      streamDisconnectNoticeRef.current = false
+      streamExhaustedNoticeRef.current = false
+    }
+    const generation = createWorkspaceStreamGeneration(token, streamRetryCountRef.current)
+    streamGenerationRef.current = generation
     const source = new EventSource(userApi.taskStreamUrl(token))
+    function markStreamHealthy() {
+      if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
+      markWorkspaceStreamHealthy(generation)
+      streamRetryCountRef.current = 0
+      streamDisconnectNoticeRef.current = false
+      streamExhaustedNoticeRef.current = false
+    }
+    source.addEventListener('open', () => { markStreamHealthy() })
     source.addEventListener('history', (event) => {
+      if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
       const tasks = JSON.parse((event as MessageEvent).data).map(toTask) as ImageTask[]
+      markStreamHealthy()
       setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
         limit: 20,
         preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
       }))
     })
     source.addEventListener('task', (event) => {
+      if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
       const next = toTask(JSON.parse((event as MessageEvent).data))
+      markStreamHealthy()
       setRecords((items) => mergeWorkspaceTaskRecords(items, next, {
         limit: 20,
         preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
       }))
       if (isTerminalStatus(next.status) && next.status === 'succeeded' && !completedNoticeRef.current.has(next.id)) {
         completedNoticeRef.current.add(next.id)
-        app.notify('success', '任务已完成，结果已同步到历史资产')
-        void app.refreshAccount()
+        notifyRef.current('success', '任务已完成，结果已同步到历史资产')
+        void refreshAccountRef.current()
       }
     })
-    source.addEventListener('error', () => {
-      app.notify('error', '任务状态连接已断开，请稍后刷新页面查看最新结果。')
-    })
-    streamRef.current = source
-    return () => {
+    let recovering = false
+    async function recoverStream() {
+      if (recovering || streamRecoveryTimerRef.current !== null || !workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) return
+      recovering = true
+      closeWorkspaceStreamGeneration(generation)
       source.close()
       if (streamRef.current === source) streamRef.current = null
+      const decision = nextWorkspaceStreamRetry(generation)
+      streamRetryCountRef.current = generation.retryCount
+      if (!decision.retry) {
+        if (!streamExhaustedNoticeRef.current) {
+          streamExhaustedNoticeRef.current = true
+          notifyRef.current('error', '任务状态连接恢复失败，请稍后刷新页面查看最新结果。')
+        }
+        return
+      }
+      if (!streamDisconnectNoticeRef.current) {
+        streamDisconnectNoticeRef.current = true
+        notifyRef.current('info', '任务状态连接已断开，正在自动恢复。')
+      }
+      try {
+        const tasks = await userApi.listTasks()
+        if (!workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) return
+        setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
+          limit: 20,
+          preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
+        }))
+        setStreamRetryKey((value) => value + 1)
+      } catch {
+        if (!workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) return
+        recovering = false
+        streamRecoveryTimerRef.current = window.setTimeout(() => {
+          streamRecoveryTimerRef.current = null
+          void recoverStream()
+        }, 400 * decision.attempt)
+      }
     }
-  }, [app, initialTaskId])
+    source.addEventListener('error', () => { void recoverStream() })
+    streamRef.current = source
+    return () => {
+      if (streamRecoveryTimerRef.current !== null) {
+        window.clearTimeout(streamRecoveryTimerRef.current)
+        streamRecoveryTimerRef.current = null
+      }
+      source.close()
+      if (streamRef.current === source) streamRef.current = null
+      closeWorkspaceStreamGeneration(generation)
+      if (workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) streamGenerationRef.current = null
+    }
+  }, [app.session?.token, streamRetryKey])
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
@@ -424,7 +504,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           } else {
             setEditRefs(sources)
           }
-          app.notify('success', '已恢复图片编辑上下文')
+          notifyRef.current('success', '已恢复图片编辑上下文')
           return
         }
         if (context.fallbackImageUrl) {
@@ -436,18 +516,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           const asset = await userApi.uploadReferenceAsset(file)
           if (!cancelled) {
             setEditRefs([{ ...asset, preview_url: asset.preview_url || context.fallbackImageUrl }])
-            app.notify('success', '已恢复图片编辑上下文')
+            notifyRef.current('success', '已恢复图片编辑上下文')
           }
         }
       } catch (err) {
-        if (!cancelled) app.notify('error', errorMessage(err))
+        if (!cancelled) notifyRef.current('error', errorMessage(err))
       } finally {
         if (!cancelled) setBusy(false)
       }
     }
     void restoreEditContext()
     return () => { cancelled = true }
-  }, [app])
+  }, [])
 
   // Reset form fields when mode tab switches, but keep generated records intact.
   useEffect(() => {
@@ -496,11 +576,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     )
     if (waitingForPreferredModel) return
 
-    setSizeMode((current) => {
-      if (sizeModes.includes(current)) return current
-      return sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio'
-    })
-    setBaseResolution(restoreParameters?.baseResolution && baseResolutionOptionsForModel.includes(restoreParameters.baseResolution) ? restoreParameters.baseResolution : baseResolutionOptionsForModel[0] ?? '')
+	setSizeMode((current) => sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
+    setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
     setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
     setPixelSize((current) => current && pixelSizes.includes(current) ? current : pixelSizes[0] ?? '')
     setCount((current) => {
@@ -526,26 +603,27 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const parametersReady = Boolean(
     selectedModel
     && count
-    && sizeModes.includes(sizeMode)
-    && sizeParametersReady
-    && outputOptions.quality.includes(quality)
-    && outputOptions.outputFormat.includes(outputFormat)
-    && outputOptions.moderation.includes(moderation)
-    && (!compressionVisible || (outputCompression >= 1 && outputCompression <= 100))
-    && counts.includes(count),
+	&& sizeModes.includes(sizeMode)
+	&& sizeParametersReady
+	&& outputOptions.quality.includes(quality)
+	&& outputOptions.outputFormat.includes(outputFormat)
+	&& outputOptions.moderation.includes(moderation)
+	&& (!compressionVisible || (outputCompression >= 1 && outputCompression <= 100))
+    && counts.includes(count)
+    && requiredReferencesReady,
   )
 
-  const estimatePayload = useMemo(() => ({
+  const estimatePayload = useMemo<EstimateRequest>(() => ({
     task_type: taskType,
     route_model_code: model,
-    size_mode: sizeMode,
-    base_resolution: sizeMode === 'ratio' ? baseResolution : 'auto',
-    quality,
-    output_format: outputFormat,
-    output_compression: compressionVisible ? outputCompression : 100,
-    moderation,
-    aspect_ratio: sizeMode === 'ratio' ? ratio : '',
-    pixel_size: sizeMode === 'pixel' ? pixelSize : undefined,
+	size_mode: sizeMode,
+	base_resolution: sizeMode === 'ratio' ? baseResolution : 'auto',
+	quality,
+	output_format: outputFormat,
+	output_compression: compressionVisible ? outputCompression : 100,
+	moderation,
+	aspect_ratio: sizeMode === 'ratio' ? ratio : '',
+	pixel_size: sizeMode === 'pixel' ? pixelSize : undefined,
     image_count: count,
     reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : taskType === 'reference_to_image' ? refs.map((item) => item.id) : [],
   }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, pixelSize, count, refs, editRefs])
@@ -571,7 +649,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         if (!cancelled) {
           const message = errorMessage(err)
           setEstimateSnapshot({ key: requestedKey, estimate: null, error: message })
-          app.notify('error', message)
+          notifyRef.current('error', message)
         }
       }
     }, 180)
@@ -579,11 +657,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [app, capability, estimateKey, estimatePayload, model, parametersReady])
+  }, [capability, estimateKey, estimatePayload, model, parametersReady])
 
   const maxReferenceUploadBytes = referenceUploadMaxBytes(capability)
   const maxReferenceUploadLabel = formatFileSize(maxReferenceUploadBytes)
-  const maxReferenceImages = selectedModel?.max_reference_image_count ?? 5
+  const maxReferenceImages = workspaceReferenceMaximum(selectedModel?.max_reference_image_count)
   const referenceRemainingLimit = remainingReferenceCapacity(maxReferenceImages, refs.length)
   const editRemainingLimit = remainingReferenceCapacity(maxReferenceImages, editRefs.length)
   const remainingGalleryImportLimit = galleryImportTarget === 'edit' ? editRemainingLimit : referenceRemainingLimit
@@ -593,6 +671,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const workspaceView = useMemo(() => createWorkspaceViewModel({
     capability,
     taskType,
+    referenceCount,
+    requiredReferencesReady,
     selectedModelCode: model,
     parametersReady,
     prompt,
@@ -601,7 +681,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     estimate,
     busy,
     task: latestTask,
-  }), [capability, taskType, model, parametersReady, prompt, estimateError, estimate, busy, latestTask])
+  }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, prompt, estimateError, estimate, busy, latestTask])
   const generateReadiness = workspaceView.generate
   const historyTasks = useMemo(() => (
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -720,6 +800,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }
 
   async function createTask() {
+    if (!requiredReferencesReady) {
+      app.notify('error', WORKSPACE_REFERENCE_REQUIRED_MESSAGE)
+      return
+    }
     if (generateReadiness.disabled) {
       app.notify('error', generateReadiness.reason)
       return
@@ -791,6 +875,19 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (!counts.length) return
     const next = Math.max(1, Math.min(maxOutputCount, Math.round(value) || 1))
     setCount(next)
+  }
+
+  function selectRecentTask(task: ImageTask) {
+    const interaction = workspaceTaskHistoryInteraction({ surface: 'recent', status: task.status, resultCount: task.results.length })
+    if (interaction.selectTask) setSelectedTaskId(task.id)
+    if (interaction.navigateHash) app.navigate('genpic', { taskId: task.id })
+    if (interaction.outputTab === 'current') setOutputTab('current')
+    setHistoryTaskDialog(null)
+  }
+
+  function openHistoryTaskDialog(task: ImageTask) {
+    const interaction = workspaceTaskHistoryInteraction({ surface: 'history', status: task.status, resultCount: task.results.length })
+    if (interaction.openDialog) setHistoryTaskDialog(task)
   }
 
   function handleSheetPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
@@ -1021,19 +1118,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
           {selectedModel ? (
             <>
-              {/* Size Mode */}
               {sizeModes.length > 1 ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>尺寸模式</label>
                   <div className={workspaceClasses.selectGridThree}>
-                    {sizeModes.map((mode) => (
+                    {sizeModes.map((value) => (
                       <button
-                        key={mode}
+                        key={value}
                         type="button"
-                        className={cn(workspaceClasses.selectItem, sizeMode === mode && workspaceClasses.selectItemActive)}
-                        onClick={() => setSizeMode(mode)}
+                        className={cn(workspaceClasses.selectItem, sizeMode === value && workspaceClasses.selectItemActive)}
+                        onClick={() => setSizeMode(value)}
                       >
-                        {mode === 'pixel' ? '按像素' : '按比例'}
+                        <span className={rdWorkspace.itemLabel}>{value === 'pixel' ? '按像素' : '按比例'}</span>
                       </button>
                     ))}
                   </div>
@@ -1079,26 +1175,24 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 </div>
               ) : null}
 
-              {/* Pixel Size */}
               {sizeMode === 'pixel' && pixelSizes.length ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>像素尺寸</label>
                   <div className={workspaceClasses.selectGridThree}>
-                    {pixelSizes.map((size) => (
+                    {pixelSizes.map((value) => (
                       <button
-                        key={size}
+                        key={value}
                         type="button"
-                        className={cn(workspaceClasses.selectItem, pixelSize === size && workspaceClasses.selectItemActive)}
-                        onClick={() => setPixelSize(size)}
+                        className={cn(workspaceClasses.selectItem, pixelSize === value && workspaceClasses.selectItemActive)}
+                        onClick={() => setPixelSize(value)}
                       >
-                        <span className={rdWorkspace.itemLabel}>{size}</span>
+                        <span className={rdWorkspace.itemLabel}>{value}</span>
                       </button>
                     ))}
                   </div>
                 </div>
               ) : null}
 
-              {/* Quality */}
               {outputOptions.quality.length ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>质量</label>
@@ -1110,14 +1204,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         className={cn(workspaceClasses.selectItem, quality === value && workspaceClasses.selectItemActive)}
                         onClick={() => setQuality(value)}
                       >
-                        <span className={rdWorkspace.itemLabel}>{workspaceQualityLabel(value)}</span>
+                        <span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value}</span>
                       </button>
                     ))}
                   </div>
                 </div>
               ) : null}
 
-              {/* Output format */}
               {outputOptions.outputFormat.length ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>输出格式</label>
@@ -1136,22 +1229,20 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 </div>
               ) : null}
 
-              {/* Compression */}
               {compressionVisible ? (
                 <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>压缩质量</label>
-                  <div className="grid grid-cols-[minmax(0,1fr)_72px] items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-3">
+                  <label className={workspaceClasses.fieldLabel} htmlFor="workspace-output-compression">压缩质量</label>
+                  <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-3">
                     <input
-                      className="w-full accent-[var(--accent)]"
+                      id="workspace-output-compression"
                       type="range"
                       min="1"
                       max="100"
                       value={outputCompression}
-                      aria-label="压缩质量"
                       onChange={(event) => setOutputCompression(Number(event.target.value))}
                     />
                     <input
-                      className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 text-center font-vault-mono text-sm font-bold text-[var(--fg)]"
+                      className={cn(userForm.input, 'text-center')}
                       type="number"
                       min="1"
                       max="100"
@@ -1163,8 +1254,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 </div>
               ) : null}
 
-              {/* Moderation */}
-              {outputOptions.moderation.length ? (
+              {outputOptions.moderation.length > 1 ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>审核等级</label>
                   <div className={workspaceClasses.selectGridThree}>
@@ -1175,7 +1265,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         className={cn(workspaceClasses.selectItem, moderation === value && workspaceClasses.selectItemActive)}
                         onClick={() => setModeration(value)}
                       >
-                        <span className={rdWorkspace.itemLabel}>{workspaceModerationLabel(value)}</span>
+                        <span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value}</span>
                       </button>
                     ))}
                   </div>
@@ -1276,7 +1366,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             tasks={historyTasks}
             activeTaskId={latestTask?.id}
             accessToken={app.session?.token}
-            onOpenTask={setHistoryTaskDialog}
+            onSelectTask={selectRecentTask}
           />
         ) : null}
         {latestTask ? (
@@ -1317,7 +1407,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                   try {
                     await userApi.deleteTask(task.id)
                     setRecords((items) => items.filter((item) => item.id !== task.id))
-                    setSelectedTaskId((selected) => selected === task.id ? null : selected)
+                    if (selectedTaskIdRef.current === task.id) {
+                      setSelectedTaskId(null)
+                      app.navigate('genpic')
+                    }
                     app.notify('success', '失败记录已删除')
                   } catch (err) {
                     app.notify('error', errorMessage(err))
@@ -1326,7 +1419,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 accessToken={app.session?.token}
               />
             ) : (
-              <HistoryCreationGrid tasks={historyTasks} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTask={setHistoryTaskDialog} />
+              <HistoryCreationGrid tasks={historyTasks} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} />
             )}
             <div ref={feedEndRef} />
           </div>
@@ -1578,11 +1671,11 @@ function formatHistoryTime(value?: string) {
   }).format(date)
 }
 
-function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onOpenTask }: {
+function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask }: {
   tasks: ImageTask[]
   activeTaskId?: string
   accessToken?: string
-  onOpenTask: (task: ImageTask) => void
+  onSelectTask: (task: ImageTask) => void
 }) {
   return (
     <section className="border-b border-[var(--border)] px-3 py-2.5 sm:px-5" aria-label="最近创作">
@@ -1599,7 +1692,7 @@ function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onOpenTask }: {
                 task.id === activeTaskId ? 'border-[var(--accent)]' : 'border-[var(--border)]',
               )}
               aria-current={task.id === activeTaskId ? 'true' : undefined}
-              onClick={() => onOpenTask(task)}
+              onClick={() => onSelectTask(task)}
             >
               <span className="grid size-[42px] place-items-center overflow-hidden rounded-lg bg-[var(--bg)] text-[10px] text-[var(--muted)]">
                 {image ? <img className="size-full object-cover" src={userApi.imageAssetUrl(image.url, accessToken)} alt="" /> : <span className="px-1 text-center leading-tight">{card.statusLabel}</span>}
@@ -1633,11 +1726,11 @@ function formatCompactDuration(ms: number) {
   return `${seconds}s`
 }
 
-function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTask }: {
+function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDialog }: {
   tasks: ImageTask[]
   accessToken?: string | null
   onPreviewImage: (image: ImageLightboxPayload) => void
-  onOpenTask: (task: ImageTask) => void
+  onOpenTaskDialog: (task: ImageTask) => void
 }) {
   if (!tasks.length) {
     return <EmptyState title="暂无历史创作" detail="完成一次创作后，任务记录会展示在这里。" />
@@ -1650,18 +1743,18 @@ function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTask }:
           task={task}
           accessToken={accessToken}
           onPreviewImage={onPreviewImage}
-          onOpenTask={onOpenTask}
+          onOpenTaskDialog={onOpenTaskDialog}
         />
       ))}
     </div>
   )
 }
 
-function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTask }: {
+function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTaskDialog }: {
   task: ImageTask
   accessToken?: string | null
   onPreviewImage: (image: ImageLightboxPayload) => void
-  onOpenTask: (task: ImageTask) => void
+  onOpenTaskDialog: (task: ImageTask) => void
 }) {
   const slots = generationSlots(task)
   const imageSlot = slots.find((slot): slot is Extract<typeof slot, { kind: 'image' }> => slot.kind === 'image')
@@ -1670,14 +1763,15 @@ function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTask }: 
   const allFailed = isTerminalStatus(task.status) && !task.results.length && task.status !== 'succeeded'
   const partialFailed = task.status === 'partial_failed' || (isTerminalStatus(task.status) && task.results.length > 0 && task.results.length < requested)
   const multi = requested > 1
+  const interaction = workspaceTaskHistoryInteraction({ surface: 'history', status: task.status, resultCount: task.results.length })
   const imageUrl = imageSlot ? userApi.imageAssetUrl(imageSlot.image.url, accessToken) : ''
   const downloadUrl = imageSlot ? userApi.imageAssetUrl(imageSlot.image.download_url ?? imageSlot.image.url, accessToken) : ''
   const openPreview = () => {
-    if (multi && task.results.length > 1) {
-      onOpenTask(task)
+    if (interaction.openDialog) {
+      onOpenTaskDialog(task)
       return
     }
-    if (!imageSlot || !imageUrl) return
+    if (!interaction.openLightbox || !imageSlot || !imageUrl) return
     onPreviewImage({
       url: imageUrl,
       downloadUrl,
@@ -1692,7 +1786,7 @@ function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTask }: 
   }
 
   return (
-    <button type="button" className={workspaceClasses.historyCard} disabled={!imageSlot} onClick={openPreview}>
+    <button type="button" className={workspaceClasses.historyCard} disabled={!interaction.openDialog && !interaction.openLightbox} onClick={openPreview}>
       <span className={workspaceClasses.historyPreview}>
         {multi ? <span className={cn(workspaceClasses.historyLayer, workspaceClasses.historyLayerBack2)} aria-hidden="true" /> : null}
         {multi ? <span className={cn(workspaceClasses.historyLayer, workspaceClasses.historyLayerBack1)} aria-hidden="true" /> : null}

@@ -30,7 +30,7 @@ export function publicGalleryCardView(image: ImageResult) {
     title: image.prompt_excerpt || '登录后查看完整提示词',
     taskType: taskTypeLabel(image.task_type ?? 'text_to_image'),
     model,
-    baseResolution: image.base_resolution || '-',
+    baseResolution: image.base_resolution || image.quality || '-',
     aspectRatio: image.aspect_ratio || '-',
     author: image.author_name || '匿名用户',
     date: formatDate(image.created_at),

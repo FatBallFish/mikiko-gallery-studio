@@ -623,7 +623,7 @@ func (s *MemoryStore) RenewTaskLease(_ context.Context, taskID, owner string, no
 func taskEligibleForLease(task domainimagetask.Task, now time.Time) bool {
 	switch task.Status {
 	case domainimagetask.StatusQueued:
-		return true
+		return task.ArtifactRecovery.Status != artifactRecoveryPending || task.ArtifactRecovery.NextRetryAt == nil || !task.ArtifactRecovery.NextRetryAt.After(now)
 	case domainimagetask.StatusRunning:
 		return task.LeaseExpiresAt == nil || task.LeaseExpiresAt.Before(now)
 	default:
@@ -656,6 +656,7 @@ func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.Image
 		SHA256:            result.SHA256,
 		ObjectKey:         result.ObjectKey,
 		StorageDriver:     result.StorageDriver,
+		StorageConfigID:   result.StorageConfigID,
 		ImageGroup:        result.ImageGroup,
 		VisibilityStatus:  defaultVisibilityStatus(result.VisibilityStatus),
 		ReviewReason:      result.ReviewReason,

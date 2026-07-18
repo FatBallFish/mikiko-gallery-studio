@@ -13,6 +13,19 @@ export function toggleGalleryImageSelection(current: ReadonlySet<string>, imageI
   return next
 }
 
-export function selectVisibleGalleryImages(_current: ReadonlySet<string>, visibleIDs: string[], selected: boolean) {
-  return selected ? new Set(visibleIDs) : new Set<string>()
+export function selectVisibleGalleryImages(current: ReadonlySet<string>, visibleIDs: string[], selected: boolean) {
+  const next = new Set(current)
+  visibleIDs.forEach((id) => {
+    if (selected) next.add(id)
+    else next.delete(id)
+  })
+  return next
+}
+
+export function selectedVisibleGalleryItems<T extends { id: string }>(rows: T[], selectedIds: ReadonlySet<string>) {
+  return rows.filter((row) => selectedIds.has(row.id))
+}
+
+export function areAllVisibleGalleryItemsSelected(rows: Array<{ id: string }>, selectedIds: ReadonlySet<string>) {
+  return rows.length > 0 && rows.every((row) => selectedIds.has(row.id))
 }

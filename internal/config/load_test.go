@@ -7,6 +7,30 @@ import (
 	"time"
 )
 
+func TestLoadEnvDefaultsAuthenticationSessionTTLs(t *testing.T) {
+	envPath := filepath.Join(t.TempDir(), "empty.env")
+	if err := os.WriteFile(envPath, nil, 0o600); err != nil {
+		t.Fatalf("write empty env file: %v", err)
+	}
+	t.Setenv("AUTH_ACCESS_TOKEN_TTL", "")
+	t.Setenv("AUTH_REFRESH_TOKEN_TTL", "")
+
+	cfg, err := LoadEnv(envPath)
+	if err != nil {
+		t.Fatalf("LoadEnv returned error: %v", err)
+	}
+
+	if cfg.Auth.AccessTokenTTL != 10*time.Minute {
+		t.Fatalf("expected default access token TTL 10m, got %s", cfg.Auth.AccessTokenTTL)
+	}
+	if cfg.Auth.RefreshTokenTTL != 2*time.Hour {
+		t.Fatalf("expected default refresh token TTL 2h, got %s", cfg.Auth.RefreshTokenTTL)
+	}
+	if cfg.Auth.AdminRefreshCookieName != "pg_admin_refresh_token" {
+		t.Fatalf("expected default admin refresh cookie name pg_admin_refresh_token, got %#v", cfg.Auth)
+	}
+}
+
 func TestLoadUsesEnvByDefault(t *testing.T) {
 	t.Setenv("PIC_GALLERY_ENV", "production")
 	t.Setenv("PIC_GALLERY_ADDR", ":9090")
@@ -45,8 +69,8 @@ func TestLoadUsesEnvByDefault(t *testing.T) {
 	if cfg.Billing.PointsScale != 5 {
 		t.Fatalf("expected billing scale 5, got %d", cfg.Billing.PointsScale)
 	}
-	if cfg.Auth.AccessTokenTTL != 10*time.Minute || cfg.Auth.RefreshTokenTTL != 30*time.Minute {
-		t.Fatalf("expected auth TTL defaults 10m/30m, got access=%s refresh=%s", cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL)
+	if cfg.Auth.AccessTokenTTL != 10*time.Minute || cfg.Auth.RefreshTokenTTL != 2*time.Hour {
+		t.Fatalf("expected auth TTL defaults 10m/2h, got access=%s refresh=%s", cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL)
 	}
 	if cfg.Auth.RefreshCookieName != "pg_refresh_token" || cfg.Auth.AdminRefreshCookieName != "pg_admin_refresh_token" {
 		t.Fatalf("expected refresh cookie defaults, got user=%q admin=%q", cfg.Auth.RefreshCookieName, cfg.Auth.AdminRefreshCookieName)

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -75,27 +76,28 @@ import (
 )
 
 type API struct {
-	auth          *authservice.Service
-	adminAuth     *adminauthservice.Service
-	apiKeys       *apikeyservice.Service
-	billing       *billingservice.Service
-	assets        *assetservice.Service
-	caps          *capserv.Service
-	compat        *compatservice.Service
-	tasks         *imagetaskservice.Service
-	admin         *adminconfigservice.Service
-	cashierCfg    *cashierservice.ConfigFacade
-	adminUser     *adminuserservice.Service
-	callRecord    *admincallrecordservice.Service
-	modelAdmin    *modeladminservice.Service
-	secureCfg     *secureconfigservice.Service
-	storageCfg    *storageconfigservice.Service
-	storageRouter *storage.Registry
-	redeem        *redeemservice.Service
-	audit         *auditservice.Service
-	adminPerms    domainadminauth.PermissionResolver
-	docsReady     DocsReadinessChecker
-	cfg           config.Config
+	auth       *authservice.Service
+	adminAuth  *adminauthservice.Service
+	apiKeys    *apikeyservice.Service
+	billing    *billingservice.Service
+	assets     *assetservice.Service
+	caps       *capserv.Service
+	compat     *compatservice.Service
+	tasks      *imagetaskservice.Service
+	admin      *adminconfigservice.Service
+	cashierCfg *cashierservice.ConfigFacade
+	adminUser  *adminuserservice.Service
+	callRecord *admincallrecordservice.Service
+	modelAdmin *modeladminservice.Service
+	secureCfg  *secureconfigservice.Service
+	storageCfg *storageconfigservice.Service
+	storageReg *storage.Registry
+	storagePub storage.InvalidationPublisher
+	redeem     *redeemservice.Service
+	audit      *auditservice.Service
+	adminPerms domainadminauth.PermissionResolver
+	docsReady  DocsReadinessChecker
+	cfg        config.Config
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -128,6 +130,8 @@ type adminDashboardOperations struct {
 	TrialExpiringUserCount         int            `json:"trial_expiring_user_count"`
 	PreflightFailureCount          int            `json:"preflight_failure_count"`
 	PreflightFailuresByErrorCode   map[string]int `json:"preflight_failures_by_error_code"`
+	PlatformLossCount              int            `json:"platform_loss_count"`
+	PlatformLossProviderCost       string         `json:"platform_loss_provider_cost"`
 	PublicGalleryListViews         uint64         `json:"public_gallery_list_views"`
 	PublicGalleryDetailLoginBlocks uint64         `json:"public_gallery_detail_login_blocks"`
 	EnabledPaymentMethods          []string       `json:"enabled_payment_methods"`
@@ -258,9 +262,10 @@ func (a *API) SetSecureConfigService(service *secureconfigservice.Service) {
 	a.secureCfg = service
 }
 
-func (a *API) SetStorageConfigService(service *storageconfigservice.Service, router *storage.Registry) {
+func (a *API) SetStorageConfigService(service *storageconfigservice.Service, registry *storage.Registry, publisher storage.InvalidationPublisher) {
 	a.storageCfg = service
-	a.storageRouter = router
+	a.storageReg = registry
+	a.storagePub = publisher
 }
 
 func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {
@@ -295,6 +300,7 @@ func NewAPIWithModelAdminService(cfg config.Config, authSvc *authservice.Service
 	api.caps.SetModelRoutingSource(modelAdminSvc)
 	api.tasks.SetModelRoutingSource(modelAdminSvc)
 	api.billing.SetModelRoutingSource(modelAdminSvc)
+	api.compat.SetModelRoutingSource(modelAdminSvc)
 	return api
 }
 
@@ -2806,12 +2812,17 @@ func (a *API) HandleAdminRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie, err := r.Cookie(a.adminRefreshCookieName())
 	if err != nil {
+		a.clearAdminRefreshCookie(w)
 		httpx.WriteError(w, r, errs.New(http.StatusUnauthorized, errs.CodeAuthRefreshExpired, "admin refresh token expired"))
 		return
 	}
-	session, refreshErr := a.adminAuth.Refresh(r.Context(), cookie.Value)
-	if refreshErr != nil {
-		httpx.WriteError(w, r, normalizeAppError(refreshErr))
+	session, err := a.adminAuth.Refresh(r.Context(), cookie.Value)
+	if err != nil {
+		appErr := normalizeAppError(err)
+		if appErr.StatusCode == http.StatusUnauthorized || appErr.StatusCode == http.StatusForbidden {
+			a.clearAdminRefreshCookie(w)
+		}
+		httpx.WriteError(w, r, appErr)
 		return
 	}
 	a.setAdminRefreshCookie(w, session)
@@ -3230,6 +3241,8 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	)
 	preflightFailuresByCode := map[string]int{}
 	preflightFailureCount := 0
+	platformLossCount := 0
+	platformLossProviderCost := decimal.Zero
 	for _, item := range callRecords.Items {
 		switch item.Status {
 		case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed:
@@ -3240,6 +3253,12 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		if item.ErrorCode != nil && isPreflightErrorCode(*item.ErrorCode) {
 			preflightFailuresByCode[*item.ErrorCode]++
 			preflightFailureCount++
+		}
+		if item.PlatformLoss {
+			platformLossCount++
+			if cost, parseErr := decimal.NewFromString(strings.TrimSpace(item.ProviderCost)); parseErr == nil {
+				platformLossProviderCost = platformLossProviderCost.Add(cost)
+			}
 		}
 		if item.StartedAt != nil && item.FinishedAt != nil && item.FinishedAt.After(*item.StartedAt) {
 			totalDurationSec += item.FinishedAt.Sub(*item.StartedAt).Seconds()
@@ -3335,6 +3354,8 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		TrialExpiringUserCount:         trialExpiringUserCount,
 		PreflightFailureCount:          preflightFailureCount,
 		PreflightFailuresByErrorCode:   preflightFailuresByCode,
+		PlatformLossCount:              platformLossCount,
+		PlatformLossProviderCost:       platformLossProviderCost.StringFixed(5),
 		PublicGalleryListViews:         observability.DefaultMetrics().PublicGalleryListViewsTotal(),
 		PublicGalleryDetailLoginBlocks: observability.DefaultMetrics().PublicGalleryDetailLoginBlockTotal(),
 		EnabledPaymentMethods:          enabledMethods,
@@ -4451,6 +4472,7 @@ func (a *API) HandleAdminStorageConfigs(w http.ResponseWriter, r *http.Request) 
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
+		a.publishStorageInvalidation(r.Context(), storage.StorageInvalidation{ConfigID: created.ID, Version: created.Version})
 		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.create", "object_storage_config", created.ID, map[string]any{"code": created.Code, "driver": created.Driver, "provider": created.Provider}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
@@ -4466,7 +4488,7 @@ func (a *API) HandleAdminStorageConfigProbe(w http.ResponseWriter, r *http.Reque
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	if a.storageRouter == nil {
+	if a.storageReg == nil {
 		httpx.WriteError(w, r, errs.Internal("storage router is not available"))
 		return
 	}
@@ -4478,7 +4500,7 @@ func (a *API) HandleAdminStorageConfigProbe(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	result := a.storageRouter.Probe(r.Context(), storageProbeCandidate(req))
+	result := a.storageReg.Probe(r.Context(), storageProbeCandidate(req))
 	status := http.StatusOK
 	if result.Status != domainstorageconfig.ProbeStatusSuccess {
 		status = http.StatusBadRequest
@@ -4492,7 +4514,7 @@ func (a *API) HandleAdminStorageConfigDetail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	id, action := parseStorageConfigAction(r.URL.Path)
-	if strings.TrimSpace(id) == "" {
+	if id == "" {
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "storage config route not found"))
 		return
 	}
@@ -4518,99 +4540,125 @@ func (a *API) HandleAdminStorageConfigDetail(w http.ResponseWriter, r *http.Requ
 		if !ok {
 			return
 		}
-		req.ID = id
-		req.UpdatedBy = admin.AdminID
+		req.ID, req.UpdatedBy = id, admin.AdminID
 		updated, err := a.storageCfg.Update(r.Context(), req)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
+		a.publishStorageInvalidation(r.Context(), storage.StorageInvalidation{ConfigID: updated.ID, Version: updated.Version})
 		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.update", "object_storage_config", updated.ID, map[string]any{"code": updated.Code, "version": updated.Version}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case r.Method == http.MethodPost && action == "probe":
-		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
-		if appErr != nil {
-			httpx.WriteError(w, r, appErr)
-			return
-		}
-		if a.storageRouter == nil {
-			httpx.WriteError(w, r, errs.Internal("storage router is not available"))
-			return
-		}
-		resolved, err := a.storageCfg.ResolveByID(r.Context(), id)
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		result := a.storageRouter.Probe(r.Context(), resolved)
-		updated, updateErr := a.storageCfg.UpdateProbe(r.Context(), id, result, admin.AdminID)
-		if updateErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(updateErr))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.probe", "object_storage_config", updated.ID, map[string]any{"status": result.Status}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
-			return
-		}
-		status := http.StatusOK
-		if result.Status != domainstorageconfig.ProbeStatusSuccess {
-			status = http.StatusBadRequest
-		}
-		httpx.WriteSuccess(w, r, status, updated)
+		a.handleAdminStoredStorageProbe(w, r, id)
 	case r.Method == http.MethodPost && action == "set-default":
-		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
-		if appErr != nil {
-			httpx.WriteError(w, r, appErr)
-			return
-		}
-		var req struct {
-			Version int64 `json:"version"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
-			return
-		}
-		updated, err := a.storageCfg.SetDefault(r.Context(), domainstorageconfig.SetDefaultRequest{ID: id, Version: req.Version, UpdatedBy: admin.AdminID})
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.set_default", "object_storage_config", updated.ID, map[string]any{"code": updated.Code}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+		a.handleAdminStorageSetDefault(w, r, id)
 	case r.Method == http.MethodPost && action == "set-status":
-		admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
-		if appErr != nil {
-			httpx.WriteError(w, r, appErr)
-			return
-		}
-		var req struct {
-			Version      int64  `json:"version"`
-			Status       string `json:"status"`
-			ReadEnabled  bool   `json:"read_enabled"`
-			WriteEnabled bool   `json:"write_enabled"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
-			return
-		}
-		updated, err := a.storageCfg.SetStatus(r.Context(), domainstorageconfig.StatusRequest{ID: id, Version: req.Version, Status: req.Status, ReadEnabled: req.ReadEnabled, WriteEnabled: req.WriteEnabled, UpdatedBy: admin.AdminID})
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.set_status", "object_storage_config", updated.ID, map[string]any{"status": updated.Status, "read_enabled": updated.ReadEnabled, "write_enabled": updated.WriteEnabled}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+		a.handleAdminStorageSetStatus(w, r, id)
 	default:
 		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) handleAdminStoredStorageProbe(w http.ResponseWriter, r *http.Request, id string) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.storageReg == nil {
+		httpx.WriteError(w, r, errs.Internal("storage router is not available"))
+		return
+	}
+	resolved, err := a.storageCfg.ResolveForProbe(r.Context(), id)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	result := a.storageReg.Probe(r.Context(), resolved)
+	updated, err := a.storageCfg.UpdateProbe(r.Context(), id, result, admin.AdminID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.publishStorageInvalidation(r.Context(), storage.StorageInvalidation{ConfigID: updated.ID, Version: updated.Version})
+	if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.probe", "object_storage_config", updated.ID, map[string]any{"status": result.Status}); auditErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(auditErr))
+		return
+	}
+	status := http.StatusOK
+	if result.Status != domainstorageconfig.ProbeStatusSuccess {
+		status = http.StatusBadRequest
+	}
+	httpx.WriteSuccess(w, r, status, updated)
+}
+
+func (a *API) handleAdminStorageSetDefault(w http.ResponseWriter, r *http.Request, id string) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	var req struct {
+		Version int64 `json:"version"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	updated, err := a.storageCfg.SetDefault(r.Context(), domainstorageconfig.SetDefaultRequest{ID: id, Version: req.Version, UpdatedBy: admin.AdminID})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.publishStorageInvalidation(r.Context(), storage.StorageInvalidation{ConfigID: updated.ID, Version: updated.Version, DefaultChanged: true})
+	if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.set_default", "object_storage_config", updated.ID, map[string]any{"code": updated.Code}); auditErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(auditErr))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, updated)
+}
+
+func (a *API) handleAdminStorageSetStatus(w http.ResponseWriter, r *http.Request, id string) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	var req struct {
+		Version      int64  `json:"version"`
+		Status       string `json:"status"`
+		ReadEnabled  bool   `json:"read_enabled"`
+		WriteEnabled bool   `json:"write_enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	updated, err := a.storageCfg.SetStatus(r.Context(), domainstorageconfig.StatusRequest{ID: id, Version: req.Version, Status: req.Status, ReadEnabled: req.ReadEnabled, WriteEnabled: req.WriteEnabled, UpdatedBy: admin.AdminID})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.publishStorageInvalidation(r.Context(), storage.StorageInvalidation{ConfigID: updated.ID, Version: updated.Version, DefaultChanged: updated.IsDefault})
+	if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "storage_config.set_status", "object_storage_config", updated.ID, map[string]any{"status": updated.Status, "read_enabled": updated.ReadEnabled, "write_enabled": updated.WriteEnabled}); auditErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(auditErr))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, updated)
+}
+
+func (a *API) publishStorageInvalidation(ctx context.Context, event storage.StorageInvalidation) {
+	if a.storageReg != nil {
+		a.storageReg.Invalidate(event)
+	}
+	if a.storagePub != nil {
+		if err := a.storagePub.Publish(ctx, event); err != nil {
+			slog.ErrorContext(ctx, "publish storage config invalidation", "config_id", event.ConfigID, "version", event.Version, "default_changed", event.DefaultChanged, "error", err)
+		}
 	}
 }
 
@@ -4642,33 +4690,14 @@ func decodeStorageConfigWriteRequest(w http.ResponseWriter, r *http.Request) (do
 	if status == "" {
 		status = domainstorageconfig.StatusEnabled
 	}
-	readEnabled := true
+	readEnabled, writeEnabled := true, true
 	if req.ReadEnabled != nil {
 		readEnabled = *req.ReadEnabled
 	}
-	writeEnabled := true
 	if req.WriteEnabled != nil {
 		writeEnabled = *req.WriteEnabled
 	}
-	return domainstorageconfig.WriteRequest{
-		Version:        req.Version,
-		Code:           req.Code,
-		Name:           req.Name,
-		Driver:         req.Driver,
-		Provider:       req.Provider,
-		Status:         status,
-		ReadEnabled:    readEnabled,
-		WriteEnabled:   writeEnabled,
-		Endpoint:       req.Endpoint,
-		Region:         req.Region,
-		Bucket:         req.Bucket,
-		Prefix:         req.Prefix,
-		ForcePathStyle: req.ForcePathStyle,
-		PublicBaseURL:  req.PublicBaseURL,
-		LocalRoot:      req.LocalRoot,
-		Secrets:        req.Secrets,
-		ClearSecrets:   req.ClearSecrets,
-	}, true
+	return domainstorageconfig.WriteRequest{Version: req.Version, Code: req.Code, Name: req.Name, Driver: req.Driver, Provider: req.Provider, Status: status, ReadEnabled: readEnabled, WriteEnabled: writeEnabled, Endpoint: req.Endpoint, Region: req.Region, Bucket: req.Bucket, Prefix: req.Prefix, ForcePathStyle: req.ForcePathStyle, PublicBaseURL: req.PublicBaseURL, LocalRoot: req.LocalRoot, Secrets: req.Secrets, ClearSecrets: req.ClearSecrets}, true
 }
 
 func parseStorageConfigAction(requestPath string) (string, string) {
@@ -4696,27 +4725,7 @@ func storageProbeCandidate(req domainstorageconfig.WriteRequest) domainstorageco
 	if strings.TrimSpace(req.Provider) == domainstorageconfig.ProviderR2 && region == "" {
 		region = "auto"
 	}
-	return domainstorageconfig.ResolvedConfig{
-		ConfigRecord: domainstorageconfig.ConfigRecord{
-			ID:             "probe",
-			Code:           "probe",
-			Name:           "probe",
-			Driver:         driver,
-			Provider:       strings.TrimSpace(req.Provider),
-			Status:         domainstorageconfig.StatusEnabled,
-			ReadEnabled:    true,
-			WriteEnabled:   true,
-			Endpoint:       strings.TrimSpace(req.Endpoint),
-			Region:         region,
-			Bucket:         strings.TrimSpace(req.Bucket),
-			Prefix:         strings.Trim(strings.TrimSpace(req.Prefix), "/"),
-			ForcePathStyle: req.ForcePathStyle,
-			PublicBaseURL:  strings.TrimSpace(req.PublicBaseURL),
-			LocalRoot:      strings.TrimSpace(req.LocalRoot),
-			Version:        1,
-		},
-		Secrets: secrets,
-	}
+	return domainstorageconfig.ResolvedConfig{ConfigRecord: domainstorageconfig.ConfigRecord{ID: "probe", Code: "probe", Name: "probe", Driver: driver, Provider: strings.TrimSpace(req.Provider), Status: domainstorageconfig.StatusEnabled, ReadEnabled: true, WriteEnabled: true, Endpoint: strings.TrimSpace(req.Endpoint), Region: region, Bucket: strings.TrimSpace(req.Bucket), Prefix: strings.Trim(strings.TrimSpace(req.Prefix), "/"), ForcePathStyle: req.ForcePathStyle, PublicBaseURL: strings.TrimSpace(req.PublicBaseURL), LocalRoot: strings.TrimSpace(req.LocalRoot), Version: 1}, Secrets: secrets}
 }
 
 func (a *API) HandleAdminSecuritySMTP(w http.ResponseWriter, r *http.Request) {
@@ -4811,9 +4820,28 @@ func (a *API) HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	accessToken := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		accessToken = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	}
 	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly)
+	accessSession := admin
+	if cookie, err := r.Cookie(a.adminRefreshCookieName()); err == nil {
+		a.adminAuth.LogoutRefresh(cookie.Value)
+	}
+	if accessSession != nil {
+		a.adminAuth.LogoutAccessSession(accessSession.SessionID)
+	} else if accessToken != "" {
+		a.adminAuth.LogoutAccessToken(accessToken)
+	}
+	a.clearAdminRefreshCookie(w)
 	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
+		if appErr.StatusCode != http.StatusUnauthorized {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	if cookie, err := r.Cookie(a.adminRefreshCookieName()); err == nil {
@@ -5689,17 +5717,23 @@ func (a *API) HandleAdminCallRecords(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
+	platformLoss, queryErr := parseOptionalBoolQuery(r, "platform_loss")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
 	result, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{
-		Page:          page,
-		PageSize:      pageSize,
-		Status:        r.URL.Query().Get("status"),
-		ErrorCode:     r.URL.Query().Get("error_code"),
-		Provider:      r.URL.Query().Get("provider"),
-		SourceChannel: r.URL.Query().Get("source_channel"),
-		UserID:        userID,
-		TaskID:        r.URL.Query().Get("task_id"),
-		CreatedFrom:   createdFrom,
-		CreatedTo:     createdTo,
+		Page:             page,
+		PageSize:         pageSize,
+		Status:           r.URL.Query().Get("status"),
+		ErrorCode:        r.URL.Query().Get("error_code"),
+		Provider:         r.URL.Query().Get("provider"),
+		SourceChannel:    r.URL.Query().Get("source_channel"),
+		UserID:           userID,
+		TaskID:           r.URL.Query().Get("task_id"),
+		CreatedFrom:      createdFrom,
+		CreatedTo:        createdTo,
+		PlatformLossOnly: platformLoss != nil && *platformLoss,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -6663,14 +6697,21 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	modelSelection, err := a.compat.ResolveModel(r.Context(), req.Model)
+	if err != nil {
+		a.writeCompatError(w, compatservice.MapError(err))
+		return
+	}
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
-		AbstractModel:             a.compatAbstractModel(req.Model),
+		AbstractModel:             modelSelection.AbstractModel,
+		RouteModelCode:            modelSelection.RouteModelCode,
 		BaseResolution:            "auto",
-		Quality:                   req.Quality,
+		Quality:                   compatQuality(req.Quality),
 		RequestedSize:             req.Size,
 		RequestedOutputImageCount: req.N,
 		UserGroupCode:             identity.GroupCode,
+		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
 	})
 	if err != nil {
@@ -6689,6 +6730,8 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		UserGroupCode:       identity.GroupCode,
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
 		Model:               req.Model,
+		AbstractModel:       modelSelection.AbstractModel,
+		RouteModelCode:      modelSelection.RouteModelCode,
 		Prompt:              req.Prompt,
 		Size:                req.Size,
 		N:                   req.N,
@@ -6751,15 +6794,22 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	modelSelection, err := a.compat.ResolveModel(r.Context(), r.FormValue("model"))
+	if err != nil {
+		a.writeCompatError(w, compatservice.MapError(err))
+		return
+	}
 	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeImageEdit),
-		AbstractModel:             a.compatAbstractModel(r.FormValue("model")),
+		AbstractModel:             modelSelection.AbstractModel,
+		RouteModelCode:            modelSelection.RouteModelCode,
 		BaseResolution:            "auto",
-		Quality:                   r.FormValue("quality"),
+		Quality:                   compatQuality(r.FormValue("quality")),
 		RequestedSize:             r.FormValue("size"),
 		RequestedOutputImageCount: count,
 		ReferenceImageCount:       len(images),
 		UserGroupCode:             identity.GroupCode,
+		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
 	})
 	if err != nil {
@@ -6778,6 +6828,8 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 		UserGroupCode:       identity.GroupCode,
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
 		Model:               r.FormValue("model"),
+		AbstractModel:       modelSelection.AbstractModel,
+		RouteModelCode:      modelSelection.RouteModelCode,
 		Prompt:              r.FormValue("prompt"),
 		Size:                r.FormValue("size"),
 		N:                   count,
@@ -8065,7 +8117,7 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.ModelAccountModelWriteRequest{}, false
 	}
-	maxReferenceCount := 5
+	maxReferenceCount := 0
 	if req.MaxReferenceImageCount != nil {
 		maxReferenceCount = *req.MaxReferenceImageCount
 	}
@@ -9387,7 +9439,8 @@ func (a *API) setAdminRefreshCookie(w http.ResponseWriter, session domainadminau
 	http.SetCookie(w, &http.Cookie{
 		Name:     a.adminRefreshCookieName(),
 		Value:    session.RefreshToken,
-		Path:     "/",
+		Path:     "/api/ops/admin/v1/auth",
+		Secure:   a.adminRefreshCookieSecure(),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  session.RefreshTokenExpiresAt,
@@ -9395,14 +9448,31 @@ func (a *API) setAdminRefreshCookie(w http.ResponseWriter, session domainadminau
 }
 
 func (a *API) clearAdminRefreshCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: a.adminRefreshCookieName(), Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{
+		Name:     a.adminRefreshCookieName(),
+		Value:    "",
+		Path:     "/api/ops/admin/v1/auth",
+		Secure:   a.adminRefreshCookieSecure(),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
 }
 
 func (a *API) adminRefreshCookieName() string {
-	if strings.TrimSpace(a.cfg.Auth.AdminRefreshCookieName) != "" {
-		return a.cfg.Auth.AdminRefreshCookieName
+	if name := strings.TrimSpace(a.cfg.Auth.AdminRefreshCookieName); name != "" {
+		return name
 	}
 	return "pg_admin_refresh_token"
+}
+
+func (a *API) adminRefreshCookieSecure() bool {
+	switch strings.ToLower(strings.TrimSpace(a.cfg.App.Env)) {
+	case "", "local", "dev", "development", "test":
+		return false
+	default:
+		return true
+	}
 }
 
 func (a *API) requireCompatBearer(r *http.Request) *errs.Error {
@@ -9603,15 +9673,19 @@ func defaultString(value, fallback string) string {
 	return value
 }
 
-func (a *API) compatAbstractModel(model string) string {
-	model = strings.ToLower(strings.TrimSpace(model))
-	if value := strings.ToLower(strings.TrimSpace(a.cfg.Routing.OpenAICompatModelMap[model])); value != "" {
-		return value
+func compatQuality(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "low":
+		return "1k"
+	case "medium":
+		return "2k"
+	case "high":
+		return "4k"
+	case "1k", "2k", "4k":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "auto"
 	}
-	if _, ok := a.cfg.Billing.BaseResolutionPointsByModel[model]; ok {
-		return model
-	}
-	return ""
 }
 
 func taskProviderPreference(cfg config.Config) []string {

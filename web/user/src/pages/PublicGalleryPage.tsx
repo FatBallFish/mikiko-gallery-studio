@@ -8,8 +8,16 @@ import { errorMessage } from '../useApiResource'
 import { ArrowRight, Image as ImageIcon, RefreshCw } from '../ui/icons'
 import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
 import { galleryImageAspect } from './galleryExperience'
-import { publicGalleryCardView, shouldFetchPublicGalleryDetailByID } from './publicGalleryModel'
-import { beginPublicGalleryRequest, canCommitPublicGalleryRequest, initialPublicGalleryRequestState } from './publicGalleryRequests'
+import { publicGalleryCardView } from './publicGalleryModel'
+import {
+  beginPublicGalleryDetailRequest,
+  beginPublicGalleryRequest,
+  canCommitPublicGalleryDetailRequest,
+  canCommitPublicGalleryRequest,
+  initialPublicGalleryDetailRequestState,
+  initialPublicGalleryRequestState,
+  resetPublicGalleryDetailRequest,
+} from './publicGalleryRequests'
 
 const PAGE_SIZE = 24
 
@@ -50,8 +58,11 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   const [selected, setSelected] = useState<ImageResult | null>(null)
   const [imagePreview, setImagePreview] = useState<ImageLightboxPayload | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<{ imageId: string; message: string } | null>(null)
+  const [detailRetryVersion, setDetailRetryVersion] = useState(0)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
   const requestStateRef = useRef(initialPublicGalleryRequestState())
+  const detailRequestStateRef = useRef(initialPublicGalleryDetailRequestState())
 
   const loadPage = useCallback(async (pageNumber: number, mode: 'replace' | 'append') => {
     const request = beginPublicGalleryRequest(requestStateRef.current, mode)
@@ -179,25 +190,46 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   }
 
   useEffect(() => {
-    if (!imageId || !rows.length || selected?.id === imageId || busyId === `detail:${imageId}`) return
-    const target = rows.find((image) => image.id === imageId)
-    if (target) void openDetail(target)
-  }, [imageId, rows, selected?.id, busyId])
-
-  useEffect(() => {
-    if (!shouldFetchPublicGalleryDetailByID({ imageId, rows, selectedId: selected?.id, busyId })) return
-    if (!requireLogin('请先登录后再查看完整作品', imageId)) return
     const targetImageId = imageId?.trim()
-    if (!targetImageId) return
+    if (!targetImageId) {
+      detailRequestStateRef.current = beginPublicGalleryDetailRequest(detailRequestStateRef.current, null, null).state
+      return
+    }
+    if (!requireLogin('请先登录后再查看完整作品', targetImageId)) return
+    const request = beginPublicGalleryDetailRequest(detailRequestStateRef.current, targetImageId, accessToken)
+    detailRequestStateRef.current = request.state
+    if (!request.token) return
+    const requestToken = request.token
+    let cancelled = false
+    setSelected((current) => current?.id === targetImageId ? current : null)
+    setDetailError(null)
     setBusyId(`detail:${targetImageId}`)
     void openApi.getPublicGalleryImage(targetImageId, { accessToken })
       .then((detail) => {
+        if (cancelled || !canCommitPublicGalleryDetailRequest(detailRequestStateRef.current, requestToken)) return
         setSelected(detail)
         setRows((items) => items.some((item) => item.id === detail.id) ? items.map((item) => item.id === detail.id ? { ...item, ...detail } : item) : [detail, ...items])
       })
-      .catch((error) => app.notify('error', errorMessage(error)))
-      .finally(() => setBusyId(null))
-  }, [accessToken, app, busyId, imageId, rows, selected?.id])
+      .catch((error) => {
+        if (cancelled || !canCommitPublicGalleryDetailRequest(detailRequestStateRef.current, requestToken)) return
+        const message = errorMessage(error)
+        setDetailError({ imageId: targetImageId, message })
+        app.notify('error', message)
+      })
+      .finally(() => {
+        if (cancelled || !canCommitPublicGalleryDetailRequest(detailRequestStateRef.current, requestToken)) return
+        setBusyId((current) => current === `detail:${targetImageId}` ? null : current)
+      })
+    return () => { cancelled = true }
+  }, [accessToken, detailRetryVersion, imageId])
+
+  function retryDeepLinkDetail() {
+    const targetImageId = imageId?.trim()
+    if (!targetImageId) return
+    detailRequestStateRef.current = resetPublicGalleryDetailRequest(detailRequestStateRef.current, targetImageId, accessToken)
+    setDetailError(null)
+    setDetailRetryVersion((current) => current + 1)
+  }
 
   function downloadImage(image: ImageResult) {
     const url = image.download_url ?? image.url
@@ -240,6 +272,8 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         meta={loading ? '读取中' : `已加载 ${rows.length} 张`}
         action={<Button tone="ghost" onClick={() => void loadPage(1, 'replace')} disabled={loading}><RefreshCw size={15} strokeWidth={1.5} aria-hidden="true" />刷新</Button>}
       />
+
+      {detailError && detailError.imageId === imageId?.trim() ? <ErrorState message={detailError.message} onRetry={retryDeepLinkDetail} /> : null}
 
       {loading && !rows.length ? <PublicGallerySkeleton /> : null}
       {loadError && !rows.length ? <ErrorState message={loadError} onRetry={() => void loadPage(1, 'replace')} /> : null}

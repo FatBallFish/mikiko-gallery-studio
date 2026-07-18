@@ -5,8 +5,8 @@ if (workspaceBaseResolutionLabel('auto') !== '自动') {
   throw new Error(`base resolution auto should localize to 自动, got ${workspaceBaseResolutionLabel('auto')}`)
 }
 
-if (workspaceBaseResolutionLabel('HIGH') !== '高清') {
-  throw new Error(`base resolution labels should be case-insensitive, got ${workspaceBaseResolutionLabel('HIGH')}`)
+if (workspaceBaseResolutionLabel('2k') !== '2K') {
+  throw new Error(`base resolution labels should normalize case, got ${workspaceBaseResolutionLabel('2k')}`)
 }
 
 if (workspaceBaseResolutionLabel('experimental') !== 'experimental') {

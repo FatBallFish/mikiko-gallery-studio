@@ -7,7 +7,7 @@ import { KeyRound, Palette, User } from './icons'
 export type SettingsSectionId = 'profile' | 'api-keys' | 'appearance'
 
 export const settingsWorkspaceSections: Array<{ id: SettingsSectionId; route: RouteId; label: string; detail: string }> = [
-  { id: 'profile', route: 'profile', label: '个人资料', detail: '账户、积分与生成偏好' },
+  { id: 'profile', route: 'profile', label: '个人资料', detail: '账户、积分与资料' },
   { id: 'api-keys', route: 'api-keys', label: 'API 密钥', detail: '凭据、额度与调用限制' },
   { id: 'appearance', route: 'settings', label: '外观偏好', detail: '主题模式与强调色' },
 ]

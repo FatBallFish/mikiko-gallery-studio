@@ -142,6 +142,36 @@ type Attempt struct {
 	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
 }
 
+type ArtifactDiagnostic struct {
+	Code            string    `json:"code,omitempty"`
+	Stage           string    `json:"stage,omitempty"`
+	Attempt         int       `json:"attempt,omitempty"`
+	URLHost         string    `json:"url_host,omitempty"`
+	URLPath         string    `json:"url_path,omitempty"`
+	HTTPStatus      int       `json:"http_status,omitempty"`
+	ContentType     string    `json:"content_type,omitempty"`
+	ContentLength   int64     `json:"content_length,omitempty"`
+	BytesRead       int64     `json:"bytes_read,omitempty"`
+	DurationMS      int64     `json:"duration_ms,omitempty"`
+	StorageConfigID string    `json:"storage_config_id,omitempty"`
+	StorageVersion  int64     `json:"storage_version,omitempty"`
+	Retryable       bool      `json:"retryable"`
+	Cause           string    `json:"cause,omitempty"`
+	StartedAt       time.Time `json:"started_at,omitempty"`
+	FinishedAt      time.Time `json:"finished_at,omitempty"`
+}
+
+type ArtifactRecovery struct {
+	Status           string               `json:"status,omitempty"`
+	EncryptedPayload string               `json:"-"`
+	AttemptCount     int                  `json:"attempt_count,omitempty"`
+	NextRetryAt      *time.Time           `json:"next_retry_at,omitempty"`
+	LastDiagnostic   ArtifactDiagnostic   `json:"last_diagnostic,omitempty"`
+	Diagnostics      []ArtifactDiagnostic `json:"diagnostics,omitempty"`
+	StorageConfigID  string               `json:"storage_config_id,omitempty"`
+	StorageVersion   int64                `json:"storage_version,omitempty"`
+}
+
 type Task struct {
 	UserID               int64                         `json:"-"`
 	APIKeyID             int64                         `json:"-"`
@@ -189,6 +219,9 @@ type Task struct {
 	ErrorCode            string                        `json:"error_code,omitempty"`
 	Attempts             []Attempt                     `json:"attempts,omitempty"`
 	ErrorMessage         string                        `json:"error_message,omitempty"`
+	ProviderRequestID    string                        `json:"provider_request_id,omitempty"`
+	UpstreamSucceededAt  *time.Time                    `json:"upstream_succeeded_at,omitempty"`
+	ArtifactRecovery     ArtifactRecovery              `json:"artifact_recovery,omitempty"`
 	Results              []provider.ImageResult        `json:"results,omitempty"`
 	PricingSnapshot      domainbilling.PricingSnapshot `json:"-"`
 	CreatedAt            time.Time                     `json:"created_at"`

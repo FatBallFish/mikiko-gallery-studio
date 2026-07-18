@@ -2,6 +2,11 @@ export type LandingStage = 'attention' | 'interest' | 'desire' | 'action'
 
 export const landingActionInk = '#111218'
 
+export function landingAssetUrl(baseUrl: string, assetPath: string) {
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+  return `${normalizedBase || '/'}${assetPath.replace(/^\/+/, '')}`
+}
+
 export type LandingAction = {
   label: string
   kind: 'create' | 'docs'

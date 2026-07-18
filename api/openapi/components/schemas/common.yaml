@@ -105,14 +105,22 @@ components:
           type: string
         progress_stage:
           type: string
-          enum: [queued, provider, persisting, settling, completed, failed]
-          description: Latest persisted coarse execution stage. Providers do not expose a reliable numeric percentage.
         progress_message:
           type: string
-          description: User-facing detail for the latest persisted execution stage.
+        route_model_code:
+          type: string
         abstract_model:
           type: string
+          deprecated: true
+          description: Legacy model field retained for older clients. Use route_model_code for new integrations.
+        size_mode:
+          type: string
+          enum: [ratio, pixel]
         base_resolution:
+          type: string
+        aspect_ratio:
+          type: string
+        requested_size:
           type: string
         quality:
           type: string

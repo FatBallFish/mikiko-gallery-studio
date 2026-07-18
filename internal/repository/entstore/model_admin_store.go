@@ -1018,6 +1018,14 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 		if model.UpdatedAt.After(latestVersionAt) {
 			latestVersionAt = model.UpdatedAt
 		}
+		supportedRatios := append([]string(nil), model.SupportedRatios...)
+		if len(supportedRatios) == 0 {
+			supportedRatios = []string{"1:1"}
+		}
+		maxImageCount := model.MaxImageCount
+		if maxImageCount <= 0 {
+			maxImageCount = 1
+		}
 		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{
 			AccountModelID:            int64(model.ID),
 			ModelAccountID:            model.AccountID,
@@ -1031,9 +1039,9 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			SupportedBaseResolution:   append([]string(nil), model.BaseResolution...),
 			Quality:                   append([]string(nil), model.Quality...),
 			SizeModes:                 append([]string(nil), model.SizeModes...),
-			SupportedAspectRatios:     append([]string(nil), model.SupportedRatios...),
+			SupportedAspectRatios:     supportedRatios,
 			SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
-			MaxImageCount:             model.MaxImageCount,
+			MaxImageCount:             maxImageCount,
 			MaxReferenceImageCount:    model.MaxReferenceImageCount,
 			SupportsImageInput:        model.MaxReferenceImageCount > 0,
 			OutputFormat:              append([]string(nil), model.OutputFormat...),
@@ -1042,7 +1050,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			Moderation:                append([]string(nil), model.Moderation...),
 			HealthStatus:              account.Status,
 			TimeoutMS:                 account.TimeoutMs,
-			InputCost:                 model.CostPerImage,
+			OutputCost:                model.CostPerImage,
 			Currency:                  model.Currency,
 			AccountExtra:              cloneModelAdminExtra(account.Extra),
 			ModelExtra:                cloneModelAdminExtra(model.Extra),

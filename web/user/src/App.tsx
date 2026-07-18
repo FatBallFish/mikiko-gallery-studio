@@ -44,6 +44,7 @@ export default function App() {
   const [routeTaskId, setRouteTaskId] = useState<string | undefined>(initial.taskId)
   const [session, setSession] = useState<SessionState | null>(() => readStoredSession())
   const sessionRef = useRef<SessionState | null>(session)
+  const sessionVersionRef = useRef(0)
   const routeRef = useRef<RouteId>(initial.route)
   const expiredNoticeRef = useRef(false)
   const [profile, setProfile] = useState<UserProfile | null>(() => readStoredSession()?.profile ?? null)
@@ -71,6 +72,7 @@ export default function App() {
   }, [themePreference])
 
   const expireSession = useCallback(() => {
+    sessionVersionRef.current += 1
     sessionRef.current = null
     setSession(null)
     setProfile(null)
@@ -93,9 +95,12 @@ export default function App() {
   useLayoutEffect(() => {
     userApi.configureAuth({
       getToken: () => sessionRef.current?.token,
+      getSessionVersion: () => sessionVersionRef.current,
       onUnauthorized: async () => {
+        const refreshSessionVersion = sessionVersionRef.current
         try {
           const refreshed = await userApi.refreshSession()
+          if (sessionVersionRef.current !== refreshSessionVersion) return null
           const currentProfile = sessionRef.current?.profile ?? profile ?? refreshed.profile ?? {
             id: String(refreshed.user_id ?? ''),
             email: '',
@@ -104,7 +109,7 @@ export default function App() {
             tier: 'FREE' as const,
             group: 'DEFAULT',
             signature: '',
-            preferences: { model_group: 'plus-image', base_resolution: 'auto', aspect_ratio: '16:9', image_count: 1 },
+            preferences: { model_group: 'plus-image', base_resolution: 'auto', quality: 'auto', aspect_ratio: '16:9', image_count: 1 },
           }
           const nextSession = { token: refreshed.access_token, profile: currentProfile }
           sessionRef.current = nextSession
@@ -113,7 +118,7 @@ export default function App() {
           expiredNoticeRef.current = false
           return refreshed.access_token
         } catch {
-          expireSession()
+          if (sessionVersionRef.current === refreshSessionVersion) expireSession()
           return null
         }
       },
@@ -135,15 +140,21 @@ export default function App() {
   }, [])
 
   const refreshAccount = useCallback(async () => {
-    if (!sessionRef.current?.token) return
+    const currentSession = sessionRef.current
+    if (!currentSession?.token) return
+    const refreshAccountVersion = sessionVersionRef.current
     try {
       const [nextProfile, nextBalance] = await Promise.all([userApi.getProfile(), userApi.getBalance()])
+      if (sessionVersionRef.current !== refreshAccountVersion) return
+      const latestToken = sessionRef.current?.token
+      if (!latestToken) return
       setProfile(nextProfile)
       setBalance(nextBalance)
-      installSession({ token: sessionRef.current.token, profile: nextProfile })
+      installSession({ token: latestToken, profile: nextProfile })
     } catch (caught) {
+      if (sessionVersionRef.current !== refreshAccountVersion) return
       if (caught && typeof caught === 'object' && 'status' in caught && caught.status === 401) {
-        expireSession()
+        if (sessionVersionRef.current === refreshAccountVersion) expireSession()
         return
       }
       throw caught
@@ -182,7 +193,7 @@ export default function App() {
           tier: 'FREE',
           group: 'DEFAULT',
           signature: '',
-          preferences: { model_group: 'plus-image', base_resolution: 'auto', aspect_ratio: '16:9', image_count: 1 },
+          preferences: { model_group: 'plus-image', base_resolution: 'auto', quality: 'auto', aspect_ratio: '16:9', image_count: 1 },
         } }
         const nextProfile = await userApi.getProfile()
         if (cancelled) return
@@ -238,6 +249,7 @@ export default function App() {
   }, [installSession, notify, themePreference])
 
   const login = useCallback(async (nextSession: SessionState, target?: RouteId, options?: { imageId?: string | null; taskId?: string | null }) => {
+    sessionVersionRef.current += 1
     expiredNoticeRef.current = false
     installSession(nextSession, { applyProfileTheme: true })
     notify('success', '登录成功，欢迎回到 Mikiko Studio')
@@ -249,13 +261,16 @@ export default function App() {
   }, [installSession, notify, returnTo, routeImageId, routeTaskId])
 
   const logout = useCallback(async () => {
-    await userApi.logout().catch(() => undefined)
+    const logoutRequest = userApi.logout().catch(() => undefined)
+    sessionVersionRef.current += 1
+    sessionRef.current = null
     window.localStorage.removeItem(sessionKey)
     setSession(null)
     setProfile(null)
     setBalance(null)
     notify('info', '已退出登录')
     writeHash('login')
+    await logoutRequest
   }, [notify])
 
   const appValue = useMemo(() => ({

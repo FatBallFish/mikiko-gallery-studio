@@ -46,6 +46,7 @@ func (ObjectStorageConfig) Fields() []ent.Field {
 func (ObjectStorageConfig) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("code").Unique(),
+		index.Fields("is_default").Unique().Annotations(entsql.IndexWhere("is_default")),
 		index.Fields("is_default", "status", "write_enabled"),
 		index.Fields("status"),
 	}

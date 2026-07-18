@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useState } from 'react'
 
 /**
  * Lightweight scroll-reveal hook using IntersectionObserver.
@@ -16,21 +16,17 @@ export function useReveal<T extends HTMLElement = HTMLDivElement>(options: {
   once?: boolean
 } = {}) {
   const { threshold = 0.15, rootMargin = '0px 0px -10% 0px', once = true } = options
-  const ref = useRef<T | null>(null)
+  const [node, setNode] = useState<T | null>(null)
   const [visible, setVisible] = useState(true)
+  const ref = useCallback((nextNode: T | null) => setNode(nextNode), [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduceMotion) {
       setVisible(true)
       return
     }
-    const node = ref.current
-    // 关键修复:node 不存在时不要 setVisible(false)。
-    // 父组件先 return LoadingState 再切真实内容时,这里 node 为 null,
-    // 若先 setVisible(false) 再 return,effect 不会因 deps 变化重跑,
-    // 元素会永久隐藏。保留 visible=true,等下次渲染再触发 effect。
     if (!node) return
     setVisible(false)
     const observer = new IntersectionObserver(
@@ -48,7 +44,7 @@ export function useReveal<T extends HTMLElement = HTMLDivElement>(options: {
     )
     observer.observe(node)
     return () => observer.disconnect()
-  })
+  }, [node, once, rootMargin, threshold])
 
   return { ref, visible }
 }

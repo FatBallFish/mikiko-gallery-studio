@@ -194,19 +194,19 @@ export const rdCommon = {
 
 // Unified component primitives - replaces old `userButton`/`userForm`/`userState`/`userPill`/`userCard`/`userText`
 export const button = {
-  base: 'inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-[18px] py-2.5 text-sm font-bold text-[var(--fg)] no-underline transition-all duration-200 ease-out hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:bg-[color-mix(in_oklch,var(--accent)_6%,transparent)] active:translate-y-0 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none',
+  base: 'inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-[18px] py-2.5 text-sm font-bold text-[var(--fg)] no-underline transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 ease-out hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:bg-[color-mix(in_oklch,var(--accent)_6%,transparent)] active:translate-y-0 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none',
   primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)] hover:bg-[var(--accent)] hover:border-[var(--accent)] hover:shadow-[0_5px_20px_-5px_rgba(var(--accent-rgb),0.4)]',
   ghost: 'bg-transparent border-transparent hover:bg-[color-mix(in_oklch,var(--accent)_8%,transparent)]',
   danger: 'border-[color-mix(in_oklch,var(--accent-coral)_30%,var(--border))] text-[var(--accent-coral)] hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)]',
-  icon: 'inline-grid size-10 place-items-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] text-[var(--fg)] transition-all duration-200 hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] hover:text-[var(--accent)] active:scale-[0.98]',
-  iconSm: 'inline-grid size-8 place-items-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] text-[var(--fg)] transition-all duration-200 hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:text-[var(--accent)] active:scale-[0.98]',
+  icon: 'inline-grid size-10 place-items-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] text-[var(--fg)] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] hover:text-[var(--accent)] active:scale-[0.98]',
+  iconSm: 'inline-grid size-8 place-items-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] text-[var(--fg)] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 hover:border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] hover:text-[var(--accent)] active:scale-[0.98]',
 }
 
 export const form = {
   field: 'grid gap-2',
   fieldLabel: 'text-xs font-bold text-[var(--muted)]',
-  input: 'w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--fg)] outline-none transition-all duration-200 placeholder:text-[var(--dim)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_22%,transparent)]',
-  textarea: 'w-full min-h-[120px] resize-y rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--fg)] outline-none transition-all duration-200 placeholder:text-[var(--dim)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_22%,transparent)]',
+  input: 'w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--fg)] outline-none transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 placeholder:text-[var(--dim)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_22%,transparent)]',
+  textarea: 'w-full min-h-[120px] resize-y rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--fg)] outline-none transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 placeholder:text-[var(--dim)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_22%,transparent)]',
 }
 
 export const state = {

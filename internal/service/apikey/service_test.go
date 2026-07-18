@@ -256,6 +256,28 @@ func TestVerifyCanonicalHMACChecksTimestampBodyHashAndSignature(t *testing.T) {
 	}
 }
 
+func TestCanonicalHMACCrossLanguageVector(t *testing.T) {
+	const (
+		secret            = "contract-signing-secret"
+		method            = "POST"
+		requestURI        = "/api/open/image/v1/tasks"
+		timestampRFC3339  = "2026-07-17T00:00:00Z"
+		body              = `{"task_type":"reference_generate","route_model_code":"plus-image","requested_quality":"2k","requested_size":"2560x1440","requested_output_image_count":2,"reference_image_count":1,"prompt":"Paint a quiet harbor","reference_asset_ids":["ref-open-1"],"response_mode":"async"}`
+		expectedBodyHash  = "6fff_WCPvUUIT3glSfxfpdhwNzshFVGsPp_V4S3OAFA"
+		expectedSignature = "arlbDv1imOzeIPiOzgToeD66fugKbyXOrAHT9tcoLGY"
+	)
+	timestamp, err := time.Parse(time.RFC3339, timestampRFC3339)
+	if err != nil {
+		t.Fatalf("parse timestamp: %v", err)
+	}
+	if got := BodySHA256([]byte(body)); got != expectedBodyHash {
+		t.Fatalf("cross-language body hash mismatch: got %q", got)
+	}
+	if got := SignCanonicalHMAC(secret, method, requestURI, timestamp, expectedBodyHash); got != expectedSignature {
+		t.Fatalf("cross-language signature mismatch: got %q", got)
+	}
+}
+
 func TestAPIKeyRPMAndQuotaAreEnforced(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(nil)

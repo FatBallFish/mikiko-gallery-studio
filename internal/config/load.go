@@ -148,11 +148,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.Auth.AccessTokenSecret == "" {
 		cfg.Auth.AccessTokenSecret = "local-dev-secret"
 	}
-	if cfg.Auth.AccessTokenTTL <= 0 {
+	if cfg.Auth.AccessTokenTTL == 0 {
 		cfg.Auth.AccessTokenTTL = 10 * time.Minute
 	}
-	if cfg.Auth.RefreshTokenTTL <= 0 {
-		cfg.Auth.RefreshTokenTTL = 30 * time.Minute
+	if cfg.Auth.RefreshTokenTTL == 0 {
+		cfg.Auth.RefreshTokenTTL = 2 * time.Hour
 	}
 	if cfg.Auth.RefreshCookieName == "" {
 		cfg.Auth.RefreshCookieName = "pg_refresh_token"

@@ -2,7 +2,6 @@ import { useRef } from 'react'
 import { cn } from '../../../shared/classnames'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
-import { openDocsSite } from '../docsUrl'
 import {
   ArrowRight,
   Edit,
@@ -14,7 +13,7 @@ import {
   Wallet,
 } from '../ui/icons'
 import { useLandingMotion } from '../ui/useLandingMotion'
-import { landingActionInk, landingChapters } from './landingContent'
+import { landingActionInk, landingAssetUrl, landingChapters } from './landingContent'
 
 const container = 'mx-auto w-full max-w-[1440px] px-6 sm:px-8 lg:px-12 xl:px-16'
 const sectionSpace = 'py-32 md:py-48'
@@ -30,6 +29,8 @@ export function LandingPage() {
   const app = useApp()
   const pageRef = useRef<HTMLElement>(null)
   useLandingMotion(pageRef)
+  const heroGalleryAsset = landingAssetUrl(import.meta.env.BASE_URL, '/landing/hero-gallery.webp')
+  const workspaceAsset = landingAssetUrl(import.meta.env.BASE_URL, '/landing/workspace.webp')
 
   const goCreate = () => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })
 
@@ -95,7 +96,7 @@ export function LandingPage() {
                 type="button"
                 className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[#f6f2eb] bg-[#f6f2eb] px-7 text-base font-bold text-[#111218] transition-all duration-200 hover:-translate-y-1 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6f2eb] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--bg)] active:translate-y-0 active:scale-[0.98]"
                 style={{ color: landingActionInk }}
-                onClick={() => openDocsSite()}
+                onClick={() => app.navigate('docs')}
               >
                 {landingChapters.hero.actions[1].label}
                 <ExternalLink size={17} aria-hidden="true" />
@@ -112,7 +113,7 @@ export function LandingPage() {
             <img
               data-landing-image
               className="size-full object-cover object-left transition-transform duration-700 ease-out group-hover:scale-105 group-focus-visible:scale-105"
-              src="/landing/hero-gallery.webp"
+              src={heroGalleryAsset}
               alt="Mikiko 图片详情中的真实生成结果"
               width={1280}
               height={720}
@@ -161,7 +162,7 @@ export function LandingPage() {
                   {capability.image ? (
                     <img
                       data-landing-image
-                      src={capability.image}
+                      src={landingAssetUrl(import.meta.env.BASE_URL, capability.image)}
                       alt=""
                       width={capability.image === '/landing/workspace.webp' ? 1291 : 1280}
                       height={capability.image === '/landing/workspace.webp' ? 808 : 720}
@@ -196,7 +197,7 @@ export function LandingPage() {
             构想
             <span className="mx-3 inline-block h-[0.72em] w-20 overflow-hidden rounded-full border border-[var(--border-strong)] align-middle transition-transform duration-700 hover:scale-105 md:w-32" aria-hidden="true">
               <img
-                src="/landing/workspace.webp"
+                src={workspaceAsset}
                 alt=""
                 width={1291}
                 height={808}
@@ -244,7 +245,7 @@ export function LandingPage() {
               >
                 <img
                   data-landing-image
-                  src={mode.image}
+                  src={landingAssetUrl(import.meta.env.BASE_URL, mode.image)}
                   alt=""
                   width={mode.image === '/landing/workspace.webp' ? 1291 : 1280}
                   height={mode.image === '/landing/workspace.webp' ? 808 : 720}
@@ -276,7 +277,7 @@ export function LandingPage() {
               <button
                 type="button"
                 className="mt-10 inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 text-sm font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-1 hover:border-[var(--border-strong)] hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98]"
-                onClick={() => openDocsSite()}
+                onClick={() => app.navigate('docs')}
               >
                 查看接入方式
                 <ExternalLink size={16} aria-hidden="true" />
@@ -344,7 +345,7 @@ export function LandingPage() {
               <button
                 type="button"
                 className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] px-7 text-base font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-1 hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98]"
-                onClick={() => openDocsSite()}
+                onClick={() => app.navigate('docs')}
               >
                 阅读 API 文档
                 <ExternalLink size={17} aria-hidden="true" />
@@ -361,7 +362,7 @@ export function LandingPage() {
             <p className="mt-5 max-w-[440px] leading-6">连接图片生成、任务状态、积分计费与历史资产的一体化平台。</p>
           </div>
           <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
-            <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => openDocsSite()}>API 文档</button>
+            <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => app.navigate('docs')}>API 文档</button>
             <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => app.navigate('public-gallery')}>公开画廊</button>
             <span>© 2026 {siteBrand.name}</span>
           </div>

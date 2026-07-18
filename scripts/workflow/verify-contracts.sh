@@ -9,43 +9,20 @@ if [ ! -d web ]; then
   exit 0
 fi
 
-printf '\n==> contract scripts/workflow/contracts/luminous-vault-css.mjs\n'
-node scripts/workflow/contracts/luminous-vault-css.mjs
-
-printf '\n==> contract scripts/workflow/contracts/landing-contract-wiring.mjs\n'
-node scripts/workflow/contracts/landing-contract-wiring.mjs
-
-LANDING_CONTRACTS=(
-  web/user/src/pages/landingContent.contract.ts
-  web/user/src/pages/landingPage.contract.ts
-  web/user/src/ui/useLandingMotion.contract.ts
+LANDING_BUILD_TESTS=(
+  "scripts/workflow/contracts/landing-build.test.mjs"
+  "scripts/workflow/contracts/landing-build-wiring.test.mjs"
 )
+printf '\n==> contract tests %s\n' "${LANDING_BUILD_TESTS[*]}"
+node --test "${LANDING_BUILD_TESTS[@]}"
 
-AUTH_CONTRACTS=(
-  web/user/src/pages/loginPage.contract.ts
-  web/user/src/pages/loginPresentation.contract.ts
-)
+CSS_CONTRACT="scripts/workflow/contracts/luminous-vault-css.mjs"
+printf '\n==> contract %s\n' "$CSS_CONTRACT"
+node "$CSS_CONTRACT"
 
-for contract in "${LANDING_CONTRACTS[@]}"; do
-  printf '\n==> contract %s\n' "$contract"
-  npm exec --prefix web/user -- tsx "$contract"
-done
-
-for contract in "${AUTH_CONTRACTS[@]}"; do
-  printf '\n==> contract %s\n' "$contract"
-  npm exec --prefix web/user -- tsx "$contract"
-done
-
-DOCS_CONTRACTS=(
-  web/docs/src/openapiManifest.contract.ts
-  web/docs/src/content/guides.contract.ts
-  web/docs/src/search/searchIndex.contract.ts
-)
-
-for contract in "${DOCS_CONTRACTS[@]}"; do
-  printf '\n==> contract %s\n' "$contract"
-  npm exec --prefix web/user -- tsx "$contract"
-done
+LANDING_BUILD_WIRING_CONTRACT="scripts/workflow/contracts/landing-build-wiring.mjs"
+printf '\n==> contract %s\n' "$LANDING_BUILD_WIRING_CONTRACT"
+node "$LANDING_BUILD_WIRING_CONTRACT"
 
 mapfile -t CONTRACTS < <(find web/admin/src web/user/src web/shared -name '*.contract.ts' -print 2>/dev/null | sort)
 

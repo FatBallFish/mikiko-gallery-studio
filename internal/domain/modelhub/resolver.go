@@ -707,6 +707,9 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 	if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, req.TaskType) {
 		return false
 	}
+	if candidate.MaxImageCount > 0 && req.RequestedOutputImageCount > candidate.MaxImageCount {
+		return false
+	}
 	if req.ReferenceImageCount > candidate.MaxReferenceImageCount {
 		return false
 	}
