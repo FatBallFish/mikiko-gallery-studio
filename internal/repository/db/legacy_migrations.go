@@ -20,9 +20,11 @@ const (
 
 var legacyModelAccountSupportedRatios = []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
 
-const backfillRouteModelPriceQualitySQL = `
+const prepareLegacyDataSQL = `
 DO $$
 BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('pic-gallery:prepare-legacy-data'));
+
     IF EXISTS (
         SELECT 1
         FROM information_schema.columns
@@ -44,17 +46,39 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = current_schema()
-          AND table_name = 'route_model_prices'
-    ) AND NOT EXISTS (
-        SELECT 1
         FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name = 'route_model_prices'
           AND column_name = 'quality'
     ) THEN
-        ALTER TABLE route_model_prices ADD COLUMN quality varchar(32);
+        IF NOT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'route_model_prices'
+              AND column_name = 'base_resolution'
+        ) THEN
+            ALTER TABLE route_model_prices RENAME COLUMN quality TO base_resolution;
+        ELSE
+            IF EXISTS (
+                SELECT 1
+                FROM route_model_prices
+                WHERE NULLIF(btrim(base_resolution), '') IS NOT NULL
+                  AND NULLIF(btrim(quality), '') IS NOT NULL
+                  AND lower(btrim(base_resolution)) <> lower(btrim(quality))
+            ) THEN
+                RAISE EXCEPTION 'conflicting route model price dimensions: quality and base_resolution differ';
+            END IF;
+
+            UPDATE route_model_prices
+            SET base_resolution = quality
+            WHERE base_resolution IS NULL OR btrim(base_resolution) = '';
+
+            DROP INDEX IF EXISTS routemodelprice_route_model_id_task_type_quality;
+            ALTER TABLE route_model_prices DROP COLUMN quality;
+        END IF;
+
+        DROP INDEX IF EXISTS routemodelprice_route_model_id_task_type_quality;
     END IF;
 
     IF EXISTS (
@@ -62,28 +86,16 @@ BEGIN
         FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name = 'route_model_prices'
-          AND column_name = 'quality'
+          AND column_name = 'base_resolution'
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'route_model_prices'
+          AND indexname = 'routemodelprice_route_model_id_task_type_base_resolution'
     ) THEN
-        IF EXISTS (
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_schema = current_schema()
-              AND table_name = 'route_model_prices'
-              AND column_name = 'base_resolution'
-        ) AND NOT EXISTS (
-            SELECT 1
-            FROM pg_indexes
-            WHERE schemaname = current_schema()
-              AND tablename = 'route_model_prices'
-              AND indexname = 'routemodelprice_route_model_id_task_type_quality'
-        ) THEN
-            UPDATE route_model_prices
-            SET quality = COALESCE(NULLIF(btrim(base_resolution), ''), 'auto');
-        ELSE
-            UPDATE route_model_prices
-            SET quality = 'auto'
-            WHERE quality IS NULL OR btrim(quality) = '';
-        END IF;
+        CREATE UNIQUE INDEX routemodelprice_route_model_id_task_type_base_resolution
+            ON route_model_prices(route_model_id, task_type, base_resolution);
     END IF;
 END $$;
 `
@@ -97,8 +109,8 @@ func PrepareLegacyData(ctx context.Context, url string) error {
 		return fmt.Errorf("open legacy migration database: %w", err)
 	}
 	defer database.Close()
-	if _, err := database.ExecContext(ctx, backfillRouteModelPriceQualitySQL); err != nil {
-		return fmt.Errorf("backfill route model price quality: %w", err)
+	if _, err := database.ExecContext(ctx, prepareLegacyDataSQL); err != nil {
+		return fmt.Errorf("prepare legacy database data: %w", err)
 	}
 	return nil
 }
