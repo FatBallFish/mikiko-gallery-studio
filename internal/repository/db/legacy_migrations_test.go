@@ -2,12 +2,19 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
+	"net/url"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -27,6 +34,204 @@ func TestIsPostgresURL(t *testing.T) {
 	}
 	if isPostgresURL("file:app.db") {
 		t.Fatal("sqlite URL must not be treated as postgres")
+	}
+}
+
+func TestPrepareLegacyDataRemovesObsoleteRoutePriceQuality(t *testing.T) {
+	database, databaseURL := openLegacyMigrationPostgres(t)
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx, `
+		CREATE TABLE route_model_prices (
+			id bigint PRIMARY KEY,
+			route_model_id bigint NOT NULL,
+			task_type varchar(64) NOT NULL,
+			base_resolution varchar(32) NOT NULL,
+			base_points numeric(18,5) NOT NULL DEFAULT 0.00000,
+			reference_multiplier numeric(18,5) NOT NULL DEFAULT 1.00000,
+			enabled boolean NOT NULL DEFAULT true,
+			quality varchar(32) NOT NULL
+		);
+		CREATE UNIQUE INDEX routemodelprice_route_model_id_task_type_base_resolution
+			ON route_model_prices(route_model_id, task_type, base_resolution);
+		CREATE UNIQUE INDEX routemodelprice_route_model_id_task_type_quality
+			ON route_model_prices(route_model_id, task_type, quality);
+		INSERT INTO route_model_prices
+			(id, route_model_id, task_type, base_resolution, base_points, reference_multiplier, enabled, quality)
+		VALUES (1, 1, 'text_to_image', '1k', 1.00000, 1.00000, true, '1k');
+	`); err != nil {
+		t.Fatalf("create route model price compatibility fixture: %v", err)
+	}
+
+	if err := PrepareLegacyData(ctx, databaseURL); err != nil {
+		t.Fatalf("PrepareLegacyData: %v", err)
+	}
+	if err := PrepareLegacyData(ctx, databaseURL); err != nil {
+		t.Fatalf("second PrepareLegacyData: %v", err)
+	}
+
+	assertColumnExists(t, database, "base_resolution", true)
+	assertColumnExists(t, database, "quality", false)
+	assertIndexExists(t, database, "routemodelprice_route_model_id_task_type_base_resolution", true)
+	assertIndexExists(t, database, "routemodelprice_route_model_id_task_type_quality", false)
+	var originalBaseResolution string
+	if err := database.QueryRowContext(ctx, `SELECT base_resolution FROM route_model_prices WHERE id = 1`).Scan(&originalBaseResolution); err != nil {
+		t.Fatalf("query original route price: %v", err)
+	}
+	if originalBaseResolution != "1k" {
+		t.Fatalf("expected original base_resolution 1k, got %q", originalBaseResolution)
+	}
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO route_model_prices
+			(id, route_model_id, task_type, base_resolution, base_points, reference_multiplier, enabled)
+		VALUES (2, 1, 'text_to_image', '2k', 2.00000, 1.00000, true)
+	`); err != nil {
+		t.Fatalf("insert route price without obsolete quality: %v", err)
+	}
+}
+
+func TestPrepareLegacyDataRenamesLegacyRoutePriceQuality(t *testing.T) {
+	database, databaseURL := openLegacyMigrationPostgres(t)
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx, `
+		CREATE TABLE route_model_prices (
+			id bigint PRIMARY KEY,
+			route_model_id bigint NOT NULL,
+			task_type varchar(64) NOT NULL,
+			quality varchar(32) NOT NULL,
+			base_points numeric(18,5) NOT NULL DEFAULT 0.00000,
+			reference_multiplier numeric(18,5) NOT NULL DEFAULT 1.00000,
+			enabled boolean NOT NULL DEFAULT true
+		);
+		CREATE UNIQUE INDEX routemodelprice_route_model_id_task_type_quality
+			ON route_model_prices(route_model_id, task_type, quality);
+		INSERT INTO route_model_prices
+			(id, route_model_id, task_type, quality, base_points, reference_multiplier, enabled)
+		VALUES (1, 1, 'text_to_image', '1k', 1.00000, 1.00000, true);
+	`); err != nil {
+		t.Fatalf("create legacy route model price fixture: %v", err)
+	}
+
+	if err := PrepareLegacyData(ctx, databaseURL); err != nil {
+		t.Fatalf("PrepareLegacyData: %v", err)
+	}
+
+	assertColumnExists(t, database, "base_resolution", true)
+	assertColumnExists(t, database, "quality", false)
+	var baseResolution string
+	if err := database.QueryRowContext(ctx, `SELECT base_resolution FROM route_model_prices WHERE id = 1`).Scan(&baseResolution); err != nil {
+		t.Fatalf("query migrated route price: %v", err)
+	}
+	if baseResolution != "1k" {
+		t.Fatalf("expected migrated base_resolution 1k, got %q", baseResolution)
+	}
+	assertIndexExists(t, database, "routemodelprice_route_model_id_task_type_base_resolution", true)
+	assertIndexExists(t, database, "routemodelprice_route_model_id_task_type_quality", false)
+}
+
+func TestPrepareLegacyDataRejectsConflictingRoutePriceDimensions(t *testing.T) {
+	database, databaseURL := openLegacyMigrationPostgres(t)
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx, `
+		CREATE TABLE route_model_prices (
+			id bigint PRIMARY KEY,
+			route_model_id bigint NOT NULL,
+			task_type varchar(64) NOT NULL,
+			base_resolution varchar(32) NOT NULL,
+			base_points numeric(18,5) NOT NULL DEFAULT 0.00000,
+			reference_multiplier numeric(18,5) NOT NULL DEFAULT 1.00000,
+			enabled boolean NOT NULL DEFAULT true,
+			quality varchar(32) NOT NULL
+		);
+		INSERT INTO route_model_prices
+			(id, route_model_id, task_type, base_resolution, base_points, reference_multiplier, enabled, quality)
+		VALUES (1, 1, 'text_to_image', '2k', 1.00000, 1.00000, true, '1k');
+	`); err != nil {
+		t.Fatalf("create conflicting route model price fixture: %v", err)
+	}
+
+	err := PrepareLegacyData(ctx, databaseURL)
+	if err == nil || !strings.Contains(err.Error(), "conflicting route model price dimensions") {
+		t.Fatalf("expected conflicting dimensions error, got %v", err)
+	}
+	assertColumnExists(t, database, "quality", true)
+}
+
+func TestPrepareLegacyDataSQLLocksLegacyDDL(t *testing.T) {
+	if !strings.Contains(prepareLegacyDataSQL, "pg_advisory_xact_lock") {
+		t.Fatal("legacy DDL migration must hold a transaction advisory lock across concurrent service startup")
+	}
+}
+
+func openLegacyMigrationPostgres(t *testing.T) (*sql.DB, string) {
+	t.Helper()
+	rawURL := os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL")
+	if rawURL == "" {
+		t.Skip("PIC_GALLERY_TEST_POSTGRES_URL is not set")
+	}
+	admin, err := sql.Open("postgres", rawURL)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	schemaName := fmt.Sprintf("legacy_route_price_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(`CREATE SCHEMA ` + pq.QuoteIdentifier(schemaName)); err != nil {
+		t.Fatalf("create test schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(`DROP SCHEMA IF EXISTS ` + pq.QuoteIdentifier(schemaName) + ` CASCADE`)
+	})
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse postgres URL: %v", err)
+	}
+	query := parsedURL.Query()
+	query.Set("search_path", schemaName)
+	parsedURL.RawQuery = query.Encode()
+	databaseURL := parsedURL.String()
+	database, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatalf("open schema postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	return database, databaseURL
+}
+
+func assertColumnExists(t *testing.T, database *sql.DB, columnName string, expected bool) {
+	t.Helper()
+	var exists bool
+	if err := database.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'route_model_prices'
+			  AND column_name = $1
+		)
+	`, columnName).Scan(&exists); err != nil {
+		t.Fatalf("query column %q: %v", columnName, err)
+	}
+	if exists != expected {
+		t.Fatalf("column %q exists=%t, expected %t", columnName, exists, expected)
+	}
+}
+
+func assertIndexExists(t *testing.T, database *sql.DB, indexName string, expected bool) {
+	t.Helper()
+	var exists bool
+	if err := database.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_indexes
+			WHERE schemaname = current_schema()
+			  AND tablename = 'route_model_prices'
+			  AND indexname = $1
+		)
+	`, indexName).Scan(&exists); err != nil {
+		t.Fatalf("query index %q: %v", indexName, err)
+	}
+	if exists != expected {
+		t.Fatalf("index %q exists=%t, expected %t", indexName, exists, expected)
 	}
 }
 
