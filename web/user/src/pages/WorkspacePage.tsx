@@ -1956,7 +1956,7 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
           ) : null}
           <div className={workspaceClasses.outputMetaRow}>
             <span>模型: {task.route_model_name || task.route_model_code || task.model_group}</span>
-            <span>比例: {task.aspect_ratio}</span>
+            <span>{task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`}</span>
             <span>数量: {task.image_count}</span>
             <span>耗时: {formatCompactDuration(taskElapsedMs(task))}</span>
             <span>消耗: {displayTaskPoints(task)} ◈</span>

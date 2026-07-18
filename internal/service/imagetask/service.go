@@ -617,7 +617,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 				task.ErrorMessage = errorMessage(progress.Failures[0])
 			}
 			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
-				return domainimagetask.ExecuteResult{}, checkpointErr
+				return s.handleProviderSuccessCheckpointFailure(ctx, task, owner, checkpointErr)
 			}
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
@@ -664,7 +664,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		attemptFinished := s.nowUTC()
 		if err == nil {
 			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
-				return domainimagetask.ExecuteResult{}, checkpointErr
+				return s.handleProviderSuccessCheckpointFailure(ctx, task, owner, checkpointErr)
 			}
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {

@@ -53,6 +53,22 @@ components:
       schema:
         type: string
         enum: [basic, plus, pro]
+    SizeMode:
+      name: size_mode
+      in: query
+      required: false
+      description: Size interpretation mode. Use ratio with aspect_ratio, or pixel with requested_size.
+      schema:
+        type: string
+        enum: [ratio, pixel]
+    AspectRatio:
+      name: aspect_ratio
+      in: query
+      required: false
+      description: Requested output aspect ratio when size_mode is ratio.
+      schema:
+        type: string
+        examples: ['1:1', '16:9', '9:16']
     BaseResolution:
       name: base_resolution
       in: query

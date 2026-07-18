@@ -113,7 +113,14 @@ components:
           type: string
           deprecated: true
           description: Legacy model field retained for older clients. Use route_model_code for new integrations.
-        requested_quality:
+        size_mode:
+          type: string
+          enum: [ratio, pixel]
+        base_resolution:
+          type: string
+        aspect_ratio:
+          type: string
+        requested_size:
           type: string
         quality:
           type: string

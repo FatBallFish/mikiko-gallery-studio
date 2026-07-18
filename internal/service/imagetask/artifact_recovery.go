@@ -61,10 +61,6 @@ func (s *Service) checkpointProviderSuccess(
 	if err != nil {
 		return fmt.Errorf("encrypt artifact recovery payload: %w", err)
 	}
-	writer, err := s.router.DefaultWriter(ctx)
-	if err != nil {
-		return fmt.Errorf("resolve artifact storage writer: %w", err)
-	}
 	decorated := s.decorateTaskProvider(*task, candidate)
 	decorated.Status = domainimagetask.StatusRunning
 	setTaskProgress(&decorated, domainimagetask.ProgressStagePersisting, "图片生成完成，正在保存结果")
@@ -76,8 +72,6 @@ func (s *Service) checkpointProviderSuccess(
 	decorated.ArtifactRecovery = domainimagetask.ArtifactRecovery{
 		Status:           artifactRecoveryPersisting,
 		EncryptedPayload: payload,
-		StorageConfigID:  writer.ConfigID,
-		StorageVersion:   writer.Version,
 	}
 	if err := s.saveOwnedTask(ctx, decorated, owner); err != nil {
 		// A paid upstream result must survive an expired lease. SaveTerminalState
@@ -88,6 +82,9 @@ func (s *Service) checkpointProviderSuccess(
 		}
 	}
 	*task = decorated
+	if err := s.pinArtifactWriter(ctx, task, owner); err != nil {
+		return fmt.Errorf("resolve artifact storage writer: %w", err)
+	}
 	return nil
 }
 
@@ -101,6 +98,13 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 	}
 	task.ArtifactRecovery.Status = artifactRecoveryPersisting
 	task.ArtifactRecovery.NextRetryAt = nil
+	if err := s.pinArtifactWriter(ctx, &task, owner); err != nil {
+		var failure *artifactPersistenceFailure
+		if errors.As(err, &failure) {
+			return s.handleArtifactPersistenceFailure(ctx, task, owner, failure)
+		}
+		return domainimagetask.ExecuteResult{}, err
+	}
 	persisted, err := s.persistImageResults(ctx, task, results)
 	if err != nil {
 		return s.handleArtifactPersistenceFailure(ctx, task, owner, err)
@@ -129,6 +133,35 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 		return domainimagetask.ExecuteResult{}, err
 	}
 	return domainimagetask.ExecuteResult{Task: task, Response: provider.ImageResponse{ProviderRequestID: task.ProviderRequestID, Data: persisted}}, nil
+}
+
+func (s *Service) handleProviderSuccessCheckpointFailure(ctx context.Context, task domainimagetask.Task, owner string, err error) (domainimagetask.ExecuteResult, error) {
+	var failure *artifactPersistenceFailure
+	if errors.As(err, &failure) {
+		return s.handleArtifactPersistenceFailure(ctx, task, owner, failure)
+	}
+	return domainimagetask.ExecuteResult{}, err
+}
+
+func (s *Service) pinArtifactWriter(ctx context.Context, task *domainimagetask.Task, owner string) error {
+	if task == nil {
+		return fmt.Errorf("pin artifact storage writer: task is nil")
+	}
+	if strings.TrimSpace(task.ArtifactRecovery.StorageConfigID) != "" {
+		return nil
+	}
+	writer, err := s.router.DefaultWriter(ctx)
+	if err != nil {
+		return newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)
+	}
+	task.ArtifactRecovery.StorageConfigID = writer.ConfigID
+	task.ArtifactRecovery.StorageVersion = writer.Version
+	if err := s.saveOwnedTask(ctx, *task, owner); err != nil {
+		if snapshotErr := s.saveTerminalState(ctx, *task, owner); snapshotErr != nil {
+			return fmt.Errorf("persist artifact storage writer checkpoint: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) handleArtifactPersistenceFailure(ctx context.Context, task domainimagetask.Task, owner string, failure error) (domainimagetask.ExecuteResult, error) {

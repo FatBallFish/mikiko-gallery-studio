@@ -739,7 +739,7 @@ components:
           $ref: ./common.yaml#/components/schemas/ReferenceAsset
     CreateImageTaskRequest:
       type: object
-      required: [task_type, prompt, route_model_code, requested_quality, requested_output_image_count]
+      required: [task_type, prompt, route_model_code, base_resolution, requested_output_image_count]
       properties:
         task_type:
           type: string
@@ -758,7 +758,10 @@ components:
           enum: [basic, plus, pro]
           deprecated: true
           description: Legacy static model selector retained for older clients.
-        requested_quality:
+        size_mode:
+          type: string
+          enum: [ratio, pixel]
+        base_resolution:
           type: string
           enum: [auto, 1k, 2k, 4k]
         quality:

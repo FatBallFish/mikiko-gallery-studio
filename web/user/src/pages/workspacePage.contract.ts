@@ -140,6 +140,10 @@ if (/Math\.round\(task\.progress/.test(source) || /task\.progress\s*\?\?/.test(s
   throw new Error('workspace history must not display synthetic or legacy numeric progress')
 }
 
+if (!source.includes("task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`")) {
+  throw new Error('pixel-mode task results must display requested pixel size instead of an aspect-ratio label')
+}
+
 const recentHandlerStart = source.indexOf('function selectRecentTask')
 const dialogHandlerStart = source.indexOf('function openHistoryTaskDialog')
 const gestureHandlerStart = source.indexOf('function handleSheetPointerDown', dialogHandlerStart)

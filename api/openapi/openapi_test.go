@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -1521,6 +1522,62 @@ func TestOpenAPISpecDocumentsNativeTaskAsyncOnlyContract(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsCurrentImageTaskRequestContract(t *testing.T) {
+	content, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string       `yaml:"required"`
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+	request := doc.Components.Schemas["CreateImageTaskRequest"]
+	for _, field := range []string{
+		"size_mode", "base_resolution", "quality", "output_format", "output_compression",
+		"moderation", "aspect_ratio", "requested_size", "requested_output_image_count",
+	} {
+		if _, ok := request.Properties[field]; !ok {
+			t.Errorf("CreateImageTaskRequest must document %s", field)
+		}
+	}
+	for _, legacy := range []string{"requested_quality", "resolved_quality_bucket"} {
+		if _, ok := request.Properties[legacy]; ok {
+			t.Errorf("CreateImageTaskRequest must not expose legacy field %s", legacy)
+		}
+		for _, required := range request.Required {
+			if required == legacy {
+				t.Errorf("CreateImageTaskRequest must not require legacy field %s", legacy)
+			}
+		}
+	}
+
+	commonContent, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schema: %v", err)
+	}
+	if err := yaml.Unmarshal(commonContent, &doc); err != nil {
+		t.Fatalf("unmarshal common schema: %v", err)
+	}
+	imageTask := doc.Components.Schemas["ImageTask"]
+	for _, field := range []string{"size_mode", "base_resolution", "quality", "output_format", "output_compression", "moderation", "aspect_ratio", "requested_size", "requested_output_image_count"} {
+		if _, ok := imageTask.Properties[field]; !ok {
+			t.Errorf("ImageTask must document %s", field)
+		}
+	}
+	for _, legacy := range []string{"requested_quality", "resolved_quality_bucket"} {
+		if _, ok := imageTask.Properties[legacy]; ok {
+			t.Errorf("ImageTask must not expose legacy field %s", legacy)
+		}
+	}
+}
+
 func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
 	content, err := os.ReadFile("openapi.yaml")
 	if err != nil {
@@ -1541,14 +1598,18 @@ func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
 		if len(parameters) < 2 || parameters[0].Ref != "./components/parameters/common.yaml#/components/parameters/RouteModelCode" {
 			t.Fatalf("expected %s to prefer RouteModelCode, got %#v", path, parameters)
 		}
-		foundLegacy := false
+		found := map[string]bool{}
 		for _, parameter := range parameters {
-			if parameter.Ref == "./components/parameters/common.yaml#/components/parameters/AbstractModel" {
-				foundLegacy = true
-			}
+			found[parameter.Ref] = true
 		}
-		if !foundLegacy {
+		if !found["./components/parameters/common.yaml#/components/parameters/AbstractModel"] {
 			t.Fatalf("expected %s to retain deprecated AbstractModel compatibility", path)
+		}
+		for _, name := range []string{"SizeMode", "AspectRatio"} {
+			ref := "./components/parameters/common.yaml#/components/parameters/" + name
+			if !found[ref] {
+				t.Errorf("expected %s to document %s", path, ref)
+			}
 		}
 	}
 
@@ -1563,8 +1624,9 @@ func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
 				Required   bool   `yaml:"required"`
 				Deprecated bool   `yaml:"deprecated"`
 				Schema     struct {
-					Type      string `yaml:"type"`
-					MinLength int    `yaml:"minLength"`
+					Type      string   `yaml:"type"`
+					MinLength int      `yaml:"minLength"`
+					Enum      []string `yaml:"enum"`
 				} `yaml:"schema"`
 			} `yaml:"parameters"`
 		} `yaml:"components"`
@@ -1579,6 +1641,14 @@ func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
 	legacyParameter := parameterDoc.Components.Parameters["AbstractModel"]
 	if legacyParameter.Required || !legacyParameter.Deprecated {
 		t.Fatalf("expected AbstractModel to be optional and deprecated, got %#v", legacyParameter)
+	}
+	sizeModeParameter := parameterDoc.Components.Parameters["SizeMode"]
+	if sizeModeParameter.Name != "size_mode" || sizeModeParameter.Required || sizeModeParameter.Schema.Type != "string" || strings.Join(sizeModeParameter.Schema.Enum, ",") != "ratio,pixel" {
+		t.Fatalf("unexpected SizeMode parameter %#v", sizeModeParameter)
+	}
+	aspectRatioParameter := parameterDoc.Components.Parameters["AspectRatio"]
+	if aspectRatioParameter.Name != "aspect_ratio" || aspectRatioParameter.Required || aspectRatioParameter.Schema.Type != "string" {
+		t.Fatalf("unexpected AspectRatio parameter %#v", aspectRatioParameter)
 	}
 
 	agentContent, err := os.ReadFile("components/schemas/agent.yaml")

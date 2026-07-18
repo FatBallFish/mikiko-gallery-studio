@@ -68,6 +68,82 @@ func TestArtifactRecoveryRetriesThreeTimesWithoutSecondProviderCall(t *testing.T
 	}
 }
 
+func TestArtifactRecoverySurvivesDefaultWriterFailureAfterProviderSuccess(t *testing.T) {
+	svc, store, backend, providerCalls, now := newArtifactRecoveryTestService(t, 0)
+	router := &failingDefaultWriterRouter{
+		failuresRemaining: 1,
+		ref: storage.BackendRef{
+			ConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Version:  7,
+			Driver:   backend.Driver(),
+			Backend:  backend,
+		},
+	}
+	svc.router = router
+	task, err := svc.CreateTask(context.Background(), artifactRecoveryCreateRequest())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	claimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("AcquireNextTask: ok=%v err=%v", ok, err)
+	}
+	pending, err := svc.ExecuteLeasedTask(context.Background(), claimed, "worker-1", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("initial writer failure should enter automatic recovery: %v", err)
+	}
+	if pending.Task.ArtifactRecovery.Status != artifactRecoveryPending || pending.Task.ArtifactRecovery.AttemptCount != 1 || pending.Task.ArtifactRecovery.NextRetryAt == nil {
+		t.Fatalf("expected first failed persistence attempt to be queued for recovery: %#v", pending.Task.ArtifactRecovery)
+	}
+
+	checkpoint, err := store.GetByID(context.Background(), task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after writer failure: %v", err)
+	}
+	if checkpoint.ArtifactRecovery.EncryptedPayload == "" || checkpoint.UpstreamSucceededAt == nil {
+		t.Fatalf("paid provider result must be durable before writer resolution: %#v", checkpoint)
+	}
+	if *providerCalls != 1 {
+		t.Fatalf("expected one paid provider call, got %d", *providerCalls)
+	}
+
+	*now = pending.Task.ArtifactRecovery.NextRetryAt.Add(time.Millisecond)
+	reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker-2", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("reclaim task after writer failure: ok=%v err=%v", ok, err)
+	}
+	recovered, err := svc.ExecuteLeasedTask(context.Background(), reclaimed, "worker-2", []string{"openrouter"})
+	if err != nil {
+		t.Fatalf("recover paid result: %v", err)
+	}
+	if recovered.Task.Status != domainimagetask.StatusSucceeded || *providerCalls != 1 {
+		t.Fatalf("expected recovery without provider replay, task=%#v calls=%d", recovered.Task, *providerCalls)
+	}
+	if recovered.Task.ArtifactRecovery.StorageConfigID != router.ref.ConfigID || recovered.Task.ArtifactRecovery.StorageVersion != router.ref.Version {
+		t.Fatalf("expected resolved storage config to remain pinned, got %#v", recovered.Task.ArtifactRecovery)
+	}
+}
+
+type failingDefaultWriterRouter struct {
+	failuresRemaining int
+	ref               storage.BackendRef
+}
+
+func (r *failingDefaultWriterRouter) DefaultWriter(context.Context) (storage.BackendRef, error) {
+	if r.failuresRemaining > 0 {
+		r.failuresRemaining--
+		return storage.BackendRef{}, errors.New("default writer unavailable")
+	}
+	return r.ref, nil
+}
+
+func (r *failingDefaultWriterRouter) BackendFor(_ context.Context, configID string, _ string) (storage.BackendRef, error) {
+	if configID != r.ref.ConfigID {
+		return storage.BackendRef{}, fmt.Errorf("unexpected storage config %q", configID)
+	}
+	return r.ref, nil
+}
+
 func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.T) {
 	now := time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC)
 	providerCalls := 0
