@@ -29,6 +29,9 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 		"imagetask.go",
 		"imageresult.go",
 		"auditlog.go",
+		"textmodelaccount.go",
+		"textmodel.go",
+		"promptoptimizationrun.go",
 	}
 
 	for _, name := range expected {

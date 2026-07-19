@@ -54,6 +54,9 @@ type PaymentWebhookEvent func(*sql.Selector)
 // PointLedger is the predicate function for pointledger builders.
 type PointLedger func(*sql.Selector)
 
+// PromptOptimizationRun is the predicate function for promptoptimizationrun builders.
+type PromptOptimizationRun func(*sql.Selector)
+
 // ProviderErrorPolicy is the predicate function for providererrorpolicy builders.
 type ProviderErrorPolicy func(*sql.Selector)
 
@@ -92,6 +95,12 @@ type SecureConfig func(*sql.Selector)
 
 // SubscriptionPlan is the predicate function for subscriptionplan builders.
 type SubscriptionPlan func(*sql.Selector)
+
+// TextModel is the predicate function for textmodel builders.
+type TextModel func(*sql.Selector)
+
+// TextModelAccount is the predicate function for textmodelaccount builders.
+type TextModelAccount func(*sql.Selector)
 
 // User is the predicate function for user builders.
 type User func(*sql.Selector)
