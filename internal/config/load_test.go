@@ -42,6 +42,7 @@ func TestLoadUsesEnvByDefault(t *testing.T) {
 	t.Setenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "api-key-secret-test-key")
 	t.Setenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "cashier-provider-config-test-key")
 	t.Setenv("PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "secure-config-test-key")
+	t.Setenv("PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY", "prompt-optimization-quote-test-key")
 	t.Setenv("WORKER_MAX_CONCURRENT_TASKS", "12")
 	t.Setenv("PIC_GALLERY_ADMIN_EMAIL", "admin@example.com")
 	t.Setenv("PIC_GALLERY_ADMIN_PASSWORD", "admin-password")
@@ -96,6 +97,9 @@ func TestLoadUsesEnvByDefault(t *testing.T) {
 	}
 	if cfg.Security.SecureConfigEncryptionKey != "secure-config-test-key" {
 		t.Fatalf("expected secure config env value, got %q", cfg.Security.SecureConfigEncryptionKey)
+	}
+	if cfg.Security.PromptOptimizationQuoteSigningKey != "prompt-optimization-quote-test-key" {
+		t.Fatalf("expected prompt optimization quote signing key env value, got %q", cfg.Security.PromptOptimizationQuoteSigningKey)
 	}
 	if cfg.Worker.MaxConcurrentTasks != 12 {
 		t.Fatalf("expected worker max concurrency from env, got %d", cfg.Worker.MaxConcurrentTasks)

@@ -10,8 +10,11 @@ import (
 	domaintextmodel "github.com/fatballfish/pic-gallery/internal/domain/textmodel"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var _ textmodelservice.Store = entstore.NewTextModelStore(nil)
 
 func TestTextModelStorePersistsAccountsModelsAndOneDefault(t *testing.T) {
 	ctx := context.Background()

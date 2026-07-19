@@ -122,7 +122,8 @@ type CashierConfig struct {
 }
 
 type SecurityConfig struct {
-	SecureConfigEncryptionKey string `yaml:"secure_config_encryption_key"`
+	SecureConfigEncryptionKey         string `yaml:"secure_config_encryption_key"`
+	PromptOptimizationQuoteSigningKey string `yaml:"prompt_optimization_quote_signing_key"`
 }
 
 type WorkerConfig struct {

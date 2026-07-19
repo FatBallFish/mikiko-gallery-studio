@@ -92,6 +92,7 @@ func LoadEnv(path string) (Config, error) {
 
 	cfg.APIKey.SigningSecretEncryptionKey = envString(fileEnv, "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "")
 	cfg.Security.SecureConfigEncryptionKey = envString(fileEnv, "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", envString(fileEnv, "SECURE_CONFIG_ENCRYPTION_KEY", ""))
+	cfg.Security.PromptOptimizationQuoteSigningKey = envString(fileEnv, "PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY", "")
 	cfg.Cashier.ProviderConfigEncryptionKey = envString(fileEnv, "CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", envString(fileEnv, "PIC_GALLERY_CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", ""))
 	cfg.Cashier.Enabled = envBool(fileEnv, "CASHIER_ENABLED", false)
 	cfg.Cashier.MockEnabled = envBool(fileEnv, "CASHIER_MOCK_ENABLED", false)
@@ -188,6 +189,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.Security.SecureConfigEncryptionKey) == "" {
 		cfg.Security.SecureConfigEncryptionKey = "local-dev-secure-config-encryption-key"
+	}
+	if strings.TrimSpace(cfg.Security.PromptOptimizationQuoteSigningKey) == "" {
+		cfg.Security.PromptOptimizationQuoteSigningKey = "local-dev-prompt-optimization-quote-signing-key"
 	}
 	if cfg.Worker.MaxConcurrentTasks <= 0 {
 		cfg.Worker.MaxConcurrentTasks = 4

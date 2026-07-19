@@ -66,9 +66,11 @@ import (
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
+	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
@@ -89,6 +91,8 @@ type API struct {
 	adminUser  *adminuserservice.Service
 	callRecord *admincallrecordservice.Service
 	modelAdmin *modeladminservice.Service
+	textModels *textmodelservice.Service
+	promptOpt  *promptoptimizerservice.Service
 	secureCfg  *secureconfigservice.Service
 	storageCfg *storageconfigservice.Service
 	storageReg *storage.Registry
@@ -260,6 +264,11 @@ func (a *API) SetCashierProviderInstanceStore(store cashierservice.ProviderInsta
 
 func (a *API) SetSecureConfigService(service *secureconfigservice.Service) {
 	a.secureCfg = service
+}
+
+func (a *API) SetTextModelServices(textModels *textmodelservice.Service, promptOptimizer *promptoptimizerservice.Service) {
+	a.textModels = textModels
+	a.promptOpt = promptOptimizer
 }
 
 func (a *API) SetStorageConfigService(service *storageconfigservice.Service, registry *storage.Registry, publisher storage.InvalidationPublisher) {

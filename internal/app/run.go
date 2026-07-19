@@ -28,9 +28,11 @@ import (
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
+	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
@@ -79,6 +81,9 @@ func Run() error {
 		return err
 	}
 	if err := validateSecureConfigEncryptionKey(cfg); err != nil {
+		return err
+	}
+	if err := validatePromptOptimizationQuoteSigningKey(cfg); err != nil {
 		return err
 	}
 	metricsContext, stopMetrics := context.WithCancel(context.Background())
@@ -150,11 +155,15 @@ func Run() error {
 	redeemSvc := redeemservice.NewServiceWithStore(entstore.NewRedeemAdminStore(client))
 	callRecordSvc := admincallrecordservice.NewServiceWithStore(entstore.NewAdminCallRecordStore(client))
 	modelAdminSvc := modeladminservice.NewServiceWithStore(modelAdminStore)
+	textModelStore := entstore.NewTextModelStore(client)
+	textModelSvc := textmodelservice.NewService(textModelStore, cfg.Security.SecureConfigEncryptionKey)
+	promptOptimizerSvc := promptoptimizerservice.NewService(textModelSvc, textModelStore, cfg.Security.PromptOptimizationQuoteSigningKey, nil)
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)
+	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 
 	srv := &http.Server{
@@ -175,6 +184,14 @@ func validateSecureConfigEncryptionKey(cfg config.Config) error {
 	key := strings.TrimSpace(cfg.Security.SecureConfigEncryptionKey)
 	if isProductionEnv(cfg.App.Env) && isWeakAPIKeySigningSecretEncryptionKey(key) {
 		return fmt.Errorf("secure config encryption key must be set to a non-development value in %s env", cfg.App.Env)
+	}
+	return nil
+}
+
+func validatePromptOptimizationQuoteSigningKey(cfg config.Config) error {
+	key := strings.TrimSpace(cfg.Security.PromptOptimizationQuoteSigningKey)
+	if isProductionEnv(cfg.App.Env) && isWeakAPIKeySigningSecretEncryptionKey(key) {
+		return fmt.Errorf("prompt optimization quote signing key must be set to a non-development value in %s env", cfg.App.Env)
 	}
 	return nil
 }

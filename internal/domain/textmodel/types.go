@@ -42,6 +42,17 @@ type Account struct {
 	UpdatedAt    time.Time    `json:"updated_at"`
 }
 
+type AccountWriteRequest struct {
+	Version      int64             `json:"version"`
+	Name         string            `json:"name"`
+	PlatformType string            `json:"platform_type"`
+	APIStyle     string            `json:"api_style"`
+	BaseURL      string            `json:"base_url"`
+	Enabled      bool              `json:"enabled"`
+	Secrets      map[string]string `json:"secrets,omitempty"`
+	ClearSecrets []string          `json:"clear_secrets,omitempty"`
+}
+
 type Model struct {
 	ID                 int64      `json:"id"`
 	AccountID          int64      `json:"account_id"`
@@ -56,6 +67,17 @@ type Model struct {
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 	DeletedAt          *time.Time `json:"-"`
+}
+
+type ModelWriteRequest struct {
+	Version            int64  `json:"version"`
+	AccountID          int64  `json:"account_id"`
+	ModelCode          string `json:"model_code"`
+	DisplayName        string `json:"display_name"`
+	InputPricePerMTok  string `json:"input_price_per_million_tokens"`
+	OutputPricePerMTok string `json:"output_price_per_million_tokens"`
+	Currency           string `json:"currency"`
+	Enabled            bool   `json:"enabled"`
 }
 
 type OptimizationRun struct {

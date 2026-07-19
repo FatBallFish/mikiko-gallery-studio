@@ -74,7 +74,11 @@ func (c *Client) Optimize(ctx context.Context, req textprovider.OptimizeRequest)
 		payload = map[string]any{"model": req.Model, "instructions": req.SystemPrompt, "input": req.Prompt}
 	}
 	if req.MaxOutputTokens > 0 {
-		payload["max_output_tokens"] = req.MaxOutputTokens
+		if c.apiStyle == textprovider.APIStyleResponses {
+			payload["max_output_tokens"] = req.MaxOutputTokens
+		} else {
+			payload["max_completion_tokens"] = req.MaxOutputTokens
+		}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

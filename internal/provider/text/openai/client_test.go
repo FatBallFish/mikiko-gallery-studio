@@ -20,8 +20,10 @@ func TestClientOptimizesWithChatCompletions(t *testing.T) {
 			t.Fatalf("unexpected authorization header %q", got)
 		}
 		var body struct {
-			Model    string `json:"model"`
-			Messages []struct {
+			Model               string `json:"model"`
+			MaxCompletionTokens int    `json:"max_completion_tokens"`
+			MaxOutputTokens     int    `json:"max_output_tokens"`
+			Messages            []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
@@ -29,7 +31,7 @@ func TestClientOptimizesWithChatCompletions(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if body.Model != "gpt-test" || len(body.Messages) != 2 || body.Messages[1].Content != "short prompt" {
+		if body.Model != "gpt-test" || len(body.Messages) != 2 || body.Messages[1].Content != "short prompt" || body.MaxCompletionTokens != 2000 || body.MaxOutputTokens != 0 {
 			t.Fatalf("unexpected request body %#v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -42,7 +44,7 @@ func TestClientOptimizesWithChatCompletions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	result, err := client.Optimize(context.Background(), textprovider.OptimizeRequest{Model: "gpt-test", SystemPrompt: "Improve image prompts", Prompt: "short prompt"})
+	result, err := client.Optimize(context.Background(), textprovider.OptimizeRequest{Model: "gpt-test", SystemPrompt: "Improve image prompts", Prompt: "short prompt", MaxOutputTokens: 2000})
 	if err != nil {
 		t.Fatalf("Optimize: %v", err)
 	}
