@@ -39,17 +39,38 @@ import (
 )
 
 type Service struct {
-	cfg           config.Config
-	resolver      *modelhub.Resolver
-	providers     map[string]provider.ImageProvider
-	store         Store
-	assets        AssetLoader
-	billing       BillingManager
-	apiKeys       APIKeyUsageManager
-	router        storage.Router
-	recoveryCodec *secretcodec.Codec
-	httpClient    *http.Client
-	now           func() time.Time
+	cfg             config.Config
+	resolver        *modelhub.Resolver
+	providers       map[string]provider.ImageProvider
+	store           Store
+	assets          AssetLoader
+	billing         BillingManager
+	apiKeys         APIKeyUsageManager
+	router          storage.Router
+	recoveryCodec   *secretcodec.Codec
+	httpClient      *http.Client
+	now             func() time.Time
+	concurrencyGate ConcurrencyGate
+}
+
+type ConcurrencyGate interface {
+	Acquire(ctx context.Context, resources []ConcurrencyResource, leaseTTL time.Duration) (func(), error)
+}
+
+type ConcurrencyResource struct {
+	Key   string
+	Limit int
+}
+
+type localConcurrencyGate struct {
+	mu      sync.Mutex
+	entries map[string]*modelAccountConcurrencyState
+	changed chan struct{}
+}
+
+type modelAccountConcurrencyState struct {
+	active int
+	limit  int
 }
 
 type executionOptions struct {
@@ -81,6 +102,10 @@ type BillingManager interface {
 
 type APIKeyUsageManager interface {
 	CheckTaskAllowed(ctx context.Context, apiKeyID, userID int64, estimatedPoints string, now time.Time) (domainbilling.APIKeyQuota, error)
+}
+
+type UserConcurrencyLimitSource interface {
+	UserConcurrencyLimit(ctx context.Context, userID int64) (int, error)
 }
 
 func NewService(cfg config.Config) *Service {
@@ -137,16 +162,17 @@ func NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg config.Config, provi
 		router = storage.NewStaticRouter(storage.NewLocalBackend(cfg.Storage.LocalRoot))
 	}
 	return &Service{
-		cfg:           cfg,
-		resolver:      modelhub.NewResolver(cfg),
-		providers:     providers,
-		store:         store,
-		assets:        assets,
-		billing:       billing,
-		router:        router,
-		recoveryCodec: secretcodec.New(cfg.Security.SecureConfigEncryptionKey),
-		httpClient:    &http.Client{Timeout: 30 * time.Second},
-		now:           time.Now,
+		cfg:             cfg,
+		resolver:        modelhub.NewResolver(cfg),
+		providers:       providers,
+		store:           store,
+		assets:          assets,
+		billing:         billing,
+		router:          router,
+		recoveryCodec:   secretcodec.New(cfg.Security.SecureConfigEncryptionKey),
+		httpClient:      &http.Client{Timeout: 30 * time.Second},
+		now:             time.Now,
+		concurrencyGate: NewLocalConcurrencyGate(),
 	}
 }
 
@@ -163,6 +189,12 @@ func (s *Service) SetAPIKeyUsageManager(apiKeys APIKeyUsageManager) {
 
 func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
 	s.resolver.SetModelRoutingSource(source)
+}
+
+func (s *Service) SetConcurrencyGate(gate ConcurrencyGate) {
+	if gate != nil {
+		s.concurrencyGate = gate
+	}
 }
 
 func (s *Service) SetHTTPClient(client *http.Client) {
@@ -605,9 +637,23 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			attemptFinished := s.nowUTC()
 			if progressErr != nil {
 				task = s.decorateTaskProvider(task, candidate)
-				task.FallbackCount = len(task.Attempts)
 				task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, progressErr, attemptStarted, attemptFinished))
-				return s.failOwnedTask(ctx, task, owner, progressErr)
+				task.FallbackCount = len(task.Attempts)
+				lastErr = progressErr
+				shouldRetry := false
+				if upstream, ok := provider.AsUpstreamError(progressErr); ok && upstream.Action == provider.UpstreamErrorActionRetry {
+					shouldRetry = true
+				}
+				if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
+					if shouldRetry {
+						return domainimagetask.ExecuteResult{}, saveErr
+					}
+					return s.failOwnedTask(ctx, task, owner, progressErr)
+				}
+				if shouldRetry {
+					continue
+				}
+				break
 			}
 			resp := progress.Response
 			resp.Data = append([]provider.ImageResult(nil), progress.Results...)
@@ -624,8 +670,12 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
 			}
 			finalStatus := domainimagetask.StatusSucceeded
-			if len(progress.Failures) > 0 && len(persistedResults) > 0 {
+			if len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
+				if task.ErrorCode == "" {
+					task.ErrorCode = errs.CodeUpstreamUnavailable
+					task.ErrorMessage = "部分上游批次未返回有效图片"
+				}
 			}
 			task.Status = domainimagetask.StatusRunning
 			task.FallbackCount = len(task.Attempts)
@@ -638,7 +688,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
 			setTaskProgress(&task, domainimagetask.ProgressStageSettling, "结果已保存，正在结算积分")
 			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
-				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, domainimagetask.StatusSucceeded, "task succeeded after lease conflict")
+				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, finalStatus, "task completed after lease conflict")
 				if recoverErr != nil {
 					return domainimagetask.ExecuteResult{}, recoverErr
 				}
@@ -671,8 +721,10 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
 			}
 			finalStatus := domainimagetask.StatusSucceeded
-			if openAIFormat && len(persistedResults) < normalizedCount(task.OutputImageCount) {
+			if len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
+				task.ErrorCode = errs.CodeUpstreamUnavailable
+				task.ErrorMessage = "部分上游批次未返回有效图片"
 			}
 			task.Status = domainimagetask.StatusRunning
 			task.FallbackCount = len(task.Attempts)
@@ -685,7 +737,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
 			setTaskProgress(&task, domainimagetask.ProgressStageSettling, "结果已保存，正在结算积分")
 			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
-				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, domainimagetask.StatusSucceeded, "task succeeded after lease conflict")
+				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, finalStatus, "task completed after lease conflict")
 				if recoverErr != nil {
 					return domainimagetask.ExecuteResult{}, recoverErr
 				}
@@ -749,7 +801,16 @@ func (s *Service) decorateTaskProvider(task domainimagetask.Task, candidate mode
 }
 
 func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, req provider.ImageRequest) (openAIFanoutProgress, error) {
+	userConcurrencyLimit, err := s.userConcurrencyLimit(ctx, task.UserID)
+	if err != nil {
+		return openAIFanoutProgress{}, err
+	}
 	call := func(ctx context.Context, singleReq provider.ImageRequest) (provider.ImageResponse, error) {
+		release, err := s.acquireProviderConcurrency(ctx, task.UserID, userConcurrencyLimit, candidate)
+		if err != nil {
+			return provider.ImageResponse{}, err
+		}
+		defer release()
 		if task.TaskType == string(provider.TaskTypeImageEdit) {
 			return client.Edit(ctx, singleReq)
 		}
@@ -764,7 +825,7 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 	}
 	var mu sync.Mutex
 	group, groupCtx := errgroup.WithContext(ctx)
-	group.SetLimit(len(chunks))
+	group.SetLimit(fanoutConcurrencyLimit(candidate, userConcurrencyLimit, len(chunks)))
 	for i, chunkCount := range chunks {
 		fanoutIndex := i + 1
 		chunkCount := chunkCount
@@ -965,7 +1026,16 @@ func buildProviderAttempt(candidate modelhub.ProviderCandidate, status string, e
 }
 
 func (s *Service) executeProviderRequest(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, req provider.ImageRequest) (provider.ImageResponse, error) {
+	userConcurrencyLimit, err := s.userConcurrencyLimit(ctx, task.UserID)
+	if err != nil {
+		return provider.ImageResponse{}, err
+	}
 	call := func(ctx context.Context, singleReq provider.ImageRequest) (provider.ImageResponse, error) {
+		release, err := s.acquireProviderConcurrency(ctx, task.UserID, userConcurrencyLimit, candidate)
+		if err != nil {
+			return provider.ImageResponse{}, err
+		}
+		defer release()
 		if task.TaskType == string(provider.TaskTypeImageEdit) {
 			return client.Edit(ctx, singleReq)
 		}
@@ -973,11 +1043,10 @@ func (s *Service) executeProviderRequest(ctx context.Context, client provider.Im
 	}
 
 	count := normalizedCount(req.OutputImageCount)
-	openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
-	if !openAIFormat || count <= 1 {
+	chunks := splitOutputImageCount(count, candidate.MaxImageCount)
+	if len(chunks) == 1 {
 		return call(ctx, req)
 	}
-	chunks := splitOutputImageCount(count, candidate.MaxImageCount)
 
 	results := make([]provider.ImageResult, 0, count)
 	var (
@@ -986,14 +1055,14 @@ func (s *Service) executeProviderRequest(ctx context.Context, client provider.Im
 		firstErr  error
 	)
 	group, groupCtx := errgroup.WithContext(ctx)
-	group.SetLimit(len(chunks))
+	group.SetLimit(fanoutConcurrencyLimit(candidate, userConcurrencyLimit, len(chunks)))
 	for i, chunkCount := range chunks {
 		fanoutIndex := i + 1
 		chunkCount := chunkCount
 		group.Go(func() error {
 			singleReq := req
 			singleReq.OutputImageCount = chunkCount
-			attrs := fanoutLogAttrs("openai_aggregate", task, candidate, singleReq, len(chunks), fanoutIndex)
+			attrs := fanoutLogAttrs("provider_aggregate", task, candidate, singleReq, len(chunks), fanoutIndex)
 			slog.Info("image fanout request started", attrs...)
 			startedAt := time.Now()
 			resp, err := call(groupCtx, singleReq)
@@ -1109,7 +1178,7 @@ func (s *Service) failOwnedTask(ctx context.Context, task domainimagetask.Task, 
 
 func (s *Service) resumeTerminalization(ctx context.Context, task domainimagetask.Task, owner string) (domainimagetask.ExecuteResult, bool, error) {
 	switch task.Status {
-	case domainimagetask.StatusSucceeded:
+	case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed:
 		return domainimagetask.ExecuteResult{
 			Task: task,
 			Response: provider.ImageResponse{
@@ -1129,7 +1198,7 @@ func (s *Service) resumeTerminalization(ctx context.Context, task domainimagetas
 		if settleErr := s.settleTaskBilling(ctx, task, "resume settled image task"); settleErr != nil {
 			return domainimagetask.ExecuteResult{}, true, settleErr
 		}
-		task.Status = domainimagetask.StatusSucceeded
+		task.Status = completedStatusForResults(task)
 		setCompletedTaskProgress(&task)
 		task.LeaseOwner = ""
 		task.LeaseExpiresAt = nil
@@ -1540,7 +1609,7 @@ func isTaskLeaseConflict(err error) bool {
 
 func terminalTaskResult(task domainimagetask.Task) (domainimagetask.ExecuteResult, bool, error) {
 	switch task.Status {
-	case domainimagetask.StatusSucceeded:
+	case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed:
 		return domainimagetask.ExecuteResult{
 			Task: task,
 			Response: provider.ImageResponse{
@@ -1552,6 +1621,13 @@ func terminalTaskResult(task domainimagetask.Task) (domainimagetask.ExecuteResul
 	default:
 		return domainimagetask.ExecuteResult{}, false, nil
 	}
+}
+
+func completedStatusForResults(task domainimagetask.Task) string {
+	if len(task.Results) > 0 && len(task.Results) < normalizedCount(task.OutputImageCount) {
+		return domainimagetask.StatusPartialFailed
+	}
+	return domainimagetask.StatusSucceeded
 }
 
 func (s *Service) persistImageResults(ctx context.Context, task domainimagetask.Task, results []provider.ImageResult) ([]provider.ImageResult, error) {
@@ -2122,7 +2198,7 @@ func splitOutputImageCount(total, maxPerRequest int) []int {
 	if maxPerRequest <= 0 {
 		maxPerRequest = 1
 	}
-	chunks := make([]int, 0, (total+maxPerRequest-1)/maxPerRequest)
+	chunks := make([]int, 0, (total-1)/maxPerRequest+1)
 	remaining := total
 	for remaining > 0 {
 		count := maxPerRequest
@@ -2133,6 +2209,157 @@ func splitOutputImageCount(total, maxPerRequest int) []int {
 		remaining -= count
 	}
 	return chunks
+}
+
+func fanoutConcurrencyLimit(candidate modelhub.ProviderCandidate, userConcurrencyLimit, batchCount int) int {
+	if batchCount <= 1 {
+		return 1
+	}
+	limit := batchCount
+	if candidate.ConcurrencyLimit > 0 && candidate.ConcurrencyLimit < limit {
+		limit = candidate.ConcurrencyLimit
+	}
+	if userConcurrencyLimit > 0 && userConcurrencyLimit < limit {
+		limit = userConcurrencyLimit
+	}
+	return limit
+}
+
+func (s *Service) userConcurrencyLimit(ctx context.Context, userID int64) (int, error) {
+	if userID <= 0 {
+		return 0, nil
+	}
+	source, ok := s.store.(UserConcurrencyLimitSource)
+	if !ok {
+		return 0, nil
+	}
+	limit, err := source.UserConcurrencyLimit(ctx, userID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("load user concurrency limit: %w", err)
+	}
+	return limit, nil
+}
+
+func (s *Service) acquireProviderConcurrency(ctx context.Context, userID int64, userConcurrencyLimit int, candidate modelhub.ProviderCandidate) (func(), error) {
+	resources := []ConcurrencyResource{
+		{Key: userConcurrencyKey(userID), Limit: userConcurrencyLimit},
+		{Key: modelAccountConcurrencyKey(candidate), Limit: candidate.ConcurrencyLimit},
+	}
+	return s.concurrencyGate.Acquire(ctx, resources, providerConcurrencyLeaseTTL(candidate))
+}
+
+func NewLocalConcurrencyGate() ConcurrencyGate {
+	return &localConcurrencyGate{
+		entries: make(map[string]*modelAccountConcurrencyState),
+		changed: make(chan struct{}),
+	}
+}
+
+func (g *localConcurrencyGate) Acquire(ctx context.Context, resources []ConcurrencyResource, _ time.Duration) (func(), error) {
+	resources = normalizeConcurrencyResources(resources)
+	if len(resources) == 0 {
+		return func() {}, nil
+	}
+	for {
+		g.mu.Lock()
+		available := true
+		for _, resource := range resources {
+			state := g.entries[resource.Key]
+			if state == nil {
+				state = &modelAccountConcurrencyState{limit: resource.Limit}
+				g.entries[resource.Key] = state
+			} else if state.limit != resource.Limit {
+				state.limit = resource.Limit
+				g.signalChangedLocked()
+			}
+			if state.active >= state.limit {
+				available = false
+			}
+		}
+		if available {
+			for _, resource := range resources {
+				g.entries[resource.Key].active++
+			}
+			g.mu.Unlock()
+			var once sync.Once
+			return func() {
+				once.Do(func() {
+					g.mu.Lock()
+					for _, resource := range resources {
+						state := g.entries[resource.Key]
+						if state != nil && state.active > 0 {
+							state.active--
+						}
+					}
+					g.signalChangedLocked()
+					g.mu.Unlock()
+				})
+			}, nil
+		}
+		changed := g.changed
+		g.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
+func (g *localConcurrencyGate) signalChangedLocked() {
+	close(g.changed)
+	g.changed = make(chan struct{})
+}
+
+func normalizeConcurrencyResources(resources []ConcurrencyResource) []ConcurrencyResource {
+	normalized := make([]ConcurrencyResource, 0, len(resources))
+	indexes := make(map[string]int, len(resources))
+	for _, resource := range resources {
+		resource.Key = strings.TrimSpace(resource.Key)
+		if resource.Key == "" || resource.Limit <= 0 {
+			continue
+		}
+		if index, ok := indexes[resource.Key]; ok {
+			if resource.Limit < normalized[index].Limit {
+				normalized[index].Limit = resource.Limit
+			}
+			continue
+		}
+		indexes[resource.Key] = len(normalized)
+		normalized = append(normalized, resource)
+	}
+	return normalized
+}
+
+func providerConcurrencyLeaseTTL(candidate modelhub.ProviderCandidate) time.Duration {
+	if candidate.TimeoutMS > 0 {
+		return time.Duration(candidate.TimeoutMS)*time.Millisecond + 30*time.Second
+	}
+	return 2 * time.Minute
+}
+
+func modelAccountConcurrencyKey(candidate modelhub.ProviderCandidate) string {
+	if candidate.ConcurrencyLimit <= 0 {
+		return ""
+	}
+	if candidate.ModelAccountID > 0 {
+		return fmt.Sprintf("model-account:%d", candidate.ModelAccountID)
+	}
+	if candidate.AccountModelID > 0 {
+		return fmt.Sprintf("account-model:%d", candidate.AccountModelID)
+	}
+	return "provider:" + strings.ToLower(strings.TrimSpace(candidate.Provider)) + "|" + strings.TrimSpace(candidate.BaseURL)
+}
+
+func userConcurrencyKey(userID int64) string {
+	if userID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("user:%d", userID)
 }
 
 func defaultPositive(value, fallback int) int {

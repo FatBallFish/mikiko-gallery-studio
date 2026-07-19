@@ -1,5 +1,5 @@
 import type { Capability, EstimateResult, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType } from '../../../shared/api-types'
-import { createWorkspaceViewModel, matchWorkspaceCapabilityOption } from './workspaceViewModel'
+import { createWorkspaceViewModel, matchWorkspaceCapabilityOption, normalizeWorkspaceImageCount } from './workspaceViewModel'
 
 if (matchWorkspaceCapabilityOption(['auto', '1K', '2K'], '2k') !== '2K') {
   throw new Error('legacy lowercase base resolution must match the live capability spelling')
@@ -45,8 +45,15 @@ if (ready.parameters.models.map((item) => item.value).join(',') !== 'plus') {
 if (ready.parameters.baseResolutions.join(',') !== 'auto,2K' || ready.parameters.aspectRatios.join(',') !== '1:1,16:9') {
   throw new Error(`ratio parameters must come from selected live model, got ${JSON.stringify(ready.parameters)}`)
 }
-if (ready.parameters.referenceLimit !== 4 || ready.parameters.counts.join(',') !== '1,2,3') {
-  throw new Error(`limits and image counts must come from selected live model, got ${JSON.stringify(ready.parameters)}`)
+if (ready.parameters.referenceLimit !== 4 || 'counts' in ready.parameters) {
+  throw new Error(`provider batch size must not become a user-facing total image limit, got ${JSON.stringify(ready.parameters)}`)
+}
+
+if (normalizeWorkspaceImageCount(5) !== 5 || normalizeWorkspaceImageCount(500) !== 500 || normalizeWorkspaceImageCount(0) !== 1) {
+  throw new Error('requested image count must accept positive integers without clamping to provider capability')
+}
+if (normalizeWorkspaceImageCount(1001) !== 1000) {
+  throw new Error('requested image count must retain an independent technical safety ceiling')
 }
 
 for (const unsupported of ['sizeModes', 'pixelSizes', 'quality', 'outputFormat', 'outputCompression', 'moderation']) {

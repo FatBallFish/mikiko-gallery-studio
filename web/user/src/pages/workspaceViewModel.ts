@@ -21,12 +21,13 @@ type WorkspaceViewModelInput = {
 
 export type WorkspaceParameterOption = { value: string; label: string; detail?: string }
 
+export const workspaceTaskImageSafetyLimit = 1000
+
 export type WorkspaceParameterModel = {
   taskTypes: ImageTaskType[]
   models: WorkspaceParameterOption[]
   baseResolutions: string[]
   aspectRatios: string[]
-  counts: number[]
   referenceLimit: number
 }
 
@@ -43,6 +44,11 @@ export function matchWorkspaceCapabilityOption(options: string[], candidate?: st
   const normalized = candidate?.trim().toLowerCase()
   if (!normalized) return undefined
   return options.find((option) => option.toLowerCase() === normalized)
+}
+
+export function normalizeWorkspaceImageCount(value: number) {
+  if (!Number.isFinite(value)) return 1
+  return Math.min(workspaceTaskImageSafetyLimit, Math.max(1, Math.round(value) || 1))
 }
 
 function taskModels(capability: Capability | null, taskType: ImageTaskType) {
@@ -114,7 +120,6 @@ export function createWorkspaceViewModel(input: WorkspaceViewModelInput) {
       models: models.map((item) => ({ value: item.code, label: item.name, detail: item.description })),
       baseResolutions: model?.base_resolution?.length ? model.base_resolution : [],
       aspectRatios: model?.aspect_ratios?.length ? model.aspect_ratios : input.capability?.aspect_ratios ?? [],
-      counts: Array.from({ length: Math.max(0, Number(model?.max_output_image_count ?? input.capability?.max_image_count ?? 0)) }, (_, index) => index + 1),
       referenceLimit: workspaceReferenceMaximum(model?.max_reference_image_count),
     } satisfies WorkspaceParameterModel,
     estimate,

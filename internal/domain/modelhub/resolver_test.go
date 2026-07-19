@@ -102,6 +102,51 @@ func TestResolveAllowsEnabledModelAccountCandidates(t *testing.T) {
 	}
 }
 
+func TestResolveAllowsTaskImageCountAboveProviderBatchLimit(t *testing.T) {
+	resolver := modelhub.NewResolver(config.Config{
+		Billing: config.BillingConfig{
+			AutoBaseResolutionDefaultByGroup: map[string]string{"basic": "1k"},
+			BaseResolutionPointsByModel: map[string]map[string]string{
+				"basic": {"1k": "2.00000"},
+			},
+		},
+		GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 2, ReferenceImageMaxCount: 4},
+		Providers:        config.ProvidersConfig{OpenAI: config.ProviderConfig{Enabled: true}},
+		Routing: config.RoutingConfig{ProviderCapabilities: map[string]config.ProviderCapabilityConfig{
+			"openai": {
+				SupportedModels:         []string{"basic"},
+				SupportedTaskTypes:      []string{"text_to_image"},
+				SupportedBaseResolution: []string{"1k"},
+				MaxImageCount:           2,
+				Priority:                1,
+			},
+		}},
+	})
+
+	resolved, err := resolver.Resolve(modelhub.ResolveRequest{
+		AbstractModel:             "basic",
+		TaskType:                  "text_to_image",
+		BaseResolution:            "1k",
+		RequestedOutputImageCount: 5,
+	})
+	if err != nil {
+		t.Fatalf("task total should be independent from provider batch limit: %v", err)
+	}
+	if len(resolved.Providers) != 1 || resolved.Providers[0].MaxImageCount != 2 {
+		t.Fatalf("expected provider batch capability to remain available for scheduling, got %#v", resolved.Providers)
+	}
+}
+
+func TestNormalizeResolveRequestRejectsTaskImageCountAboveSafetyLimit(t *testing.T) {
+	_, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
+		TaskType:                  "text_to_image",
+		RequestedOutputImageCount: modelhub.MaxTaskOutputImageCount + 1,
+	})
+	if err == nil {
+		t.Fatal("expected technical task image safety limit to reject oversized request")
+	}
+}
+
 func TestResolveFiltersAndOrdersProviders(t *testing.T) {
 	resolver := modelhub.NewResolver(config.Config{
 		Billing: config.BillingConfig{

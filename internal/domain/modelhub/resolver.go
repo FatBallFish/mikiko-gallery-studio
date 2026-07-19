@@ -319,6 +319,7 @@ type ProviderCandidate struct {
 	SupportsOutputCompression bool
 	Moderation                []string
 	MaxImageCount             int
+	ConcurrencyLimit          int
 	MaxReferenceImageCount    int
 	SupportsImageInput        bool
 	SupportsMask              bool
@@ -600,9 +601,6 @@ func (r *Resolver) ResolveContext(ctx context.Context, req ResolveRequest) (Reso
 	if req.RequestedOutputImageCount <= 0 {
 		req.RequestedOutputImageCount = 1
 	}
-	if req.RequestedOutputImageCount > r.cfg.GenerationLimits.MaxImageCount {
-		return ResolvedRequest{}, errs.New(400, errs.CodeImageCapabilityMismatch, "requested output image count exceeds platform limit")
-	}
 	if req.ReferenceImageCount > r.cfg.GenerationLimits.ReferenceImageMaxCount {
 		return ResolvedRequest{}, errs.New(400, errs.CodeImageReferenceExceeded, "reference image count exceeds platform limit")
 	}
@@ -705,9 +703,6 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 		return false
 	}
 	if len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, req.TaskType) {
-		return false
-	}
-	if candidate.MaxImageCount > 0 && req.RequestedOutputImageCount > candidate.MaxImageCount {
 		return false
 	}
 	if req.ReferenceImageCount > candidate.MaxReferenceImageCount {
@@ -844,9 +839,6 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 	partial.BaseResolution = baseResolution
 	if req.RequestedOutputImageCount <= 0 {
 		req.RequestedOutputImageCount = 1
-	}
-	if req.RequestedOutputImageCount > r.cfg.GenerationLimits.MaxImageCount {
-		return partial, errs.New(400, errs.CodeImageCapabilityMismatch, "requested output image count exceeds platform limit")
 	}
 	if req.ReferenceImageCount > r.cfg.GenerationLimits.ReferenceImageMaxCount {
 		return partial, errs.New(400, errs.CodeImageReferenceExceeded, "reference image count exceeds platform limit")

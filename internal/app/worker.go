@@ -77,6 +77,9 @@ func RunWorker() error {
 		storageRegistry,
 	)
 	taskSvc.SetModelRoutingSource(entstore.NewModelAdminStore(client))
+	if redisClient != nil {
+		taskSvc.SetConcurrencyGate(imagetaskservice.NewRedisConcurrencyGate(redisClient, cfg.Redis.KeyPrefix))
+	}
 	slog.Info("database-backed task store enabled for worker")
 
 	runner := worker.NewRunner(taskSvc, worker.Config{

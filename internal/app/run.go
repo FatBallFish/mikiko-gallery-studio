@@ -135,6 +135,9 @@ func Run() error {
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageRegistry)
 	modelAdminStore := entstore.NewModelAdminStore(client)
 	taskSvc.SetModelRoutingSource(modelAdminStore)
+	if redisClient != nil {
+		taskSvc.SetConcurrencyGate(imagetaskservice.NewRedisConcurrencyGate(redisClient, cfg.Redis.KeyPrefix))
+	}
 	apiKeySvc, err := newRuntimeAPIKeyService(cfg, entstore.NewAPIKeyStore(client))
 	if err != nil {
 		return err
