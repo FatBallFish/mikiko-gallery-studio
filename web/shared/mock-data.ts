@@ -124,7 +124,7 @@ export const providerHealth: ProviderHealth[] = [
 ]
 
 export const initialConfig: ConfigItem[] = [
-  { tab: 'Generation Limits', key: 'max_image_count', value: '{"value":4}', draft_value: '{"value":4}', state: 'active', version: 7, description: '单次最大输出图片数量' },
+  { tab: 'Generation Limits', key: 'max_image_count', value: '{"value":4}', draft_value: '{"value":4}', state: 'active', version: 7, description: '模型未单独配置时的单次上游请求容量' },
   { tab: 'Generation Limits', key: 'reference_image_max_count', value: '{"value":3}', draft_value: '{"value":3}', state: 'active', version: 4, description: '参考图最大数量' },
   { tab: 'Billing & Pricing', key: 'cny_per_point', value: '{"value":"0.31250"}', draft_value: '{"value":"0.31250"}', state: 'active', version: 9, description: '人民币兑换积分比例' },
   { tab: 'Billing & Pricing', key: 'task_multipliers', value: '{"value":{"text_to_image":"1.00000","image_edit":"1.25000","reference_generate":"1.15000"}}', draft_value: '{"value":{"text_to_image":"1.00000","image_edit":"1.25000","reference_generate":"1.15000"}}', state: 'active', version: 9, description: '任务类型倍率' },

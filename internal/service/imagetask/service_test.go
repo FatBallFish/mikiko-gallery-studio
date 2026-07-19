@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +46,15 @@ func (f *fakeAssetLoader) LoadInput(userID int64, assetID string) (provider.Imag
 type fakeProvider struct {
 	generateFunc func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error)
 	editFunc     func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error)
+}
+
+type userLimitedStore struct {
+	imagetask.Store
+	limit int
+}
+
+func (s *userLimitedStore) UserConcurrencyLimit(context.Context, int64) (int, error) {
+	return s.limit, nil
 }
 
 func (f fakeProvider) Generate(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
@@ -80,7 +91,7 @@ func withMockRemoteFetch(svc *imagetask.Service) *imagetask.Service {
 	return svc
 }
 
-func TestExecuteGenerateProducesSucceededTask(t *testing.T) {
+func TestExecuteGenerateMarksMissingRequestedImagesAsPartial(t *testing.T) {
 	cfg := taskTestConfig()
 	providers := map[string]provider.ImageProvider{
 		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
@@ -106,8 +117,8 @@ func TestExecuteGenerateProducesSucceededTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if result.Task.Status != domainimagetask.StatusSucceeded {
-		t.Fatalf("expected succeeded, got %s", result.Task.Status)
+	if result.Task.Status != domainimagetask.StatusPartialFailed {
+		t.Fatalf("expected partial_failed, got %s", result.Task.Status)
 	}
 	if result.Task.Provider != "openrouter" {
 		t.Fatalf("expected openrouter provider, got %s", result.Task.Provider)
@@ -120,7 +131,7 @@ func TestExecuteGenerateProducesSucceededTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if loaded.ID != result.Task.ID || loaded.Status != domainimagetask.StatusSucceeded {
+	if loaded.ID != result.Task.ID || loaded.Status != domainimagetask.StatusPartialFailed {
 		t.Fatalf("unexpected loaded task %#v", loaded)
 	}
 	if len(loaded.Results) != 1 || loaded.Results[0].URL == "" {
@@ -390,6 +401,91 @@ func TestExecuteFallsBackOnRetryableProviderError(t *testing.T) {
 	}
 	if result.Task.Attempts[0].StartedAt == nil || result.Task.Attempts[0].FinishedAt == nil {
 		t.Fatalf("expected attempt timestamps, got %#v", result.Task.Attempts[0])
+	}
+}
+
+func TestExecuteFallsBackWhenAllOpenAIFanoutBatchesFailRetryably(t *testing.T) {
+	cfg := taskTestConfig()
+	openaiCapability := cfg.Routing.ProviderCapabilities["openai"]
+	openaiCapability.MaxImageCount = 1
+	cfg.Routing.ProviderCapabilities["openai"] = openaiCapability
+	var openAICalls atomic.Int64
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			openAICalls.Add(1)
+			return provider.ImageResponse{}, &provider.UpstreamError{
+				Provider: provider.ProviderTypeOpenAI, HTTPStatus: 429, Code: "rate_limit_error", Message: "slow down",
+				Action: provider.UpstreamErrorActionRetry, Family: provider.UpstreamErrorFamilyRateLimited,
+			}
+		}},
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			results := make([]provider.ImageResult, req.OutputImageCount)
+			for i := range results {
+				results[i] = provider.ImageResult{B64JSON: tinyPNGBase64}
+			}
+			return provider.ImageResponse{Created: 1770000002, Data: results}, nil
+		}},
+	}
+
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 10, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "fallback fanout",
+		RequestedSize: "auto", BaseResolution: "1k", OutputImageCount: 3,
+		ResponseFormat: string(provider.ResponseFormatB64JSON), PreferredProviders: []string{"openai", "openrouter"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if openAICalls.Load() != 3 || result.Task.Provider != "openrouter" || result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected retryable OpenAI fanout failure to use fallback candidate, calls=%d task=%#v", openAICalls.Load(), result.Task)
+	}
+}
+
+func TestExecuteRejectsTaskImageCountAboveSafetyLimit(t *testing.T) {
+	var providerCalls atomic.Int64
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			providerCalls.Add(1)
+			return provider.ImageResponse{}, nil
+		}},
+	}
+	svc := imagetask.NewServiceWithProviders(taskTestConfig(), providers)
+
+	_, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 10, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "oversized",
+		BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto",
+		OutputImageCount: modelhub.MaxTaskOutputImageCount + 1,
+	})
+	if err == nil {
+		t.Fatal("expected task safety limit error")
+	}
+	if providerCalls.Load() != 0 {
+		t.Fatalf("provider must not be called for oversized task, calls=%d", providerCalls.Load())
+	}
+}
+
+func TestExecuteLeasedTaskResumesPartialTerminalization(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	now := time.Now().UTC()
+	leaseExpiry := now.Add(time.Minute)
+	task := domainimagetask.Task{
+		UserID: 95, ID: "95959595-9595-4595-8595-959595959595", Status: domainimagetask.StatusRunning,
+		ProgressStage: domainimagetask.ProgressStageSettling, LeaseOwner: "worker-partial", LeaseExpiresAt: &leaseExpiry,
+		AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), BaseResolution: "1k", OutputImageCount: 2,
+		ErrorCode: errs.CodeUpstreamUnavailable, ErrorMessage: "部分上游批次未返回有效图片",
+		Results: []provider.ImageResult{{ID: "partial-result", URL: "/images/partial-result.png"}},
+	}
+	if err := store.Save(context.Background(), task); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+	svc := imagetask.NewServiceWithProvidersAndStore(taskTestConfig(), nil, store)
+
+	result, err := svc.ExecuteLeasedTask(context.Background(), task, "worker-partial", nil)
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if result.Task.Status != domainimagetask.StatusPartialFailed {
+		t.Fatalf("expected recovered partial_failed task, got %#v", result.Task)
 	}
 }
 
@@ -1260,6 +1356,362 @@ func TestExecuteOpenAIFormatMultiImageFansOutAndChargesActualSuccesses(t *testin
 	}
 }
 
+func TestExecuteOpenAIFormatSplitsProviderBatchesAndQueuesAtAccountConcurrency(t *testing.T) {
+	cfg := taskTestConfig()
+	openaiCapability := cfg.Routing.ProviderCapabilities["openai"]
+	openaiCapability.MaxImageCount = 2
+	cfg.Routing.ProviderCapabilities["openai"] = openaiCapability
+
+	var (
+		mu        sync.Mutex
+		active    int
+		maxActive int
+		batches   []int
+	)
+	release := make(chan struct{})
+	started := make(chan struct{}, 5)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			mu.Lock()
+			active++
+			if active > maxActive {
+				maxActive = active
+			}
+			batches = append(batches, req.OutputImageCount)
+			mu.Unlock()
+			started <- struct{}{}
+			<-release
+			mu.Lock()
+			active--
+			mu.Unlock()
+			results := make([]provider.ImageResult, req.OutputImageCount)
+			for i := range results {
+				results[i] = provider.ImageResult{B64JSON: tinyPNGBase64}
+			}
+			return provider.ImageResponse{Created: 1770001000, Data: results}, nil
+		}},
+	}
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{ProviderModels: []modelhub.ProviderCandidate{{
+		Provider:                "openai",
+		ModelCode:               "gpt-image-1",
+		SupportedTaskTypes:      []string{"text_to_image"},
+		SupportedBaseResolution: []string{"1k"},
+		SupportedAspectRatios:   []string{"1:1"},
+		Quality:                 []string{"auto"},
+		OutputFormat:            []string{"png"},
+		Moderation:              []string{"auto"},
+		MaxImageCount:           2,
+		ConcurrencyLimit:        2,
+		HealthStatus:            "enabled",
+	}}}})
+
+	resultCh := make(chan domainimagetask.ExecuteResult, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+			UserID: 88, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "five images",
+			BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto",
+			OutputImageCount: 5, ResponseFormat: string(provider.ResponseFormatB64JSON), PreferredProviders: []string{"openai"},
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case err := <-errCh:
+			t.Fatalf("Execute: %v", err)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for bounded fanout to start")
+		}
+	}
+	select {
+	case <-started:
+		t.Fatal("third provider batch started before account concurrency was released")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+
+	var result domainimagetask.ExecuteResult
+	select {
+	case err := <-errCh:
+		t.Fatalf("Execute: %v", err)
+	case result = <-resultCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for fanout result")
+	}
+	mu.Lock()
+	sort.Ints(batches)
+	gotBatches := append([]int(nil), batches...)
+	gotMaxActive := maxActive
+	mu.Unlock()
+	if !reflect.DeepEqual(gotBatches, []int{1, 2, 2}) {
+		t.Fatalf("expected batches [2 2 1], got %v", gotBatches)
+	}
+	if gotMaxActive != 2 {
+		t.Fatalf("expected max account concurrency 2, got %d", gotMaxActive)
+	}
+	if len(result.Task.Results) != 5 || result.Task.Status != domainimagetask.StatusSucceeded {
+		t.Fatalf("expected one succeeded task with five results, got %#v", result.Task)
+	}
+}
+
+func TestExecuteFanoutSharesModelAccountConcurrencyAcrossTasks(t *testing.T) {
+	cfg := taskTestConfig()
+	openaiCapability := cfg.Routing.ProviderCapabilities["openai"]
+	openaiCapability.MaxImageCount = 1
+	cfg.Routing.ProviderCapabilities["openai"] = openaiCapability
+
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			started <- struct{}{}
+			<-release
+			return provider.ImageResponse{Created: 1770001100, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{ProviderModels: []modelhub.ProviderCandidate{{
+		ModelAccountID:          901,
+		Provider:                "openai",
+		ModelCode:               "gpt-image-1",
+		SupportedTaskTypes:      []string{"text_to_image"},
+		SupportedBaseResolution: []string{"1k"},
+		SupportedAspectRatios:   []string{"1:1"},
+		Quality:                 []string{"auto"},
+		OutputFormat:            []string{"png"},
+		Moderation:              []string{"auto"},
+		MaxImageCount:           1,
+		ConcurrencyLimit:        1,
+		HealthStatus:            "enabled",
+	}}}})
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	for userID := int64(91); userID <= 92; userID++ {
+		userID := userID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+				UserID: userID, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "two images",
+				BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto",
+				OutputImageCount: 2, ResponseFormat: string(provider.ResponseFormatB64JSON), PreferredProviders: []string{"openai"},
+			})
+			if err != nil {
+				errCh <- err
+			}
+		}()
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first account request")
+	}
+	select {
+	case <-started:
+		t.Fatal("another task bypassed the shared model-account concurrency limit")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestExecuteFanoutSharesUserConcurrencyAcrossTasks(t *testing.T) {
+	cfg := taskTestConfig()
+	openaiCapability := cfg.Routing.ProviderCapabilities["openai"]
+	openaiCapability.MaxImageCount = 1
+	cfg.Routing.ProviderCapabilities["openai"] = openaiCapability
+
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			started <- struct{}{}
+			<-release
+			return provider.ImageResponse{Created: 1770001150, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	store := &userLimitedStore{Store: imagetask.NewMemoryStore(), limit: 1}
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, providers, store))
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{ProviderModels: []modelhub.ProviderCandidate{{
+		ModelAccountID:          902,
+		Provider:                "openai",
+		ModelCode:               "gpt-image-1",
+		SupportedTaskTypes:      []string{"text_to_image"},
+		SupportedBaseResolution: []string{"1k"},
+		SupportedAspectRatios:   []string{"1:1"},
+		Quality:                 []string{"auto"},
+		OutputFormat:            []string{"png"},
+		Moderation:              []string{"auto"},
+		MaxImageCount:           1,
+		ConcurrencyLimit:        4,
+		HealthStatus:            "enabled",
+	}}}})
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+				UserID: 94, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "two images",
+				BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto",
+				OutputImageCount: 2, ResponseFormat: string(provider.ResponseFormatB64JSON), PreferredProviders: []string{"openai"},
+			})
+			if err != nil {
+				errCh <- err
+			}
+		}()
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first user request")
+	}
+	select {
+	case <-started:
+		t.Fatal("another task bypassed the shared user concurrency limit")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestExecuteFanoutSharesConcurrencyAcrossServiceInstances(t *testing.T) {
+	cfg := taskTestConfig()
+	openaiCapability := cfg.Routing.ProviderCapabilities["openai"]
+	openaiCapability.MaxImageCount = 1
+	cfg.Routing.ProviderCapabilities["openai"] = openaiCapability
+
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			started <- struct{}{}
+			<-release
+			return provider.ImageResponse{Created: 1770001160, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{ProviderModels: []modelhub.ProviderCandidate{{
+		ModelAccountID: 903, Provider: "openai", ModelCode: "gpt-image-1",
+		SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, SupportedAspectRatios: []string{"1:1"},
+		Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"},
+		MaxImageCount: 1, ConcurrencyLimit: 1, HealthStatus: "enabled",
+	}}}}
+	sharedGate := imagetask.NewLocalConcurrencyGate()
+	services := make([]*imagetask.Service, 0, 2)
+	for i := 0; i < 2; i++ {
+		store := &userLimitedStore{Store: imagetask.NewMemoryStore(), limit: 1}
+		svc := withMockRemoteFetch(imagetask.NewServiceWithProvidersAndStore(cfg, providers, store))
+		svc.SetModelRoutingSource(routing)
+		svc.SetConcurrencyGate(sharedGate)
+		services = append(services, svc)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	for _, svc := range services {
+		svc := svc
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+				UserID: 96, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "cross service",
+				BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto",
+				OutputImageCount: 1, ResponseFormat: string(provider.ResponseFormatB64JSON), PreferredProviders: []string{"openai"},
+			})
+			if err != nil {
+				errCh <- err
+			}
+		}()
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first cross-service request")
+	}
+	select {
+	case <-started:
+		t.Fatal("second service bypassed shared concurrency gate")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestExecuteNonOpenAIProviderSplitsBatchesAndMarksPartialSuccess(t *testing.T) {
+	cfg := taskTestConfig()
+	openrouterCapability := cfg.Routing.ProviderCapabilities["openrouter"]
+	openrouterCapability.MaxImageCount = 2
+	cfg.Routing.ProviderCapabilities["openrouter"] = openrouterCapability
+
+	var (
+		mu      sync.Mutex
+		batches []int
+	)
+	providers := map[string]provider.ImageProvider{
+		"openrouter": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			mu.Lock()
+			batches = append(batches, req.OutputImageCount)
+			call := len(batches)
+			mu.Unlock()
+			if call == 1 {
+				return provider.ImageResponse{}, errors.New("one provider batch failed")
+			}
+			results := make([]provider.ImageResult, req.OutputImageCount)
+			for i := range results {
+				results[i] = provider.ImageResult{B64JSON: tinyPNGBase64}
+			}
+			return provider.ImageResponse{Created: 1770001200, Data: results}, nil
+		}},
+	}
+	svc := withMockRemoteFetch(imagetask.NewServiceWithProviders(cfg, providers))
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 93, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "five images",
+		BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto",
+		OutputImageCount: 5, ResponseFormat: string(provider.ResponseFormatB64JSON), PreferredProviders: []string{"openrouter"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	mu.Lock()
+	sort.Ints(batches)
+	gotBatches := append([]int(nil), batches...)
+	mu.Unlock()
+	if !reflect.DeepEqual(gotBatches, []int{1, 2, 2}) {
+		t.Fatalf("expected provider batches [2 2 1], got %v", gotBatches)
+	}
+	if result.Task.Status != domainimagetask.StatusPartialFailed || len(result.Task.Results) >= 5 || len(result.Task.Results) == 0 {
+		t.Fatalf("expected partial task result from mixed batch outcomes, got %#v", result.Task)
+	}
+	if result.Task.ErrorCode == "" || result.Task.ErrorMessage == "" {
+		t.Fatalf("partial task must preserve an actionable failure reason, got %#v", result.Task)
+	}
+}
+
 func TestExecuteLeasedTaskWaitsToCheckpointOpenAIFanoutBeforePersistence(t *testing.T) {
 	cfg := taskTestConfig()
 	openaiCapability := cfg.Routing.ProviderCapabilities["openai"]
@@ -1878,8 +2330,8 @@ func TestExecuteLeasedTaskSettlesPartialSuccessAgainstReservedEstimate(t *testin
 	if err != nil {
 		t.Fatalf("ExecuteLeasedTask: %v", err)
 	}
-	if result.Task.Status != domainimagetask.StatusSucceeded {
-		t.Fatalf("expected succeeded task, got %s", result.Task.Status)
+	if result.Task.Status != domainimagetask.StatusPartialFailed {
+		t.Fatalf("expected partial_failed task, got %s", result.Task.Status)
 	}
 	if result.Task.ActualPoints != "8.00000" {
 		t.Fatalf("expected actual points 8.00000, got %#v", result.Task)

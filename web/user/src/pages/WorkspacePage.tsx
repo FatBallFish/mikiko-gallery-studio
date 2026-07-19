@@ -18,7 +18,7 @@ import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
 import { generationSlots, workspaceBaseResolutionLabel } from './workspaceTaskProgress'
 import { limitReferenceSelection, remainingReferenceCapacity, singleReferenceAddition, workspaceReferenceMaximum, workspaceRequiredReferencesReady } from './workspaceReferenceLimit'
-import { createWorkspaceViewModel, matchWorkspaceCapabilityOption } from './workspaceViewModel'
+import { createWorkspaceViewModel, matchWorkspaceCapabilityOption, normalizeWorkspaceImageCount, workspaceTaskImageSafetyLimit } from './workspaceViewModel'
 import { useCompactWorkspaceViewport, workspaceParametersHidden } from './workspaceResponsive'
 import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGesture'
 import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
@@ -54,12 +54,6 @@ function sizeModeOptions(model: CapabilityModelGroup | undefined): WorkspaceSize
 function pixelOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
   if (!model) return []
   return model.pixel_sizes?.length ? model.pixel_sizes : capability?.pixel_sizes ?? []
-}
-
-function countOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
-  if (!model) return []
-  const maxCount = Number(model.max_output_image_count ?? capability?.max_image_count ?? 0)
-  return Array.from({ length: Math.max(0, maxCount) }, (_, index) => index + 1)
 }
 
 function isTerminalStatus(status: ImageTaskStatus | string) {
@@ -262,7 +256,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [baseResolution, setBaseResolution] = useState('')
   const [ratio, setRatio] = useState('')
   const [pixelSize, setPixelSize] = useState('')
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState(1)
   const [quality, setQuality] = useState('auto')
   const [outputFormat, setOutputFormat] = useState('png')
   const [outputCompression, setOutputCompression] = useState(100)
@@ -561,10 +555,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
   const ratios = useMemo(() => ratioOptions(selectedModel, capability), [selectedModel, capability])
   const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
-  const counts = useMemo(() => countOptions(selectedModel, capability), [selectedModel, capability])
   const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
-  const maxOutputCount = counts[counts.length - 1] ?? 1
 
   useEffect(() => {
     if (!capability || !selectedModel) return
@@ -580,12 +572,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
     setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
     setPixelSize((current) => current && pixelSizes.includes(current) ? current : pixelSizes[0] ?? '')
-    setCount((current) => {
-      const restored = current > 0 && counts.includes(current) ? current : counts[0] ?? 0
-      return Math.max(0, Math.min(restored, counts[counts.length - 1] ?? restored))
-    })
+    setCount((current) => normalizeWorkspaceImageCount(current))
     restoreParametersRef.current = null
-  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, counts])
+  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -609,7 +598,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	&& outputOptions.outputFormat.includes(outputFormat)
 	&& outputOptions.moderation.includes(moderation)
 	&& (!compressionVisible || (outputCompression >= 1 && outputCompression <= 100))
-    && counts.includes(count)
+    && count >= 1
     && requiredReferencesReady,
   )
 
@@ -872,9 +861,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }
 
   function updateImageCount(value: number) {
-    if (!counts.length) return
-    const next = Math.max(1, Math.min(maxOutputCount, Math.round(value) || 1))
-    setCount(next)
+    setCount(normalizeWorkspaceImageCount(value))
   }
 
   function selectRecentTask(task: ImageTask) {
@@ -1273,7 +1260,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               ) : null}
 
               {/* Image Count */}
-              {counts.length ? (
+              {selectedModel ? (
                 <div>
                   <label className={workspaceClasses.fieldLabel}>图片数量</label>
                   <div className={workspaceClasses.countInputWrap}>
@@ -1282,13 +1269,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                       className={workspaceClasses.countInput}
                       type="number"
                       min={1}
-                      max={maxOutputCount}
+                      max={workspaceTaskImageSafetyLimit}
                       value={count || 1}
                       onChange={(event) => updateImageCount(Number(event.target.value))}
                     />
-                    <button type="button" className={workspaceClasses.countStepper} disabled={count >= maxOutputCount} onClick={() => updateImageCount(count + 1)}>+</button>
+                    <button type="button" className={workspaceClasses.countStepper} disabled={count >= workspaceTaskImageSafetyLimit} onClick={() => updateImageCount(count + 1)}>+</button>
                   </div>
-                  <p className={workspaceClasses.countHint}>后端当前允许最多生成 {maxOutputCount} 张。</p>
                 </div>
               ) : null}
             </>

@@ -132,6 +132,9 @@ func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
 			if !reflect.DeepEqual(candidate.SupportedAspectRatios, []string{"1:1"}) || candidate.MaxImageCount != 1 || candidate.MaxReferenceImageCount != 0 || candidate.SupportsImageInput {
 				t.Fatalf("account model safe capability defaults were not preserved: %#v", candidate)
 			}
+			if candidate.ConcurrencyLimit != account.ConcurrencyLimit {
+				t.Fatalf("model account concurrency must be propagated to runtime scheduling, got %#v", candidate)
+			}
 			return
 		}
 	}

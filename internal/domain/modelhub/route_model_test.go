@@ -127,7 +127,7 @@ func TestResolveRouteModelSkipsDisabledCandidates(t *testing.T) {
 	}
 }
 
-func TestResolveRouteModelFiltersCandidatesByGenerationCapabilities(t *testing.T) {
+func TestResolveRouteModelFiltersCandidatesByGenerationCapabilitiesWithoutUsingBatchLimitAsTaskLimit(t *testing.T) {
 	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 5, ReferenceImageMaxCount: 4}})
 	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{
 		RouteModels: []RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
@@ -166,8 +166,8 @@ func TestResolveRouteModelFiltersCandidatesByGenerationCapabilities(t *testing.T
 	if err != nil {
 		t.Fatalf("ResolveContext() error = %v", err)
 	}
-	if len(resolved.Providers) != 1 || resolved.Providers[0].ModelCode != "reference-model" {
-		t.Fatalf("expected only the candidate supporting the complete request, got %#v", resolved.Providers)
+	if len(resolved.Providers) != 2 || resolved.Providers[0].ModelCode != "reference-model" || resolved.Providers[1].ModelCode != "single-output" {
+		t.Fatalf("expected both compatible candidates regardless of per-request batch size, got %#v", resolved.Providers)
 	}
 }
 

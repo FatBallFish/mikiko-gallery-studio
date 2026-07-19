@@ -59,6 +59,16 @@ for (const groupingContract of ['expandedGroups', 'adminTaskTypeLabel(group.task
   }
 }
 
+for (const rowExpansionContract of ['renderAfterRow', 'pricingExpandedGroup(group, openDialog)']) {
+  if (!pricingPageSource.includes(rowExpansionContract)) {
+    throw new Error(`expanded pricing details must render directly after their route-model row with ${rowExpansionContract}`)
+  }
+}
+
+if (pricingPageSource.includes('expandedVisibleGroups')) {
+  throw new Error('expanded pricing details must not be collected into a global block below the route-model list')
+}
+
 for (const filterStateContract of ['hasActiveFilters', "hasActiveFilters ? '已应用筛选' : '全部价格组'"]) {
   if (!pricingPageSource.includes(filterStateContract)) {
     throw new Error(`pricing filter toolbar should expose truthful filter state with ${filterStateContract}`)

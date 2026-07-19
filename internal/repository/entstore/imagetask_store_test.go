@@ -17,6 +17,30 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+func TestImageTaskStoreLoadsUserConcurrencyLimit(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-user-concurrency?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	user, err := client.User.Create().SetEmail("concurrency@example.com").SetStatus("active").SetConcurrencyLimit(3).Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	limit, err := NewImageTaskStore(client).UserConcurrencyLimit(ctx, int64(user.ID))
+	if err != nil {
+		t.Fatalf("UserConcurrencyLimit: %v", err)
+	}
+	if limit != 3 {
+		t.Fatalf("expected user concurrency 3, got %d", limit)
+	}
+}
+
 func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:imagetaskstore?mode=memory&cache=shared&_fk=1")

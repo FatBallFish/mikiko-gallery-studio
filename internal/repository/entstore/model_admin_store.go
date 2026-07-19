@@ -1042,6 +1042,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			SupportedAspectRatios:     supportedRatios,
 			SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
 			MaxImageCount:             maxImageCount,
+			ConcurrencyLimit:          account.ConcurrencyLimit,
 			MaxReferenceImageCount:    model.MaxReferenceImageCount,
 			SupportsImageInput:        model.MaxReferenceImageCount > 0,
 			OutputFormat:              append([]string(nil), model.OutputFormat...),

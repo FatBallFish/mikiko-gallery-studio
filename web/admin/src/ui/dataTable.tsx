@@ -119,6 +119,7 @@ export function DataTable<T>({
   empty,
   className,
   bodyClassName,
+  renderAfterRow,
 }: {
   columns: ColumnDef<T>[]
   rows: T[]
@@ -126,6 +127,7 @@ export function DataTable<T>({
   empty?: React.ReactNode
   className?: string
   bodyClassName?: string
+  renderAfterRow?: (row: T) => React.ReactNode
 }) {
   const gridTemplate = columns
     .map((col) => col.width ?? 'minmax(120px,1fr)')
@@ -155,9 +157,15 @@ export function DataTable<T>({
         </div>
         {/* 数据行 */}
         <div className={cn('contents', bodyClassName)}>
-          {rows.map((row) => (
-            <RowFragment key={rowKey(row)} columns={columns} row={row} />
-          ))}
+          {rows.map((row) => {
+            const afterRow = renderAfterRow?.(row)
+            return (
+              <React.Fragment key={rowKey(row)}>
+                <RowFragment columns={columns} row={row} />
+                {afterRow ? <div className="min-w-0" style={{ gridColumn: '1 / -1' }}>{afterRow}</div> : null}
+              </React.Fragment>
+            )
+          })}
         </div>
       </div>
     </div>

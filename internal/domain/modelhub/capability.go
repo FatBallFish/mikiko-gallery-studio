@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	SizeModeRatio       = "ratio"
-	SizeModePixel       = "pixel"
-	sizeModeLegacyRatio = "legacy_ratio_size"
+	SizeModeRatio           = "ratio"
+	SizeModePixel           = "pixel"
+	sizeModeLegacyRatio     = "legacy_ratio_size"
+	MaxTaskOutputImageCount = 1000
 )
 
 var (
@@ -97,6 +98,12 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 }
 
 func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
+	if req.RequestedOutputImageCount <= 0 {
+		req.RequestedOutputImageCount = 1
+	}
+	if req.RequestedOutputImageCount > MaxTaskOutputImageCount {
+		return req, errs.New(400, errs.CodeImageCapabilityMismatch, fmt.Sprintf("requested output image count exceeds task safety limit %d", MaxTaskOutputImageCount))
+	}
 	req.Quality = NormalizeQuality(req.Quality)
 	if req.Quality == "" {
 		return req, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported quality")

@@ -36,8 +36,7 @@ const pricingClasses = {
   routeName: 'font-semibold text-[var(--fg)]',
   routeMeta: 'mt-1 font-[family-name:var(--admin-font-mono)] text-xs text-[var(--soft)]',
   actionRow: 'flex flex-wrap items-center justify-end gap-2',
-  expandedStack: 'grid gap-5 border-t border-[var(--border)] pt-4',
-  expandedSection: 'grid min-w-0 gap-3',
+  expandedSection: 'grid min-w-0 gap-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--surface-solid)_96%,var(--accent)_4%)] px-4 py-4',
   expandedHeader: 'flex flex-wrap items-center justify-between gap-3',
 }
 
@@ -84,7 +83,6 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     if (filters.status === 'disabled' && !group.rows.some((row) => !row.enabled)) return false
     return true
   }), [filters, priceGroups])
-  const expandedVisibleGroups = visibleGroups.filter((group) => expandedGroups[group.key])
   const hasActiveFilters = Boolean(filters.routeID || filters.taskType || filters.status)
 
   const metrics = [
@@ -188,25 +186,9 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
             columns={priceGroupColumns(expandedGroups, (key) => setExpandedGroups((current) => ({ ...current, [key]: !current[key] })), openDialog)}
             rows={visibleGroups}
             rowKey={(group) => group.key}
+            renderAfterRow={(group) => expandedGroups[group.key] ? pricingExpandedGroup(group, openDialog) : null}
             empty={<EmptyBlock title="没有匹配的价格组" detail="清空筛选或为当前路由新增价格配置。" action={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openDialog(newPriceDialog(routes))}>新增配置</button>} />}
           />
-
-          {expandedVisibleGroups.length ? (
-            <div className={pricingClasses.expandedStack} aria-label="已展开价格明细">
-              {expandedVisibleGroups.map((group) => (
-                <section key={group.key} className={pricingClasses.expandedSection}>
-                  <header className={pricingClasses.expandedHeader}>
-                    <div>
-                      <h2 className={cn('m-0', adminType.sectionTitle)}>{group.routeLabel}</h2>
-                      <p className={cn('mt-1', adminType.support)}>{adminTaskTypeLabel(group.taskType)} · {group.rows.length} 个基础分辨率配置</p>
-                    </div>
-                    <button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" onClick={() => openDialog(newPriceDialogForGroup(group))}>新增分辨率</button>
-                  </header>
-                  <DataTable columns={priceDetailColumns(openDialog)} rows={group.rows} rowKey={(row) => row.id} />
-                </section>
-              ))}
-            </div>
-          ) : null}
         </ListPage>
       )}
 
@@ -223,6 +205,21 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
           </div>
         </Modal>
       ) : null}
+    </section>
+  )
+}
+
+function pricingExpandedGroup(group: PriceGroup, onOpenDialog: (dialog: PricingDialog) => void) {
+  return (
+    <section className={pricingClasses.expandedSection} aria-label={`${group.routeLabel} 价格明细`}>
+      <header className={pricingClasses.expandedHeader}>
+        <div>
+          <h2 className={cn('m-0', adminType.sectionTitle)}>{group.routeLabel}</h2>
+          <p className={cn('mt-1', adminType.support)}>{adminTaskTypeLabel(group.taskType)} · {group.rows.length} 个基础分辨率配置</p>
+        </div>
+        <button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" onClick={() => onOpenDialog(newPriceDialogForGroup(group))}>新增分辨率</button>
+      </header>
+      <DataTable columns={priceDetailColumns(onOpenDialog)} rows={group.rows} rowKey={(row) => row.id} />
     </section>
   )
 }

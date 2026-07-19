@@ -33,6 +33,17 @@ func NewImageTaskStore(client *repoent.Client) *ImageTaskStore {
 	return &ImageTaskStore{client: client}
 }
 
+func (s *ImageTaskStore) UserConcurrencyLimit(ctx context.Context, userID int64) (int, error) {
+	entity, err := s.client.User.Query().Where(entuser.IDEQ(int(userID)), entuser.DeletedAtIsNil()).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return 0, repoerr.ErrNotFound
+		}
+		return 0, err
+	}
+	return entity.ConcurrencyLimit, nil
+}
+
 func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) error {
 	taskUUID, err := uuid.Parse(task.ID)
 	if err != nil {

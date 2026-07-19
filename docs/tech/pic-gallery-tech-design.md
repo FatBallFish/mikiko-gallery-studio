@@ -19,7 +19,7 @@
 - 预期效果：
   - 终端用户可以完成从登录、兑换/充值、生成、下载到历史追溯的完整闭环。
   - API 开发者可以通过 AK/SK 调用平台原生接口和 OpenAI 兼容图片接口，而不用直接兼容多个底层模型。
-  - 运营可以在后台动态配置汇率、价格、任务倍率、用户分组倍率、模型分组、最大生成数量、公开审核开关等核心参数。
+  - 运营可以在后台动态配置汇率、价格、任务倍率、用户分组倍率、模型分组、模型单次出图能力、公开审核开关等核心参数。
   - 开发者可以在文档页面查看全部 OpenAPI 分类、参数说明、错误码和 curl/Python/TypeScript 示例。
   - 交付形态只包含用户 Web 和管理后台 Web，两者统一采用 React + Vite；不做独立 Client。
   - 平台能够沉淀任务、图片、计费、成本、会话和审计数据，为后续支付自动化、广场运营和更多模型扩展打基础。
@@ -63,7 +63,7 @@
   - 管理后台 Web：用户管理、用户分组倍率、模型接入、价格策略、配置中心、调用记录、审核和监控大盘。
 - 数据层采用 PostgreSQL + Redis + 对象存储三件套：
   - PostgreSQL：权威业务数据，含用户、任务、图片、会话、积分、配置、审计、审核。
-  - Redis：验证码、限流、刷新会话热缓存、幂等键、任务短期状态、配置热点缓存。
+  - Redis：验证码、限流、刷新会话热缓存、幂等键、任务短期状态、配置热点缓存，以及跨 API/worker/多副本共享的用户和模型账号并发租约。
   - 对象存储：生成图、参考图、头像等二进制文件；首版支持本地文件系统与 S3 兼容对象存储两种驱动。
 - 图片生成采用“统一任务编排模型”：
   - 无论 Web 还是 Open API，请求先落任务表，再由任务执行器调度底层模型。
@@ -414,7 +414,7 @@ sequenceDiagram
 
 | 方法 | 路径 | 说明 | 鉴权 | 限流 | 幂等性 |
 |---|---|---|---|---|---|
-| `GET` | `/api/agent/image/v1/capabilities` | 返回用户可见的模型分组、数量上限、任务类型开关、质量/比例范围 | Access Token | 120 RPM | 幂等读 |
+| `GET` | `/api/agent/image/v1/capabilities` | 返回用户可见的模型分组、模型单次出图能力、任务类型开关、质量/比例范围 | Access Token | 120 RPM | 幂等读 |
 | `POST` | `/api/agent/image/v1/reference-assets` | 上传参考图，返回可复用 `reference_asset_id` | Access Token | 20 RPM | 文件 hash 去重 |
 | `GET` | `/api/agent/image/v1/reference-assets/{asset_id}` | 查询参考图上传状态与元信息 | Access Token | 60 RPM | 幂等读 |
 | `DELETE` | `/api/agent/image/v1/reference-assets/{asset_id}` | 删除未使用或用户主动删除的参考图 | Access Token | 20 RPM | 幂等删 |
@@ -640,7 +640,6 @@ candidates := filter providers by:
   task.task_type in provider.supported_task_types
   resolved_quality_bucket in provider.supported_qualities
   task.aspect_ratio in provider.supported_ratios or provider.can_map_ratio
-  task.requested_output_image_count <= provider.max_image_count
   task.reference_image_count <= provider.max_reference_image_count
   if task.reference_image_count > 0 => provider.supports_image_input == true
   if task.mask_present => provider.supports_mask == true
@@ -652,10 +651,15 @@ ordered := sort by health desc, priority asc
 weighted := apply AB ratio on same priority bucket
 
 for candidate in fallback_chain(weighted, max_hops=3):
-  provider_request := build_provider_request(candidate.platform, task)
-  result := invoke provider(candidate, provider_request)
+  batches := split(task.requested_output_image_count, candidate.max_image_count)
+  validate task.requested_output_image_count <= 1000 technical safety limit
+  concurrency := min(len(batches), user.concurrency_limit, candidate.model_account_concurrency_limit)
+  atomically acquire shared Redis leases for user and model account
+  result := invoke batches with bounded concurrency; excess batches wait for a slot
   if result.success:
     return result
+  if result.partial_success:
+    return partial result without cross-model refill
   policy := classify_upstream_error(candidate.platform, result.error)
   if policy == retryable:
     continue
@@ -1063,6 +1067,7 @@ rotated
 | `rate:api_key:{key_id}:{minute}` | - | 2m | key 维度限流 | INCR + TTL |
 | `task:status:{task_id}` | - | 30m | 短期任务状态加速查询 | worker 更新，完成后保留 30m |
 | `task:lease:{task_id}` | - | 30s | 集群 worker 任务租约 | 心跳续租，超时释放 |
+| `{image-concurrency}:<resource-hash>` | - | 模型超时 + 30s，默认 2m | API、worker 和多副本共享的用户/模型账号并发租约 | Lua 原子清理过期租约并同时获取用户与模型槽位；完成时释放，进程崩溃后按 TTL 回收 |
 | `upload:refasset:{asset_id}` | - | 24h | 参考图上传状态缓存 | 完成确认后回填 |
 | `cfg:tab:{category}` | - | 60s | 配置中心热点缓存 | 更新时主动失效 |
 | `docs:openapi:etag` | - | 5m | 开发文档与 OpenAPI 规格缓存 | spec 更新时主动失效 |
@@ -1077,7 +1082,7 @@ rotated
 | `auth_security` | `email_code_ttl_min` | 10 | 验证码有效期 |
 | `auth_security` | `email_code_cooldown_sec` | 60 | 发码冷却 |
 | `auth_security` | `email_code_error_limit` | 5 | 验证码错误上限 |
-| `generation_limits` | `max_image_count` | 5 | 前端实际可选上限 |
+| `generation_limits` | `max_image_count` | 5 | 模型未单独配置时的单次上游请求容量默认值，不限制任务期望总量 |
 | `generation_limits` | `reference_image_max_mb` | 10 | 参考图大小限制 |
 | `generation_limits` | `reference_image_max_count` | 4 | 参考图最大张数 |
 | `generation_limits` | `prompt_max_chars` | 4000 | Prompt 上限 |
@@ -1104,6 +1109,8 @@ rotated
 | `ops` | `audit_retention_days` | 180 | 审计保留期 |
 | `docs` | `docs_enabled` | true | 开发文档页开关 |
 | `docs` | `openapi_spec_source` | `api/openapi/*.yaml` | 文档数据源 |
+
+任务期望总出图数另受代码级技术安全上限 `1000` 保护，用于限制批次数量、内存占用和整数运算范围；该上限独立于 `generation_limits.max_image_count` 和模型账号能力配置，后两者只决定单次上游请求容量。
 
 ### 2.7 错误码设计
 
@@ -1288,7 +1295,7 @@ rotated
 |---|---|---|---|
 | 单个 provider 故障 | 使用同组 fallback provider | 任务稍慢或部分失败 | 健康探测恢复后自动回归 |
 | 全部 provider 故障 | 暂停新任务创建，返回明确错误 | 无法生成，但不扣费 | 管理后台关闭/恢复模型组 |
-| Redis 不可用 | 降级到 DB 权威读；关闭部分非核心缓存与限流精度 | 性能下降 | Redis 恢复后自动回填 |
+| Redis 不可用 | DB 权威读继续可用；共享并发租约获取失败时停止新的上游调用，禁止退化为各实例独立额度 | 生图任务等待或失败，但不会突破用户/模型账号额度 | Redis 恢复后自动恢复租约获取 |
 | 对象存储不可写 | 暂停任务执行器领取新任务 | 无法生成结果 | 恢复存储后重启 worker |
 | 单个 worker 实例崩溃 | 任务租约超时后由其他 worker 接管 | 用户可能感知到任务稍慢 | lease TTL 到期自动恢复 |
 | 单个 API 实例崩溃 | 由负载均衡切走流量 | 少量请求重试 | 实例恢复或自动替换 |
@@ -1397,7 +1404,7 @@ rotated
 - 开发文档页 -> 接口分类 -> 示例代码展示
 - 余额不足、参考图非法、无可用模型、用户禁用
 - 上游 429 / 5xx / 参数错误 / 内容拦截的错误归一化链路
-- 管理后台改价格/改数量上限 -> 前端即时感知
+- 管理后台改价格/改模型单次出图能力 -> 新任务按最新能力拆批
 - 管理后台修改用户分组倍率 -> 新任务即时感知
 - P1：公开申请 -> 审核 -> 广场可见
 

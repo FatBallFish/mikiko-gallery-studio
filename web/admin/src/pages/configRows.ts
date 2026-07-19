@@ -10,7 +10,7 @@ export const forbiddenGeneralConfigCategories = ['auth_security', 'generation_li
 
 const tabMeta: Record<string, ConfigTabMeta> = {
   auth_security: { label: '认证安全', detail: '登录令牌、刷新 Cookie 和会话安全相关配置。' },
-  generation_limits: { label: '生成限制', detail: '控制提示词、参考图和单次生成数量的安全上限。' },
+  generation_limits: { label: '生成限制', detail: '控制提示词、参考图和上游单次请求容量的安全上限。' },
   billing_pricing: { label: '积分计费', detail: '积分汇率、任务倍率、自动质量和参考图附加费用。' },
   openai_compat: { label: '兼容接口', detail: 'OpenAI 兼容模型名到平台模型分组的映射。' },
   public_gallery: { label: '公开内容', detail: '图片公开申请、广场展示和内容可见性开关。' },
@@ -23,7 +23,7 @@ const itemMeta: Record<string, ConfigFieldMeta> = {
   access_token_ttl_sec: { label: '访问令牌有效期', hint: 'Access Token 的有效秒数，过短会导致频繁刷新。', type: 'number' },
   refresh_token_ttl_sec: { label: '刷新令牌有效期', hint: 'Refresh Token 的有效秒数，决定用户可静默续期多久。', type: 'number' },
   refresh_cookie_name: { label: '刷新 Cookie 名称', hint: '浏览器保存 Refresh Token 的 HttpOnly Cookie 名称。', type: 'text' },
-  max_image_count: { label: '单次最大出图数', hint: '控制一次生成任务最多返回多少张图片。', type: 'number' },
+  max_image_count: { label: '单次最大出图数', hint: '作为模型未单独配置时的单次上游请求容量；任务总量超出后由系统自动分批。', type: 'number' },
   reference_image_max_mb: { label: '参考图大小上限 MB', hint: '单张参考图允许上传的最大体积。', type: 'number' },
   reference_image_max_count: { label: '参考图数量上限', hint: '图生图或参考图生成时允许携带的参考图数量。', type: 'number' },
   prompt_max_chars: { label: '提示词字数上限', hint: '用户主提示词允许输入的最大字符数。', type: 'number' },
