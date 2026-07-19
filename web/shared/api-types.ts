@@ -32,6 +32,8 @@ export const API_PATHS = {
     cashierOrderCancel: '/api/agent/cashier/v1/orders/{order_id}/cancel',
     cashierOrderMockPay: '/api/agent/cashier/v1/orders/{order_id}/mock-pay',
     estimate: '/api/agent/billing/v1/estimate',
+    promptOptimizationEstimate: '/api/agent/text/v1/prompt-optimizations/estimate',
+    promptOptimizations: '/api/agent/text/v1/prompt-optimizations',
     redeemCode: '/api/agent/billing/v1/redeem-codes/redeem',
     capabilities: '/api/agent/image/v1/capabilities',
     referenceAssets: '/api/agent/image/v1/reference-assets',
@@ -108,6 +110,12 @@ export const API_PATHS = {
     modelAccountModels: '/api/ops/admin/v1/model-accounts/{account_id}/models',
     modelAccountModelDetail: '/api/ops/admin/v1/model-accounts/{account_id}/models/{model_id}',
     modelAccountTestImage: '/api/ops/admin/v1/model-accounts/{account_id}/test-image',
+    textModelAccounts: '/api/ops/admin/v1/text-model-accounts',
+    textModelAccountDetail: '/api/ops/admin/v1/text-model-accounts/{account_id}',
+    textModelAccountModels: '/api/ops/admin/v1/text-model-accounts/{account_id}/models',
+    textModelDetail: '/api/ops/admin/v1/text-models/{model_id}',
+    textModelDefault: '/api/ops/admin/v1/text-models/{model_id}:default',
+    textModelTest: '/api/ops/admin/v1/text-models/{model_id}:test',
     routeModels: '/api/ops/admin/v1/route-models',
     routeModelDetail: '/api/ops/admin/v1/route-models/{route_model_id}',
     routeModelCandidates: '/api/ops/admin/v1/route-models/{route_model_id}/candidates',
@@ -174,7 +182,7 @@ export type ApiPagination = Pagination
 export type PagedResponse<T> = { items: T[]; pagination: Pagination }
 export type PageResult<T> = { items: T[]; total: number; next_cursor?: string; pagination?: Pagination }
 
-export type ImageTaskType = 'text_to_image' | 'reference_to_image' | 'image_edit'
+export type ImageTaskType = 'text_to_image' | 'image_edit'
 export type ImageTaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'rejected' | 'deleted'
 export type PublishStatus = 'private' | 'reviewing' | 'pending_review' | 'public' | 'approved' | 'rejected' | 'unpublished'
 export type ThemeMode = 'dark' | 'light'
@@ -525,7 +533,7 @@ export type Capability = {
   task_types: ImageTaskType[]
 }
 export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; size_mode?: 'ratio' | 'pixel' | string; base_resolution: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
-export type BackendImageTaskType = Exclude<ImageTaskType, 'reference_to_image'> | 'reference_generate'
+export type BackendImageTaskType = ImageTaskType
 export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
 export type EstimateResult = {
   resolved_quality_bucket?: string
@@ -911,6 +919,58 @@ export type ModelAccountTestImageResult = {
   actual_params?: Record<string, string>
   elapsed_ms: number
 }
+export type TextModelPlatformType = 'openai_compatible'
+export type TextModelAPIStyle = 'chat_completions' | 'responses'
+export type TextModelSecretStatus = { has_secret: boolean; fingerprint?: string; updated_at?: string | null }
+export type TextModelAccount = {
+  id: ID
+  name: string
+  platform_type: TextModelPlatformType
+  api_style: TextModelAPIStyle
+  base_url: string
+  enabled: boolean
+  secret_status: TextModelSecretStatus
+  version: number
+  created_at: string
+  updated_at: string
+}
+export type TextModelAccountWriteRequest = {
+  version?: number
+  name: string
+  platform_type: TextModelPlatformType
+  api_style: TextModelAPIStyle
+  base_url: string
+  enabled: boolean
+  secrets?: { api_key?: string }
+  clear_secrets?: Array<'api_key'>
+}
+export type TextModel = {
+  id: ID
+  account_id: ID
+  model_code: string
+  display_name: string
+  input_price_per_million_tokens: string
+  output_price_per_million_tokens: string
+  currency: string
+  enabled: boolean
+  is_default: boolean
+  version: number
+  created_at: string
+  updated_at: string
+}
+export type TextModelWriteRequest = {
+  version?: number
+  model_code: string
+  display_name: string
+  input_price_per_million_tokens: string
+  output_price_per_million_tokens: string
+  currency: string
+  enabled: boolean
+}
+export type TextModelConnectionTest = { status: 'success'; model_id: ID; model_code: string; api_style: TextModelAPIStyle; latency_ms: number }
+export type PromptOptimizationModelSummary = { id: ID; model_code: string; display_name: string; api_style: TextModelAPIStyle }
+export type PromptOptimizationEstimate = { quote: string; expires_at: string; estimated_points: string; model: PromptOptimizationModelSummary }
+export type PromptOptimizationResult = { run_id: string; optimized_prompt: string; input_tokens: number; output_tokens: number; estimated_points: string; actual_points: string }
 export type RouteModelVisibility = 'public' | 'groups' | 'hidden' | string
 export type RouteModel = {
   id: ID

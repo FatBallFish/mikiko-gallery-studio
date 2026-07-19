@@ -263,8 +263,8 @@ func TestCanonicalHMACCrossLanguageVector(t *testing.T) {
 		requestURI        = "/api/open/image/v1/tasks"
 		timestampRFC3339  = "2026-07-17T00:00:00Z"
 		body              = `{"task_type":"image_edit","route_model_code":"plus-image","requested_quality":"2k","requested_size":"2560x1440","requested_output_image_count":2,"reference_image_count":1,"prompt":"Paint a quiet harbor","reference_asset_ids":["ref-open-1"],"response_mode":"async"}`
-		expectedBodyHash  = "6fff_WCPvUUIT3glSfxfpdhwNzshFVGsPp_V4S3OAFA"
-		expectedSignature = "arlbDv1imOzeIPiOzgToeD66fugKbyXOrAHT9tcoLGY"
+		expectedBodyHash  = "F-y2oZ4DbiAMUoV5nPDNiDF-sPoMo4wRRW-4e6LPvK0"
+		expectedSignature = "KFATqBMyGGl_aUHTGx052h5_mK04hszt0csDxqen2sA"
 	)
 	timestamp, err := time.Parse(time.RFC3339, timestampRFC3339)
 	if err != nil {

@@ -79,7 +79,7 @@ if (estimateFailure.estimate.state !== 'error' || estimateFailure.estimate.detai
 
 const missingReference = createWorkspaceViewModel({
   ...baseInput,
-  taskType: 'reference_to_image',
+  taskType: 'image_edit',
   referenceCount: 0,
   requiredReferencesReady: false,
   selectedModelCode: 'plus',
@@ -111,19 +111,19 @@ function assertTaskState(status: ImageTaskStatus, expectedState: string, expecte
 
 function capabilityFixture(): Capability {
   return {
-    task_types: ['text_to_image', 'reference_to_image', 'image_edit'],
+    task_types: ['text_to_image', 'image_edit'],
     base_resolution: ['auto', '2K'],
     aspect_ratios: ['1:1', '16:9'],
     max_image_count: 4,
     reference_image_max_bytes: 8 * 1024 * 1024,
     model_groups: [
       {
-        id: 'plus', code: 'plus', name: 'Plus', task_types: ['text_to_image', 'reference_to_image', 'image_edit'],
+        id: 'plus', code: 'plus', name: 'Plus', task_types: ['text_to_image', 'image_edit'],
         base_resolution: ['auto', '2K'], size_modes: ['ratio'], aspect_ratios: ['1:1', '16:9'],
         max_output_image_count: 3, max_reference_image_count: 4, prices: [], supports_reference: true,
       },
       {
-        id: 'reference-only', code: 'reference-only', name: 'Reference', task_types: ['reference_to_image'],
+        id: 'edit-only', code: 'edit-only', name: 'Edit', task_types: ['image_edit'],
         base_resolution: ['auto'], size_modes: ['ratio'], aspect_ratios: ['1:1'],
         max_output_image_count: 1, max_reference_image_count: 6, prices: [], supports_reference: true,
       },

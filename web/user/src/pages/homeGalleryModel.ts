@@ -66,7 +66,6 @@ function isFailedTask(status: ImageTask['status']) {
 function taskTypeLabel(type: ImageTaskType | string) {
   const labels: Record<string, string> = {
     text_to_image: '文生图',
-    reference_to_image: '参考生图',
     image_edit: '图片编辑',
   }
   return labels[type] ?? type

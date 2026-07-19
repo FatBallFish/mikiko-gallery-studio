@@ -102,6 +102,59 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsTextModelsAndPromptOptimization(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var doc struct {
+		Paths map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+	for _, path := range []string{
+		"/api/agent/text/v1/prompt-optimizations/estimate",
+		"/api/agent/text/v1/prompt-optimizations",
+		"/api/ops/admin/v1/text-model-accounts",
+		"/api/ops/admin/v1/text-model-accounts/{account_id}",
+		"/api/ops/admin/v1/text-model-accounts/{account_id}/models",
+		"/api/ops/admin/v1/text-models/{model_id}",
+		"/api/ops/admin/v1/text-models/{model_id}:default",
+		"/api/ops/admin/v1/text-models/{model_id}:test",
+	} {
+		if _, ok := doc.Paths[path]; !ok {
+			t.Fatalf("expected text-model path %q", path)
+		}
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/text.yaml")
+	if err != nil {
+		t.Fatalf("read text model schemas: %v", err)
+	}
+	var schemas struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					WriteOnly bool `yaml:"writeOnly"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemas); err != nil {
+		t.Fatalf("unmarshal text model schemas: %v", err)
+	}
+	for _, name := range []string{"TextModelAccount", "TextModel", "TextModelConnectionTest", "PromptOptimizationEstimate", "PromptOptimizationResult"} {
+		if _, ok := schemas.Components.Schemas[name]; !ok {
+			t.Fatalf("expected text schema %q", name)
+		}
+	}
+	writeRequest := schemas.Components.Schemas["TextModelAccountWriteRequest"]
+	if !writeRequest.Properties["secrets"].WriteOnly {
+		t.Fatal("TextModelAccountWriteRequest.secrets must be writeOnly")
+	}
+}
+
 func TestOpenAPISpecPlacesProgressOnImageTask(t *testing.T) {
 	content, err := os.ReadFile("components/schemas/common.yaml")
 	if err != nil {

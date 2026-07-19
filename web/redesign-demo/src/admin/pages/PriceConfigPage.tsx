@@ -72,7 +72,7 @@ export const PriceConfigPage: React.FC = () => {
             />
             <AggregatedPriceRow 
               route="Flux Pro" 
-              type="参考生图 (R2I)" 
+              type="图片编辑 (R2I)"
               base_resolution={[
                 { quality: "Auto", base: "1.25000", multiplier: "1.5", status: "enabled" }
               ]}

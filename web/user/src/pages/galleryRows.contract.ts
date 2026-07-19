@@ -37,7 +37,7 @@ if (galleryPublishMatches('private', 'approved')) {
 
 const rows = [
   image({ id: '1', prompt: 'blue city skyline', visibility_status: 'public', task_type: 'text_to_image', image_group: '城市' }),
-  image({ id: '2', prompt: 'green forest', visibility_status: 'reviewing', task_type: 'reference_to_image', image_group: '自然' }),
+  image({ id: '2', prompt: 'green forest', visibility_status: 'reviewing', task_type: 'image_edit', image_group: '自然' }),
   image({ id: '3', prompt: 'red icon', visibility_status: 'private', task_type: 'image_edit', image_group: '' }),
 ]
 
@@ -75,7 +75,7 @@ if (multiTermRows.length !== 1 || multiTermRows[0]?.id !== '1') {
 }
 
 const search = galleryImageSearchText(rows[1])
-for (const expected of ['green forest', '参考生图', '审核中', '自然']) {
+for (const expected of ['green forest', '图片编辑', '审核中', '自然']) {
   if (!search.includes(expected.toLowerCase())) {
     throw new Error(`gallery search text should include ${expected}, got ${search}`)
   }

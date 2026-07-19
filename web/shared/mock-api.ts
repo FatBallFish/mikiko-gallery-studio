@@ -123,7 +123,7 @@ class MockPicGalleryApi {
     const resolvedQuality = requestedQuality === 'auto' ? '2k' : requestedQuality
     const modelBase = routeCode.includes('pro') ? 8 : routeCode.includes('plus') ? 5.125 : 2
     const qualityMulti = requestedQuality === '4k' ? 2 : requestedQuality === '2k' ? 1.45 : requestedQuality === 'auto' ? 1.25 : 1
-    const refMulti = req.task_type === 'reference_to_image' || req.task_type === 'image_edit' ? 1.2 : 1
+    const refMulti = req.task_type === 'image_edit' ? 1.2 : 1
     const points = modelBase * qualityMulti * refMulti * req.image_count
     return {
       points: points.toFixed(2),

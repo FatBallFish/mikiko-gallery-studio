@@ -1,0 +1,153 @@
+components:
+  schemas:
+    TextModelSecretStatus:
+      type: object
+      required: [has_secret]
+      properties:
+        has_secret: { type: boolean }
+        fingerprint: { type: string }
+        updated_at: { type: string, format: date-time, nullable: true }
+    TextModelAccount:
+      type: object
+      required: [id, name, platform_type, api_style, base_url, enabled, secret_status, version, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        platform_type: { type: string, enum: [openai_compatible] }
+        api_style: { type: string, enum: [chat_completions, responses] }
+        base_url: { type: string, format: uri }
+        enabled: { type: boolean }
+        secret_status: { $ref: '#/components/schemas/TextModelSecretStatus' }
+        version: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TextModelAccountWriteRequest:
+      type: object
+      required: [name, platform_type, api_style, base_url, enabled]
+      properties:
+        version: { type: integer, format: int64 }
+        name: { type: string, minLength: 1 }
+        platform_type: { type: string, enum: [openai_compatible] }
+        api_style: { type: string, enum: [chat_completions, responses] }
+        base_url: { type: string, format: uri }
+        enabled: { type: boolean }
+        secrets:
+          type: object
+          writeOnly: true
+          properties:
+            api_key: { type: string, format: password, writeOnly: true }
+        clear_secrets:
+          type: array
+          items: { type: string, enum: [api_key] }
+    TextModel:
+      type: object
+      required: [id, account_id, model_code, display_name, input_price_per_million_tokens, output_price_per_million_tokens, currency, enabled, is_default, version, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        account_id: { type: integer, format: int64 }
+        model_code: { type: string }
+        display_name: { type: string }
+        input_price_per_million_tokens: { type: string, pattern: '^\\d+(\\.\\d{1,6})?$' }
+        output_price_per_million_tokens: { type: string, pattern: '^\\d+(\\.\\d{1,6})?$' }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        enabled: { type: boolean }
+        is_default: { type: boolean }
+        version: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TextModelWriteRequest:
+      type: object
+      required: [model_code, display_name, input_price_per_million_tokens, output_price_per_million_tokens, currency, enabled]
+      properties:
+        version: { type: integer, format: int64 }
+        model_code: { type: string, minLength: 1 }
+        display_name: { type: string }
+        input_price_per_million_tokens: { type: string }
+        output_price_per_million_tokens: { type: string }
+        currency: { type: string, default: USD }
+        enabled: { type: boolean }
+    TextModelConnectionTest:
+      type: object
+      required: [status, model_id, model_code, api_style, latency_ms]
+      properties:
+        status: { type: string, enum: [success] }
+        model_id: { type: integer, format: int64 }
+        model_code: { type: string }
+        api_style: { type: string, enum: [chat_completions, responses] }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
+    PromptOptimizationRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string, minLength: 8, maxLength: 4000 }
+    PromptOptimizationExecuteRequest:
+      allOf:
+        - $ref: '#/components/schemas/PromptOptimizationRequest'
+        - type: object
+          required: [quote]
+          properties:
+            quote: { type: string }
+    PromptOptimizationModel:
+      type: object
+      required: [id, model_code, display_name, api_style]
+      properties:
+        id: { type: integer, format: int64 }
+        model_code: { type: string }
+        display_name: { type: string }
+        api_style: { type: string, enum: [chat_completions, responses] }
+    PromptOptimizationEstimate:
+      type: object
+      required: [quote, expires_at, estimated_points, model]
+      properties:
+        quote: { type: string }
+        expires_at: { type: string, format: date-time }
+        estimated_points: { type: string, enum: ['0.00000'] }
+        model: { $ref: '#/components/schemas/PromptOptimizationModel' }
+    PromptOptimizationResult:
+      type: object
+      required: [run_id, optimized_prompt, input_tokens, output_tokens, estimated_points, actual_points]
+      properties:
+        run_id: { type: string, format: uuid }
+        optimized_prompt: { type: string }
+        input_tokens: { type: integer, minimum: 0 }
+        output_tokens: { type: integer, minimum: 0 }
+        estimated_points: { type: string, enum: ['0.00000'] }
+        actual_points: { type: string, enum: ['0.00000'] }
+    TextModelAccountResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/TextModelAccount' }
+    TextModelAccountListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/TextModelAccount' }
+    TextModelResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/TextModel' }
+    TextModelListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/TextModel' }
+    TextModelConnectionTestResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/TextModelConnectionTest' }
+    PromptOptimizationEstimateResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/PromptOptimizationEstimate' }
+    PromptOptimizationResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/PromptOptimizationResult' }

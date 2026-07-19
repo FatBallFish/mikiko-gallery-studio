@@ -14,8 +14,6 @@ if (typeof workspaceRequiredReferencesReady !== 'function') {
 
 const requiredReferenceCases = [
   { taskType: 'text_to_image', count: 0, expected: true },
-  { taskType: 'reference_to_image', count: 0, expected: false },
-  { taskType: 'reference_to_image', count: 1, expected: true },
   { taskType: 'image_edit', count: 0, expected: false },
   { taskType: 'image_edit', count: 1, expected: true },
 ] as const

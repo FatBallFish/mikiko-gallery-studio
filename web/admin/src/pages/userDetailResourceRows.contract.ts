@@ -46,8 +46,6 @@ assertStatus(apiKeyStatusLabel('expired'), '已过期', 'api key expired label')
 assertStatus(apiKeyStatusTone('expired'), 'warning', 'api key expired tone')
 
 assertStatus(imageTaskTypeLabel('text_to_image'), '文生图', 'task type text-to-image label')
-assertStatus(imageTaskTypeLabel('reference_to_image'), '参考生图', 'task type reference label')
-assertStatus(imageTaskTypeLabel('reference_generate'), '参考生图', 'task type legacy reference label')
 assertStatus(imageTaskTypeLabel('image_edit'), '图片编辑', 'task type edit label')
 assertStatus(imageTaskTypeLabel('image_to_image'), '图片编辑', 'task type legacy edit label')
 
@@ -85,7 +83,7 @@ const taskRow = userDetailTaskRow({
   id: 'task-abcdef123456',
   title: '任务',
   prompt: 'prompt',
-  task_type: 'reference_to_image',
+  task_type: 'image_edit',
   status: 'queued',
   route_model_name: 'Flux Pro',
   abstract_model: 'pro',
@@ -108,7 +106,7 @@ const taskRow = userDetailTaskRow({
 assertStatus(taskRow.shortId, 'task-abc', 'task row short id')
 assertStatus(taskRow.statusLabel, '排队中', 'task row localized status')
 assertStatus(taskRow.statusTone, 'warning', 'task row status tone')
-assertStatus(taskRow.typeLabel, '参考生图', 'task row type label')
+assertStatus(taskRow.typeLabel, '图片编辑', 'task row type label')
 assertStatus(taskRow.modelLabel, 'Flux Pro', 'task row model prefers route model name')
 assertStatus(taskRow.pointsLabel, '12.50000', 'task row falls back to estimated points')
 

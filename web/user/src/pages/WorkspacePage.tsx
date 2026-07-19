@@ -25,11 +25,10 @@ import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHi
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions } from './workspaceParameters'
 
-type WorkspaceMode = 'reference' | 'text'
 type OutputTab = 'current' | 'history'
 type WorkspaceSizeMode = 'ratio' | 'pixel'
 type RestoreParameters = { routeModelCode?: string; baseResolution?: string; aspectRatio?: string }
-type UploadTarget = 'edit' | 'reference'
+type UploadTarget = 'edit'
 type DragUploadState = Record<UploadTarget, boolean>
 type SheetDragState = { pointerId: number; startY: number; dragged: boolean }
 
@@ -244,10 +243,8 @@ const workspaceClasses = {
 export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const app = useApp()
   const compactViewport = useCompactWorkspaceViewport()
-  const [mode, setMode] = useState<WorkspaceMode>('text')
 
   const [capability, setCapability] = useState<Capability | null>(null)
-  const [refs, setRefs] = useState<ReferenceAsset[]>([])
   const [editRefs, setEditRefs] = useState<ReferenceAsset[]>([])
   const [prompt, setPrompt] = useState('')
   const [negative, setNegative] = useState('')
@@ -274,12 +271,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [previewImage, setPreviewImage] = useState<ImageLightboxPayload | null>(null)
   const [outputTab, setOutputTab] = useState<OutputTab>('current')
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
-  const [galleryImportTarget, setGalleryImportTarget] = useState<'reference' | 'edit' | null>(null)
+  const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [galleryImportLoading, setGalleryImportLoading] = useState(false)
   const [galleryImportBusy, setGalleryImportBusy] = useState(false)
   const [galleryImportFilter, setGalleryImportFilter] = useState<GalleryImportFilter>(defaultGalleryImportFilter)
-  const [dragUpload, setDragUpload] = useState<DragUploadState>({ edit: false, reference: false })
+  const [dragUpload, setDragUpload] = useState<DragUploadState>({ edit: false })
   const [parametersExpanded, setParametersExpanded] = useState(false)
   const [sheetDragOffset, setSheetDragOffset] = useState(0)
   const parametersHidden = workspaceParametersHidden(compactViewport, parametersExpanded)
@@ -295,13 +292,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const refreshAccountRef = useRef(app.refreshAccount)
   const completedNoticeRef = useRef<Set<string>>(new Set())
   const feedEndRef = useRef<HTMLDivElement | null>(null)
-  const skipNextModeResetRef = useRef(false)
   const restoreParametersRef = useRef<RestoreParameters | null>(null)
   const sheetDragRef = useRef<SheetDragState | null>(null)
   const suppressSheetClickRef = useRef(false)
   const sheetClickResetRef = useRef<number | null>(null)
-  const taskType: ImageTaskType = mode === 'reference' ? 'reference_to_image' : editRefs.length ? 'image_edit' : 'text_to_image'
-  const referenceCount = taskType === 'image_edit' ? editRefs.length : taskType === 'reference_to_image' ? refs.length : 0
+  const taskType: ImageTaskType = editRefs.length ? 'image_edit' : 'text_to_image'
+  const referenceCount = editRefs.length
   const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)
 
   notifyRef.current = app.notify
@@ -317,10 +313,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     async function load() {
       setLoading(true)
       try {
-        const [nextCapability, nextRefs] = await Promise.all([userApi.getCapabilities(), userApi.listReferenceAssets()])
+        const nextCapability = await userApi.getCapabilities()
         if (!mounted) return
         setCapability(nextCapability)
-        setRefs(nextRefs)
       } catch (err) {
         if (mounted) notifyRef.current('error', errorMessage(err))
       } finally {
@@ -482,22 +477,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       try {
         const context = parseGalleryEditContext(storedRaw)
         if (!context) throw new Error('图片上下文读取失败，请从资产重新进入。')
-        skipNextModeResetRef.current = true
         restoreParametersRef.current = {
           routeModelCode: context.route_model_code,
           baseResolution: context.base_resolution,
           aspectRatio: context.aspect_ratio,
         }
-        setMode(context.task_type === 'reference_to_image' ? 'reference' : 'text')
         setPrompt(context.prompt)
         setNegative('')
         const sources = (context.sources ?? []).filter((item) => item.id || item.preview_url)
         if (sources.length) {
-          if (context.task_type === 'reference_to_image') {
-            setRefs((items) => [...sources, ...items])
-          } else {
-            setEditRefs(sources)
-          }
+          setEditRefs(sources)
           notifyRef.current('success', '已恢复图片编辑上下文')
           return
         }
@@ -522,16 +511,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     void restoreEditContext()
     return () => { cancelled = true }
   }, [])
-
-  // Reset form fields when mode tab switches, but keep generated records intact.
-  useEffect(() => {
-    if (skipNextModeResetRef.current) {
-      skipNextModeResetRef.current = false
-      return
-    }
-    setPrompt('')
-    setNegative('')
-  }, [mode])
 
   useEffect(() => {
     if (editRefs.length) setEditSourceOpen(true)
@@ -614,8 +593,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	aspect_ratio: sizeMode === 'ratio' ? ratio : '',
 	pixel_size: sizeMode === 'pixel' ? pixelSize : undefined,
     image_count: count,
-    reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : taskType === 'reference_to_image' ? refs.map((item) => item.id) : [],
-  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, pixelSize, count, refs, editRefs])
+    reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : [],
+  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, pixelSize, count, editRefs])
   const estimateKey = useMemo(() => workspaceEstimateKey(estimatePayload), [estimatePayload])
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
@@ -651,9 +630,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const maxReferenceUploadBytes = referenceUploadMaxBytes(capability)
   const maxReferenceUploadLabel = formatFileSize(maxReferenceUploadBytes)
   const maxReferenceImages = workspaceReferenceMaximum(selectedModel?.max_reference_image_count)
-  const referenceRemainingLimit = remainingReferenceCapacity(maxReferenceImages, refs.length)
   const editRemainingLimit = remainingReferenceCapacity(maxReferenceImages, editRefs.length)
-  const remainingGalleryImportLimit = galleryImportTarget === 'edit' ? editRemainingLimit : referenceRemainingLimit
+  const remainingGalleryImportLimit = editRemainingLimit
   const newestTask = records[records.length - 1] ?? null
   const selectedTask = selectedTaskId ? records.find((task) => task.id === selectedTaskId) ?? null : null
   const latestTask = selectedTask ?? newestTask
@@ -676,8 +654,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
 
-  async function openGalleryImport(target: 'reference' | 'edit') {
-    const remaining = target === 'edit' ? editRemainingLimit : referenceRemainingLimit
+  async function openGalleryImport(target: 'edit') {
+    const remaining = editRemainingLimit
     if (remaining <= 0) {
       app.notify('error', '当前模型的参考图数量已达上限，请先移除一张。')
       return
@@ -706,11 +684,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setGalleryImportBusy(true)
     try {
       const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
-      if (galleryImportTarget === 'edit') {
-        setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
-      } else {
-        setRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
-      }
+      setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
       setGalleryImportTarget(null)
       app.notify('success', `已从资产导入 ${assets.length} 张参考图`)
     } catch (err) {
@@ -727,7 +701,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (rejected.length) {
       app.notify('error', rejected.length === 1 ? uploadTooLargeMessage(rejected[0], maxReferenceUploadBytes) : `${rejected.length} 个文件超过单张最大 ${maxReferenceUploadLabel}，已跳过。`)
     }
-    const remaining = target === 'edit' ? editRemainingLimit : referenceRemainingLimit
+    const remaining = editRemainingLimit
     const limited = limitReferenceSelection(sizeAccepted, remaining)
     if (limited.rejectedCount > 0) {
       app.notify('error', remaining <= 0
@@ -740,11 +714,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setBusy(true)
     try {
       const uploaded = await Promise.all(limited.accepted.map((file) => userApi.uploadReferenceAsset(file)))
-      if (target === 'edit') {
-        setEditRefs((items) => mergeReferenceAssets(items, uploaded, maxReferenceImages))
-      } else {
-        setRefs((items) => mergeReferenceAssets(items, uploaded, maxReferenceImages))
-      }
+      setEditRefs((items) => mergeReferenceAssets(items, uploaded, maxReferenceImages))
       app.notify('success', `已上传 ${uploaded.length} 张参考图`)
     } catch (err) {
       app.notify('error', uploadErrorMessage(err))
@@ -838,7 +808,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       const file = new File([blob], `generated-reference-${Date.now()}.png`, { type: blob.type || 'image/png' })
       const asset = await userApi.uploadReferenceAsset(file)
       const nextAsset = { ...asset, preview_url: asset.preview_url || addition.item }
-      setMode('text')
       setEditRefs((items) => mergeReferenceAssets(items, [nextAsset], maxReferenceImages))
       app.notify('success', '已加入图片编辑')
     } catch (err) {
@@ -846,12 +815,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     } finally {
       setBusy(false)
     }
-  }
-
-  function removeReferenceAsset(asset: ReferenceAsset) {
-    setRefs((items) => items.filter((item) => (
-      asset.id ? item.id !== asset.id : item.preview_url !== asset.preview_url
-    )))
   }
 
   function removeEditAsset(asset: ReferenceAsset) {
@@ -975,50 +938,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           inert={parametersHidden ? true : undefined}
         >
         <div className={workspaceClasses.panelScroll}>
-        {/* Tabs */}
         <div className={workspaceClasses.panelSection}>
-          <div className={workspaceClasses.tabs}>
-            <button type="button" className={cn(workspaceClasses.tab, mode === 'text' && workspaceClasses.tabActive)} onClick={() => setMode('text')}>文生图片</button>
-            <button type="button" className={cn(workspaceClasses.tab, mode === 'reference' && workspaceClasses.tabActive)} onClick={() => setMode('reference')}>参考生图</button>
-          </div>
-
           <div>
-            <h2 className={workspaceClasses.panelTitle}>{mode === 'text' ? '文生图' : '参考生图'}</h2>
+            <h2 className={workspaceClasses.panelTitle}>图片创作</h2>
           </div>
-          <p className={workspaceClasses.panelCopy}>
-            {mode === 'text' ? '通过文字描述直接生成图片；添加图片后会进入二次编辑模式。' : '参考多图元素，生成全新图片'}
-          </p>
+          <p className={workspaceClasses.panelCopy}>通过文字生成图片；添加图片后会自动进入图片编辑模式。</p>
 
-          {/* Reference upload area (only for reference mode) */}
-          {mode === 'reference' ? (
-            <>
-              <div className={workspaceClasses.uploadStrip}>
-                <label className={cn(workspaceClasses.refThumb, workspaceClasses.refThumbUpload, dragUpload.reference && workspaceClasses.refThumbDrag)} aria-disabled={busy || referenceRemainingLimit <= 0} {...uploadDropBindings('reference')}>
-                  <input className={workspaceClasses.hiddenInput} type="file" accept="image/*" multiple disabled={busy || referenceRemainingLimit <= 0} onChange={(event) => uploadReference(event, 'reference')} />
-                  <UploadGlyph />
-                  <span>本地上传</span>
-                </label>
-                <button type="button" className={cn(workspaceClasses.refThumb, workspaceClasses.refThumbImport)} disabled={busy || referenceRemainingLimit <= 0} onClick={() => void openGalleryImport('reference')}>
-                  <ImportGlyph />
-                  <span>从资产导入</span>
-                </button>
-              </div>
-              {maxReferenceUploadLabel ? <p className={workspaceClasses.uploadHint}>单张参考图最大 {maxReferenceUploadLabel}</p> : null}
-              {refs.length ? (
-                <div className={workspaceClasses.refGrid}>
-                  {refs.map((asset) => (
-                    <div key={asset.id || asset.preview_url} className={workspaceClasses.refTile}>
-                      <ReferenceAssetPreview asset={asset} accessToken={app.session?.token} />
-                      <button type="button" className={workspaceClasses.refRemove} title="移除参考图" onClick={() => removeReferenceAsset(asset)}><CloseGlyph /></button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </>
-          ) : null}
-
-          {mode === 'text' ? (
-            <div className={workspaceClasses.editSourcePanel}>
+          <div className={workspaceClasses.editSourcePanel}>
               <button type="button" className={workspaceClasses.editSourceTrigger} onClick={() => setEditSourceOpen((open) => !open)}>
                 <span className={workspaceClasses.editSourceTitle}>
                   <ImageGlyph />
@@ -1050,11 +976,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                   </div>
                 ) : null}
               </div>
-            </div>
-          ) : null}
+          </div>
 
           {/* Prompt */}
-          <div className={mode === 'reference' ? workspaceClasses.promptBlockReference : workspaceClasses.promptBlock}>
+          <div className={workspaceClasses.promptBlock}>
             <label className={workspaceClasses.fieldLabel}>提示词</label>
             <div className={rdWorkspace.promptWrapper}>
               <textarea

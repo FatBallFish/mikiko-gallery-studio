@@ -2,7 +2,7 @@ import type { EstimateRequest, EstimateResult } from '../../../shared/api-types'
 import { currentWorkspaceEstimate, workspaceEstimateKey } from './workspaceEstimate'
 
 const ratioPayload: EstimateRequest = {
-  task_type: 'reference_to_image',
+  task_type: 'image_edit',
   route_model_code: 'plus',
   base_resolution: '2K',
   aspect_ratio: '1:1',

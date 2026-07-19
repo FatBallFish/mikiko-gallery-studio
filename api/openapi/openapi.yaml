@@ -15,6 +15,7 @@ tags:
   - name: Agent Billing
   - name: Agent Cashier
   - name: Agent Image
+  - name: Agent Text
   - name: Open Image API
   - name: Admin Config
   - name: Admin Security Config
@@ -24,6 +25,7 @@ tags:
   - name: Admin Redeem Codes
   - name: Admin Call Records
   - name: Admin Model Routing
+  - name: Admin Text Models
   - name: Admin Gallery
   - name: Admin Metrics
   - name: Admin Readiness
@@ -3462,6 +3464,223 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/agent/text/v1/prompt-optimizations/estimate:
+    post:
+      tags: [Agent Text]
+      summary: Estimate prompt optimization points and issue a short-lived quote
+      operationId: estimatePromptOptimization
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/text.yaml#/components/schemas/PromptOptimizationRequest }
+      responses:
+        '200':
+          description: Zero-point estimate and signed quote
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/PromptOptimizationEstimateResponse }
+        '409':
+          description: No enabled default prompt optimization model
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+  /api/agent/text/v1/prompt-optimizations:
+    post:
+      tags: [Agent Text]
+      summary: Optimize a prompt after the estimate has been confirmed
+      operationId: optimizePrompt
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/text.yaml#/components/schemas/PromptOptimizationExecuteRequest }
+      responses:
+        '200':
+          description: Optimized prompt and zero-point charge result
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/PromptOptimizationResponse }
+        '409':
+          description: Estimate is stale, expired, or no longer matches the prompt/model configuration
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+  /api/ops/admin/v1/text-model-accounts:
+    get:
+      tags: [Admin Text Models]
+      summary: List text model accounts
+      operationId: listTextModelAccounts
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Text model accounts
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelAccountListResponse }
+    post:
+      tags: [Admin Text Models]
+      summary: Create a text model account
+      operationId: createTextModelAccount
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelAccountWriteRequest }
+      responses:
+        '201':
+          description: Text model account created
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelAccountResponse }
+  /api/ops/admin/v1/text-model-accounts/{account_id}:
+    put:
+      tags: [Admin Text Models]
+      summary: Update a text model account
+      operationId: updateTextModelAccount
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelAccountWriteRequest }
+      responses:
+        '200':
+          description: Text model account updated
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelAccountResponse }
+    delete:
+      tags: [Admin Text Models]
+      summary: Delete an empty text model account
+      operationId: deleteTextModelAccount
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '204': { description: Text model account deleted }
+  /api/ops/admin/v1/text-model-accounts/{account_id}/models:
+    get:
+      tags: [Admin Text Models]
+      summary: List models belonging to a text model account
+      operationId: listTextModels
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Text models
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelListResponse }
+    post:
+      tags: [Admin Text Models]
+      summary: Create a text model
+      operationId: createTextModel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelWriteRequest }
+      responses:
+        '201':
+          description: Text model created
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelResponse }
+  /api/ops/admin/v1/text-models/{model_id}:
+    put:
+      tags: [Admin Text Models]
+      summary: Update a text model
+      operationId: updateTextModel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelWriteRequest }
+      responses:
+        '200':
+          description: Text model updated
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelResponse }
+    delete:
+      tags: [Admin Text Models]
+      summary: Delete a text model
+      operationId: deleteTextModel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '204': { description: Text model deleted }
+  /api/ops/admin/v1/text-models/{model_id}:default:
+    put:
+      tags: [Admin Text Models]
+      summary: Select the default prompt optimization model
+      operationId: setDefaultTextModel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Default text model selected
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelResponse }
+  /api/ops/admin/v1/text-models/{model_id}:test:
+    post:
+      tags: [Admin Text Models]
+      summary: Test a text model connection with a minimal request
+      operationId: testTextModel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Sanitized connection test result
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelConnectionTestResponse }
+        '502':
+          description: Connection test failed without exposing upstream credentials or response bodies
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
   /api/ops/admin/v1/auth/login:
     post:
       tags: [Admin Auth]

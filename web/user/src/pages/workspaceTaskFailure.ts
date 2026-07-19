@@ -25,7 +25,6 @@ export type WorkspaceTaskPendingView = {
 
 const taskTypeLabels: Record<string, string> = {
   text_to_image: '文生图',
-  reference_to_image: '参考生图',
   image_edit: '图片编辑',
 }
 

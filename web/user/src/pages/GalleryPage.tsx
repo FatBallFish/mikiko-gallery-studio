@@ -64,7 +64,6 @@ const galleryClasses = {
 const typeFilters: Array<{ value: 'all' | ImageTaskType | 'api'; label: string }> = [
   { value: 'all', label: '全部类型' },
   { value: 'text_to_image', label: '文生图' },
-  { value: 'reference_to_image', label: '参考生图' },
   { value: 'image_edit', label: '图片编辑' },
   { value: 'api', label: 'API 调用' },
 ]
