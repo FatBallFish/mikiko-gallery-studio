@@ -233,8 +233,9 @@ func applyDefaults(cfg *Config) {
 		}
 	}
 	for name, capability := range cfg.Routing.ProviderCapabilities {
+		capability.SupportedTaskTypes = currentImageTaskTypes(capability.SupportedTaskTypes)
 		if len(capability.SupportedTaskTypes) == 0 {
-			capability.SupportedTaskTypes = []string{"text_to_image", "image_edit", "reference_generate"}
+			capability.SupportedTaskTypes = []string{"text_to_image", "image_edit"}
 		}
 		if len(capability.SupportedBaseResolution) == 0 {
 			capability.SupportedBaseResolution = []string{"1k", "2k", "4k"}
@@ -280,7 +281,7 @@ func applyDefaults(cfg *Config) {
 func defaultProviderCapability(cfg *Config, models []string, supportsImageInput bool, supportsMask bool, priority int) ProviderCapabilityConfig {
 	return ProviderCapabilityConfig{
 		SupportedModels:         models,
-		SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+		SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 		SupportedBaseResolution: []string{"1k", "2k", "4k"},
 		Quality:                 []string{"auto", "low", "medium", "high"},
 		SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
@@ -293,6 +294,17 @@ func defaultProviderCapability(cfg *Config, models []string, supportsImageInput 
 		SupportsMask:            supportsMask,
 		Priority:                priority,
 	}
+}
+
+func currentImageTaskTypes(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "text_to_image" || value == "image_edit" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func providerPriority(cfg RoutingConfig, provider string) int {

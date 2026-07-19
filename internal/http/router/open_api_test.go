@@ -70,7 +70,7 @@ func TestOpenImageEstimateTaskAndReferenceUploadUseAPIKeyAuth(t *testing.T) {
 		t.Fatalf("unexpected upload response %#v", uploadResp)
 	}
 
-	taskBody := `{"task_type":"reference_generate","prompt":"use reference","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_asset_ids":["` + uploadResp.Data.AssetID + `"],"response_mode":"async"}`
+	taskBody := `{"task_type":"image_edit","prompt":"edit reference","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"reference_asset_ids":["` + uploadResp.Data.AssetID + `"],"response_mode":"async"}`
 	firstReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/tasks", bytes.NewBufferString(taskBody))
 	firstReq.Header.Set("Content-Type", "application/json")
 	firstReq.Header.Set("Idempotency-Key", "open-idem")
@@ -109,8 +109,19 @@ func TestOpenImageEstimateTaskAndReferenceUploadUseAPIKeyAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if summary.AvailablePoints != "90.80000" || summary.FrozenPoints != "9.20000" {
-		t.Fatalf("expected single reference_generate reserve, got %#v", summary)
+	if summary.AvailablePoints != "90.00000" || summary.FrozenPoints != "10.00000" {
+		t.Fatalf("expected single image_edit reserve, got %#v", summary)
+	}
+}
+
+func TestOpenImageEstimateRejectsRemovedReferenceGeneration(t *testing.T) {
+	handler, creds, _ := newOpenAPIHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/estimate?task_type=reference_generate&abstract_model=plus&base_resolution=1k&requested_output_image_count=1", nil)
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected removed task type to return 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

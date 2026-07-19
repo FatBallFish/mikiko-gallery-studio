@@ -77,7 +77,7 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("decode model account response: %v", err)
 	}
 
-	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","reference_to_image"],"qualities":["1k","2k"],"supported_ratios":["1:1","16:9"],"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
+	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","image_edit"],"qualities":["1k","2k"],"supported_ratios":["1:1","16:9"],"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
 	createAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	createAccountModelReq.Header.Set("Content-Type", "application/json")
 	createAccountModelRec := httptest.NewRecorder()

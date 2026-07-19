@@ -2130,6 +2130,9 @@ func setTaskProgress(task *domainimagetask.Task, stage, message string) {
 }
 
 func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.CreateRequest, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return req, errs.BadRequest("unsupported task_type")
+	}
 	normalized, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
 		SizeMode:          req.SizeMode,
 		AspectRatio:       req.AspectRatio,
@@ -2155,6 +2158,9 @@ func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.
 }
 
 func normalizeExecuteRequest(req domainimagetask.ExecuteRequest) (domainimagetask.ExecuteRequest, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return req, errs.BadRequest("unsupported task_type")
+	}
 	normalized, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
 		SizeMode:          req.SizeMode,
 		AspectRatio:       req.AspectRatio,

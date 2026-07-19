@@ -938,7 +938,7 @@ func taskTestConfig() config.Config {
 		"plus": {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 	}
 	cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000", "plus": "1.00000"}
-	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000", "reference_generate": "1.15000"}
+	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000"}
 	cfg.Billing.ReferenceImageExtra = config.ReferenceExtra{First: "0.10000", Additional: "0.05000"}
 	cfg.GenerationLimits.MaxImageCount = 5
 	cfg.GenerationLimits.ReferenceImageMaxCount = 4
@@ -947,7 +947,7 @@ func taskTestConfig() config.Config {
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
 		"openrouter": {
 			SupportedModels:         []string{"plus"},
-			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
 			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
 			MaxImageCount:           5,
@@ -958,7 +958,7 @@ func taskTestConfig() config.Config {
 		},
 		"openai": {
 			SupportedModels:         []string{"plus"},
-			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
 			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
 			MaxImageCount:           5,

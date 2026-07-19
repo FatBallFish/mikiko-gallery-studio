@@ -134,4 +134,4 @@ components:
       required: true
       schema:
         type: string
-        enum: [text_to_image, image_edit, reference_generate]
+        enum: [text_to_image, image_edit]

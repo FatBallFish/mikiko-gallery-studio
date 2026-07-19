@@ -674,7 +674,7 @@ func workerTestConfig() config.Config {
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
 		"openrouter": {
 			SupportedModels:         []string{"plus"},
-			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
 			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
 			MaxImageCount:           5,

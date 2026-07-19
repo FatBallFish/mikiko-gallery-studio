@@ -37,7 +37,7 @@ func TestListVisibleRouteModelsMergesGroupsAndUsesLowestMultiplier(t *testing.T)
 		Prices: []RoutePriceConfig{
 			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "10.00000", Enabled: true},
 			{RouteModelID: 2, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "10.00000", Enabled: true},
-			{RouteModelID: 2, TaskType: "reference_generate", BaseResolution: "1k", BasePoints: "12.00000", Enabled: true},
+			{RouteModelID: 2, TaskType: "image_edit", BaseResolution: "1k", BasePoints: "12.00000", Enabled: true},
 		},
 		ProviderModels: []ProviderCandidate{
 			{AccountModelID: 101, ProviderModelID: 101, ModelCode: "text-model", SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 2},
@@ -68,7 +68,7 @@ func TestListVisibleRouteModelsMergesGroupsAndUsesLowestMultiplier(t *testing.T)
 	if got := items[1].Prices[0].DisplayPoints; got != "6.00" {
 		t.Fatalf("expected display points at 2 decimal places, got %s", got)
 	}
-	if !containsString(items[1].TaskTypes, "reference_generate") || items[1].MaxReferenceImageCount != 3 || items[1].MaxOutputImageCount != 4 {
+	if !containsString(items[1].TaskTypes, "image_edit") || items[1].MaxReferenceImageCount != 3 || items[1].MaxOutputImageCount != 4 {
 		t.Fatalf("expected visible reference capabilities, got %#v", items[1])
 	}
 }
@@ -131,13 +131,13 @@ func TestResolveRouteModelFiltersCandidatesByGenerationCapabilitiesWithoutUsingB
 	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 5, ReferenceImageMaxCount: 4}})
 	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{
 		RouteModels: []RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
-		Prices:      []RoutePriceConfig{{RouteModelID: 1, TaskType: "reference_to_image", BaseResolution: "1K", BasePoints: "1.00000", Enabled: true}},
+		Prices:      []RoutePriceConfig{{RouteModelID: 1, TaskType: "image_edit", BaseResolution: "1K", BasePoints: "1.00000", Enabled: true}},
 		ProviderModels: []ProviderCandidate{
-			{AccountModelID: 11, ModelCode: "text-only", SupportedTaskTypes: []string{"reference_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 2},
-			{AccountModelID: 12, ModelCode: "reference-model", SupportedTaskTypes: []string{"reference_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 2, SupportsImageInput: true},
-			{AccountModelID: 13, ModelCode: "wrong-ratio", SupportedTaskTypes: []string{"reference_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 2, MaxReferenceImageCount: 2, SupportsImageInput: true},
-			{AccountModelID: 14, ModelCode: "single-output", SupportedTaskTypes: []string{"reference_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 1, MaxReferenceImageCount: 2, SupportsImageInput: true},
-			{AccountModelID: 15, ModelCode: "zero-reference-limit", SupportedTaskTypes: []string{"reference_to_image"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 0, SupportsImageInput: true},
+			{AccountModelID: 11, ModelCode: "text-only", SupportedTaskTypes: []string{"image_edit"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 2},
+			{AccountModelID: 12, ModelCode: "reference-model", SupportedTaskTypes: []string{"image_edit"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 2, SupportsImageInput: true},
+			{AccountModelID: 13, ModelCode: "wrong-ratio", SupportedTaskTypes: []string{"image_edit"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"1:1"}, MaxImageCount: 2, MaxReferenceImageCount: 2, SupportsImageInput: true},
+			{AccountModelID: 14, ModelCode: "single-output", SupportedTaskTypes: []string{"image_edit"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 1, MaxReferenceImageCount: 2, SupportsImageInput: true},
+			{AccountModelID: 15, ModelCode: "zero-reference-limit", SupportedTaskTypes: []string{"image_edit"}, SupportedBaseResolution: []string{"1k"}, Quality: []string{"auto"}, SupportedAspectRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 0, SupportsImageInput: true},
 		},
 		Candidates: []RouteCandidateConfig{
 			{RouteModelID: 1, AccountModelID: 11, Priority: 1, Enabled: true},
@@ -154,7 +154,7 @@ func TestResolveRouteModelFiltersCandidatesByGenerationCapabilitiesWithoutUsingB
 	}
 	resolved, err := resolver.ResolveContext(context.Background(), ResolveRequest{
 		RouteModelCode:            "plus",
-		TaskType:                  "reference_to_image",
+		TaskType:                  "image_edit",
 		SizeMode:                  "ratio",
 		AspectRatio:               "16:9",
 		BaseResolution:            "1k",

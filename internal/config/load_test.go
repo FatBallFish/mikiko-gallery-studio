@@ -78,6 +78,13 @@ func TestLoadUsesEnvByDefault(t *testing.T) {
 	if cfg.Billing.BaseResolutionPointsByModel["basic"]["1k"] != "2.00000" {
 		t.Fatalf("expected default basic 1k pricing, got %#v", cfg.Billing.BaseResolutionPointsByModel)
 	}
+	for providerName, capability := range cfg.Routing.ProviderCapabilities {
+		for _, taskType := range capability.SupportedTaskTypes {
+			if taskType != "text_to_image" && taskType != "image_edit" {
+				t.Fatalf("provider %s exposes removed task type %q", providerName, taskType)
+			}
+		}
+	}
 	if cfg.Cashier.MaxPendingOrdersPerUser != 3 || cfg.Cashier.OrderTimeoutSeconds != 1800 {
 		t.Fatalf("expected cashier defaults from config, got %#v", cfg.Cashier)
 	}
