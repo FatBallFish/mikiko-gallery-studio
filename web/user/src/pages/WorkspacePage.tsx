@@ -24,6 +24,8 @@ import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGe
 import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions } from './workspaceParameters'
+import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
+import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 
 type OutputTab = 'current' | 'history'
 type WorkspaceSizeMode = 'ratio' | 'pixel'
@@ -247,6 +249,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [capability, setCapability] = useState<Capability | null>(null)
   const [editRefs, setEditRefs] = useState<ReferenceAsset[]>([])
   const [prompt, setPrompt] = useState('')
+  const [promptExpanded, setPromptExpanded] = useState(false)
+  const [promptOptimization, setPromptOptimization] = useState(initialPromptOptimizationState)
   const [negative, setNegative] = useState('')
   const [model, setModel] = useState('')
   const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('ratio')
@@ -794,6 +798,53 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
   }
 
+  async function startPromptOptimization() {
+    const value = prompt.trim()
+    if (Array.from(value).length < 8) {
+      app.notify('error', '提示词至少需要 8 个字符后才能优化')
+      return
+    }
+    const next = beginPromptOptimization(promptOptimization, value)
+    if (next === promptOptimization) return
+    setPromptOptimization(next)
+    try {
+      const estimateResult = await userApi.estimatePromptOptimization(value)
+      setPromptOptimization(receivePromptEstimate(next, estimateResult))
+    } catch (cause) {
+      setPromptOptimization(failPromptOptimization(next, errorMessage(cause)))
+    }
+  }
+
+  async function confirmOptimization() {
+    if (!promptOptimization.estimate) return
+    const next = confirmPromptOptimization(promptOptimization)
+    setPromptOptimization(next)
+    try {
+      const result = await userApi.optimizePrompt(next.originalPrompt, promptOptimization.estimate.quote)
+      setPromptOptimization(receivePromptOptimization(next, result))
+    } catch (cause) {
+      setPromptOptimization(failPromptOptimization(next, errorMessage(cause)))
+    }
+  }
+
+  function applyOptimization() {
+    const applied = applyOptimizedPrompt(promptOptimization)
+    setPrompt(applied.prompt)
+    setPromptOptimization(applied.state)
+    app.notify('success', '优化后的提示词已应用')
+  }
+
+  function undoOptimization() {
+    const undone = undoPromptOptimization(promptOptimization, prompt)
+    setPrompt(undone.prompt)
+    setPromptOptimization(undone.state)
+    app.notify('success', '已恢复优化前的提示词')
+  }
+
+  function cancelOptimization() {
+    setPromptOptimization(initialPromptOptimizationState())
+  }
+
   async function applyAsEditSource(url: string) {
     const addition = singleReferenceAddition(url, maxReferenceImages, editRefs.length)
     if (!addition.item) {
@@ -981,14 +1032,24 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           {/* Prompt */}
           <div className={workspaceClasses.promptBlock}>
             <label className={workspaceClasses.fieldLabel}>提示词</label>
-            <div className={rdWorkspace.promptWrapper}>
+            <div className={cn(rdWorkspace.promptWrapper, 'relative')}>
               <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input')}
+                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11 pr-20')}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={5}
+                maxLength={4000}
                 placeholder="描述想要生成的内容..."
               />
+              <div className="absolute bottom-2 right-2">
+                <PromptEditorActions
+                  optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
+                  canUndo={promptOptimization.stage === 'applied'}
+                  onExpand={() => setPromptExpanded(true)}
+                  onOptimize={() => void startPromptOptimization()}
+                  onUndo={undoOptimization}
+                />
+              </div>
             </div>
           </div>
 
@@ -1262,6 +1323,26 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   return (
     <div className={workspaceClasses.root} data-workspace-layout="creative">
       {compactViewport ? <OverlayPortal>{parameterPanel}</OverlayPortal> : parameterPanel}
+      {promptExpanded ? (
+        <PromptEditorDialog
+          prompt={prompt}
+          assets={editRefs}
+          accessToken={app.session?.token}
+          optimization={promptOptimization}
+          onPromptChange={setPrompt}
+          onClose={() => setPromptExpanded(false)}
+          onOptimize={() => void startPromptOptimization()}
+          onConfirm={() => void confirmOptimization()}
+          onApply={applyOptimization}
+          onCancel={cancelOptimization}
+          onUndo={undoOptimization}
+        />
+      ) : null}
+      {!promptExpanded && promptOptimization.stage !== 'idle' && promptOptimization.stage !== 'applied' ? (
+        <Modal title="优化提示词" onClose={cancelOptimization}>
+          <PromptOptimizationPanel state={promptOptimization} onConfirm={() => void confirmOptimization()} onApply={applyOptimization} onCancel={cancelOptimization} />
+        </Modal>
+      ) : null}
 
       {/* Right Canvas */}
       <section className={workspaceClasses.canvas}>

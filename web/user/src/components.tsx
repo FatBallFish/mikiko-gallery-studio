@@ -1024,13 +1024,13 @@ function useDismissableLayer(open: boolean, onClose: () => void, focusRef: React
   }, [focusRef, open])
 }
 
-export function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+export function Modal({ title, children, onClose, className = '' }: { title: string; children: React.ReactNode; onClose: () => void; className?: string }) {
   const dialogRef = useRef<HTMLElement | null>(null)
   useDismissableLayer(true, onClose, dialogRef)
   return (
     <OverlayPortal>
       <div className={userState.modalBackdrop} role="presentation" data-focus-layer onMouseDown={onClose}>
-        <section ref={dialogRef} tabIndex={-1} className={userState.modalCard} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <section ref={dialogRef} tabIndex={-1} className={cn(userState.modalCard, className)} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
           <div className="flex items-center justify-between gap-5">
             <h2 className="m-0 text-xl">{title}</h2>
             <IconButton label="关闭" onClick={onClose}><X size={18} strokeWidth={1.5} aria-hidden="true" /></IconButton>
