@@ -2009,6 +2009,31 @@ func TestCreateTaskQueuesResolvedTask(t *testing.T) {
 	}
 }
 
+func TestCreateTaskRejectsUnsupportedTypeWithoutPersistingHistory(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(taskTestConfig(), nil, store)
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           33,
+		AbstractModel:    "plus",
+		TaskType:         "reference_generate",
+		Prompt:           "This removed task type must never enter history",
+		RequestedSize:    "auto",
+		BaseResolution:   "auto",
+		OutputImageCount: 1,
+	})
+	if err == nil {
+		t.Fatal("expected unsupported task type to be rejected")
+	}
+	tasks, listErr := store.ListByUser(context.Background(), 33)
+	if listErr != nil {
+		t.Fatalf("ListByUser: %v", listErr)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("unsupported task type must not create history, got %d tasks", len(tasks))
+	}
+}
+
 func TestRetryTaskCreatesQueuedCopyFromFailedTask(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()

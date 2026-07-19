@@ -7,6 +7,16 @@ import {
   validateTextModelAccountDraft,
   validateTextModelDraft,
 } from './textModelRows'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
+
+const pageSource = readFileSync(new URL('./TextModelsPage.tsx', import.meta.url), 'utf8')
+if (!pageSource.includes('className="flex min-w-0 flex-1 overflow-hidden"')) {
+  throw new Error('text model account labels must shrink and clip inside the account sidebar')
+}
+if (!pageSource.includes("cn('flex min-h-12 min-w-0 w-full")) {
+  throw new Error('text model account buttons must allow the sidebar grid track to shrink')
+}
 
 const empty = emptyTextModelAccountDraft()
 if (empty.platformType !== 'openai_compatible' || empty.apiStyle !== 'responses' || empty.enabled) throw new Error('new account defaults drifted')

@@ -87,6 +87,7 @@ services:
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-e2e-api-key-signing-secret-encryption-key
       CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-e2e-cashier-provider-config-encryption-key
       PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-e2e-secure-config-secret-change-me
+      PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY: local-e2e-prompt-optimization-quote-signing-key
       PIC_GALLERY_ADMIN_EMAIL: admin@example.com
       PIC_GALLERY_ADMIN_PASSWORD: admin123456
       PIC_GALLERY_ADMIN_ROLE: super_admin
@@ -136,6 +137,7 @@ services:
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-e2e-api-key-signing-secret-encryption-key
       CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-e2e-cashier-provider-config-encryption-key
       PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-e2e-secure-config-secret-change-me
+      PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY: local-e2e-prompt-optimization-quote-signing-key
       CASHIER_ENABLED: "true"
       CASHIER_MOCK_ENABLED: "true"
       CASHIER_SITE_BASE_URL: http://localhost:${API_PORT:-18080}

@@ -180,8 +180,8 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
         </div>
         <div className="grid gap-1.5">
           {accounts.map((account) => (
-            <button key={account.id} type="button" className={cn('flex min-h-12 w-full items-center justify-between gap-3 rounded-md border px-3 text-left text-sm', selectedID === String(account.id) ? 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]' : 'border-transparent hover:border-[var(--border)]')} onClick={() => void selectAccount(account)}>
-              <span className="min-w-0"><span className="block truncate font-semibold">{account.name}</span><span className="block truncate text-xs text-[var(--muted)]">{account.api_style === 'responses' ? 'Responses' : 'Chat Completions'}</span></span>
+            <button key={account.id} type="button" className={cn('flex min-h-12 min-w-0 w-full items-center justify-between gap-3 rounded-md border px-3 text-left text-sm', selectedID === String(account.id) ? 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]' : 'border-transparent hover:border-[var(--border)]')} onClick={() => void selectAccount(account)}>
+              <span className="flex min-w-0 flex-1 overflow-hidden"><span className="min-w-0 flex-1"><span className="block truncate font-semibold">{account.name}</span><span className="block truncate text-xs text-[var(--muted)]">{account.api_style === 'responses' ? 'Responses' : 'Chat Completions'}</span></span></span>
               <span className={cn('size-2 shrink-0 rounded-full', account.enabled ? 'bg-emerald-500' : 'bg-[var(--muted)]')} />
             </button>
           ))}

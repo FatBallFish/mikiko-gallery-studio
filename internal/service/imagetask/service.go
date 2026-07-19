@@ -212,6 +212,9 @@ func (s *Service) nowUTC() time.Time {
 }
 
 func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequest) (domainimagetask.Task, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return domainimagetask.Task{}, errs.BadRequest("unsupported task_type")
+	}
 	normalizedReq, err := normalizeCreateRequest(req)
 	if err != nil {
 		_ = s.persistPreflightFailedRequest(ctx, req, modelhub.ResolvedRequest{}, err)

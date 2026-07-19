@@ -29,7 +29,7 @@ export function PromptEditorDialog({ prompt, assets, accessToken, optimization, 
   onUndo: () => void
 }) {
   const busy = optimization.stage === 'estimating' || optimization.stage === 'optimizing'
-  return <Modal title="提示词编辑器" onClose={onClose} className="max-[600px]:h-[calc(100dvh-1rem)] max-[600px]:max-h-none max-[600px]:w-[calc(100vw-1rem)] max-[600px]:rounded-lg max-[600px]:p-4">
+  return <Modal title="提示词编辑器" onClose={onClose} className="max-[600px]:h-[calc(100dvh-3rem)] max-[600px]:max-h-[calc(100dvh-3rem)] max-[600px]:w-[calc(100vw-3rem)] max-[600px]:rounded-lg max-[600px]:p-4">
     <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px]">
       <div className="min-w-0">
         <div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-bold" htmlFor="expanded-prompt-editor">提示词</label><PromptEditorActions optimizing={busy} canUndo={optimization.stage === 'applied'} onOptimize={onOptimize} onUndo={onUndo} /></div>
