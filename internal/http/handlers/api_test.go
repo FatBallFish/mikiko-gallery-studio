@@ -4,8 +4,21 @@ import (
 	"strings"
 	"testing"
 
+	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 )
+
+func TestPublicGalleryDetailPreservesReusableCreationConfiguration(t *testing.T) {
+	item := domainimagetask.GalleryImage{
+		ID: "image-a", Prompt: "full prompt", TaskType: "image_edit", RouteModelCode: "plus",
+		SizeMode: "pixel", RequestedSize: "1536x1024", BaseResolution: "2k", AspectRatio: "3:2",
+		Quality: "high", OutputFormat: "webp", OutputCompression: 72, Moderation: "low", OutputImageCount: 4,
+	}
+	detail := publicGalleryDetailItem(item)
+	if detail.SizeMode != item.SizeMode || detail.RequestedSize != item.RequestedSize || detail.OutputFormat != item.OutputFormat || detail.OutputCompression != item.OutputCompression || detail.Moderation != item.Moderation || detail.OutputImageCount != item.OutputImageCount {
+		t.Fatalf("public detail lost reusable creation configuration: %#v", detail)
+	}
+}
 
 func TestReadBoundedBodyRejectsOversizedUnsignedBody(t *testing.T) {
 	if _, err := readBoundedBody(strings.NewReader(strings.Repeat("x", 3<<20)), 1); err == nil {

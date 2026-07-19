@@ -243,9 +243,15 @@ type GalleryImage struct {
 	RouteModelCode    string                  `json:"route_model_code,omitempty"`
 	TaskType          string                  `json:"task_type,omitempty"`
 	TaskStatus        string                  `json:"task_status,omitempty"`
+	SizeMode          string                  `json:"size_mode,omitempty"`
+	RequestedSize     string                  `json:"requested_size,omitempty"`
 	BaseResolution    string                  `json:"base_resolution,omitempty"`
 	Quality           string                  `json:"quality,omitempty"`
 	AspectRatio       string                  `json:"aspect_ratio,omitempty"`
+	OutputFormat      string                  `json:"output_format,omitempty"`
+	OutputCompression int                     `json:"output_compression,omitempty"`
+	Moderation        string                  `json:"moderation,omitempty"`
+	OutputImageCount  int                     `json:"requested_output_image_count,omitempty"`
 	ActualPoints      string                  `json:"actual_points,omitempty"`
 	ReferenceAssetIDs []string                `json:"reference_asset_ids,omitempty"`
 	ReferenceAssets   []GalleryReferenceAsset `json:"reference_assets,omitempty"`

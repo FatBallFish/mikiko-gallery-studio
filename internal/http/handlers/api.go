@@ -2931,9 +2931,15 @@ type publicGalleryListImage struct {
 	RouteModelCode    string     `json:"route_model_code,omitempty"`
 	TaskType          string     `json:"task_type,omitempty"`
 	TaskStatus        string     `json:"task_status,omitempty"`
+	SizeMode          string     `json:"size_mode,omitempty"`
+	RequestedSize     string     `json:"requested_size,omitempty"`
 	BaseResolution    string     `json:"base_resolution,omitempty"`
 	Quality           string     `json:"quality,omitempty"`
 	AspectRatio       string     `json:"aspect_ratio,omitempty"`
+	OutputFormat      string     `json:"output_format,omitempty"`
+	OutputCompression int        `json:"output_compression,omitempty"`
+	Moderation        string     `json:"moderation,omitempty"`
+	OutputImageCount  int        `json:"requested_output_image_count,omitempty"`
 	URL               string     `json:"url,omitempty"`
 	DownloadURL       string     `json:"download_url,omitempty"`
 	MimeType          string     `json:"mime_type,omitempty"`
@@ -2962,9 +2968,15 @@ func publicGalleryListItems(items []domainimagetask.GalleryImage) []publicGaller
 			RouteModelCode:    item.RouteModelCode,
 			TaskType:          item.TaskType,
 			TaskStatus:        item.TaskStatus,
+			SizeMode:          item.SizeMode,
+			RequestedSize:     item.RequestedSize,
 			BaseResolution:    item.BaseResolution,
 			Quality:           item.Quality,
 			AspectRatio:       item.AspectRatio,
+			OutputFormat:      item.OutputFormat,
+			OutputCompression: item.OutputCompression,
+			Moderation:        item.Moderation,
+			OutputImageCount:  item.OutputImageCount,
 			URL:               item.URL,
 			DownloadURL:       item.DownloadURL,
 			MimeType:          item.MimeType,
@@ -2995,9 +3007,15 @@ func publicGalleryDetailItem(item domainimagetask.GalleryImage) publicGalleryLis
 		RouteModelCode:    item.RouteModelCode,
 		TaskType:          item.TaskType,
 		TaskStatus:        item.TaskStatus,
+		SizeMode:          item.SizeMode,
+		RequestedSize:     item.RequestedSize,
 		BaseResolution:    item.BaseResolution,
 		Quality:           item.Quality,
 		AspectRatio:       item.AspectRatio,
+		OutputFormat:      item.OutputFormat,
+		OutputCompression: item.OutputCompression,
+		Moderation:        item.Moderation,
+		OutputImageCount:  item.OutputImageCount,
 		URL:               item.URL,
 		DownloadURL:       item.DownloadURL,
 		MimeType:          item.MimeType,
@@ -7933,27 +7951,36 @@ func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID s
 				continue
 			}
 			return domainimagetask.GalleryImage{
-				ID:               result.ID,
-				TaskID:           task.ID,
-				UserID:           task.UserID,
-				Prompt:           task.Prompt,
-				AbstractModel:    task.AbstractModel,
-				TaskType:         task.TaskType,
-				BaseResolution:   task.BaseResolution,
-				Quality:          task.Quality,
-				URL:              result.URL,
-				DownloadURL:      result.DownloadURL,
-				MimeType:         result.MimeType,
-				FileSizeBytes:    result.FileSizeBytes,
-				Width:            result.Width,
-				Height:           result.Height,
-				SHA256:           result.SHA256,
-				StorageConfigID:  result.StorageConfigID,
-				ObjectKey:        result.ObjectKey,
-				StorageDriver:    result.StorageDriver,
-				VisibilityStatus: defaultString(result.VisibilityStatus, domainimagetask.VisibilityPrivate),
-				ReviewReason:     result.ReviewReason,
-				PublishedAt:      result.PublishedAt,
+				ID:                result.ID,
+				TaskID:            task.ID,
+				UserID:            task.UserID,
+				Prompt:            task.Prompt,
+				AbstractModel:     task.AbstractModel,
+				TaskType:          task.TaskType,
+				RouteModelCode:    task.RouteModelCode,
+				SizeMode:          task.SizeMode,
+				RequestedSize:     task.RequestedSize,
+				BaseResolution:    task.BaseResolution,
+				Quality:           task.Quality,
+				AspectRatio:       task.AspectRatio,
+				OutputFormat:      task.OutputFormat,
+				OutputCompression: task.OutputCompression,
+				Moderation:        task.Moderation,
+				OutputImageCount:  task.OutputImageCount,
+				ReferenceAssetIDs: append([]string(nil), task.ReferenceAssetIDs...),
+				URL:               result.URL,
+				DownloadURL:       result.DownloadURL,
+				MimeType:          result.MimeType,
+				FileSizeBytes:     result.FileSizeBytes,
+				Width:             result.Width,
+				Height:            result.Height,
+				SHA256:            result.SHA256,
+				StorageConfigID:   result.StorageConfigID,
+				ObjectKey:         result.ObjectKey,
+				StorageDriver:     result.StorageDriver,
+				VisibilityStatus:  defaultString(result.VisibilityStatus, domainimagetask.VisibilityPrivate),
+				ReviewReason:      result.ReviewReason,
+				PublishedAt:       result.PublishedAt,
 			}, nil
 		}
 	}

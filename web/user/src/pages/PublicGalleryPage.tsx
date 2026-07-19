@@ -6,7 +6,7 @@ import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, ImageLightbox, PublicDetailIcon, copyText, publicDetailButton, type ImageLightboxPayload, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 import { ArrowRight, Image as ImageIcon, RefreshCw } from '../ui/icons'
-import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
+import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { galleryImageAspect } from './galleryExperience'
 import { publicGalleryCardView } from './publicGalleryModel'
 import {
@@ -174,18 +174,13 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
     app.notify('success', 'Prompt 已复制')
   }
 
-  function generateSame(image: ImageResult) {
-    if (!requireLogin('请先登录后再同款生成', image.id)) return
+  function reuseConfiguration(image: ImageResult) {
+    if (!requireLogin('请先登录后再复用配置', image.id)) return
     if (!image.prompt) {
       app.notify('info', '请先打开详情获取完整提示词')
       return
     }
-    window.sessionStorage.setItem(galleryEditContextKey, JSON.stringify(createGalleryEditContext({
-      prompt: image.prompt,
-      route_model_code: image.route_model_code || image.abstract_model,
-      base_resolution: image.base_resolution,
-      aspect_ratio: image.aspect_ratio,
-    })))
+    stageWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot(image), window.sessionStorage, window.history)
     app.navigate('genpic')
   }
 
@@ -324,11 +319,15 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         onFavorite={(image) => void toggleReaction(image as ImageResult, 'favorite')}
         onDownload={(image) => downloadImage(image as ImageResult)}
         onCopyPrompt={(prompt) => void copyPrompt(prompt)}
-        actions={selected ? [{ key: 'same', label: '同款生成', icon: <PublicDetailIcon name="edit" />, onClick: () => generateSame(selected), disabled: !selected.prompt }] : []}
+        actions={selected ? [{ key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: () => reuseConfiguration(selected), disabled: !selected.prompt }] : []}
         previewSourceLabel="公开广场"
         onClose={() => setSelected(null)}
       />
-      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} />
+      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} onReuseConfiguration={(draft) => {
+        stageWorkspaceCreationDraft(draft, window.sessionStorage, window.history)
+        setImagePreview(null)
+        app.navigate('genpic')
+      }} />
     </main>
   )
 }

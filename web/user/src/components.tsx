@@ -14,6 +14,7 @@ import { OverlayPortal } from './ui/overlayPortal'
 import { imageMediaTransition, initialImageMediaState } from './ui/imageMediaModel'
 import { shouldStartZoomDrag } from './ui/zoomPointer'
 import { resetShellScroll, shellActiveNavIndex, shellChromeClasses, shellLayoutClasses, type ShellScrollMode } from './shellLayout'
+import { workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './pages/workspaceCreationDraft'
 export { userShell, userButton, userForm, userState, userPill, userCard, userText }
 
 export const AppContext = createContext<AppContextValue | null>(null)
@@ -34,6 +35,7 @@ export type ImageLightboxPayload = {
   ratio?: string
   model?: string
   source?: string
+  creationDraft?: WorkspaceCreationDraft
 }
 
 export function imagePixelsLabel(width?: number, height?: number) {
@@ -106,9 +108,10 @@ export function ImageMediaFallback({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-export function ImageLightbox({ image, onClose }: {
+export function ImageLightbox({ image, onClose, onReuseConfiguration }: {
   image: ImageLightboxPayload | null
   onClose: () => void
+  onReuseConfiguration?: (draft: WorkspaceCreationDraft) => void
 }) {
   const [zoomOpen, setZoomOpen] = useState(false)
   const media = useImageMediaState(image?.url ?? '')
@@ -122,14 +125,8 @@ export function ImageLightbox({ image, onClose }: {
   if (!image) return null
   const pixels = imagePixelsLabel(image.width, image.height)
   const ratio = imageRatioLabel(image.width, image.height, image.ratio)
-  const copyConfig = async () => {
-    await copyText(JSON.stringify({
-      prompt: image.prompt || image.alt || '',
-      model: image.model || '',
-      ratio,
-      pixels,
-      source: image.source || '',
-    }, null, 2))
+  const reuseConfiguration = () => {
+    if (image.creationDraft) onReuseConfiguration?.(image.creationDraft)
   }
   const downloadImage = () => {
     const link = document.createElement('a')
@@ -172,7 +169,7 @@ export function ImageLightbox({ image, onClose }: {
               </div>
             </div>
             <div className={lightboxClasses.actions}>
-              <button type="button" className={lightboxClasses.primaryAction} onClick={() => void copyConfig()}>复制配置</button>
+              {image.creationDraft && onReuseConfiguration ? <button type="button" className={lightboxClasses.primaryAction} onClick={reuseConfiguration}>复用配置</button> : null}
               <button type="button" className={lightboxClasses.secondaryAction} onClick={downloadImage}>下载图片</button>
             </div>
           </aside>
@@ -419,6 +416,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
                 ratio: image.aspect_ratio,
                 model: image.route_model_code || image.abstract_model,
                 source: previewSourceLabel,
+                creationDraft: workspaceCreationDraftFromSnapshot(image),
               }) : undefined}
             />
           ) : <div className={publicDetailClasses.placeholder}>图片不可预览</div>}
