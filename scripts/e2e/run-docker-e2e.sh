@@ -5,6 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/deployments/docker-compose/docker-compose.local.yml"
 ENV_FILE="$ROOT_DIR/deployments/docker-compose/.env.example"
 STATE_HELPER="$ROOT_DIR/scripts/e2e/local-state.sh"
+SCRIPT_PATH="$ROOT_DIR/scripts/e2e/run-docker-e2e.sh"
+ORIGINAL_ARGS=("$@")
+
+fail() {
+  echo "shared local E2E: $*" >&2
+  exit 1
+}
 
 usage() {
   cat <<'EOF'
@@ -17,10 +24,7 @@ Options:
   --start   Start or update the E2E compose stack before testing.
 
 Environment:
-  BASE_URL       API base URL. Default: http://127.0.0.1:8088
-  USER_WEB_URL   User frontend URL. Default: http://127.0.0.1:8088
-  ADMIN_WEB_URL  Admin frontend URL. Default: http://127.0.0.1:8088/admin
-  NGINX_URL      Nginx URL. Default: http://127.0.0.1:8088
+  DEV_NGINX_PORT Shared local nginx port. Default: 8088
 EOF
 }
 
@@ -49,13 +53,47 @@ done
 
 cd "$ROOT_DIR"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
-BASE_URL="${BASE_URL:-http://127.0.0.1:8088}"
-USER_WEB_URL="${USER_WEB_URL:-http://127.0.0.1:8088}"
-ADMIN_WEB_URL="${ADMIN_WEB_URL:-http://127.0.0.1:8088/admin}"
-NGINX_URL="${NGINX_URL:-http://127.0.0.1:8088}"
+DEV_NGINX_PORT="${DEV_NGINX_PORT:-8088}"
+LOCAL_BASE_URL="http://127.0.0.1:${DEV_NGINX_PORT}"
+BASE_URL="${BASE_URL:-$LOCAL_BASE_URL}"
+USER_WEB_URL="${USER_WEB_URL:-$LOCAL_BASE_URL}"
+ADMIN_WEB_URL="${ADMIN_WEB_URL:-$LOCAL_BASE_URL/admin}"
+NGINX_URL="${NGINX_URL:-$LOCAL_BASE_URL}"
 SNAPSHOT_DIR="$ROOT_DIR/tmp/e2e/local-state-$(date +%Y%m%d%H%M%S)-$$"
+LOCK_FILE="$ROOT_DIR/tmp/e2e/pic-gallery-local.lock"
 STATE_SNAPSHOTTED=false
 WRITERS_STOPPED=false
+
+assert_local_url() {
+  local name=$1
+  local actual=$2
+  local expected=$3
+  [[ "$actual" == "$expected" ]] || fail "$name must be $expected because E2E restores the pic-gallery-local database"
+}
+
+assert_local_url BASE_URL "$BASE_URL" "$LOCAL_BASE_URL"
+assert_local_url USER_WEB_URL "$USER_WEB_URL" "$LOCAL_BASE_URL"
+assert_local_url ADMIN_WEB_URL "$ADMIN_WEB_URL" "$LOCAL_BASE_URL/admin"
+assert_local_url NGINX_URL "$NGINX_URL" "$LOCAL_BASE_URL"
+
+mkdir -p "$(dirname "$LOCK_FILE")"
+if [[ "${PIC_GALLERY_E2E_LOCKED:-}" != "true" ]]; then
+  if command -v flock >/dev/null 2>&1; then
+    set +e
+    flock -E 75 -n "$LOCK_FILE" env PIC_GALLERY_E2E_LOCKED=true "$SCRIPT_PATH" "${ORIGINAL_ARGS[@]}"
+    lock_status=$?
+    set -e
+  elif command -v lockf >/dev/null 2>&1; then
+    set +e
+    lockf -t 0 "$LOCK_FILE" env PIC_GALLERY_E2E_LOCKED=true "$SCRIPT_PATH" "${ORIGINAL_ARGS[@]}"
+    lock_status=$?
+    set -e
+  else
+    fail "flock or lockf is required to protect the shared local environment"
+  fi
+  [[ "$lock_status" -ne 75 ]] || fail "another shared local E2E run is active"
+  exit "$lock_status"
+fi
 
 wait_for_local_api() {
   for _ in {1..120}; do
@@ -68,28 +106,49 @@ wait_for_local_api() {
 }
 
 start_writers() {
-  "${COMPOSE[@]}" up -d minio api worker
+  "${COMPOSE[@]}" up -d minio api worker || return 1
+  wait_for_local_api || return 1
   WRITERS_STOPPED=false
-  wait_for_local_api
+}
+
+writers_are_stopped() {
+  local service container_id
+  for service in api worker minio; do
+    container_id="$("${COMPOSE[@]}" ps -q "$service")"
+    if [[ -n "$container_id" && "$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || true)" == "true" ]]; then
+      echo "shared local E2E: writer is still running after stop: $service" >&2
+      return 1
+    fi
+  done
+}
+
+stop_writers() {
+  WRITERS_STOPPED=true
+  "${COMPOSE[@]}" stop api worker minio >/dev/null || return 1
+  writers_are_stopped
 }
 
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
   if [[ "$STATE_SNAPSHOTTED" == true ]]; then
-    "${COMPOSE[@]}" stop api worker minio >/dev/null || status=1
-    WRITERS_STOPPED=true
-    if "$STATE_HELPER" restore "$SNAPSHOT_DIR"; then
-      if start_writers; then
-        find "$SNAPSHOT_DIR" -mindepth 1 -delete
-        rmdir "$SNAPSHOT_DIR"
+    if stop_writers; then
+      if "$STATE_HELPER" restore "$SNAPSHOT_DIR"; then
+        if start_writers; then
+          find "$SNAPSHOT_DIR" -mindepth 1 -delete
+          rmdir "$SNAPSHOT_DIR"
+        else
+          echo "E2E restore succeeded but the local API did not become ready" >&2
+          status=1
+        fi
       else
-        echo "E2E restore succeeded but the local API did not become ready" >&2
+        echo "E2E state restore failed; recovery snapshot retained at $SNAPSHOT_DIR" >&2
         status=1
       fi
     else
-      echo "E2E state restore failed; recovery snapshot retained at $SNAPSHOT_DIR" >&2
+      echo "E2E writers could not be stopped; restore skipped and recovery snapshot retained at $SNAPSHOT_DIR" >&2
       status=1
+      start_writers || true
     fi
   elif [[ "$WRITERS_STOPPED" == true ]]; then
     start_writers || status=1
@@ -109,8 +168,7 @@ wait_for_local_api || {
   exit 1
 }
 
-"${COMPOSE[@]}" stop api worker minio >/dev/null
-WRITERS_STOPPED=true
+stop_writers || fail "writers could not be stopped before the E2E snapshot"
 "$STATE_HELPER" snapshot "$SNAPSHOT_DIR"
 STATE_SNAPSHOTTED=true
 start_writers || {

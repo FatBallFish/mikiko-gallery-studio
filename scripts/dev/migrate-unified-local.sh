@@ -18,6 +18,8 @@ NEW_MINIO_VOLUME=pic-gallery-local_minio-data
 NEW_STORAGE_VOLUME=pic-gallery-local_shared-storage
 SOURCE_WAS_RUNNING=false
 USING_TEMP_SOURCE=false
+OLD_WRITER_IDS=()
+DEV_NGINX_PORT="${DEV_NGINX_PORT:-8088}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 fail() {
@@ -46,12 +48,38 @@ wait_for_database() {
 
 wait_for_api() {
   for _ in {1..180}; do
-    if curl --silent --fail --max-time 2 http://127.0.0.1:8088/readyz >/dev/null 2>&1; then
+    if curl --silent --fail --max-time 2 "http://127.0.0.1:${DEV_NGINX_PORT}/readyz" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
   done
   return 1
+}
+
+stop_old_dev_writers() {
+  local service container_id
+  for service in api worker minio; do
+    while IFS= read -r container_id; do
+      [[ -n "$container_id" ]] || continue
+      if container_running "$container_id"; then
+        OLD_WRITER_IDS+=("$container_id")
+        docker stop "$container_id" >/dev/null
+      fi
+    done < <(docker ps -aq \
+      --filter "label=com.docker.compose.project=pic-gallery-dev" \
+      --filter "label=com.docker.compose.service=$service")
+  done
+  for container_id in "${OLD_WRITER_IDS[@]}"; do
+    container_running "$container_id" && fail "old writer is still running after stop: $container_id"
+  done
+}
+
+restart_old_dev_writers() {
+  local container_id
+  for container_id in "${OLD_WRITER_IDS[@]}"; do
+    docker inspect "$container_id" >/dev/null 2>&1 || continue
+    docker start "$container_id" >/dev/null 2>&1 || true
+  done
 }
 
 stop_source_postgres() {
@@ -60,6 +88,11 @@ stop_source_postgres() {
   elif [[ "$SOURCE_WAS_RUNNING" == false ]] && container_running "$OLD_POSTGRES_CONTAINER"; then
     docker stop "$OLD_POSTGRES_CONTAINER" >/dev/null
   fi
+}
+
+cleanup_source() {
+  stop_source_postgres
+  restart_old_dev_writers
 }
 
 remove_project_runtime() {
@@ -83,7 +116,8 @@ for volume in "$NEW_POSTGRES_VOLUME" "$NEW_MINIO_VOLUME" "$NEW_STORAGE_VOLUME"; 
 done
 
 mkdir -p "$BACKUP_DIR"
-trap stop_source_postgres EXIT
+trap cleanup_source EXIT
+stop_old_dev_writers
 
 if docker inspect "$OLD_POSTGRES_CONTAINER" >/dev/null 2>&1; then
   if container_running "$OLD_POSTGRES_CONTAINER"; then
@@ -130,9 +164,11 @@ wait_for_database pic-gallery-local-postgres-1 || fail "new local database did n
 
 "$STATE_HELPER" restore "$BACKUP_DIR"
 "${COMPOSE[@]}" up -d --build --remove-orphans
-wait_for_api || fail "new local API did not become ready at http://127.0.0.1:8088"
+wait_for_api || fail "new local API did not become ready at http://127.0.0.1:${DEV_NGINX_PORT}"
 
 echo "local migration: restored database-manifest.tsv, minio-manifest.sha256, and shared-storage-manifest.sha256"
 echo "local migration: backup retained at $BACKUP_DIR"
 echo "local migration: old volumes retained until API and E2E validation completes"
+echo "local migration: after validation, remove only the old volumes with:"
+echo "docker volume rm pic-gallery-dev_postgres-data pic-gallery-dev_minio-data pic-gallery-dev_redis-data pic-gallery-dev_shared-storage pic-gallery-e2e_postgres-data pic-gallery-e2e_minio-data pic-gallery-e2e_redis-data pic-gallery-e2e_shared-storage pic-gallery-e2e_admin-node-modules pic-gallery-e2e_docs-node-modules pic-gallery-e2e_go-cache pic-gallery-e2e_user-node-modules"
 echo "local migration: new project pic-gallery-local is ready"

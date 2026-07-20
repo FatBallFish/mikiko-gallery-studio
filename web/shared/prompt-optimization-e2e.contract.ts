@@ -6,9 +6,12 @@ const browserSource = readFileSync(new URL('../../scripts/e2e/prompt-workflow-br
 const runnerSource = readFileSync(new URL('../../scripts/e2e/run-docker-e2e.sh', import.meta.url), 'utf8')
 
 for (const required of [
-  'BASE_URL="${BASE_URL:-http://127.0.0.1:8088}"',
-  'USER_WEB_URL="${USER_WEB_URL:-http://127.0.0.1:8088}"',
-  'ADMIN_WEB_URL="${ADMIN_WEB_URL:-http://127.0.0.1:8088/admin}"',
+  'DEV_NGINX_PORT="${DEV_NGINX_PORT:-8088}"',
+  'LOCAL_BASE_URL="http://127.0.0.1:${DEV_NGINX_PORT}"',
+  'BASE_URL="${BASE_URL:-$LOCAL_BASE_URL}"',
+  'USER_WEB_URL="${USER_WEB_URL:-$LOCAL_BASE_URL}"',
+  'ADMIN_WEB_URL="${ADMIN_WEB_URL:-$LOCAL_BASE_URL/admin}"',
+  'assert_local_url BASE_URL',
   'STATE_HELPER',
   'snapshot',
   'restore',

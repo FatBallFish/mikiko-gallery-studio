@@ -38,9 +38,18 @@ for (const [label, source] of [['dev up', devUp], ['dev down', devDown], ['E2E r
 }
 if (e2eRunner.includes('down -v')) throw new Error('E2E must never delete the shared local volumes')
 for (const required of [
-  'BASE_URL:-http://127.0.0.1:8088',
-  'USER_WEB_URL:-http://127.0.0.1:8088',
-  'ADMIN_WEB_URL:-http://127.0.0.1:8088/admin',
+  'DEV_NGINX_PORT:-8088',
+  'LOCAL_BASE_URL="http://127.0.0.1:${DEV_NGINX_PORT}"',
+  'assert_local_url BASE_URL "$BASE_URL" "$LOCAL_BASE_URL"',
+  'assert_local_url USER_WEB_URL "$USER_WEB_URL" "$LOCAL_BASE_URL"',
+  'assert_local_url ADMIN_WEB_URL "$ADMIN_WEB_URL" "$LOCAL_BASE_URL/admin"',
+  'PIC_GALLERY_E2E_LOCKED',
+  'flock -E 75',
+  'lockf',
+  'lock_status',
+  'stop_writers',
+  'writers_are_stopped',
+  'if stop_writers; then',
   'snapshot',
   'restore',
   'trap',
@@ -60,11 +69,19 @@ for (const required of ['pg_dump', 'pg_restore', 'minio-data', 'shared-storage',
 if (/docker volume rm|down\s+-v/.test(stateHelper)) throw new Error('local state helper must not delete persistent local volumes')
 
 const migration = requireSource('scripts/dev/migrate-unified-local.sh')
-for (const required of ['pg_dump', 'pg_restore --list', 'database-manifest', 'minio-manifest', 'shared-storage-manifest', '--execute']) {
+for (const required of ['pg_dump', 'pg_restore --list', 'database-manifest', 'minio-manifest', 'shared-storage-manifest', '--execute', 'stop_old_dev_writers', 'old writer is still running', 'DEV_NGINX_PORT:-8088', 'docker volume rm pic-gallery-dev_postgres-data']) {
   if (!migration.includes(required)) throw new Error(`migration safety flow is missing ${required}`)
 }
 if (!migration.includes('old volumes retained')) throw new Error('migration must retain old volumes until separate final cleanup')
+if (migration.indexOf('stop_old_dev_writers') > migration.indexOf('"$STATE_HELPER" snapshot')) {
+  throw new Error('migration must stop old dev writers before taking the source snapshot')
+}
 
 if (!devDown.includes('--confirm-destroy-local-data')) {
   throw new Error('local volume deletion must require an explicit destructive confirmation token')
+}
+
+const verifyScript = read('scripts/workflow/verify.sh')
+if (!verifyScript.includes('run-docker-e2e.contract.sh')) {
+  throw new Error('repository verification must run the shared local E2E runner safety contract')
 }

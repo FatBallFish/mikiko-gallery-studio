@@ -65,6 +65,27 @@ storage_value="$(docker run --rm -v "$STORAGE_VOLUME:/target:ro" alpine:3.21 cat
 [[ "$minio_value" == "before" ]]
 [[ "$storage_value" == "before" ]]
 
+cp -R "$TMP_DIR/snapshot" "$TMP_DIR/corrupt-database"
+printf 'not a PostgreSQL dump\n' >"$TMP_DIR/corrupt-database/database.dump"
+if "$HELPER" restore "$TMP_DIR/corrupt-database" >/dev/null 2>&1; then
+  echo "FAIL: restore accepted a corrupt database dump" >&2
+  exit 1
+fi
+
+cp -R "$TMP_DIR/snapshot" "$TMP_DIR/corrupt-minio"
+printf 'not a tar archive\n' >"$TMP_DIR/corrupt-minio/minio-data.tar.gz"
+if "$HELPER" restore "$TMP_DIR/corrupt-minio" >/dev/null 2>&1; then
+  echo "FAIL: restore accepted a corrupt MinIO archive" >&2
+  exit 1
+fi
+
+database_value="$(docker exec "$POSTGRES_CONTAINER" psql -U postgres -d pic_gallery -Atc "select value from state_probe where id = 1")"
+minio_value="$(docker run --rm -v "$MINIO_VOLUME:/target:ro" alpine:3.21 cat /target/bucket/object.txt)"
+storage_value="$(docker run --rm -v "$STORAGE_VOLUME:/target:ro" alpine:3.21 cat /target/images/object.txt)"
+[[ "$database_value" == "before" ]]
+[[ "$minio_value" == "before" ]]
+[[ "$storage_value" == "before" ]]
+
 if "$HELPER" restore "$TMP_DIR/missing" >/dev/null 2>&1; then
   echo "FAIL: restore accepted a missing snapshot" >&2
   exit 1
