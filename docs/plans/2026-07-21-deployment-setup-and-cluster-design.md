@@ -384,14 +384,17 @@ Final apply executes:
 4. Check PostgreSQL version and schema privileges.
 5. Run the explicit database migration.
 6. Create the installation record and first administrator transactionally.
-7. Render and atomically replace `runtime.env`.
-8. Persist the completed install-state marker.
-9. Return an operation ID and restart countdown.
-10. Exit with the documented restart code after the response is flushed.
+7. Persist an install-state commit journal containing the operation and installation IDs.
+8. Render and atomically replace `runtime.env`.
+9. Finalize the install-state marker as completed.
+10. Return an operation ID and restart countdown.
+11. Exit with the documented restart code after the response is flushed.
 
 `SETUP_COMPLETED=true` is written only after all required persistent fields have values and all initialization work succeeds. Optional and mode-inapplicable fields may remain empty according to the configuration schema.
 
 The operation is idempotent. Retries after a network failure or process interruption reuse the installation operation ID and do not create duplicate administrators or apply migrations twice.
+
+The two persistent files use a recoverable commit protocol rather than pretending that two filesystem renames are one transaction. A crash before the runtime env rename resumes setup. A crash after the env rename but before the final state rename reconciles the commit journal against the database installation record, then finalizes completion. Once `EverCompleted` is true, missing or inconsistent files always fail closed.
 
 ## Service Lifecycle
 
