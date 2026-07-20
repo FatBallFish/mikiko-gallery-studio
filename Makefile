@@ -4,7 +4,7 @@ NPM ?= npm
 COMPOSE ?= docker compose
 USER_WEB_DIR := web/user
 ADMIN_WEB_DIR := web/admin
-DEV_COMPOSE_FILE := deployments/docker-compose/docker-compose.dev.yml
+DEV_COMPOSE_FILE := deployments/docker-compose/docker-compose.local.yml
 
 .PHONY: dev worker test lint openapi compose-up compose-fullstack-up compose-middleware-up compose-down compose-clean service-install service-uninstall service-start service-stop service-restart service-status service-logs local-build local-up user-web-install admin-web-install user-web-dev admin-web-dev
 

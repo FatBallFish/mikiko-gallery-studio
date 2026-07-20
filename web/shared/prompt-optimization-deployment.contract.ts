@@ -10,7 +10,7 @@ if (!envExample.includes(`${key}=local-dev-prompt-optimization-quote-signing-key
   throw new Error('root environment template must document the prompt optimization quote signing key')
 }
 
-for (const path of ['deployments/docker-compose/docker-compose.dev.yml', 'deployments/docker-compose/docker-compose.e2e.yml']) {
+for (const path of ['deployments/docker-compose/docker-compose.local.yml']) {
   const source = read(path)
   if ((source.match(new RegExp(key, 'g')) ?? []).length < 2) {
     throw new Error(`${path} must configure the quote signing key for API and worker runtimes`)

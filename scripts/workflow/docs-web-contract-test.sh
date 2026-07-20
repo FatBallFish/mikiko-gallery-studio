@@ -18,8 +18,7 @@ require_file_text scripts/workflow/verify.sh 'web/docs run typecheck' 'web/docs 
 require_file_text scripts/workflow/verify.sh 'web/docs run build' 'web/docs build is not wired into verify.sh'
 
 for compose in \
-  deployments/docker-compose/docker-compose.dev.yml \
-  deployments/docker-compose/docker-compose.e2e.yml \
+  deployments/docker-compose/docker-compose.local.yml \
   deployments/docker-compose/docker-compose.prod.yml; do
   require_file_text "$compose" 'docs-web:' "docs-web service is missing from $compose"
 done

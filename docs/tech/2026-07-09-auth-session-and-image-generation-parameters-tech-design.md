@@ -736,9 +736,9 @@ npm --prefix web/admin run build
 | 仓库完整验证 | `./scripts/workflow/verify.sh` | 通过，覆盖 Go test/vet、前端 contracts、用户端/管理端 typecheck 和 build |
 | 字段旧契约扫描 | `rg "qualities|generation_qualities|moderation_modes|requested_quality|resolved_quality|resolved_quality_bucket|request_quality" ...` | 生产链路 0 命中 |
 | Review gate | `./scripts/workflow/review-local.sh --scope all` | PASS |
-| Docker E2E | `POSTGRES_PORT=15432 ... ./scripts/e2e/run-docker-e2e.sh --start --clean` | 通过，报告：`tmp/e2e/latest-report.md` |
+| Docker E2E | `./scripts/e2e/run-docker-e2e.sh` | 通过，直接使用并在退出时恢复 `pic-gallery-local` 开发数据，报告：`tmp/e2e/latest-report.md` |
 | API smoke | `./scripts/workflow/api-smoke.sh` | 通过 |
-| Dev Docker 重部署 | `docker compose -f deployments/docker-compose/docker-compose.dev.yml up -d api worker user-web admin-web nginx` | API、worker、user-web、admin-web、nginx 均启动；`GET http://127.0.0.1:8088/readyz` 返回 ready |
+| Dev Docker 重部署 | `./scripts/dev/up.sh` | `pic-gallery-local` 的 API、worker、user-web、admin-web、nginx 均启动；`GET http://127.0.0.1:8088/readyz` 返回 ready |
 | 后台登录 smoke | `POST /api/ops/admin/v1/auth/login` with `admin@example.com/admin123456` | 通过 |
 
 备注：由于本方案明确不做历史字段迁移，dev Docker 首次按新 schema 启动时旧 Postgres 中 `route_model_prices.base_resolution` 存在 NULL，已按需求授权重建 dev Postgres 卷后完成部署。

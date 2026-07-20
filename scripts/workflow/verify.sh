@@ -14,6 +14,7 @@ run() {
 run "go test" go test ./...
 run "go vet" go vet ./...
 run "local build service startup scripts" ./scripts/local/pgctl_contract_test.sh
+run "shared local E2E runner safety contract" ./scripts/e2e/run-docker-e2e.contract.sh
 
 run "frontend/shared contracts" ./scripts/workflow/verify-contracts.sh
 run "docs web deployment contract" ./scripts/workflow/docs-web-contract-test.sh

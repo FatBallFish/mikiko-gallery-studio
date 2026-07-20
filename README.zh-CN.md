@@ -473,9 +473,8 @@ cp .env.example .env
 
 Docker 模式使用 Compose 和镜像仓库：
 
-- `docker-compose.dev.yml` 面向本地迭代，仍可构建本地镜像，但 API/Worker 使用 env 配置，不再挂载 YAML。
+- `docker-compose.local.yml` 是开发与 Docker E2E 共用的唯一环境，构建本地镜像并保留 PostgreSQL 和对象存储卷。
 - `docker-compose.prod.yml` 面向部署，只拉取预构建镜像。
-- `docker-compose.e2e.yml` 面向测试，源码容器直接注入 env 配置。
 
 镜像构建与发布：
 
@@ -529,10 +528,10 @@ BASE_URL=http://127.0.0.1:8080 ./scripts/workflow/api-smoke.sh
 ./scripts/e2e/run-docker-e2e.sh --start
 ```
 
-停止 E2E 环境：
+停止共享本地环境并保留数据：
 
 ```bash
-docker compose -f deployments/docker-compose/docker-compose.e2e.yml down --remove-orphans
+./scripts/dev/down.sh
 ```
 
 ## 项目结构
