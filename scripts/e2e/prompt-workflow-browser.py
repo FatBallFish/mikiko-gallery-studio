@@ -8,9 +8,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 
-BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:18080").rstrip("/")
-USER_WEB_URL = os.environ.get("USER_WEB_URL", "http://127.0.0.1:5173").rstrip("/")
-ADMIN_WEB_URL = os.environ.get("ADMIN_WEB_URL", "http://127.0.0.1:5174").rstrip("/")
+BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8088").rstrip("/")
+USER_WEB_URL = os.environ.get("USER_WEB_URL", "http://127.0.0.1:8088").rstrip("/")
+ADMIN_WEB_URL = os.environ.get("ADMIN_WEB_URL", "http://127.0.0.1:8088/admin").rstrip("/")
 USER_TOKEN = os.environ["E2E_USER_TOKEN"]
 RUN_ID = os.environ["E2E_RUN_ID"]
 OUTPUT_DIR = Path(os.environ.get("E2E_BROWSER_OUTPUT_DIR", "tmp/e2e/prompt-workflow"))

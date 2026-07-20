@@ -3,6 +3,22 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../../scripts/e2e/docker-e2e.mjs', import.meta.url), 'utf8')
 const browserSource = readFileSync(new URL('../../scripts/e2e/prompt-workflow-browser.py', import.meta.url), 'utf8')
+const runnerSource = readFileSync(new URL('../../scripts/e2e/run-docker-e2e.sh', import.meta.url), 'utf8')
+
+for (const required of [
+  'BASE_URL="${BASE_URL:-http://127.0.0.1:8088}"',
+  'USER_WEB_URL="${USER_WEB_URL:-http://127.0.0.1:8088}"',
+  'ADMIN_WEB_URL="${ADMIN_WEB_URL:-http://127.0.0.1:8088/admin}"',
+  'STATE_HELPER',
+  'snapshot',
+  'restore',
+  'trap cleanup EXIT',
+]) {
+  if (!runnerSource.includes(required)) throw new Error(`shared local E2E runner is missing: ${required}`)
+}
+if (runnerSource.includes('down -v') || runnerSource.includes('CLEAN_STACK=true')) {
+  throw new Error('shared local E2E runner must not expose a volume-destructive clean mode')
+}
 
 for (const required of [
   "req.url === '/v1/chat/completions'",
