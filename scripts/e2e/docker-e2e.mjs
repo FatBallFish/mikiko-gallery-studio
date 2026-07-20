@@ -316,6 +316,24 @@ async function createRouteCandidate(routeModelId) {
   return data(candidate)
 }
 
+async function disableExistingRouteCandidates(routeModelId) {
+  const list = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/route-models/${routeModelId}/candidates`, 200, {
+    headers: bearer(state.admin.token),
+  })
+  for (const candidate of data(list).items || []) {
+    await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/route-models/${routeModelId}/candidates/${candidate.id}`, 200, {
+      headers: bearer(state.admin.token),
+      body: {
+        account_model_id: Number(candidate.account_model_id),
+        priority: Number(candidate.priority),
+        weight: Number(candidate.weight),
+        fallback_order: Number(candidate.fallback_order),
+        enabled: false,
+      },
+    })
+  }
+}
+
 async function seedGenerationRoute() {
   const fakeProvider = await startFakeProvider()
   const account = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/model-accounts`, 201, {
@@ -349,6 +367,7 @@ async function seedGenerationRoute() {
   state.ids.accountModelId = String(data(accountModel).id)
   const routeModel = await ensureRouteModel('basic', 'Basic', 1)
   state.ids.basicRouteModelId = String(routeModel.id)
+  await disableExistingRouteCandidates(state.ids.basicRouteModelId)
   const candidate = await createRouteCandidate(state.ids.basicRouteModelId)
   state.ids.routeCandidateId = String(candidate.id)
   const price = await ensureRoutePrice(state.ids.basicRouteModelId)
@@ -356,6 +375,7 @@ async function seedGenerationRoute() {
 
   const compatRouteModel = await ensureRouteModel('plus', 'Plus', 2)
   state.ids.compatRouteModelId = String(compatRouteModel.id)
+  await disableExistingRouteCandidates(state.ids.compatRouteModelId)
   const compatCandidate = await createRouteCandidate(state.ids.compatRouteModelId)
   state.ids.compatRouteCandidateId = String(compatCandidate.id)
   const compatPrice = await ensureRoutePrice(state.ids.compatRouteModelId)
@@ -1094,7 +1114,7 @@ async function corsSweep(openapi) {
     USER_WEB_URL.replace('127.0.0.1', 'localhost'),
     ADMIN_WEB_URL,
     ADMIN_WEB_URL.replace('127.0.0.1', 'localhost'),
-  ])]
+  ].map(url => new URL(url).origin))]
   let checked = 0
   for (const [template, ops] of Object.entries(openapi.paths)) {
     for (const method of Object.keys(ops)) {

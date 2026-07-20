@@ -26,6 +26,9 @@ for (const path of oldComposePaths) {
 for (const service of ['postgres:', 'redis:', 'minio:', 'mailpit:', 'api:', 'worker:', 'user-web:', 'docs-web:', 'admin-web:', 'nginx:']) {
   if (!localCompose.includes(`  ${service}`)) throw new Error(`unified local Compose is missing ${service}`)
 }
+if (!localCompose.includes('CORS_ALLOWED_ORIGINS: http://localhost:${DEV_NGINX_PORT:-8088},http://127.0.0.1:${DEV_NGINX_PORT:-8088}')) {
+  throw new Error('unified local API must allow both localhost aliases for the shared nginx origin')
+}
 
 const devUp = read('scripts/dev/up.sh')
 const devDown = read('scripts/dev/down.sh')
@@ -43,6 +46,11 @@ for (const required of [
   'trap',
 ]) {
   if (!e2eRunner.includes(required)) throw new Error(`shared-environment E2E runner is missing ${required}`)
+}
+
+const dockerE2E = read('scripts/e2e/docker-e2e.mjs')
+if (!dockerE2E.includes('new URL(url).origin')) {
+  throw new Error('Docker E2E must normalize frontend URLs to browser origins before CORS checks')
 }
 
 const stateHelper = requireSource('scripts/e2e/local-state.sh')
