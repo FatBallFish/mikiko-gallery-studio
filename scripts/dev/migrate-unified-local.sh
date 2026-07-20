@@ -31,10 +31,6 @@ volume_exists() {
   docker volume inspect "$1" >/dev/null 2>&1
 }
 
-container_running() {
-  [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || true)" == "true" ]]
-}
-
 wait_for_database() {
   local container=$1
   for _ in {1..80}; do
@@ -94,10 +90,17 @@ restart_old_dev_writers() {
 }
 
 stop_source_postgres() {
+  local running
   if [[ "$USING_TEMP_SOURCE" == true ]]; then
     docker rm -f "$TEMP_POSTGRES_CONTAINER" >/dev/null 2>&1 || true
-  elif [[ "$SOURCE_STARTED_BY_MIGRATION" == true ]] && container_running "$OLD_POSTGRES_CONTAINER"; then
-    docker stop "$OLD_POSTGRES_CONTAINER" >/dev/null
+  elif [[ "$SOURCE_STARTED_BY_MIGRATION" == true ]]; then
+    if ! running="$(docker inspect -f '{{.State.Running}}' "$OLD_POSTGRES_CONTAINER" 2>/dev/null)"; then
+      echo "local migration: could not inspect migration-started source PostgreSQL during cleanup" >&2
+      return 0
+    fi
+    if [[ "$running" == "true" ]]; then
+      docker stop "$OLD_POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+    fi
   fi
 }
 
@@ -130,10 +133,21 @@ mkdir -p "$BACKUP_DIR"
 trap cleanup_source EXIT
 stop_old_dev_writers
 
-if docker inspect "$OLD_POSTGRES_CONTAINER" >/dev/null 2>&1; then
-  if ! container_running "$OLD_POSTGRES_CONTAINER"; then
+if ! source_postgres_ids="$(docker ps -aq --filter "name=^/${OLD_POSTGRES_CONTAINER}$")"; then
+  fail "failed to list the source PostgreSQL container"
+fi
+if [[ "$source_postgres_ids" == *$'\n'* ]]; then
+  fail "multiple source PostgreSQL containers matched: $OLD_POSTGRES_CONTAINER"
+fi
+if [[ -n "$source_postgres_ids" ]]; then
+  if ! source_postgres_running="$(docker inspect -f '{{.State.Running}}' "$source_postgres_ids" 2>/dev/null)"; then
+    fail "failed to inspect the source PostgreSQL container"
+  fi
+  if [[ "$source_postgres_running" == "false" ]]; then
     docker start "$OLD_POSTGRES_CONTAINER" >/dev/null
     SOURCE_STARTED_BY_MIGRATION=true
+  elif [[ "$source_postgres_running" != "true" ]]; then
+    fail "unexpected source PostgreSQL state: $source_postgres_running"
   fi
 else
   docker run -d --name "$TEMP_POSTGRES_CONTAINER" \

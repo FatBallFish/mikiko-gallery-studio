@@ -74,6 +74,8 @@ STATE_SNAPSHOTTED=false
 WRITERS_STOPPED=false
 LOCK_ACQUIRED=false
 RECOVERY_IN_PROGRESS=false
+E2E_CHILD_PID=""
+E2E_CHILD_PGID=""
 WRITER_CONTAINER_IDS=()
 
 assert_local_url() {
@@ -118,7 +120,8 @@ release_e2e_lock() {
 write_recovery_marker() {
   local phase=$1
   local pending_marker="${RECOVERY_MARKER}.tmp.$$"
-  printf 'snapshot_dir=%s\nphase=%s\nowner_pid=%s\n' "$SNAPSHOT_DIR" "$phase" "$$" >"$pending_marker"
+  printf 'snapshot_dir=%s\nphase=%s\nowner_pid=%s\nchild_pid=%s\nchild_pgid=%s\n' \
+    "$SNAPSHOT_DIR" "$phase" "$$" "$E2E_CHILD_PID" "$E2E_CHILD_PGID" >"$pending_marker"
   mv "$pending_marker" "$RECOVERY_MARKER"
 }
 
@@ -192,6 +195,14 @@ acquire_e2e_lock || fail "another shared local E2E run is active"
 
 if [[ "$RECOVER_ONLY" == true ]]; then
   [[ -f "$RECOVERY_MARKER" ]] || fail "no shared E2E recovery marker exists"
+  recovery_child_pid="$(sed -n 's/^child_pid=//p' "$RECOVERY_MARKER" | head -n 1)"
+  recovery_child_pgid="$(sed -n 's/^child_pgid=//p' "$RECOVERY_MARKER" | head -n 1)"
+  if [[ "$recovery_child_pid" =~ ^[0-9]+$ ]] && kill -0 "$recovery_child_pid" 2>/dev/null; then
+    fail "the interrupted E2E child process is still running: $recovery_child_pid"
+  fi
+  if [[ "$recovery_child_pgid" =~ ^[0-9]+$ ]] && kill -0 -- "-$recovery_child_pgid" 2>/dev/null; then
+    fail "the interrupted E2E process group is still running: $recovery_child_pgid"
+  fi
   SNAPSHOT_DIR="$(recovery_snapshot_dir)"
   case "$SNAPSHOT_DIR" in
     "$ROOT_DIR"/tmp/e2e/local-state-*) ;;
@@ -236,8 +247,24 @@ start_writers || {
   exit 1
 }
 
+NODE_BIN="$(command -v node)" || fail "node is required for Docker E2E"
 BASE_URL="$BASE_URL" \
 USER_WEB_URL="$USER_WEB_URL" \
 ADMIN_WEB_URL="$ADMIN_WEB_URL" \
 NGINX_URL="$NGINX_URL" \
-node "$ROOT_DIR/scripts/e2e/docker-e2e.mjs"
+python3 -c 'import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
+  "$NODE_BIN" "$ROOT_DIR/scripts/e2e/docker-e2e.mjs" &
+E2E_CHILD_PID=$!
+E2E_CHILD_PGID=$E2E_CHILD_PID
+write_recovery_marker test-running || {
+  kill "$E2E_CHILD_PID" >/dev/null 2>&1 || true
+  wait "$E2E_CHILD_PID" >/dev/null 2>&1 || true
+  fail "could not record the Docker E2E process group"
+}
+set +e
+wait "$E2E_CHILD_PID"
+e2e_status=$?
+set -e
+E2E_CHILD_PID=""
+E2E_CHILD_PGID=""
+exit "$e2e_status"

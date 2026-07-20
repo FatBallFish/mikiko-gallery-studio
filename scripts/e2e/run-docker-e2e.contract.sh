@@ -9,6 +9,7 @@ RECOVERY_MARKER="$ROOT_DIR/tmp/e2e/pic-gallery-local-recovery-required"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-e2e-runner-contract.XXXXXX")"
 LOCK_CREATED=false
 RECOVERY_MARKER_CREATED=false
+GROUP_PID=""
 
 cleanup() {
   if [[ "$LOCK_CREATED" == true && -L "$LOCK_FILE" ]]; then
@@ -16,6 +17,10 @@ cleanup() {
   fi
   if [[ "$RECOVERY_MARKER_CREATED" == true && -f "$RECOVERY_MARKER" ]]; then
     unlink "$RECOVERY_MARKER"
+  fi
+  if [[ -n "$GROUP_PID" ]]; then
+    kill -TERM -- "-$GROUP_PID" >/dev/null 2>&1 || true
+    wait "$GROUP_PID" >/dev/null 2>&1 || true
   fi
   find "$TMP_DIR" -mindepth 1 -delete 2>/dev/null || true
   rmdir "$TMP_DIR" 2>/dev/null || true
@@ -61,8 +66,45 @@ if "$RUNNER" >"$TMP_DIR/recovery-required.out" 2>&1; then
   exit 1
 fi
 rg -q 'recovery required before another shared E2E run' "$TMP_DIR/recovery-required.out"
+
+printf 'snapshot_dir=%s\nphase=test-running\nowner_pid=999999\nchild_pid=%s\nchild_pgid=\n' "$TMP_DIR/local-state-contract" "$$" >"$RECOVERY_MARKER"
+if "$RUNNER" --recover >"$TMP_DIR/live-child.out" 2>&1; then
+  echo "FAIL: shared E2E recovery ignored a live child process" >&2
+  exit 1
+fi
+rg -q 'interrupted E2E child process is still running' "$TMP_DIR/live-child.out"
+
+python3 -c 'import os; os.setsid(); os.execlp("sleep", "sleep", "30")' &
+GROUP_PID=$!
+for _ in {1..40}; do
+  kill -0 -- "-$GROUP_PID" 2>/dev/null && break
+  sleep 0.05
+done
+kill -0 -- "-$GROUP_PID" 2>/dev/null || { echo "FAIL: process-group test fixture did not start" >&2; exit 1; }
+printf 'snapshot_dir=%s\nphase=test-running\nowner_pid=999999\nchild_pid=\nchild_pgid=%s\n' "$TMP_DIR/local-state-contract" "$GROUP_PID" >"$RECOVERY_MARKER"
+if "$RUNNER" --recover >"$TMP_DIR/live-process-group.out" 2>&1; then
+  echo "FAIL: shared E2E recovery ignored a live process group" >&2
+  exit 1
+fi
+rg -q 'interrupted E2E process group is still running' "$TMP_DIR/live-process-group.out"
+kill -TERM -- "-$GROUP_PID" >/dev/null 2>&1 || true
+wait "$GROUP_PID" >/dev/null 2>&1 || true
+GROUP_PID=""
+
+printf 'snapshot_dir=/tmp/outside-pic-gallery\nphase=test-running\nowner_pid=999999\nchild_pid=\nchild_pgid=\n' >"$RECOVERY_MARKER"
+if "$RUNNER" --recover >"$TMP_DIR/unsafe-recovery-path.out" 2>&1; then
+  echo "FAIL: shared E2E recovery accepted an unsafe snapshot path" >&2
+  exit 1
+fi
+rg -q 'recovery marker contains an unsafe snapshot path' "$TMP_DIR/unsafe-recovery-path.out"
+
 unlink "$RECOVERY_MARKER"
 RECOVERY_MARKER_CREATED=false
+if "$RUNNER" --recover >"$TMP_DIR/missing-recovery-marker.out" 2>&1; then
+  echo "FAIL: shared E2E recovery accepted a missing marker" >&2
+  exit 1
+fi
+rg -q 'no shared E2E recovery marker exists' "$TMP_DIR/missing-recovery-marker.out"
 
 source "$RUNNER_STATE"
 COMPOSE=(fake_compose)
