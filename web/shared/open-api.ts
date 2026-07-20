@@ -86,7 +86,7 @@ export function buildOpenCreateTaskWire(req: CreateTaskRequest): OpenCreateTaskW
 
 function toEstimateQuery(req: EstimateRequest) {
   return {
-    task_type: req.task_type === 'reference_to_image' ? 'reference_generate' : req.task_type,
+    task_type: req.task_type,
     route_model_code: req.route_model_code,
     ...resolveGenerationResolution(req),
     requested_output_image_count: req.image_count,

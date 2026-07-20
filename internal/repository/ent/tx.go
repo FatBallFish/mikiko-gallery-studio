@@ -44,6 +44,8 @@ type Tx struct {
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
 	PointLedger *PointLedgerClient
+	// PromptOptimizationRun is the client for interacting with the PromptOptimizationRun builders.
+	PromptOptimizationRun *PromptOptimizationRunClient
 	// ProviderErrorPolicy is the client for interacting with the ProviderErrorPolicy builders.
 	ProviderErrorPolicy *ProviderErrorPolicyClient
 	// ProviderModel is the client for interacting with the ProviderModel builders.
@@ -70,6 +72,10 @@ type Tx struct {
 	SecureConfig *SecureConfigClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// TextModel is the client for interacting with the TextModel builders.
+	TextModel *TextModelClient
+	// TextModelAccount is the client for interacting with the TextModelAccount builders.
+	TextModelAccount *TextModelAccountClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserGroup is the client for interacting with the UserGroup builders.
@@ -229,6 +235,7 @@ func (tx *Tx) init() {
 	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)
 	tx.PaymentWebhookEvent = NewPaymentWebhookEventClient(tx.config)
 	tx.PointLedger = NewPointLedgerClient(tx.config)
+	tx.PromptOptimizationRun = NewPromptOptimizationRunClient(tx.config)
 	tx.ProviderErrorPolicy = NewProviderErrorPolicyClient(tx.config)
 	tx.ProviderModel = NewProviderModelClient(tx.config)
 	tx.PublicImageInteraction = NewPublicImageInteractionClient(tx.config)
@@ -242,6 +249,8 @@ func (tx *Tx) init() {
 	tx.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(tx.config)
 	tx.SecureConfig = NewSecureConfigClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
+	tx.TextModel = NewTextModelClient(tx.config)
+	tx.TextModelAccount = NewTextModelAccountClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserGroup = NewUserGroupClient(tx.config)
 	tx.UserGroupMember = NewUserGroupMemberClient(tx.config)

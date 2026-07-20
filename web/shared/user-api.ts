@@ -19,6 +19,8 @@ import type {
   LoginResult,
   PageResult,
   PaymentOrder,
+  PromptOptimizationEstimate,
+  PromptOptimizationResult,
   ReferenceAsset,
   Subscription,
   UpdatePreferencesRequest,
@@ -70,12 +72,10 @@ export function toBalance(raw: any): Balance {
 
 function normalizeTaskType(type: string): ImageTask['task_type'] {
   if (type === 'image_edit') return 'image_edit'
-  if (type === 'reference_to_image' || type === 'reference_generate' || type === 'image_to_image') return 'reference_to_image'
   return 'text_to_image'
 }
 
 function toBackendTaskType(type: ImageTask['task_type'] | string): BackendEstimateRequest['task_type'] {
-  if (type === 'reference_to_image' || type === 'reference_generate') return 'reference_generate'
   if (type === 'image_edit') return 'image_edit'
   return 'text_to_image'
 }
@@ -319,7 +319,7 @@ export function normalizeCapabilities(raw: any): Capability {
       max_reference_image_count: maxReference,
       effective_multiplier: pick<string>(item, 'effective_multiplier', 'EffectiveMultiplier'),
       prices,
-      supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.some((type) => type === 'reference_to_image' || type === 'image_edit'))),
+      supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.includes('image_edit'))),
       display_points: pick<string>(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
       ...optionalOutputCapabilities(item),
     }]
@@ -407,6 +407,8 @@ export const userApi = {
   mockPayCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderMockPay, { method: 'POST', pathParams: { order_id } }),
   redeemCode: (code: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request(API_PATHS.agent.redeemCode, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { code } }),
   getCapabilities: async (): Promise<Capability> => normalizeCapabilities(await sharedApiClient.request(API_PATHS.agent.capabilities)),
+  estimatePromptOptimization: (prompt: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt } }),
+  optimizePrompt: (prompt: string, quote: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote } }),
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
     if (typeof file === 'string') {

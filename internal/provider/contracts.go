@@ -14,10 +14,18 @@ const (
 type TaskType string
 
 const (
-	TaskTypeTextToImage       TaskType = "text_to_image"
-	TaskTypeImageEdit         TaskType = "image_edit"
-	TaskTypeReferenceGenerate TaskType = "reference_generate"
+	TaskTypeTextToImage TaskType = "text_to_image"
+	TaskTypeImageEdit   TaskType = "image_edit"
 )
+
+func IsSupportedTaskType(value string) bool {
+	switch TaskType(value) {
+	case TaskTypeTextToImage, TaskTypeImageEdit:
+		return true
+	default:
+		return false
+	}
+}
 
 type ResponseFormat string
 

@@ -14,6 +14,7 @@ import { OverlayPortal } from './ui/overlayPortal'
 import { imageMediaTransition, initialImageMediaState } from './ui/imageMediaModel'
 import { shouldStartZoomDrag } from './ui/zoomPointer'
 import { resetShellScroll, shellActiveNavIndex, shellChromeClasses, shellLayoutClasses, type ShellScrollMode } from './shellLayout'
+import { workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './pages/workspaceCreationDraft'
 export { userShell, userButton, userForm, userState, userPill, userCard, userText }
 
 export const AppContext = createContext<AppContextValue | null>(null)
@@ -34,6 +35,7 @@ export type ImageLightboxPayload = {
   ratio?: string
   model?: string
   source?: string
+  creationDraft?: WorkspaceCreationDraft
 }
 
 export function imagePixelsLabel(width?: number, height?: number) {
@@ -106,9 +108,10 @@ export function ImageMediaFallback({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-export function ImageLightbox({ image, onClose }: {
+export function ImageLightbox({ image, onClose, onReuseConfiguration }: {
   image: ImageLightboxPayload | null
   onClose: () => void
+  onReuseConfiguration?: (draft: WorkspaceCreationDraft) => void
 }) {
   const [zoomOpen, setZoomOpen] = useState(false)
   const media = useImageMediaState(image?.url ?? '')
@@ -122,14 +125,8 @@ export function ImageLightbox({ image, onClose }: {
   if (!image) return null
   const pixels = imagePixelsLabel(image.width, image.height)
   const ratio = imageRatioLabel(image.width, image.height, image.ratio)
-  const copyConfig = async () => {
-    await copyText(JSON.stringify({
-      prompt: image.prompt || image.alt || '',
-      model: image.model || '',
-      ratio,
-      pixels,
-      source: image.source || '',
-    }, null, 2))
+  const reuseConfiguration = () => {
+    if (image.creationDraft) onReuseConfiguration?.(image.creationDraft)
   }
   const downloadImage = () => {
     const link = document.createElement('a')
@@ -172,7 +169,7 @@ export function ImageLightbox({ image, onClose }: {
               </div>
             </div>
             <div className={lightboxClasses.actions}>
-              <button type="button" className={lightboxClasses.primaryAction} onClick={() => void copyConfig()}>复制配置</button>
+              {image.creationDraft && onReuseConfiguration ? <button type="button" className={lightboxClasses.primaryAction} onClick={reuseConfiguration}>复用配置</button> : null}
               <button type="button" className={lightboxClasses.secondaryAction} onClick={downloadImage}>下载图片</button>
             </div>
           </aside>
@@ -419,6 +416,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
                 ratio: image.aspect_ratio,
                 model: image.route_model_code || image.abstract_model,
                 source: previewSourceLabel,
+                creationDraft: workspaceCreationDraftFromSnapshot(image),
               }) : undefined}
             />
           ) : <div className={publicDetailClasses.placeholder}>图片不可预览</div>}
@@ -1024,13 +1022,13 @@ function useDismissableLayer(open: boolean, onClose: () => void, focusRef: React
   }, [focusRef, open])
 }
 
-export function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+export function Modal({ title, children, onClose, className = '' }: { title: string; children: React.ReactNode; onClose: () => void; className?: string }) {
   const dialogRef = useRef<HTMLElement | null>(null)
   useDismissableLayer(true, onClose, dialogRef)
   return (
     <OverlayPortal>
       <div className={userState.modalBackdrop} role="presentation" data-focus-layer onMouseDown={onClose}>
-        <section ref={dialogRef} tabIndex={-1} className={userState.modalCard} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <section ref={dialogRef} tabIndex={-1} className={cn(userState.modalCard, className)} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
           <div className="flex items-center justify-between gap-5">
             <h2 className="m-0 text-xl">{title}</h2>
             <IconButton label="关闭" onClick={onClose}><X size={18} strokeWidth={1.5} aria-hidden="true" /></IconButton>
@@ -1134,7 +1132,6 @@ export function StatusPill({ status }: { status: ImageTaskStatus | PublishStatus
 export function taskTypeLabel(type: ImageTaskType | string) {
   const labels: Record<string, string> = {
     text_to_image: '文生图',
-    reference_to_image: '参考生图',
     image_edit: '图片编辑',
   }
   return labels[type] ?? type

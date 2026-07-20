@@ -327,7 +327,7 @@ func compatTestConfig() config.Config {
 		"plus":  {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 	}
 	cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000", "plus": "1.00000"}
-	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000", "reference_generate": "1.15000"}
+	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000"}
 	cfg.GenerationLimits.MaxImageCount = 5
 	cfg.GenerationLimits.ReferenceImageMaxCount = 4
 	cfg.Providers.OpenAI.Enabled = true
@@ -337,7 +337,7 @@ func compatTestConfig() config.Config {
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
 		"openrouter": {
 			SupportedModels:         []string{"plus"},
-			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
 			Quality:                 []string{"auto", "low", "medium", "high"},
 			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
@@ -352,7 +352,7 @@ func compatTestConfig() config.Config {
 		},
 		"openai": {
 			SupportedModels:         []string{"plus"},
-			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
 			Quality:                 []string{"auto", "low", "medium", "high"},
 			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},

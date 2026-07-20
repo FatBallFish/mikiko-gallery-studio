@@ -92,6 +92,7 @@ func LoadEnv(path string) (Config, error) {
 
 	cfg.APIKey.SigningSecretEncryptionKey = envString(fileEnv, "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "")
 	cfg.Security.SecureConfigEncryptionKey = envString(fileEnv, "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", envString(fileEnv, "SECURE_CONFIG_ENCRYPTION_KEY", ""))
+	cfg.Security.PromptOptimizationQuoteSigningKey = envString(fileEnv, "PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY", "")
 	cfg.Cashier.ProviderConfigEncryptionKey = envString(fileEnv, "CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", envString(fileEnv, "PIC_GALLERY_CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", ""))
 	cfg.Cashier.Enabled = envBool(fileEnv, "CASHIER_ENABLED", false)
 	cfg.Cashier.MockEnabled = envBool(fileEnv, "CASHIER_MOCK_ENABLED", false)
@@ -189,6 +190,9 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Security.SecureConfigEncryptionKey) == "" {
 		cfg.Security.SecureConfigEncryptionKey = "local-dev-secure-config-encryption-key"
 	}
+	if strings.TrimSpace(cfg.Security.PromptOptimizationQuoteSigningKey) == "" {
+		cfg.Security.PromptOptimizationQuoteSigningKey = "local-dev-prompt-optimization-quote-signing-key"
+	}
 	if cfg.Worker.MaxConcurrentTasks <= 0 {
 		cfg.Worker.MaxConcurrentTasks = 4
 	}
@@ -233,8 +237,9 @@ func applyDefaults(cfg *Config) {
 		}
 	}
 	for name, capability := range cfg.Routing.ProviderCapabilities {
+		capability.SupportedTaskTypes = currentImageTaskTypes(capability.SupportedTaskTypes)
 		if len(capability.SupportedTaskTypes) == 0 {
-			capability.SupportedTaskTypes = []string{"text_to_image", "image_edit", "reference_generate"}
+			capability.SupportedTaskTypes = []string{"text_to_image", "image_edit"}
 		}
 		if len(capability.SupportedBaseResolution) == 0 {
 			capability.SupportedBaseResolution = []string{"1k", "2k", "4k"}
@@ -280,7 +285,7 @@ func applyDefaults(cfg *Config) {
 func defaultProviderCapability(cfg *Config, models []string, supportsImageInput bool, supportsMask bool, priority int) ProviderCapabilityConfig {
 	return ProviderCapabilityConfig{
 		SupportedModels:         models,
-		SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+		SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 		SupportedBaseResolution: []string{"1k", "2k", "4k"},
 		Quality:                 []string{"auto", "low", "medium", "high"},
 		SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
@@ -293,6 +298,17 @@ func defaultProviderCapability(cfg *Config, models []string, supportsImageInput 
 		SupportsMask:            supportsMask,
 		Priority:                priority,
 	}
+}
+
+func currentImageTaskTypes(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "text_to_image" || value == "image_edit" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func providerPriority(cfg RoutingConfig, provider string) int {

@@ -938,7 +938,7 @@ func taskTestConfig() config.Config {
 		"plus": {"1k": "5.00000", "2k": "8.00000", "4k": "16.00000"},
 	}
 	cfg.Billing.UserGroupMultipliers = map[string]string{"basic": "1.00000", "plus": "1.00000"}
-	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000", "reference_generate": "1.15000"}
+	cfg.Billing.TaskMultipliers = map[string]string{"text_to_image": "1.00000", "image_edit": "1.25000"}
 	cfg.Billing.ReferenceImageExtra = config.ReferenceExtra{First: "0.10000", Additional: "0.05000"}
 	cfg.GenerationLimits.MaxImageCount = 5
 	cfg.GenerationLimits.ReferenceImageMaxCount = 4
@@ -947,7 +947,7 @@ func taskTestConfig() config.Config {
 	cfg.Routing.ProviderCapabilities = map[string]config.ProviderCapabilityConfig{
 		"openrouter": {
 			SupportedModels:         []string{"plus"},
-			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
 			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
 			MaxImageCount:           5,
@@ -958,7 +958,7 @@ func taskTestConfig() config.Config {
 		},
 		"openai": {
 			SupportedModels:         []string{"plus"},
-			SupportedTaskTypes:      []string{"text_to_image", "image_edit", "reference_generate"},
+			SupportedTaskTypes:      []string{"text_to_image", "image_edit"},
 			SupportedBaseResolution: []string{"1k", "2k", "4k"},
 			SupportedAspectRatios:   []string{"1:1", "4:3", "16:9"},
 			MaxImageCount:           5,
@@ -2006,6 +2006,31 @@ func TestCreateTaskQueuesResolvedTask(t *testing.T) {
 	}
 	if loaded.Status != domainimagetask.StatusQueued {
 		t.Fatalf("expected persisted queued task, got %s", loaded.Status)
+	}
+}
+
+func TestCreateTaskRejectsUnsupportedTypeWithoutPersistingHistory(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(taskTestConfig(), nil, store)
+
+	_, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           33,
+		AbstractModel:    "plus",
+		TaskType:         "reference_generate",
+		Prompt:           "This removed task type must never enter history",
+		RequestedSize:    "auto",
+		BaseResolution:   "auto",
+		OutputImageCount: 1,
+	})
+	if err == nil {
+		t.Fatal("expected unsupported task type to be rejected")
+	}
+	tasks, listErr := store.ListByUser(context.Background(), 33)
+	if listErr != nil {
+		t.Fatalf("ListByUser: %v", listErr)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("unsupported task type must not create history, got %d tasks", len(tasks))
 	}
 }
 

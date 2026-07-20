@@ -13,6 +13,7 @@ import (
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -85,6 +86,9 @@ func (s *Service) SetAdminConfigResolver(resolver adminConfigResolver) {
 }
 
 func (s *Service) Estimate(req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return domainbilling.EstimateResult{}, errs.BadRequest("unsupported task_type")
+	}
 	if strings.TrimSpace(req.RouteModelCode) != "" {
 		return s.estimateRouteModel(req)
 	}

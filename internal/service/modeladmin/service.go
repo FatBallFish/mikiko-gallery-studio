@@ -7,6 +7,7 @@ import (
 
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -424,6 +425,11 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 		req.Currency = "USD"
 	}
 	req.TaskTypes = cloneNormalizedStrings(req.TaskTypes)
+	for _, taskType := range req.TaskTypes {
+		if !provider.IsSupportedTaskType(taskType) {
+			return domainmodeladmin.ModelAccountModelWriteRequest{}, errs.BadRequest("unsupported task_type")
+		}
+	}
 	capability, err := modelhub.NormalizeCapability(modelhub.ImageModelCapability{
 		MaxReferenceImageCount:    req.MaxReferenceImageCount,
 		MaxImageCount:             req.MaxImageCount,
@@ -495,6 +501,9 @@ func normalizeRouteModelPriceWrite(req domainmodeladmin.RouteModelPriceWriteRequ
 	if req.RouteModelID <= 0 || req.TaskType == "" || req.BaseResolution == "" {
 		return domainmodeladmin.RouteModelPriceWriteRequest{}, errs.BadRequest("route_model_id, task_type and base_resolution are required")
 	}
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return domainmodeladmin.RouteModelPriceWriteRequest{}, errs.BadRequest("unsupported task_type")
+	}
 	if req.BasePoints == "" {
 		req.BasePoints = "0.00000"
 	}
@@ -510,6 +519,9 @@ func normalizeRouteWrite(req domainmodeladmin.RouteWriteRequest) (domainmodeladm
 	req.ProviderCode = normalizeCode(req.ProviderCode)
 	if req.GroupCode == "" || req.TaskType == "" {
 		return domainmodeladmin.RouteWriteRequest{}, errs.BadRequest("group_code and task_type are required")
+	}
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return domainmodeladmin.RouteWriteRequest{}, errs.BadRequest("unsupported task_type")
 	}
 	if req.ProviderCode == "" && req.ProviderModelID <= 0 {
 		return domainmodeladmin.RouteWriteRequest{}, errs.BadRequest("provider_code or provider_model_id is required")

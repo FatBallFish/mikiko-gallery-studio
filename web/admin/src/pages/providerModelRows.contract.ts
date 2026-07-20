@@ -49,12 +49,12 @@ assertEqual(modelEnabledTone(false), 'warning', 'disabled model tone')
 
 assertEqual(
   modelCapabilitySummary({
-    task_types: ['text_to_image', 'reference_to_image', 'image_edit'],
+    task_types: ['text_to_image', 'image_edit'],
     base_resolution: ['auto', '1K', '2K'],
     cost_per_image: '0.12000',
     currency: 'USD',
   }),
-  '文生图/参考生图/图片编辑 · auto/1K/2K · 0.12000 USD',
+  '文生图/图片编辑 · auto/1K/2K · 0.12000 USD',
   'model capability summary',
 )
 

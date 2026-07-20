@@ -56,13 +56,13 @@ if (emptyTerminal.title !== '没有可用结果') {
 }
 
 const card = workspaceTaskCardView(task({
-  task_type: 'reference_to_image',
+  task_type: 'image_edit',
   status: 'partial_failed',
   route_model_code: 'plus',
   created_at: '2026-06-05T13:45:30Z',
 }))
 
-if (card.taskTypeLabel !== '参考生图' || card.createdAtLabel !== '2026/06/05 13:45' || card.statusLabel !== '部分完成') {
+if (card.taskTypeLabel !== '图片编辑' || card.createdAtLabel !== '2026/06/05 13:45' || card.statusLabel !== '部分完成') {
   throw new Error(`workspace task card should localize type/date/status, got ${JSON.stringify(card)}`)
 }
 

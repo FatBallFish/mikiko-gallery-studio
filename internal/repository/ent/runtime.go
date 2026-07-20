@@ -21,6 +21,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
@@ -34,6 +35,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/schema"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
@@ -1570,6 +1573,129 @@ func init() {
 	pointledgerDescIdempotencyKey := pointledgerFields[16].Descriptor()
 	// pointledger.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
 	pointledger.IdempotencyKeyValidator = pointledgerDescIdempotencyKey.Validators[0].(func(string) error)
+	promptoptimizationrunMixin := schema.PromptOptimizationRun{}.Mixin()
+	promptoptimizationrunMixinFields0 := promptoptimizationrunMixin[0].Fields()
+	_ = promptoptimizationrunMixinFields0
+	promptoptimizationrunFields := schema.PromptOptimizationRun{}.Fields()
+	_ = promptoptimizationrunFields
+	// promptoptimizationrunDescCreatedAt is the schema descriptor for created_at field.
+	promptoptimizationrunDescCreatedAt := promptoptimizationrunMixinFields0[0].Descriptor()
+	// promptoptimizationrun.DefaultCreatedAt holds the default value on creation for the created_at field.
+	promptoptimizationrun.DefaultCreatedAt = promptoptimizationrunDescCreatedAt.Default.(func() time.Time)
+	// promptoptimizationrunDescUpdatedAt is the schema descriptor for updated_at field.
+	promptoptimizationrunDescUpdatedAt := promptoptimizationrunMixinFields0[1].Descriptor()
+	// promptoptimizationrun.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	promptoptimizationrun.DefaultUpdatedAt = promptoptimizationrunDescUpdatedAt.Default.(func() time.Time)
+	// promptoptimizationrun.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	promptoptimizationrun.UpdateDefaultUpdatedAt = promptoptimizationrunDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// promptoptimizationrunDescModelCode is the schema descriptor for model_code field.
+	promptoptimizationrunDescModelCode := promptoptimizationrunFields[4].Descriptor()
+	// promptoptimizationrun.ModelCodeValidator is a validator for the "model_code" field. It is called by the builders before save.
+	promptoptimizationrun.ModelCodeValidator = func() func(string) error {
+		validators := promptoptimizationrunDescModelCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model_code string) error {
+			for _, fn := range fns {
+				if err := fn(model_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// promptoptimizationrunDescAPIStyle is the schema descriptor for api_style field.
+	promptoptimizationrunDescAPIStyle := promptoptimizationrunFields[5].Descriptor()
+	// promptoptimizationrun.APIStyleValidator is a validator for the "api_style" field. It is called by the builders before save.
+	promptoptimizationrun.APIStyleValidator = func() func(string) error {
+		validators := promptoptimizationrunDescAPIStyle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(api_style string) error {
+			for _, fn := range fns {
+				if err := fn(api_style); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// promptoptimizationrunDescPromptSha256 is the schema descriptor for prompt_sha256 field.
+	promptoptimizationrunDescPromptSha256 := promptoptimizationrunFields[7].Descriptor()
+	// promptoptimizationrun.PromptSha256Validator is a validator for the "prompt_sha256" field. It is called by the builders before save.
+	promptoptimizationrun.PromptSha256Validator = func() func(string) error {
+		validators := promptoptimizationrunDescPromptSha256.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(prompt_sha256 string) error {
+			for _, fn := range fns {
+				if err := fn(prompt_sha256); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// promptoptimizationrunDescStatus is the schema descriptor for status field.
+	promptoptimizationrunDescStatus := promptoptimizationrunFields[8].Descriptor()
+	// promptoptimizationrun.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	promptoptimizationrun.StatusValidator = func() func(string) error {
+		validators := promptoptimizationrunDescStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(status string) error {
+			for _, fn := range fns {
+				if err := fn(status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// promptoptimizationrunDescInputTokens is the schema descriptor for input_tokens field.
+	promptoptimizationrunDescInputTokens := promptoptimizationrunFields[9].Descriptor()
+	// promptoptimizationrun.DefaultInputTokens holds the default value on creation for the input_tokens field.
+	promptoptimizationrun.DefaultInputTokens = promptoptimizationrunDescInputTokens.Default.(int)
+	// promptoptimizationrunDescOutputTokens is the schema descriptor for output_tokens field.
+	promptoptimizationrunDescOutputTokens := promptoptimizationrunFields[10].Descriptor()
+	// promptoptimizationrun.DefaultOutputTokens holds the default value on creation for the output_tokens field.
+	promptoptimizationrun.DefaultOutputTokens = promptoptimizationrunDescOutputTokens.Default.(int)
+	// promptoptimizationrunDescEstimatedPoints is the schema descriptor for estimated_points field.
+	promptoptimizationrunDescEstimatedPoints := promptoptimizationrunFields[11].Descriptor()
+	// promptoptimizationrun.DefaultEstimatedPoints holds the default value on creation for the estimated_points field.
+	promptoptimizationrun.DefaultEstimatedPoints = promptoptimizationrunDescEstimatedPoints.Default.(string)
+	// promptoptimizationrunDescActualPoints is the schema descriptor for actual_points field.
+	promptoptimizationrunDescActualPoints := promptoptimizationrunFields[12].Descriptor()
+	// promptoptimizationrun.DefaultActualPoints holds the default value on creation for the actual_points field.
+	promptoptimizationrun.DefaultActualPoints = promptoptimizationrunDescActualPoints.Default.(string)
+	// promptoptimizationrunDescProviderRequestID is the schema descriptor for provider_request_id field.
+	promptoptimizationrunDescProviderRequestID := promptoptimizationrunFields[13].Descriptor()
+	// promptoptimizationrun.DefaultProviderRequestID holds the default value on creation for the provider_request_id field.
+	promptoptimizationrun.DefaultProviderRequestID = promptoptimizationrunDescProviderRequestID.Default.(string)
+	// promptoptimizationrun.ProviderRequestIDValidator is a validator for the "provider_request_id" field. It is called by the builders before save.
+	promptoptimizationrun.ProviderRequestIDValidator = promptoptimizationrunDescProviderRequestID.Validators[0].(func(string) error)
+	// promptoptimizationrunDescErrorCode is the schema descriptor for error_code field.
+	promptoptimizationrunDescErrorCode := promptoptimizationrunFields[14].Descriptor()
+	// promptoptimizationrun.DefaultErrorCode holds the default value on creation for the error_code field.
+	promptoptimizationrun.DefaultErrorCode = promptoptimizationrunDescErrorCode.Default.(string)
+	// promptoptimizationrun.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	promptoptimizationrun.ErrorCodeValidator = promptoptimizationrunDescErrorCode.Validators[0].(func(string) error)
+	// promptoptimizationrunDescErrorMessage is the schema descriptor for error_message field.
+	promptoptimizationrunDescErrorMessage := promptoptimizationrunFields[15].Descriptor()
+	// promptoptimizationrun.DefaultErrorMessage holds the default value on creation for the error_message field.
+	promptoptimizationrun.DefaultErrorMessage = promptoptimizationrunDescErrorMessage.Default.(string)
+	// promptoptimizationrunDescID is the schema descriptor for id field.
+	promptoptimizationrunDescID := promptoptimizationrunFields[0].Descriptor()
+	// promptoptimizationrun.DefaultID holds the default value on creation for the id field.
+	promptoptimizationrun.DefaultID = promptoptimizationrunDescID.Default.(func() uuid.UUID)
 	providererrorpolicyMixin := schema.ProviderErrorPolicy{}.Mixin()
 	providererrorpolicyMixinFields0 := providererrorpolicyMixin[0].Fields()
 	_ = providererrorpolicyMixinFields0
@@ -2318,6 +2444,184 @@ func init() {
 	subscriptionplanDescSortOrder := subscriptionplanFields[11].Descriptor()
 	// subscriptionplan.DefaultSortOrder holds the default value on creation for the sort_order field.
 	subscriptionplan.DefaultSortOrder = subscriptionplanDescSortOrder.Default.(int)
+	textmodelMixin := schema.TextModel{}.Mixin()
+	textmodelMixinFields0 := textmodelMixin[0].Fields()
+	_ = textmodelMixinFields0
+	textmodelFields := schema.TextModel{}.Fields()
+	_ = textmodelFields
+	// textmodelDescCreatedAt is the schema descriptor for created_at field.
+	textmodelDescCreatedAt := textmodelMixinFields0[0].Descriptor()
+	// textmodel.DefaultCreatedAt holds the default value on creation for the created_at field.
+	textmodel.DefaultCreatedAt = textmodelDescCreatedAt.Default.(func() time.Time)
+	// textmodelDescUpdatedAt is the schema descriptor for updated_at field.
+	textmodelDescUpdatedAt := textmodelMixinFields0[1].Descriptor()
+	// textmodel.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	textmodel.DefaultUpdatedAt = textmodelDescUpdatedAt.Default.(func() time.Time)
+	// textmodel.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	textmodel.UpdateDefaultUpdatedAt = textmodelDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// textmodelDescModelCode is the schema descriptor for model_code field.
+	textmodelDescModelCode := textmodelFields[1].Descriptor()
+	// textmodel.ModelCodeValidator is a validator for the "model_code" field. It is called by the builders before save.
+	textmodel.ModelCodeValidator = func() func(string) error {
+		validators := textmodelDescModelCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model_code string) error {
+			for _, fn := range fns {
+				if err := fn(model_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// textmodelDescDisplayName is the schema descriptor for display_name field.
+	textmodelDescDisplayName := textmodelFields[2].Descriptor()
+	// textmodel.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
+	textmodel.DisplayNameValidator = func() func(string) error {
+		validators := textmodelDescDisplayName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(display_name string) error {
+			for _, fn := range fns {
+				if err := fn(display_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// textmodelDescInputPricePerMillionTokens is the schema descriptor for input_price_per_million_tokens field.
+	textmodelDescInputPricePerMillionTokens := textmodelFields[3].Descriptor()
+	// textmodel.DefaultInputPricePerMillionTokens holds the default value on creation for the input_price_per_million_tokens field.
+	textmodel.DefaultInputPricePerMillionTokens = textmodelDescInputPricePerMillionTokens.Default.(string)
+	// textmodelDescOutputPricePerMillionTokens is the schema descriptor for output_price_per_million_tokens field.
+	textmodelDescOutputPricePerMillionTokens := textmodelFields[4].Descriptor()
+	// textmodel.DefaultOutputPricePerMillionTokens holds the default value on creation for the output_price_per_million_tokens field.
+	textmodel.DefaultOutputPricePerMillionTokens = textmodelDescOutputPricePerMillionTokens.Default.(string)
+	// textmodelDescCurrency is the schema descriptor for currency field.
+	textmodelDescCurrency := textmodelFields[5].Descriptor()
+	// textmodel.DefaultCurrency holds the default value on creation for the currency field.
+	textmodel.DefaultCurrency = textmodelDescCurrency.Default.(string)
+	// textmodel.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	textmodel.CurrencyValidator = textmodelDescCurrency.Validators[0].(func(string) error)
+	// textmodelDescEnabled is the schema descriptor for enabled field.
+	textmodelDescEnabled := textmodelFields[6].Descriptor()
+	// textmodel.DefaultEnabled holds the default value on creation for the enabled field.
+	textmodel.DefaultEnabled = textmodelDescEnabled.Default.(bool)
+	// textmodelDescIsDefault is the schema descriptor for is_default field.
+	textmodelDescIsDefault := textmodelFields[7].Descriptor()
+	// textmodel.DefaultIsDefault holds the default value on creation for the is_default field.
+	textmodel.DefaultIsDefault = textmodelDescIsDefault.Default.(bool)
+	// textmodelDescVersion is the schema descriptor for version field.
+	textmodelDescVersion := textmodelFields[8].Descriptor()
+	// textmodel.DefaultVersion holds the default value on creation for the version field.
+	textmodel.DefaultVersion = textmodelDescVersion.Default.(int64)
+	textmodelaccountMixin := schema.TextModelAccount{}.Mixin()
+	textmodelaccountMixinFields0 := textmodelaccountMixin[0].Fields()
+	_ = textmodelaccountMixinFields0
+	textmodelaccountFields := schema.TextModelAccount{}.Fields()
+	_ = textmodelaccountFields
+	// textmodelaccountDescCreatedAt is the schema descriptor for created_at field.
+	textmodelaccountDescCreatedAt := textmodelaccountMixinFields0[0].Descriptor()
+	// textmodelaccount.DefaultCreatedAt holds the default value on creation for the created_at field.
+	textmodelaccount.DefaultCreatedAt = textmodelaccountDescCreatedAt.Default.(func() time.Time)
+	// textmodelaccountDescUpdatedAt is the schema descriptor for updated_at field.
+	textmodelaccountDescUpdatedAt := textmodelaccountMixinFields0[1].Descriptor()
+	// textmodelaccount.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	textmodelaccount.DefaultUpdatedAt = textmodelaccountDescUpdatedAt.Default.(func() time.Time)
+	// textmodelaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	textmodelaccount.UpdateDefaultUpdatedAt = textmodelaccountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// textmodelaccountDescName is the schema descriptor for name field.
+	textmodelaccountDescName := textmodelaccountFields[0].Descriptor()
+	// textmodelaccount.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	textmodelaccount.NameValidator = func() func(string) error {
+		validators := textmodelaccountDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// textmodelaccountDescPlatformType is the schema descriptor for platform_type field.
+	textmodelaccountDescPlatformType := textmodelaccountFields[1].Descriptor()
+	// textmodelaccount.PlatformTypeValidator is a validator for the "platform_type" field. It is called by the builders before save.
+	textmodelaccount.PlatformTypeValidator = func() func(string) error {
+		validators := textmodelaccountDescPlatformType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(platform_type string) error {
+			for _, fn := range fns {
+				if err := fn(platform_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// textmodelaccountDescAPIStyle is the schema descriptor for api_style field.
+	textmodelaccountDescAPIStyle := textmodelaccountFields[2].Descriptor()
+	// textmodelaccount.APIStyleValidator is a validator for the "api_style" field. It is called by the builders before save.
+	textmodelaccount.APIStyleValidator = func() func(string) error {
+		validators := textmodelaccountDescAPIStyle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(api_style string) error {
+			for _, fn := range fns {
+				if err := fn(api_style); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// textmodelaccountDescBaseURL is the schema descriptor for base_url field.
+	textmodelaccountDescBaseURL := textmodelaccountFields[3].Descriptor()
+	// textmodelaccount.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
+	textmodelaccount.BaseURLValidator = func() func(string) error {
+		validators := textmodelaccountDescBaseURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(base_url string) error {
+			for _, fn := range fns {
+				if err := fn(base_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// textmodelaccountDescSecretFingerprint is the schema descriptor for secret_fingerprint field.
+	textmodelaccountDescSecretFingerprint := textmodelaccountFields[5].Descriptor()
+	// textmodelaccount.DefaultSecretFingerprint holds the default value on creation for the secret_fingerprint field.
+	textmodelaccount.DefaultSecretFingerprint = textmodelaccountDescSecretFingerprint.Default.(string)
+	// textmodelaccount.SecretFingerprintValidator is a validator for the "secret_fingerprint" field. It is called by the builders before save.
+	textmodelaccount.SecretFingerprintValidator = textmodelaccountDescSecretFingerprint.Validators[0].(func(string) error)
+	// textmodelaccountDescEnabled is the schema descriptor for enabled field.
+	textmodelaccountDescEnabled := textmodelaccountFields[6].Descriptor()
+	// textmodelaccount.DefaultEnabled holds the default value on creation for the enabled field.
+	textmodelaccount.DefaultEnabled = textmodelaccountDescEnabled.Default.(bool)
+	// textmodelaccountDescVersion is the schema descriptor for version field.
+	textmodelaccountDescVersion := textmodelaccountFields[7].Descriptor()
+	// textmodelaccount.DefaultVersion holds the default value on creation for the version field.
+	textmodelaccount.DefaultVersion = textmodelaccountDescVersion.Default.(int64)
 	userMixin := schema.User{}.Mixin()
 	userMixinFields0 := userMixin[0].Fields()
 	_ = userMixinFields0

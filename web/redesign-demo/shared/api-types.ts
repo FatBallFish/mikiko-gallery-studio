@@ -162,7 +162,7 @@ export type ApiPagination = Pagination
 export type PagedResponse<T> = { items: T[]; pagination: Pagination }
 export type PageResult<T> = { items: T[]; total: number; next_cursor?: string; pagination?: Pagination }
 
-export type ImageTaskType = 'text_to_image' | 'reference_to_image' | 'image_edit'
+export type ImageTaskType = 'text_to_image' | 'image_edit'
 export type ImageTaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'rejected' | 'deleted'
 export type PublishStatus = 'private' | 'reviewing' | 'pending_review' | 'public' | 'approved' | 'rejected' | 'unpublished'
 

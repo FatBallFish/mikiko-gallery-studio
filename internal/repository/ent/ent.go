@@ -28,6 +28,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
@@ -41,6 +42,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
@@ -123,6 +126,7 @@ func checkColumn(t, c string) error {
 			paymentproviderinstance.Table:     paymentproviderinstance.ValidColumn,
 			paymentwebhookevent.Table:         paymentwebhookevent.ValidColumn,
 			pointledger.Table:                 pointledger.ValidColumn,
+			promptoptimizationrun.Table:       promptoptimizationrun.ValidColumn,
 			providererrorpolicy.Table:         providererrorpolicy.ValidColumn,
 			providermodel.Table:               providermodel.ValidColumn,
 			publicimageinteraction.Table:      publicimageinteraction.ValidColumn,
@@ -136,6 +140,8 @@ func checkColumn(t, c string) error {
 			routemodelvisibilitygroup.Table:   routemodelvisibilitygroup.ValidColumn,
 			secureconfig.Table:                secureconfig.ValidColumn,
 			subscriptionplan.Table:            subscriptionplan.ValidColumn,
+			textmodel.Table:                   textmodel.ValidColumn,
+			textmodelaccount.Table:            textmodelaccount.ValidColumn,
 			user.Table:                        user.ValidColumn,
 			usergroup.Table:                   usergroup.ValidColumn,
 			usergroupmember.Table:             usergroupmember.ValidColumn,

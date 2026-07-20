@@ -1,16 +1,16 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ChevronUp, SlidersHorizontal } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronUp, SlidersHorizontal } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, ImageLightbox, LoadingState, Modal, copyText, useApp, type ImageLightboxPayload } from '../components'
+import { Button, EmptyState, ErrorState, ImageDetailModal, ImageLightbox, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImageLightboxPayload } from '../components'
 import { userButton, userForm, userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
 import { errorMessage } from '../useApiResource'
-import { galleryEditContextKey, parseGalleryEditContext } from './galleryEditContext'
+import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
 import { currentWorkspaceEstimate, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
 import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
@@ -24,12 +24,24 @@ import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGe
 import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions } from './workspaceParameters'
+import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
+import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 
-type WorkspaceMode = 'reference' | 'text'
 type OutputTab = 'current' | 'history'
 type WorkspaceSizeMode = 'ratio' | 'pixel'
-type RestoreParameters = { routeModelCode?: string; baseResolution?: string; aspectRatio?: string }
-type UploadTarget = 'edit' | 'reference'
+type RestoreParameters = {
+  routeModelCode?: string
+  sizeMode?: WorkspaceSizeMode
+  baseResolution?: string
+  aspectRatio?: string
+  pixelSize?: string
+  quality?: string
+  outputFormat?: string
+  outputCompression?: number
+  moderation?: string
+  imageCount?: number
+}
+type UploadTarget = 'edit'
 type DragUploadState = Record<UploadTarget, boolean>
 type SheetDragState = { pointerId: number; startY: number; dragged: boolean }
 
@@ -234,22 +246,17 @@ const workspaceClasses = {
   historyWarn: 'absolute right-2 top-2 z-10 inline-flex min-h-7 items-center rounded-full border border-[color-mix(in_oklch,var(--accent-coral)_52%,transparent)] bg-[color-mix(in_oklch,var(--accent-coral)_22%,var(--canvas))] px-2 text-[10px] font-black tracking-[0.04em] text-[var(--fg)] shadow-lg',
   historyTitle: 'line-clamp-2 min-h-[2.5em] text-sm font-bold leading-snug text-[var(--fg)]',
   historyMeta: 'flex items-center justify-between gap-2 text-[10px] font-vault-mono text-[var(--muted)]',
-  historyDialogGrid: 'grid max-h-[65vh] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2',
-  historyDialogTile: 'group overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]',
-  historyDialogButton: 'block w-full border-0 bg-transparent p-0 text-left',
-  historyDialogImage: 'aspect-[4/3] w-full object-cover transition duration-500 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100',
-  historyDialogTileMeta: 'border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]',
 }
 
 export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const app = useApp()
   const compactViewport = useCompactWorkspaceViewport()
-  const [mode, setMode] = useState<WorkspaceMode>('text')
 
   const [capability, setCapability] = useState<Capability | null>(null)
-  const [refs, setRefs] = useState<ReferenceAsset[]>([])
   const [editRefs, setEditRefs] = useState<ReferenceAsset[]>([])
   const [prompt, setPrompt] = useState('')
+  const [promptExpanded, setPromptExpanded] = useState(false)
+  const [promptOptimization, setPromptOptimization] = useState(initialPromptOptimizationState)
   const [negative, setNegative] = useState('')
   const [model, setModel] = useState('')
   const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('ratio')
@@ -274,12 +281,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [previewImage, setPreviewImage] = useState<ImageLightboxPayload | null>(null)
   const [outputTab, setOutputTab] = useState<OutputTab>('current')
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
-  const [galleryImportTarget, setGalleryImportTarget] = useState<'reference' | 'edit' | null>(null)
+  const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [galleryImportLoading, setGalleryImportLoading] = useState(false)
   const [galleryImportBusy, setGalleryImportBusy] = useState(false)
   const [galleryImportFilter, setGalleryImportFilter] = useState<GalleryImportFilter>(defaultGalleryImportFilter)
-  const [dragUpload, setDragUpload] = useState<DragUploadState>({ edit: false, reference: false })
+  const [dragUpload, setDragUpload] = useState<DragUploadState>({ edit: false })
   const [parametersExpanded, setParametersExpanded] = useState(false)
   const [sheetDragOffset, setSheetDragOffset] = useState(0)
   const parametersHidden = workspaceParametersHidden(compactViewport, parametersExpanded)
@@ -295,13 +302,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const refreshAccountRef = useRef(app.refreshAccount)
   const completedNoticeRef = useRef<Set<string>>(new Set())
   const feedEndRef = useRef<HTMLDivElement | null>(null)
-  const skipNextModeResetRef = useRef(false)
   const restoreParametersRef = useRef<RestoreParameters | null>(null)
+  const pendingCreationDraftRef = useRef<WorkspaceCreationDraft | null | undefined>(undefined)
   const sheetDragRef = useRef<SheetDragState | null>(null)
   const suppressSheetClickRef = useRef(false)
   const sheetClickResetRef = useRef<number | null>(null)
-  const taskType: ImageTaskType = mode === 'reference' ? 'reference_to_image' : editRefs.length ? 'image_edit' : 'text_to_image'
-  const referenceCount = taskType === 'image_edit' ? editRefs.length : taskType === 'reference_to_image' ? refs.length : 0
+  const taskType: ImageTaskType = editRefs.length ? 'image_edit' : 'text_to_image'
+  const referenceCount = editRefs.length
   const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)
 
   notifyRef.current = app.notify
@@ -317,10 +324,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     async function load() {
       setLoading(true)
       try {
-        const [nextCapability, nextRefs] = await Promise.all([userApi.getCapabilities(), userApi.listReferenceAssets()])
+        const nextCapability = await userApi.getCapabilities()
         if (!mounted) return
         setCapability(nextCapability)
-        setRefs(nextRefs)
       } catch (err) {
         if (mounted) notifyRef.current('error', errorMessage(err))
       } finally {
@@ -473,65 +479,68 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }, [records])
 
   useEffect(() => {
-    const raw = window.sessionStorage.getItem(galleryEditContextKey)
-    if (!raw) return
-    window.sessionStorage.removeItem(galleryEditContextKey)
-    const storedRaw = raw
+    if (!capability) return undefined
+    if (pendingCreationDraftRef.current === undefined) {
+      pendingCreationDraftRef.current = consumeWorkspaceCreationDraft(window.sessionStorage, window.history)
+    }
+    const draft = pendingCreationDraftRef.current
+    if (!draft) return undefined
     let cancelled = false
-    async function restoreEditContext() {
-      try {
-        const context = parseGalleryEditContext(storedRaw)
-        if (!context) throw new Error('图片上下文读取失败，请从资产重新进入。')
-        skipNextModeResetRef.current = true
-        restoreParametersRef.current = {
-          routeModelCode: context.route_model_code,
-          baseResolution: context.base_resolution,
-          aspectRatio: context.aspect_ratio,
-        }
-        setMode(context.task_type === 'reference_to_image' ? 'reference' : 'text')
-        setPrompt(context.prompt)
-        setNegative('')
-        const sources = (context.sources ?? []).filter((item) => item.id || item.preview_url)
-        if (sources.length) {
-          if (context.task_type === 'reference_to_image') {
-            setRefs((items) => [...sources, ...items])
-          } else {
-            setEditRefs(sources)
-          }
-          notifyRef.current('success', '已恢复图片编辑上下文')
-          return
-        }
-        if (context.fallbackImageUrl) {
-          setBusy(true)
-          const response = await fetch(context.fallbackImageUrl)
-          if (!response.ok) throw new Error('图片读取失败，请稍后重试。')
-          const blob = await response.blob()
-          const file = new File([blob], `gallery-edit-${Date.now()}.png`, { type: blob.type || 'image/png' })
-          const asset = await userApi.uploadReferenceAsset(file)
-          if (!cancelled) {
-            setEditRefs([{ ...asset, preview_url: asset.preview_url || context.fallbackImageUrl }])
-            notifyRef.current('success', '已恢复图片编辑上下文')
-          }
-        }
-      } catch (err) {
-        if (!cancelled) notifyRef.current('error', errorMessage(err))
-      } finally {
-        if (!cancelled) setBusy(false)
-      }
+    let normalized: ReturnType<typeof normalizeWorkspaceCreationDraft>
+    try {
+      normalized = normalizeWorkspaceCreationDraft(draft, capability)
+    } catch (err) {
+      pendingCreationDraftRef.current = null
+      notifyRef.current('error', errorMessage(err))
+      return undefined
     }
-    void restoreEditContext()
-    return () => { cancelled = true }
-  }, [])
-
-  // Reset form fields when mode tab switches, but keep generated records intact.
-  useEffect(() => {
-    if (skipNextModeResetRef.current) {
-      skipNextModeResetRef.current = false
-      return
+    const values = normalized.values
+    restoreParametersRef.current = {
+      routeModelCode: values.route_model_code,
+      sizeMode: values.size_mode === 'pixel' ? 'pixel' : 'ratio',
+      baseResolution: values.base_resolution,
+      aspectRatio: values.aspect_ratio,
+      pixelSize: values.pixel_size,
+      quality: values.quality,
+      outputFormat: values.output_format,
+      outputCompression: values.output_compression,
+      moderation: values.moderation,
+      imageCount: values.image_count,
     }
-    setPrompt('')
+    setPrompt(values.prompt)
     setNegative('')
-  }, [mode])
+    setModel(values.route_model_code)
+    setSizeMode(values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+    setBaseResolution(values.base_resolution)
+    setRatio(values.aspect_ratio)
+    setPixelSize(values.pixel_size)
+    setQuality(values.quality)
+    setOutputFormat(values.output_format)
+    setOutputCompression(values.output_compression)
+    setModeration(values.moderation)
+    setCount(values.image_count)
+
+    async function restoreReferences() {
+      const restored = await Promise.all(values.reference_asset_ids.map(async (assetID) => {
+        try {
+          return await userApi.getReferenceAsset(assetID)
+        } catch {
+          return null
+        }
+      }))
+      if (cancelled) return
+      const accessible = restored.filter((asset): asset is ReferenceAsset => Boolean(asset))
+      setEditRefs(accessible)
+      const missing = values.reference_asset_ids.length - accessible.length
+      const notices = [...normalized.notices]
+      if (missing > 0) notices.push(`${missing} 张引用图片已失效或无权访问，未恢复到创作台。`)
+      if (values.task_type === 'image_edit' && !accessible.length) notices.push('没有可访问的引用图片，已按文生图配置恢复。')
+      notifyRef.current(notices.length ? 'info' : 'success', notices.length ? `已复用配置：${notices.join(' ')}` : '已完整恢复生成配置')
+      pendingCreationDraftRef.current = null
+    }
+    void restoreReferences()
+    return () => { cancelled = true }
+  }, [capability])
 
   useEffect(() => {
     if (editRefs.length) setEditSourceOpen(true)
@@ -568,13 +577,17 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     )
     if (waitingForPreferredModel) return
 
-	setSizeMode((current) => sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
+	setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
     setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
-    setPixelSize((current) => current && pixelSizes.includes(current) ? current : pixelSizes[0] ?? '')
-    setCount((current) => normalizeWorkspaceImageCount(current))
+    setPixelSize(restoreParameters?.pixelSize && pixelSizes.includes(restoreParameters.pixelSize) ? restoreParameters.pixelSize : pixelSizes[0] ?? '')
+    setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0])
+    setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0])
+    setOutputCompression(restoreParameters?.outputCompression ?? 100)
+    setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0])
+    setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))
     restoreParametersRef.current = null
-  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes])
+  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -614,8 +627,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	aspect_ratio: sizeMode === 'ratio' ? ratio : '',
 	pixel_size: sizeMode === 'pixel' ? pixelSize : undefined,
     image_count: count,
-    reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : taskType === 'reference_to_image' ? refs.map((item) => item.id) : [],
-  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, pixelSize, count, refs, editRefs])
+    reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : [],
+  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, pixelSize, count, editRefs])
   const estimateKey = useMemo(() => workspaceEstimateKey(estimatePayload), [estimatePayload])
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
@@ -651,9 +664,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const maxReferenceUploadBytes = referenceUploadMaxBytes(capability)
   const maxReferenceUploadLabel = formatFileSize(maxReferenceUploadBytes)
   const maxReferenceImages = workspaceReferenceMaximum(selectedModel?.max_reference_image_count)
-  const referenceRemainingLimit = remainingReferenceCapacity(maxReferenceImages, refs.length)
   const editRemainingLimit = remainingReferenceCapacity(maxReferenceImages, editRefs.length)
-  const remainingGalleryImportLimit = galleryImportTarget === 'edit' ? editRemainingLimit : referenceRemainingLimit
+  const remainingGalleryImportLimit = editRemainingLimit
   const newestTask = records[records.length - 1] ?? null
   const selectedTask = selectedTaskId ? records.find((task) => task.id === selectedTaskId) ?? null : null
   const latestTask = selectedTask ?? newestTask
@@ -676,8 +688,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
 
-  async function openGalleryImport(target: 'reference' | 'edit') {
-    const remaining = target === 'edit' ? editRemainingLimit : referenceRemainingLimit
+  async function openGalleryImport(target: 'edit') {
+    const remaining = editRemainingLimit
     if (remaining <= 0) {
       app.notify('error', '当前模型的参考图数量已达上限，请先移除一张。')
       return
@@ -706,11 +718,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setGalleryImportBusy(true)
     try {
       const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
-      if (galleryImportTarget === 'edit') {
-        setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
-      } else {
-        setRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
-      }
+      setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
       setGalleryImportTarget(null)
       app.notify('success', `已从资产导入 ${assets.length} 张参考图`)
     } catch (err) {
@@ -727,7 +735,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (rejected.length) {
       app.notify('error', rejected.length === 1 ? uploadTooLargeMessage(rejected[0], maxReferenceUploadBytes) : `${rejected.length} 个文件超过单张最大 ${maxReferenceUploadLabel}，已跳过。`)
     }
-    const remaining = target === 'edit' ? editRemainingLimit : referenceRemainingLimit
+    const remaining = editRemainingLimit
     const limited = limitReferenceSelection(sizeAccepted, remaining)
     if (limited.rejectedCount > 0) {
       app.notify('error', remaining <= 0
@@ -740,11 +748,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setBusy(true)
     try {
       const uploaded = await Promise.all(limited.accepted.map((file) => userApi.uploadReferenceAsset(file)))
-      if (target === 'edit') {
-        setEditRefs((items) => mergeReferenceAssets(items, uploaded, maxReferenceImages))
-      } else {
-        setRefs((items) => mergeReferenceAssets(items, uploaded, maxReferenceImages))
-      }
+      setEditRefs((items) => mergeReferenceAssets(items, uploaded, maxReferenceImages))
       app.notify('success', `已上传 ${uploaded.length} 张参考图`)
     } catch (err) {
       app.notify('error', uploadErrorMessage(err))
@@ -824,6 +828,53 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
   }
 
+  async function startPromptOptimization() {
+    const value = prompt.trim()
+    if (Array.from(value).length < 8) {
+      app.notify('error', '提示词至少需要 8 个字符后才能优化')
+      return
+    }
+    const next = beginPromptOptimization(promptOptimization, value)
+    if (next === promptOptimization) return
+    setPromptOptimization(next)
+    try {
+      const estimateResult = await userApi.estimatePromptOptimization(value)
+      setPromptOptimization(receivePromptEstimate(next, estimateResult))
+    } catch (cause) {
+      setPromptOptimization(failPromptOptimization(next, errorMessage(cause)))
+    }
+  }
+
+  async function confirmOptimization() {
+    if (!promptOptimization.estimate) return
+    const next = confirmPromptOptimization(promptOptimization)
+    setPromptOptimization(next)
+    try {
+      const result = await userApi.optimizePrompt(next.originalPrompt, promptOptimization.estimate.quote)
+      setPromptOptimization(receivePromptOptimization(next, result))
+    } catch (cause) {
+      setPromptOptimization(failPromptOptimization(next, errorMessage(cause)))
+    }
+  }
+
+  function applyOptimization() {
+    const applied = applyOptimizedPrompt(promptOptimization)
+    setPrompt(applied.prompt)
+    setPromptOptimization(applied.state)
+    app.notify('success', '优化后的提示词已应用')
+  }
+
+  function undoOptimization() {
+    const undone = undoPromptOptimization(promptOptimization, prompt)
+    setPrompt(undone.prompt)
+    setPromptOptimization(undone.state)
+    app.notify('success', '已恢复优化前的提示词')
+  }
+
+  function cancelOptimization() {
+    setPromptOptimization(initialPromptOptimizationState())
+  }
+
   async function applyAsEditSource(url: string) {
     const addition = singleReferenceAddition(url, maxReferenceImages, editRefs.length)
     if (!addition.item) {
@@ -838,7 +889,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       const file = new File([blob], `generated-reference-${Date.now()}.png`, { type: blob.type || 'image/png' })
       const asset = await userApi.uploadReferenceAsset(file)
       const nextAsset = { ...asset, preview_url: asset.preview_url || addition.item }
-      setMode('text')
       setEditRefs((items) => mergeReferenceAssets(items, [nextAsset], maxReferenceImages))
       app.notify('success', '已加入图片编辑')
     } catch (err) {
@@ -846,12 +896,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     } finally {
       setBusy(false)
     }
-  }
-
-  function removeReferenceAsset(asset: ReferenceAsset) {
-    setRefs((items) => items.filter((item) => (
-      asset.id ? item.id !== asset.id : item.preview_url !== asset.preview_url
-    )))
   }
 
   function removeEditAsset(asset: ReferenceAsset) {
@@ -975,50 +1019,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           inert={parametersHidden ? true : undefined}
         >
         <div className={workspaceClasses.panelScroll}>
-        {/* Tabs */}
         <div className={workspaceClasses.panelSection}>
-          <div className={workspaceClasses.tabs}>
-            <button type="button" className={cn(workspaceClasses.tab, mode === 'text' && workspaceClasses.tabActive)} onClick={() => setMode('text')}>文生图片</button>
-            <button type="button" className={cn(workspaceClasses.tab, mode === 'reference' && workspaceClasses.tabActive)} onClick={() => setMode('reference')}>参考生图</button>
-          </div>
-
           <div>
-            <h2 className={workspaceClasses.panelTitle}>{mode === 'text' ? '文生图' : '参考生图'}</h2>
+            <h2 className={workspaceClasses.panelTitle}>图片创作</h2>
           </div>
-          <p className={workspaceClasses.panelCopy}>
-            {mode === 'text' ? '通过文字描述直接生成图片；添加图片后会进入二次编辑模式。' : '参考多图元素，生成全新图片'}
-          </p>
+          <p className={workspaceClasses.panelCopy}>通过文字生成图片；添加图片后会自动进入图片编辑模式。</p>
 
-          {/* Reference upload area (only for reference mode) */}
-          {mode === 'reference' ? (
-            <>
-              <div className={workspaceClasses.uploadStrip}>
-                <label className={cn(workspaceClasses.refThumb, workspaceClasses.refThumbUpload, dragUpload.reference && workspaceClasses.refThumbDrag)} aria-disabled={busy || referenceRemainingLimit <= 0} {...uploadDropBindings('reference')}>
-                  <input className={workspaceClasses.hiddenInput} type="file" accept="image/*" multiple disabled={busy || referenceRemainingLimit <= 0} onChange={(event) => uploadReference(event, 'reference')} />
-                  <UploadGlyph />
-                  <span>本地上传</span>
-                </label>
-                <button type="button" className={cn(workspaceClasses.refThumb, workspaceClasses.refThumbImport)} disabled={busy || referenceRemainingLimit <= 0} onClick={() => void openGalleryImport('reference')}>
-                  <ImportGlyph />
-                  <span>从资产导入</span>
-                </button>
-              </div>
-              {maxReferenceUploadLabel ? <p className={workspaceClasses.uploadHint}>单张参考图最大 {maxReferenceUploadLabel}</p> : null}
-              {refs.length ? (
-                <div className={workspaceClasses.refGrid}>
-                  {refs.map((asset) => (
-                    <div key={asset.id || asset.preview_url} className={workspaceClasses.refTile}>
-                      <ReferenceAssetPreview asset={asset} accessToken={app.session?.token} />
-                      <button type="button" className={workspaceClasses.refRemove} title="移除参考图" onClick={() => removeReferenceAsset(asset)}><CloseGlyph /></button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </>
-          ) : null}
-
-          {mode === 'text' ? (
-            <div className={workspaceClasses.editSourcePanel}>
+          <div className={workspaceClasses.editSourcePanel}>
               <button type="button" className={workspaceClasses.editSourceTrigger} onClick={() => setEditSourceOpen((open) => !open)}>
                 <span className={workspaceClasses.editSourceTitle}>
                   <ImageGlyph />
@@ -1050,20 +1057,29 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                   </div>
                 ) : null}
               </div>
-            </div>
-          ) : null}
+          </div>
 
           {/* Prompt */}
-          <div className={mode === 'reference' ? workspaceClasses.promptBlockReference : workspaceClasses.promptBlock}>
+          <div className={workspaceClasses.promptBlock}>
             <label className={workspaceClasses.fieldLabel}>提示词</label>
-            <div className={rdWorkspace.promptWrapper}>
+            <div className={cn(rdWorkspace.promptWrapper, 'relative')}>
               <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input')}
+                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11 pr-20')}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={5}
+                maxLength={4000}
                 placeholder="描述想要生成的内容..."
               />
+              <div className="absolute bottom-2 right-2">
+                <PromptEditorActions
+                  optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
+                  canUndo={promptOptimization.stage === 'applied'}
+                  onExpand={() => setPromptExpanded(true)}
+                  onOptimize={() => void startPromptOptimization()}
+                  onUndo={undoOptimization}
+                />
+              </div>
             </div>
           </div>
 
@@ -1337,6 +1353,26 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   return (
     <div className={workspaceClasses.root} data-workspace-layout="creative">
       {compactViewport ? <OverlayPortal>{parameterPanel}</OverlayPortal> : parameterPanel}
+      {promptExpanded ? (
+        <PromptEditorDialog
+          prompt={prompt}
+          assets={editRefs}
+          accessToken={app.session?.token}
+          optimization={promptOptimization}
+          onPromptChange={setPrompt}
+          onClose={() => setPromptExpanded(false)}
+          onOptimize={() => void startPromptOptimization()}
+          onConfirm={() => void confirmOptimization()}
+          onApply={applyOptimization}
+          onCancel={cancelOptimization}
+          onUndo={undoOptimization}
+        />
+      ) : null}
+      {!promptExpanded && promptOptimization.stage !== 'idle' && promptOptimization.stage !== 'applied' ? (
+        <Modal title="优化提示词" onClose={cancelOptimization}>
+          <PromptOptimizationPanel state={promptOptimization} onConfirm={() => void confirmOptimization()} onApply={applyOptimization} onCancel={cancelOptimization} />
+        </Modal>
+      ) : null}
 
       {/* Right Canvas */}
       <section className={workspaceClasses.canvas}>
@@ -1419,7 +1455,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           </div>
         )}
 
-        <ImageLightbox image={previewImage} onClose={() => setPreviewImage(null)} />
+        <ImageLightbox image={previewImage} onClose={() => setPreviewImage(null)} onReuseConfiguration={(draft) => {
+          stageWorkspaceCreationDraft(draft, window.sessionStorage, window.history)
+          setPreviewImage(null)
+          app.navigate('genpic')
+        }} />
         {historyTaskDialog ? (
           <HistoryTaskDialog
             task={historyTaskDialog}
@@ -1809,40 +1849,63 @@ function HistoryTaskDialog({ task, accessToken, onClose, onPreviewImage }: {
   onClose: () => void
   onPreviewImage: (image: ImageLightboxPayload) => void
 }) {
+  const app = useApp()
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  useEffect(() => setSelectedIndex(0), [task.id])
+  const image = task.results[selectedIndex] ?? task.results[0]
+  if (!image) return null
+  const detailImage: ImageResult = {
+    ...image,
+    prompt: image.prompt || task.prompt,
+    task_type: task.task_type,
+    route_model_code: image.route_model_code || task.route_model_code,
+    abstract_model: image.abstract_model || task.abstract_model,
+    size_mode: task.size_mode,
+    requested_size: task.requested_size,
+    base_resolution: image.base_resolution || task.base_resolution,
+    quality: image.quality || task.quality,
+    aspect_ratio: image.aspect_ratio || task.aspect_ratio,
+    output_format: task.output_format,
+    output_compression: task.output_compression,
+    moderation: task.moderation,
+    requested_output_image_count: task.requested_output_image_count || task.image_count,
+    reference_asset_ids: task.reference_asset_ids,
+  }
+  const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
+  const reuseConfiguration = () => {
+    stageWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot(task), window.sessionStorage, window.history)
+    onClose()
+    app.navigate('genpic')
+  }
   return (
-    <Modal title="历史创作图片" onClose={onClose}>
-      <div className="mb-4 text-sm text-[var(--muted)]">{task.prompt || task.title || '未命名创作'}</div>
-      <div className={workspaceClasses.historyDialogGrid}>
-        {task.results.map((image, index) => {
-          const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-          const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)
-          return (
-            <div className={workspaceClasses.historyDialogTile} key={image.id || `${task.id}-${index}`}>
-              <button
-                type="button"
-                className={workspaceClasses.historyDialogButton}
-                onClick={() => onPreviewImage({
-                  url: imageUrl,
-                  downloadUrl,
-                  alt: task.title,
-                  prompt: image.prompt || task.prompt,
-                  width: image.width,
-                  height: image.height,
-                  ratio: task.aspect_ratio,
-                  model: image.route_model_code || task.route_model_code || task.model_group,
-                  source: '历史创作',
-                })}
-              >
-                <img className={workspaceClasses.historyDialogImage} src={imageUrl} alt={task.title} />
-              </button>
-              <div className={workspaceClasses.historyDialogTileMeta}>
-                第 {index + 1} 张 · {image.width || '?'} x {image.height || '?'}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </Modal>
+    <ImageDetailModal
+      title={`历史创作图片 ${selectedIndex + 1}/${task.results.length}`}
+      image={detailImage}
+      imageUrl={imageUrl}
+      referenceImages={task.reference_assets.map((asset) => {
+        const url = referenceAssetPreviewURL(asset, accessToken)
+        return {
+          id: asset.id,
+          url,
+          alt: asset.name || '原图引用',
+          onPreview: url ? () => onPreviewImage({ url, downloadUrl: url, alt: asset.name || '原图引用', source: '原图引用' }) : undefined,
+        }
+      }).filter((item) => item.url)}
+      showPublicStats={false}
+      onPreviewImage={onPreviewImage}
+      onDownload={() => window.open(userApi.imageAssetUrl(image.download_url ?? image.url, accessToken), '_blank', 'noopener,noreferrer')}
+      onCopyPrompt={async (value) => {
+        await copyText(value)
+        app.notify('success', 'Prompt 已复制')
+      }}
+      actions={[
+        { key: 'previous', label: '上一张', icon: <ArrowLeft size={18} strokeWidth={1.5} aria-hidden="true" />, onClick: () => setSelectedIndex((current) => Math.max(0, current - 1)), disabled: selectedIndex === 0 },
+        { key: 'next', label: '下一张', icon: <ArrowRight size={18} strokeWidth={1.5} aria-hidden="true" />, onClick: () => setSelectedIndex((current) => Math.min(task.results.length - 1, current + 1)), disabled: selectedIndex >= task.results.length - 1 },
+        { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: reuseConfiguration },
+      ]}
+      previewSourceLabel="历史创作"
+      onClose={onClose}
+    />
   )
 }
 

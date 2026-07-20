@@ -162,6 +162,23 @@ func TestPrepareLegacyDataSQLLocksLegacyDDL(t *testing.T) {
 	}
 }
 
+func TestPrepareLegacyDataSQLPurgesRemovedReferenceGeneration(t *testing.T) {
+	for _, fragment := range []string{
+		"DELETE FROM task_images",
+		"DELETE FROM point_ledgers",
+		"DELETE FROM api_key_quota_reservations",
+		"DELETE FROM image_tasks",
+		"DELETE FROM model_routes",
+		"DELETE FROM route_model_prices",
+		"reference_generate",
+		"reference_to_image",
+	} {
+		if !strings.Contains(prepareLegacyDataSQL, fragment) {
+			t.Fatalf("reference-generation cleanup is missing %q", fragment)
+		}
+	}
+}
+
 func openLegacyMigrationPostgres(t *testing.T) (*sql.DB, string) {
 	t.Helper()
 	rawURL := os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL")

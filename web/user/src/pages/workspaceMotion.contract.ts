@@ -6,7 +6,6 @@ const workspaceSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.
 const workspaceMotionClasses = {
   generatedImage: /generatedImage:\s*'([^']+)'/.exec(workspaceSource)?.[1] ?? '',
   historyImage: /historyImage:\s*'([^']+)'/.exec(workspaceSource)?.[1] ?? '',
-  historyDialogImage: /historyDialogImage:\s*'([^']+)'/.exec(workspaceSource)?.[1] ?? '',
   outputResultWrap: /outputResultWrap:\s*'([^']+)'/.exec(workspaceSource)?.[1] ?? '',
   slotSkeletonGlow: /slotSkeletonGlow:\s*'([^']+)'/.exec(workspaceSource)?.[1] ?? '',
   refRemove: /refRemove:\s*'([^']+)'/.exec(workspaceSource)?.[1] ?? '',
@@ -19,11 +18,6 @@ assertContainsAll('generated image scale transition', workspaceMotionClasses.gen
 ])
 assertContainsAll('history image scale transition', workspaceMotionClasses.historyImage, [
   'group-hover:scale-105',
-  'motion-reduce:transition-none',
-  'motion-reduce:group-hover:scale-100',
-])
-assertContainsAll('history dialog image scale transition', workspaceMotionClasses.historyDialogImage, [
-  'group-hover:scale-[1.03]',
   'motion-reduce:transition-none',
   'motion-reduce:group-hover:scale-100',
 ])

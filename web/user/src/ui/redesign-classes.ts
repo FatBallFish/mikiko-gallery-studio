@@ -220,7 +220,7 @@ export const state = {
   skeletonLine: 'pg-skeleton h-3.5 rounded-xl',
   toastStack: 'fixed right-5 top-5 z-[100] grid w-[min(380px,calc(100vw-40px))] gap-3',
   toast: 'grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_92%,black_8%)] p-3.5 text-[var(--fg)] shadow-[var(--pg-shadow-lg)] backdrop-blur-xl',
-  modalBackdrop: 'fixed inset-0 z-[80] grid place-items-center bg-black/60 backdrop-blur-md p-6 animate-in fade-in duration-200',
+  modalBackdrop: 'fixed inset-0 z-[110] grid place-items-center bg-black/60 backdrop-blur-md p-6 animate-in fade-in duration-200',
   modalCard: 'max-h-[90vh] w-[min(920px,100%)] overflow-auto rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--pg-shadow-lg)] animate-in zoom-in-95 duration-200',
 }
 

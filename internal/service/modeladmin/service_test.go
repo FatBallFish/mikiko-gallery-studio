@@ -61,6 +61,34 @@ func TestServiceValidatesProviderAndRouteCRUD(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsRemovedReferenceGenerationConfiguration(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	account, err := svc.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "image account", AdapterType: "openai_compatible", AuthType: "api_key",
+		BaseURL: "https://images.example.com", Credentials: map[string]string{"api_key": "test-key"},
+		Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	if _, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "legacy", TaskTypes: []string{"reference_generate"}, Enabled: true,
+	}); err == nil {
+		t.Fatal("expected removed model task type to be rejected")
+	}
+	if _, err := svc.CreateRoute(ctx, domainmodeladmin.RouteWriteRequest{
+		GroupCode: "plus", TaskType: "reference_to_image", ProviderModelID: 1, Enabled: true,
+	}); err == nil {
+		t.Fatal("expected removed route task type to be rejected")
+	}
+	if _, err := svc.CreateRouteModelPrice(ctx, domainmodeladmin.RouteModelPriceWriteRequest{
+		RouteModelID: 1, TaskType: "reference_generate", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true,
+	}); err == nil {
+		t.Fatal("expected removed route price task type to be rejected")
+	}
+}
+
 func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 	ctx := context.Background()
 	svc := modeladmin.NewServiceWithStore(nil)
@@ -74,7 +102,7 @@ func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 	}
 	model, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
-		TaskTypes: []string{"reference_to_image"}, Quality: []string{"high"},
+		TaskTypes: []string{"image_edit"}, Quality: []string{"high"},
 		SupportedRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
 		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
 	})

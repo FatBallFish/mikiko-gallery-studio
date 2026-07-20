@@ -38,6 +38,7 @@ replace_env AUTH_ACCESS_TOKEN_SECRET "$(generate_secret)"
 replace_env API_KEY_SIGNING_SECRET_ENCRYPTION_KEY "$(generate_secret)"
 replace_env CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY "$(generate_secret)"
 replace_env PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY "$(generate_secret)"
+replace_env PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY "$(generate_secret)"
 
 mkdir -p data postgres-data redis-data storage
 chmod 600 .env.prod

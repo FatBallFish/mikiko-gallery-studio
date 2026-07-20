@@ -28,6 +28,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
@@ -41,6 +42,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
@@ -75,6 +78,7 @@ const (
 	TypePaymentProviderInstance     = "PaymentProviderInstance"
 	TypePaymentWebhookEvent         = "PaymentWebhookEvent"
 	TypePointLedger                 = "PointLedger"
+	TypePromptOptimizationRun       = "PromptOptimizationRun"
 	TypeProviderErrorPolicy         = "ProviderErrorPolicy"
 	TypeProviderModel               = "ProviderModel"
 	TypePublicImageInteraction      = "PublicImageInteraction"
@@ -88,6 +92,8 @@ const (
 	TypeRouteModelVisibilityGroup   = "RouteModelVisibilityGroup"
 	TypeSecureConfig                = "SecureConfig"
 	TypeSubscriptionPlan            = "SubscriptionPlan"
+	TypeTextModel                   = "TextModel"
+	TypeTextModelAccount            = "TextModelAccount"
 	TypeUser                        = "User"
 	TypeUserGroup                   = "UserGroup"
 	TypeUserGroupMember             = "UserGroupMember"
@@ -24122,6 +24128,1479 @@ func (m *PointLedgerMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown PointLedger edge %s", name)
 }
 
+// PromptOptimizationRunMutation represents an operation that mutates the PromptOptimizationRun nodes in the graph.
+type PromptOptimizationRunMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *uuid.UUID
+	created_at          *time.Time
+	updated_at          *time.Time
+	user_id             *int64
+	adduser_id          *int64
+	account_id          *int64
+	addaccount_id       *int64
+	model_id            *int64
+	addmodel_id         *int64
+	model_code          *string
+	api_style           *string
+	config_version      *int64
+	addconfig_version   *int64
+	prompt_sha256       *string
+	status              *string
+	input_tokens        *int
+	addinput_tokens     *int
+	output_tokens       *int
+	addoutput_tokens    *int
+	estimated_points    *string
+	actual_points       *string
+	provider_request_id *string
+	error_code          *string
+	error_message       *string
+	metadata            *map[string]interface{}
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*PromptOptimizationRun, error)
+	predicates          []predicate.PromptOptimizationRun
+}
+
+var _ ent.Mutation = (*PromptOptimizationRunMutation)(nil)
+
+// promptoptimizationrunOption allows management of the mutation configuration using functional options.
+type promptoptimizationrunOption func(*PromptOptimizationRunMutation)
+
+// newPromptOptimizationRunMutation creates new mutation for the PromptOptimizationRun entity.
+func newPromptOptimizationRunMutation(c config, op Op, opts ...promptoptimizationrunOption) *PromptOptimizationRunMutation {
+	m := &PromptOptimizationRunMutation{
+		config:        c,
+		op:            op,
+		typ:           TypePromptOptimizationRun,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withPromptOptimizationRunID sets the ID field of the mutation.
+func withPromptOptimizationRunID(id uuid.UUID) promptoptimizationrunOption {
+	return func(m *PromptOptimizationRunMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *PromptOptimizationRun
+		)
+		m.oldValue = func(ctx context.Context) (*PromptOptimizationRun, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().PromptOptimizationRun.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withPromptOptimizationRun sets the old PromptOptimizationRun of the mutation.
+func withPromptOptimizationRun(node *PromptOptimizationRun) promptoptimizationrunOption {
+	return func(m *PromptOptimizationRunMutation) {
+		m.oldValue = func(context.Context) (*PromptOptimizationRun, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m PromptOptimizationRunMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m PromptOptimizationRunMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of PromptOptimizationRun entities.
+func (m *PromptOptimizationRunMutation) SetID(id uuid.UUID) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *PromptOptimizationRunMutation) ID() (id uuid.UUID, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *PromptOptimizationRunMutation) IDs(ctx context.Context) ([]uuid.UUID, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []uuid.UUID{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().PromptOptimizationRun.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *PromptOptimizationRunMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *PromptOptimizationRunMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *PromptOptimizationRunMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *PromptOptimizationRunMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *PromptOptimizationRunMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *PromptOptimizationRunMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *PromptOptimizationRunMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *PromptOptimizationRunMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *PromptOptimizationRunMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *PromptOptimizationRunMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *PromptOptimizationRunMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *PromptOptimizationRunMutation) SetAccountID(i int64) {
+	m.account_id = &i
+	m.addaccount_id = nil
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *PromptOptimizationRunMutation) AccountID() (r int64, exists bool) {
+	v := m.account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// AddAccountID adds i to the "account_id" field.
+func (m *PromptOptimizationRunMutation) AddAccountID(i int64) {
+	if m.addaccount_id != nil {
+		*m.addaccount_id += i
+	} else {
+		m.addaccount_id = &i
+	}
+}
+
+// AddedAccountID returns the value that was added to the "account_id" field in this mutation.
+func (m *PromptOptimizationRunMutation) AddedAccountID() (r int64, exists bool) {
+	v := m.addaccount_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *PromptOptimizationRunMutation) ResetAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+}
+
+// SetModelID sets the "model_id" field.
+func (m *PromptOptimizationRunMutation) SetModelID(i int64) {
+	m.model_id = &i
+	m.addmodel_id = nil
+}
+
+// ModelID returns the value of the "model_id" field in the mutation.
+func (m *PromptOptimizationRunMutation) ModelID() (r int64, exists bool) {
+	v := m.model_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelID returns the old "model_id" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldModelID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelID: %w", err)
+	}
+	return oldValue.ModelID, nil
+}
+
+// AddModelID adds i to the "model_id" field.
+func (m *PromptOptimizationRunMutation) AddModelID(i int64) {
+	if m.addmodel_id != nil {
+		*m.addmodel_id += i
+	} else {
+		m.addmodel_id = &i
+	}
+}
+
+// AddedModelID returns the value that was added to the "model_id" field in this mutation.
+func (m *PromptOptimizationRunMutation) AddedModelID() (r int64, exists bool) {
+	v := m.addmodel_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetModelID resets all changes to the "model_id" field.
+func (m *PromptOptimizationRunMutation) ResetModelID() {
+	m.model_id = nil
+	m.addmodel_id = nil
+}
+
+// SetModelCode sets the "model_code" field.
+func (m *PromptOptimizationRunMutation) SetModelCode(s string) {
+	m.model_code = &s
+}
+
+// ModelCode returns the value of the "model_code" field in the mutation.
+func (m *PromptOptimizationRunMutation) ModelCode() (r string, exists bool) {
+	v := m.model_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelCode returns the old "model_code" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldModelCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelCode: %w", err)
+	}
+	return oldValue.ModelCode, nil
+}
+
+// ResetModelCode resets all changes to the "model_code" field.
+func (m *PromptOptimizationRunMutation) ResetModelCode() {
+	m.model_code = nil
+}
+
+// SetAPIStyle sets the "api_style" field.
+func (m *PromptOptimizationRunMutation) SetAPIStyle(s string) {
+	m.api_style = &s
+}
+
+// APIStyle returns the value of the "api_style" field in the mutation.
+func (m *PromptOptimizationRunMutation) APIStyle() (r string, exists bool) {
+	v := m.api_style
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIStyle returns the old "api_style" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldAPIStyle(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIStyle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIStyle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIStyle: %w", err)
+	}
+	return oldValue.APIStyle, nil
+}
+
+// ResetAPIStyle resets all changes to the "api_style" field.
+func (m *PromptOptimizationRunMutation) ResetAPIStyle() {
+	m.api_style = nil
+}
+
+// SetConfigVersion sets the "config_version" field.
+func (m *PromptOptimizationRunMutation) SetConfigVersion(i int64) {
+	m.config_version = &i
+	m.addconfig_version = nil
+}
+
+// ConfigVersion returns the value of the "config_version" field in the mutation.
+func (m *PromptOptimizationRunMutation) ConfigVersion() (r int64, exists bool) {
+	v := m.config_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfigVersion returns the old "config_version" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldConfigVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfigVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfigVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfigVersion: %w", err)
+	}
+	return oldValue.ConfigVersion, nil
+}
+
+// AddConfigVersion adds i to the "config_version" field.
+func (m *PromptOptimizationRunMutation) AddConfigVersion(i int64) {
+	if m.addconfig_version != nil {
+		*m.addconfig_version += i
+	} else {
+		m.addconfig_version = &i
+	}
+}
+
+// AddedConfigVersion returns the value that was added to the "config_version" field in this mutation.
+func (m *PromptOptimizationRunMutation) AddedConfigVersion() (r int64, exists bool) {
+	v := m.addconfig_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConfigVersion resets all changes to the "config_version" field.
+func (m *PromptOptimizationRunMutation) ResetConfigVersion() {
+	m.config_version = nil
+	m.addconfig_version = nil
+}
+
+// SetPromptSha256 sets the "prompt_sha256" field.
+func (m *PromptOptimizationRunMutation) SetPromptSha256(s string) {
+	m.prompt_sha256 = &s
+}
+
+// PromptSha256 returns the value of the "prompt_sha256" field in the mutation.
+func (m *PromptOptimizationRunMutation) PromptSha256() (r string, exists bool) {
+	v := m.prompt_sha256
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPromptSha256 returns the old "prompt_sha256" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldPromptSha256(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPromptSha256 is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPromptSha256 requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPromptSha256: %w", err)
+	}
+	return oldValue.PromptSha256, nil
+}
+
+// ResetPromptSha256 resets all changes to the "prompt_sha256" field.
+func (m *PromptOptimizationRunMutation) ResetPromptSha256() {
+	m.prompt_sha256 = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *PromptOptimizationRunMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *PromptOptimizationRunMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *PromptOptimizationRunMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (m *PromptOptimizationRunMutation) SetInputTokens(i int) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
+}
+
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *PromptOptimizationRunMutation) InputTokens() (r int, exists bool) {
+	v := m.input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputTokens returns the old "input_tokens" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldInputTokens(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
+	}
+	return oldValue.InputTokens, nil
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *PromptOptimizationRunMutation) AddInputTokens(i int) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
+	} else {
+		m.addinput_tokens = &i
+	}
+}
+
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *PromptOptimizationRunMutation) AddedInputTokens() (r int, exists bool) {
+	v := m.addinput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *PromptOptimizationRunMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (m *PromptOptimizationRunMutation) SetOutputTokens(i int) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
+}
+
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *PromptOptimizationRunMutation) OutputTokens() (r int, exists bool) {
+	v := m.output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputTokens returns the old "output_tokens" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldOutputTokens(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
+	}
+	return oldValue.OutputTokens, nil
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *PromptOptimizationRunMutation) AddOutputTokens(i int) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
+	} else {
+		m.addoutput_tokens = &i
+	}
+}
+
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *PromptOptimizationRunMutation) AddedOutputTokens() (r int, exists bool) {
+	v := m.addoutput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *PromptOptimizationRunMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
+}
+
+// SetEstimatedPoints sets the "estimated_points" field.
+func (m *PromptOptimizationRunMutation) SetEstimatedPoints(s string) {
+	m.estimated_points = &s
+}
+
+// EstimatedPoints returns the value of the "estimated_points" field in the mutation.
+func (m *PromptOptimizationRunMutation) EstimatedPoints() (r string, exists bool) {
+	v := m.estimated_points
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEstimatedPoints returns the old "estimated_points" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldEstimatedPoints(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEstimatedPoints is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEstimatedPoints requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEstimatedPoints: %w", err)
+	}
+	return oldValue.EstimatedPoints, nil
+}
+
+// ResetEstimatedPoints resets all changes to the "estimated_points" field.
+func (m *PromptOptimizationRunMutation) ResetEstimatedPoints() {
+	m.estimated_points = nil
+}
+
+// SetActualPoints sets the "actual_points" field.
+func (m *PromptOptimizationRunMutation) SetActualPoints(s string) {
+	m.actual_points = &s
+}
+
+// ActualPoints returns the value of the "actual_points" field in the mutation.
+func (m *PromptOptimizationRunMutation) ActualPoints() (r string, exists bool) {
+	v := m.actual_points
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActualPoints returns the old "actual_points" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldActualPoints(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActualPoints is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActualPoints requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActualPoints: %w", err)
+	}
+	return oldValue.ActualPoints, nil
+}
+
+// ResetActualPoints resets all changes to the "actual_points" field.
+func (m *PromptOptimizationRunMutation) ResetActualPoints() {
+	m.actual_points = nil
+}
+
+// SetProviderRequestID sets the "provider_request_id" field.
+func (m *PromptOptimizationRunMutation) SetProviderRequestID(s string) {
+	m.provider_request_id = &s
+}
+
+// ProviderRequestID returns the value of the "provider_request_id" field in the mutation.
+func (m *PromptOptimizationRunMutation) ProviderRequestID() (r string, exists bool) {
+	v := m.provider_request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderRequestID returns the old "provider_request_id" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldProviderRequestID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderRequestID: %w", err)
+	}
+	return oldValue.ProviderRequestID, nil
+}
+
+// ResetProviderRequestID resets all changes to the "provider_request_id" field.
+func (m *PromptOptimizationRunMutation) ResetProviderRequestID() {
+	m.provider_request_id = nil
+}
+
+// SetErrorCode sets the "error_code" field.
+func (m *PromptOptimizationRunMutation) SetErrorCode(s string) {
+	m.error_code = &s
+}
+
+// ErrorCode returns the value of the "error_code" field in the mutation.
+func (m *PromptOptimizationRunMutation) ErrorCode() (r string, exists bool) {
+	v := m.error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorCode returns the old "error_code" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldErrorCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorCode: %w", err)
+	}
+	return oldValue.ErrorCode, nil
+}
+
+// ResetErrorCode resets all changes to the "error_code" field.
+func (m *PromptOptimizationRunMutation) ResetErrorCode() {
+	m.error_code = nil
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *PromptOptimizationRunMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *PromptOptimizationRunMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldErrorMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *PromptOptimizationRunMutation) ResetErrorMessage() {
+	m.error_message = nil
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *PromptOptimizationRunMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *PromptOptimizationRunMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the PromptOptimizationRun entity.
+// If the PromptOptimizationRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptOptimizationRunMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (m *PromptOptimizationRunMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[promptoptimizationrun.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *PromptOptimizationRunMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[promptoptimizationrun.FieldMetadata]
+	return ok
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *PromptOptimizationRunMutation) ResetMetadata() {
+	m.metadata = nil
+	delete(m.clearedFields, promptoptimizationrun.FieldMetadata)
+}
+
+// Where appends a list predicates to the PromptOptimizationRunMutation builder.
+func (m *PromptOptimizationRunMutation) Where(ps ...predicate.PromptOptimizationRun) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the PromptOptimizationRunMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *PromptOptimizationRunMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.PromptOptimizationRun, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *PromptOptimizationRunMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *PromptOptimizationRunMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (PromptOptimizationRun).
+func (m *PromptOptimizationRunMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *PromptOptimizationRunMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.created_at != nil {
+		fields = append(fields, promptoptimizationrun.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, promptoptimizationrun.FieldUpdatedAt)
+	}
+	if m.user_id != nil {
+		fields = append(fields, promptoptimizationrun.FieldUserID)
+	}
+	if m.account_id != nil {
+		fields = append(fields, promptoptimizationrun.FieldAccountID)
+	}
+	if m.model_id != nil {
+		fields = append(fields, promptoptimizationrun.FieldModelID)
+	}
+	if m.model_code != nil {
+		fields = append(fields, promptoptimizationrun.FieldModelCode)
+	}
+	if m.api_style != nil {
+		fields = append(fields, promptoptimizationrun.FieldAPIStyle)
+	}
+	if m.config_version != nil {
+		fields = append(fields, promptoptimizationrun.FieldConfigVersion)
+	}
+	if m.prompt_sha256 != nil {
+		fields = append(fields, promptoptimizationrun.FieldPromptSha256)
+	}
+	if m.status != nil {
+		fields = append(fields, promptoptimizationrun.FieldStatus)
+	}
+	if m.input_tokens != nil {
+		fields = append(fields, promptoptimizationrun.FieldInputTokens)
+	}
+	if m.output_tokens != nil {
+		fields = append(fields, promptoptimizationrun.FieldOutputTokens)
+	}
+	if m.estimated_points != nil {
+		fields = append(fields, promptoptimizationrun.FieldEstimatedPoints)
+	}
+	if m.actual_points != nil {
+		fields = append(fields, promptoptimizationrun.FieldActualPoints)
+	}
+	if m.provider_request_id != nil {
+		fields = append(fields, promptoptimizationrun.FieldProviderRequestID)
+	}
+	if m.error_code != nil {
+		fields = append(fields, promptoptimizationrun.FieldErrorCode)
+	}
+	if m.error_message != nil {
+		fields = append(fields, promptoptimizationrun.FieldErrorMessage)
+	}
+	if m.metadata != nil {
+		fields = append(fields, promptoptimizationrun.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *PromptOptimizationRunMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case promptoptimizationrun.FieldCreatedAt:
+		return m.CreatedAt()
+	case promptoptimizationrun.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case promptoptimizationrun.FieldUserID:
+		return m.UserID()
+	case promptoptimizationrun.FieldAccountID:
+		return m.AccountID()
+	case promptoptimizationrun.FieldModelID:
+		return m.ModelID()
+	case promptoptimizationrun.FieldModelCode:
+		return m.ModelCode()
+	case promptoptimizationrun.FieldAPIStyle:
+		return m.APIStyle()
+	case promptoptimizationrun.FieldConfigVersion:
+		return m.ConfigVersion()
+	case promptoptimizationrun.FieldPromptSha256:
+		return m.PromptSha256()
+	case promptoptimizationrun.FieldStatus:
+		return m.Status()
+	case promptoptimizationrun.FieldInputTokens:
+		return m.InputTokens()
+	case promptoptimizationrun.FieldOutputTokens:
+		return m.OutputTokens()
+	case promptoptimizationrun.FieldEstimatedPoints:
+		return m.EstimatedPoints()
+	case promptoptimizationrun.FieldActualPoints:
+		return m.ActualPoints()
+	case promptoptimizationrun.FieldProviderRequestID:
+		return m.ProviderRequestID()
+	case promptoptimizationrun.FieldErrorCode:
+		return m.ErrorCode()
+	case promptoptimizationrun.FieldErrorMessage:
+		return m.ErrorMessage()
+	case promptoptimizationrun.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *PromptOptimizationRunMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case promptoptimizationrun.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case promptoptimizationrun.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case promptoptimizationrun.FieldUserID:
+		return m.OldUserID(ctx)
+	case promptoptimizationrun.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case promptoptimizationrun.FieldModelID:
+		return m.OldModelID(ctx)
+	case promptoptimizationrun.FieldModelCode:
+		return m.OldModelCode(ctx)
+	case promptoptimizationrun.FieldAPIStyle:
+		return m.OldAPIStyle(ctx)
+	case promptoptimizationrun.FieldConfigVersion:
+		return m.OldConfigVersion(ctx)
+	case promptoptimizationrun.FieldPromptSha256:
+		return m.OldPromptSha256(ctx)
+	case promptoptimizationrun.FieldStatus:
+		return m.OldStatus(ctx)
+	case promptoptimizationrun.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case promptoptimizationrun.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
+	case promptoptimizationrun.FieldEstimatedPoints:
+		return m.OldEstimatedPoints(ctx)
+	case promptoptimizationrun.FieldActualPoints:
+		return m.OldActualPoints(ctx)
+	case promptoptimizationrun.FieldProviderRequestID:
+		return m.OldProviderRequestID(ctx)
+	case promptoptimizationrun.FieldErrorCode:
+		return m.OldErrorCode(ctx)
+	case promptoptimizationrun.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case promptoptimizationrun.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown PromptOptimizationRun field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PromptOptimizationRunMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case promptoptimizationrun.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case promptoptimizationrun.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case promptoptimizationrun.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case promptoptimizationrun.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case promptoptimizationrun.FieldModelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelID(v)
+		return nil
+	case promptoptimizationrun.FieldModelCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelCode(v)
+		return nil
+	case promptoptimizationrun.FieldAPIStyle:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIStyle(v)
+		return nil
+	case promptoptimizationrun.FieldConfigVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfigVersion(v)
+		return nil
+	case promptoptimizationrun.FieldPromptSha256:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPromptSha256(v)
+		return nil
+	case promptoptimizationrun.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case promptoptimizationrun.FieldInputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputTokens(v)
+		return nil
+	case promptoptimizationrun.FieldOutputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputTokens(v)
+		return nil
+	case promptoptimizationrun.FieldEstimatedPoints:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEstimatedPoints(v)
+		return nil
+	case promptoptimizationrun.FieldActualPoints:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActualPoints(v)
+		return nil
+	case promptoptimizationrun.FieldProviderRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderRequestID(v)
+		return nil
+	case promptoptimizationrun.FieldErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorCode(v)
+		return nil
+	case promptoptimizationrun.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case promptoptimizationrun.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PromptOptimizationRun field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *PromptOptimizationRunMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, promptoptimizationrun.FieldUserID)
+	}
+	if m.addaccount_id != nil {
+		fields = append(fields, promptoptimizationrun.FieldAccountID)
+	}
+	if m.addmodel_id != nil {
+		fields = append(fields, promptoptimizationrun.FieldModelID)
+	}
+	if m.addconfig_version != nil {
+		fields = append(fields, promptoptimizationrun.FieldConfigVersion)
+	}
+	if m.addinput_tokens != nil {
+		fields = append(fields, promptoptimizationrun.FieldInputTokens)
+	}
+	if m.addoutput_tokens != nil {
+		fields = append(fields, promptoptimizationrun.FieldOutputTokens)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *PromptOptimizationRunMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case promptoptimizationrun.FieldUserID:
+		return m.AddedUserID()
+	case promptoptimizationrun.FieldAccountID:
+		return m.AddedAccountID()
+	case promptoptimizationrun.FieldModelID:
+		return m.AddedModelID()
+	case promptoptimizationrun.FieldConfigVersion:
+		return m.AddedConfigVersion()
+	case promptoptimizationrun.FieldInputTokens:
+		return m.AddedInputTokens()
+	case promptoptimizationrun.FieldOutputTokens:
+		return m.AddedOutputTokens()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PromptOptimizationRunMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case promptoptimizationrun.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case promptoptimizationrun.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountID(v)
+		return nil
+	case promptoptimizationrun.FieldModelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddModelID(v)
+		return nil
+	case promptoptimizationrun.FieldConfigVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConfigVersion(v)
+		return nil
+	case promptoptimizationrun.FieldInputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInputTokens(v)
+		return nil
+	case promptoptimizationrun.FieldOutputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputTokens(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PromptOptimizationRun numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *PromptOptimizationRunMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(promptoptimizationrun.FieldMetadata) {
+		fields = append(fields, promptoptimizationrun.FieldMetadata)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *PromptOptimizationRunMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *PromptOptimizationRunMutation) ClearField(name string) error {
+	switch name {
+	case promptoptimizationrun.FieldMetadata:
+		m.ClearMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown PromptOptimizationRun nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *PromptOptimizationRunMutation) ResetField(name string) error {
+	switch name {
+	case promptoptimizationrun.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case promptoptimizationrun.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case promptoptimizationrun.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case promptoptimizationrun.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case promptoptimizationrun.FieldModelID:
+		m.ResetModelID()
+		return nil
+	case promptoptimizationrun.FieldModelCode:
+		m.ResetModelCode()
+		return nil
+	case promptoptimizationrun.FieldAPIStyle:
+		m.ResetAPIStyle()
+		return nil
+	case promptoptimizationrun.FieldConfigVersion:
+		m.ResetConfigVersion()
+		return nil
+	case promptoptimizationrun.FieldPromptSha256:
+		m.ResetPromptSha256()
+		return nil
+	case promptoptimizationrun.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case promptoptimizationrun.FieldInputTokens:
+		m.ResetInputTokens()
+		return nil
+	case promptoptimizationrun.FieldOutputTokens:
+		m.ResetOutputTokens()
+		return nil
+	case promptoptimizationrun.FieldEstimatedPoints:
+		m.ResetEstimatedPoints()
+		return nil
+	case promptoptimizationrun.FieldActualPoints:
+		m.ResetActualPoints()
+		return nil
+	case promptoptimizationrun.FieldProviderRequestID:
+		m.ResetProviderRequestID()
+		return nil
+	case promptoptimizationrun.FieldErrorCode:
+		m.ResetErrorCode()
+		return nil
+	case promptoptimizationrun.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case promptoptimizationrun.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown PromptOptimizationRun field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *PromptOptimizationRunMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *PromptOptimizationRunMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *PromptOptimizationRunMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *PromptOptimizationRunMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *PromptOptimizationRunMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *PromptOptimizationRunMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *PromptOptimizationRunMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown PromptOptimizationRun unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *PromptOptimizationRunMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown PromptOptimizationRun edge %s", name)
+}
+
 // ProviderErrorPolicyMutation represents an operation that mutates the ProviderErrorPolicy nodes in the graph.
 type ProviderErrorPolicyMutation struct {
 	config
@@ -36356,6 +37835,1960 @@ func (m *SubscriptionPlanMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *SubscriptionPlanMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown SubscriptionPlan edge %s", name)
+}
+
+// TextModelMutation represents an operation that mutates the TextModel nodes in the graph.
+type TextModelMutation struct {
+	config
+	op                              Op
+	typ                             string
+	id                              *int
+	created_at                      *time.Time
+	updated_at                      *time.Time
+	deleted_at                      *time.Time
+	account_id                      *int64
+	addaccount_id                   *int64
+	model_code                      *string
+	display_name                    *string
+	input_price_per_million_tokens  *string
+	output_price_per_million_tokens *string
+	currency                        *string
+	enabled                         *bool
+	is_default                      *bool
+	version                         *int64
+	addversion                      *int64
+	clearedFields                   map[string]struct{}
+	done                            bool
+	oldValue                        func(context.Context) (*TextModel, error)
+	predicates                      []predicate.TextModel
+}
+
+var _ ent.Mutation = (*TextModelMutation)(nil)
+
+// textmodelOption allows management of the mutation configuration using functional options.
+type textmodelOption func(*TextModelMutation)
+
+// newTextModelMutation creates new mutation for the TextModel entity.
+func newTextModelMutation(c config, op Op, opts ...textmodelOption) *TextModelMutation {
+	m := &TextModelMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeTextModel,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withTextModelID sets the ID field of the mutation.
+func withTextModelID(id int) textmodelOption {
+	return func(m *TextModelMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *TextModel
+		)
+		m.oldValue = func(ctx context.Context) (*TextModel, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().TextModel.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTextModel sets the old TextModel of the mutation.
+func withTextModel(node *TextModel) textmodelOption {
+	return func(m *TextModelMutation) {
+		m.oldValue = func(context.Context) (*TextModel, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m TextModelMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m TextModelMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TextModelMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TextModelMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().TextModel.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *TextModelMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *TextModelMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *TextModelMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *TextModelMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *TextModelMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *TextModelMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *TextModelMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *TextModelMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *TextModelMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[textmodel.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *TextModelMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[textmodel.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *TextModelMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, textmodel.FieldDeletedAt)
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *TextModelMutation) SetAccountID(i int64) {
+	m.account_id = &i
+	m.addaccount_id = nil
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *TextModelMutation) AccountID() (r int64, exists bool) {
+	v := m.account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// AddAccountID adds i to the "account_id" field.
+func (m *TextModelMutation) AddAccountID(i int64) {
+	if m.addaccount_id != nil {
+		*m.addaccount_id += i
+	} else {
+		m.addaccount_id = &i
+	}
+}
+
+// AddedAccountID returns the value that was added to the "account_id" field in this mutation.
+func (m *TextModelMutation) AddedAccountID() (r int64, exists bool) {
+	v := m.addaccount_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *TextModelMutation) ResetAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+}
+
+// SetModelCode sets the "model_code" field.
+func (m *TextModelMutation) SetModelCode(s string) {
+	m.model_code = &s
+}
+
+// ModelCode returns the value of the "model_code" field in the mutation.
+func (m *TextModelMutation) ModelCode() (r string, exists bool) {
+	v := m.model_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelCode returns the old "model_code" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldModelCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelCode: %w", err)
+	}
+	return oldValue.ModelCode, nil
+}
+
+// ResetModelCode resets all changes to the "model_code" field.
+func (m *TextModelMutation) ResetModelCode() {
+	m.model_code = nil
+}
+
+// SetDisplayName sets the "display_name" field.
+func (m *TextModelMutation) SetDisplayName(s string) {
+	m.display_name = &s
+}
+
+// DisplayName returns the value of the "display_name" field in the mutation.
+func (m *TextModelMutation) DisplayName() (r string, exists bool) {
+	v := m.display_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayName returns the old "display_name" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldDisplayName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayName: %w", err)
+	}
+	return oldValue.DisplayName, nil
+}
+
+// ResetDisplayName resets all changes to the "display_name" field.
+func (m *TextModelMutation) ResetDisplayName() {
+	m.display_name = nil
+}
+
+// SetInputPricePerMillionTokens sets the "input_price_per_million_tokens" field.
+func (m *TextModelMutation) SetInputPricePerMillionTokens(s string) {
+	m.input_price_per_million_tokens = &s
+}
+
+// InputPricePerMillionTokens returns the value of the "input_price_per_million_tokens" field in the mutation.
+func (m *TextModelMutation) InputPricePerMillionTokens() (r string, exists bool) {
+	v := m.input_price_per_million_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputPricePerMillionTokens returns the old "input_price_per_million_tokens" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldInputPricePerMillionTokens(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputPricePerMillionTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputPricePerMillionTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputPricePerMillionTokens: %w", err)
+	}
+	return oldValue.InputPricePerMillionTokens, nil
+}
+
+// ResetInputPricePerMillionTokens resets all changes to the "input_price_per_million_tokens" field.
+func (m *TextModelMutation) ResetInputPricePerMillionTokens() {
+	m.input_price_per_million_tokens = nil
+}
+
+// SetOutputPricePerMillionTokens sets the "output_price_per_million_tokens" field.
+func (m *TextModelMutation) SetOutputPricePerMillionTokens(s string) {
+	m.output_price_per_million_tokens = &s
+}
+
+// OutputPricePerMillionTokens returns the value of the "output_price_per_million_tokens" field in the mutation.
+func (m *TextModelMutation) OutputPricePerMillionTokens() (r string, exists bool) {
+	v := m.output_price_per_million_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputPricePerMillionTokens returns the old "output_price_per_million_tokens" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldOutputPricePerMillionTokens(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputPricePerMillionTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputPricePerMillionTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputPricePerMillionTokens: %w", err)
+	}
+	return oldValue.OutputPricePerMillionTokens, nil
+}
+
+// ResetOutputPricePerMillionTokens resets all changes to the "output_price_per_million_tokens" field.
+func (m *TextModelMutation) ResetOutputPricePerMillionTokens() {
+	m.output_price_per_million_tokens = nil
+}
+
+// SetCurrency sets the "currency" field.
+func (m *TextModelMutation) SetCurrency(s string) {
+	m.currency = &s
+}
+
+// Currency returns the value of the "currency" field in the mutation.
+func (m *TextModelMutation) Currency() (r string, exists bool) {
+	v := m.currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCurrency returns the old "currency" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldCurrency(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCurrency: %w", err)
+	}
+	return oldValue.Currency, nil
+}
+
+// ResetCurrency resets all changes to the "currency" field.
+func (m *TextModelMutation) ResetCurrency() {
+	m.currency = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *TextModelMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *TextModelMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *TextModelMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetIsDefault sets the "is_default" field.
+func (m *TextModelMutation) SetIsDefault(b bool) {
+	m.is_default = &b
+}
+
+// IsDefault returns the value of the "is_default" field in the mutation.
+func (m *TextModelMutation) IsDefault() (r bool, exists bool) {
+	v := m.is_default
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsDefault returns the old "is_default" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldIsDefault(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsDefault is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsDefault requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsDefault: %w", err)
+	}
+	return oldValue.IsDefault, nil
+}
+
+// ResetIsDefault resets all changes to the "is_default" field.
+func (m *TextModelMutation) ResetIsDefault() {
+	m.is_default = nil
+}
+
+// SetVersion sets the "version" field.
+func (m *TextModelMutation) SetVersion(i int64) {
+	m.version = &i
+	m.addversion = nil
+}
+
+// Version returns the value of the "version" field in the mutation.
+func (m *TextModelMutation) Version() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersion returns the old "version" field's value of the TextModel entity.
+// If the TextModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelMutation) OldVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersion: %w", err)
+	}
+	return oldValue.Version, nil
+}
+
+// AddVersion adds i to the "version" field.
+func (m *TextModelMutation) AddVersion(i int64) {
+	if m.addversion != nil {
+		*m.addversion += i
+	} else {
+		m.addversion = &i
+	}
+}
+
+// AddedVersion returns the value that was added to the "version" field in this mutation.
+func (m *TextModelMutation) AddedVersion() (r int64, exists bool) {
+	v := m.addversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetVersion resets all changes to the "version" field.
+func (m *TextModelMutation) ResetVersion() {
+	m.version = nil
+	m.addversion = nil
+}
+
+// Where appends a list predicates to the TextModelMutation builder.
+func (m *TextModelMutation) Where(ps ...predicate.TextModel) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the TextModelMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *TextModelMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.TextModel, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *TextModelMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *TextModelMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (TextModel).
+func (m *TextModelMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *TextModelMutation) Fields() []string {
+	fields := make([]string, 0, 12)
+	if m.created_at != nil {
+		fields = append(fields, textmodel.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, textmodel.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, textmodel.FieldDeletedAt)
+	}
+	if m.account_id != nil {
+		fields = append(fields, textmodel.FieldAccountID)
+	}
+	if m.model_code != nil {
+		fields = append(fields, textmodel.FieldModelCode)
+	}
+	if m.display_name != nil {
+		fields = append(fields, textmodel.FieldDisplayName)
+	}
+	if m.input_price_per_million_tokens != nil {
+		fields = append(fields, textmodel.FieldInputPricePerMillionTokens)
+	}
+	if m.output_price_per_million_tokens != nil {
+		fields = append(fields, textmodel.FieldOutputPricePerMillionTokens)
+	}
+	if m.currency != nil {
+		fields = append(fields, textmodel.FieldCurrency)
+	}
+	if m.enabled != nil {
+		fields = append(fields, textmodel.FieldEnabled)
+	}
+	if m.is_default != nil {
+		fields = append(fields, textmodel.FieldIsDefault)
+	}
+	if m.version != nil {
+		fields = append(fields, textmodel.FieldVersion)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *TextModelMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case textmodel.FieldCreatedAt:
+		return m.CreatedAt()
+	case textmodel.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case textmodel.FieldDeletedAt:
+		return m.DeletedAt()
+	case textmodel.FieldAccountID:
+		return m.AccountID()
+	case textmodel.FieldModelCode:
+		return m.ModelCode()
+	case textmodel.FieldDisplayName:
+		return m.DisplayName()
+	case textmodel.FieldInputPricePerMillionTokens:
+		return m.InputPricePerMillionTokens()
+	case textmodel.FieldOutputPricePerMillionTokens:
+		return m.OutputPricePerMillionTokens()
+	case textmodel.FieldCurrency:
+		return m.Currency()
+	case textmodel.FieldEnabled:
+		return m.Enabled()
+	case textmodel.FieldIsDefault:
+		return m.IsDefault()
+	case textmodel.FieldVersion:
+		return m.Version()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *TextModelMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case textmodel.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case textmodel.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case textmodel.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case textmodel.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case textmodel.FieldModelCode:
+		return m.OldModelCode(ctx)
+	case textmodel.FieldDisplayName:
+		return m.OldDisplayName(ctx)
+	case textmodel.FieldInputPricePerMillionTokens:
+		return m.OldInputPricePerMillionTokens(ctx)
+	case textmodel.FieldOutputPricePerMillionTokens:
+		return m.OldOutputPricePerMillionTokens(ctx)
+	case textmodel.FieldCurrency:
+		return m.OldCurrency(ctx)
+	case textmodel.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case textmodel.FieldIsDefault:
+		return m.OldIsDefault(ctx)
+	case textmodel.FieldVersion:
+		return m.OldVersion(ctx)
+	}
+	return nil, fmt.Errorf("unknown TextModel field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TextModelMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case textmodel.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case textmodel.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case textmodel.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case textmodel.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case textmodel.FieldModelCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelCode(v)
+		return nil
+	case textmodel.FieldDisplayName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayName(v)
+		return nil
+	case textmodel.FieldInputPricePerMillionTokens:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputPricePerMillionTokens(v)
+		return nil
+	case textmodel.FieldOutputPricePerMillionTokens:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputPricePerMillionTokens(v)
+		return nil
+	case textmodel.FieldCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCurrency(v)
+		return nil
+	case textmodel.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case textmodel.FieldIsDefault:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsDefault(v)
+		return nil
+	case textmodel.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TextModel field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *TextModelMutation) AddedFields() []string {
+	var fields []string
+	if m.addaccount_id != nil {
+		fields = append(fields, textmodel.FieldAccountID)
+	}
+	if m.addversion != nil {
+		fields = append(fields, textmodel.FieldVersion)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *TextModelMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case textmodel.FieldAccountID:
+		return m.AddedAccountID()
+	case textmodel.FieldVersion:
+		return m.AddedVersion()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TextModelMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case textmodel.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountID(v)
+		return nil
+	case textmodel.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TextModel numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *TextModelMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(textmodel.FieldDeletedAt) {
+		fields = append(fields, textmodel.FieldDeletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *TextModelMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *TextModelMutation) ClearField(name string) error {
+	switch name {
+	case textmodel.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown TextModel nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *TextModelMutation) ResetField(name string) error {
+	switch name {
+	case textmodel.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case textmodel.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case textmodel.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case textmodel.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case textmodel.FieldModelCode:
+		m.ResetModelCode()
+		return nil
+	case textmodel.FieldDisplayName:
+		m.ResetDisplayName()
+		return nil
+	case textmodel.FieldInputPricePerMillionTokens:
+		m.ResetInputPricePerMillionTokens()
+		return nil
+	case textmodel.FieldOutputPricePerMillionTokens:
+		m.ResetOutputPricePerMillionTokens()
+		return nil
+	case textmodel.FieldCurrency:
+		m.ResetCurrency()
+		return nil
+	case textmodel.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case textmodel.FieldIsDefault:
+		m.ResetIsDefault()
+		return nil
+	case textmodel.FieldVersion:
+		m.ResetVersion()
+		return nil
+	}
+	return fmt.Errorf("unknown TextModel field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *TextModelMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *TextModelMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *TextModelMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *TextModelMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *TextModelMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *TextModelMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *TextModelMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown TextModel unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *TextModelMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown TextModel edge %s", name)
+}
+
+// TextModelAccountMutation represents an operation that mutates the TextModelAccount nodes in the graph.
+type TextModelAccountMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int
+	created_at         *time.Time
+	updated_at         *time.Time
+	deleted_at         *time.Time
+	name               *string
+	platform_type      *string
+	api_style          *string
+	base_url           *string
+	secret_encrypted   *map[string]interface{}
+	secret_fingerprint *string
+	enabled            *bool
+	version            *int64
+	addversion         *int64
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*TextModelAccount, error)
+	predicates         []predicate.TextModelAccount
+}
+
+var _ ent.Mutation = (*TextModelAccountMutation)(nil)
+
+// textmodelaccountOption allows management of the mutation configuration using functional options.
+type textmodelaccountOption func(*TextModelAccountMutation)
+
+// newTextModelAccountMutation creates new mutation for the TextModelAccount entity.
+func newTextModelAccountMutation(c config, op Op, opts ...textmodelaccountOption) *TextModelAccountMutation {
+	m := &TextModelAccountMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeTextModelAccount,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withTextModelAccountID sets the ID field of the mutation.
+func withTextModelAccountID(id int) textmodelaccountOption {
+	return func(m *TextModelAccountMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *TextModelAccount
+		)
+		m.oldValue = func(ctx context.Context) (*TextModelAccount, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().TextModelAccount.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTextModelAccount sets the old TextModelAccount of the mutation.
+func withTextModelAccount(node *TextModelAccount) textmodelaccountOption {
+	return func(m *TextModelAccountMutation) {
+		m.oldValue = func(context.Context) (*TextModelAccount, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m TextModelAccountMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m TextModelAccountMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TextModelAccountMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TextModelAccountMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().TextModelAccount.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *TextModelAccountMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *TextModelAccountMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *TextModelAccountMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *TextModelAccountMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *TextModelAccountMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *TextModelAccountMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *TextModelAccountMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *TextModelAccountMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *TextModelAccountMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[textmodelaccount.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *TextModelAccountMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[textmodelaccount.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *TextModelAccountMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, textmodelaccount.FieldDeletedAt)
+}
+
+// SetName sets the "name" field.
+func (m *TextModelAccountMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *TextModelAccountMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *TextModelAccountMutation) ResetName() {
+	m.name = nil
+}
+
+// SetPlatformType sets the "platform_type" field.
+func (m *TextModelAccountMutation) SetPlatformType(s string) {
+	m.platform_type = &s
+}
+
+// PlatformType returns the value of the "platform_type" field in the mutation.
+func (m *TextModelAccountMutation) PlatformType() (r string, exists bool) {
+	v := m.platform_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatformType returns the old "platform_type" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldPlatformType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatformType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatformType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatformType: %w", err)
+	}
+	return oldValue.PlatformType, nil
+}
+
+// ResetPlatformType resets all changes to the "platform_type" field.
+func (m *TextModelAccountMutation) ResetPlatformType() {
+	m.platform_type = nil
+}
+
+// SetAPIStyle sets the "api_style" field.
+func (m *TextModelAccountMutation) SetAPIStyle(s string) {
+	m.api_style = &s
+}
+
+// APIStyle returns the value of the "api_style" field in the mutation.
+func (m *TextModelAccountMutation) APIStyle() (r string, exists bool) {
+	v := m.api_style
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIStyle returns the old "api_style" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldAPIStyle(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIStyle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIStyle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIStyle: %w", err)
+	}
+	return oldValue.APIStyle, nil
+}
+
+// ResetAPIStyle resets all changes to the "api_style" field.
+func (m *TextModelAccountMutation) ResetAPIStyle() {
+	m.api_style = nil
+}
+
+// SetBaseURL sets the "base_url" field.
+func (m *TextModelAccountMutation) SetBaseURL(s string) {
+	m.base_url = &s
+}
+
+// BaseURL returns the value of the "base_url" field in the mutation.
+func (m *TextModelAccountMutation) BaseURL() (r string, exists bool) {
+	v := m.base_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBaseURL returns the old "base_url" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldBaseURL(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBaseURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBaseURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBaseURL: %w", err)
+	}
+	return oldValue.BaseURL, nil
+}
+
+// ResetBaseURL resets all changes to the "base_url" field.
+func (m *TextModelAccountMutation) ResetBaseURL() {
+	m.base_url = nil
+}
+
+// SetSecretEncrypted sets the "secret_encrypted" field.
+func (m *TextModelAccountMutation) SetSecretEncrypted(value map[string]interface{}) {
+	m.secret_encrypted = &value
+}
+
+// SecretEncrypted returns the value of the "secret_encrypted" field in the mutation.
+func (m *TextModelAccountMutation) SecretEncrypted() (r map[string]interface{}, exists bool) {
+	v := m.secret_encrypted
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSecretEncrypted returns the old "secret_encrypted" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldSecretEncrypted(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSecretEncrypted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSecretEncrypted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSecretEncrypted: %w", err)
+	}
+	return oldValue.SecretEncrypted, nil
+}
+
+// ClearSecretEncrypted clears the value of the "secret_encrypted" field.
+func (m *TextModelAccountMutation) ClearSecretEncrypted() {
+	m.secret_encrypted = nil
+	m.clearedFields[textmodelaccount.FieldSecretEncrypted] = struct{}{}
+}
+
+// SecretEncryptedCleared returns if the "secret_encrypted" field was cleared in this mutation.
+func (m *TextModelAccountMutation) SecretEncryptedCleared() bool {
+	_, ok := m.clearedFields[textmodelaccount.FieldSecretEncrypted]
+	return ok
+}
+
+// ResetSecretEncrypted resets all changes to the "secret_encrypted" field.
+func (m *TextModelAccountMutation) ResetSecretEncrypted() {
+	m.secret_encrypted = nil
+	delete(m.clearedFields, textmodelaccount.FieldSecretEncrypted)
+}
+
+// SetSecretFingerprint sets the "secret_fingerprint" field.
+func (m *TextModelAccountMutation) SetSecretFingerprint(s string) {
+	m.secret_fingerprint = &s
+}
+
+// SecretFingerprint returns the value of the "secret_fingerprint" field in the mutation.
+func (m *TextModelAccountMutation) SecretFingerprint() (r string, exists bool) {
+	v := m.secret_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSecretFingerprint returns the old "secret_fingerprint" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldSecretFingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSecretFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSecretFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSecretFingerprint: %w", err)
+	}
+	return oldValue.SecretFingerprint, nil
+}
+
+// ResetSecretFingerprint resets all changes to the "secret_fingerprint" field.
+func (m *TextModelAccountMutation) ResetSecretFingerprint() {
+	m.secret_fingerprint = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *TextModelAccountMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *TextModelAccountMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *TextModelAccountMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetVersion sets the "version" field.
+func (m *TextModelAccountMutation) SetVersion(i int64) {
+	m.version = &i
+	m.addversion = nil
+}
+
+// Version returns the value of the "version" field in the mutation.
+func (m *TextModelAccountMutation) Version() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersion returns the old "version" field's value of the TextModelAccount entity.
+// If the TextModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TextModelAccountMutation) OldVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersion: %w", err)
+	}
+	return oldValue.Version, nil
+}
+
+// AddVersion adds i to the "version" field.
+func (m *TextModelAccountMutation) AddVersion(i int64) {
+	if m.addversion != nil {
+		*m.addversion += i
+	} else {
+		m.addversion = &i
+	}
+}
+
+// AddedVersion returns the value that was added to the "version" field in this mutation.
+func (m *TextModelAccountMutation) AddedVersion() (r int64, exists bool) {
+	v := m.addversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetVersion resets all changes to the "version" field.
+func (m *TextModelAccountMutation) ResetVersion() {
+	m.version = nil
+	m.addversion = nil
+}
+
+// Where appends a list predicates to the TextModelAccountMutation builder.
+func (m *TextModelAccountMutation) Where(ps ...predicate.TextModelAccount) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the TextModelAccountMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *TextModelAccountMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.TextModelAccount, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *TextModelAccountMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *TextModelAccountMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (TextModelAccount).
+func (m *TextModelAccountMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *TextModelAccountMutation) Fields() []string {
+	fields := make([]string, 0, 11)
+	if m.created_at != nil {
+		fields = append(fields, textmodelaccount.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, textmodelaccount.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, textmodelaccount.FieldDeletedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, textmodelaccount.FieldName)
+	}
+	if m.platform_type != nil {
+		fields = append(fields, textmodelaccount.FieldPlatformType)
+	}
+	if m.api_style != nil {
+		fields = append(fields, textmodelaccount.FieldAPIStyle)
+	}
+	if m.base_url != nil {
+		fields = append(fields, textmodelaccount.FieldBaseURL)
+	}
+	if m.secret_encrypted != nil {
+		fields = append(fields, textmodelaccount.FieldSecretEncrypted)
+	}
+	if m.secret_fingerprint != nil {
+		fields = append(fields, textmodelaccount.FieldSecretFingerprint)
+	}
+	if m.enabled != nil {
+		fields = append(fields, textmodelaccount.FieldEnabled)
+	}
+	if m.version != nil {
+		fields = append(fields, textmodelaccount.FieldVersion)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *TextModelAccountMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case textmodelaccount.FieldCreatedAt:
+		return m.CreatedAt()
+	case textmodelaccount.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case textmodelaccount.FieldDeletedAt:
+		return m.DeletedAt()
+	case textmodelaccount.FieldName:
+		return m.Name()
+	case textmodelaccount.FieldPlatformType:
+		return m.PlatformType()
+	case textmodelaccount.FieldAPIStyle:
+		return m.APIStyle()
+	case textmodelaccount.FieldBaseURL:
+		return m.BaseURL()
+	case textmodelaccount.FieldSecretEncrypted:
+		return m.SecretEncrypted()
+	case textmodelaccount.FieldSecretFingerprint:
+		return m.SecretFingerprint()
+	case textmodelaccount.FieldEnabled:
+		return m.Enabled()
+	case textmodelaccount.FieldVersion:
+		return m.Version()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *TextModelAccountMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case textmodelaccount.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case textmodelaccount.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case textmodelaccount.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case textmodelaccount.FieldName:
+		return m.OldName(ctx)
+	case textmodelaccount.FieldPlatformType:
+		return m.OldPlatformType(ctx)
+	case textmodelaccount.FieldAPIStyle:
+		return m.OldAPIStyle(ctx)
+	case textmodelaccount.FieldBaseURL:
+		return m.OldBaseURL(ctx)
+	case textmodelaccount.FieldSecretEncrypted:
+		return m.OldSecretEncrypted(ctx)
+	case textmodelaccount.FieldSecretFingerprint:
+		return m.OldSecretFingerprint(ctx)
+	case textmodelaccount.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case textmodelaccount.FieldVersion:
+		return m.OldVersion(ctx)
+	}
+	return nil, fmt.Errorf("unknown TextModelAccount field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TextModelAccountMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case textmodelaccount.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case textmodelaccount.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case textmodelaccount.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case textmodelaccount.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case textmodelaccount.FieldPlatformType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatformType(v)
+		return nil
+	case textmodelaccount.FieldAPIStyle:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIStyle(v)
+		return nil
+	case textmodelaccount.FieldBaseURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBaseURL(v)
+		return nil
+	case textmodelaccount.FieldSecretEncrypted:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSecretEncrypted(v)
+		return nil
+	case textmodelaccount.FieldSecretFingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSecretFingerprint(v)
+		return nil
+	case textmodelaccount.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case textmodelaccount.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TextModelAccount field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *TextModelAccountMutation) AddedFields() []string {
+	var fields []string
+	if m.addversion != nil {
+		fields = append(fields, textmodelaccount.FieldVersion)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *TextModelAccountMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case textmodelaccount.FieldVersion:
+		return m.AddedVersion()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TextModelAccountMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case textmodelaccount.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TextModelAccount numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *TextModelAccountMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(textmodelaccount.FieldDeletedAt) {
+		fields = append(fields, textmodelaccount.FieldDeletedAt)
+	}
+	if m.FieldCleared(textmodelaccount.FieldSecretEncrypted) {
+		fields = append(fields, textmodelaccount.FieldSecretEncrypted)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *TextModelAccountMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *TextModelAccountMutation) ClearField(name string) error {
+	switch name {
+	case textmodelaccount.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	case textmodelaccount.FieldSecretEncrypted:
+		m.ClearSecretEncrypted()
+		return nil
+	}
+	return fmt.Errorf("unknown TextModelAccount nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *TextModelAccountMutation) ResetField(name string) error {
+	switch name {
+	case textmodelaccount.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case textmodelaccount.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case textmodelaccount.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case textmodelaccount.FieldName:
+		m.ResetName()
+		return nil
+	case textmodelaccount.FieldPlatformType:
+		m.ResetPlatformType()
+		return nil
+	case textmodelaccount.FieldAPIStyle:
+		m.ResetAPIStyle()
+		return nil
+	case textmodelaccount.FieldBaseURL:
+		m.ResetBaseURL()
+		return nil
+	case textmodelaccount.FieldSecretEncrypted:
+		m.ResetSecretEncrypted()
+		return nil
+	case textmodelaccount.FieldSecretFingerprint:
+		m.ResetSecretFingerprint()
+		return nil
+	case textmodelaccount.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case textmodelaccount.FieldVersion:
+		m.ResetVersion()
+		return nil
+	}
+	return fmt.Errorf("unknown TextModelAccount field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *TextModelAccountMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *TextModelAccountMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *TextModelAccountMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *TextModelAccountMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *TextModelAccountMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *TextModelAccountMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *TextModelAccountMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown TextModelAccount unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *TextModelAccountMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown TextModelAccount edge %s", name)
 }
 
 // UserMutation represents an operation that mutates the User nodes in the graph.

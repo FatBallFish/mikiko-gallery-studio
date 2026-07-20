@@ -51,7 +51,7 @@ const capability = normalizeCapabilities({
     Code: 'plus-image',
     Name: 'Plus Image',
     Description: 'Current Go capability shape',
-    TaskTypes: ['text_to_image', 'reference_generate'],
+    TaskTypes: ['text_to_image', 'image_edit'],
     Qualities: ['auto', '1k', '2k'],
     AspectRatios: ['1:1', '16:9'],
     MaxOutputImageCount: 4,
@@ -81,7 +81,7 @@ assertDeepEqual(model.supports_output_compression, false, 'missing compression s
 assertAbsent(model, ['quality', 'output_format', 'moderation'], 'normalization must not advertise unsupported option sets')
 
 const ratioRequest = {
-  task_type: 'reference_to_image',
+  task_type: 'image_edit',
   route_model_code: 'plus-image',
   size_mode: 'ratio',
   base_resolution: '2K',
@@ -106,7 +106,7 @@ void baseResolutionOnlyRequest
 
 const estimateWire = buildEstimateWireRequest(ratioRequest)
 assertDeepEqual(estimateWire, {
-  task_type: 'reference_generate',
+  task_type: 'image_edit',
   route_model_code: 'plus-image',
   size_mode: 'ratio',
   aspect_ratio: '16:9',
@@ -132,7 +132,7 @@ const createWire = buildCreateTaskWireRequest({
 })
 assertDeepEqual(createWire, {
   body: {
-    task_type: 'reference_generate',
+    task_type: 'image_edit',
     prompt: 'Paint a quiet harbor\n\nNegative prompt: text, watermark',
     route_model_code: 'plus-image',
     size_mode: 'ratio',
@@ -213,7 +213,7 @@ async function verifyBaseResolutionOnlyConsumers() {
   const openApi = openApiModule.openApi
   const referenceAssetIDs = ['ref-open-1']
   const request: EstimateRequest = {
-    task_type: 'reference_to_image',
+    task_type: 'image_edit',
     route_model_code: 'plus-image',
     base_resolution: '2K',
     aspect_ratio: '16:9',
@@ -224,13 +224,13 @@ async function verifyBaseResolutionOnlyConsumers() {
   const createDescriptor = buildOpenCreateTaskWire({ ...request, prompt: 'Paint a quiet harbor' }) as OpenWireDescriptor
   assertDeepEqual(estimateDescriptor, {
     method: 'GET',
-    request_uri: '/api/open/image/v1/estimate?task_type=reference_generate&route_model_code=plus-image&requested_quality=2k&requested_size=2560x1440&requested_output_image_count=2&reference_image_count=1',
+    request_uri: '/api/open/image/v1/estimate?task_type=image_edit&route_model_code=plus-image&requested_quality=2k&requested_size=2560x1440&requested_output_image_count=2&reference_image_count=1',
     serialized_body: '',
   }, 'Open API estimate builder should freeze the exact signable wire request')
   assertDeepEqual(createDescriptor, {
     method: 'POST',
     request_uri: '/api/open/image/v1/tasks',
-    serialized_body: '{"task_type":"reference_generate","route_model_code":"plus-image","requested_quality":"2k","requested_size":"2560x1440","requested_output_image_count":2,"reference_image_count":1,"prompt":"Paint a quiet harbor","reference_asset_ids":["ref-open-1"],"response_mode":"async"}',
+    serialized_body: '{"task_type":"image_edit","route_model_code":"plus-image","requested_quality":"2k","requested_size":"2560x1440","requested_output_image_count":2,"reference_image_count":1,"prompt":"Paint a quiet harbor","reference_asset_ids":["ref-open-1"],"response_mode":"async"}',
   }, 'Open API create builder should freeze the exact signable wire request')
   assertAbsent(estimateDescriptor as unknown as Record<string, unknown>, ['query', 'body'], 'Open estimate descriptor must not expose mutable derived objects')
   assertAbsent(createDescriptor as unknown as Record<string, unknown>, ['query', 'body'], 'Open create descriptor must not expose mutable derived objects')
@@ -238,15 +238,15 @@ async function verifyBaseResolutionOnlyConsumers() {
   referenceAssetIDs.push('ref-after-signing')
   request.aspect_ratio = '1:1'
   request.base_resolution = '4K'
-  if (estimateDescriptor.request_uri !== '/api/open/image/v1/estimate?task_type=reference_generate&route_model_code=plus-image&requested_quality=2k&requested_size=2560x1440&requested_output_image_count=2&reference_image_count=1'
-    || createDescriptor.serialized_body !== '{"task_type":"reference_generate","route_model_code":"plus-image","requested_quality":"2k","requested_size":"2560x1440","requested_output_image_count":2,"reference_image_count":1,"prompt":"Paint a quiet harbor","reference_asset_ids":["ref-open-1"],"response_mode":"async"}') {
+  if (estimateDescriptor.request_uri !== '/api/open/image/v1/estimate?task_type=image_edit&route_model_code=plus-image&requested_quality=2k&requested_size=2560x1440&requested_output_image_count=2&reference_image_count=1'
+    || createDescriptor.serialized_body !== '{"task_type":"image_edit","route_model_code":"plus-image","requested_quality":"2k","requested_size":"2560x1440","requested_output_image_count":2,"reference_image_count":1,"prompt":"Paint a quiet harbor","reference_asset_ids":["ref-open-1"],"response_mode":"async"}') {
     throw new Error('Open descriptors must remain stable after the original request is mutated')
   }
 
   const timestamp = '2026-07-17T00:00:00Z'
   const secret = 'contract-signing-secret'
-  const goCreateBodyHash = '6fff_WCPvUUIT3glSfxfpdhwNzshFVGsPp_V4S3OAFA'
-  const goCreateSignature = 'arlbDv1imOzeIPiOzgToeD66fugKbyXOrAHT9tcoLGY'
+  const goCreateBodyHash = 'F-y2oZ4DbiAMUoV5nPDNiDF-sPoMo4wRRW-4e6LPvK0'
+  const goCreateSignature = 'KFATqBMyGGl_aUHTGx052h5_mK04hszt0csDxqen2sA'
   const estimateHeaders = await signedHeaders(estimateDescriptor, secret, timestamp)
   const createHeaders = await signedHeaders(createDescriptor, secret, timestamp)
   if (createHeaders['X-Body-SHA256'] !== goCreateBodyHash || createHeaders['X-Signature'] !== goCreateSignature) {
@@ -260,7 +260,7 @@ async function verifyBaseResolutionOnlyConsumers() {
       captured.push({ input, init })
       const payload = String(input).includes('/estimate')
         ? { points: '14.86250', formula: 'contract', sufficient: true }
-        : { id: 'open-task-1', prompt: 'Paint a quiet harbor', task_type: 'reference_generate', status: 'queued' }
+        : { id: 'open-task-1', prompt: 'Paint a quiet harbor', task_type: 'image_edit', status: 'queued' }
       return new Response(JSON.stringify({ data: payload, meta: { request_id: 'generation-contract' } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -316,7 +316,7 @@ async function verifyBaseResolutionOnlyConsumers() {
 
   mockApi.reset()
   const mockRequest: EstimateRequest = {
-    task_type: 'reference_to_image',
+    task_type: 'image_edit',
     route_model_code: 'plus-image',
     base_resolution: '2K',
     aspect_ratio: '16:9',

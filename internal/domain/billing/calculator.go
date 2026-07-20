@@ -7,6 +7,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -31,6 +32,9 @@ func NewCalculatorWithResolver(cfg config.BillingConfig, resolver baseResolution
 }
 
 func (c *Calculator) Estimate(req EstimateRequest) (EstimateResult, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return EstimateResult{}, errs.BadRequest("unsupported task_type")
+	}
 	normalized, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
 		SizeMode:       req.SizeMode,
 		AspectRatio:    req.AspectRatio,

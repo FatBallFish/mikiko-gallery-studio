@@ -104,7 +104,7 @@ if (ready.disabled || ready.reason) {
   throw new Error(`workspace should enable generation when all readiness checks pass, got ${JSON.stringify(ready)}`)
 }
 
-for (const taskType of ['reference_to_image', 'image_edit'] as const) {
+for (const taskType of ['image_edit'] as const) {
   const missingReference = workspaceGenerateReadiness({
     busy: false,
     hasModel: true,
@@ -123,7 +123,7 @@ for (const taskType of ['reference_to_image', 'image_edit'] as const) {
 const referenceReady = workspaceGenerateReadiness({
   busy: false,
   hasModel: true,
-  taskType: 'reference_to_image',
+  taskType: 'image_edit',
   referenceCount: 1,
   requiredReferencesReady: true,
   parametersReady: true,

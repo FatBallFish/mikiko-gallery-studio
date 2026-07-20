@@ -6,6 +6,7 @@ import { adminPage } from '../ui/classes'
 import { ConfigPage } from './ConfigPage'
 import { SecurityConfigPage } from './SecurityConfigPage'
 import { StorageConfigPage } from './StorageConfigPage'
+import { TextModelsPage } from './TextModelsPage'
 import { isSystemSettingsHash, systemSettingsTabFromHash, type SystemSettingsTab } from './systemSettingsTabs'
 
 export { isSystemSettingsHash, systemSettingsTabFromHash } from './systemSettingsTabs'
@@ -14,6 +15,7 @@ const tabItems = [
   { id: 'general', label: '通用配置', description: '文档、公开内容和低风险运行参数' },
   { id: 'security', label: '安全配置', description: 'SMTP 与敏感安全项' },
   { id: 'storage', label: '存储配置', description: 'Local / S3 / R2 多实例存储' },
+  { id: 'text-models', label: '文本模型', description: '提示词优化账号、模型与价格' },
 ] satisfies Array<{ id: SystemSettingsTab; label: string; description: string }>
 
 export function SystemSettingsPage({
@@ -24,8 +26,8 @@ export function SystemSettingsPage({
   onFeedback: (title: string, detail?: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(() => systemSettingsTabFromHash(window.location.hash))
-  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false })
-  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false })
+  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false, 'text-models': false })
+  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false, 'text-models': false })
   const activeTabRef = useRef(activeTab)
   const dirtyTabsRef = useRef(dirtyTabs)
   const busyTabsRef = useRef(busyTabs)
@@ -82,12 +84,14 @@ export function SystemSettingsPage({
   const onGeneralBusyChange = useCallback((busy: boolean) => updateBusyTab('general', busy), [updateBusyTab])
   const onSecurityBusyChange = useCallback((busy: boolean) => updateBusyTab('security', busy), [updateBusyTab])
   const onStorageBusyChange = useCallback((busy: boolean) => updateBusyTab('storage', busy), [updateBusyTab])
+  const onTextModelsDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('text-models', dirty), [updateDirtyTab])
+  const onTextModelsBusyChange = useCallback((busy: boolean) => updateBusyTab('text-models', busy), [updateBusyTab])
 
   return (
     <section className={adminPage.stack}>
       <PageHeader
         title="系统设置"
-        description="通用配置、安全配置和存储配置聚合在一个页面内，通过横向子 Tab 切换。"
+        description="通用、安全、存储和文本模型配置聚合在一个页面内，通过横向子 Tab 切换。"
       />
       <AdminTabs
         ariaLabel="系统设置分区"
@@ -99,8 +103,9 @@ export function SystemSettingsPage({
       {activeTab === 'general' ? <ConfigPage session={session} onFeedback={onFeedback} onDirtyChange={onGeneralDirtyChange} onBusyChange={onGeneralBusyChange} compact /> : null}
       {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
       {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
+      {activeTab === 'text-models' && canManageDangerous ? <TextModelsPage onFeedback={onFeedback} onDirtyChange={onTextModelsDirtyChange} onBusyChange={onTextModelsBusyChange} /> : null}
       {activeTab !== 'general' && !canManageDangerous ? (
-        <EmptyBlock title="暂无敏感配置权限" detail="安全配置和存储配置需要 manage:dangerous_config 权限，请联系超级管理员处理。" />
+        <EmptyBlock title="暂无敏感配置权限" detail="安全、存储和文本模型配置需要 manage:dangerous_config 权限，请联系超级管理员处理。" />
       ) : null}
     </section>
   )

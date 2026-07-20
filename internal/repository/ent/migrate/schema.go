@@ -905,6 +905,51 @@ var (
 			},
 		},
 	}
+	// PromptOptimizationRunsColumns holds the columns for the "prompt_optimization_runs" table.
+	PromptOptimizationRunsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "model_id", Type: field.TypeInt64},
+		{Name: "model_code", Type: field.TypeString, Size: 128},
+		{Name: "api_style", Type: field.TypeString, Size: 32},
+		{Name: "config_version", Type: field.TypeInt64},
+		{Name: "prompt_sha256", Type: field.TypeString, Size: 64},
+		{Name: "status", Type: field.TypeString, Size: 32},
+		{Name: "input_tokens", Type: field.TypeInt, Default: 0},
+		{Name: "output_tokens", Type: field.TypeInt, Default: 0},
+		{Name: "estimated_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "actual_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "provider_request_id", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "error_code", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "error_message", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// PromptOptimizationRunsTable holds the schema information for the "prompt_optimization_runs" table.
+	PromptOptimizationRunsTable = &schema.Table{
+		Name:       "prompt_optimization_runs",
+		Columns:    PromptOptimizationRunsColumns,
+		PrimaryKey: []*schema.Column{PromptOptimizationRunsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "promptoptimizationrun_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{PromptOptimizationRunsColumns[3], PromptOptimizationRunsColumns[1]},
+			},
+			{
+				Name:    "promptoptimizationrun_account_id_model_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptOptimizationRunsColumns[4], PromptOptimizationRunsColumns[5]},
+			},
+			{
+				Name:    "promptoptimizationrun_status",
+				Unique:  false,
+				Columns: []*schema.Column{PromptOptimizationRunsColumns[10]},
+			},
+		},
+	}
 	// ProviderErrorPoliciesColumns holds the columns for the "provider_error_policies" table.
 	ProviderErrorPoliciesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1371,6 +1416,78 @@ var (
 			},
 		},
 	}
+	// TextModelsColumns holds the columns for the "text_models" table.
+	TextModelsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "model_code", Type: field.TypeString, Size: 128},
+		{Name: "display_name", Type: field.TypeString, Size: 128},
+		{Name: "input_price_per_million_tokens", Type: field.TypeString, Default: "0.000000", SchemaType: map[string]string{"postgres": "numeric(20,6)"}},
+		{Name: "output_price_per_million_tokens", Type: field.TypeString, Default: "0.000000", SchemaType: map[string]string{"postgres": "numeric(20,6)"}},
+		{Name: "currency", Type: field.TypeString, Size: 8, Default: "USD"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "is_default", Type: field.TypeBool, Default: false},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+	}
+	// TextModelsTable holds the schema information for the "text_models" table.
+	TextModelsTable = &schema.Table{
+		Name:       "text_models",
+		Columns:    TextModelsColumns,
+		PrimaryKey: []*schema.Column{TextModelsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "textmodel_account_id_model_code",
+				Unique:  true,
+				Columns: []*schema.Column{TextModelsColumns[4], TextModelsColumns[5]},
+			},
+			{
+				Name:    "textmodel_is_default_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{TextModelsColumns[11], TextModelsColumns[10]},
+			},
+			{
+				Name:    "textmodel_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{TextModelsColumns[3]},
+			},
+		},
+	}
+	// TextModelAccountsColumns holds the columns for the "text_model_accounts" table.
+	TextModelAccountsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "platform_type", Type: field.TypeString, Size: 64},
+		{Name: "api_style", Type: field.TypeString, Size: 32},
+		{Name: "base_url", Type: field.TypeString, Size: 512},
+		{Name: "secret_encrypted", Type: field.TypeJSON, Nullable: true},
+		{Name: "secret_fingerprint", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+	}
+	// TextModelAccountsTable holds the schema information for the "text_model_accounts" table.
+	TextModelAccountsTable = &schema.Table{
+		Name:       "text_model_accounts",
+		Columns:    TextModelAccountsColumns,
+		PrimaryKey: []*schema.Column{TextModelAccountsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "textmodelaccount_platform_type_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{TextModelAccountsColumns[5], TextModelAccountsColumns[10]},
+			},
+			{
+				Name:    "textmodelaccount_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{TextModelAccountsColumns[3]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1651,6 +1768,7 @@ var (
 		PaymentProviderInstancesTable,
 		PaymentWebhookEventsTable,
 		PointLedgersTable,
+		PromptOptimizationRunsTable,
 		ProviderErrorPoliciesTable,
 		ProviderModelsTable,
 		PublicImageInteractionsTable,
@@ -1664,6 +1782,8 @@ var (
 		RouteModelVisibilityGroupsTable,
 		SecureConfigsTable,
 		SubscriptionPlansTable,
+		TextModelsTable,
+		TextModelAccountsTable,
 		UsersTable,
 		UserGroupsTable,
 		UserGroupMembersTable,
@@ -1695,6 +1815,9 @@ func init() {
 	ObjectStorageConfigsTable.Annotation = &entsql.Annotation{
 		Table: "object_storage_configs",
 	}
+	PromptOptimizationRunsTable.Annotation = &entsql.Annotation{
+		Table: "prompt_optimization_runs",
+	}
 	ProviderErrorPoliciesTable.Annotation = &entsql.Annotation{
 		Table: "provider_error_policies",
 	}
@@ -1718,6 +1841,12 @@ func init() {
 	}
 	RouteModelVisibilityGroupsTable.Annotation = &entsql.Annotation{
 		Table: "route_model_visibility_groups",
+	}
+	TextModelsTable.Annotation = &entsql.Annotation{
+		Table: "text_models",
+	}
+	TextModelAccountsTable.Annotation = &entsql.Annotation{
+		Table: "text_model_accounts",
 	}
 	UserGroupMembersTable.Annotation = &entsql.Annotation{
 		Table: "user_group_members",

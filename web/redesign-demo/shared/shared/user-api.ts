@@ -68,12 +68,12 @@ export function toBalance(raw: any): Balance {
 
 function normalizeTaskType(type: string): ImageTask['task_type'] {
   if (type === 'image_edit') return 'image_edit'
-  if (type === 'reference_to_image' || type === 'reference_generate' || type === 'image_to_image') return 'reference_to_image'
+  if (type === 'image_to_image') return 'image_edit'
   return 'text_to_image'
 }
 
 function toBackendTaskType(type: ImageTask['task_type'] | string) {
-  return type === 'reference_to_image' ? 'reference_generate' : type
+  return type === 'image_edit' ? 'image_edit' : type
 }
 
 function pick<T = unknown>(source: any, ...keys: string[]): T | undefined {
@@ -302,7 +302,7 @@ export const userApi = {
         max_reference_image_count: maxReference,
         effective_multiplier: pick(item, 'effective_multiplier', 'EffectiveMultiplier'),
         prices,
-        supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.some((type) => type === 'reference_to_image' || type === 'image_edit'))),
+        supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.includes('image_edit'))),
         display_points: pick(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
       }]
     })
@@ -315,7 +315,7 @@ export const userApi = {
       max_image_count: pick(raw, 'max_image_count', 'MaxImageCount') ?? 4,
       reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,
       reference_image_max_bytes: Number(pick(raw, 'reference_image_max_bytes', 'ReferenceImageMaxBytes') ?? 0) || undefined,
-      task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? ['text_to_image', 'reference_to_image', 'image_edit']).map(normalizeTaskType),
+      task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? ['text_to_image', 'image_edit']).map(normalizeTaskType),
     } satisfies Capability
   },
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: toEstimateQuery(req) }), req),

@@ -186,12 +186,28 @@ components:
           type: string
         task_status:
           type: string
+        size_mode:
+          type: string
+          enum: [ratio, pixel]
+        requested_size:
+          type: string
         base_resolution:
           type: string
         quality:
           type: string
         aspect_ratio:
           type: string
+        output_format:
+          type: string
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          type: string
+        requested_output_image_count:
+          type: integer
+          minimum: 1
         actual_points:
           type: string
         reference_asset_ids:
@@ -272,12 +288,28 @@ components:
           type: string
         task_status:
           type: string
+        size_mode:
+          type: string
+          enum: [ratio, pixel]
+        requested_size:
+          type: string
         base_resolution:
           type: string
         quality:
           type: string
         aspect_ratio:
           type: string
+        output_format:
+          type: string
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          type: string
+        requested_output_image_count:
+          type: integer
+          minimum: 1
         url:
           type: string
         download_url:
@@ -336,12 +368,28 @@ components:
           type: string
         task_status:
           type: string
+        size_mode:
+          type: string
+          enum: [ratio, pixel]
+        requested_size:
+          type: string
         base_resolution:
           type: string
         quality:
           type: string
         aspect_ratio:
           type: string
+        output_format:
+          type: string
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          type: string
+        requested_output_image_count:
+          type: integer
+          minimum: 1
         url:
           type: string
         download_url:

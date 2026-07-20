@@ -119,3 +119,26 @@ func TestRunAllowsDefaultSecureConfigEncryptionKeyOutsideProd(t *testing.T) {
 		t.Fatalf("expected local runtime to allow default secure config encryption key: %v", err)
 	}
 }
+
+func TestRunRejectsWeakPromptOptimizationQuoteSigningKeyInProd(t *testing.T) {
+	weakValues := []string{"", "secret", "short-prod-key", "example-prompt-quote-key", "local-dev-prompt-optimization-quote-signing-key"}
+	for _, value := range weakValues {
+		cfg := config.Config{
+			App:      config.AppConfig{Env: "prod"},
+			Security: config.SecurityConfig{PromptOptimizationQuoteSigningKey: value},
+		}
+		if err := validatePromptOptimizationQuoteSigningKey(cfg); err == nil {
+			t.Fatalf("expected prod runtime to reject weak prompt optimization quote signing key %q", value)
+		}
+	}
+}
+
+func TestRunAllowsDefaultPromptOptimizationQuoteSigningKeyOutsideProd(t *testing.T) {
+	cfg := config.Config{
+		App:      config.AppConfig{Env: "local"},
+		Security: config.SecurityConfig{PromptOptimizationQuoteSigningKey: "local-dev-prompt-optimization-quote-signing-key"},
+	}
+	if err := validatePromptOptimizationQuoteSigningKey(cfg); err != nil {
+		t.Fatalf("expected local runtime to allow default prompt optimization quote signing key: %v", err)
+	}
+}

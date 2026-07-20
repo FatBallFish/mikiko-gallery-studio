@@ -60,14 +60,14 @@ const pendingRow = reviewRowView({
   image_id: 'img_1',
   title: '公开申请',
   owner: 'user@example.com',
-  task_type: 'reference_to_image',
+  task_type: 'image_edit',
   image_url: '/image.png',
   status: 'pending_review',
   reason: '',
   created_at: '2026-06-05T13:45:30Z',
 })
 
-if (pendingRow.createdAtLabel !== '2026/06/05 13:45' || pendingRow.taskTypeLabel !== '参考生图') {
+if (pendingRow.createdAtLabel !== '2026/06/05 13:45' || pendingRow.taskTypeLabel !== '图片编辑') {
   throw new Error(`review row should format created_at and task type for operators, got ${JSON.stringify(pendingRow)}`)
 }
 

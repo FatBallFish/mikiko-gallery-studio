@@ -31,6 +31,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
@@ -44,6 +45,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
@@ -89,6 +92,8 @@ type Client struct {
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
 	PointLedger *PointLedgerClient
+	// PromptOptimizationRun is the client for interacting with the PromptOptimizationRun builders.
+	PromptOptimizationRun *PromptOptimizationRunClient
 	// ProviderErrorPolicy is the client for interacting with the ProviderErrorPolicy builders.
 	ProviderErrorPolicy *ProviderErrorPolicyClient
 	// ProviderModel is the client for interacting with the ProviderModel builders.
@@ -115,6 +120,10 @@ type Client struct {
 	SecureConfig *SecureConfigClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// TextModel is the client for interacting with the TextModel builders.
+	TextModel *TextModelClient
+	// TextModelAccount is the client for interacting with the TextModelAccount builders.
+	TextModelAccount *TextModelAccountClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserGroup is the client for interacting with the UserGroup builders.
@@ -154,6 +163,7 @@ func (c *Client) init() {
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
 	c.PaymentWebhookEvent = NewPaymentWebhookEventClient(c.config)
 	c.PointLedger = NewPointLedgerClient(c.config)
+	c.PromptOptimizationRun = NewPromptOptimizationRunClient(c.config)
 	c.ProviderErrorPolicy = NewProviderErrorPolicyClient(c.config)
 	c.ProviderModel = NewProviderModelClient(c.config)
 	c.PublicImageInteraction = NewPublicImageInteractionClient(c.config)
@@ -167,6 +177,8 @@ func (c *Client) init() {
 	c.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(c.config)
 	c.SecureConfig = NewSecureConfigClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
+	c.TextModel = NewTextModelClient(c.config)
+	c.TextModelAccount = NewTextModelAccountClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserGroup = NewUserGroupClient(c.config)
 	c.UserGroupMember = NewUserGroupMemberClient(c.config)
@@ -281,6 +293,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
+		PromptOptimizationRun:       NewPromptOptimizationRunClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
 		PublicImageInteraction:      NewPublicImageInteractionClient(cfg),
@@ -294,6 +307,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SecureConfig:                NewSecureConfigClient(cfg),
 		SubscriptionPlan:            NewSubscriptionPlanClient(cfg),
+		TextModel:                   NewTextModelClient(cfg),
+		TextModelAccount:            NewTextModelAccountClient(cfg),
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
 		UserGroupMember:             NewUserGroupMemberClient(cfg),
@@ -335,6 +350,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
+		PromptOptimizationRun:       NewPromptOptimizationRunClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
 		PublicImageInteraction:      NewPublicImageInteractionClient(cfg),
@@ -348,6 +364,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SecureConfig:                NewSecureConfigClient(cfg),
 		SubscriptionPlan:            NewSubscriptionPlanClient(cfg),
+		TextModel:                   NewTextModelClient(cfg),
+		TextModelAccount:            NewTextModelAccountClient(cfg),
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
 		UserGroupMember:             NewUserGroupMemberClient(cfg),
@@ -387,12 +405,12 @@ func (c *Client) Use(hooks ...Hook) {
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
 		c.ModelProvider, c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger,
-		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
-		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
-		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
+		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -406,12 +424,12 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
 		c.ModelProvider, c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger,
-		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
-		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
-		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
+		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -452,6 +470,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PaymentWebhookEvent.mutate(ctx, m)
 	case *PointLedgerMutation:
 		return c.PointLedger.mutate(ctx, m)
+	case *PromptOptimizationRunMutation:
+		return c.PromptOptimizationRun.mutate(ctx, m)
 	case *ProviderErrorPolicyMutation:
 		return c.ProviderErrorPolicy.mutate(ctx, m)
 	case *ProviderModelMutation:
@@ -478,6 +498,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.SecureConfig.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
+	case *TextModelMutation:
+		return c.TextModel.mutate(ctx, m)
+	case *TextModelAccountMutation:
+		return c.TextModelAccount.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	case *UserGroupMutation:
@@ -2623,6 +2647,139 @@ func (c *PointLedgerClient) mutate(ctx context.Context, m *PointLedgerMutation) 
 	}
 }
 
+// PromptOptimizationRunClient is a client for the PromptOptimizationRun schema.
+type PromptOptimizationRunClient struct {
+	config
+}
+
+// NewPromptOptimizationRunClient returns a client for the PromptOptimizationRun from the given config.
+func NewPromptOptimizationRunClient(c config) *PromptOptimizationRunClient {
+	return &PromptOptimizationRunClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `promptoptimizationrun.Hooks(f(g(h())))`.
+func (c *PromptOptimizationRunClient) Use(hooks ...Hook) {
+	c.hooks.PromptOptimizationRun = append(c.hooks.PromptOptimizationRun, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `promptoptimizationrun.Intercept(f(g(h())))`.
+func (c *PromptOptimizationRunClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PromptOptimizationRun = append(c.inters.PromptOptimizationRun, interceptors...)
+}
+
+// Create returns a builder for creating a PromptOptimizationRun entity.
+func (c *PromptOptimizationRunClient) Create() *PromptOptimizationRunCreate {
+	mutation := newPromptOptimizationRunMutation(c.config, OpCreate)
+	return &PromptOptimizationRunCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PromptOptimizationRun entities.
+func (c *PromptOptimizationRunClient) CreateBulk(builders ...*PromptOptimizationRunCreate) *PromptOptimizationRunCreateBulk {
+	return &PromptOptimizationRunCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptOptimizationRunClient) MapCreateBulk(slice any, setFunc func(*PromptOptimizationRunCreate, int)) *PromptOptimizationRunCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptOptimizationRunCreateBulk{err: fmt.Errorf("calling to PromptOptimizationRunClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptOptimizationRunCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptOptimizationRunCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PromptOptimizationRun.
+func (c *PromptOptimizationRunClient) Update() *PromptOptimizationRunUpdate {
+	mutation := newPromptOptimizationRunMutation(c.config, OpUpdate)
+	return &PromptOptimizationRunUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptOptimizationRunClient) UpdateOne(_m *PromptOptimizationRun) *PromptOptimizationRunUpdateOne {
+	mutation := newPromptOptimizationRunMutation(c.config, OpUpdateOne, withPromptOptimizationRun(_m))
+	return &PromptOptimizationRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptOptimizationRunClient) UpdateOneID(id uuid.UUID) *PromptOptimizationRunUpdateOne {
+	mutation := newPromptOptimizationRunMutation(c.config, OpUpdateOne, withPromptOptimizationRunID(id))
+	return &PromptOptimizationRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PromptOptimizationRun.
+func (c *PromptOptimizationRunClient) Delete() *PromptOptimizationRunDelete {
+	mutation := newPromptOptimizationRunMutation(c.config, OpDelete)
+	return &PromptOptimizationRunDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptOptimizationRunClient) DeleteOne(_m *PromptOptimizationRun) *PromptOptimizationRunDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptOptimizationRunClient) DeleteOneID(id uuid.UUID) *PromptOptimizationRunDeleteOne {
+	builder := c.Delete().Where(promptoptimizationrun.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptOptimizationRunDeleteOne{builder}
+}
+
+// Query returns a query builder for PromptOptimizationRun.
+func (c *PromptOptimizationRunClient) Query() *PromptOptimizationRunQuery {
+	return &PromptOptimizationRunQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePromptOptimizationRun},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PromptOptimizationRun entity by its id.
+func (c *PromptOptimizationRunClient) Get(ctx context.Context, id uuid.UUID) (*PromptOptimizationRun, error) {
+	return c.Query().Where(promptoptimizationrun.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptOptimizationRunClient) GetX(ctx context.Context, id uuid.UUID) *PromptOptimizationRun {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptOptimizationRunClient) Hooks() []Hook {
+	return c.hooks.PromptOptimizationRun
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptOptimizationRunClient) Interceptors() []Interceptor {
+	return c.inters.PromptOptimizationRun
+}
+
+func (c *PromptOptimizationRunClient) mutate(ctx context.Context, m *PromptOptimizationRunMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptOptimizationRunCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptOptimizationRunUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptOptimizationRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptOptimizationRunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PromptOptimizationRun mutation op: %q", m.Op())
+	}
+}
+
 // ProviderErrorPolicyClient is a client for the ProviderErrorPolicy schema.
 type ProviderErrorPolicyClient struct {
 	config
@@ -4352,6 +4509,272 @@ func (c *SubscriptionPlanClient) mutate(ctx context.Context, m *SubscriptionPlan
 	}
 }
 
+// TextModelClient is a client for the TextModel schema.
+type TextModelClient struct {
+	config
+}
+
+// NewTextModelClient returns a client for the TextModel from the given config.
+func NewTextModelClient(c config) *TextModelClient {
+	return &TextModelClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `textmodel.Hooks(f(g(h())))`.
+func (c *TextModelClient) Use(hooks ...Hook) {
+	c.hooks.TextModel = append(c.hooks.TextModel, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `textmodel.Intercept(f(g(h())))`.
+func (c *TextModelClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TextModel = append(c.inters.TextModel, interceptors...)
+}
+
+// Create returns a builder for creating a TextModel entity.
+func (c *TextModelClient) Create() *TextModelCreate {
+	mutation := newTextModelMutation(c.config, OpCreate)
+	return &TextModelCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TextModel entities.
+func (c *TextModelClient) CreateBulk(builders ...*TextModelCreate) *TextModelCreateBulk {
+	return &TextModelCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TextModelClient) MapCreateBulk(slice any, setFunc func(*TextModelCreate, int)) *TextModelCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TextModelCreateBulk{err: fmt.Errorf("calling to TextModelClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TextModelCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TextModelCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TextModel.
+func (c *TextModelClient) Update() *TextModelUpdate {
+	mutation := newTextModelMutation(c.config, OpUpdate)
+	return &TextModelUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TextModelClient) UpdateOne(_m *TextModel) *TextModelUpdateOne {
+	mutation := newTextModelMutation(c.config, OpUpdateOne, withTextModel(_m))
+	return &TextModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TextModelClient) UpdateOneID(id int) *TextModelUpdateOne {
+	mutation := newTextModelMutation(c.config, OpUpdateOne, withTextModelID(id))
+	return &TextModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TextModel.
+func (c *TextModelClient) Delete() *TextModelDelete {
+	mutation := newTextModelMutation(c.config, OpDelete)
+	return &TextModelDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TextModelClient) DeleteOne(_m *TextModel) *TextModelDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TextModelClient) DeleteOneID(id int) *TextModelDeleteOne {
+	builder := c.Delete().Where(textmodel.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TextModelDeleteOne{builder}
+}
+
+// Query returns a query builder for TextModel.
+func (c *TextModelClient) Query() *TextModelQuery {
+	return &TextModelQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTextModel},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TextModel entity by its id.
+func (c *TextModelClient) Get(ctx context.Context, id int) (*TextModel, error) {
+	return c.Query().Where(textmodel.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TextModelClient) GetX(ctx context.Context, id int) *TextModel {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TextModelClient) Hooks() []Hook {
+	return c.hooks.TextModel
+}
+
+// Interceptors returns the client interceptors.
+func (c *TextModelClient) Interceptors() []Interceptor {
+	return c.inters.TextModel
+}
+
+func (c *TextModelClient) mutate(ctx context.Context, m *TextModelMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TextModelCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TextModelUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TextModelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TextModelDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TextModel mutation op: %q", m.Op())
+	}
+}
+
+// TextModelAccountClient is a client for the TextModelAccount schema.
+type TextModelAccountClient struct {
+	config
+}
+
+// NewTextModelAccountClient returns a client for the TextModelAccount from the given config.
+func NewTextModelAccountClient(c config) *TextModelAccountClient {
+	return &TextModelAccountClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `textmodelaccount.Hooks(f(g(h())))`.
+func (c *TextModelAccountClient) Use(hooks ...Hook) {
+	c.hooks.TextModelAccount = append(c.hooks.TextModelAccount, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `textmodelaccount.Intercept(f(g(h())))`.
+func (c *TextModelAccountClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TextModelAccount = append(c.inters.TextModelAccount, interceptors...)
+}
+
+// Create returns a builder for creating a TextModelAccount entity.
+func (c *TextModelAccountClient) Create() *TextModelAccountCreate {
+	mutation := newTextModelAccountMutation(c.config, OpCreate)
+	return &TextModelAccountCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TextModelAccount entities.
+func (c *TextModelAccountClient) CreateBulk(builders ...*TextModelAccountCreate) *TextModelAccountCreateBulk {
+	return &TextModelAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TextModelAccountClient) MapCreateBulk(slice any, setFunc func(*TextModelAccountCreate, int)) *TextModelAccountCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TextModelAccountCreateBulk{err: fmt.Errorf("calling to TextModelAccountClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TextModelAccountCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TextModelAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TextModelAccount.
+func (c *TextModelAccountClient) Update() *TextModelAccountUpdate {
+	mutation := newTextModelAccountMutation(c.config, OpUpdate)
+	return &TextModelAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TextModelAccountClient) UpdateOne(_m *TextModelAccount) *TextModelAccountUpdateOne {
+	mutation := newTextModelAccountMutation(c.config, OpUpdateOne, withTextModelAccount(_m))
+	return &TextModelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TextModelAccountClient) UpdateOneID(id int) *TextModelAccountUpdateOne {
+	mutation := newTextModelAccountMutation(c.config, OpUpdateOne, withTextModelAccountID(id))
+	return &TextModelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TextModelAccount.
+func (c *TextModelAccountClient) Delete() *TextModelAccountDelete {
+	mutation := newTextModelAccountMutation(c.config, OpDelete)
+	return &TextModelAccountDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TextModelAccountClient) DeleteOne(_m *TextModelAccount) *TextModelAccountDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TextModelAccountClient) DeleteOneID(id int) *TextModelAccountDeleteOne {
+	builder := c.Delete().Where(textmodelaccount.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TextModelAccountDeleteOne{builder}
+}
+
+// Query returns a query builder for TextModelAccount.
+func (c *TextModelAccountClient) Query() *TextModelAccountQuery {
+	return &TextModelAccountQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTextModelAccount},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TextModelAccount entity by its id.
+func (c *TextModelAccountClient) Get(ctx context.Context, id int) (*TextModelAccount, error) {
+	return c.Query().Where(textmodelaccount.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TextModelAccountClient) GetX(ctx context.Context, id int) *TextModelAccount {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TextModelAccountClient) Hooks() []Hook {
+	return c.hooks.TextModelAccount
+}
+
+// Interceptors returns the client interceptors.
+func (c *TextModelAccountClient) Interceptors() []Interceptor {
+	return c.inters.TextModelAccount
+}
+
+func (c *TextModelAccountClient) mutate(ctx context.Context, m *TextModelAccountMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TextModelAccountCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TextModelAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TextModelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TextModelAccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TextModelAccount mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -5156,22 +5579,22 @@ type (
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, ProviderErrorPolicy, ProviderModel,
-		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
-		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
-		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, User, UserGroup,
-		UserGroupMember, UserSubscription, WalletGrant,
-		WalletReservationAllocation []ent.Hook
+		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
+		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
+		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
+		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
+		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
 		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, ProviderErrorPolicy, ProviderModel,
-		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
-		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
-		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, User, UserGroup,
-		UserGroupMember, UserSubscription, WalletGrant,
-		WalletReservationAllocation []ent.Interceptor
+		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
+		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
+		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
+		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
+		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Interceptor
 	}
 )

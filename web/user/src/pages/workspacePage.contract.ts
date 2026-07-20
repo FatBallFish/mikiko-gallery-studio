@@ -31,7 +31,6 @@ for (const required of [
   'compactViewport && !parametersExpanded',
   'data-workspace-compact-generate="true"',
   'data-workspace-full-actions="true"',
-  "disabled={busy || referenceRemainingLimit <= 0}",
   "disabled={busy || editRemainingLimit <= 0}",
   'limitReferenceSelection',
   'data-workspace-sheet-handle="true"',
@@ -113,12 +112,16 @@ if (!(referenceGuard >= 0 && createRequest > referenceGuard)) {
 }
 
 const historyEditStart = source.indexOf('async function applyAsEditSource')
-const historyEditEnd = source.indexOf('\n  function removeReferenceAsset', historyEditStart)
+const historyEditEnd = source.indexOf('\n  function removeEditAsset', historyEditStart)
 const historyEditSource = source.slice(historyEditStart, historyEditEnd)
 const historyLimitCheck = historyEditSource.indexOf('singleReferenceAddition')
 const historyFetch = historyEditSource.indexOf('await fetch')
 if (!(historyLimitCheck >= 0 && historyFetch > historyLimitCheck)) {
   throw new Error('history edit source must enforce the live reference limit before fetching or uploading')
+}
+
+for (const removed of ['参考生图', 'reference_to_image', "openGalleryImport('reference')", "uploadReference(event, 'reference')"]) {
+  if (source.includes(removed)) throw new Error(`creative workspace must not retain removed reference-generation path ${removed}`)
 }
 
 const controlsStart = source.indexOf('id="workspace-parameter-controls"')

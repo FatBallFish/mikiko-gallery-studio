@@ -8,7 +8,7 @@ import { errorMessage } from '../useApiResource'
 import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
 import { Check, Copy, Download, Edit, FolderPlus, Globe, Trash2 } from '../ui/icons'
-import { createGalleryEditContext, galleryEditContextKey } from './galleryEditContext'
+import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { runGalleryBatch } from './galleryBatchActions'
 import { areAllVisibleGalleryItemsSelected, galleryImageAspect, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
 import { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState } from './galleryPagination'
@@ -64,7 +64,6 @@ const galleryClasses = {
 const typeFilters: Array<{ value: 'all' | ImageTaskType | 'api'; label: string }> = [
   { value: 'all', label: '全部类型' },
   { value: 'text_to_image', label: '文生图' },
-  { value: 'reference_to_image', label: '参考生图' },
   { value: 'image_edit', label: '图片编辑' },
   { value: 'api', label: 'API 调用' },
 ]
@@ -343,17 +342,8 @@ export function GalleryPage() {
     }
   }
 
-  function continueEdit(image: GalleryImage) {
-    const sources = image.reference_assets?.length ? image.reference_assets : []
-    window.sessionStorage.setItem(galleryEditContextKey, JSON.stringify(createGalleryEditContext({
-      prompt: image.prompt ?? '',
-      sources,
-      fallbackImageUrl: sources.length ? '' : assetUrl(image.url || image.download_url || ''),
-      task_type: sources.length || image.url || image.download_url ? 'image_edit' : 'text_to_image',
-      route_model_code: image.route_model_code || image.abstract_model,
-      base_resolution: image.base_resolution,
-      aspect_ratio: image.aspect_ratio,
-    })))
+  function reuseConfiguration(image: GalleryImage) {
+    stageWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot(image), window.sessionStorage, window.history)
     app.navigate('genpic')
   }
 
@@ -508,7 +498,7 @@ export function GalleryPage() {
           await copyText(image.prompt || image.id)
           app.notify('success', '提示词已复制')
         }}
-        onContinue={continueEdit}
+        onReuse={reuseConfiguration}
         onDownload={(image) => downloadImage(image)}
         onPublish={publishImage}
         onDelete={(image) => requestDeleteImages([image])}
@@ -538,7 +528,7 @@ export function GalleryPage() {
           app.notify('success', 'Prompt 已复制')
         }}
         actions={selected ? [
-          { key: 'edit', label: '继续编辑', icon: <PublicDetailIcon name="edit" />, onClick: () => continueEdit(selected) },
+          { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: () => reuseConfiguration(selected) },
           { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !selected.url && !selected.download_url },
           { key: 'public', label: '申请公开', icon: <PublicDetailIcon name="public" />, onClick: () => void publishImage(selected), disabled: !selected.url },
           { key: 'group', label: '设置分组', icon: <PublicDetailIcon name="group" />, onClick: () => openGroupDialog([selected]) },
@@ -586,12 +576,16 @@ export function GalleryPage() {
           </div>
         </Modal>
       ) : null}
-      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} />
+      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} onReuseConfiguration={(draft) => {
+        stageWorkspaceCreationDraft(draft, window.sessionStorage, window.history)
+        setImagePreview(null)
+        app.navigate('genpic')
+      }} />
     </div>
   )
 }
 
-function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onOpen, onCopyPrompt, onContinue, onDownload, onPublish, onDelete, onGroup }: {
+function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onOpen, onCopyPrompt, onReuse, onDownload, onPublish, onDelete, onGroup }: {
   rows: GalleryImage[]
   accessToken?: string
   busyId: string | null
@@ -599,7 +593,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
   onToggleSelected: (imageID: string, checked?: boolean) => void
   onOpen: (image: GalleryImage) => void
   onCopyPrompt: (image: GalleryImage) => void | Promise<void>
-  onContinue: (image: GalleryImage) => void
+  onReuse: (image: GalleryImage) => void
   onDownload: (image: GalleryImage) => void
   onPublish: (image: GalleryImage) => void
   onDelete: (image: GalleryImage) => void
@@ -636,7 +630,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
               )}
               actions={<div className={galleryClasses.iconActions}>
                 {iconButton('复制提示词', <ActionIcon name="copy" />, () => void onCopyPrompt(image), !card.prompt)}
-                {iconButton('继续编辑', <ActionIcon name="edit" />, () => onContinue(image))}
+                {iconButton('复用配置', <ActionIcon name="edit" />, () => onReuse(image))}
                 {iconButton('下载', <ActionIcon name="download" />, () => onDownload(image), !card.canDownload)}
                 {iconButton(card.publishActionLabel, <ActionIcon name="public" />, () => onPublish(image), !card.canPublish, busyId === image.id)}
                 {iconButton('设置分组', <ActionIcon name="group" />, () => onGroup(image))}

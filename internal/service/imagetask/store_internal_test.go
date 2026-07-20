@@ -75,6 +75,19 @@ func TestMemoryStoreSaveTerminalStateRejectsReclaimedOwner(t *testing.T) {
 	}
 }
 
+func TestGalleryImageFromMemoryTaskPreservesReusableCreationConfiguration(t *testing.T) {
+	task := domainimagetask.Task{
+		ID: "reuse-task", UserID: 42, Prompt: "reuse prompt", TaskType: string(provider.TaskTypeImageEdit),
+		RouteModelCode: "plus", SizeMode: "pixel", RequestedSize: "1536x1024", BaseResolution: "2k",
+		Quality: "high", AspectRatio: "3:2", OutputFormat: "webp", OutputCompression: 72,
+		Moderation: "low", OutputImageCount: 4, ReferenceAssetIDs: []string{"ref-a", "ref-b"},
+	}
+	image := galleryImageFromMemoryTask(task, provider.ImageResult{ID: "image-a", URL: "https://example.test/image-a.webp"})
+	if image.SizeMode != task.SizeMode || image.RequestedSize != task.RequestedSize || image.OutputFormat != task.OutputFormat || image.OutputCompression != task.OutputCompression || image.Moderation != task.Moderation || image.OutputImageCount != task.OutputImageCount {
+		t.Fatalf("gallery image lost reusable creation configuration: %#v", image)
+	}
+}
+
 func TestMemoryStorePublicGalleryHotSortIgnoresLegacyCommentCount(t *testing.T) {
 	store := NewMemoryStore()
 	ctx := context.Background()

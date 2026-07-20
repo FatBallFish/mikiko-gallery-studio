@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import http from 'node:http'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -21,6 +22,7 @@ const FAKE_PROVIDER_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe
 const state = {
   steps: [],
   warnings: [],
+  fakeTextRequests: [],
   user: {},
   admin: {},
   apiKey: {},
@@ -36,6 +38,8 @@ const state = {
     routeId: '1',
     providerModelId: '1',
     storageConfigId: 'missing-storage-config',
+    textModelAccountId: '1',
+    textModelId: '1',
     providerCode: `e2e-provider-${RUN_ID}`.toLowerCase(),
     groupCode: `e2e-group-${RUN_ID}`.toLowerCase(),
     storageConfigId: '1',
@@ -170,7 +174,7 @@ async function startFakeProvider() {
     }
   }
   const png = Buffer.from(FAKE_PROVIDER_IMAGE_BASE64, 'base64')
-  fakeProviderServer = http.createServer((req, res) => {
+  fakeProviderServer = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/images/smoke.png') {
       res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': String(png.length) })
       res.end(png)
@@ -190,6 +194,32 @@ async function startFakeProvider() {
         ],
       })
       res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)), 'x-request-id': 'docker-e2e-fake-provider' })
+      res.end(payload)
+      return
+    }
+    if (req.method === 'POST' && (req.url === '/v1/chat/completions' || req.url === '/v1/responses')) {
+      let body = {}
+      try {
+        const chunks = []
+        for await (const chunk of req) chunks.push(chunk)
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: { code: 'invalid_json' } }))
+        return
+      }
+      state.fakeTextRequests.push({
+        path: req.url,
+        model: typeof body.model === 'string' ? body.model : '',
+        authorized: /^Bearer\s+\S+$/i.test(req.headers.authorization || ''),
+        max_completion_tokens: Object.hasOwn(body, 'max_completion_tokens'),
+        max_output_tokens: Object.hasOwn(body, 'max_output_tokens'),
+      })
+      const responseBody = req.url === '/v1/responses'
+        ? { output_text: 'Optimized responses prompt for Docker E2E', usage: { input_tokens: 12, output_tokens: 7 } }
+        : { choices: [{ message: { content: 'Optimized chat prompt for Docker E2E' } }], usage: { prompt_tokens: 11, completion_tokens: 6 } }
+      const payload = JSON.stringify(responseBody)
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)), 'x-request-id': `docker-e2e-text-${req.url.endsWith('responses') ? 'responses' : 'chat'}` })
       res.end(payload)
       return
     }
@@ -771,6 +801,150 @@ async function signedOk(method, pathWithQuery) {
   return result
 }
 
+async function happyPathPromptOptimization() {
+  const fakeProvider = await startFakeProvider()
+  const secret = `fake-text-secret-${RUN_ID}`
+  const createAccount = async (suffix, apiStyle) => {
+    const result = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/text-model-accounts`, 201, {
+      headers: bearer(state.admin.token),
+      body: {
+        name: `Docker E2E Text ${suffix} ${RUN_ID}`,
+        platform_type: 'openai_compatible',
+        api_style: apiStyle,
+        base_url: fakeProvider.containerURL,
+        enabled: true,
+        secrets: { api_key: secret },
+      },
+    })
+    if (result.text.includes(secret) || !data(result).secret_status?.has_secret) {
+      fail('Text model account response leaked or failed to record its secret', { body: result.text })
+    }
+    return data(result)
+  }
+  const chatAccount = await createAccount('Chat', 'chat_completions')
+  const responsesAccount = await createAccount('Responses', 'responses')
+  const accounts = await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/text-model-accounts`, 200, { headers: bearer(state.admin.token) })
+  const accountItems = data(accounts).items || []
+  if (!accountItems.some(item => String(item.id) === String(chatAccount.id)) || !accountItems.some(item => String(item.id) === String(responsesAccount.id))) {
+    fail('Text model account list did not retain both configured accounts', { body: accounts.text })
+  }
+
+  const createModel = async (account, suffix) => data(await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/text-model-accounts/${account.id}/models`, 201, {
+    headers: bearer(state.admin.token),
+    body: {
+      model_code: `docker-e2e-${suffix}`,
+      display_name: `Docker E2E ${suffix}`,
+      input_price_per_million_tokens: '0.000000',
+      output_price_per_million_tokens: '0.000000',
+      currency: 'USD',
+      enabled: true,
+    },
+  }))
+  const chatModel = await createModel(chatAccount, 'chat')
+  const responsesModel = await createModel(responsesAccount, 'responses')
+  state.ids.textModelAccountId = String(chatAccount.id)
+  state.ids.textModelId = String(chatModel.id)
+
+  const chatTest = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/text-models/${chatModel.id}:test`, 200, { headers: bearer(state.admin.token) })
+  const responsesTest = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/text-models/${responsesModel.id}:test`, 200, { headers: bearer(state.admin.token) })
+  if (data(chatTest).status !== 'success' || data(responsesTest).status !== 'success') {
+    fail('Text model connection tests did not succeed', { chat: chatTest.text, responses: responsesTest.text })
+  }
+
+  const optimizeWithModel = async (model, expectedPrompt) => {
+    await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/text-models/${model.id}:default`, 200, { headers: bearer(state.admin.token) })
+    const prompt = `Turn this into a precise image prompt for ${model.model_code}`
+    const estimate = await expectStatus('POST', `${BASE_URL}/api/agent/text/v1/prompt-optimizations/estimate`, 200, {
+      headers: bearer(state.user.token),
+      body: { prompt },
+    })
+    const estimateData = data(estimate)
+    if (estimateData.estimated_points !== '0.00000' || !estimateData.quote || String(estimateData.model?.id) !== String(model.id)) {
+      fail('Prompt optimization estimate was not a zero-point quote for the selected model', { body: estimate.text })
+    }
+    const optimized = await expectStatus('POST', `${BASE_URL}/api/agent/text/v1/prompt-optimizations`, 200, {
+      headers: bearer(state.user.token),
+      body: { prompt, quote: estimateData.quote },
+    })
+    const optimizedData = data(optimized)
+    if (optimizedData.actual_points !== '0.00000' || optimizedData.estimated_points !== '0.00000' || optimizedData.optimized_prompt !== expectedPrompt || !optimizedData.run_id) {
+      fail('Prompt optimization result was incomplete or charged points', { body: optimized.text })
+    }
+    return optimizedData
+  }
+  await optimizeWithModel(responsesModel, 'Optimized responses prompt for Docker E2E')
+  await optimizeWithModel(chatModel, 'Optimized chat prompt for Docker E2E')
+  await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/text-models/${chatModel.id}:default`, 200, { headers: bearer(state.admin.token) })
+
+  const chatRequest = state.fakeTextRequests.find(item => item.path === '/v1/chat/completions' && item.model === chatModel.model_code && item.max_completion_tokens)
+  const responsesRequest = state.fakeTextRequests.find(item => item.path === '/v1/responses' && item.model === responsesModel.model_code && item.max_output_tokens)
+  if (!chatRequest?.authorized || !responsesRequest?.authorized) {
+    fail('Fake provider did not receive sanitized Chat and Responses request shapes', { requests: state.fakeTextRequests })
+  }
+
+  const legacy = await request('POST', `${BASE_URL}/api/agent/image/v1/tasks`, {
+    headers: bearer(state.user.token),
+    body: {
+      task_type: 'reference_generate',
+      prompt: 'legacy reference generation must stay deleted',
+      route_model_code: 'basic',
+      size_mode: 'ratio',
+      base_resolution: '1k',
+      quality: 'auto',
+      output_format: 'png',
+      output_compression: 100,
+      moderation: 'auto',
+      requested_size: '1024x1024',
+      aspect_ratio: '1:1',
+      requested_output_image_count: 1,
+      response_mode: 'async',
+    },
+  })
+  if (legacy.status !== 400 || legacy.json?.error?.code !== 'BAD_REQUEST') {
+    fail('Removed reference generation task type was not rejected', { status: legacy.status, body: legacy.text })
+  }
+  const historyAfterLegacy = await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/history/tasks`, 200, { headers: bearer(state.user.token) })
+  const historyTasks = Array.isArray(data(historyAfterLegacy)) ? data(historyAfterLegacy) : data(historyAfterLegacy)?.items ?? []
+  if (historyTasks.some(task => task.prompt === 'legacy reference generation must stay deleted' || task.task_type === 'reference_generate')) {
+    fail('Removed reference generation task was persisted in user history', { body: historyAfterLegacy.text })
+  }
+  return { chatAccountId: chatAccount.id, responsesAccountId: responsesAccount.id, defaultModelId: chatModel.id }
+}
+
+async function browserPromptWorkflow() {
+  const outputDir = path.join(REPORT_DIR, `prompt-workflow-${RUN_ID}`)
+  await fs.mkdir(outputDir, { recursive: true })
+  const scriptPath = path.join(ROOT_DIR, 'scripts/e2e/prompt-workflow-browser.py')
+  return await new Promise((resolve, reject) => {
+    const child = spawn('python3', [scriptPath], {
+      cwd: ROOT_DIR,
+      env: {
+        ...process.env,
+        BASE_URL,
+        USER_WEB_URL,
+        ADMIN_WEB_URL,
+        E2E_USER_TOKEN: state.user.token,
+        E2E_ADMIN_TOKEN: state.admin.token,
+        E2E_RUN_ID: RUN_ID,
+        E2E_BROWSER_OUTPUT_DIR: outputDir,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', chunk => { stdout += chunk.toString() })
+    child.stderr.on('data', chunk => { stderr += chunk.toString() })
+    child.once('error', reject)
+    child.once('exit', code => {
+      if (code !== 0) {
+        reject(Object.assign(new Error('Browser prompt workflow failed'), { detail: { stderr: stderr.slice(-4000), stdout: stdout.slice(-2000) } }))
+        return
+      }
+      resolve({ outputDir, result: stdout.trim().slice(-1000) })
+    })
+  })
+}
+
 async function happyPathAdmin() {
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/metrics/dashboard`, 200, { headers: bearer(state.admin.token) })
   await expectStatus('GET', `${BASE_URL}/api/ops/admin/v1/config-tabs`, 200, { headers: bearer(state.admin.token) })
@@ -1035,6 +1209,7 @@ function defaultHeaders(template, method, pathWithQuery, body) {
 }
 
 function materializePath(template) {
+  const textModelPath = template.includes('/text-model')
   return template
     .replace('{key_id}', state.ids.keyId)
     .replace('{order_id}', state.ids.orderId)
@@ -1049,8 +1224,8 @@ function materializePath(template) {
     .replace('{provider_code}', state.ids.providerCode)
     .replace('{route_id}', state.ids.routeId)
     .replace('{provider_model_id}', state.ids.providerModelId)
-    .replace('{account_id}', state.ids.modelAccountId)
-    .replace('{model_id}', state.ids.accountModelId)
+    .replace('{account_id}', textModelPath ? state.ids.textModelAccountId : state.ids.modelAccountId)
+    .replace('{model_id}', textModelPath ? state.ids.textModelId : state.ids.accountModelId)
     .replace('{storage_config_id}', state.ids.storageConfigId)
 }
 
@@ -1201,6 +1376,8 @@ async function main() {
     await step('seed generation route for image task happy paths', seedGenerationRoute)
     await step('agent assets and image task happy path', happyPathAssetsAndTasks)
     await step('native Open API and OpenAI-compatible API happy path', happyPathOpenAPI)
+    await step('text model accounts and prompt optimization happy path', happyPathPromptOptimization)
+    await step('browser prompt optimization and configuration reuse workflow', browserPromptWorkflow)
     await step('admin management happy path', happyPathAdmin)
     await step('legacy and non-OpenAPI route coverage', async () => {
       await expectStatus('POST', `${BASE_URL}/api/agent/auth/v1/password/reset`, [200, 400], {

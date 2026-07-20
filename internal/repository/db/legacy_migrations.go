@@ -25,6 +25,102 @@ DO $$
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('pic-gallery:prepare-legacy-data'));
 
+    IF to_regclass(current_schema() || '.image_tasks') IS NOT NULL THEN
+        IF to_regclass(current_schema() || '.public_image_interactions') IS NOT NULL
+           AND to_regclass(current_schema() || '.task_images') IS NOT NULL THEN
+            EXECUTE 'DELETE FROM public_image_interactions
+                WHERE image_id IN (
+                    SELECT images.id FROM task_images AS images
+                    JOIN image_tasks AS tasks ON tasks.id = images.task_id
+                    WHERE tasks.task_type IN (''reference_generate'', ''reference_to_image'')
+                )';
+        END IF;
+
+        IF to_regclass(current_schema() || '.public_image_stats') IS NOT NULL
+           AND to_regclass(current_schema() || '.task_images') IS NOT NULL THEN
+            EXECUTE 'DELETE FROM public_image_stats
+                WHERE image_id IN (
+                    SELECT images.id FROM task_images AS images
+                    JOIN image_tasks AS tasks ON tasks.id = images.task_id
+                    WHERE tasks.task_type IN (''reference_generate'', ''reference_to_image'')
+                )';
+        END IF;
+
+        IF to_regclass(current_schema() || '.task_images') IS NOT NULL THEN
+            EXECUTE 'DELETE FROM task_images
+                WHERE task_id IN (
+                    SELECT id FROM image_tasks
+                    WHERE task_type IN (''reference_generate'', ''reference_to_image'')
+                )';
+        END IF;
+
+        IF to_regclass(current_schema() || '.reference_assets') IS NOT NULL THEN
+            EXECUTE 'DELETE FROM reference_assets
+                WHERE bound_task_id IN (
+                    SELECT id FROM image_tasks
+                    WHERE task_type IN (''reference_generate'', ''reference_to_image'')
+                )';
+        END IF;
+
+        IF to_regclass(current_schema() || '.point_ledgers') IS NOT NULL THEN
+            EXECUTE 'DELETE FROM point_ledgers
+                WHERE task_id IN (
+                    SELECT id FROM image_tasks
+                    WHERE task_type IN (''reference_generate'', ''reference_to_image'')
+                )';
+        END IF;
+
+        IF to_regclass(current_schema() || '.wallet_reservation_allocations') IS NOT NULL THEN
+            EXECUTE 'DELETE FROM wallet_reservation_allocations
+                WHERE task_id IN (
+                    SELECT id FROM image_tasks
+                    WHERE task_type IN (''reference_generate'', ''reference_to_image'')
+                )';
+        END IF;
+
+        IF to_regclass(current_schema() || '.api_key_quota_reservations') IS NOT NULL THEN
+            EXECUTE 'DELETE FROM api_key_quota_reservations
+                WHERE reservation_id IN (
+                    SELECT id::text FROM image_tasks
+                    WHERE task_type IN (''reference_generate'', ''reference_to_image'')
+                )';
+        END IF;
+
+        EXECUTE 'DELETE FROM image_tasks
+            WHERE task_type IN (''reference_generate'', ''reference_to_image'')';
+    END IF;
+
+    IF to_regclass(current_schema() || '.model_routes') IS NOT NULL THEN
+        EXECUTE 'DELETE FROM model_routes
+            WHERE task_type IN (''reference_generate'', ''reference_to_image'')';
+    END IF;
+
+    IF to_regclass(current_schema() || '.route_model_prices') IS NOT NULL THEN
+        EXECUTE 'DELETE FROM route_model_prices
+            WHERE task_type IN (''reference_generate'', ''reference_to_image'')';
+    END IF;
+
+    IF to_regclass(current_schema() || '.model_account_models') IS NOT NULL THEN
+        EXECUTE 'UPDATE model_account_models
+            SET task_types = COALESCE((
+                SELECT jsonb_agg(value)
+                FROM jsonb_array_elements_text(task_types::jsonb) AS value
+                WHERE value NOT IN (''reference_generate'', ''reference_to_image'')
+            ), ''[]''::jsonb)
+            WHERE task_types::jsonb ?| ARRAY[''reference_generate'', ''reference_to_image'']';
+    END IF;
+
+    IF to_regclass(current_schema() || '.system_configs') IS NOT NULL THEN
+        EXECUTE 'UPDATE system_configs
+            SET config_value = jsonb_set(
+                config_value::jsonb,
+                ''{value}'',
+                (config_value::jsonb->''value'') - ''reference_generate'' - ''reference_to_image''
+            )
+            WHERE jsonb_typeof(config_value::jsonb->''value'') = ''object''
+              AND ((config_value::jsonb->''value'') ?| ARRAY[''reference_generate'', ''reference_to_image''])';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM information_schema.columns

@@ -201,6 +201,18 @@ func (f PointLedgerFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PointLedgerMutation", m)
 }
 
+// The PromptOptimizationRunFunc type is an adapter to allow the use of ordinary
+// function as PromptOptimizationRun mutator.
+type PromptOptimizationRunFunc func(context.Context, *ent.PromptOptimizationRunMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PromptOptimizationRunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PromptOptimizationRunMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromptOptimizationRunMutation", m)
+}
+
 // The ProviderErrorPolicyFunc type is an adapter to allow the use of ordinary
 // function as ProviderErrorPolicy mutator.
 type ProviderErrorPolicyFunc func(context.Context, *ent.ProviderErrorPolicyMutation) (ent.Value, error)
@@ -355,6 +367,30 @@ func (f SubscriptionPlanFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionPlanMutation", m)
+}
+
+// The TextModelFunc type is an adapter to allow the use of ordinary
+// function as TextModel mutator.
+type TextModelFunc func(context.Context, *ent.TextModelMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TextModelFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TextModelMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TextModelMutation", m)
+}
+
+// The TextModelAccountFunc type is an adapter to allow the use of ordinary
+// function as TextModelAccount mutator.
+type TextModelAccountFunc func(context.Context, *ent.TextModelAccountMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TextModelAccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TextModelAccountMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TextModelAccountMutation", m)
 }
 
 // The UserFunc type is an adapter to allow the use of ordinary

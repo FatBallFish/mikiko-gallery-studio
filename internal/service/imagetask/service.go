@@ -212,6 +212,9 @@ func (s *Service) nowUTC() time.Time {
 }
 
 func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequest) (domainimagetask.Task, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return domainimagetask.Task{}, errs.BadRequest("unsupported task_type")
+	}
 	normalizedReq, err := normalizeCreateRequest(req)
 	if err != nil {
 		_ = s.persistPreflightFailedRequest(ctx, req, modelhub.ResolvedRequest{}, err)
@@ -2130,6 +2133,9 @@ func setTaskProgress(task *domainimagetask.Task, stage, message string) {
 }
 
 func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.CreateRequest, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return req, errs.BadRequest("unsupported task_type")
+	}
 	normalized, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
 		SizeMode:          req.SizeMode,
 		AspectRatio:       req.AspectRatio,
@@ -2155,6 +2161,9 @@ func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.
 }
 
 func normalizeExecuteRequest(req domainimagetask.ExecuteRequest) (domainimagetask.ExecuteRequest, error) {
+	if !provider.IsSupportedTaskType(req.TaskType) {
+		return req, errs.BadRequest("unsupported task_type")
+	}
 	normalized, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
 		SizeMode:          req.SizeMode,
 		AspectRatio:       req.AspectRatio,
