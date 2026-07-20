@@ -130,9 +130,11 @@ recovery_snapshot_dir() {
 }
 
 clear_recovery_state() {
+  # Retire the blocker before deleting the snapshot so an interruption cannot
+  # leave a recovery marker pointing at a missing directory.
+  unlink "$RECOVERY_MARKER"
   find "$SNAPSHOT_DIR" -mindepth 1 -delete
   rmdir "$SNAPSHOT_DIR"
-  unlink "$RECOVERY_MARKER"
 }
 
 wait_for_local_api() {
