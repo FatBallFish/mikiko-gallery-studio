@@ -5,10 +5,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +21,13 @@ type RuntimeEnvDocument struct {
 	Values     map[string]string
 	Entries    []EnvEntry
 	Extensions []EnvEntry
+}
+
+type runtimeEnvAtomicOps struct {
+	secureDirectory func(string) error
+	secureFile      func(string, *os.File) error
+	replaceFile     func(string, string) error
+	syncDirectory   func(string) error
 }
 
 func ParseRuntimeEnv(data []byte) (RuntimeEnvDocument, error) {
@@ -132,13 +137,23 @@ func RenderRuntimeEnv(schema RuntimeSchema, values map[string]string, extensions
 	return output.Bytes(), nil
 }
 
-func WriteRuntimeEnvAtomic(path string, data []byte) (returnErr error) {
+func WriteRuntimeEnvAtomic(path string, data []byte) error {
+	return writeRuntimeEnvAtomicWithOps(path, data, platformRuntimeEnvAtomicOps())
+}
+
+func writeRuntimeEnvAtomicWithOps(path string, data []byte, operations runtimeEnvAtomicOps) (returnErr error) {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("runtime env path must not be empty")
+	}
+	if err := operations.validate(); err != nil {
+		return err
 	}
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return fmt.Errorf("create runtime env directory %q: %w", directory, err)
+	}
+	if err := operations.secureDirectory(directory); err != nil {
+		return fmt.Errorf("secure runtime env directory %q: %w", directory, err)
 	}
 
 	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-")
@@ -158,8 +173,8 @@ func WriteRuntimeEnvAtomic(path string, data []byte) (returnErr error) {
 		}
 	}()
 
-	if err := temporary.Chmod(0o600); err != nil {
-		return fmt.Errorf("set temporary runtime env permissions: %w", err)
+	if err := operations.secureFile(temporaryPath, temporary); err != nil {
+		return fmt.Errorf("secure temporary runtime env: %w", err)
 	}
 	if _, err := temporary.Write(data); err != nil {
 		return fmt.Errorf("write temporary runtime env: %w", err)
@@ -171,21 +186,35 @@ func WriteRuntimeEnvAtomic(path string, data []byte) (returnErr error) {
 		return fmt.Errorf("close temporary runtime env before rename: %w", err)
 	}
 	temporaryOpen = false
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := operations.replaceFile(temporaryPath, path); err != nil {
 		return fmt.Errorf("replace runtime env %q: %w", path, err)
 	}
-	if runtime.GOOS != "windows" {
-		if err := syncDirectory(directory); err != nil {
-			return err
-		}
+	if err := operations.syncDirectory(directory); err != nil {
+		return fmt.Errorf("sync runtime env directory %q: %w", directory, err)
 	}
 	return nil
+}
+
+func (operations runtimeEnvAtomicOps) validate() error {
+	if operations.secureDirectory == nil || operations.secureFile == nil || operations.replaceFile == nil || operations.syncDirectory == nil {
+		return fmt.Errorf("runtime env atomic operations are incomplete")
+	}
+	return nil
+}
+
+func platformRuntimeEnvAtomicOps() runtimeEnvAtomicOps {
+	return runtimeEnvAtomicOps{
+		secureDirectory: secureRuntimeEnvDirectory,
+		secureFile:      secureRuntimeEnvFile,
+		replaceFile:     replaceRuntimeEnvFile,
+		syncDirectory:   syncRuntimeEnvDirectory,
+	}
 }
 
 func parseRuntimeEnvValue(raw string) (string, error) {
 	trimmedLeft := strings.TrimLeft(raw, " \t")
 	if trimmedLeft == "" {
-		return "", nil
+		return validatedRuntimeEnvValue("")
 	}
 	switch trimmedLeft[0] {
 	case '\'':
@@ -197,7 +226,7 @@ func parseRuntimeEnvValue(raw string) (string, error) {
 		if err := validateQuotedRemainder(trimmedLeft[closing+1:]); err != nil {
 			return "", err
 		}
-		return trimmedLeft[1:closing], nil
+		return validatedRuntimeEnvValue(trimmedLeft[1:closing])
 	case '"':
 		closing := findDoubleQuoteEnd(trimmedLeft)
 		if closing < 0 {
@@ -210,9 +239,9 @@ func parseRuntimeEnvValue(raw string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("decode double-quoted value: %w", err)
 		}
-		return value, nil
+		return validatedRuntimeEnvValue(value)
 	default:
-		return strings.TrimSpace(raw), nil
+		return validatedRuntimeEnvValue(strings.TrimSpace(raw))
 	}
 }
 
@@ -240,8 +269,8 @@ func findDoubleQuoteEnd(value string) int {
 }
 
 func encodeRuntimeEnvValue(value string) (string, error) {
-	if strings.ContainsAny(value, "\x00\r\n") {
-		return "", fmt.Errorf("dotenv values must not contain NUL or newlines")
+	if err := validateRuntimeEnvValue(value); err != nil {
+		return "", err
 	}
 	if value == "" {
 		return "", nil
@@ -250,6 +279,20 @@ func encodeRuntimeEnvValue(value string) (string, error) {
 		return value, nil
 	}
 	return strconv.Quote(value), nil
+}
+
+func validatedRuntimeEnvValue(value string) (string, error) {
+	if err := validateRuntimeEnvValue(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func validateRuntimeEnvValue(value string) error {
+	if strings.ContainsAny(value, "\x00\r\n") {
+		return fmt.Errorf("dotenv values must not contain NUL or newlines")
+	}
+	return nil
 }
 
 func isPlainRuntimeEnvValue(value string) bool {
@@ -313,16 +356,4 @@ func runtimeSchemaKeySet(schema RuntimeSchema) map[string]struct{} {
 		keys[runtimeField.Key] = struct{}{}
 	}
 	return keys
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open runtime env directory for sync: %w", err)
-	}
-	defer directory.Close()
-	if err := directory.Sync(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-		return fmt.Errorf("sync runtime env directory: %w", err)
-	}
-	return nil
 }

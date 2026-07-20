@@ -13,6 +13,7 @@ require (
 	github.com/shopspring/decimal v1.4.0
 	golang.org/x/crypto v0.0.0-20220517005047-85d78b3ac167
 	golang.org/x/sync v0.11.0
+	golang.org/x/sys v0.30.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

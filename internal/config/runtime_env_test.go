@@ -2,9 +2,11 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -134,6 +136,46 @@ func TestRuntimeEnvParserRejectsMalformedOrDuplicateEntries(t *testing.T) {
 	}
 }
 
+func TestRuntimeEnvParserRejectsDecodedControlCharacters(t *testing.T) {
+	for _, input := range []string{
+		`VALUE="line\nfeed"`,
+		`VALUE="carriage\rreturn"`,
+		`VALUE="nul\x00byte"`,
+	} {
+		if _, err := ParseRuntimeEnv([]byte(input + "\n")); err == nil {
+			t.Errorf("expected parser to reject decoded control characters in %q", input)
+		}
+	}
+}
+
+func FuzzRuntimeEnvValueRoundTrip(f *testing.F) {
+	for _, seed := range []string{
+		"plain", "two words", "value # with = signs", `single ' and double " quotes`,
+		"初始化配置", "postgres://app:p%40ss%23word@db:5432/app?sslmode=disable", "",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		encoded, err := encodeRuntimeEnvValue(value)
+		if strings.ContainsAny(value, "\x00\r\n") {
+			if err == nil {
+				t.Fatalf("encoder accepted control characters in %q", value)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("encode %q: %v", value, err)
+		}
+		document, err := ParseRuntimeEnv([]byte("FUZZ_VALUE=" + encoded + "\n"))
+		if err != nil {
+			t.Fatalf("parse encoded value %q: %v", encoded, err)
+		}
+		if got := document.Values["FUZZ_VALUE"]; got != value {
+			t.Fatalf("round trip changed value: got %q, want %q", got, value)
+		}
+	})
+}
+
 func TestWriteRuntimeEnvAtomicCreatesPrivateFileAndReplacesContent(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "config")
 	path := filepath.Join(dir, "runtime.env")
@@ -164,6 +206,84 @@ func TestWriteRuntimeEnvAtomicCreatesPrivateFileAndReplacesContent(t *testing.T)
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), ".runtime.env.tmp-") {
 			t.Errorf("temporary file leaked after successful write: %s", entry.Name())
+		}
+	}
+}
+
+func TestWriteRuntimeEnvAtomicFailurePreservesTargetAndCleansTemporaryFile(t *testing.T) {
+	for _, failure := range []string{"secure file", "replace file"} {
+		t.Run(failure, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "config")
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatalf("create config directory: %v", err)
+			}
+			path := filepath.Join(dir, "runtime.env")
+			if err := os.WriteFile(path, []byte("VALUE=old\n"), 0o600); err != nil {
+				t.Fatalf("write old runtime env: %v", err)
+			}
+
+			operations := platformRuntimeEnvAtomicOps()
+			switch failure {
+			case "secure file":
+				operations.secureFile = func(string, *os.File) error { return errors.New("injected secure failure") }
+			case "replace file":
+				operations.replaceFile = func(string, string) error { return errors.New("injected replace failure") }
+			}
+
+			if err := writeRuntimeEnvAtomicWithOps(path, []byte("VALUE=new\n"), operations); err == nil {
+				t.Fatal("expected injected atomic write failure")
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read preserved runtime env: %v", err)
+			}
+			if got := string(content); got != "VALUE=old\n" {
+				t.Fatalf("failed atomic write changed target to %q", got)
+			}
+			assertNoRuntimeEnvTemporaryFiles(t, dir)
+		})
+	}
+}
+
+func TestWriteRuntimeEnvAtomicSecuresBeforePlatformReplace(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	path := filepath.Join(dir, "runtime.env")
+	operations := platformRuntimeEnvAtomicOps()
+	originalSecureDirectory := operations.secureDirectory
+	originalSecureFile := operations.secureFile
+	steps := make([]string, 0, 3)
+	operations.secureDirectory = func(path string) error {
+		steps = append(steps, "secure directory")
+		return originalSecureDirectory(path)
+	}
+	operations.secureFile = func(path string, file *os.File) error {
+		steps = append(steps, "secure file")
+		return originalSecureFile(path, file)
+	}
+	operations.replaceFile = func(string, string) error {
+		steps = append(steps, "replace file")
+		return errors.New("stop before replacement")
+	}
+
+	if err := writeRuntimeEnvAtomicWithOps(path, []byte("VALUE=new\n"), operations); err == nil {
+		t.Fatal("expected injected replacement failure")
+	}
+	want := []string{"secure directory", "secure file", "replace file"}
+	if !slices.Equal(steps, want) {
+		t.Fatalf("atomic platform operation order = %v, want %v", steps, want)
+	}
+	assertNoRuntimeEnvTemporaryFiles(t, dir)
+}
+
+func assertNoRuntimeEnvTemporaryFiles(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read config directory: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".runtime.env.tmp-") {
+			t.Errorf("temporary file leaked: %s", entry.Name())
 		}
 	}
 }

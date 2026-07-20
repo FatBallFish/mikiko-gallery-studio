@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const CurrentRuntimeSchemaVersion = 1
@@ -118,8 +119,8 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("STORAGE_LOCAL_ROOT", "storage", "单节点 local 存储根目录，API 与 Worker 必须可访问同一路径。", "Root directory for single-node local storage; API and Worker must access the same path.", "./data/storage", "", FieldOwnerSetup, requiredLocalStorage, validateNonEmpty),
 			field("STORAGE_PUBLIC_BASE_URL", "storage", "资源公开访问基础地址；留空时由 API 按部署方式生成访问地址。", "Public asset base URL; leave empty for the API to derive it from the deployment.", "http://127.0.0.1:8080/assets", "", FieldOwnerSetup, requiredNever, validateOptionalHTTPURL),
 			field("STORAGE_SHARED_VOLUME", "storage", "local 存储目录是否在本节点 API 与 Worker 间共享。", "Whether the local storage directory is shared by API and Worker on this host.", "true", "false", FieldOwnerSetup, requiredLocalStorage, validateBool),
-			field("STORAGE_S3_ENDPOINT", "storage", "S3 兼容服务地址。AWS S3 可留空，MinIO 等服务必须填写。", "S3-compatible endpoint. It may be empty for AWS S3 and is required for services such as MinIO.", "http://127.0.0.1:9000", "", FieldOwnerSetup, requiredS3Storage, validateOptionalHTTPURL),
-			field("STORAGE_S3_REGION", "storage", "S3 区域；兼容服务不校验区域时可使用约定值。", "S3 region; use the provider's conventional value when it does not enforce regions.", "us-east-1", "", FieldOwnerSetup, requiredNever, validateOptionalNonEmpty),
+			field("STORAGE_S3_ENDPOINT", "storage", "S3 兼容服务地址。当前版本的所有 S3 部署均必须填写完整的 HTTP 或 HTTPS 地址。", "S3-compatible endpoint. Every S3 deployment in the current release must provide a complete HTTP or HTTPS URL.", "http://127.0.0.1:9000", "", FieldOwnerSetup, requiredS3Storage, validateOptionalHTTPURL),
+			field("STORAGE_S3_REGION", "storage", "S3 区域。服务不校验区域时也必须填写其约定值，例如 us-east-1。", "S3 region. Providers that do not enforce regions still require their conventional value, such as us-east-1.", "us-east-1", "", FieldOwnerSetup, requiredS3Storage, validateOptionalNonEmpty),
 			field("STORAGE_S3_BUCKET", "storage", "存放任务输入和生成结果的 S3 Bucket 名称。", "S3 bucket containing task inputs and generated outputs.", "app-assets", "", FieldOwnerSetup, requiredS3Storage, validateNonEmpty),
 			secretField("STORAGE_S3_ACCESS_KEY_ID", "storage", "S3 访问密钥 ID。", "S3 access key ID.", FieldOwnerSetup, requiredS3Storage),
 			secretField("STORAGE_S3_SECRET_ACCESS_KEY", "storage", "S3 访问密钥内容。", "S3 secret access key.", FieldOwnerSetup, requiredS3Storage),
@@ -184,14 +185,17 @@ func (schema RuntimeSchema) Validate() error {
 	return nil
 }
 
-func RequiredRuntimeFields(schema RuntimeSchema, context DeploymentContext) []RuntimeField {
+func RequiredRuntimeFields(schema RuntimeSchema, context DeploymentContext) ([]RuntimeField, error) {
+	if err := ValidateDeploymentContext(context); err != nil {
+		return nil, fmt.Errorf("validate deployment context: %w", err)
+	}
 	fields := make([]RuntimeField, 0, len(schema.Fields))
 	for _, runtimeField := range schema.Fields {
 		if runtimeField.RequiredWhen != nil && runtimeField.RequiredWhen(context) {
 			fields = append(fields, runtimeField)
 		}
 	}
-	return fields
+	return fields, nil
 }
 
 func ValidateDeploymentContext(context DeploymentContext) error {
@@ -384,7 +388,12 @@ func validateNonEmpty(value string) error {
 	return nil
 }
 
-func validateOptionalNonEmpty(string) error { return nil }
+func validateOptionalNonEmpty(value string) error {
+	if value != "" && strings.TrimSpace(value) == "" {
+		return fmt.Errorf("provided value must not contain only whitespace")
+	}
+	return nil
+}
 
 func validateIdentifier(value string) error {
 	if value == "" {
@@ -440,7 +449,8 @@ func validateOptionalDurationLike(value string) error {
 	if value == "" {
 		return nil
 	}
-	if !regexp.MustCompile(`^[1-9][0-9]*(ns|us|µs|ms|s|m|h)$`).MatchString(value) {
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration <= 0 {
 		return fmt.Errorf("duration %q is invalid", value)
 	}
 	return nil

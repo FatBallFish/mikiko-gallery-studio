@@ -76,7 +76,7 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 				Mode: DeploymentModeDocker, Profile: DeploymentProfileFull, Role: DeploymentRoleSingle,
 				Topology: DeploymentTopologySingle, StorageDriver: "s3",
 			},
-			required: []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD", "SETUP_TOKEN"},
+			required: []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD", "SETUP_TOKEN"},
 		},
 		{
 			name: "docker core cluster control",
@@ -84,7 +84,7 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 				Mode: DeploymentModeDocker, Profile: DeploymentProfileCore, Role: DeploymentRoleControl,
 				Topology: DeploymentTopologyCluster, StorageDriver: "s3",
 			},
-			required:  []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_BUCKET", "SETUP_TOKEN", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
+			required:  []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "STORAGE_S3_BUCKET", "SETUP_TOKEN", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
 			forbidden: []string{"STORAGE_LOCAL_ROOT", "POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD"},
 		},
 		{
@@ -93,7 +93,7 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 				Mode: DeploymentModeNative, Profile: DeploymentProfileCore, Role: DeploymentRoleAPI,
 				Topology: DeploymentTopologyCluster, StorageDriver: "s3", SetupCompleted: true,
 			},
-			required:  []string{"DATABASE_URL", "REDIS_URL", "STORAGE_S3_BUCKET", "AUTH_ACCESS_TOKEN_SECRET", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
+			required:  []string{"DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "STORAGE_S3_BUCKET", "AUTH_ACCESS_TOKEN_SECRET", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
 			forbidden: []string{"SETUP_TOKEN", "POSTGRES_PASSWORD"},
 		},
 		{
@@ -121,7 +121,10 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 			if err := ValidateDeploymentContext(tt.context); err != nil {
 				t.Fatalf("valid deployment context rejected: %v", err)
 			}
-			fields := RequiredRuntimeFields(schema, tt.context)
+			fields, err := RequiredRuntimeFields(schema, tt.context)
+			if err != nil {
+				t.Fatalf("RequiredRuntimeFields rejected valid context: %v", err)
+			}
 			keys := make([]string, 0, len(fields))
 			for _, field := range fields {
 				keys = append(keys, field.Key)
@@ -150,8 +153,71 @@ func TestRequiredRuntimeFieldsRejectsInvalidDeploymentContexts(t *testing.T) {
 		{Mode: "unknown", Profile: DeploymentProfileCore, Topology: DeploymentTopologySingle, Role: DeploymentRoleSingle, StorageDriver: "local"},
 	}
 	for _, context := range tests {
-		if err := ValidateDeploymentContext(context); err == nil {
-			t.Errorf("expected invalid context to fail: %#v", context)
+		if _, err := RequiredRuntimeFields(DefaultRuntimeSchema(), context); err == nil {
+			t.Errorf("expected required-field lookup to reject invalid context: %#v", context)
+		}
+	}
+}
+
+func TestRuntimeSchemaRequiresS3EndpointAndRegion(t *testing.T) {
+	schema := DefaultRuntimeSchema()
+	context := DeploymentContext{
+		Mode: DeploymentModeDocker, Profile: DeploymentProfileCore,
+		Topology: DeploymentTopologySingle, Role: DeploymentRoleSingle,
+		StorageDriver: "s3",
+	}
+	fields, err := RequiredRuntimeFields(schema, context)
+	if err != nil {
+		t.Fatalf("RequiredRuntimeFields returned error: %v", err)
+	}
+	keys := make([]string, 0, len(fields))
+	for _, field := range fields {
+		keys = append(keys, field.Key)
+	}
+	for _, key := range []string{"STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION"} {
+		if !slices.Contains(keys, key) {
+			t.Errorf("S3 deployment must require %s", key)
+		}
+		field := runtimeSchemaFieldForTest(t, schema, key)
+		if strings.Contains(field.DescriptionZH, "可留空") || strings.Contains(strings.ToLower(field.DescriptionEN), "may be empty") {
+			t.Errorf("required S3 field %s claims it may be empty", key)
+		}
+	}
+}
+
+func TestRuntimeSchemaSecretValidatorsRejectWhitespaceOnlyValues(t *testing.T) {
+	schema := DefaultRuntimeSchema()
+	keys := []string{
+		"SETUP_TOKEN", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD",
+		"STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY",
+		"AUTH_ACCESS_TOKEN_SECRET", "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY",
+		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY",
+		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY",
+	}
+	for _, key := range keys {
+		field := runtimeSchemaFieldForTest(t, schema, key)
+		if err := field.Validate(""); err != nil {
+			t.Errorf("%s must allow empty pending value: %v", key, err)
+		}
+		if err := field.Validate(" \t "); err == nil {
+			t.Errorf("%s accepted a whitespace-only provided secret", key)
+		}
+		if err := field.Validate("generated-secret-value"); err != nil {
+			t.Errorf("%s rejected a provided secret: %v", key, err)
+		}
+	}
+}
+
+func TestRuntimeSchemaDurationValidationUsesGoDurationSyntax(t *testing.T) {
+	field := runtimeSchemaFieldForTest(t, DefaultRuntimeSchema(), "DATABASE_CONN_MAX_LIFETIME")
+	for _, value := range []string{"1h30m", "1.5s", "250ms"} {
+		if err := field.Validate(value); err != nil {
+			t.Errorf("valid Go duration %q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{"1 hour", "forever", "1"} {
+		if err := field.Validate(value); err == nil {
+			t.Errorf("invalid Go duration %q accepted", value)
 		}
 	}
 }
