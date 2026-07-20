@@ -78,7 +78,9 @@ rg -q 'interrupted E2E child process is still running' "$TMP_DIR/live-child.out"
 
 python3 -c 'import os; os.setsid(); os.execlp("sleep", "sleep", "30")' &
 GROUP_PID=$!
-for _ in {1..40}; do
+# Python may briefly remain in the pre-exec child state while the full
+# verification suite is under load, so allow a bounded startup window.
+for _ in {1..200}; do
   kill -0 -- "-$GROUP_PID" 2>/dev/null && break
   sleep 0.05
 done
