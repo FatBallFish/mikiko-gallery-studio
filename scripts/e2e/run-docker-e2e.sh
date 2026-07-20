@@ -154,6 +154,11 @@ start_writers() {
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
+  if ! stop_e2e_children; then
+    echo "E2E cleanup could not terminate the Docker E2E process group; restore skipped and recovery marker retained at $RECOVERY_MARKER" >&2
+    release_e2e_lock
+    exit 1
+  fi
   if [[ "$RECOVERY_IN_PROGRESS" == true ]]; then
     stop_writers >/dev/null 2>&1 || true
     echo "E2E recovery did not complete; writers remain stopped where possible and recovery marker is retained at $RECOVERY_MARKER" >&2

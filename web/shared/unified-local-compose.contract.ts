@@ -54,6 +54,8 @@ for (const required of [
   'os.setsid()',
   'child_pgid',
   'kill -0 -- "-$recovery_child_pgid"',
+  'stop_e2e_children',
+  'could not terminate the Docker E2E process group',
   'if stop_writers; then',
   'snapshot',
   'restore',
@@ -68,7 +70,7 @@ if (!e2eRunner.includes('local-runner-state.sh')) {
   throw new Error('shared E2E runner must load the tested writer state helper')
 }
 const runnerState = requireSource('scripts/e2e/local-runner-state.sh')
-for (const required of ['stop_writers', 'writers_are_stopped', 'ps -a -q "$service"', 'failed to inspect writer state']) {
+for (const required of ['stop_writers', 'writers_are_stopped', 'stop_e2e_children', 'ps -a -q "$service"', 'failed to inspect writer state']) {
   if (!runnerState.includes(required)) throw new Error(`shared E2E writer state helper is missing ${required}`)
 }
 

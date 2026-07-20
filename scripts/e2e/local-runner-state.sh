@@ -34,3 +34,43 @@ stop_writers() {
   "${COMPOSE[@]}" stop api worker minio >/dev/null || return 1
   writers_are_stopped
 }
+
+stop_e2e_children() {
+  local attempt child_state
+  if [[ "$E2E_CHILD_PGID" =~ ^[0-9]+$ ]] && kill -0 -- "-$E2E_CHILD_PGID" 2>/dev/null; then
+    kill -TERM -- "-$E2E_CHILD_PGID" >/dev/null 2>&1 || true
+    for attempt in {1..50}; do
+      if [[ "$E2E_CHILD_PID" =~ ^[0-9]+$ ]]; then
+        child_state="$(ps -o stat= -p "$E2E_CHILD_PID" 2>/dev/null | tr -d '[:space:]' || true)"
+        if [[ -z "$child_state" || "$child_state" == Z* ]]; then
+          wait "$E2E_CHILD_PID" >/dev/null 2>&1 || true
+          E2E_CHILD_PID=""
+        fi
+      fi
+      kill -0 -- "-$E2E_CHILD_PGID" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 -- "-$E2E_CHILD_PGID" 2>/dev/null; then
+      kill -KILL -- "-$E2E_CHILD_PGID" >/dev/null 2>&1 || true
+      for attempt in {1..20}; do
+        if [[ "$E2E_CHILD_PID" =~ ^[0-9]+$ ]]; then
+          child_state="$(ps -o stat= -p "$E2E_CHILD_PID" 2>/dev/null | tr -d '[:space:]' || true)"
+          if [[ -z "$child_state" || "$child_state" == Z* ]]; then
+            wait "$E2E_CHILD_PID" >/dev/null 2>&1 || true
+            E2E_CHILD_PID=""
+          fi
+        fi
+        kill -0 -- "-$E2E_CHILD_PGID" 2>/dev/null || break
+        sleep 0.1
+      done
+    fi
+    if kill -0 -- "-$E2E_CHILD_PGID" 2>/dev/null; then
+      return 1
+    fi
+  fi
+  if [[ "$E2E_CHILD_PID" =~ ^[0-9]+$ ]]; then
+    wait "$E2E_CHILD_PID" >/dev/null 2>&1 || true
+  fi
+  E2E_CHILD_PID=""
+  E2E_CHILD_PGID=""
+}

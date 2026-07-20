@@ -11,6 +11,8 @@ LOCK_CREATED=false
 RECOVERY_MARKER_CREATED=false
 GROUP_PID=""
 
+source "$RUNNER_STATE"
+
 cleanup() {
   if [[ "$LOCK_CREATED" == true && -L "$LOCK_FILE" ]]; then
     unlink "$LOCK_FILE"
@@ -87,8 +89,13 @@ if "$RUNNER" --recover >"$TMP_DIR/live-process-group.out" 2>&1; then
   exit 1
 fi
 rg -q 'interrupted E2E process group is still running' "$TMP_DIR/live-process-group.out"
-kill -TERM -- "-$GROUP_PID" >/dev/null 2>&1 || true
-wait "$GROUP_PID" >/dev/null 2>&1 || true
+E2E_CHILD_PID=$GROUP_PID
+E2E_CHILD_PGID=$GROUP_PID
+stop_e2e_children || { echo "FAIL: cleanup could not terminate the E2E process group fixture" >&2; exit 1; }
+if kill -0 -- "-$GROUP_PID" 2>/dev/null; then
+  echo "FAIL: E2E process group survived cleanup" >&2
+  exit 1
+fi
 GROUP_PID=""
 
 printf 'snapshot_dir=/tmp/outside-pic-gallery\nphase=test-running\nowner_pid=999999\nchild_pid=\nchild_pgid=\n' >"$RECOVERY_MARKER"
@@ -106,7 +113,6 @@ if "$RUNNER" --recover >"$TMP_DIR/missing-recovery-marker.out" 2>&1; then
 fi
 rg -q 'no shared E2E recovery marker exists' "$TMP_DIR/missing-recovery-marker.out"
 
-source "$RUNNER_STATE"
 COMPOSE=(fake_compose)
 WRITERS_STOPPED=false
 WRITER_CONTAINER_IDS=()
