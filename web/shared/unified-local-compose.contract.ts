@@ -13,6 +13,7 @@ const localComposePath = 'deployments/docker-compose/docker-compose.local.yml'
 const oldComposePaths = [
   'deployments/docker-compose/docker-compose.dev.yml',
   'deployments/docker-compose/docker-compose.e2e.yml',
+  'deployments/docker-compose/docker-compose-middileware.yml',
 ]
 const localCompose = requireSource(localComposePath)
 

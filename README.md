@@ -473,9 +473,8 @@ cp .env.example .env
 
 Docker mode uses Compose and images from the configured registry:
 
-- `docker-compose.dev.yml` is optimized for local iteration and still builds local images, but API and worker receive env configuration instead of a mounted YAML file.
+- `docker-compose.local.yml` is the single local environment for development and Docker E2E. It builds local images and preserves local PostgreSQL and object-storage volumes.
 - `docker-compose.prod.yml` is optimized for deployment and only pulls prebuilt images.
-- `docker-compose.e2e.yml` runs source containers for tests and injects env configuration directly.
 
 Build and publish images with:
 
@@ -529,10 +528,10 @@ Run the Docker E2E suite:
 ./scripts/e2e/run-docker-e2e.sh --start
 ```
 
-Stop the E2E stack:
+Stop the shared local stack while preserving its data:
 
 ```bash
-docker compose -f deployments/docker-compose/docker-compose.e2e.yml down --remove-orphans
+./scripts/dev/down.sh
 ```
 
 ## Project Structure

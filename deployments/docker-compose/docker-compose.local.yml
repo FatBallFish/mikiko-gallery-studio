@@ -1,4 +1,4 @@
-name: pic-gallery-dev
+name: pic-gallery-local
 
 services:
   postgres:
@@ -76,6 +76,8 @@ services:
       AUTH_ACCESS_TOKEN_SECRET: local-dev-secret
       AUTH_ACCESS_TOKEN_TTL: 10m
       AUTH_REFRESH_TOKEN_TTL: 2h
+      AUTH_FIXED_EMAIL_CODE: "123456"
+      AUTH_DEV_EMAIL_CODES: "true"
       API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: local-dev-api-key-signing-secret-encryption-key
       CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-dev-cashier-provider-config-encryption-key
       PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-dev-secure-config-encryption-key
