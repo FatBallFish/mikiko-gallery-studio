@@ -5,8 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/deployments/docker-compose/docker-compose.local.yml"
 ENV_FILE="$ROOT_DIR/deployments/docker-compose/.env.example"
 STATE_HELPER="$ROOT_DIR/scripts/e2e/local-state.sh"
-SCRIPT_PATH="$ROOT_DIR/scripts/e2e/run-docker-e2e.sh"
-ORIGINAL_ARGS=("$@")
+RUNNER_STATE="$ROOT_DIR/scripts/e2e/local-runner-state.sh"
+
+source "$RUNNER_STATE"
 
 fail() {
   echo "shared local E2E: $*" >&2
@@ -63,6 +64,8 @@ SNAPSHOT_DIR="$ROOT_DIR/tmp/e2e/local-state-$(date +%Y%m%d%H%M%S)-$$"
 LOCK_FILE="$ROOT_DIR/tmp/e2e/pic-gallery-local.lock"
 STATE_SNAPSHOTTED=false
 WRITERS_STOPPED=false
+LOCK_ACQUIRED=false
+WRITER_CONTAINER_IDS=()
 
 assert_local_url() {
   local name=$1
@@ -76,24 +79,32 @@ assert_local_url USER_WEB_URL "$USER_WEB_URL" "$LOCAL_BASE_URL"
 assert_local_url ADMIN_WEB_URL "$ADMIN_WEB_URL" "$LOCAL_BASE_URL/admin"
 assert_local_url NGINX_URL "$NGINX_URL" "$LOCAL_BASE_URL"
 
-mkdir -p "$(dirname "$LOCK_FILE")"
-if [[ "${PIC_GALLERY_E2E_LOCKED:-}" != "true" ]]; then
-  if command -v flock >/dev/null 2>&1; then
-    set +e
-    flock -E 75 -n "$LOCK_FILE" env PIC_GALLERY_E2E_LOCKED=true "$SCRIPT_PATH" "${ORIGINAL_ARGS[@]}"
-    lock_status=$?
-    set -e
-  elif command -v lockf >/dev/null 2>&1; then
-    set +e
-    lockf -t 0 "$LOCK_FILE" env PIC_GALLERY_E2E_LOCKED=true "$SCRIPT_PATH" "${ORIGINAL_ARGS[@]}"
-    lock_status=$?
-    set -e
-  else
-    fail "flock or lockf is required to protect the shared local environment"
+acquire_e2e_lock() {
+  local owner_pid attempt
+  mkdir -p "$(dirname "$LOCK_FILE")"
+  for attempt in 1 2; do
+    if ln -s "$$" "$LOCK_FILE" 2>/dev/null; then
+      LOCK_ACQUIRED=true
+      return 0
+    fi
+    owner_pid="$(readlink "$LOCK_FILE" 2>/dev/null || true)"
+    if [[ "$owner_pid" =~ ^[0-9]+$ ]] && kill -0 "$owner_pid" 2>/dev/null; then
+      return 1
+    fi
+    unlink "$LOCK_FILE" >/dev/null 2>&1 || return 1
+  done
+  return 1
+}
+
+release_e2e_lock() {
+  local owner_pid
+  [[ "$LOCK_ACQUIRED" == true ]] || return 0
+  owner_pid="$(readlink "$LOCK_FILE" 2>/dev/null || true)"
+  if [[ "$owner_pid" == "$$" ]]; then
+    unlink "$LOCK_FILE" >/dev/null 2>&1 || true
   fi
-  [[ "$lock_status" -ne 75 ]] || fail "another shared local E2E run is active"
-  exit "$lock_status"
-fi
+  LOCK_ACQUIRED=false
+}
 
 wait_for_local_api() {
   for _ in {1..120}; do
@@ -109,23 +120,6 @@ start_writers() {
   "${COMPOSE[@]}" up -d minio api worker || return 1
   wait_for_local_api || return 1
   WRITERS_STOPPED=false
-}
-
-writers_are_stopped() {
-  local service container_id
-  for service in api worker minio; do
-    container_id="$("${COMPOSE[@]}" ps -q "$service")"
-    if [[ -n "$container_id" && "$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || true)" == "true" ]]; then
-      echo "shared local E2E: writer is still running after stop: $service" >&2
-      return 1
-    fi
-  done
-}
-
-stop_writers() {
-  WRITERS_STOPPED=true
-  "${COMPOSE[@]}" stop api worker minio >/dev/null || return 1
-  writers_are_stopped
 }
 
 cleanup() {
@@ -153,10 +147,13 @@ cleanup() {
   elif [[ "$WRITERS_STOPPED" == true ]]; then
     start_writers || status=1
   fi
+  release_e2e_lock
   exit "$status"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
+
+acquire_e2e_lock || fail "another shared local E2E run is active"
 
 if [[ "$START_STACK" == true ]]; then
   "${COMPOSE[@]}" config -q

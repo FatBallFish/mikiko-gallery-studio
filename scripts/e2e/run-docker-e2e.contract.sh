@@ -3,14 +3,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUNNER="$ROOT_DIR/scripts/e2e/run-docker-e2e.sh"
+RUNNER_STATE="$ROOT_DIR/scripts/e2e/local-runner-state.sh"
 LOCK_FILE="$ROOT_DIR/tmp/e2e/pic-gallery-local.lock"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-e2e-runner-contract.XXXXXX")"
-LOCK_PID=""
+LOCK_CREATED=false
 
 cleanup() {
-  if [[ -n "$LOCK_PID" ]]; then
-    kill "$LOCK_PID" >/dev/null 2>&1 || true
-    wait "$LOCK_PID" >/dev/null 2>&1 || true
+  if [[ "$LOCK_CREATED" == true && -L "$LOCK_FILE" ]]; then
+    unlink "$LOCK_FILE"
   fi
   find "$TMP_DIR" -mindepth 1 -delete 2>/dev/null || true
   rmdir "$TMP_DIR" 2>/dev/null || true
@@ -24,26 +24,64 @@ fi
 rg -q 'BASE_URL must be http://127.0.0.1:8088' "$TMP_DIR/invalid-url.out"
 
 mkdir -p "$(dirname "$LOCK_FILE")"
-if command -v flock >/dev/null 2>&1; then
-  flock "$LOCK_FILE" sh -c 'touch "$1"; sleep 30' sh "$TMP_DIR/locked" &
-elif command -v lockf >/dev/null 2>&1; then
-  lockf "$LOCK_FILE" sh -c 'touch "$1"; sleep 30' sh "$TMP_DIR/locked" &
-else
-  echo "FAIL: flock or lockf is required for the runner contract" >&2
-  exit 1
+if [[ -e "$LOCK_FILE" || -L "$LOCK_FILE" ]]; then
+  owner_pid="$(readlink "$LOCK_FILE" 2>/dev/null || true)"
+  if [[ "$owner_pid" =~ ^[0-9]+$ ]] && kill -0 "$owner_pid" 2>/dev/null; then
+    echo "FAIL: a real shared local E2E run is already active" >&2
+    exit 1
+  fi
+  unlink "$LOCK_FILE" >/dev/null 2>&1 || { echo "FAIL: stale E2E lock could not be removed" >&2; exit 1; }
 fi
-LOCK_PID=$!
-
-for _ in {1..40}; do
-  [[ -f "$TMP_DIR/locked" ]] && break
-  sleep 0.05
-done
-[[ -f "$TMP_DIR/locked" ]] || { echo "FAIL: test lock was not acquired" >&2; exit 1; }
+ln -s "$$" "$LOCK_FILE"
+LOCK_CREATED=true
 
 if "$RUNNER" >"$TMP_DIR/concurrent.out" 2>&1; then
   echo "FAIL: shared E2E allowed a concurrent run" >&2
   exit 1
 fi
 rg -q 'another shared local E2E run is active' "$TMP_DIR/concurrent.out"
+
+if PIC_GALLERY_E2E_LOCKED=true "$RUNNER" >"$TMP_DIR/environment-bypass.out" 2>&1; then
+  echo "FAIL: shared E2E lock was bypassed through the old environment sentinel" >&2
+  exit 1
+fi
+rg -q 'another shared local E2E run is active' "$TMP_DIR/environment-bypass.out"
+
+source "$RUNNER_STATE"
+COMPOSE=(fake_compose)
+WRITERS_STOPPED=false
+WRITER_CONTAINER_IDS=()
+
+fake_compose() {
+  local operation=$1
+  local service="${*: -1}"
+  if [[ "$operation" == "ps" ]]; then
+    [[ "$WRITER_TEST_SCENARIO" != "ps-error" ]] || return 1
+    [[ "$WRITER_TEST_SCENARIO" != "missing" ]] || return 0
+    printf '%s-container\n' "$service"
+    return 0
+  fi
+  [[ "$operation" == "stop" ]]
+}
+
+docker() {
+  local container_id="${*: -1}"
+  [[ "$1" == "inspect" ]] || return 2
+  [[ "$WRITER_TEST_SCENARIO" != "inspect-error" ]] || return 1
+  if [[ "$WRITER_TEST_SCENARIO" == "running" && "$container_id" == "worker-container" ]]; then
+    printf 'true\n'
+  else
+    printf 'false\n'
+  fi
+}
+
+for WRITER_TEST_SCENARIO in ps-error missing inspect-error running; do
+  if stop_writers >/dev/null 2>&1; then
+    echo "FAIL: writer stop accepted unsafe scenario: $WRITER_TEST_SCENARIO" >&2
+    exit 1
+  fi
+done
+WRITER_TEST_SCENARIO=stopped
+stop_writers >/dev/null 2>&1 || { echo "FAIL: writer stop rejected three inspected stopped containers" >&2; exit 1; }
 
 echo "OK: shared local E2E runner safety contract passed"

@@ -16,7 +16,7 @@ TEMP_POSTGRES_CONTAINER=pic-gallery-local-migration-source-postgres
 NEW_POSTGRES_VOLUME=pic-gallery-local_postgres-data
 NEW_MINIO_VOLUME=pic-gallery-local_minio-data
 NEW_STORAGE_VOLUME=pic-gallery-local_shared-storage
-SOURCE_WAS_RUNNING=false
+SOURCE_STARTED_BY_MIGRATION=false
 USING_TEMP_SOURCE=false
 OLD_WRITER_IDS=()
 DEV_NGINX_PORT="${DEV_NGINX_PORT:-8088}"
@@ -85,7 +85,7 @@ restart_old_dev_writers() {
 stop_source_postgres() {
   if [[ "$USING_TEMP_SOURCE" == true ]]; then
     docker rm -f "$TEMP_POSTGRES_CONTAINER" >/dev/null 2>&1 || true
-  elif [[ "$SOURCE_WAS_RUNNING" == false ]] && container_running "$OLD_POSTGRES_CONTAINER"; then
+  elif [[ "$SOURCE_STARTED_BY_MIGRATION" == true ]] && container_running "$OLD_POSTGRES_CONTAINER"; then
     docker stop "$OLD_POSTGRES_CONTAINER" >/dev/null
   fi
 }
@@ -120,10 +120,9 @@ trap cleanup_source EXIT
 stop_old_dev_writers
 
 if docker inspect "$OLD_POSTGRES_CONTAINER" >/dev/null 2>&1; then
-  if container_running "$OLD_POSTGRES_CONTAINER"; then
-    SOURCE_WAS_RUNNING=true
-  else
+  if ! container_running "$OLD_POSTGRES_CONTAINER"; then
     docker start "$OLD_POSTGRES_CONTAINER" >/dev/null
+    SOURCE_STARTED_BY_MIGRATION=true
   fi
 else
   docker run -d --name "$TEMP_POSTGRES_CONTAINER" \

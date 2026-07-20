@@ -43,18 +43,26 @@ for (const required of [
   'assert_local_url BASE_URL "$BASE_URL" "$LOCAL_BASE_URL"',
   'assert_local_url USER_WEB_URL "$USER_WEB_URL" "$LOCAL_BASE_URL"',
   'assert_local_url ADMIN_WEB_URL "$ADMIN_WEB_URL" "$LOCAL_BASE_URL/admin"',
-  'PIC_GALLERY_E2E_LOCKED',
-  'flock -E 75',
-  'lockf',
-  'lock_status',
-  'stop_writers',
-  'writers_are_stopped',
+  'acquire_e2e_lock',
+  'release_e2e_lock',
+  'readlink "$LOCK_FILE"',
+  'kill -0 "$owner_pid"',
   'if stop_writers; then',
   'snapshot',
   'restore',
   'trap',
 ]) {
   if (!e2eRunner.includes(required)) throw new Error(`shared-environment E2E runner is missing ${required}`)
+}
+if (e2eRunner.includes('PIC_GALLERY_E2E_LOCKED')) {
+  throw new Error('shared E2E lock must not be bypassable through an environment sentinel')
+}
+if (!e2eRunner.includes('local-runner-state.sh')) {
+  throw new Error('shared E2E runner must load the tested writer state helper')
+}
+const runnerState = requireSource('scripts/e2e/local-runner-state.sh')
+for (const required of ['stop_writers', 'writers_are_stopped', 'ps -a -q "$service"', 'failed to inspect writer state']) {
+  if (!runnerState.includes(required)) throw new Error(`shared E2E writer state helper is missing ${required}`)
 }
 
 const dockerE2E = read('scripts/e2e/docker-e2e.mjs')
@@ -69,7 +77,7 @@ for (const required of ['pg_dump', 'pg_restore', 'minio-data', 'shared-storage',
 if (/docker volume rm|down\s+-v/.test(stateHelper)) throw new Error('local state helper must not delete persistent local volumes')
 
 const migration = requireSource('scripts/dev/migrate-unified-local.sh')
-for (const required of ['pg_dump', 'pg_restore --list', 'database-manifest', 'minio-manifest', 'shared-storage-manifest', '--execute', 'stop_old_dev_writers', 'old writer is still running', 'DEV_NGINX_PORT:-8088', 'docker volume rm pic-gallery-dev_postgres-data']) {
+for (const required of ['pg_dump', 'pg_restore --list', 'database-manifest', 'minio-manifest', 'shared-storage-manifest', '--execute', 'stop_old_dev_writers', 'old writer is still running', 'SOURCE_STARTED_BY_MIGRATION', 'DEV_NGINX_PORT:-8088', 'docker volume rm pic-gallery-dev_postgres-data']) {
   if (!migration.includes(required)) throw new Error(`migration safety flow is missing ${required}`)
 }
 if (!migration.includes('old volumes retained')) throw new Error('migration must retain old volumes until separate final cleanup')
