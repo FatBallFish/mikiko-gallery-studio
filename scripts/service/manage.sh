@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPONENTS="api,worker"
 USER_MODE=false
-ENV_FILE="${PIC_GALLERY_ENV_FILE:-$ROOT_DIR/.env}"
+ENV_FILE="${APP_ENV_FILE:-$ROOT_DIR/config/runtime.env}"
 
 usage() {
   cat <<'USAGE'
@@ -99,7 +99,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$ROOT_DIR
-Environment=PIC_GALLERY_ENV_FILE=$ENV_FILE
+Environment=APP_ENV_FILE=$ENV_FILE
 ExecStart=$command
 Restart=always
 RestartSec=5
@@ -154,7 +154,7 @@ install_launchd() {
   <key>Label</key><string>$label</string>
   <key>WorkingDirectory</key><string>$ROOT_DIR</string>
   <key>ProgramArguments</key><array><string>$command</string></array>
-  <key>EnvironmentVariables</key><dict><key>PIC_GALLERY_ENV_FILE</key><string>$ENV_FILE</string></dict>
+  <key>EnvironmentVariables</key><dict><key>APP_ENV_FILE</key><string>$ENV_FILE</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>$ROOT_DIR/tmp/$component.out.log</string>

@@ -70,7 +70,7 @@ The Worker already has useful cluster primitives: PostgreSQL task leases, owner 
 
 1. Use an API dual-mode process: setup-only before initialization and normal after initialization.
 2. Use `./config/runtime.env` as the default runtime configuration file in every deployment mode.
-3. Remove `PIC_GALLERY_ENV_FILE` without a compatibility alias.
+3. Remove the retired product-specific env-file selector without a compatibility alias.
 4. Keep optional generic `APP_ENV_FILE` path override support.
 5. Generate runtime env files from one typed configuration schema with detailed Chinese and English comments.
 6. Use a cross-platform Go `deployctl` as the deployment control plane.
@@ -536,7 +536,7 @@ Production is not considered business-ready until at least one usable provider/m
 
 ## Migration from Current Deployments
 
-Removing `PIC_GALLERY_ENV_FILE` is an intentional breaking change. Application runtime does not retain an alias.
+Removing the retired product-specific env-file selector is an intentional breaking change. Application runtime does not retain an alias.
 
 `deployctl` provides an explicit one-time import command for current `.env`, `.env.prod`, and packaged backend env files. Import:
 

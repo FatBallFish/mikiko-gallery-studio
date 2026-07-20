@@ -98,13 +98,14 @@ git clone https://github.com/fatballfish/pic-gallery.git
 cd pic-gallery
 ```
 
-### 2. Prepare local environment variables
+### 2. Prepare the portable runtime file
 
 ```bash
-cp .env.example .env
+mkdir -p config
+cp config/runtime.env.example config/runtime.env
 ```
 
-For local development, the default `.env.example` is enough to start the infrastructure. Edit `.env` for host-run API/worker settings, or `deployments/docker-compose/.env.example` for Compose defaults.
+API and worker read `./config/runtime.env` relative to their working directory. Every field in the template has Chinese and English operational guidance. Compose interpolation defaults remain in `deployments/docker-compose/.env.example`.
 
 ### 3. Start the development full stack
 
@@ -125,7 +126,7 @@ Default development admin login:
 - Email: `admin@example.com`
 - Password: `admin123456`
 
-Override the relevant values in `.env` or `deployments/docker-compose/.env.example` before exposing the service outside a local development machine.
+Complete setup-managed runtime values in `config/runtime.env`, and override Compose-only values in `deployments/docker-compose/.env.example`, before exposing the service outside a local development machine.
 
 Stop it with:
 
@@ -216,8 +217,9 @@ Use local source deployment when the machine has Go, Node.js, npm, PostgreSQL, a
 1. Prepare the env file:
 
    ```bash
-   cp .env.example .env
-   $EDITOR .env
+   mkdir -p config
+   cp config/runtime.env.example config/runtime.env
+   $EDITOR config/runtime.env
    ```
 
 2. Build everything, or only the components you need:
@@ -236,7 +238,7 @@ Use local source deployment when the machine has Go, Node.js, npm, PostgreSQL, a
 4. Install API and worker as host services when the host should keep them running after logout or restart:
 
    ```bash
-   ./scripts/local/pgctl.sh install --components api,worker --env-file .env --user
+   ./scripts/local/pgctl.sh install --components api,worker --user
    ./scripts/local/pgctl.sh status --components api,worker --user
    ```
 
@@ -274,7 +276,7 @@ Linux uses `systemd`.
 Install user-level services:
 
 ```bash
-./scripts/service/manage.sh install --components api,worker --env-file .env --user
+./scripts/service/manage.sh install --components api,worker --user
 ```
 
 Uninstall user-level services:
@@ -286,7 +288,7 @@ Uninstall user-level services:
 Install system-level services:
 
 ```bash
-sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
+sudo ./scripts/service/manage.sh install --components api,worker
 ```
 
 Uninstall system-level services:
@@ -302,7 +304,7 @@ macOS uses `launchd`.
 Install user-level services:
 
 ```bash
-./scripts/service/manage.sh install --components api,worker --env-file .env --user
+./scripts/service/manage.sh install --components api,worker --user
 ```
 
 Uninstall user-level services:
@@ -314,7 +316,7 @@ Uninstall user-level services:
 Install system-level daemons:
 
 ```bash
-sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
+sudo ./scripts/service/manage.sh install --components api,worker
 ```
 
 Uninstall system-level daemons:
@@ -351,15 +353,16 @@ Runtime configuration now uses env files for deployment bootstrap and database-b
 
 Main templates:
 
-- [`.env.example`](./.env.example): local source-run environment template.
+- [`config/runtime.env.example`](./config/runtime.env.example): canonical bilingual API/worker runtime template.
+- [`.env.example`](./.env.example): migration notice for the retired root `.env` layout.
 - [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example): local Compose environment template.
 - [`deployments/docker-compose/.env.prod.example`](./deployments/docker-compose/.env.prod.example): production Compose environment template.
 
 Backend runtime configuration:
 
-- API and worker load `.env`/process environment by default. `PIC_GALLERY_ENV_FILE` can point to an explicit env file for local or service-managed runs.
-- `APP_CONFIG_PATH` and `PIC_GALLERY_CONFIG` are compatibility-only selectors for explicit `LoadYAML` migration tools/tests. API and worker default startup ignores them; new deployments should not use them.
-- Keep only bootstrap settings in env: database, Redis, storage bootstrap, auth/encryption secrets, initial admin bootstrap, and basic service ports.
+- API and worker load `./config/runtime.env` by default. `APP_ENV_FILE` is the only optional path override.
+- Process variables with the same names do not override setup-managed file values. `LoadYAML` remains an explicit migration/test API and does not participate in normal startup.
+- Keep only bootstrap settings in the runtime file: deployment metadata, database, Redis, storage bootstrap, auth/encryption secrets, and basic service ports. The first administrator password is never persisted there.
 - Configure SMTP, payment channels, billing/pricing, provider accounts, model routing, and other operational settings in the admin console after startup.
 
 Before public launch, configure at least one enabled model provider/account/route/price and one usable payment channel if recharge is exposed.
@@ -465,7 +468,8 @@ Rollback is the same flow with `PIC_GALLERY_IMAGE_TAG` set back to the previous 
 Local source-run mode uses [`scripts/local/pgctl.sh`](./scripts/local/pgctl.sh):
 
 ```bash
-cp .env.example .env
+mkdir -p config
+cp config/runtime.env.example config/runtime.env
 ./scripts/local/pgctl.sh build --components api,worker
 ./scripts/local/pgctl.sh up --components api,worker --background
 ./scripts/service/manage.sh status --user

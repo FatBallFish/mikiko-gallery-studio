@@ -5,9 +5,12 @@ const root = new URL('../../', import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8')
 const key = 'PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY'
 
-const envExample = read('.env.example')
-if (!envExample.includes(`${key}=local-dev-prompt-optimization-quote-signing-key`)) {
-  throw new Error('root environment template must document the prompt optimization quote signing key')
+const envExample = read('config/runtime.env.example')
+if (!envExample.includes(`${key}=`) || !envExample.includes('# [中文]') || !envExample.includes('# [English]')) {
+  throw new Error('runtime environment template must document the prompt optimization quote signing key bilingually')
+}
+if (envExample.includes(`${key}=local-dev-prompt-optimization-quote-signing-key`)) {
+  throw new Error('runtime environment template must not contain a usable prompt optimization quote signing key')
 }
 
 for (const path of ['deployments/docker-compose/docker-compose.local.yml']) {

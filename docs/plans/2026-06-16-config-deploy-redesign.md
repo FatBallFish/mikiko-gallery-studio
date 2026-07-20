@@ -580,9 +580,9 @@ func LoadEnv(path string) (BootConfig, error)
 
 加载顺序：
 
-1. 如果显式传 `--env-file` 或 `PIC_GALLERY_ENV_FILE`，读取该文件注入进程环境。
-2. 如果当前目录存在 `.env`，本地模式可自动读取；生产 systemd/Docker 不依赖自动发现。
-3. 读取 `os.Getenv`。
+1. 如果显式传 `--env-file` 或通用路径覆盖变量，读取指定文件。
+2. 否则读取工作目录下的 `./config/runtime.env`。
+3. 文件中的运行时字段为权威值，进程同名变量不覆盖。
 4. 应用代码默认值。
 5. 校验生产环境必填项。
 
@@ -597,20 +597,20 @@ func LoadEnv(path string) (BootConfig, error)
 API/worker 支持：
 
 ```bash
-pic-gallery-api --env-file /etc/pic-gallery/.env
-pic-gallery-worker --env-file /etc/pic-gallery/.env
+pic-gallery-api --env-file ./config/runtime.env
+pic-gallery-worker --env-file ./config/runtime.env
 ```
 
 环境变量：
 
 ```dotenv
-PIC_GALLERY_ENV_FILE=/etc/pic-gallery/.env
+APP_ENV_FILE=./config/runtime.env
 ```
 
 优先级：
 
 ```text
-命令行 --env-file > PIC_GALLERY_ENV_FILE > 当前工作目录 .env > 进程环境
+命令行 --env-file > APP_ENV_FILE > 当前工作目录 ./config/runtime.env
 ```
 
 注意：Docker Compose 已通过 `env_file` 注入环境，容器内不需要再读取 `.env` 文件。

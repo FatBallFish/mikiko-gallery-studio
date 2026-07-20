@@ -186,7 +186,7 @@ git commit -m "feat(config): add portable runtime env schema"
 - Modify: `internal/config/load.go`
 - Modify: `internal/config/load_test.go`
 - Modify: `.env.example`
-- Modify: repository files containing `PIC_GALLERY_ENV_FILE`
+- Modify: repository files containing the retired product-specific env-file selector
 - Test: `web/shared/prompt-optimization-deployment.contract.ts`
 
 **Step 1: Write failing loading-contract tests**
@@ -195,7 +195,7 @@ Require:
 
 - default file is `./config/runtime.env` relative to process working directory;
 - `APP_ENV_FILE` overrides the default;
-- `PIC_GALLERY_ENV_FILE` is ignored/removed;
+- the retired product-specific env-file selector is ignored/removed;
 - process env does not silently override setup-managed runtime fields;
 - explicit test helpers can still load a supplied path;
 - bootstrap loading tolerates incomplete pending files;
@@ -207,7 +207,7 @@ Require:
 go test ./internal/config -run 'TestLoadEnv|TestBootstrap'
 ```
 
-Expected: FAIL against current `.env` and `PIC_GALLERY_ENV_FILE` behavior.
+Expected: FAIL against current root `.env` and retired selector behavior.
 
 **Step 3: Split bootstrap and complete loading**
 
@@ -223,7 +223,7 @@ func DefaultRuntimeEnvPath() string
 
 **Step 4: Remove branded path selector usage**
 
-Delete `PIC_GALLERY_ENV_FILE` from Go, service scripts, packaged scripts, documentation contracts, and examples. Retain only optional `APP_ENV_FILE`.
+Delete the retired product-specific selector from Go, service scripts, packaged scripts, documentation contracts, and examples. Retain only optional `APP_ENV_FILE`.
 
 **Step 5: Run focused and repository contracts**
 
@@ -992,7 +992,7 @@ Require static user/admin/docs routing, SPA fallback, runtime frontend config, A
 
 **Step 2: Write failing Linux/Windows service-plan tests**
 
-Assert systemd and Windows service definitions set the runtime working directory, start API/Worker/Gateway in dependency order, restart on the documented API restart code, and use no `PIC_GALLERY_ENV_FILE`.
+Assert systemd and Windows service definitions set the runtime working directory, start API/Worker/Gateway in dependency order, restart on the documented API restart code, and use no retired product-specific env-file selector.
 
 **Step 3: Run and confirm failure**
 

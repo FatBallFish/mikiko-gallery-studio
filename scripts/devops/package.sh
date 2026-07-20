@@ -16,8 +16,8 @@ Environment overrides:
   DEVOPS_GOOS          Backend GOOS, default linux
   DEVOPS_GOARCH        Backend GOARCH, default amd64
   DEVOPS_CGO_ENABLED   Backend CGO_ENABLED, default 0
-  PIC_GALLERY_ENV_FILE Runtime env file path used by generated service scripts,
-                       default ./env/backend.env beside the backend package.
+  APP_ENV_FILE         Optional runtime env path used by generated service scripts,
+                       default ./config/runtime.env beside the backend package.
 USAGE
 }
 
@@ -89,8 +89,8 @@ package_backend() {
       go build -trimpath -ldflags="-s -w" -o "$out_dir/bin/$bin_name" "$cmd_pkg"
   )
 
-  mkdir -p "$out_dir/env"
-  copy_file "$ROOT_DIR/.env.example" "$out_dir/env/backend.env.example"
+  mkdir -p "$out_dir/config"
+  copy_file "$ROOT_DIR/config/runtime.env.example" "$out_dir/config/runtime.env.example"
   copy_file "$ROOT_DIR/deployments/devops/$run_script" "$out_dir/$run_script"
   chmod +x "$out_dir/$run_script"
 

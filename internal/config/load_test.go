@@ -3,274 +3,289 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestLoadEnvDefaultsAuthenticationSessionTTLs(t *testing.T) {
-	envPath := filepath.Join(t.TempDir(), "empty.env")
-	if err := os.WriteFile(envPath, nil, 0o600); err != nil {
-		t.Fatalf("write empty env file: %v", err)
+func TestDefaultRuntimeEnvPathIsRelativeToWorkingDirectory(t *testing.T) {
+	want := filepath.FromSlash("./config/runtime.env")
+	if got := DefaultRuntimeEnvPath(); got != want {
+		t.Fatalf("DefaultRuntimeEnvPath() = %q, want %q", got, want)
 	}
-	t.Setenv("AUTH_ACCESS_TOKEN_TTL", "")
-	t.Setenv("AUTH_REFRESH_TOKEN_TTL", "")
 
-	cfg, err := LoadEnv(envPath)
+	workingDirectory := t.TempDir()
+	previous, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("LoadEnv returned error: %v", err)
+		t.Fatalf("get working directory: %v", err)
 	}
-
-	if cfg.Auth.AccessTokenTTL != 10*time.Minute {
-		t.Fatalf("expected default access token TTL 10m, got %s", cfg.Auth.AccessTokenTTL)
+	if err := os.Chdir(workingDirectory); err != nil {
+		t.Fatalf("change working directory: %v", err)
 	}
-	if cfg.Auth.RefreshTokenTTL != 2*time.Hour {
-		t.Fatalf("expected default refresh token TTL 2h, got %s", cfg.Auth.RefreshTokenTTL)
-	}
-	if cfg.Auth.AdminRefreshCookieName != "pg_admin_refresh_token" {
-		t.Fatalf("expected default admin refresh cookie name pg_admin_refresh_token, got %#v", cfg.Auth)
-	}
-}
-
-func TestLoadUsesEnvByDefault(t *testing.T) {
-	t.Setenv("PIC_GALLERY_ENV", "production")
-	t.Setenv("PIC_GALLERY_ADDR", ":9090")
-	t.Setenv("DATABASE_URL", "postgres://pic_gallery:secret@db:5432/pic_gallery?sslmode=disable")
-	t.Setenv("REDIS_URL", "redis://localhost:6379/1")
-	t.Setenv("REDIS_KEY_PREFIX", "test-prefix")
-	t.Setenv("STORAGE_DRIVER", "s3")
-	t.Setenv("STORAGE_LOCAL_ROOT", "/var/lib/override")
-	t.Setenv("API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "api-key-secret-test-key")
-	t.Setenv("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "cashier-provider-config-test-key")
-	t.Setenv("PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "secure-config-test-key")
-	t.Setenv("PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY", "prompt-optimization-quote-test-key")
-	t.Setenv("WORKER_MAX_CONCURRENT_TASKS", "12")
-	t.Setenv("PIC_GALLERY_ADMIN_EMAIL", "admin@example.com")
-	t.Setenv("PIC_GALLERY_ADMIN_PASSWORD", "admin-password")
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-
-	if cfg.App.Env != "production" {
-		t.Fatalf("expected app env from env, got %q", cfg.App.Env)
-	}
-	if cfg.App.Addr != ":9090" {
-		t.Fatalf("expected app addr from env, got %q", cfg.App.Addr)
-	}
-	if cfg.Database.URL != "postgres://pic_gallery:secret@db:5432/pic_gallery?sslmode=disable" {
-		t.Fatalf("expected database URL from env, got %q", cfg.Database.URL)
-	}
-	if cfg.Redis.URL != "redis://localhost:6379/1" || cfg.Redis.KeyPrefix != "test-prefix" {
-		t.Fatalf("expected Redis values from env, got %#v", cfg.Redis)
-	}
-	if cfg.Storage.Driver != "s3" || cfg.Storage.LocalRoot != "/var/lib/override" {
-		t.Fatalf("expected storage values from env, got %#v", cfg.Storage)
-	}
-	if cfg.Billing.PointsScale != 5 {
-		t.Fatalf("expected billing scale 5, got %d", cfg.Billing.PointsScale)
-	}
-	if cfg.Auth.AccessTokenTTL != 10*time.Minute || cfg.Auth.RefreshTokenTTL != 2*time.Hour {
-		t.Fatalf("expected auth TTL defaults 10m/2h, got access=%s refresh=%s", cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL)
-	}
-	if cfg.Auth.RefreshCookieName != "pg_refresh_token" || cfg.Auth.AdminRefreshCookieName != "pg_admin_refresh_token" {
-		t.Fatalf("expected refresh cookie defaults, got user=%q admin=%q", cfg.Auth.RefreshCookieName, cfg.Auth.AdminRefreshCookieName)
-	}
-	if cfg.Billing.BaseResolutionPointsByModel["basic"]["1k"] != "2.00000" {
-		t.Fatalf("expected default basic 1k pricing, got %#v", cfg.Billing.BaseResolutionPointsByModel)
-	}
-	for providerName, capability := range cfg.Routing.ProviderCapabilities {
-		for _, taskType := range capability.SupportedTaskTypes {
-			if taskType != "text_to_image" && taskType != "image_edit" {
-				t.Fatalf("provider %s exposes removed task type %q", providerName, taskType)
-			}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Errorf("restore working directory: %v", err)
 		}
+	})
+
+	path := filepath.Join(workingDirectory, "config", "runtime.env")
+	writeRuntimeValuesForTest(t, path, map[string]string{"SETUP_COMPLETED": "false", "SETUP_TOKEN": "pending-token"})
+	t.Setenv("APP_ENV_FILE", "")
+
+	bootstrap, err := LoadBootstrap("")
+	if err != nil {
+		t.Fatalf("LoadBootstrap default path returned error: %v", err)
 	}
-	if cfg.Cashier.MaxPendingOrdersPerUser != 3 || cfg.Cashier.OrderTimeoutSeconds != 1800 {
-		t.Fatalf("expected cashier defaults from config, got %#v", cfg.Cashier)
+	if bootstrap.Path != want {
+		t.Fatalf("bootstrap path = %q, want %q", bootstrap.Path, want)
 	}
-	if cfg.APIKey.SigningSecretEncryptionKey != "api-key-secret-test-key" {
-		t.Fatalf("expected API key signing secret env value, got %q", cfg.APIKey.SigningSecretEncryptionKey)
-	}
-	if cfg.Cashier.ProviderConfigEncryptionKey != "cashier-provider-config-test-key" {
-		t.Fatalf("expected cashier provider config env value, got %q", cfg.Cashier.ProviderConfigEncryptionKey)
-	}
-	if cfg.Security.SecureConfigEncryptionKey != "secure-config-test-key" {
-		t.Fatalf("expected secure config env value, got %q", cfg.Security.SecureConfigEncryptionKey)
-	}
-	if cfg.Security.PromptOptimizationQuoteSigningKey != "prompt-optimization-quote-test-key" {
-		t.Fatalf("expected prompt optimization quote signing key env value, got %q", cfg.Security.PromptOptimizationQuoteSigningKey)
-	}
-	if cfg.Worker.MaxConcurrentTasks != 12 {
-		t.Fatalf("expected worker max concurrency from env, got %d", cfg.Worker.MaxConcurrentTasks)
-	}
-	if cfg.Admin.SeedEmail != "admin@example.com" || cfg.Admin.SeedPassword != "admin-password" {
-		t.Fatalf("expected admin bootstrap from env, got %#v", cfg.Admin)
+	if bootstrap.SetupCompleted {
+		t.Fatal("pending default runtime file loaded as completed")
 	}
 }
 
-func TestLoadYAMLUsesPicGalleryConfigEnv(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("app:\n  name: from-pic-gallery-config\n"), 0o600); err != nil {
-		t.Fatalf("write temp config: %v", err)
-	}
-	t.Setenv("APP_CONFIG_PATH", "")
-	t.Setenv("PIC_GALLERY_CONFIG", configPath)
+func TestLoadBootstrapUsesAPPENVFILEOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom.env")
+	writeRuntimeValuesForTest(t, path, map[string]string{
+		"DEPLOYMENT_MODE": "native",
+		"SETUP_COMPLETED": "false",
+		"SETUP_TOKEN":     "custom-token",
+	})
+	t.Setenv("APP_ENV_FILE", path)
 
-	cfg, err := LoadYAML("")
+	bootstrap, err := LoadBootstrap("")
+	if err != nil {
+		t.Fatalf("LoadBootstrap APP_ENV_FILE returned error: %v", err)
+	}
+	if bootstrap.Path != path || bootstrap.Deployment.Mode != DeploymentModeNative || bootstrap.SetupToken != "custom-token" {
+		t.Fatalf("unexpected bootstrap config: %#v", bootstrap)
+	}
+}
+
+func TestLoadBootstrapIgnoresRemovedPicGalleryEnvFile(t *testing.T) {
+	workingDirectory := t.TempDir()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(workingDirectory); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
+
+	defaultPath := filepath.Join(workingDirectory, "config", "runtime.env")
+	removedSelectorPath := filepath.Join(workingDirectory, "removed-selector.env")
+	writeRuntimeValuesForTest(t, defaultPath, map[string]string{"SETUP_COMPLETED": "false", "SETUP_TOKEN": "default-token"})
+	writeRuntimeValuesForTest(t, removedSelectorPath, map[string]string{"SETUP_COMPLETED": "false", "SETUP_TOKEN": "removed-token"})
+	t.Setenv("APP_ENV_FILE", "")
+	removedSelector := strings.Join([]string{"PIC", "GALLERY", "ENV", "FILE"}, "_")
+	t.Setenv(removedSelector, removedSelectorPath)
+
+	bootstrap, err := LoadBootstrap("")
+	if err != nil {
+		t.Fatalf("LoadBootstrap returned error: %v", err)
+	}
+	if bootstrap.SetupToken != "default-token" {
+		t.Fatalf("removed branded selector affected loading: token = %q", bootstrap.SetupToken)
+	}
+}
+
+func TestLoadBootstrapAllowsIncompletePendingRuntime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pending.env")
+	writeRuntimeValuesForTest(t, path, map[string]string{
+		"RUNTIME_SCHEMA_VERSION": "1",
+		"DEPLOYMENT_MODE":        "docker",
+		"DEPLOYMENT_PROFILE":     "core",
+		"SETUP_COMPLETED":        "false",
+		"DATABASE_URL":           "",
+		"REDIS_URL":              "",
+		"SETUP_TOKEN":            "pending-token",
+	})
+
+	bootstrap, err := LoadBootstrap(path)
+	if err != nil {
+		t.Fatalf("LoadBootstrap rejected incomplete pending config: %v", err)
+	}
+	if bootstrap.SetupCompleted || bootstrap.SetupToken != "pending-token" {
+		t.Fatalf("unexpected pending bootstrap: %#v", bootstrap)
+	}
+	if bootstrap.Values["DATABASE_URL"] != "" || bootstrap.Values["REDIS_URL"] != "" {
+		t.Fatalf("bootstrap did not preserve incomplete values: %#v", bootstrap.Values)
+	}
+}
+
+func TestLoadRuntimeRequiresCompletedSetupAndRequiredFields(t *testing.T) {
+	pendingPath := filepath.Join(t.TempDir(), "pending.env")
+	writeRuntimeValuesForTest(t, pendingPath, map[string]string{"SETUP_COMPLETED": "false"})
+	if _, err := LoadRuntime(pendingPath); err == nil || !strings.Contains(err.Error(), "SETUP_COMPLETED") {
+		t.Fatalf("LoadRuntime pending error = %v, want SETUP_COMPLETED diagnostic", err)
+	}
+
+	missingRedisPath := filepath.Join(t.TempDir(), "missing-redis.env")
+	values := completeRuntimeValuesForTest()
+	delete(values, "REDIS_URL")
+	writeRuntimeValuesForTest(t, missingRedisPath, values)
+	if _, err := LoadRuntime(missingRedisPath); err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
+		t.Fatalf("LoadRuntime missing required field error = %v, want REDIS_URL diagnostic", err)
+	}
+}
+
+func TestLoadRuntimeUsesFileValuesInsteadOfProcessEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	values["DATABASE_URL"] = "postgres://file-user:file-pass@file-db:5432/app?sslmode=disable"
+	values["REDIS_URL"] = "redis://file-cache:6379/2"
+	writeRuntimeValuesForTest(t, path, values)
+	t.Setenv("DATABASE_URL", "postgres://process-user:process-pass@process-db:5432/app?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://process-cache:6379/9")
+	t.Setenv("AUTH_ACCESS_TOKEN_SECRET", "process-secret")
+
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime returned error: %v", err)
+	}
+	if cfg.Database.URL != values["DATABASE_URL"] || cfg.Redis.URL != values["REDIS_URL"] {
+		t.Fatalf("process environment overrode runtime file: database=%q redis=%q", cfg.Database.URL, cfg.Redis.URL)
+	}
+	if cfg.Auth.AccessTokenSecret != values["AUTH_ACCESS_TOKEN_SECRET"] {
+		t.Fatalf("process secret overrode runtime file: %q", cfg.Auth.AccessTokenSecret)
+	}
+}
+
+func TestLoadRuntimeUsesRoleSpecificRequiredMatrix(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "web-runtime.env")
+	writeRuntimeValuesForTest(t, path, map[string]string{
+		"RUNTIME_SCHEMA_VERSION": "1",
+		"DEPLOYMENT_MODE":        "native",
+		"DEPLOYMENT_PROFILE":     "core",
+		"DEPLOYMENT_TOPOLOGY":    "cluster",
+		"DEPLOYMENT_ROLE":        "web",
+		"DEPLOYMENT_MODULES":     "user-web,admin-web,gateway",
+		"POSTGRES_MANAGED":       "false",
+		"REDIS_MANAGED":          "false",
+		"OBJECT_STORAGE_MANAGED": "false",
+		"SETUP_COMPLETED":        "true",
+		"PUBLIC_API_URL":         "http://api.internal:8080",
+		"RELEASE_VERSION":        "test",
+		"INSTALLATION_ID":        "installation-test",
+		"CLUSTER_NODE_ID":        "web-node-test",
+		"CONFIG_REVISION":        "1",
+		"APPLICATION_VERSION":    "test",
+	})
+
+	if _, err := LoadRuntime(path); err != nil {
+		t.Fatalf("LoadRuntime rejected a valid web-node matrix without database or Redis: %v", err)
+	}
+}
+
+func TestLoadRuntimeMapsSpecialDotenvValuesAndDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	values["STORAGE_DRIVER"] = "s3"
+	delete(values, "STORAGE_LOCAL_ROOT")
+	delete(values, "STORAGE_SHARED_VOLUME")
+	values["STORAGE_S3_ENDPOINT"] = "http://minio.internal:9000/path?label=primary#assets"
+	values["STORAGE_S3_REGION"] = "us-east-1"
+	values["STORAGE_S3_BUCKET"] = "generated-assets"
+	values["STORAGE_S3_ACCESS_KEY_ID"] = "access key #1"
+	values["STORAGE_S3_SECRET_ACCESS_KEY"] = `secret = value with "quotes"`
+	values["STORAGE_S3_FORCE_PATH_STYLE"] = "true"
+	values["STORAGE_S3_PREFIX"] = "projects/July 2026 # primary"
+	values["DATABASE_CONN_MAX_LIFETIME"] = "45m"
+	values["DATABASE_MAX_OPEN_CONNS"] = "30"
+	values["DATABASE_MAX_IDLE_CONNS"] = "12"
+	writeRuntimeValuesForTest(t, path, values)
+
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime returned error: %v", err)
+	}
+	if cfg.Storage.S3.Endpoint != values["STORAGE_S3_ENDPOINT"] || cfg.Storage.S3.AccessKeyID != values["STORAGE_S3_ACCESS_KEY_ID"] || cfg.Storage.S3.SecretAccessKey != values["STORAGE_S3_SECRET_ACCESS_KEY"] || cfg.Storage.S3.Prefix != values["STORAGE_S3_PREFIX"] {
+		t.Fatalf("special dotenv values were not mapped exactly: %#v", cfg.Storage.S3)
+	}
+	if cfg.Database.MaxOpenConns != 30 || cfg.Database.MaxIdleConns != 12 || cfg.Database.ConnMaxLifetime != 45*time.Minute {
+		t.Fatalf("database tuning values were not mapped: %#v", cfg.Database)
+	}
+	if cfg.App.Addr != ":8080" || cfg.Auth.AccessTokenTTL != 10*time.Minute || cfg.Worker.MaxConcurrentTasks != 4 {
+		t.Fatalf("application defaults were not applied: app=%#v auth=%#v worker=%#v", cfg.App, cfg.Auth, cfg.Worker)
+	}
+}
+
+func TestLoadEnvExplicitPathUsesRuntimeContract(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "explicit.env")
+	values := completeRuntimeValuesForTest()
+	values["REDIS_KEY_PREFIX"] = "explicit-prefix"
+	writeRuntimeValuesForTest(t, path, values)
+
+	cfg, err := LoadEnv(path)
+	if err != nil {
+		t.Fatalf("LoadEnv explicit path returned error: %v", err)
+	}
+	if cfg.Redis.KeyPrefix != "explicit-prefix" {
+		t.Fatalf("LoadEnv ignored explicit path: %#v", cfg.Redis)
+	}
+}
+
+func TestLoadYAMLRemainsExplicit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("app:\n  name: explicit-yaml\n"), 0o600); err != nil {
+		t.Fatalf("write YAML: %v", err)
+	}
+	t.Setenv("APP_ENV_FILE", filepath.Join(t.TempDir(), "unused.env"))
+
+	cfg, err := LoadYAML(path)
 	if err != nil {
 		t.Fatalf("LoadYAML returned error: %v", err)
 	}
-	if cfg.App.Name != "from-pic-gallery-config" {
-		t.Fatalf("expected PIC_GALLERY_CONFIG path to load config, got app name %q", cfg.App.Name)
+	if cfg.App.Name != "explicit-yaml" {
+		t.Fatalf("LoadYAML app name = %q", cfg.App.Name)
 	}
 }
 
-func TestLoadIgnoresLegacyYAMLSelectorsByDefault(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("app:\n  name: legacy-yaml\n"), 0o600); err != nil {
-		t.Fatalf("write temp config: %v", err)
-	}
-	t.Setenv("PIC_GALLERY_CONFIG", configPath)
-	t.Setenv("PIC_GALLERY_ENV", "production")
-
-	_, err := Load("")
-	if err == nil {
-		t.Fatal("expected default Load to ignore legacy YAML selector and require env DATABASE_URL")
-	}
-	if got := err.Error(); got != "DATABASE_URL must be configured in production env" {
-		t.Fatalf("unexpected Load error %q", got)
+func completeRuntimeValuesForTest() map[string]string {
+	return map[string]string{
+		"RUNTIME_SCHEMA_VERSION":                   "1",
+		"DEPLOYMENT_MODE":                          "docker",
+		"DEPLOYMENT_PROFILE":                       "core",
+		"DEPLOYMENT_TOPOLOGY":                      "single",
+		"DEPLOYMENT_ROLE":                          "single",
+		"DEPLOYMENT_MODULES":                       "api,worker",
+		"POSTGRES_MANAGED":                         "false",
+		"REDIS_MANAGED":                            "false",
+		"OBJECT_STORAGE_MANAGED":                   "false",
+		"SETUP_COMPLETED":                          "true",
+		"DATABASE_URL":                             "postgres://app:password@db:5432/app?sslmode=disable",
+		"REDIS_URL":                                "redis://cache:6379/0",
+		"REDIS_KEY_PREFIX":                         "app-test",
+		"STORAGE_DRIVER":                           "local",
+		"STORAGE_LOCAL_ROOT":                       "./data/storage",
+		"STORAGE_SHARED_VOLUME":                    "true",
+		"AUTH_ACCESS_TOKEN_SECRET":                 "access-token-secret",
+		"API_KEY_SIGNING_SECRET_ENCRYPTION_KEY":    "api-key-encryption-secret",
+		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY":   "cashier-encryption-secret",
+		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": "secure-config-encryption-secret",
+		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY":    "quote-signing-secret",
+		"API_PORT":                                 "8080",
+		"IMAGE_TAG":                                "test",
+		"INSTALLATION_ID":                          "installation-test",
+		"APPLICATION_VERSION":                      "test",
 	}
 }
 
-func TestLoadEnvIgnoresObjectStorageSecretEnv(t *testing.T) {
-	t.Setenv("PIC_GALLERY_ENV", "local")
-	t.Setenv("STORAGE_DRIVER", "local")
-	t.Setenv("STORAGE_S3_ENDPOINT", "https://s3.example.com")
-	t.Setenv("STORAGE_S3_REGION", "cn-test-1")
-	t.Setenv("STORAGE_S3_BUCKET", "pic-gallery-assets")
-	t.Setenv("STORAGE_S3_ACCESS_KEY_ID", "s3-ak")
-	t.Setenv("STORAGE_S3_SECRET_ACCESS_KEY", "s3-sk")
-	t.Setenv("STORAGE_S3_FORCE_PATH_STYLE", "true")
-	t.Setenv("STORAGE_S3_PREFIX", "prod/pic-gallery")
-	t.Setenv("BFSS_ENDPOINT", "https://bfss.example.com")
-	t.Setenv("BFSS_REGION", "cn-test-1")
-	t.Setenv("BFSS_BUCKET", "pic-gallery-assets")
-	t.Setenv("BFSS_ACCESS_KEY_ID", "bfss-ak")
-	t.Setenv("BFSS_SECRET_ACCESS_KEY", "bfss-sk")
-	t.Setenv("BFSS_FORCE_PATH_STYLE", "false")
-	t.Setenv("BFSS_PREFIX", "prod/pic-gallery")
-
-	cfg, err := Load("")
+func writeRuntimeValuesForTest(t *testing.T, path string, values map[string]string) {
+	t.Helper()
+	rendered, err := RenderRuntimeEnv(DefaultRuntimeSchema(), values, nil)
 	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
+		t.Fatalf("render runtime env: %v", err)
 	}
-
-	if cfg.Storage.S3.Endpoint != "" ||
-		cfg.Storage.S3.Region != "" ||
-		cfg.Storage.S3.Bucket != "" ||
-		cfg.Storage.S3.AccessKeyID != "" ||
-		cfg.Storage.S3.SecretAccessKey != "" ||
-		cfg.Storage.S3.ForcePathStyle ||
-		cfg.Storage.S3.Prefix != "" {
-		t.Fatalf("expected object storage secret env vars to be ignored, got %#v", cfg.Storage.S3)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create runtime config directory: %v", err)
 	}
-}
-
-func TestLoadYAMLIgnoresBFSSStorageEnvAliases(t *testing.T) {
-	t.Setenv("BFSS_ENDPOINT", "https://bfss.example.com")
-	t.Setenv("BFSS_REGION", "cn-test-1")
-	t.Setenv("BFSS_BUCKET", "pic-gallery-assets")
-	t.Setenv("BFSS_ACCESS_KEY_ID", "bfss-ak")
-	t.Setenv("BFSS_SECRET_ACCESS_KEY", "bfss-sk")
-	t.Setenv("BFSS_FORCE_PATH_STYLE", "false")
-	t.Setenv("BFSS_PREFIX", "prod/pic-gallery")
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(`storage:
-  s3:
-    region: us-east-1
-    force_path_style: true
-    prefix: pic-gallery
-`), 0o600); err != nil {
-		t.Fatalf("write temp config: %v", err)
-	}
-
-	cfg, err := LoadYAML(configPath)
-	if err != nil {
-		t.Fatalf("LoadYAML returned error: %v", err)
-	}
-
-	if cfg.Storage.S3.Endpoint != "" ||
-		cfg.Storage.S3.Region != "us-east-1" ||
-		cfg.Storage.S3.Bucket != "" ||
-		cfg.Storage.S3.AccessKeyID != "" ||
-		cfg.Storage.S3.SecretAccessKey != "" ||
-		!cfg.Storage.S3.ForcePathStyle ||
-		cfg.Storage.S3.Prefix != "pic-gallery" {
-		t.Fatalf("expected BFSS env aliases to be ignored, got %#v", cfg.Storage.S3)
-	}
-}
-
-func TestLoadEnvFileDoesNotOverrideProcessEnv(t *testing.T) {
-	dir := t.TempDir()
-	envPath := filepath.Join(dir, ".env")
-	content := []byte("PIC_GALLERY_ENV=production\nPIC_GALLERY_ADDR=:8081\nDATABASE_URL=postgres://file@db:5432/pic_gallery?sslmode=disable\n")
-	if err := os.WriteFile(envPath, content, 0o600); err != nil {
-		t.Fatalf("write env file: %v", err)
-	}
-	t.Setenv("PIC_GALLERY_ADDR", ":9090")
-
-	cfg, err := LoadEnv(envPath)
-	if err != nil {
-		t.Fatalf("LoadEnv returned error: %v", err)
-	}
-	if cfg.App.Addr != ":9090" {
-		t.Fatalf("expected process env to win, got %q", cfg.App.Addr)
-	}
-	if cfg.Database.URL != "postgres://file@db:5432/pic_gallery?sslmode=disable" {
-		t.Fatalf("expected database URL from env file, got %q", cfg.Database.URL)
-	}
-}
-
-func TestLoadEnvDoesNotLeakFileValuesBetweenLoads(t *testing.T) {
-	dir := t.TempDir()
-	firstPath := filepath.Join(dir, "first.env")
-	secondPath := filepath.Join(dir, "second.env")
-	if err := os.WriteFile(firstPath, []byte("PIC_GALLERY_ENV=production\nDATABASE_URL=postgres://first@db:5432/pic_gallery?sslmode=disable\n"), 0o600); err != nil {
-		t.Fatalf("write first env file: %v", err)
-	}
-	if err := os.WriteFile(secondPath, []byte("PIC_GALLERY_ENV=production\nDATABASE_URL=postgres://second@db:5432/pic_gallery?sslmode=disable\n"), 0o600); err != nil {
-		t.Fatalf("write second env file: %v", err)
-	}
-
-	if _, err := LoadEnv(firstPath); err != nil {
-		t.Fatalf("LoadEnv first returned error: %v", err)
-	}
-	cfg, err := LoadEnv(secondPath)
-	if err != nil {
-		t.Fatalf("LoadEnv second returned error: %v", err)
-	}
-
-	if cfg.Database.URL != "postgres://second@db:5432/pic_gallery?sslmode=disable" {
-		t.Fatalf("expected second env file database URL, got %q", cfg.Database.URL)
-	}
-}
-
-func TestLoadEnvSupportsPicGalleryCashierEncryptionAlias(t *testing.T) {
-	t.Setenv("PIC_GALLERY_ENV", "production")
-	t.Setenv("DATABASE_URL", "postgres://pic_gallery:secret@db:5432/pic_gallery?sslmode=disable")
-	t.Setenv("PIC_GALLERY_CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "cashier-alias-key")
-
-	cfg, err := LoadEnv("")
-	if err != nil {
-		t.Fatalf("LoadEnv returned error: %v", err)
-	}
-
-	if cfg.Cashier.ProviderConfigEncryptionKey != "cashier-alias-key" {
-		t.Fatalf("expected cashier provider config alias value, got %q", cfg.Cashier.ProviderConfigEncryptionKey)
+	if err := os.WriteFile(path, rendered, 0o600); err != nil {
+		t.Fatalf("write runtime env: %v", err)
 	}
 }

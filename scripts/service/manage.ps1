@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 if (-not $EnvFile) {
-  $EnvFile = Join-Path $Root ".env"
+  $EnvFile = Join-Path $Root "config/runtime.env"
 }
 
 function Build-Component {
@@ -42,7 +42,7 @@ function Install-Component {
   Build-Component $Component
   $TaskName = Task-Name $Component
   $Exe = Component-Command $Component
-  $Command = "cd `"$Root`"; `$env:PIC_GALLERY_ENV_FILE=`"$EnvFile`"; & `"$Exe`""
+  $Command = "cd `"$Root`"; `$env:APP_ENV_FILE=`"$EnvFile`"; & `"$Exe`""
   $TaskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -Command $Command"
   $Trigger = New-ScheduledTaskTrigger -AtStartup
   $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel LeastPrivilege
@@ -68,7 +68,7 @@ function Manage-Component {
     }
     "status" { Get-ScheduledTask -TaskName $TaskName | Format-List * }
     "logs" {
-      Write-Host "Windows scheduled-task mode does not capture logs by default. Run target/local/bin/pic-gallery-$Component.exe with PIC_GALLERY_ENV_FILE=$EnvFile for foreground logs."
+      Write-Host "Windows scheduled-task mode does not capture logs by default. Run target/local/bin/pic-gallery-$Component.exe with APP_ENV_FILE=$EnvFile for foreground logs."
     }
   }
 }

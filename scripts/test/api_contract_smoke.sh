@@ -1135,7 +1135,7 @@ DOCS_BASE_PATH=/developers/docs
 ENV
 }
 start_worker() {
-  PIC_GALLERY_ENV_FILE="$SMOKE_ENV_PATH" \
+  APP_ENV_FILE="$SMOKE_ENV_PATH" \
   go run ./cmd/worker >"$WORKER_LOG" 2>&1 &
   WORKER_PID="$!"
 }
@@ -1213,7 +1213,7 @@ wait_for_task_status() {
 cd "$ROOT_DIR"
 write_smoke_config
 
-PIC_GALLERY_ENV_FILE="$SMOKE_ENV_PATH" \
+APP_ENV_FILE="$SMOKE_ENV_PATH" \
 go run ./cmd/api >"$SERVER_LOG" 2>&1 &
 SERVER_PID="$!"
 

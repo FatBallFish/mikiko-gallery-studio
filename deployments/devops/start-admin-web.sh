@@ -2,7 +2,7 @@
 set -eu
 
 APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ENV_FILE=${PIC_GALLERY_ENV_FILE:-"$APP_DIR/env/frontend.env"}
+ENV_FILE=${FRONTEND_ENV_FILE:-"$APP_DIR/env/frontend.env"}
 if [ -f "$ENV_FILE" ]; then
   set -a
   . "$ENV_FILE"
@@ -22,4 +22,3 @@ window.__PIC_GALLERY_CONFIG__ = {
 EOF
 
 echo "Rendered $APP_DIR/dist/env.js. Serve $APP_DIR/dist at /admin/ with nginx."
-

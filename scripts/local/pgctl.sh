@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPONENTS="api,worker,user-web,admin-web"
-ENV_FILE="${PIC_GALLERY_ENV_FILE:-$ROOT_DIR/.env}"
+ENV_FILE="${APP_ENV_FILE:-$ROOT_DIR/config/runtime.env}"
 BACKGROUND=false
 
 usage() {
@@ -12,7 +12,7 @@ Usage: scripts/local/pgctl.sh <build|run|up|install|uninstall|start|stop|restart
 
 Options:
   --components LIST   Comma-separated components. Default: api,worker,user-web,admin-web
-  --env-file PATH     Env file for api and worker. Default: .env
+  --env-file PATH     Env file for api and worker. Default: ./config/runtime.env
   --background        For run/up, start processes in the background.
   --user              Forward to service manager for user-level service install.
 
@@ -113,8 +113,8 @@ if [[ "\${PIC_GALLERY_SYSTEM_SERVICE:-}" == "1" ]]; then
   USER_FLAG=()
 fi
 ENV_ARGS=()
-if [[ -n "\${PIC_GALLERY_ENV_FILE:-}" ]]; then
-  ENV_ARGS=(--env-file "\$PIC_GALLERY_ENV_FILE")
+if [[ -n "\${APP_ENV_FILE:-}" ]]; then
+  ENV_ARGS=(--env-file "\$APP_ENV_FILE")
 fi
 
 service_is_registered() {
@@ -176,8 +176,8 @@ run_component() {
   local component=$1
   local cmd
   case "$component" in
-    api) cmd="PIC_GALLERY_ENV_FILE='$ENV_FILE' '$ROOT_DIR/target/local/bin/pic-gallery-api'" ;;
-    worker) cmd="PIC_GALLERY_ENV_FILE='$ENV_FILE' '$ROOT_DIR/target/local/bin/pic-gallery-worker'" ;;
+    api) cmd="APP_ENV_FILE='$ENV_FILE' '$ROOT_DIR/target/local/bin/pic-gallery-api'" ;;
+    worker) cmd="APP_ENV_FILE='$ENV_FILE' '$ROOT_DIR/target/local/bin/pic-gallery-worker'" ;;
     user-web) cmd="npm --prefix '$ROOT_DIR/web/user' run dev -- --host 0.0.0.0 --port ${USER_WEB_PORT:-5173}" ;;
     admin-web) cmd="npm --prefix '$ROOT_DIR/web/admin' run dev -- --host 0.0.0.0 --port ${ADMIN_WEB_PORT:-5174}" ;;
     *) echo "Unknown component: $component" >&2; exit 2 ;;

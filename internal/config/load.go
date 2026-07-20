@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -12,16 +13,34 @@ import (
 
 const defaultConfigPath = "config.yaml"
 
+type BootstrapConfig struct {
+	Path                 string
+	SchemaVersion        int
+	Deployment           DeploymentContext
+	DeploymentModules    []string
+	PostgresManaged      bool
+	RedisManaged         bool
+	ObjectStorageManaged bool
+	SetupCompleted       bool
+	SetupToken           string
+	InstallationID       string
+	ClusterNodeID        string
+	ConfigRevision       int
+	ApplicationVersion   string
+	Values               map[string]string
+}
+
+func DefaultRuntimeEnvPath() string {
+	return filepath.FromSlash("./config/runtime.env")
+}
+
 func Load(path string) (Config, error) {
-	if path == "" {
-		return LoadEnv("")
-	}
-	return LoadYAML(path)
+	return LoadRuntime(path)
 }
 
 func LoadYAML(path string) (Config, error) {
 	if path == "" {
-		path = configPathFromEnv()
+		path = defaultConfigPath
 	}
 
 	content, err := os.ReadFile(path)
@@ -39,30 +58,121 @@ func LoadYAML(path string) (Config, error) {
 }
 
 func LoadEnv(path string) (Config, error) {
-	fileEnv := map[string]string{}
-	if path == "" {
-		path = os.Getenv("PIC_GALLERY_ENV_FILE")
+	return LoadRuntime(path)
+}
+
+func LoadBootstrap(path string) (BootstrapConfig, error) {
+	resolvedPath := resolveRuntimeEnvPath(path)
+	content, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return BootstrapConfig{}, fmt.Errorf("read runtime env %q: %w", resolvedPath, err)
 	}
+	document, err := ParseRuntimeEnv(content)
+	if err != nil {
+		return BootstrapConfig{}, fmt.Errorf("parse runtime env %q: %w", resolvedPath, err)
+	}
+
+	bootstrap := BootstrapConfig{
+		Path:               resolvedPath,
+		DeploymentModules:  envCSV(document.Values, "DEPLOYMENT_MODULES"),
+		SetupToken:         document.Values["SETUP_TOKEN"],
+		InstallationID:     document.Values["INSTALLATION_ID"],
+		ClusterNodeID:      document.Values["CLUSTER_NODE_ID"],
+		ApplicationVersion: document.Values["APPLICATION_VERSION"],
+		Values:             cloneStringMap(document.Values),
+	}
+	bootstrap.Deployment.Mode = DeploymentMode(document.Values["DEPLOYMENT_MODE"])
+	bootstrap.Deployment.Profile = DeploymentProfile(document.Values["DEPLOYMENT_PROFILE"])
+	bootstrap.Deployment.Topology = DeploymentTopology(document.Values["DEPLOYMENT_TOPOLOGY"])
+	bootstrap.Deployment.Role = DeploymentRole(document.Values["DEPLOYMENT_ROLE"])
+	bootstrap.Deployment.StorageDriver = document.Values["STORAGE_DRIVER"]
+
+	if bootstrap.SchemaVersion, err = optionalEnvInt(document.Values, "RUNTIME_SCHEMA_VERSION"); err != nil {
+		return BootstrapConfig{}, err
+	}
+	if bootstrap.ConfigRevision, err = optionalEnvInt(document.Values, "CONFIG_REVISION"); err != nil {
+		return BootstrapConfig{}, err
+	}
+	if bootstrap.SetupCompleted, err = optionalEnvBool(document.Values, "SETUP_COMPLETED"); err != nil {
+		return BootstrapConfig{}, err
+	}
+	if bootstrap.PostgresManaged, err = optionalEnvBool(document.Values, "POSTGRES_MANAGED"); err != nil {
+		return BootstrapConfig{}, err
+	}
+	if bootstrap.RedisManaged, err = optionalEnvBool(document.Values, "REDIS_MANAGED"); err != nil {
+		return BootstrapConfig{}, err
+	}
+	if bootstrap.ObjectStorageManaged, err = optionalEnvBool(document.Values, "OBJECT_STORAGE_MANAGED"); err != nil {
+		return BootstrapConfig{}, err
+	}
+	bootstrap.Deployment.SetupCompleted = bootstrap.SetupCompleted
+	return bootstrap, nil
+}
+
+func LoadRuntime(path string) (Config, error) {
+	bootstrap, err := LoadBootstrap(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if !bootstrap.SetupCompleted {
+		return Config{}, fmt.Errorf("SETUP_COMPLETED must be true before loading runtime configuration")
+	}
+	if err := validateRuntimeValues(bootstrap.Values, bootstrap.Deployment, bootstrap.SchemaVersion); err != nil {
+		return Config{}, err
+	}
+
+	cfg := configFromRuntimeValues(bootstrap.Values)
+	applyDefaults(&cfg)
+	if bootstrap.Deployment.Role != DeploymentRoleWeb {
+		if err := validateEnvConfig(cfg); err != nil {
+			return Config{}, err
+		}
+	}
+	return cfg, nil
+}
+
+func resolveRuntimeEnvPath(path string) string {
 	if path != "" {
-		loaded, err := loadDotEnv(path)
-		if err != nil {
-			return Config{}, err
-		}
-		fileEnv = loaded
-	} else if _, err := os.Stat(".env"); err == nil {
-		loaded, err := loadDotEnv(".env")
-		if err != nil {
-			return Config{}, err
-		}
-		fileEnv = loaded
-	} else if err != nil && !os.IsNotExist(err) {
-		return Config{}, fmt.Errorf("stat .env: %w", err)
+		return path
 	}
+	if override := strings.TrimSpace(os.Getenv("APP_ENV_FILE")); override != "" {
+		return override
+	}
+	return DefaultRuntimeEnvPath()
+}
+
+func validateRuntimeValues(values map[string]string, context DeploymentContext, schemaVersion int) error {
+	schema := DefaultRuntimeSchema()
+	if schemaVersion != schema.Version {
+		return fmt.Errorf("RUNTIME_SCHEMA_VERSION must be %d, got %d", schema.Version, schemaVersion)
+	}
+	required, err := RequiredRuntimeFields(schema, context)
+	if err != nil {
+		return fmt.Errorf("validate runtime deployment metadata: %w", err)
+	}
+	for _, runtimeField := range required {
+		if strings.TrimSpace(values[runtimeField.Key]) == "" {
+			return fmt.Errorf("required runtime field %s must be configured", runtimeField.Key)
+		}
+	}
+	for _, runtimeField := range schema.Fields {
+		value, exists := values[runtimeField.Key]
+		if !exists || value == "" {
+			continue
+		}
+		if err := runtimeField.Validate(value); err != nil {
+			return fmt.Errorf("validate runtime field %s: %w", runtimeField.Key, err)
+		}
+	}
+	return nil
+}
+
+func configFromRuntimeValues(fileEnv map[string]string) Config {
 
 	cfg := Config{}
 	cfg.App.Name = envString(fileEnv, "PIC_GALLERY_NAME", envString(fileEnv, "APP_NAME", ""))
-	cfg.App.Env = envString(fileEnv, "PIC_GALLERY_ENV", envString(fileEnv, "APP_ENV", ""))
-	cfg.App.Addr = envString(fileEnv, "PIC_GALLERY_ADDR", envString(fileEnv, "APP_ADDR", ""))
+	cfg.App.Env = envString(fileEnv, "PIC_GALLERY_ENV", envString(fileEnv, "APP_ENV", "production"))
+	cfg.App.Addr = envString(fileEnv, "PIC_GALLERY_ADDR", envString(fileEnv, "APP_ADDR", apiAddress(fileEnv["API_PORT"])))
 
 	cfg.Database.URL = envString(fileEnv, "DATABASE_URL", "")
 	cfg.Database.MaxOpenConns = envInt(fileEnv, "DATABASE_MAX_OPEN_CONNS", 0)
@@ -76,6 +186,13 @@ func LoadEnv(path string) (Config, error) {
 	cfg.Storage.LocalRoot = envString(fileEnv, "STORAGE_LOCAL_ROOT", "")
 	cfg.Storage.PublicBaseURL = envString(fileEnv, "STORAGE_PUBLIC_BASE_URL", "")
 	cfg.Storage.SharedVolume = envBool(fileEnv, "STORAGE_SHARED_VOLUME", false)
+	cfg.Storage.S3.Endpoint = envString(fileEnv, "STORAGE_S3_ENDPOINT", "")
+	cfg.Storage.S3.Region = envString(fileEnv, "STORAGE_S3_REGION", "")
+	cfg.Storage.S3.Bucket = envString(fileEnv, "STORAGE_S3_BUCKET", "")
+	cfg.Storage.S3.AccessKeyID = envString(fileEnv, "STORAGE_S3_ACCESS_KEY_ID", "")
+	cfg.Storage.S3.SecretAccessKey = envString(fileEnv, "STORAGE_S3_SECRET_ACCESS_KEY", "")
+	cfg.Storage.S3.ForcePathStyle = envBool(fileEnv, "STORAGE_S3_FORCE_PATH_STYLE", false)
+	cfg.Storage.S3.Prefix = envString(fileEnv, "STORAGE_S3_PREFIX", "")
 
 	cfg.Auth.AccessTokenTTL = envDuration(fileEnv, "AUTH_ACCESS_TOKEN_TTL", 0)
 	cfg.Auth.RefreshTokenTTL = envDuration(fileEnv, "AUTH_REFRESH_TOKEN_TTL", 0)
@@ -113,21 +230,46 @@ func LoadEnv(path string) (Config, error) {
 	cfg.Docs.Title = envString(fileEnv, "DOCS_TITLE", "")
 	cfg.Docs.BasePath = envString(fileEnv, "DOCS_BASE_PATH", "")
 
-	applyDefaults(&cfg)
-	if err := validateEnvConfig(cfg); err != nil {
-		return Config{}, err
-	}
-	return cfg, nil
+	return cfg
 }
 
-func configPathFromEnv() string {
-	if value := os.Getenv("APP_CONFIG_PATH"); value != "" {
-		return value
+func apiAddress(port string) string {
+	if strings.TrimSpace(port) == "" {
+		return ""
 	}
-	if value := os.Getenv("PIC_GALLERY_CONFIG"); value != "" {
-		return value
+	return ":" + port
+}
+
+func optionalEnvInt(values map[string]string, key string) (int, error) {
+	value := strings.TrimSpace(values[key])
+	if value == "" {
+		return 0, nil
 	}
-	return defaultConfigPath
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse runtime field %s as integer: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func optionalEnvBool(values map[string]string, key string) (bool, error) {
+	value := strings.TrimSpace(values[key])
+	if value == "" {
+		return false, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("parse runtime field %s as boolean: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func applyDefaults(cfg *Config) {
@@ -324,47 +466,7 @@ func providerPriority(cfg RoutingConfig, provider string) int {
 	return len(cfg.FallbackProviders) + 2
 }
 
-func loadDotEnv(path string) (map[string]string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read env file %q: %w", path, err)
-	}
-	values := map[string]string{}
-	for lineNo, rawLine := range strings.Split(string(content), "\n") {
-		line := strings.TrimSpace(rawLine)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			return nil, fmt.Errorf("parse env file %q line %d: missing '='", path, lineNo+1)
-		}
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return nil, fmt.Errorf("parse env file %q line %d: empty key", path, lineNo+1)
-		}
-		value = stripInlineComment(strings.TrimSpace(value))
-		value = strings.Trim(value, `"'`)
-		values[key] = value
-	}
-	return values, nil
-}
-
-func stripInlineComment(value string) string {
-	if strings.HasPrefix(value, `"`) || strings.HasPrefix(value, `'`) {
-		return value
-	}
-	if idx := strings.Index(value, " #"); idx >= 0 {
-		return strings.TrimSpace(value[:idx])
-	}
-	return value
-}
-
 func envString(fileEnv map[string]string, key string, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
 	if value := fileEnv[key]; value != "" {
 		return value
 	}

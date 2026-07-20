@@ -83,6 +83,29 @@ func TestRuntimeEnvRendererAddsBilingualCommentsAndRoundTrips(t *testing.T) {
 	}
 }
 
+func TestRuntimeEnvExampleIsGeneratedFromCurrentSchema(t *testing.T) {
+	want, err := RenderRuntimeEnv(DefaultRuntimeSchema(), nil, nil)
+	if err != nil {
+		t.Fatalf("render expected runtime env example: %v", err)
+	}
+	path := filepath.Join("..", "..", "config", "runtime.env.example")
+	if os.Getenv("UPDATE_RUNTIME_ENV_EXAMPLE") == "1" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create runtime env example directory: %v", err)
+		}
+		if err := os.WriteFile(path, want, 0o644); err != nil {
+			t.Fatalf("update runtime env example: %v", err)
+		}
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read runtime env example: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("config/runtime.env.example is stale; regenerate it from DefaultRuntimeSchema")
+	}
+}
+
 func TestRuntimeEnvUpgradePreservesValuesAndUnknownExtensions(t *testing.T) {
 	previous := []byte(`# legacy comments are replaced by current schema comments
 RUNTIME_SCHEMA_VERSION=1

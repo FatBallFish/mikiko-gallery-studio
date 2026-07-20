@@ -98,13 +98,14 @@ git clone https://github.com/fatballfish/pic-gallery.git
 cd pic-gallery
 ```
 
-### 2. 准备本地环境变量
+### 2. 准备可移植运行时配置
 
 ```bash
-cp .env.example .env
+mkdir -p config
+cp config/runtime.env.example config/runtime.env
 ```
 
-本地开发时，默认 `.env.example` 已足够启动依赖服务。宿主机运行 API/Worker 时编辑 `.env`；Compose 默认值在 `deployments/docker-compose/.env.example` 中调整。
+API 和 Worker 会相对于工作目录读取 `./config/runtime.env`。模板中的每个字段均包含中英文运维说明；Compose 插值默认值仍在 `deployments/docker-compose/.env.example` 中维护。
 
 ### 3. 启动开发全栈
 
@@ -125,7 +126,7 @@ make compose-up
 - 邮箱：`admin@example.com`
 - 密码：`admin123456`
 
-如果要把服务暴露到本机开发环境之外，请先在 `.env` 或 `deployments/docker-compose/.env.example` 中覆盖相关默认值。
+如果要把服务暴露到本机开发环境之外，请先完成 `config/runtime.env` 中由 setup 管理的配置，并在 `deployments/docker-compose/.env.example` 中覆盖 Compose 专用值。
 
 停止依赖：
 
@@ -216,8 +217,9 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 1. 准备 env 文件：
 
    ```bash
-   cp .env.example .env
-   $EDITOR .env
+   mkdir -p config
+   cp config/runtime.env.example config/runtime.env
+   $EDITOR config/runtime.env
    ```
 
 2. 构建全部组件，或只构建需要的组件：
@@ -236,7 +238,7 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 4. 如果希望退出登录或重启机器后 API/Worker 仍自动运行，可以安装成本机服务：
 
    ```bash
-   ./scripts/local/pgctl.sh install --components api,worker --env-file .env --user
+   ./scripts/local/pgctl.sh install --components api,worker --user
    ./scripts/local/pgctl.sh status --components api,worker --user
    ```
 
@@ -274,7 +276,7 @@ Linux 使用 `systemd`。
 安装用户级服务：
 
 ```bash
-./scripts/service/manage.sh install --components api,worker --env-file .env --user
+./scripts/service/manage.sh install --components api,worker --user
 ```
 
 卸载用户级服务：
@@ -286,7 +288,7 @@ Linux 使用 `systemd`。
 安装系统级服务：
 
 ```bash
-sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
+sudo ./scripts/service/manage.sh install --components api,worker
 ```
 
 卸载系统级服务：
@@ -302,7 +304,7 @@ macOS 使用 `launchd`。
 安装用户级服务：
 
 ```bash
-./scripts/service/manage.sh install --components api,worker --env-file .env --user
+./scripts/service/manage.sh install --components api,worker --user
 ```
 
 卸载用户级服务：
@@ -314,7 +316,7 @@ macOS 使用 `launchd`。
 安装系统级守护进程：
 
 ```bash
-sudo ./scripts/service/manage.sh install --components api,worker --env-file /etc/pic-gallery/backend.env
+sudo ./scripts/service/manage.sh install --components api,worker
 ```
 
 卸载系统级守护进程：
@@ -351,15 +353,16 @@ powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 status -Comp
 
 主要模板：
 
-- [`.env.example`](./.env.example)：本地源码运行环境变量模板。
+- [`config/runtime.env.example`](./config/runtime.env.example)：API/Worker 唯一的双语运行时配置模板。
+- [`.env.example`](./.env.example)：已退役根目录 `.env` 布局的迁移提示。
 - [`deployments/docker-compose/.env.example`](./deployments/docker-compose/.env.example)：本地 Compose 环境变量模板。
 - [`deployments/docker-compose/.env.prod.example`](./deployments/docker-compose/.env.prod.example)：生产 Compose 环境变量模板。
 
 后端运行配置：
 
-- API 和 Worker 默认从 `.env`/进程环境变量加载配置；本地服务托管时可用 `PIC_GALLERY_ENV_FILE` 指向指定 env 文件。
-- `APP_CONFIG_PATH` 和 `PIC_GALLERY_CONFIG` 仅作为显式 `LoadYAML` 迁移工具/测试的兼容入口保留；API 和 Worker 默认启动会忽略它们，新部署不再使用。
-- env 只保留启动必需项：数据库、Redis、存储 bootstrap、认证和加密密钥、首次管理员 bootstrap、基础端口。
+- API 和 Worker 默认读取 `./config/runtime.env`，仅允许用 `APP_ENV_FILE` 覆盖文件路径。
+- 进程中的同名变量不会覆盖 setup 管理的文件值。`LoadYAML` 仅保留为显式迁移/测试 API，不参与正常启动。
+- 运行时文件只保留启动必需项：部署元数据、数据库、Redis、存储 bootstrap、认证和加密密钥、基础端口；首次管理员明文密码不会写入文件。
 - SMTP、支付渠道、积分计费、模型供应商账号、模型路由和其他运营配置在启动后进入管理后台配置。
 
 正式对外发布前，至少需要配置一个可用的模型 Provider、模型账号、路由模型、价格，以及一个可用支付渠道。
@@ -465,7 +468,8 @@ curl http://127.0.0.1:8080/readyz
 本地源码运行使用 [`scripts/local/pgctl.sh`](./scripts/local/pgctl.sh)：
 
 ```bash
-cp .env.example .env
+mkdir -p config
+cp config/runtime.env.example config/runtime.env
 ./scripts/local/pgctl.sh build --components api,worker
 ./scripts/local/pgctl.sh up --components api,worker --background
 ./scripts/service/manage.sh status --user
