@@ -37,7 +37,7 @@ func TestRuntimeSchemaMetadataIsCompleteAndSafe(t *testing.T) {
 
 	for _, key := range []string{
 		"RUNTIME_SCHEMA_VERSION",
-		"DEPLOYMENT_MODE", "DEPLOYMENT_PROFILE", "DEPLOYMENT_ROLE", "DEPLOYMENT_MODULES",
+		"DEPLOYMENT_MODE", "DEPLOYMENT_PROFILE", "DEPLOYMENT_TOPOLOGY", "DEPLOYMENT_ROLE", "DEPLOYMENT_MODULES",
 		"POSTGRES_MANAGED", "REDIS_MANAGED", "OBJECT_STORAGE_MANAGED",
 		"SETUP_COMPLETED", "SETUP_TOKEN",
 		"DATABASE_URL", "REDIS_URL", "STORAGE_DRIVER", "STORAGE_S3_ENDPOINT", "STORAGE_S3_SECRET_ACCESS_KEY",
@@ -74,24 +74,24 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 			name: "docker full single",
 			context: DeploymentContext{
 				Mode: DeploymentModeDocker, Profile: DeploymentProfileFull, Role: DeploymentRoleSingle,
-				StorageDriver: "s3",
+				Topology: DeploymentTopologySingle, StorageDriver: "s3",
 			},
-			required: []string{"DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD", "SETUP_TOKEN"},
+			required: []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD", "SETUP_TOKEN"},
 		},
 		{
-			name: "docker core control",
+			name: "docker core cluster control",
 			context: DeploymentContext{
 				Mode: DeploymentModeDocker, Profile: DeploymentProfileCore, Role: DeploymentRoleControl,
-				StorageDriver: "local",
+				Topology: DeploymentTopologyCluster, StorageDriver: "s3",
 			},
-			required:  []string{"DATABASE_URL", "REDIS_URL", "STORAGE_LOCAL_ROOT", "SETUP_TOKEN", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
-			forbidden: []string{"POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD"},
+			required:  []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_BUCKET", "SETUP_TOKEN", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
+			forbidden: []string{"STORAGE_LOCAL_ROOT", "POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD"},
 		},
 		{
 			name: "native core api replica",
 			context: DeploymentContext{
 				Mode: DeploymentModeNative, Profile: DeploymentProfileCore, Role: DeploymentRoleAPI,
-				MultiNode: true, StorageDriver: "s3", SetupCompleted: true,
+				Topology: DeploymentTopologyCluster, StorageDriver: "s3", SetupCompleted: true,
 			},
 			required:  []string{"DATABASE_URL", "REDIS_URL", "STORAGE_S3_BUCKET", "AUTH_ACCESS_TOKEN_SECRET", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
 			forbidden: []string{"SETUP_TOKEN", "POSTGRES_PASSWORD"},
@@ -100,7 +100,7 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 			name: "native core worker",
 			context: DeploymentContext{
 				Mode: DeploymentModeNative, Profile: DeploymentProfileCore, Role: DeploymentRoleWorker,
-				MultiNode: true, StorageDriver: "s3", SetupCompleted: true,
+				Topology: DeploymentTopologyCluster, StorageDriver: "s3", SetupCompleted: true,
 			},
 			required:  []string{"DATABASE_URL", "REDIS_URL", "STORAGE_S3_ACCESS_KEY_ID", "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
 			forbidden: []string{"SETUP_TOKEN", "PUBLIC_API_URL", "AUTH_ACCESS_TOKEN_SECRET"},
@@ -109,7 +109,7 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 			name: "web node",
 			context: DeploymentContext{
 				Mode: DeploymentModeNative, Profile: DeploymentProfileCore, Role: DeploymentRoleWeb,
-				MultiNode: true, SetupCompleted: true,
+				Topology: DeploymentTopologyCluster, SetupCompleted: true,
 			},
 			required:  []string{"PUBLIC_API_URL", "INSTALLATION_ID", "CLUSTER_NODE_ID", "APPLICATION_VERSION"},
 			forbidden: []string{"DATABASE_URL", "REDIS_URL", "STORAGE_DRIVER", "AUTH_ACCESS_TOKEN_SECRET", "SETUP_TOKEN"},
@@ -142,14 +142,50 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 
 func TestRequiredRuntimeFieldsRejectsInvalidDeploymentContexts(t *testing.T) {
 	tests := []DeploymentContext{
-		{Mode: DeploymentModeNative, Profile: DeploymentProfileFull, Role: DeploymentRoleSingle, StorageDriver: "s3"},
-		{Mode: DeploymentModeDocker, Profile: DeploymentProfileFull, Role: DeploymentRoleControl, MultiNode: true, StorageDriver: "s3"},
-		{Mode: DeploymentModeDocker, Profile: DeploymentProfileCore, Role: DeploymentRoleWorker, MultiNode: true, StorageDriver: "local"},
-		{Mode: "unknown", Profile: DeploymentProfileCore, Role: DeploymentRoleSingle, StorageDriver: "local"},
+		{Mode: DeploymentModeNative, Profile: DeploymentProfileFull, Topology: DeploymentTopologySingle, Role: DeploymentRoleSingle, StorageDriver: "s3"},
+		{Mode: DeploymentModeDocker, Profile: DeploymentProfileFull, Topology: DeploymentTopologyCluster, Role: DeploymentRoleControl, StorageDriver: "s3"},
+		{Mode: DeploymentModeDocker, Profile: DeploymentProfileCore, Topology: DeploymentTopologyCluster, Role: DeploymentRoleWorker, StorageDriver: "local", SetupCompleted: true},
+		{Mode: DeploymentModeDocker, Profile: DeploymentProfileCore, Topology: DeploymentTopologySingle, Role: DeploymentRoleControl, StorageDriver: "local"},
+		{Mode: DeploymentModeDocker, Profile: DeploymentProfileCore, Topology: DeploymentTopologyCluster, Role: DeploymentRoleSingle, StorageDriver: "s3"},
+		{Mode: "unknown", Profile: DeploymentProfileCore, Topology: DeploymentTopologySingle, Role: DeploymentRoleSingle, StorageDriver: "local"},
 	}
 	for _, context := range tests {
 		if err := ValidateDeploymentContext(context); err == nil {
 			t.Errorf("expected invalid context to fail: %#v", context)
 		}
 	}
+}
+
+func TestRuntimeSchemaConnectionValidationRedactsCredentials(t *testing.T) {
+	schema := DefaultRuntimeSchema()
+	for _, key := range []string{"DATABASE_URL", "REDIS_URL"} {
+		field := runtimeSchemaFieldForTest(t, schema, key)
+		raw := "postgres://sensitive-user:top-secret@db.example/%zz"
+		if key == "REDIS_URL" {
+			raw = "redis://sensitive-user:top-secret@cache.example/%zz"
+		}
+		err := field.Validate(raw)
+		if err == nil {
+			t.Fatalf("%s validator accepted malformed percent escape", key)
+		}
+		if got := err.Error(); got != "connection URL is invalid" {
+			t.Errorf("%s returned unstable or non-redacted error %q", key, got)
+		}
+		for _, sensitive := range []string{raw, "sensitive-user", "top-secret"} {
+			if strings.Contains(err.Error(), sensitive) {
+				t.Errorf("%s validation error exposed sensitive input %q: %v", key, sensitive, err)
+			}
+		}
+	}
+}
+
+func runtimeSchemaFieldForTest(t *testing.T, schema RuntimeSchema, key string) RuntimeField {
+	t.Helper()
+	for _, field := range schema.Fields {
+		if field.Key == key {
+			return field
+		}
+	}
+	t.Fatalf("runtime schema field %s not found", key)
+	return RuntimeField{}
 }

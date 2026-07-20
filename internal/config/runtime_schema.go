@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -25,6 +26,13 @@ const (
 	DeploymentProfileCustom DeploymentProfile = "custom"
 )
 
+type DeploymentTopology string
+
+const (
+	DeploymentTopologySingle  DeploymentTopology = "single"
+	DeploymentTopologyCluster DeploymentTopology = "cluster"
+)
+
 type DeploymentRole string
 
 const (
@@ -46,8 +54,8 @@ const (
 type DeploymentContext struct {
 	Mode           DeploymentMode
 	Profile        DeploymentProfile
+	Topology       DeploymentTopology
 	Role           DeploymentRole
-	MultiNode      bool
 	StorageDriver  string
 	SetupCompleted bool
 }
@@ -80,6 +88,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("RUNTIME_SCHEMA_VERSION", "schema", "运行时配置 Schema 版本。升级工具使用它判断需要补充的字段。", "Runtime configuration schema version. Upgrade tooling uses it to add newly introduced fields.", "1", "1", FieldOwnerDeployctl, requiredAlways, validatePositiveInteger),
 			field("DEPLOYMENT_MODE", "deployment", "应用运行方式，可选 docker 或 native。", "Application runtime mode: docker or native.", "docker", "", FieldOwnerDeployctl, requiredAlways, validateDeploymentMode),
 			field("DEPLOYMENT_PROFILE", "deployment", "服务规格，可选 full、core 或 custom。原生部署不支持 full。", "Service profile: full, core, or custom. Native deployments do not support full.", "core", "", FieldOwnerDeployctl, requiredAlways, validateDeploymentProfile),
+			field("DEPLOYMENT_TOPOLOGY", "deployment", "部署拓扑，可选 single 或 cluster；集群拓扑中的后端节点必须使用 S3 对象存储。", "Deployment topology: single or cluster. Backend nodes in a cluster topology must use S3 object storage.", "single", "", FieldOwnerDeployctl, requiredAlways, validateDeploymentTopology),
 			field("DEPLOYMENT_ROLE", "deployment", "当前节点角色，可选 single、control、api、worker 或 web。", "Current node role: single, control, api, worker, or web.", "single", "", FieldOwnerDeployctl, requiredAlways, validateDeploymentRole),
 			field("DEPLOYMENT_MODULES", "deployment", "逗号分隔的本机模块清单，由部署工具维护。", "Comma-separated module list for this host, managed by the deployment tool.", "api,worker,user-web,admin-web,docs-web,gateway", "", FieldOwnerDeployctl, requiredAlways, validateNonEmpty),
 
@@ -192,6 +201,9 @@ func ValidateDeploymentContext(context DeploymentContext) error {
 	if err := validateDeploymentProfile(string(context.Profile)); err != nil {
 		return err
 	}
+	if err := validateDeploymentTopology(string(context.Topology)); err != nil {
+		return err
+	}
 	if err := validateDeploymentRole(string(context.Role)); err != nil {
 		return err
 	}
@@ -199,12 +211,18 @@ func ValidateDeploymentContext(context DeploymentContext) error {
 		return fmt.Errorf("native deployments do not support the full profile")
 	}
 	if context.Profile == DeploymentProfileFull {
-		if context.Mode != DeploymentModeDocker || context.Role != DeploymentRoleSingle || context.MultiNode {
+		if context.Mode != DeploymentModeDocker || context.Topology != DeploymentTopologySingle || context.Role != DeploymentRoleSingle {
 			return fmt.Errorf("the full profile supports only single-node Docker deployments")
 		}
 	}
-	if context.MultiNode && context.StorageDriver != "s3" && context.Role != DeploymentRoleWeb {
-		return fmt.Errorf("multi-node deployments require s3 object storage")
+	if context.Role == DeploymentRoleSingle && context.Topology != DeploymentTopologySingle {
+		return fmt.Errorf("role %q requires the single topology", context.Role)
+	}
+	if context.Role != DeploymentRoleSingle && context.Topology != DeploymentTopologyCluster {
+		return fmt.Errorf("role %q requires the cluster topology", context.Role)
+	}
+	if context.Topology == DeploymentTopologyCluster && context.StorageDriver != "s3" && context.Role != DeploymentRoleWeb {
+		return fmt.Errorf("cluster deployments require s3 object storage")
 	}
 	if context.Role != DeploymentRoleWeb {
 		if err := validateStorageDriver(context.StorageDriver); err != nil {
@@ -214,9 +232,6 @@ func ValidateDeploymentContext(context DeploymentContext) error {
 	if context.Role == DeploymentRoleAPI || context.Role == DeploymentRoleWorker || context.Role == DeploymentRoleWeb {
 		if context.Profile == DeploymentProfileFull {
 			return fmt.Errorf("joined nodes cannot use the full profile")
-		}
-		if !context.MultiNode {
-			return fmt.Errorf("role %q requires a multi-node deployment", context.Role)
 		}
 		if !context.SetupCompleted {
 			return fmt.Errorf("role %q can join only a completed installation", context.Role)
@@ -255,7 +270,7 @@ func requiredAPINode(context DeploymentContext) bool {
 }
 func requiredWebNode(context DeploymentContext) bool { return context.Role == DeploymentRoleWeb }
 func requiredClusterNode(context DeploymentContext) bool {
-	return context.Role != DeploymentRoleSingle
+	return context.Topology == DeploymentTopologyCluster
 }
 func requiredSetupAuthority(context DeploymentContext) bool {
 	return !context.SetupCompleted && (context.Role == DeploymentRoleSingle || context.Role == DeploymentRoleControl)
@@ -269,7 +284,7 @@ func requiredS3Storage(context DeploymentContext) bool {
 	return requiredBackend(context) && context.StorageDriver == "s3"
 }
 func requiredLocalStorage(context DeploymentContext) bool {
-	return requiredBackend(context) && !context.MultiNode && context.StorageDriver == "local"
+	return requiredBackend(context) && context.Topology == DeploymentTopologySingle && context.StorageDriver == "local"
 }
 
 func validateDeploymentMode(value string) error {
@@ -287,6 +302,15 @@ func validateDeploymentProfile(value string) error {
 		return nil
 	default:
 		return fmt.Errorf("deployment profile %q is invalid", value)
+	}
+}
+
+func validateDeploymentTopology(value string) error {
+	switch DeploymentTopology(value) {
+	case DeploymentTopologySingle, DeploymentTopologyCluster:
+		return nil
+	default:
+		return fmt.Errorf("deployment topology %q is invalid", value)
 	}
 }
 
@@ -379,7 +403,7 @@ func validateConnectionURL(schemes ...string) func(string) error {
 		}
 		parsed, err := url.Parse(value)
 		if err != nil {
-			return fmt.Errorf("parse connection URL: %w", err)
+			return errors.New("connection URL is invalid")
 		}
 		for _, scheme := range schemes {
 			if parsed.Scheme == scheme && parsed.Host != "" {
