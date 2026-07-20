@@ -57,20 +57,31 @@ wait_for_api() {
 }
 
 stop_old_dev_writers() {
-  local service container_id
+  local service container_id writer_ids running
   for service in api worker minio; do
+    if ! writer_ids="$(docker ps -aq \
+      --filter "label=com.docker.compose.project=pic-gallery-dev" \
+      --filter "label=com.docker.compose.service=$service")"; then
+      fail "failed to list old writer containers: $service"
+    fi
     while IFS= read -r container_id; do
       [[ -n "$container_id" ]] || continue
-      if container_running "$container_id"; then
+      if ! running="$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null)"; then
+        fail "failed to inspect old writer state: $container_id"
+      fi
+      if [[ "$running" == "true" ]]; then
         OLD_WRITER_IDS+=("$container_id")
         docker stop "$container_id" >/dev/null
+      elif [[ "$running" != "false" ]]; then
+        fail "unexpected old writer state for $container_id: $running"
       fi
-    done < <(docker ps -aq \
-      --filter "label=com.docker.compose.project=pic-gallery-dev" \
-      --filter "label=com.docker.compose.service=$service")
+    done <<<"$writer_ids"
   done
   for container_id in "${OLD_WRITER_IDS[@]}"; do
-    container_running "$container_id" && fail "old writer is still running after stop: $container_id"
+    if ! running="$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null)"; then
+      fail "failed to inspect old writer state after stop: $container_id"
+    fi
+    [[ "$running" == "false" ]] || fail "old writer is still running after stop: $container_id"
   done
 }
 

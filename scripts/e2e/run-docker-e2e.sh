@@ -6,6 +6,7 @@ COMPOSE_FILE="$ROOT_DIR/deployments/docker-compose/docker-compose.local.yml"
 ENV_FILE="$ROOT_DIR/deployments/docker-compose/.env.example"
 STATE_HELPER="$ROOT_DIR/scripts/e2e/local-state.sh"
 RUNNER_STATE="$ROOT_DIR/scripts/e2e/local-runner-state.sh"
+SCRIPT_PATH="$ROOT_DIR/scripts/e2e/run-docker-e2e.sh"
 
 source "$RUNNER_STATE"
 
@@ -23,6 +24,7 @@ database and object state is restored when the run exits.
 
 Options:
   --start   Start or update the E2E compose stack before testing.
+  --recover Restore the retained snapshot from a failed or interrupted E2E run.
 
 Environment:
   DEV_NGINX_PORT Shared local nginx port. Default: 8088
@@ -30,10 +32,15 @@ EOF
 }
 
 START_STACK=false
+RECOVER_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --start)
       START_STACK=true
+      shift
+      ;;
+    --recover)
+      RECOVER_ONLY=true
       shift
       ;;
     --clean)
@@ -62,9 +69,11 @@ ADMIN_WEB_URL="${ADMIN_WEB_URL:-$LOCAL_BASE_URL/admin}"
 NGINX_URL="${NGINX_URL:-$LOCAL_BASE_URL}"
 SNAPSHOT_DIR="$ROOT_DIR/tmp/e2e/local-state-$(date +%Y%m%d%H%M%S)-$$"
 LOCK_FILE="$ROOT_DIR/tmp/e2e/pic-gallery-local.lock"
+RECOVERY_MARKER="$ROOT_DIR/tmp/e2e/pic-gallery-local-recovery-required"
 STATE_SNAPSHOTTED=false
 WRITERS_STOPPED=false
 LOCK_ACQUIRED=false
+RECOVERY_IN_PROGRESS=false
 WRITER_CONTAINER_IDS=()
 
 assert_local_url() {
@@ -106,6 +115,23 @@ release_e2e_lock() {
   LOCK_ACQUIRED=false
 }
 
+write_recovery_marker() {
+  local phase=$1
+  local pending_marker="${RECOVERY_MARKER}.tmp.$$"
+  printf 'snapshot_dir=%s\nphase=%s\nowner_pid=%s\n' "$SNAPSHOT_DIR" "$phase" "$$" >"$pending_marker"
+  mv "$pending_marker" "$RECOVERY_MARKER"
+}
+
+recovery_snapshot_dir() {
+  sed -n 's/^snapshot_dir=//p' "$RECOVERY_MARKER" | head -n 1
+}
+
+clear_recovery_state() {
+  find "$SNAPSHOT_DIR" -mindepth 1 -delete
+  rmdir "$SNAPSHOT_DIR"
+  unlink "$RECOVERY_MARKER"
+}
+
 wait_for_local_api() {
   for _ in {1..120}; do
     if curl --silent --fail --max-time 2 "$BASE_URL/readyz" >/dev/null 2>&1; then
@@ -125,12 +151,21 @@ start_writers() {
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  if [[ "$STATE_SNAPSHOTTED" == true ]]; then
+  if [[ "$RECOVERY_IN_PROGRESS" == true ]]; then
+    stop_writers >/dev/null 2>&1 || true
+    echo "E2E recovery did not complete; writers remain stopped where possible and recovery marker is retained at $RECOVERY_MARKER" >&2
+    status=1
+  elif [[ "$STATE_SNAPSHOTTED" == true ]]; then
+    write_recovery_marker stopping-for-restore || true
     if stop_writers; then
+      write_recovery_marker restoring || true
       if "$STATE_HELPER" restore "$SNAPSHOT_DIR"; then
+        write_recovery_marker starting-writers || true
         if start_writers; then
-          find "$SNAPSHOT_DIR" -mindepth 1 -delete
-          rmdir "$SNAPSHOT_DIR"
+          if ! clear_recovery_state; then
+            echo "E2E state restored but recovery marker cleanup failed: $RECOVERY_MARKER" >&2
+            status=1
+          fi
         else
           echo "E2E restore succeeded but the local API did not become ready" >&2
           status=1
@@ -155,6 +190,29 @@ trap 'exit 130' INT TERM
 
 acquire_e2e_lock || fail "another shared local E2E run is active"
 
+if [[ "$RECOVER_ONLY" == true ]]; then
+  [[ -f "$RECOVERY_MARKER" ]] || fail "no shared E2E recovery marker exists"
+  SNAPSHOT_DIR="$(recovery_snapshot_dir)"
+  case "$SNAPSHOT_DIR" in
+    "$ROOT_DIR"/tmp/e2e/local-state-*) ;;
+    *) fail "recovery marker contains an unsafe snapshot path" ;;
+  esac
+  [[ -d "$SNAPSHOT_DIR" ]] || fail "recovery snapshot directory is missing: $SNAPSHOT_DIR"
+  RECOVERY_IN_PROGRESS=true
+  write_recovery_marker recovery-stopping
+  stop_writers || fail "writers could not be stopped for shared E2E recovery"
+  write_recovery_marker recovering
+  "$STATE_HELPER" restore "$SNAPSHOT_DIR" || fail "shared E2E recovery restore failed"
+  write_recovery_marker recovery-starting-writers
+  start_writers || fail "shared E2E recovery restored data but the API did not become ready"
+  RECOVERY_IN_PROGRESS=false
+  clear_recovery_state || fail "shared E2E recovery succeeded but marker cleanup failed"
+  echo "shared local E2E: recovery completed"
+  exit 0
+fi
+
+[[ ! -f "$RECOVERY_MARKER" ]] || fail "recovery required before another shared E2E run; run $SCRIPT_PATH --recover"
+
 if [[ "$START_STACK" == true ]]; then
   "${COMPOSE[@]}" config -q
   "${COMPOSE[@]}" up -d --build --remove-orphans
@@ -166,8 +224,13 @@ wait_for_local_api || {
 }
 
 stop_writers || fail "writers could not be stopped before the E2E snapshot"
-"$STATE_HELPER" snapshot "$SNAPSHOT_DIR"
+write_recovery_marker snapshot-in-progress || fail "could not create the shared E2E recovery marker"
+if ! "$STATE_HELPER" snapshot "$SNAPSHOT_DIR"; then
+  unlink "$RECOVERY_MARKER" >/dev/null 2>&1 || true
+  fail "shared local state snapshot failed"
+fi
 STATE_SNAPSHOTTED=true
+write_recovery_marker test-running || fail "could not update the shared E2E recovery marker"
 start_writers || {
   echo "Shared local API did not recover after the E2E snapshot" >&2
   exit 1

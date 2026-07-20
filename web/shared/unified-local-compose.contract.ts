@@ -47,6 +47,10 @@ for (const required of [
   'release_e2e_lock',
   'readlink "$LOCK_FILE"',
   'kill -0 "$owner_pid"',
+  'RECOVERY_MARKER',
+  'write_recovery_marker',
+  'recovery required before another shared E2E run',
+  '--recover',
   'if stop_writers; then',
   'snapshot',
   'restore',
@@ -77,7 +81,7 @@ for (const required of ['pg_dump', 'pg_restore', 'minio-data', 'shared-storage',
 if (/docker volume rm|down\s+-v/.test(stateHelper)) throw new Error('local state helper must not delete persistent local volumes')
 
 const migration = requireSource('scripts/dev/migrate-unified-local.sh')
-for (const required of ['pg_dump', 'pg_restore --list', 'database-manifest', 'minio-manifest', 'shared-storage-manifest', '--execute', 'stop_old_dev_writers', 'old writer is still running', 'SOURCE_STARTED_BY_MIGRATION', 'DEV_NGINX_PORT:-8088', 'docker volume rm pic-gallery-dev_postgres-data']) {
+for (const required of ['pg_dump', 'pg_restore --list', 'database-manifest', 'minio-manifest', 'shared-storage-manifest', '--execute', 'stop_old_dev_writers', 'failed to list old writer containers', 'failed to inspect old writer state', 'old writer is still running', 'SOURCE_STARTED_BY_MIGRATION', 'DEV_NGINX_PORT:-8088', 'docker volume rm pic-gallery-dev_postgres-data']) {
   if (!migration.includes(required)) throw new Error(`migration safety flow is missing ${required}`)
 }
 if (!migration.includes('old volumes retained')) throw new Error('migration must retain old volumes until separate final cleanup')
