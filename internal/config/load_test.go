@@ -187,7 +187,9 @@ func TestLoadRuntimeUsesFileValuesInsteadOfProcessEnvironment(t *testing.T) {
 
 func TestLoadRuntimeCarriesIdentityFromTheSameRuntimeSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.env")
+	t.Setenv("DEPLOYMENT_ROLE", string(DeploymentRoleWorker))
 	values := completeRuntimeValuesForTest()
+	values["DEPLOYMENT_ROLE"] = string(DeploymentRoleSingle)
 	values["INSTALLATION_ID"] = "snapshot-installation"
 	values["APPLICATION_VERSION"] = "snapshot-v1"
 	values["CONFIG_REVISION"] = "7"
@@ -199,6 +201,9 @@ func TestLoadRuntimeCarriesIdentityFromTheSameRuntimeSnapshot(t *testing.T) {
 	}
 	if cfg.Runtime.Path != path {
 		t.Fatalf("runtime path = %q, want %q", cfg.Runtime.Path, path)
+	}
+	if cfg.Runtime.DeploymentRole != DeploymentRoleSingle {
+		t.Fatalf("runtime deployment role = %q, want file role %q", cfg.Runtime.DeploymentRole, DeploymentRoleSingle)
 	}
 	if cfg.Runtime.InstallationID != "snapshot-installation" {
 		t.Fatalf("runtime installation ID = %q", cfg.Runtime.InstallationID)

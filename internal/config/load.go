@@ -123,6 +123,7 @@ func LoadRuntime(path string) (Config, error) {
 
 	cfg := configFromRuntimeValues(bootstrap.Values)
 	cfg.Runtime = RuntimeConfig{
+		DeploymentRole:      bootstrap.Deployment.Role,
 		Path:                bootstrap.Path,
 		InstallationID:      bootstrap.InstallationID,
 		ApplicationVersion:  bootstrap.ApplicationVersion,

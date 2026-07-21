@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -11,6 +13,7 @@ import (
 func TestRunDatabaseMigrationLoadsOneRuntimeSnapshot(t *testing.T) {
 	wantConfig := config.Config{
 		Runtime: config.RuntimeConfig{
+			DeploymentRole:      config.DeploymentRoleSingle,
 			InstallationID:      "installation-snapshot",
 			ApplicationVersion:  "v1.2.3",
 			ConfigSchemaVersion: 4,
@@ -56,5 +59,64 @@ func TestRunDatabaseMigrationLoadsOneRuntimeSnapshot(t *testing.T) {
 	}
 	if result.Current.InstallationID != wantConfig.Runtime.InstallationID {
 		t.Fatalf("migration result = %#v", result)
+	}
+}
+
+func TestRunDatabaseMigrationEnforcesControlRoleBeforeMigrator(t *testing.T) {
+	tests := []struct {
+		name    string
+		role    config.DeploymentRole
+		allowed bool
+	}{
+		{name: "single", role: config.DeploymentRoleSingle, allowed: true},
+		{name: "control", role: config.DeploymentRoleControl, allowed: true},
+		{name: "api", role: config.DeploymentRoleAPI},
+		{name: "worker", role: config.DeploymentRoleWorker},
+		{name: "web", role: config.DeploymentRoleWeb},
+		{name: "empty"},
+		{name: "unknown", role: config.DeploymentRole("unknown")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			migrateCalls := 0
+			cfg := config.Config{
+				Runtime: config.RuntimeConfig{
+					DeploymentRole:      tt.role,
+					InstallationID:      "installation-test",
+					ApplicationVersion:  "v1",
+					ConfigSchemaVersion: 1,
+				},
+				Database: config.DatabaseConfig{URL: "postgres://app:do-not-leak@db/app"},
+			}
+			loader := func(string) (config.Config, error) { return cfg, nil }
+			migrator := func(context.Context, string, db.MigrationRequest) (db.MigrationResult, error) {
+				migrateCalls++
+				return db.MigrationResult{}, nil
+			}
+
+			_, err := runDatabaseMigration(context.Background(), "runtime.env", loader, migrator)
+			if tt.allowed {
+				if err != nil {
+					t.Fatalf("allowed role %q rejected: %v", tt.role, err)
+				}
+				if migrateCalls != 1 {
+					t.Fatalf("allowed role migrator calls = %d, want 1", migrateCalls)
+				}
+				return
+			}
+			if !errors.Is(err, ErrDatabaseMigrationRoleForbidden) {
+				t.Fatalf("role %q error = %T %v, want forbidden sentinel", tt.role, err, err)
+			}
+			var roleErr *DatabaseMigrationRoleError
+			if !errors.As(err, &roleErr) || roleErr.Role != tt.role {
+				t.Fatalf("role %q error = %T %v, want typed role error", tt.role, err, err)
+			}
+			if migrateCalls != 0 {
+				t.Fatalf("forbidden role migrator calls = %d, want 0", migrateCalls)
+			}
+			if strings.Contains(err.Error(), "do-not-leak") {
+				t.Fatalf("role rejection leaked database credentials: %v", err)
+			}
+		})
 	}
 }
