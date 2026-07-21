@@ -110,7 +110,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("OBJECT_STORAGE_MANAGED", "ownership", "对象存储是否由当前 Docker 完整部署管理。", "Whether object storage is managed by this Docker full deployment.", "false", "false", FieldOwnerDeployctl, requiredAlways, validateBool),
 
 			field("SETUP_COMPLETED", "setup", "首次初始化是否已经完整提交。不得通过手工修改此值绕过初始化。", "Whether first-run setup has been fully committed. Do not edit this value to bypass setup.", "false", "false", FieldOwnerApplication, requiredAlways, validateBool),
-			secretField("SETUP_TOKEN", "setup", "首次初始化使用的一次性访问凭证；初始化完成后会被移除。", "One-time access credential for first-run setup; removed after setup completes.", FieldOwnerDeployctl, requiredSetupAuthority),
+			secretField("SETUP_TOKEN", "setup", "首次初始化访问凭证；初始化完成前可重复使用，完成后会被移除并永久失效。", "First-run setup access credential; reusable until setup completes, then removed and permanently invalidated.", FieldOwnerDeployctl, requiredSetupAuthority),
 			field("SETUP_TOKEN_VERSION", "setup", "初始化访问凭证的单调递增版本。重置凭证时版本加一，用于立即作废旧凭证和会话；初始化完成后保留最后版本。", "Monotonically increasing setup credential version. Reset increments it to invalidate old credentials and sessions immediately; the final version is retained after setup completes.", "1", "1", FieldOwnerDeployctl, requiredSetupAuthorityRole, validateRequiredPositiveUint64),
 
 			field("POSTGRES_DATABASE", "managed middleware", "Docker 完整模式创建的 PostgreSQL 数据库名，仅由部署工具维护。", "PostgreSQL database name created in Docker full mode and managed only by the deployment tool.", "app", "", FieldOwnerDeployctl, requiredDockerFull, validateNonEmpty),
