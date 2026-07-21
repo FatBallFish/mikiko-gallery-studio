@@ -59,9 +59,10 @@ func (r *StaticRouter) BackendFor(_ context.Context, configID string, legacyDriv
 }
 
 type Registry struct {
-	source ConfigSource
-	ttl    time.Duration
-	now    func() time.Time
+	source     ConfigSource
+	ttl        time.Duration
+	now        func() time.Time
+	newBackend func(config.StorageConfig) (Backend, error)
 
 	mu       sync.Mutex
 	resolved map[string]cachedResolved
@@ -77,7 +78,7 @@ func NewRegistry(source ConfigSource, ttl time.Duration) *Registry {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
-	return &Registry{source: source, ttl: ttl, now: time.Now, resolved: map[string]cachedResolved{}, backends: map[string]BackendRef{}}
+	return &Registry{source: source, ttl: ttl, now: time.Now, newBackend: NewBackend, resolved: map[string]cachedResolved{}, backends: map[string]BackendRef{}}
 }
 
 func (r *Registry) DefaultWriter(ctx context.Context) (BackendRef, error) {
@@ -170,24 +171,24 @@ func (r *Registry) Invalidate(event StorageInvalidation) {
 
 func (r *Registry) Probe(ctx context.Context, resolved domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {
 	start := r.now()
-	backend, err := NewBackend(StorageConfigFromResolved(resolved))
+	backend, err := r.newBackend(StorageConfigFromResolved(resolved))
 	if err != nil {
 		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), Message: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	key := ".pic-gallery-probe/" + start.UTC().Format("20060102150405.000000000") + ".txt"
+	key := ".pic-gallery-probe-" + start.UTC().Format("20060102150405.000000000") + ".txt"
 	content := []byte("pic-gallery-storage-probe")
 	if err := backend.Put(ctx, key, "text/plain", content); err != nil {
 		return probeFailure(r, start, err)
 	}
 	got, err := backend.Get(ctx, key)
 	if err != nil {
-		_ = backend.Delete(context.Background(), key)
+		_ = backend.Delete(ctx, key)
 		return probeFailure(r, start, err)
 	}
 	if !bytes.Equal(got, content) {
-		_ = backend.Delete(context.Background(), key)
+		_ = backend.Delete(ctx, key)
 		return probeFailure(r, start, errors.New("probe object content mismatch"))
 	}
 	if err := backend.Delete(ctx, key); err != nil && !errors.Is(err, ErrNotFound) {

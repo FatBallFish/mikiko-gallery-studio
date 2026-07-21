@@ -20,10 +20,12 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
+	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	"github.com/fatballfish/pic-gallery/internal/setup"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
 func TestLoadAPIStartupSelectsSetupFromTolerantStateBeforeRuntimeLoad(t *testing.T) {
@@ -472,6 +474,139 @@ func TestRunNormalStartupBoundsDatabaseCompatibilityBeforeListen(t *testing.T) {
 		<-result
 		t.Fatal("normal startup database compatibility remained unbounded")
 	}
+}
+
+func TestRunNormalStartupProbesLiveStorageBeforeBusinessConstructionAndListen(t *testing.T) {
+	contents, err := os.ReadFile("run.go")
+	if err != nil {
+		t.Fatalf("read run.go: %v", err)
+	}
+	source := string(contents)
+	registryAt := strings.Index(source, "storageRegistry := storage.NewRegistry")
+	probeAt := strings.Index(source, "if err := probeDefaultStorageAtStartup(startupContext, storageConfigSvc, storageRegistry); err != nil")
+	subscriberAt := strings.Index(source, "startStorageInvalidationSubscriber(")
+	businessAt := strings.Index(source, "authservice.NewServiceWithStoreAndRedis(")
+	listenAt := strings.Index(source, "srv.ListenAndServe()")
+	if registryAt < 0 || probeAt < 0 || subscriberAt < 0 || businessAt < 0 || listenAt < 0 {
+		t.Fatalf("normal startup storage probe guard or ordering marker is missing")
+	}
+	if !(registryAt < probeAt && probeAt < subscriberAt && probeAt < businessAt && probeAt < listenAt) {
+		t.Fatalf("normal startup must fail closed on live storage probe before subscriber, business construction, and listen")
+	}
+}
+
+func TestProbeDefaultStorageAtStartupUsesLiveLocalIOAndCleansProbeObject(t *testing.T) {
+	root := t.TempDir()
+	source := fixedStartupStorageSource{resolved: startupLocalStorageConfig(root)}
+	registry := storage.NewRegistry(source, time.Minute)
+	if err := probeDefaultStorageAtStartup(context.Background(), source, registry); err != nil {
+		t.Fatalf("probe default local storage: %v", err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read local storage root: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("startup storage probe left artifacts in local root: %#v", entries)
+	}
+}
+
+func TestProbeDefaultStorageAtStartupRejectsCurrentlyUnwritableDefaultDespitePersistedSuccess(t *testing.T) {
+	secretPath := filepath.Join(t.TempDir(), "storage-secret-path")
+	if err := os.WriteFile(secretPath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write path blocker: %v", err)
+	}
+	resolved := startupLocalStorageConfig(filepath.Join(secretPath, "objects"))
+	resolved.LastProbeStatus = domainstorageconfig.ProbeStatusSuccess
+	source := fixedStartupStorageSource{resolved: resolved}
+	err := probeDefaultStorageAtStartup(context.Background(), source, storage.NewRegistry(source, time.Minute))
+	if !errors.Is(err, ErrStartupStorageProbe) {
+		t.Fatalf("unwritable default storage error=%v, want ErrStartupStorageProbe", err)
+	}
+	if strings.Contains(err.Error(), secretPath) {
+		t.Fatalf("startup storage error leaked local path: %v", err)
+	}
+}
+
+func TestProbeDefaultStorageAtStartupSanitizesResolverAndProbeFailures(t *testing.T) {
+	const secret = "sensitive-storage-endpoint-and-access-key-detail"
+	t.Run("resolver", func(t *testing.T) {
+		err := probeDefaultStorageAtStartup(context.Background(), fixedStartupStorageSource{err: errors.New(secret)}, startupStorageProberFunc(nil))
+		if !errors.Is(err, ErrStartupStorageProbe) || strings.Contains(err.Error(), secret) {
+			t.Fatalf("resolver failure was not stable and sanitized: %v", err)
+		}
+	})
+	t.Run("live probe", func(t *testing.T) {
+		resolved := startupLocalStorageConfig(t.TempDir())
+		resolved.LastProbeStatus = domainstorageconfig.ProbeStatusSuccess
+		called := false
+		err := probeDefaultStorageAtStartup(context.Background(), fixedStartupStorageSource{resolved: resolved}, startupStorageProberFunc(func(context.Context, domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {
+			called = true
+			return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, Message: secret}
+		}))
+		if !called || !errors.Is(err, ErrStartupStorageProbe) || strings.Contains(err.Error(), secret) {
+			t.Fatalf("live probe failure was skipped, unstable, or leaked details: called=%v err=%v", called, err)
+		}
+	})
+}
+
+func TestProbeDefaultStorageAtStartupPreservesCancellationAndDeadline(t *testing.T) {
+	resolved := startupLocalStorageConfig(t.TempDir())
+	t.Run("already canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		called := false
+		err := probeDefaultStorageAtStartup(ctx, fixedStartupStorageSource{resolved: resolved}, startupStorageProberFunc(func(context.Context, domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {
+			called = true
+			return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusSuccess}
+		}))
+		if !errors.Is(err, context.Canceled) || called {
+			t.Fatalf("canceled startup probe = called %v, err %v; want no I/O and context.Canceled", called, err)
+		}
+	})
+	t.Run("deadline during probe", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		started := time.Now()
+		err := probeDefaultStorageAtStartup(ctx, fixedStartupStorageSource{resolved: resolved}, startupStorageProberFunc(func(ctx context.Context, _ domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {
+			<-ctx.Done()
+			return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, Message: "deadline details"}
+		}))
+		if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > 250*time.Millisecond {
+			t.Fatalf("deadline startup probe elapsed=%s err=%v", time.Since(started), err)
+		}
+	})
+}
+
+type fixedStartupStorageSource struct {
+	resolved domainstorageconfig.ResolvedConfig
+	err      error
+}
+
+func (s fixedStartupStorageSource) ResolveDefaultWritable(context.Context) (domainstorageconfig.ResolvedConfig, error) {
+	return s.resolved, s.err
+}
+
+func (s fixedStartupStorageSource) ResolveByID(context.Context, string) (domainstorageconfig.ResolvedConfig, error) {
+	return s.resolved, s.err
+}
+
+func (s fixedStartupStorageSource) ResolveLegacyByDriver(context.Context, string) (domainstorageconfig.ResolvedConfig, error) {
+	return s.resolved, s.err
+}
+
+type startupStorageProberFunc func(context.Context, domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult
+
+func (f startupStorageProberFunc) Probe(ctx context.Context, resolved domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {
+	return f(ctx, resolved)
+}
+
+func startupLocalStorageConfig(root string) domainstorageconfig.ResolvedConfig {
+	return domainstorageconfig.ResolvedConfig{ConfigRecord: domainstorageconfig.ConfigRecord{
+		ID: "startup-local", Code: "startup-local", Name: "Startup Local", Driver: domainstorageconfig.DriverLocal,
+		Provider: domainstorageconfig.ProviderLocal, Status: domainstorageconfig.StatusEnabled,
+		ReadEnabled: true, WriteEnabled: true, IsDefault: true, LocalRoot: root, Version: 1,
+	}}
 }
 
 func newTCPBlackhole(t *testing.T) (net.Listener, func()) {

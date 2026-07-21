@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 )
 
@@ -78,6 +80,76 @@ func TestRegistryRoutesHistoricalResourceByStorageConfigID(t *testing.T) {
 	}
 	if ref.ConfigID != "old" || ref.Version != 2 {
 		t.Fatalf("expected historical old v2, got %#v", ref)
+	}
+}
+
+func TestRegistryProbeFailureCleanupRemainsBounded(t *testing.T) {
+	testCases := []struct {
+		name   string
+		get    []byte
+		getErr error
+	}{
+		{name: "get failure", getErr: errors.New("get failed")},
+		{name: "content mismatch", get: []byte("wrong probe content")},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			backend := &blockingProbeCleanupBackend{
+				get: testCase.get, getErr: testCase.getErr,
+				deleteStarted: make(chan struct{}), releaseDelete: make(chan struct{}),
+			}
+			registry := NewRegistry(nil, time.Minute)
+			registry.newBackend = func(config.StorageConfig) (Backend, error) { return backend, nil }
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			result := make(chan domainstorageconfig.ProbeResult, 1)
+			go func() {
+				result <- registry.Probe(ctx, domainstorageconfig.ResolvedConfig{})
+			}()
+			select {
+			case <-backend.deleteStarted:
+			case <-time.After(200 * time.Millisecond):
+				close(backend.releaseDelete)
+				<-result
+				t.Fatal("probe did not attempt best-effort cleanup")
+			}
+			select {
+			case probeResult := <-result:
+				if probeResult.Status != domainstorageconfig.ProbeStatusFailed {
+					t.Fatalf("probe result=%#v, want failed", probeResult)
+				}
+			case <-time.After(200 * time.Millisecond):
+				close(backend.releaseDelete)
+				<-result
+				t.Fatal("probe cleanup ignored the bounded probe context")
+			}
+		})
+	}
+}
+
+type blockingProbeCleanupBackend struct {
+	get           []byte
+	getErr        error
+	deleteStarted chan struct{}
+	releaseDelete chan struct{}
+	deleteOnce    sync.Once
+}
+
+func (b *blockingProbeCleanupBackend) Driver() string { return "test" }
+
+func (b *blockingProbeCleanupBackend) Put(context.Context, string, string, []byte) error { return nil }
+
+func (b *blockingProbeCleanupBackend) Get(context.Context, string) ([]byte, error) {
+	return b.get, b.getErr
+}
+
+func (b *blockingProbeCleanupBackend) Delete(ctx context.Context, _ string) error {
+	b.deleteOnce.Do(func() { close(b.deleteStarted) })
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.releaseDelete:
+		return errors.New("cleanup released by test")
 	}
 }
 

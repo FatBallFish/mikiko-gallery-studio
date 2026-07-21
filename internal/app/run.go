@@ -15,6 +15,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	apphttp "github.com/fatballfish/pic-gallery/internal/http/router"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
@@ -44,6 +45,9 @@ const SupervisorRestartExitCode = 75
 
 // ErrSupervisorRestart is returned only after the setup response is flushed and the HTTP server shuts down.
 var ErrSupervisorRestart = errors.New("api restart requested after setup completion")
+
+// ErrStartupStorageProbe reports a failed live read-write storage check without exposing backend details.
+var ErrStartupStorageProbe = errors.New("startup storage read-write probe failed")
 
 // ExitCode maps API termination causes to process exit codes used by cmd/api.
 func ExitCode(err error) int {
@@ -283,6 +287,9 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
+	if err := probeDefaultStorageAtStartup(startupContext, storageConfigSvc, storageRegistry); err != nil {
+		return err
+	}
 	var storageInvalidationBus *storage.RedisInvalidationBus
 	if redisClient != nil {
 		storageInvalidationBus = storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)
@@ -332,6 +339,53 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 		return nil
 	}
 	return err
+}
+
+type startupStorageResolver interface {
+	ResolveDefaultWritable(context.Context) (domainstorageconfig.ResolvedConfig, error)
+}
+
+type startupStorageProber interface {
+	Probe(context.Context, domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult
+}
+
+func probeDefaultStorageAtStartup(ctx context.Context, resolver startupStorageResolver, prober startupStorageProber) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if resolver == nil || prober == nil {
+		return ErrStartupStorageProbe
+	}
+	resolved, err := resolver.ResolveDefaultWritable(ctx)
+	if err != nil {
+		return sanitizedStartupDependencyError(ctx, err, ErrStartupStorageProbe)
+	}
+	result := prober.Probe(ctx, resolved)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if result.Status != domainstorageconfig.ProbeStatusSuccess {
+		return ErrStartupStorageProbe
+	}
+	return nil
+}
+
+func sanitizedStartupDependencyError(ctx context.Context, err, fallback error) error {
+	if ctx != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return fallback
 }
 
 func runtimeMatchesBootstrapSnapshot(cfg config.Config, bootstrap config.BootstrapConfig) bool {
