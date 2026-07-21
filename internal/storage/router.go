@@ -18,6 +18,11 @@ var (
 	ErrStorageUnreadable = errors.New("storage config is not readable")
 )
 
+const (
+	defaultRegistryProbeTimeout = 10 * time.Second
+	defaultRegistryProbeWorkers = 8
+)
+
 type BackendRef struct {
 	ConfigID string
 	Driver   string
@@ -59,10 +64,13 @@ func (r *StaticRouter) BackendFor(_ context.Context, configID string, legacyDriv
 }
 
 type Registry struct {
-	source     ConfigSource
-	ttl        time.Duration
-	now        func() time.Time
-	newBackend func(config.StorageConfig) (Backend, error)
+	source              ConfigSource
+	ttl                 time.Duration
+	now                 func() time.Time
+	newBackend          func(config.StorageConfig) (Backend, error)
+	probeTimeout        time.Duration
+	probeCleanupTimeout time.Duration
+	probeSlots          chan struct{}
 
 	mu       sync.Mutex
 	resolved map[string]cachedResolved
@@ -78,7 +86,12 @@ func NewRegistry(source ConfigSource, ttl time.Duration) *Registry {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
-	return &Registry{source: source, ttl: ttl, now: time.Now, newBackend: NewBackend, resolved: map[string]cachedResolved{}, backends: map[string]BackendRef{}}
+	return &Registry{
+		source: source, ttl: ttl, now: time.Now, newBackend: NewBackend,
+		probeTimeout: defaultRegistryProbeTimeout, probeCleanupTimeout: time.Second,
+		probeSlots: make(chan struct{}, defaultRegistryProbeWorkers),
+		resolved:   map[string]cachedResolved{}, backends: map[string]BackendRef{},
+	}
 }
 
 func (r *Registry) DefaultWriter(ctx context.Context) (BackendRef, error) {
@@ -171,27 +184,99 @@ func (r *Registry) Invalidate(event StorageInvalidation) {
 
 func (r *Registry) Probe(ctx context.Context, resolved domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {
 	start := r.now()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	probeContext, cancelProbe := context.WithTimeout(ctx, r.probeTimeout)
+	defer cancelProbe()
+	if err := probeContext.Err(); err != nil {
+		return probeFailure(r, start, err)
+	}
+	select {
+	case r.probeSlots <- struct{}{}:
+	case <-probeContext.Done():
+		return probeFailure(r, start, probeContext.Err())
+	}
+	if err := probeContext.Err(); err != nil {
+		<-r.probeSlots
+		return probeFailure(r, start, err)
+	}
+
+	resultChannel := make(chan domainstorageconfig.ProbeResult, 1)
+	go func() {
+		defer func() { <-r.probeSlots }()
+		result := domainstorageconfig.ProbeResult{}
+		func() {
+			defer func() {
+				if recover() != nil {
+					result = probeFailure(r, start, errors.New("storage probe runner panicked"))
+				}
+			}()
+			result = r.runProbeIO(probeContext, resolved, start)
+		}()
+		resultChannel <- result
+	}()
+
+	select {
+	case result := <-resultChannel:
+		if err := probeContext.Err(); err != nil {
+			return probeFailure(r, start, err)
+		}
+		return result
+	case <-probeContext.Done():
+		return probeFailure(r, start, probeContext.Err())
+	}
+}
+
+func (r *Registry) runProbeIO(ctx context.Context, resolved domainstorageconfig.ResolvedConfig, start time.Time) (result domainstorageconfig.ProbeResult) {
+	if err := ctx.Err(); err != nil {
+		return probeFailure(r, start, err)
+	}
 	backend, err := r.newBackend(StorageConfigFromResolved(resolved))
 	if err != nil {
 		return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusFailed, CheckedAt: r.now().UTC(), Message: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return probeFailure(r, start, err)
+	}
 	key := ".pic-gallery-probe-" + start.UTC().Format("20060102150405.000000000") + ".txt"
 	content := []byte("pic-gallery-storage-probe")
+	cleanupRequired := true
+	defer func() {
+		if !cleanupRequired {
+			return
+		}
+		cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), r.probeCleanupTimeout)
+		defer cancelCleanup()
+		if cleanupErr := backend.Delete(cleanupContext, key); cleanupErr != nil && !errors.Is(cleanupErr, ErrNotFound) {
+			result = probeFailure(r, start, errors.New("probe object cleanup failed"))
+		}
+	}()
 	if err := backend.Put(ctx, key, "text/plain", content); err != nil {
 		return probeFailure(r, start, err)
 	}
-	got, err := backend.Get(ctx, key)
+	if err := ctx.Err(); err != nil {
+		return probeFailure(r, start, err)
+	}
+	boundedGetter, ok := backend.(BoundedGetter)
+	if !ok {
+		return probeFailure(r, start, errors.New("storage backend does not support bounded reads"))
+	}
+	got, err := boundedGetter.GetBounded(ctx, key, int64(len(content)))
 	if err != nil {
-		_ = backend.Delete(ctx, key)
+		return probeFailure(r, start, err)
+	}
+	if err := ctx.Err(); err != nil {
 		return probeFailure(r, start, err)
 	}
 	if !bytes.Equal(got, content) {
-		_ = backend.Delete(ctx, key)
 		return probeFailure(r, start, errors.New("probe object content mismatch"))
 	}
 	if err := backend.Delete(ctx, key); err != nil && !errors.Is(err, ErrNotFound) {
+		return probeFailure(r, start, err)
+	}
+	cleanupRequired = false
+	if err := ctx.Err(); err != nil {
 		return probeFailure(r, start, err)
 	}
 	return domainstorageconfig.ProbeResult{Status: domainstorageconfig.ProbeStatusSuccess, CheckedAt: r.now().UTC(), LatencyMS: r.now().Sub(start).Milliseconds(), Message: "put/get/delete probe object succeeded"}

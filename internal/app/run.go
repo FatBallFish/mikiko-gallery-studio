@@ -268,7 +268,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	if err := verifyCompletedStartupBinding(startupContext, startup); err != nil {
 		return fmt.Errorf("verify completed setup binding: %w", err)
 	}
-	redisClient, allowRedisFallback, err := newRedisClient(startupContext, cfg)
+	redisClient, err := newRedisClient(startupContext, cfg)
 	if err != nil {
 		return err
 	}
@@ -296,7 +296,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 		subscriber := startStorageInvalidationSubscriber(context.Background(), storageInvalidationBus, storageRegistry.Invalidate, time.Second, 30*time.Second)
 		defer subscriber.Stop()
 	}
-	authSvc := authservice.NewServiceWithStoreAndRedis(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client), authRedisRuntime, allowRedisFallback)
+	authSvc := authservice.NewServiceWithStoreAndRedis(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client), authRedisRuntime, false)
 	authSvc.SetSMTPConfigResolver(secureConfigSvc)
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)

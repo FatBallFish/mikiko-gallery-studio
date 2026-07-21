@@ -39,7 +39,7 @@ func RunWorker() error {
 	if err := checkRuntimeSchemaCompatibility(context.Background(), client, cfg); err != nil {
 		return err
 	}
-	redisClient, _, err := newRedisClient(context.Background(), cfg)
+	redisClient, err := newRedisClient(context.Background(), cfg)
 	if err != nil {
 		return err
 	}
