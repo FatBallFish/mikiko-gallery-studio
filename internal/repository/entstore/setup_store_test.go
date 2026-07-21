@@ -140,6 +140,40 @@ func TestSetupStoreMissingSchemaReportsBindingNotFound(t *testing.T) {
 	}
 }
 
+func TestSetupStoreRecognizesOnlyExactCompletedMigration(t *testing.T) {
+	client := newSetupStoreSQLiteClient(t)
+	installationID := uuid.NewString()
+	seedSetupInstallation(t, client, installationID)
+	store := entstore.NewSetupStore(client)
+	expected := db.SchemaVersion{
+		InstallationID: installationID, AppVersion: "setup-store-test",
+		ConfigVersion: 1, DatabaseSchemaVersion: db.CurrentDatabaseSchemaVersion,
+	}
+	completed, err := store.MigrationCompleted(t.Context(), expected)
+	if err != nil || !completed {
+		t.Fatalf("MigrationCompleted exact=(%t, %v)", completed, err)
+	}
+	mismatch := expected
+	mismatch.AppVersion = "different-version"
+	if completed, err := store.MigrationCompleted(t.Context(), mismatch); completed || !errors.Is(err, setup.ErrSetupBindingMismatch) {
+		t.Fatalf("MigrationCompleted mismatch=(%t, %v)", completed, err)
+	}
+	if _, err := client.Installation.Update().
+		Where(installation.InstallationIDEQ(installationID)).
+		SetSetupOperationID(uuid.NewString()).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed partial setup binding: %v", err)
+	}
+	if _, err := store.GetBinding(t.Context(), installationID); !errors.Is(err, setup.ErrSetupBindingCorrupt) {
+		t.Fatalf("partial setup binding error=%v", err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if completed, err := store.MigrationCompleted(cancelled, expected); completed || !errors.Is(err, context.Canceled) {
+		t.Fatalf("MigrationCompleted cancelled=(%t, %v)", completed, err)
+	}
+}
+
 func TestSetupStoreConcurrentPostgresInitializationIsIdempotent(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
 	if databaseURL == "" {
@@ -169,6 +203,13 @@ func TestSetupStoreConcurrentPostgresInitializationIsIdempotent(t *testing.T) {
 		AdminEmail: "root-setup-store@example.com", AdminPasswordHash: passwordHash,
 	}
 	store := entstore.NewSetupStore(client)
+	completed, err := store.MigrationCompleted(t.Context(), db.SchemaVersion{
+		InstallationID: installationID, AppVersion: "setup-store-integration",
+		ConfigVersion: 1, DatabaseSchemaVersion: db.CurrentDatabaseSchemaVersion,
+	})
+	if err != nil || !completed {
+		t.Fatalf("real PostgreSQL migration checkpoint=(%t, %v)", completed, err)
+	}
 	const callers = 12
 	results := make(chan setup.SetupBinding, callers)
 	errorsChannel := make(chan error, callers)

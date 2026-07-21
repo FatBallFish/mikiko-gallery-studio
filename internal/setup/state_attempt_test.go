@@ -15,8 +15,8 @@ func TestStateStoreAttemptCASBindsPendingOperationAndPromotesToCommit(t *testing
 		t.Fatalf("Initialize: %v", err)
 	}
 	attempt := SetupAttempt{
-		OperationID:    validCommitProof().OperationID,
-		ConfigRevision: validCommitProof().ConfigRevision, RequestDigest: strings.Repeat("a", 64),
+		OperationID: validCommitProof().OperationID, ConfigRevision: validCommitProof().ConfigRevision,
+		RequestDigest: strings.Repeat("a", 64), AdminCredentialVerifier: strings.Repeat("b", 64),
 	}
 	reserved, err := store.BeginAttempt(attempt, testStateTime.Add(time.Minute))
 	if err != nil || reserved.Attempt == nil || *reserved.Attempt != attempt || reserved.Phase != InstallPhasePending {
@@ -49,8 +49,8 @@ func TestStateStoreClearAttemptRequiresExactPendingBinding(t *testing.T) {
 		t.Fatalf("Initialize: %v", err)
 	}
 	attempt := SetupAttempt{
-		OperationID:    validCommitProof().OperationID,
-		ConfigRevision: validCommitProof().ConfigRevision, RequestDigest: strings.Repeat("c", 64),
+		OperationID: validCommitProof().OperationID, ConfigRevision: validCommitProof().ConfigRevision,
+		RequestDigest: strings.Repeat("c", 64), AdminCredentialVerifier: strings.Repeat("d", 64),
 	}
 	if _, err := store.BeginAttempt(attempt, testStateTime.Add(time.Minute)); err != nil {
 		t.Fatalf("BeginAttempt: %v", err)
@@ -59,6 +59,11 @@ func TestStateStoreClearAttemptRequiresExactPendingBinding(t *testing.T) {
 	mismatch.RequestDigest = strings.Repeat("e", 64)
 	if _, err := store.ClearAttempt(mismatch, testStateTime.Add(2*time.Minute)); !errors.Is(err, ErrSetupBindingMismatch) {
 		t.Fatalf("mismatched ClearAttempt error=%v", err)
+	}
+	mismatch = attempt
+	mismatch.AdminCredentialVerifier = strings.Repeat("f", 64)
+	if _, err := store.ClearAttempt(mismatch, testStateTime.Add(2*time.Minute)); !errors.Is(err, ErrSetupBindingMismatch) {
+		t.Fatalf("mismatched credential verifier ClearAttempt error=%v", err)
 	}
 	cleared, err := store.ClearAttempt(attempt, testStateTime.Add(3*time.Minute))
 	if err != nil || cleared.Attempt != nil || cleared.Phase != InstallPhasePending {

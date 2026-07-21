@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -126,7 +127,28 @@ func TestSetupApplyEnforcesManagedFullMiddlewareAsReadOnly(t *testing.T) {
 	}{
 		{name: "postgres", field: "DATABASE_URL", value: "postgres://other:password@db.invalid/other"},
 		{name: "redis", field: "REDIS_URL", value: "redis://:other@redis.invalid:6379/0"},
-		{name: "storage", field: "STORAGE_S3_BUCKET", value: "other-assets"},
+		{name: "storage driver", field: "STORAGE_DRIVER", value: "local"},
+		{name: "storage endpoint", field: "STORAGE_S3_ENDPOINT", value: "http://other.invalid:9000"},
+		{name: "storage region", field: "STORAGE_S3_REGION", value: "other-region"},
+		{name: "storage bucket", field: "STORAGE_S3_BUCKET", value: "other-assets"},
+		{name: "storage access key", field: "STORAGE_S3_ACCESS_KEY_ID", value: "other-access-key"},
+		{name: "storage secret key", field: "STORAGE_S3_SECRET_ACCESS_KEY", value: "other-secret-key"},
+		{name: "storage path style", field: "STORAGE_S3_FORCE_PATH_STYLE", value: "false"},
+		{name: "storage prefix", field: "STORAGE_S3_PREFIX", value: "other/prefix"},
+	}
+	for _, flag := range []string{"POSTGRES_MANAGED", "REDIS_MANAGED", "OBJECT_STORAGE_MANAGED"} {
+		t.Run("submitted "+flag, func(t *testing.T) {
+			fixture := newServiceFixture(t)
+			fixture.useManagedFullRuntime()
+			request := fixture.request()
+			request.Runtime[flag] = "false"
+			if _, err := fixture.service.Apply(t.Context(), request); !errors.Is(err, ErrSetupValidation) {
+				t.Fatalf("Apply error=%v", err)
+			}
+			if fixture.prober.calls.Load() != 0 || fixture.migrateCalls.Load() != 0 {
+				t.Fatalf("managed flag tamper reached side effects: probes=%d migrate=%d", fixture.prober.calls.Load(), fixture.migrateCalls.Load())
+			}
+		})
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -154,6 +176,49 @@ func TestSetupApplyEnforcesManagedFullMiddlewareAsReadOnly(t *testing.T) {
 	fixture.useManagedFullRuntime()
 	if _, err := fixture.service.Apply(t.Context(), fixture.request()); err != nil {
 		t.Fatalf("unchanged managed full Apply: %v", err)
+	}
+}
+
+func TestSetupApplyRejectsInvalidDeploymentManagementMatrix(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(map[string]string)
+	}{
+		{name: "docker full without managed postgres", mutate: func(values map[string]string) {
+			values["POSTGRES_MANAGED"] = "false"
+		}},
+		{name: "docker full without managed redis", mutate: func(values map[string]string) {
+			values["REDIS_MANAGED"] = "false"
+		}},
+		{name: "docker full without managed object storage", mutate: func(values map[string]string) {
+			values["OBJECT_STORAGE_MANAGED"] = "false"
+		}},
+		{name: "docker full with local storage", mutate: func(values map[string]string) {
+			values["STORAGE_DRIVER"] = "local"
+		}},
+		{name: "docker core with managed middleware", mutate: func(values map[string]string) {
+			values["DEPLOYMENT_PROFILE"] = "core"
+		}},
+		{name: "native core with managed middleware", mutate: func(values map[string]string) {
+			values["DEPLOYMENT_MODE"] = "native"
+			values["DEPLOYMENT_PROFILE"] = "core"
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newServiceFixture(t)
+			fixture.useManagedFullRuntime()
+			values := fixture.bootstrap.Values
+			test.mutate(values)
+			fixture.bootstrap = bootstrapFromValues(values)
+
+			if _, err := fixture.service.Apply(t.Context(), fixture.request()); !errors.Is(err, ErrSetupValidation) {
+				t.Fatalf("Apply error=%v, want ErrSetupValidation", err)
+			}
+			if fixture.prober.calls.Load() != 0 || fixture.migrateCalls.Load() != 0 || fixture.writeCalls.Load() != 0 {
+				t.Fatalf("invalid management matrix reached side effects: probes=%d migrate=%d write=%d", fixture.prober.calls.Load(), fixture.migrateCalls.Load(), fixture.writeCalls.Load())
+			}
+		})
 	}
 }
 
@@ -213,6 +278,11 @@ func TestSetupApplyRetriesDatabaseSuccessWithoutPassword(t *testing.T) {
 	if strings.Contains(string(stateJSON), "root@example.com") {
 		t.Fatalf("pending attempt persisted administrator email: %s", stateJSON)
 	}
+	barePasswordDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(fixture.adminPassword)))
+	if fixture.state.state.Attempt == nil || fixture.state.state.Attempt.AdminCredentialVerifier == "" ||
+		strings.Contains(string(stateJSON), fixture.adminPassword) || strings.Contains(string(stateJSON), barePasswordDigest) {
+		t.Fatalf("pending attempt did not persist an opaque keyed credential verifier: %s", stateJSON)
+	}
 
 	fixture.failCheckpoint = ""
 	retry := fixture.request()
@@ -223,6 +293,67 @@ func TestSetupApplyRetriesDatabaseSuccessWithoutPassword(t *testing.T) {
 	}
 	if fixture.migrateCalls.Load() != 1 || fixture.store.initializeCalls != 1 || fixture.store.adminCreations != 1 {
 		t.Fatalf("retry migrate=%d store calls=%d admin creations=%d", fixture.migrateCalls.Load(), fixture.store.initializeCalls, fixture.store.adminCreations)
+	}
+}
+
+func TestSetupApplyPendingAttemptRejectsChangedPasswordAfterRestart(t *testing.T) {
+	fixture := newServiceFixture(t)
+	fixture.failCheckpoint = "after_migration"
+	if _, err := fixture.service.Apply(t.Context(), fixture.request()); !errors.Is(err, ErrSetupMigration) {
+		t.Fatalf("first Apply error=%v", err)
+	}
+	probes := fixture.prober.calls.Load()
+	migrations := fixture.migrateCalls.Load()
+	fixture.failCheckpoint = ""
+	changed := fixture.request()
+	changed.AdminPassword = "different administrator password"
+	if _, err := fixture.newService().Apply(t.Context(), changed); !errors.Is(err, ErrSetupBindingMismatch) {
+		t.Fatalf("changed password recovery error=%v", err)
+	}
+	if fixture.prober.calls.Load() != probes || fixture.migrateCalls.Load() != migrations || fixture.store.initializeCalls != 0 {
+		t.Fatalf("changed password crossed recovery boundary: probes=%d/%d migrate=%d/%d store=%d", fixture.prober.calls.Load(), probes, fixture.migrateCalls.Load(), migrations, fixture.store.initializeCalls)
+	}
+}
+
+func TestSetupApplyAfterMigrationCrashDoesNotMigrateAgain(t *testing.T) {
+	fixture := newServiceFixture(t)
+	fixture.bootstrap.Values["CONFIG_REVISION"] = "7"
+	fixture.bootstrap = bootstrapFromValues(fixture.bootstrap.Values)
+	fixture.failCheckpoint = "after_migration"
+	request := fixture.request()
+	if _, err := fixture.service.Apply(t.Context(), request); !errors.Is(err, ErrSetupMigration) {
+		t.Fatalf("first Apply error=%v", err)
+	}
+	if fixture.migrateCalls.Load() != 1 || fixture.store.binding != (SetupBinding{}) {
+		t.Fatalf("first Apply migrate=%d binding=%+v", fixture.migrateCalls.Load(), fixture.store.binding)
+	}
+
+	fixture.failCheckpoint = ""
+	view, err := fixture.newService().Apply(t.Context(), request)
+	if err != nil || view.Phase != OperationPhaseRestartPending {
+		t.Fatalf("recovered Apply=(%+v, %v)", view, err)
+	}
+	if fixture.migrateCalls.Load() != 1 || fixture.store.adminCreations != 1 {
+		t.Fatalf("recovered Apply migrate=%d admins=%d", fixture.migrateCalls.Load(), fixture.store.adminCreations)
+	}
+}
+
+func TestSetupApplyAfterMigrationCrashStillRequiresBoundPassword(t *testing.T) {
+	fixture := newServiceFixture(t)
+	fixture.failCheckpoint = "after_migration"
+	if _, err := fixture.service.Apply(t.Context(), fixture.request()); !errors.Is(err, ErrSetupMigration) {
+		t.Fatalf("first Apply error=%v", err)
+	}
+	probes := fixture.prober.calls.Load()
+	migrations := fixture.migrateCalls.Load()
+	fixture.failCheckpoint = ""
+	retry := fixture.request()
+	retry.AdminPassword = ""
+	if _, err := fixture.newService().Apply(t.Context(), retry); !errors.Is(err, ErrSetupValidation) {
+		t.Fatalf("passwordless unbound recovery error=%v", err)
+	}
+	if fixture.prober.calls.Load() != probes || fixture.migrateCalls.Load() != migrations || fixture.store.initializeCalls != 0 {
+		t.Fatalf("passwordless unbound recovery reached side effects: probes=%d/%d migrate=%d/%d store=%d", fixture.prober.calls.Load(), probes, fixture.migrateCalls.Load(), migrations, fixture.store.initializeCalls)
 	}
 }
 
@@ -710,6 +841,47 @@ func TestSetupApplyCompletedReplayAfterRestartReturnsCompleteWithoutSideEffects(
 	}
 }
 
+func TestNewServiceReturnsEntropyFailureWithoutPanic(t *testing.T) {
+	_, err := newServiceWithEntropy(ServiceOptions{
+		RuntimeEnvPath: "runtime.env",
+		StateStore:     &StateStore{},
+		ProbeService:   &ProbeService{},
+		AuthService:    &AuthService{},
+		StoreOpener: func(context.Context, string) (SetupStoreSession, error) {
+			return nil, errors.New("unused")
+		},
+	}, &errorReader{err: errors.New("entropy unavailable")})
+	if err == nil || !strings.Contains(err.Error(), "fingerprint key") {
+		t.Fatalf("NewService entropy error=%v", err)
+	}
+}
+
+func TestSetupApplyCompletedReplayRejectsTamperedCommitJournalDigest(t *testing.T) {
+	fixture := newServiceFixture(t)
+	request := fixture.request()
+	if _, err := fixture.service.Apply(t.Context(), request); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	fixture.state.mu.Lock()
+	fixture.state.state.Commit.RequestDigest = strings.Repeat("f", 64)
+	fixture.state.mu.Unlock()
+	migrations := fixture.migrateCalls.Load()
+	admins := fixture.store.adminCreations
+	writes := fixture.writeCalls.Load()
+	fixture.auth = &fakeCompletionAuth{events: fixture.events}
+
+	view, err := fixture.newService().Apply(t.Context(), request)
+	if !errors.Is(err, ErrSetupBindingMismatch) || view.ErrorCode != "BINDING_MISMATCH" {
+		t.Fatalf("completed replay error=%v, want ErrSetupBindingMismatch", err)
+	}
+	if !fixture.auth.sealed {
+		t.Fatal("tampered completed replay did not fail closed")
+	}
+	if fixture.migrateCalls.Load() != migrations || fixture.store.adminCreations != admins || fixture.writeCalls.Load() != writes {
+		t.Fatalf("rejected replay ran side effects: migrate=%d/%d admins=%d/%d writes=%d/%d", fixture.migrateCalls.Load(), migrations, fixture.store.adminCreations, admins, fixture.writeCalls.Load(), writes)
+	}
+}
+
 func TestSetupProgressAfterRestartRequiresMatchingRuntimeStateAndDatabase(t *testing.T) {
 	fixture := newServiceFixture(t)
 	if _, err := fixture.service.Apply(t.Context(), fixture.request()); err != nil {
@@ -841,7 +1013,12 @@ func (fixture *serviceFixture) newService() *Service {
 					return db.MigrationResult{}, ctx.Err()
 				}
 			}
-			return db.MigrationResult{Current: db.SchemaVersion{InstallationID: request.InstallationID}}, nil
+			current := db.SchemaVersion{
+				InstallationID: request.InstallationID, AppVersion: request.AppVersion,
+				ConfigVersion: request.ConfigVersion, DatabaseSchemaVersion: db.CurrentDatabaseSchemaVersion,
+			}
+			fixture.store.recordMigration(current)
+			return db.MigrationResult{Current: current}, nil
 		},
 		openStore: func(context.Context, string) (SetupStoreSession, error) { return fixture.store, nil },
 		hashPassword: func(password string) (string, error) {
@@ -982,7 +1159,7 @@ func (store *fakeApplyStateStore) BeginAttempt(attempt SetupAttempt, at time.Tim
 	if store.events != nil {
 		store.events.add("state:attempt")
 	}
-	if store.state.Attempt != nil && *store.state.Attempt != attempt {
+	if store.state.Attempt != nil && !setupAttemptsEqual(*store.state.Attempt, attempt) {
 		return InstallState{}, ErrSetupOperationConflict
 	}
 	store.state.Attempt = &attempt
@@ -996,7 +1173,7 @@ func (store *fakeApplyStateStore) ClearAttempt(attempt SetupAttempt, at time.Tim
 	if store.clearErr != nil {
 		return InstallState{}, store.clearErr
 	}
-	if store.state.Attempt == nil || *store.state.Attempt != attempt {
+	if store.state.Attempt == nil || !setupAttemptsEqual(*store.state.Attempt, attempt) {
 		return InstallState{}, ErrSetupBindingMismatch
 	}
 	store.state.Attempt = nil
@@ -1018,7 +1195,7 @@ func (store *fakeApplyStateStore) BeginCommit(proof CommitProof, at time.Time) (
 	}
 	if store.state.Phase == InstallPhasePending {
 		store.state.Phase, store.state.Commit, store.state.Attempt, store.state.UpdatedAt = InstallPhaseCommitting, &proof, nil, at
-	} else if store.state.Commit == nil || *store.state.Commit != proof {
+	} else if store.state.Commit == nil || !commitProofsEqual(*store.state.Commit, proof) {
 		return InstallState{}, ErrInstallStateInvalid
 	}
 	return store.state, nil
@@ -1030,7 +1207,7 @@ func (store *fakeApplyStateStore) FinalizeCommit(proof CommitProof, at time.Time
 	if store.events != nil {
 		store.events.add("state:finalize")
 	}
-	if store.state.Commit == nil || *store.state.Commit != proof {
+	if store.state.Commit == nil || !commitProofsEqual(*store.state.Commit, proof) {
 		return InstallState{}, ErrInstallStateInvalid
 	}
 	store.state.Phase, store.state.EverCompleted, store.state.UpdatedAt = InstallPhaseCompleted, true, at
@@ -1073,6 +1250,25 @@ type fakeSetupStore struct {
 	adminCreations  int
 	closed          int
 	initializeErr   error
+	migration       *db.SchemaVersion
+}
+
+func (store *fakeSetupStore) MigrationCompleted(_ context.Context, expected db.SchemaVersion) (bool, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.migration == nil {
+		return false, nil
+	}
+	if *store.migration != expected {
+		return false, ErrSetupBindingMismatch
+	}
+	return true, nil
+}
+
+func (store *fakeSetupStore) recordMigration(current db.SchemaVersion) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.migration = &current
 }
 
 func (store *fakeSetupStore) Initialize(_ context.Context, request SetupInitializationRequest) (SetupBinding, error) {

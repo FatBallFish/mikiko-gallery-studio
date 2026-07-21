@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,7 +139,7 @@ func (store *StateStore) BeginAttempt(attempt SetupAttempt, at time.Time) (Insta
 			return InstallState{}, fmt.Errorf("%w: setup attempt requires pending install state", ErrInstallStateInvalid)
 		}
 		if state.Attempt != nil {
-			if *state.Attempt == attempt {
+			if setupAttemptsEqual(*state.Attempt, attempt) {
 				return state, nil
 			}
 			if state.Attempt.OperationID != attempt.OperationID {
@@ -174,7 +175,7 @@ func (store *StateStore) ClearAttempt(attempt SetupAttempt, at time.Time) (Insta
 		if !exists || state.Phase != InstallPhasePending || state.Attempt == nil {
 			return InstallState{}, fmt.Errorf("%w: no pending setup attempt", ErrInstallStateInvalid)
 		}
-		if *state.Attempt != attempt {
+		if !setupAttemptsEqual(*state.Attempt, attempt) {
 			if state.Attempt.OperationID != attempt.OperationID {
 				return InstallState{}, ErrSetupOperationConflict
 			}
@@ -221,7 +222,7 @@ func (store *StateStore) BeginCommit(proof CommitProof, at time.Time) (InstallSt
 			if state.Attempt.OperationID != proof.OperationID {
 				return InstallState{}, ErrSetupOperationConflict
 			}
-			if state.Attempt.ConfigRevision != proof.ConfigRevision || state.Attempt.RequestDigest != proof.RequestDigest {
+			if state.Attempt.ConfigRevision != proof.ConfigRevision || !constantTimeDigestEqual(state.Attempt.RequestDigest, proof.RequestDigest) {
 				return InstallState{}, ErrSetupBindingMismatch
 			}
 			state.Phase = InstallPhaseCommitting
@@ -233,12 +234,12 @@ func (store *StateStore) BeginCommit(proof CommitProof, at time.Time) (InstallSt
 			}
 			return state, nil
 		case InstallPhaseCommitting:
-			if state.Commit != nil && *state.Commit == proof {
+			if state.Commit != nil && commitProofsEqual(*state.Commit, proof) {
 				return state, nil
 			}
 			return InstallState{}, fmt.Errorf("%w: active commit journal does not match requested proof", ErrInstallStateInvalid)
 		case InstallPhaseCompleted:
-			if state.Commit != nil && *state.Commit == proof {
+			if state.Commit != nil && commitProofsEqual(*state.Commit, proof) {
 				return state, nil
 			}
 			return InstallState{}, fmt.Errorf("%w: completed installation cannot begin a different setup commit", ErrInstallStateInvalid)
@@ -271,7 +272,7 @@ func (store *StateStore) FinalizeCommit(proof CommitProof, at time.Time) (Instal
 		if state.InstallationID != proof.InstallationID {
 			return InstallState{}, fmt.Errorf("%w: installation ID does not match install state", ErrInstallStateInvalid)
 		}
-		if state.Commit == nil || *state.Commit != proof {
+		if state.Commit == nil || !commitProofsEqual(*state.Commit, proof) {
 			return InstallState{}, fmt.Errorf("%w: commit journal does not match requested proof", ErrInstallStateInvalid)
 		}
 
@@ -422,13 +423,29 @@ func installStatesEqual(left, right InstallState) bool {
 		if left.Commit != nil || right.Commit != nil {
 			return false
 		}
-	} else if *left.Commit != *right.Commit {
+	} else if !commitProofsEqual(*left.Commit, *right.Commit) {
 		return false
 	}
 	if left.Attempt == nil || right.Attempt == nil {
 		return left.Attempt == nil && right.Attempt == nil
 	}
-	return *left.Attempt == *right.Attempt
+	return setupAttemptsEqual(*left.Attempt, *right.Attempt)
+}
+
+func setupAttemptsEqual(left, right SetupAttempt) bool {
+	return left.OperationID == right.OperationID && left.ConfigRevision == right.ConfigRevision &&
+		constantTimeDigestEqual(left.RequestDigest, right.RequestDigest) &&
+		constantTimeDigestEqual(left.AdminCredentialVerifier, right.AdminCredentialVerifier)
+}
+
+func commitProofsEqual(left, right CommitProof) bool {
+	return left.OperationID == right.OperationID && left.InstallationID == right.InstallationID &&
+		left.RuntimeSchemaVersion == right.RuntimeSchemaVersion && left.ConfigRevision == right.ConfigRevision &&
+		constantTimeDigestEqual(left.RequestDigest, right.RequestDigest)
+}
+
+func constantTimeDigestEqual(left, right string) bool {
+	return hmac.Equal([]byte(left), []byte(right))
 }
 
 func (operations stateAtomicOps) validate() error {
@@ -554,7 +571,9 @@ func validateStrictStateJSON(content []byte) error {
 		if err := json.Unmarshal(attemptJSON, &attempt); err != nil || attempt == nil {
 			return fmt.Errorf("attempt must be a JSON object")
 		}
-		allowedAttempt := map[string]struct{}{"operation_id": {}, "config_revision": {}, "request_digest": {}}
+		allowedAttempt := map[string]struct{}{
+			"operation_id": {}, "config_revision": {}, "request_digest": {}, "admin_credential_verifier": {},
+		}
 		for key, value := range attempt {
 			if _, allowed := allowedAttempt[key]; !allowed {
 				return fmt.Errorf("unknown setup attempt field %q", key)

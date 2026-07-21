@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/mail"
 	"sort"
 	"strconv"
@@ -153,10 +154,21 @@ type preparedApply struct {
 }
 
 func NewService(options ServiceOptions) (*Service, error) {
+	return newServiceWithEntropy(options, cryptorand.Reader)
+}
+
+func newServiceWithEntropy(options ServiceOptions, entropy io.Reader) (*Service, error) {
 	if strings.TrimSpace(options.RuntimeEnvPath) == "" || options.StateStore == nil || options.ProbeService == nil || options.AuthService == nil || options.StoreOpener == nil {
 		return nil, fmt.Errorf("setup service dependencies are incomplete")
 	}
-	service := newService(serviceDependencies{
+	if entropy == nil {
+		return nil, fmt.Errorf("initialize setup request fingerprint key: entropy source is required")
+	}
+	var fingerprintKey [sha256.Size]byte
+	if _, err := io.ReadFull(entropy, fingerprintKey[:]); err != nil {
+		return nil, fmt.Errorf("initialize setup request fingerprint key: %w", err)
+	}
+	return newServiceWithFingerprintKey(serviceDependencies{
 		runtimeEnvPath: options.RuntimeEnvPath,
 		state:          options.StateStore,
 		prober:         options.ProbeService,
@@ -168,14 +180,15 @@ func NewService(options ServiceOptions) (*Service, error) {
 		renderRuntime:  config.RenderRuntimeEnv,
 		writeRuntime:   config.WriteRuntimeEnvAtomic,
 		now:            func() time.Time { return time.Now().UTC() },
-	})
-	if _, err := cryptorand.Read(service.fingerprintKey[:]); err != nil {
-		return nil, fmt.Errorf("initialize setup request fingerprint key: %w", err)
-	}
-	return service, nil
+	}, fingerprintKey), nil
 }
 
 func newService(dependencies serviceDependencies) *Service {
+	testKey := sha256.Sum256([]byte("pic-gallery/setup/test-request-fingerprint-key"))
+	return newServiceWithFingerprintKey(dependencies, testKey)
+}
+
+func newServiceWithFingerprintKey(dependencies serviceDependencies, fingerprintKey [sha256.Size]byte) *Service {
 	if dependencies.checkpoint == nil {
 		dependencies.checkpoint = func(string) error { return nil }
 	}
@@ -185,11 +198,7 @@ func newService(dependencies serviceDependencies) *Service {
 	if dependencies.lockApply == nil {
 		dependencies.lockApply = newRuntimeApplyLocker(dependencies.runtimeEnvPath)
 	}
-	service := &Service{dependencies: dependencies, operations: make(map[string]*setupOperation)}
-	if _, err := cryptorand.Read(service.fingerprintKey[:]); err != nil {
-		service.fingerprintKey = sha256.Sum256([]byte(uuid.NewString()))
-	}
-	return service
+	return &Service{dependencies: dependencies, operations: make(map[string]*setupOperation), fingerprintKey: fingerprintKey}
 }
 
 func (service *Service) Apply(ctx context.Context, request ApplyRequest) (view OperationView, returnErr error) {
@@ -338,10 +347,10 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 		return service.failOperation(operation, ErrSetupValidation)
 	}
 	if prepared.completed {
+		service.dependencies.auth.FailClosedCompletion()
 		if err := service.verifyBinding(ctx, prepared); err != nil {
 			return service.failOperation(operation, stableSetupError(err, ErrSetupReconciliation))
 		}
-		service.dependencies.auth.FailClosedCompletion()
 		service.setPhase(operation, OperationPhaseComplete)
 		return service.operationSnapshot(operation), nil
 	}
@@ -359,6 +368,7 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 	}
 	prepared.state = reserved
 	databaseBound := false
+	migrationCompleted := false
 	if hadAttempt {
 		binding, found, lookupErr := service.lookupBinding(ctx, prepared)
 		if lookupErr != nil {
@@ -369,8 +379,14 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 				return service.failOperation(operation, stableSetupError(err, ErrSetupReconciliation))
 			}
 			databaseBound = true
-		} else if request.adminPassword == "" {
-			return service.failOperation(operation, ErrSetupValidation)
+		} else {
+			if request.adminPassword == "" {
+				return service.failOperation(operation, ErrSetupValidation)
+			}
+			migrationCompleted, lookupErr = service.lookupMigration(ctx, prepared)
+			if lookupErr != nil {
+				return service.failOperation(operation, stableSetupError(lookupErr, ErrSetupReconciliation))
+			}
 		}
 	}
 	if err := service.runFinalProbes(ctx, prepared.values); err != nil {
@@ -386,21 +402,23 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 	}
 
 	service.setPhase(operation, OperationPhaseInitializingDatabase)
-	if err := service.dependencies.checkpoint("before_migration"); err != nil {
-		if _, clearErr := service.dependencies.state.ClearAttempt(prepared.attempt, service.now()); clearErr != nil {
-			return service.failOperation(operation, stableSetupError(clearErr, ErrSetupCommit))
+	if !migrationCompleted {
+		if err := service.dependencies.checkpoint("before_migration"); err != nil {
+			if _, clearErr := service.dependencies.state.ClearAttempt(prepared.attempt, service.now()); clearErr != nil {
+				return service.failOperation(operation, stableSetupError(clearErr, ErrSetupCommit))
+			}
+			return service.failOperation(operation, ErrSetupMigration)
 		}
-		return service.failOperation(operation, ErrSetupMigration)
-	}
-	if _, err := service.dependencies.migrate(ctx, prepared.values["DATABASE_URL"], db.MigrationRequest{
-		InstallationID: prepared.bootstrap.InstallationID,
-		AppVersion:     prepared.values["APPLICATION_VERSION"],
-		ConfigVersion:  config.CurrentRuntimeSchemaVersion,
-	}); err != nil {
-		return service.failOperation(operation, stableSetupError(err, ErrSetupMigration))
-	}
-	if err := service.dependencies.checkpoint("after_migration"); err != nil {
-		return service.failOperation(operation, ErrSetupMigration)
+		if _, err := service.dependencies.migrate(ctx, prepared.values["DATABASE_URL"], db.MigrationRequest{
+			InstallationID: prepared.bootstrap.InstallationID,
+			AppVersion:     prepared.values["APPLICATION_VERSION"],
+			ConfigVersion:  config.CurrentRuntimeSchemaVersion,
+		}); err != nil {
+			return service.failOperation(operation, stableSetupError(err, ErrSetupMigration))
+		}
+		if err := service.dependencies.checkpoint("after_migration"); err != nil {
+			return service.failOperation(operation, ErrSetupMigration)
+		}
 	}
 
 	service.setPhase(operation, OperationPhaseCreatingAdmin)
@@ -436,7 +454,7 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 }
 
 func (service *Service) resumeCommit(ctx context.Context, operation *setupOperation, prepared preparedApply) (OperationView, error) {
-	if prepared.state.Commit == nil || *prepared.state.Commit != prepared.proof {
+	if prepared.state.Commit == nil || !commitProofsEqual(*prepared.state.Commit, prepared.proof) {
 		return service.failOperation(operation, ErrSetupReconciliation)
 	}
 	if err := service.verifyBinding(ctx, prepared); err != nil {
@@ -540,26 +558,44 @@ func (service *Service) prepareApply(request immutableApplyRequest) (preparedApp
 	if err := proof.Validate(); err != nil {
 		return preparedApply{}, err
 	}
-	attempt := SetupAttempt{OperationID: request.operationID, ConfigRevision: revision, RequestDigest: digest}
-	if err := attempt.Validate(); err != nil {
-		return preparedApply{}, err
-	}
 	prepared := preparedApply{
 		bootstrap: bootstrap, state: state, values: values, proof: proof,
-		attempt: attempt, digest: digest, adminEmail: request.adminEmail,
+		digest: digest, adminEmail: request.adminEmail,
 	}
 	switch state.Phase {
 	case InstallPhasePending:
 		if bootstrap.SetupCompleted {
 			return preparedApply{}, ErrStartupStateInconsistent
 		}
-		if state.Attempt != nil {
-			if state.Attempt.OperationID != attempt.OperationID {
+		if state.Attempt == nil {
+			if request.adminPassword == "" {
+				return preparedApply{}, ErrSetupValidation
+			}
+			verifier, err := setupAdminCredentialVerifier(values, request.adminPassword)
+			if err != nil {
+				return preparedApply{}, err
+			}
+			prepared.attempt = SetupAttempt{
+				OperationID: request.operationID, ConfigRevision: revision,
+				RequestDigest: digest, AdminCredentialVerifier: verifier,
+			}
+			if err := prepared.attempt.Validate(); err != nil {
+				return preparedApply{}, err
+			}
+		} else {
+			if state.Attempt.OperationID != request.operationID {
 				return preparedApply{}, ErrSetupOperationConflict
 			}
-			if *state.Attempt != attempt {
+			if state.Attempt.ConfigRevision != revision || !constantTimeDigestEqual(state.Attempt.RequestDigest, digest) {
 				return preparedApply{}, ErrSetupBindingMismatch
 			}
+			if request.adminPassword != "" {
+				verifier, err := setupAdminCredentialVerifier(values, request.adminPassword)
+				if err != nil || !constantTimeDigestEqual(state.Attempt.AdminCredentialVerifier, verifier) {
+					return preparedApply{}, ErrSetupBindingMismatch
+				}
+			}
+			prepared.attempt = *state.Attempt
 		}
 	case InstallPhaseCommitting:
 		if state.Commit == nil || state.Commit.OperationID != request.operationID {
@@ -568,6 +604,10 @@ func (service *Service) prepareApply(request immutableApplyRequest) (preparedApp
 	case InstallPhaseCompleted:
 		if state.Commit == nil || state.Commit.OperationID != request.operationID {
 			return preparedApply{}, ErrSetupOperationConflict
+		}
+		if !commitProofsEqual(*state.Commit, proof) {
+			service.dependencies.auth.FailClosedCompletion()
+			return preparedApply{}, ErrSetupBindingMismatch
 		}
 		decision, decisionErr := ResolveStartupDecision(bootstrap, state, true)
 		if decisionErr != nil || decision.Mode != StartupModeNormal {
@@ -708,12 +748,29 @@ func (service *Service) lookupBinding(ctx context.Context, prepared preparedAppl
 	return binding, true, nil
 }
 
+func (service *Service) lookupMigration(ctx context.Context, prepared preparedApply) (bool, error) {
+	store, err := service.dependencies.openStore(ctx, prepared.values["DATABASE_URL"])
+	if err != nil {
+		return false, ErrSetupReconciliation
+	}
+	completed, lookupErr := store.MigrationCompleted(ctx, db.SchemaVersion{
+		InstallationID: prepared.bootstrap.InstallationID,
+		AppVersion:     prepared.values["APPLICATION_VERSION"], ConfigVersion: config.CurrentRuntimeSchemaVersion,
+		DatabaseSchemaVersion: db.CurrentDatabaseSchemaVersion,
+	})
+	closeErr := store.Close()
+	if lookupErr != nil || closeErr != nil {
+		return false, stableSetupError(lookupErr, ErrSetupReconciliation)
+	}
+	return completed, nil
+}
+
 func validateBinding(binding SetupBinding, prepared preparedApply) error {
 	if binding.OperationID != prepared.proof.OperationID {
 		return ErrSetupOperationConflict
 	}
-	if prepared.proof.RequestDigest != prepared.digest || binding.InstallationID != prepared.proof.InstallationID ||
-		binding.ConfigRevision != prepared.proof.ConfigRevision || binding.RequestDigest != prepared.digest {
+	if !constantTimeDigestEqual(prepared.proof.RequestDigest, prepared.digest) || binding.InstallationID != prepared.proof.InstallationID ||
+		binding.ConfigRevision != prepared.proof.ConfigRevision || !constantTimeDigestEqual(binding.RequestDigest, prepared.digest) {
 		return ErrSetupBindingMismatch
 	}
 	if prepared.adminEmail != "" && binding.AdminEmail != prepared.adminEmail {
@@ -860,6 +917,9 @@ func mergeFinalRuntime(bootstrap config.BootstrapConfig, submitted map[string]st
 	deployment := bootstrap.Deployment
 	deployment.SetupCompleted = true
 	deployment.StorageDriver = values["STORAGE_DRIVER"]
+	if err := validateDeploymentManagement(bootstrap, deployment); err != nil {
+		return nil, 0, ErrSetupValidation
+	}
 	required, err := config.RequiredRuntimeFields(schema, deployment)
 	if err != nil {
 		return nil, 0, ErrSetupValidation
@@ -893,20 +953,36 @@ func managedSetupFieldReadOnly(bootstrap config.BootstrapConfig, key string) boo
 	}
 	switch key {
 	case "STORAGE_DRIVER", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "STORAGE_S3_BUCKET",
-		"STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY", "STORAGE_S3_FORCE_PATH_STYLE":
+		"STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY", "STORAGE_S3_FORCE_PATH_STYLE", "STORAGE_S3_PREFIX":
 		return true
 	default:
 		return false
 	}
 }
 
-func setupRequestDigest(values map[string]string, adminEmail string) (string, error) {
-	key := []byte(values["PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"])
-	if len(key) < 32 {
-		clear(key)
-		return "", ErrSetupValidation
+func validateDeploymentManagement(bootstrap config.BootstrapConfig, deployment config.DeploymentContext) error {
+	managed := bootstrap.PostgresManaged || bootstrap.RedisManaged || bootstrap.ObjectStorageManaged
+	if deployment.Mode == config.DeploymentModeNative {
+		if deployment.Profile == config.DeploymentProfileFull || managed {
+			return ErrSetupValidation
+		}
 	}
-	defer clear(key)
+	switch deployment.Profile {
+	case config.DeploymentProfileFull:
+		if deployment.Mode != config.DeploymentModeDocker || deployment.Topology != config.DeploymentTopologySingle ||
+			deployment.Role != config.DeploymentRoleSingle || !bootstrap.PostgresManaged || !bootstrap.RedisManaged ||
+			!bootstrap.ObjectStorageManaged || deployment.StorageDriver != "s3" {
+			return ErrSetupValidation
+		}
+	case config.DeploymentProfileCore:
+		if managed {
+			return ErrSetupValidation
+		}
+	}
+	return nil
+}
+
+func setupRequestDigest(values map[string]string, adminEmail string) (string, error) {
 	entries := make([]config.EnvEntry, 0, len(values))
 	for name, value := range values {
 		entries = append(entries, config.EnvEntry{Key: name, Value: value})
@@ -920,14 +996,35 @@ func setupRequestDigest(values map[string]string, adminEmail string) (string, er
 		return "", ErrSetupValidation
 	}
 	defer clear(canonical)
+	return setupSecureHMAC(values, "setup-request-v1", canonical)
+}
+
+func setupAdminCredentialVerifier(values map[string]string, password string) (string, error) {
+	if password == "" {
+		return "", ErrSetupValidation
+	}
+	passwordBytes := []byte(password)
+	defer clear(passwordBytes)
+	return setupSecureHMAC(values, "setup-admin-credential-v1", passwordBytes)
+}
+
+func setupSecureHMAC(values map[string]string, domain string, payload []byte) (string, error) {
+	key := []byte(values["PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"])
+	if len(key) < 32 {
+		clear(key)
+		return "", ErrSetupValidation
+	}
+	defer clear(key)
 	digest := hmac.New(sha256.New, key)
-	_, _ = digest.Write(canonical)
+	_, _ = digest.Write([]byte(domain))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write(payload)
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func differentNonEmptyPassword(left, right [sha256.Size]byte) bool {
 	empty := [sha256.Size]byte{}
-	return left != empty && right != empty && left != right
+	return left != empty && right != empty && !hmac.Equal(left[:], right[:])
 }
 
 func storageConfigFromRuntime(values map[string]string) config.StorageConfig {

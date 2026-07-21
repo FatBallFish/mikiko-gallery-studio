@@ -31,9 +31,10 @@ type CommitProof struct {
 type CommitJournal = CommitProof
 
 type SetupAttempt struct {
-	OperationID    string `json:"operation_id"`
-	ConfigRevision int    `json:"config_revision"`
-	RequestDigest  string `json:"request_digest"`
+	OperationID             string `json:"operation_id"`
+	ConfigRevision          int    `json:"config_revision"`
+	RequestDigest           string `json:"request_digest"`
+	AdminCredentialVerifier string `json:"admin_credential_verifier"`
 }
 
 type InstallState struct {
@@ -128,6 +129,9 @@ func (attempt SetupAttempt) Validate() error {
 	}
 	if !installDigestPattern.MatchString(attempt.RequestDigest) {
 		return fmt.Errorf("request digest must be a lowercase SHA-256 value")
+	}
+	if !installDigestPattern.MatchString(attempt.AdminCredentialVerifier) {
+		return fmt.Errorf("administrator credential verifier must be a lowercase SHA-256 value")
 	}
 	return nil
 }

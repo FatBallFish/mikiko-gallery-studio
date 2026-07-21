@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	"github.com/fatballfish/pic-gallery/internal/repository/db"
 )
 
 var (
@@ -35,6 +37,7 @@ type SetupBinding struct {
 type SetupStore interface {
 	Initialize(context.Context, SetupInitializationRequest) (SetupBinding, error)
 	GetBinding(context.Context, string) (SetupBinding, error)
+	MigrationCompleted(context.Context, db.SchemaVersion) (bool, error)
 }
 
 type SetupStoreSession interface {

@@ -688,6 +688,7 @@ func reserveCommitAttempt(t *testing.T, store *StateStore, proof CommitProof, at
 	t.Helper()
 	if _, err := store.BeginAttempt(SetupAttempt{
 		OperationID: proof.OperationID, ConfigRevision: proof.ConfigRevision, RequestDigest: strings.Repeat("a", 64),
+		AdminCredentialVerifier: strings.Repeat("b", 64),
 	}, at); err != nil {
 		t.Fatalf("BeginAttempt before commit: %v", err)
 	}
@@ -731,8 +732,13 @@ func assertInstallStateEqual(t *testing.T, got, want InstallState) {
 	}
 	switch {
 	case got.Commit == nil && want.Commit == nil:
-		return
 	case got.Commit == nil || want.Commit == nil || *got.Commit != *want.Commit:
 		t.Fatalf("InstallState.Commit = %+v, want %+v", got.Commit, want.Commit)
+	}
+	switch {
+	case got.Attempt == nil && want.Attempt == nil:
+		return
+	case got.Attempt == nil || want.Attempt == nil || !setupAttemptsEqual(*got.Attempt, *want.Attempt):
+		t.Fatalf("InstallState.Attempt = %+v, want %+v", got.Attempt, want.Attempt)
 	}
 }

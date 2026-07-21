@@ -192,6 +192,23 @@ func (store *SetupStore) GetBinding(ctx context.Context, installationID string) 
 	return setupBindingFromClient(ctx, store.client, entities[0])
 }
 
+func (store *SetupStore) MigrationCompleted(ctx context.Context, expected db.SchemaVersion) (bool, error) {
+	if store == nil || store.client == nil {
+		return false, fmt.Errorf("setup store is not configured")
+	}
+	if err := db.CheckSchemaCompatibility(ctx, store.client, expected); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return false, contextErr
+		}
+		var compatibilityError *db.CompatibilityError
+		if errors.As(err, &compatibilityError) && compatibilityError.Kind == db.CompatibilityMissing {
+			return false, nil
+		}
+		return false, setup.ErrSetupBindingMismatch
+	}
+	return true, nil
+}
+
 func setupSchemaMissing(err error) bool {
 	var postgresError *pq.Error
 	if errors.As(err, &postgresError) && postgresError.Code == "42P01" {
@@ -201,8 +218,20 @@ func setupSchemaMissing(err error) bool {
 }
 
 func setupBindingFromClient(ctx context.Context, client *repoent.Client, entity *repoent.Installation) (setup.SetupBinding, error) {
-	if entity.SetupOperationID == nil || entity.SetupAdminID == nil || entity.SetupConfigRevision == nil || entity.SetupRequestDigest == nil {
+	missing := 0
+	for _, present := range []bool{
+		entity.SetupOperationID != nil, entity.SetupAdminID != nil,
+		entity.SetupConfigRevision != nil, entity.SetupRequestDigest != nil,
+	} {
+		if !present {
+			missing++
+		}
+	}
+	if missing == 4 {
 		return setup.SetupBinding{}, setup.ErrSetupBindingNotFound
+	}
+	if missing != 0 {
+		return setup.SetupBinding{}, setup.ErrSetupBindingCorrupt
 	}
 	if int64(int(*entity.SetupAdminID)) != *entity.SetupAdminID {
 		return setup.SetupBinding{}, setup.ErrSetupBindingCorrupt
