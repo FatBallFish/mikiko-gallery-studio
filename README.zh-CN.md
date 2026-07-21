@@ -332,7 +332,7 @@ Windows 源码服务安装使用计划任务托管，避免普通 Go/Vite 前台
 安装服务：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile ".env"
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile "config/runtime.env"
 ```
 
 卸载服务：

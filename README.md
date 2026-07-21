@@ -332,7 +332,7 @@ Windows source service installation uses Scheduled Tasks so the ordinary Go and 
 Install services:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile ".env"
+powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile "config/runtime.env"
 ```
 
 Uninstall services:

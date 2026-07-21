@@ -17,7 +17,6 @@ API_ADDR="${BASE_URL#http://127.0.0.1}"
 API_ADDR="${API_ADDR#http://localhost}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke.XXXXXX")"
 SMOKE_ID="$(basename "$TMP_DIR" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
-DB_PATH="$TMP_DIR/smoke.db"
 SMOKE_ENV_PATH="$TMP_DIR/backend.env"
 SERVER_LOG="$TMP_DIR/api.log"
 WORKER_LOG="$TMP_DIR/worker.log"
@@ -31,6 +30,18 @@ SMOKE_SUPER_ADMIN_EMAIL="super-admin-smoke-${SMOKE_ID}@example.com"
 SERVER_PID=""
 WORKER_PID=""
 FAKE_PROVIDER_PID=""
+POSTGRES_CONTAINER="pic-gallery-api-smoke-postgres-${SMOKE_ID}"
+REDIS_CONTAINER="pic-gallery-api-smoke-redis-${SMOKE_ID}"
+POSTGRES_USER="smoke"
+POSTGRES_DB="pic_gallery_smoke"
+POSTGRES_PASSWORD="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_hex(16))
+PY
+)"
+DATABASE_URL=""
+REDIS_URL=""
 ADMIN_PASSWORD="$(python3 - <<'PY'
 import secrets
 
@@ -75,9 +86,59 @@ cleanup() {
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
+  docker rm -f "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
+
+start_smoke_middleware() {
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    echo "API contract smoke requires a running Docker daemon for isolated PostgreSQL and Redis containers." >&2
+    exit 1
+  fi
+
+  docker run -d --name "$POSTGRES_CONTAINER" \
+    -e "POSTGRES_DB=$POSTGRES_DB" \
+    -e "POSTGRES_USER=$POSTGRES_USER" \
+    -e "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
+    -p 127.0.0.1::5432 \
+    postgres:16-alpine >/dev/null
+  docker run -d --name "$REDIS_CONTAINER" \
+    -p 127.0.0.1::6379 \
+    redis:7-alpine >/dev/null
+
+  for _ in {1..80}; do
+    if docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.25
+  done
+  docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null
+
+  for _ in {1..80}; do
+    if docker exec "$REDIS_CONTAINER" redis-cli ping 2>/dev/null | grep -qx PONG; then
+      break
+    fi
+    sleep 0.25
+  done
+  docker exec "$REDIS_CONTAINER" redis-cli ping | grep -qx PONG
+
+  local postgres_port redis_port
+  postgres_port="$(docker port "$POSTGRES_CONTAINER" 5432/tcp | awk -F: 'NR == 1 { print $NF }')"
+  redis_port="$(docker port "$REDIS_CONTAINER" 6379/tcp | awk -F: 'NR == 1 { print $NF }')"
+  DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${postgres_port}/${POSTGRES_DB}?sslmode=disable"
+  REDIS_URL="redis://127.0.0.1:${redis_port}/0"
+}
+
+psql_exec() {
+  docker exec -i "$POSTGRES_CONTAINER" \
+    psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"
+}
+
+psql_query() {
+  docker exec -i "$POSTGRES_CONTAINER" \
+    psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"
+}
 
 request() {
   curl --silent --show-error --fail-with-body "$@"
@@ -1091,14 +1152,24 @@ PY
 
 write_smoke_config() {
   cat >"$SMOKE_ENV_PATH" <<ENV
+RUNTIME_SCHEMA_VERSION=1
+DEPLOYMENT_MODE=docker
+DEPLOYMENT_PROFILE=core
+DEPLOYMENT_TOPOLOGY=single
+DEPLOYMENT_ROLE=single
+DEPLOYMENT_MODULES=api,worker
+POSTGRES_MANAGED=false
+REDIS_MANAGED=false
+OBJECT_STORAGE_MANAGED=false
+SETUP_COMPLETED=true
 PIC_GALLERY_NAME=pic-gallery-smoke
 PIC_GALLERY_ENV=local
 PIC_GALLERY_ADDR=$API_ADDR
-DATABASE_URL=file:$DB_PATH?cache=shared&_fk=1&_busy_timeout=10000&_journal_mode=WAL
+DATABASE_URL=$DATABASE_URL
 DATABASE_MAX_OPEN_CONNS=10
 DATABASE_MAX_IDLE_CONNS=5
 DATABASE_CONN_MAX_LIFETIME=15m
-REDIS_URL=
+REDIS_URL=$REDIS_URL
 REDIS_KEY_PREFIX=pic-gallery-smoke-${SMOKE_ID}
 STORAGE_DRIVER=local
 STORAGE_LOCAL_ROOT=$STORAGE_ROOT
@@ -1117,6 +1188,7 @@ PIC_GALLERY_ADMIN_ROLE=admin
 API_KEY_SIGNING_SECRET_ENCRYPTION_KEY=$API_KEY_ENCRYPTION_KEY
 CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY=$CASHIER_PROVIDER_CONFIG_KEY
 PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY=$SECURE_CONFIG_KEY
+PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY=$SECURE_CONFIG_KEY
 CASHIER_ENABLED=true
 CASHIER_MOCK_ENABLED=true
 CASHIER_ORDER_TIMEOUT_SECONDS=1800
@@ -1132,6 +1204,10 @@ OPENROUTER_BASE_URL=${FAKE_PROVIDER_URL:-http://127.0.0.1:1}
 OPENROUTER_API_KEY=
 DOCS_TITLE=Pic Gallery API Docs
 DOCS_BASE_PATH=/developers/docs
+API_PORT=${API_ADDR#:}
+IMAGE_TAG=api-contract-smoke
+INSTALLATION_ID=api-contract-smoke-${SMOKE_ID}
+APPLICATION_VERSION=api-contract-smoke
 ENV
 }
 start_worker() {
@@ -1141,47 +1217,23 @@ start_worker() {
 }
 
 seed_smoke_runtime_config() {
-  python3 - "$DB_PATH" <<'PY'
-import json
-import sqlite3
-import sys
-from datetime import datetime, timezone
-
-db_path = sys.argv[1]
-now = datetime.now(timezone.utc).isoformat()
-with sqlite3.connect(db_path) as conn:
-    conn.execute(
-        """
-        INSERT INTO system_configs (
-            config_category, config_key, config_value, scope,
-            version, updated_by, updated_at
-        )
-        VALUES (?, ?, ?, 'global', 2, 0, ?)
-        ON CONFLICT(config_category, config_key, scope) DO UPDATE SET
-            config_value = excluded.config_value,
-            version = excluded.version,
-            updated_by = excluded.updated_by,
-            updated_at = excluded.updated_at
-        """,
-        (
-            "trial_credits",
-            "signup_trial",
-            json.dumps(
-                {
-                    "value": {
-                        "enabled": True,
-                        "points": "20.00000",
-                        "valid_days": 7,
-                        "expiry_reminder_days": 2,
-                        "grant_once_per_user": True,
-                    }
-                },
-                separators=(",", ":"),
-            ),
-            now,
-        ),
-    )
-PY
+  psql_exec <<'SQL'
+INSERT INTO system_configs (
+  config_category, config_key, config_value, scope,
+  version, updated_by, updated_at
+)
+VALUES (
+  'trial_credits',
+  'signup_trial',
+  '{"value":{"enabled":true,"points":"20.00000","valid_days":7,"expiry_reminder_days":2,"grant_once_per_user":true}}',
+  'global', 2, 0, CURRENT_TIMESTAMP
+)
+ON CONFLICT (config_category, config_key, scope) DO UPDATE SET
+  config_value = excluded.config_value,
+  version = excluded.version,
+  updated_by = excluded.updated_by,
+  updated_at = excluded.updated_at;
+SQL
 }
 
 wait_for_task_status() {
@@ -1211,6 +1263,7 @@ wait_for_task_status() {
 }
 
 cd "$ROOT_DIR"
+start_smoke_middleware
 write_smoke_config
 
 APP_ENV_FILE="$SMOKE_ENV_PATH" \
@@ -1306,30 +1359,19 @@ assert_json_field "$cashier_options_body" "data.plans.0.plan_code" >/dev/null
 assert_cashier_options_only_points_packages "$cashier_options_body" "future-subscription-${SMOKE_ID}" >/dev/null
 
 FUTURE_SUBSCRIPTION_PLAN_CODE="future-subscription-${SMOKE_ID}"
-python3 - "$DB_PATH" "$FUTURE_SUBSCRIPTION_PLAN_CODE" <<'PY'
-import sqlite3
-import sys
-from datetime import datetime, timezone
-
-db_path, plan_code = sys.argv[1], sys.argv[2]
-now = datetime.now(timezone.utc).isoformat()
-with sqlite3.connect(db_path) as conn:
-    conn.execute(
-        """
-        INSERT INTO subscription_plans (
-            created_at, updated_at, plan_code, plan_name, status, price_cny,
-            points, bonus_points, duration_days, currency, description,
-            sort_order, metadata
-        )
-        VALUES (
-            ?, ?, ?, 'Future Subscription Smoke', 'active', '29.90000',
-            '200.00000', '0.00000', 30, 'CNY', 'future subscription placeholder',
-            99, '{"plan_type":"subscription","purchase_enabled":true}'
-        )
-        """,
-        (now, now, plan_code),
-    )
-PY
+psql_exec -v "plan_code=$FUTURE_SUBSCRIPTION_PLAN_CODE" <<'SQL'
+INSERT INTO subscription_plans (
+  created_at, updated_at, plan_code, plan_name, plan_type,
+  purchase_enabled, status, price_cny, points, bonus_points,
+  duration_days, currency, description, sort_order, metadata
+)
+VALUES (
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :'plan_code', 'Future Subscription Smoke', 'subscription',
+  true, 'active', 29.90000, 200.00000, 0.00000,
+  30, 'CNY', 'future subscription placeholder', 99,
+  '{"plan_type":"subscription","purchase_enabled":true}'::jsonb
+);
+SQL
 
 cashier_options_after_subscription_body="$(request "$BASE_URL/api/agent/cashier/v1/options" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_cashier_options_only_points_packages "$cashier_options_after_subscription_body" "$FUTURE_SUBSCRIPTION_PLAN_CODE" >/dev/null
@@ -1370,37 +1412,35 @@ recharged_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "A
 recharge_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=10" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_ledger_entry "$recharge_ledger_body" "recharge" "recharge" "payment_order" >/dev/null
 
-python3 - "$DB_PATH" "$USER_ID" "$SMOKE_SUPER_ADMIN_EMAIL" "$ADMIN_PASSWORD" <<'PY'
+SUPER_ADMIN_PASSWORD_HASH="$(python3 - "$ADMIN_PASSWORD" <<'PY'
 import base64
 import hashlib
-import sqlite3
 import sys
-from datetime import datetime, timezone
 
-db_path, user_id, super_admin_email, admin_password = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
-now = datetime.now(timezone.utc).isoformat()
+admin_password = sys.argv[1]
 salt = "api-smoke-super-admin"
 digest = hashlib.sha256(f"{salt}:{admin_password}".encode()).digest()
 password_hash = f"sha256${salt}${base64.urlsafe_b64encode(digest).decode().rstrip('=')}"
-with sqlite3.connect(db_path) as conn:
-    conn.execute(
-        """
-        INSERT INTO point_ledgers (
-            created_at, updated_at, user_id, ledger_type, change_points,
-            balance_after, frozen_after, reason, idempotency_key
-        )
-        VALUES (?, ?, ?, 'admin_adjust', '100.00000', '100.00000', '0.00000', 'api contract smoke seed', ?)
-        """,
-        (now, now, user_id, f"api-smoke-seed-{user_id}"),
-    )
-    conn.execute(
-        """
-        INSERT INTO admin_users (created_at, updated_at, email, password_hash, role, status)
-        VALUES (?, ?, ?, ?, 'super_admin', 'active')
-        """,
-        (now, now, super_admin_email, password_hash),
-    )
+print(password_hash)
 PY
+)"
+psql_exec \
+  -v "user_id=$USER_ID" \
+  -v "super_admin_email=$SMOKE_SUPER_ADMIN_EMAIL" \
+  -v "password_hash=$SUPER_ADMIN_PASSWORD_HASH" <<'SQL'
+INSERT INTO point_ledgers (
+  created_at, updated_at, user_id, ledger_type, change_points,
+  balance_after, frozen_after, reason, idempotency_key
+)
+VALUES (
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :'user_id'::bigint, 'admin_adjust', 100.00000,
+  100.00000, 0.00000, 'api contract smoke seed', 'api-smoke-seed-' || :'user_id'
+);
+INSERT INTO admin_users (created_at, updated_at, email, password_hash, role, status)
+VALUES (
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :'super_admin_email', :'password_hash', 'super_admin', 'active'
+);
+SQL
 
 estimate_body="$(request "$BASE_URL/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
@@ -2223,33 +2263,24 @@ chargeback_missing_key_status="$(curl --silent --output "$TMP_DIR/chargeback-mis
 chargeback_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_ledger_entry "$chargeback_ledger_body" "admin_adjust" "recharge" "admin" >/dev/null
 
-read -r WEBHOOK_RETRY_EVENT_ID WEBHOOK_RETRY_FAILURE_REASON <<EOF
-$(python3 - "$DB_PATH" "$ORDER_ID" "$SMOKE_ID" <<'PY'
-import json
-import sqlite3
-import sys
-from datetime import datetime, timezone
-
-db_path, order_id, smoke_id = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-now = datetime.now(timezone.utc).isoformat()
-failure_reason = f"api smoke retryable webhook failure {smoke_id}"
-payload = json.dumps({"failure_reason": failure_reason}, separators=(",", ":"))
-headers = json.dumps({"x-smoke": smoke_id}, separators=(",", ":"))
-with sqlite3.connect(db_path) as conn:
-    cursor = conn.execute(
-        """
-        INSERT INTO payment_webhook_events (
-            created_at, updated_at, provider, trade_no, event_type, status,
-            payment_order_id, headers, payload
-        )
-        VALUES (?, ?, 'mock', ?, 'payment.retryable_failed', 'failed', ?, ?, ?)
-        """,
-        (now, now, f"SMOKE-WEBHOOK-RETRY-{smoke_id}", order_id, headers, payload),
-    )
-    print(cursor.lastrowid, failure_reason)
-PY
+WEBHOOK_RETRY_FAILURE_REASON="api smoke retryable webhook failure ${SMOKE_ID}"
+WEBHOOK_RETRY_EVENT_ID="$(psql_query \
+  -v "order_id=$ORDER_ID" \
+  -v "smoke_id=$SMOKE_ID" \
+  -v "failure_reason=$WEBHOOK_RETRY_FAILURE_REASON" <<'SQL'
+INSERT INTO payment_webhook_events (
+  created_at, updated_at, provider, trade_no, event_type, status,
+  payment_order_id, headers, payload
 )
-EOF
+VALUES (
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'mock', 'SMOKE-WEBHOOK-RETRY-' || :'smoke_id',
+  'payment.retryable_failed', 'failed', :'order_id'::bigint,
+  jsonb_build_object('x-smoke', :'smoke_id'),
+  jsonb_build_object('failure_reason', :'failure_reason')::text
+)
+RETURNING id;
+SQL
+)"
 
 webhook_events_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/webhook-events?page=1&page_size=20" -H "Authorization: Bearer $ADMIN_TOKEN")"
 assert_webhook_event_in_list "$webhook_events_body" "$WEBHOOK_RETRY_EVENT_ID" "$ORDER_ID" "failed" "payment.retryable_failed" "$WEBHOOK_RETRY_FAILURE_REASON" >/dev/null
@@ -2261,68 +2292,60 @@ assert_webhook_event_retry_processed "$webhook_retry_body" "$WEBHOOK_RETRY_EVENT
 webhook_events_after_retry_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/webhook-events?page=1&page_size=20" -H "Authorization: Bearer $ADMIN_TOKEN")"
 assert_webhook_event_in_list "$webhook_events_after_retry_body" "$WEBHOOK_RETRY_EVENT_ID" "$ORDER_ID" "processed" "payment.retryable_failed" "$WEBHOOK_RETRY_FAILURE_REASON" >/dev/null
 
-read -r PUBLIC_GALLERY_TASK_ID PUBLIC_GALLERY_IMAGE_ID PUBLIC_GALLERY_PROMPT <<EOF
-$(python3 - "$DB_PATH" "$USER_ID" "$SMOKE_ID" <<'PY'
-import hashlib
-import sqlite3
-import sys
+read -r PUBLIC_GALLERY_TASK_ID PUBLIC_GALLERY_IMAGE_ID <<EOF
+$(python3 - <<'PY'
 import uuid
-from datetime import datetime, timezone
 
-db_path, user_id, smoke_id = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-task_id = str(uuid.uuid4())
-image_id = str(uuid.uuid4())
-prompt = f"Smoke public gallery full prompt {smoke_id} with protected detail text"
-now = datetime.now(timezone.utc).isoformat()
-object_key = f"https://cdn.example.com/pic-gallery-smoke/{image_id}.png"
-sha256 = hashlib.sha256(object_key.encode()).hexdigest()
-
-with sqlite3.connect(db_path) as conn:
-    conn.execute(
-        """
-        INSERT INTO image_tasks (
-            id, user_id, source_channel, task_type, status, prompt,
-            abstract_model, base_resolution, base_resolution,
-            requested_size, resolved_width, resolved_height, aspect_ratio,
-            requested_output_image_count, success_output_image_count,
-            reference_image_count, mask_present, response_mode, save_policy,
-            estimated_points, actual_points, route_model_code,
-            pricing_snapshot, routing_snapshot, error_policy_snapshot,
-            provider_trace, started_at, finished_at, created_at, updated_at
-        )
-        VALUES (
-            ?, ?, 'web', 'text_to_image', 'succeeded', ?,
-            'basic', 'auto', '1k',
-            '1024x1024', 1024, 1024, '1:1',
-            1, 1,
-            0, 0, 'async', 'private',
-            '2.00000', '2.00000', 'basic',
-            '{}', '{}', '{}',
-            '{}', ?, ?, ?, ?
-        )
-        """,
-        (task_id, user_id, prompt, now, now, now, now),
-    )
-    conn.execute(
-        """
-        INSERT INTO task_images (
-            id, task_id, user_id, image_role, storage_driver, object_key,
-            mime_type, file_size_bytes, width, height, sha256, image_group,
-            visibility_status, created_at, updated_at
-        )
-        VALUES (
-            ?, ?, ?, 'output', 'remote', ?,
-            'image/png', 128, 1024, 1024, ?, 'smoke',
-            'pending_review', ?, ?
-        )
-        """,
-        (image_id, task_id, user_id, object_key, sha256, now, now),
-    )
-
-print(task_id, image_id, prompt)
+print(uuid.uuid4(), uuid.uuid4())
 PY
 )
 EOF
+PUBLIC_GALLERY_PROMPT="Smoke public gallery full prompt ${SMOKE_ID} with protected detail text"
+PUBLIC_GALLERY_OBJECT_KEY="https://cdn.example.com/pic-gallery-smoke/${PUBLIC_GALLERY_IMAGE_ID}.png"
+PUBLIC_GALLERY_SHA256="$(python3 - "$PUBLIC_GALLERY_OBJECT_KEY" <<'PY'
+import hashlib
+import sys
+
+print(hashlib.sha256(sys.argv[1].encode()).hexdigest())
+PY
+)"
+psql_exec \
+  -v "task_id=$PUBLIC_GALLERY_TASK_ID" \
+  -v "image_id=$PUBLIC_GALLERY_IMAGE_ID" \
+  -v "user_id=$USER_ID" \
+  -v "prompt=$PUBLIC_GALLERY_PROMPT" \
+  -v "object_key=$PUBLIC_GALLERY_OBJECT_KEY" \
+  -v "sha256=$PUBLIC_GALLERY_SHA256" <<'SQL'
+INSERT INTO image_tasks (
+  id, user_id, source_channel, task_type, status, prompt,
+  abstract_model, size_mode, base_resolution, quality,
+  requested_size, resolved_width, resolved_height, aspect_ratio,
+  requested_output_image_count, success_output_image_count,
+  reference_image_count, mask_present, response_mode, save_policy,
+  estimated_points, actual_points, route_model_code,
+  pricing_snapshot, routing_snapshot, error_policy_snapshot,
+  provider_trace, started_at, finished_at, created_at, updated_at
+)
+VALUES (
+  :'task_id'::uuid, :'user_id'::bigint, 'web', 'text_to_image', 'succeeded', :'prompt',
+  'basic', 'ratio', '1k', 'auto',
+  '1024x1024', 1024, 1024, '1:1',
+  1, 1, 0, false, 'async', 'private',
+  2.00000, 2.00000, 'basic',
+  '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);
+INSERT INTO task_images (
+  id, task_id, user_id, image_role, storage_driver, object_key,
+  mime_type, file_size_bytes, width, height, sha256, image_group,
+  visibility_status, created_at, updated_at
+)
+VALUES (
+  :'image_id'::uuid, :'task_id'::uuid, :'user_id'::bigint, 'output', 'remote', :'object_key',
+  'image/png', 128, 1024, 1024, :'sha256', 'smoke',
+  'pending_review', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);
+SQL
 
 pending_review_body="$(request "$BASE_URL/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=pending_review" -H "Authorization: Bearer $ADMIN_TOKEN")"
 assert_gallery_list_contains_status "$pending_review_body" "$PUBLIC_GALLERY_IMAGE_ID" "pending_review" >/dev/null

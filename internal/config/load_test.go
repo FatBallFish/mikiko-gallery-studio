@@ -134,6 +134,35 @@ func TestLoadRuntimeRequiresCompletedSetupAndRequiredFields(t *testing.T) {
 	}
 }
 
+func TestLoadRuntimeRejectsSQLiteDatabaseURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	rendered, err := RenderRuntimeEnv(DefaultRuntimeSchema(), completeRuntimeValuesForTest(), nil)
+	if err != nil {
+		t.Fatalf("render valid runtime env: %v", err)
+	}
+	lines := strings.Split(string(rendered), "\n")
+	replaced := false
+	for index, line := range lines {
+		if strings.HasPrefix(line, "DATABASE_URL=") {
+			lines[index] = "DATABASE_URL=file:smoke.db?cache=shared"
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		t.Fatal("rendered runtime env did not contain DATABASE_URL")
+	}
+	rendered = []byte(strings.Join(lines, "\n"))
+	if err := os.WriteFile(path, rendered, 0o600); err != nil {
+		t.Fatalf("write runtime env with SQLite URL: %v", err)
+	}
+
+	_, err = LoadRuntime(path)
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || !strings.Contains(err.Error(), "postgres") {
+		t.Fatalf("LoadRuntime SQLite URL error = %v, want PostgreSQL-only DATABASE_URL diagnostic", err)
+	}
+}
+
 func TestLoadRuntimeUsesFileValuesInsteadOfProcessEnvironment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.env")
 	values := completeRuntimeValuesForTest()

@@ -15,3 +15,4 @@ target/
 .review/
 .playwright-mcp/
 .worktrees/
+/config/runtime.env
