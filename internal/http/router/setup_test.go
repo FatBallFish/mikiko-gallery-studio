@@ -110,6 +110,70 @@ func TestBrokenRouterExposesDiagnosticsOnly(t *testing.T) {
 	}
 }
 
+func TestStartupModePreflightMethodMatrix(t *testing.T) {
+	setupHandler := NewSetup(newSetupAPIForRouterTest(t, handlers.BootstrapStatus{Phase: handlers.BootstrapPhaseSetupRequired}), nil)
+	normalHandler := NewNormal(handlers.NewAPI(config.Config{}, nil, nil), config.Config{})
+	normalWithoutBusinessHandler := NewNormal(nil, config.Config{})
+	brokenHandler := NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{Phase: handlers.BootstrapPhaseBroken}))
+	testCases := []struct {
+		name      string
+		handler   http.Handler
+		path      string
+		requested string
+		want      int
+	}{
+		{name: "setup session post", handler: setupHandler, path: "/api/setup/v1/session", requested: http.MethodPost, want: http.StatusNoContent},
+		{name: "setup session get absent", handler: setupHandler, path: "/api/setup/v1/session", requested: http.MethodGet, want: http.StatusNotFound},
+		{name: "setup business absent", handler: setupHandler, path: "/api/agent/auth/v1/login/password", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "setup asset absent", handler: setupHandler, path: "/setup/assets/app.js", requested: http.MethodGet, want: http.StatusNotFound},
+		{name: "setup metrics absent", handler: setupHandler, path: "/metrics", requested: http.MethodGet, want: http.StatusNotFound},
+		{name: "setup pprof absent", handler: setupHandler, path: "/debug/pprof/", requested: http.MethodGet, want: http.StatusNotFound},
+		{name: "normal business post", handler: normalHandler, path: "/api/agent/auth/v1/login/password", requested: http.MethodPost, want: http.StatusNoContent},
+		{name: "normal business wrong get", handler: normalHandler, path: "/api/agent/auth/v1/login/password", requested: http.MethodGet, want: http.StatusNotFound},
+		{name: "normal business wrong delete", handler: normalHandler, path: "/api/agent/auth/v1/login/password", requested: http.MethodDelete, want: http.StatusNotFound},
+		{name: "normal exact trailing slash absent", handler: normalHandler, path: "/api/agent/auth/v1/login/password/", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "normal gallery get", handler: normalHandler, path: "/api/open/image/v1/gallery/images", requested: http.MethodGet, want: http.StatusNoContent},
+		{name: "normal gallery wrong post", handler: normalHandler, path: "/api/open/image/v1/gallery/images", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "normal dynamic admin delete", handler: normalHandler, path: "/api/ops/admin/v1/users/42", requested: http.MethodDelete, want: http.StatusNoContent},
+		{name: "normal dynamic admin wrong patch", handler: normalHandler, path: "/api/ops/admin/v1/users/42", requested: http.MethodPatch, want: http.StatusNotFound},
+		{name: "normal dynamic admin trailing slash absent", handler: normalHandler, path: "/api/ops/admin/v1/users/42/", requested: http.MethodDelete, want: http.StatusNotFound},
+		{name: "normal dynamic admin double slash absent", handler: normalHandler, path: "/api/ops/admin/v1/users//42", requested: http.MethodDelete, want: http.StatusNotFound},
+		{name: "normal dynamic admin encoded slash absent", handler: normalHandler, path: "/api/ops/admin/v1/users/%2F", requested: http.MethodDelete, want: http.StatusNotFound},
+		{name: "normal profile put", handler: normalHandler, path: "/api/agent/user/v1/profile", requested: http.MethodPut, want: http.StatusNoContent},
+		{name: "normal profile wrong delete", handler: normalHandler, path: "/api/agent/user/v1/profile", requested: http.MethodDelete, want: http.StatusNotFound},
+		{name: "normal supplemental preferences put", handler: normalHandler, path: "/api/agent/user/v1/preferences", requested: http.MethodPut, want: http.StatusNoContent},
+		{name: "normal supplemental preferences wrong get", handler: normalHandler, path: "/api/agent/user/v1/preferences", requested: http.MethodGet, want: http.StatusNotFound},
+		{name: "normal supplemental developer update", handler: normalHandler, path: "/api/agent/developer/v1/api-keys/42", requested: http.MethodPatch, want: http.StatusNoContent},
+		{name: "normal supplemental developer wrong post", handler: normalHandler, path: "/api/agent/developer/v1/api-keys/42", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "normal supplemental developer reset", handler: normalHandler, path: "/api/agent/developer/v1/api-keys/42/reset-secret", requested: http.MethodPost, want: http.StatusNoContent},
+		{name: "normal supplemental gallery group", handler: normalHandler, path: "/api/agent/gallery/v1/images/image-1/group", requested: http.MethodPut, want: http.StatusNoContent},
+		{name: "normal supplemental gallery group wrong delete", handler: normalHandler, path: "/api/agent/gallery/v1/images/image-1/group", requested: http.MethodDelete, want: http.StatusNotFound},
+		{name: "normal without API has no business preflight", handler: normalWithoutBusinessHandler, path: "/api/agent/auth/v1/login/password", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "normal setup write absent", handler: normalHandler, path: "/api/setup/v1/apply", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "normal setup asset absent", handler: normalHandler, path: "/setup/assets/app.js", requested: http.MethodGet, want: http.StatusNotFound},
+		{name: "normal metrics get", handler: normalHandler, path: "/metrics", requested: http.MethodGet, want: http.StatusNoContent},
+		{name: "normal metrics post absent", handler: normalHandler, path: "/metrics", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "normal pprof get", handler: normalHandler, path: "/debug/pprof/", requested: http.MethodGet, want: http.StatusNoContent},
+		{name: "normal pprof delete absent", handler: normalHandler, path: "/debug/pprof/", requested: http.MethodDelete, want: http.StatusNotFound},
+		{name: "broken health get", handler: brokenHandler, path: "/healthz", requested: http.MethodGet, want: http.StatusNoContent},
+		{name: "broken setup write absent", handler: brokenHandler, path: "/api/setup/v1/apply", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "broken business absent", handler: brokenHandler, path: "/api/agent/auth/v1/login/password", requested: http.MethodPost, want: http.StatusNotFound},
+		{name: "broken metrics absent", handler: brokenHandler, path: "/metrics", requested: http.MethodGet, want: http.StatusNotFound},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodOptions, testCase.path, nil)
+			request.Header.Set("Origin", "http://localhost:5173")
+			request.Header.Set("Access-Control-Request-Method", testCase.requested)
+			testCase.handler.ServeHTTP(recorder, request)
+			if recorder.Code != testCase.want {
+				t.Fatalf("OPTIONS %s for %s = %d, want %d; body=%s", testCase.path, testCase.requested, recorder.Code, testCase.want, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func newSetupAPIForRouterTest(t *testing.T, status handlers.BootstrapStatus) *handlers.SetupAPI {
 	t.Helper()
 	api, err := handlers.NewSetupAPI(handlers.SetupAPIOptions{

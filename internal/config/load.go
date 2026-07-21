@@ -118,6 +118,12 @@ func LoadRuntime(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	return RuntimeFromBootstrap(bootstrap)
+}
+
+// RuntimeFromBootstrap validates and maps the exact document snapshot already
+// loaded for startup-mode selection. It performs no filesystem reads.
+func RuntimeFromBootstrap(bootstrap BootstrapConfig) (Config, error) {
 	if !bootstrap.SetupCompleted {
 		return Config{}, fmt.Errorf("SETUP_COMPLETED must be true before loading runtime configuration")
 	}
@@ -214,10 +220,6 @@ func configFromRuntimeValues(fileEnv map[string]string) Config {
 	cfg.Auth.AdminRefreshCookieName = envString(fileEnv, "AUTH_ADMIN_REFRESH_COOKIE_NAME", "")
 	cfg.Auth.FixedEmailCode = envString(fileEnv, "AUTH_FIXED_EMAIL_CODE", "")
 	cfg.Auth.DevEmailCodes = envBool(fileEnv, "AUTH_DEV_EMAIL_CODES", false)
-
-	cfg.Admin.SeedEmail = envString(fileEnv, "PIC_GALLERY_ADMIN_EMAIL", "")
-	cfg.Admin.SeedPassword = envString(fileEnv, "PIC_GALLERY_ADMIN_PASSWORD", "")
-	cfg.Admin.SeedRole = envString(fileEnv, "PIC_GALLERY_ADMIN_ROLE", "")
 
 	cfg.APIKey.SigningSecretEncryptionKey = envString(fileEnv, "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "")
 	cfg.Security.SecureConfigEncryptionKey = envString(fileEnv, "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", envString(fileEnv, "SECURE_CONFIG_ENCRYPTION_KEY", ""))

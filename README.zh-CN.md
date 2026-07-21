@@ -400,9 +400,9 @@ docker compose --env-file deployments/docker-compose/.env.prod \
 - `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`
 - `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`
 - `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`
-- `PIC_GALLERY_ADMIN_EMAIL`
-- `PIC_GALLERY_ADMIN_PASSWORD`
 - `CORS_ALLOWED_ORIGINS`
+
+首个管理员通过 API 托管的初始化流程创建；运行时环境变量不会读取管理员明文凭据。
 
 检查部署状态：
 

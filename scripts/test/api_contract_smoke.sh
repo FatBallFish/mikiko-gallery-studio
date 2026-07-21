@@ -60,7 +60,6 @@ RUNTIME_STORAGE_ROOT="$TMP_DIR/runtime-storage"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 API_BINARY="$TMP_DIR/pic-gallery-api"
 WORKER_BINARY="$TMP_DIR/pic-gallery-worker"
-MIGRATE_BINARY="$TMP_DIR/pic-gallery-db-migrate"
 SMOKE_USER_EMAIL="smoke-user-${SMOKE_ID}@example.com"
 SMOKE_ADMIN_EMAIL="admin-smoke-${SMOKE_ID}@example.com"
 SMOKE_SUPER_ADMIN_EMAIL="super-admin-smoke-${SMOKE_ID}@example.com"
@@ -70,8 +69,15 @@ FAKE_PROVIDER_PID=""
 PREFLIGHT_PID=""
 POSTGRES_CONTAINER="pic-gallery-api-smoke-postgres-${SMOKE_ID}"
 REDIS_CONTAINER="pic-gallery-api-smoke-redis-${SMOKE_ID}"
+POSTGRES_SUPERUSER="postgres"
 POSTGRES_USER="smoke"
 POSTGRES_DB="pic_gallery_smoke"
+POSTGRES_SUPERUSER_PASSWORD="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_hex(16))
+PY
+)"
 POSTGRES_PASSWORD="$(python3 - <<'PY'
 import secrets
 
@@ -105,6 +111,12 @@ print(secrets.token_urlsafe(32))
 PY
 )"
 SECURE_CONFIG_KEY="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_urlsafe(32))
+PY
+)"
+SETUP_TOKEN="$(python3 - <<'PY'
 import secrets
 
 print(secrets.token_urlsafe(32))
@@ -155,9 +167,9 @@ start_smoke_middleware() {
   fi
 
   docker run -d --name "$POSTGRES_CONTAINER" \
-    -e "POSTGRES_DB=$POSTGRES_DB" \
-    -e "POSTGRES_USER=$POSTGRES_USER" \
-    -e "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
+    -e "POSTGRES_DB=postgres" \
+    -e "POSTGRES_USER=$POSTGRES_SUPERUSER" \
+    -e "POSTGRES_PASSWORD=$POSTGRES_SUPERUSER_PASSWORD" \
     -p 127.0.0.1::5432 \
     postgres:16-alpine >/dev/null
   docker run -d --name "$REDIS_CONTAINER" \
@@ -165,12 +177,19 @@ start_smoke_middleware() {
     redis:7-alpine >/dev/null
 
   for _ in {1..80}; do
-    if docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+    if docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_SUPERUSER" -d postgres >/dev/null 2>&1; then
       break
     fi
     sleep 0.25
   done
-  docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null
+  docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_SUPERUSER" -d postgres >/dev/null
+  docker exec -i "$POSTGRES_CONTAINER" \
+    psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_SUPERUSER" -d postgres \
+    -v "app_password=$POSTGRES_PASSWORD" <<SQL
+CREATE ROLE $POSTGRES_USER LOGIN PASSWORD :'app_password'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+CREATE DATABASE $POSTGRES_DB OWNER $POSTGRES_USER;
+SQL
 
   for _ in {1..80}; do
     if docker exec "$REDIS_CONTAINER" redis-cli ping 2>/dev/null | grep -qx PONG; then
@@ -1208,6 +1227,11 @@ PY
 }
 
 write_smoke_config() {
+	local setup_completed="${1:-true}"
+	local setup_token=""
+	if [[ "$setup_completed" == "false" ]]; then
+		setup_token="$SETUP_TOKEN"
+	fi
   cat >"$SMOKE_ENV_PATH" <<ENV
 RUNTIME_SCHEMA_VERSION=1
 DEPLOYMENT_MODE=docker
@@ -1218,7 +1242,8 @@ DEPLOYMENT_MODULES=api,worker
 POSTGRES_MANAGED=false
 REDIS_MANAGED=false
 OBJECT_STORAGE_MANAGED=false
-SETUP_COMPLETED=true
+SETUP_COMPLETED=$setup_completed
+SETUP_TOKEN=$setup_token
 SETUP_TOKEN_VERSION=1
 CONFIG_REVISION=1
 PIC_GALLERY_NAME=pic-gallery-smoke
@@ -1241,9 +1266,6 @@ AUTH_ACCESS_TOKEN_SECRET=$ACCESS_TOKEN_SECRET
 AUTH_REFRESH_COOKIE_NAME=pg_refresh_token
 AUTH_FIXED_EMAIL_CODE=
 AUTH_DEV_EMAIL_CODES=true
-PIC_GALLERY_ADMIN_EMAIL=$SMOKE_ADMIN_EMAIL
-PIC_GALLERY_ADMIN_PASSWORD=$ADMIN_PASSWORD
-PIC_GALLERY_ADMIN_ROLE=admin
 API_KEY_SIGNING_SECRET_ENCRYPTION_KEY=$API_KEY_ENCRYPTION_KEY
 CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY=$CASHIER_PROVIDER_CONFIG_KEY
 PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY=$SECURE_CONFIG_KEY
@@ -1255,6 +1277,7 @@ CASHIER_MAX_PENDING_ORDERS_PER_USER=3
 CASHIER_SITE_BASE_URL=$BASE_URL
 WORKER_MAX_CONCURRENT_TASKS=4
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+PUBLIC_API_URL=$BASE_URL
 OPENAI_ENABLED=true
 OPENAI_BASE_URL=${FAKE_PROVIDER_URL:-http://127.0.0.1:1}
 OPENAI_API_KEY=
@@ -1268,6 +1291,19 @@ IMAGE_TAG=api-contract-smoke
 INSTALLATION_ID=api-contract-smoke-${SMOKE_ID}
 APPLICATION_VERSION=api-contract-smoke
 ENV
+	if [[ "$setup_completed" == "false" ]]; then
+		cat >"$SMOKE_INSTALL_STATE_PATH" <<JSON
+{
+  "schema_version": 1,
+  "installation_id": "api-contract-smoke-${SMOKE_ID}",
+  "deployment_role": "single",
+  "phase": "pending",
+  "ever_completed": false,
+  "updated_at": "2026-07-22T00:00:00Z"
+}
+JSON
+		return
+	fi
   cat >"$SMOKE_INSTALL_STATE_PATH" <<JSON
 {
   "schema_version": 1,
@@ -1285,6 +1321,88 @@ ENV
   }
 }
 JSON
+}
+
+run_setup_initialization() {
+	write_smoke_config false
+	APP_ENV_FILE="$SMOKE_ENV_PATH" "$API_BINARY" >"$SERVER_LOG" 2>&1 &
+	SERVER_PID="$!"
+	for _ in {1..80}; do
+		if curl --silent --fail --max-time 2 "$BASE_URL/healthz" >/dev/null 2>&1; then
+			break
+		fi
+		if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+			echo "Setup API exited before becoming live. Log follows:" >&2
+			cat "$SERVER_LOG" >&2
+			exit 1
+		fi
+		sleep 0.25
+	done
+	curl --silent --fail --max-time 2 "$BASE_URL/healthz" >/dev/null
+	local session_status
+	session_status="$(curl --silent --output "$TMP_DIR/setup-session.json" --write-out "%{http_code}" \
+		--cookie-jar "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/session" \
+		-H "Content-Type: application/json" --data "{\"token\":\"$SETUP_TOKEN\"}")"
+	[[ "$session_status" == "204" ]]
+	local database_probe_body redis_probe_body storage_probe_body
+	database_probe_body="$(request --cookie "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/probes/database" \
+		-H "Content-Type: application/json" \
+		--data "$(DATABASE_URL="$DATABASE_URL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({"database_url": os.environ["DATABASE_URL"]}))
+PY
+)")"
+	redis_probe_body="$(request --cookie "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/probes/redis" \
+		-H "Content-Type: application/json" \
+		--data "$(REDIS_URL="$REDIS_URL" SMOKE_ID="$SMOKE_ID" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "redis_url": os.environ["REDIS_URL"],
+    "key_prefix": f"pic-gallery-smoke-{os.environ['SMOKE_ID']}",
+}))
+PY
+)")"
+	storage_probe_body="$(request --cookie "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/probes/storage" \
+		-H "Content-Type: application/json" \
+		--data "$(STORAGE_ROOT="$STORAGE_ROOT" BASE_URL="$BASE_URL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "driver": "local",
+    "local_root": os.environ["STORAGE_ROOT"],
+    "public_base_url": f"{os.environ['BASE_URL']}/files",
+    "shared_volume": True,
+}))
+PY
+)")"
+	for probe_body in "$database_probe_body" "$redis_probe_body" "$storage_probe_body"; do
+		if [[ "$(assert_json_field "$probe_body" "data.success")" != "True" ]]; then
+			echo "Setup middleware probe failed: $probe_body" >&2
+			exit 1
+		fi
+	done
+	local apply_status
+	apply_status="$(curl --silent --output "$TMP_DIR/setup-apply.json" --write-out "%{http_code}" \
+		--cookie "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/apply" -H "Content-Type: application/json" \
+		--data "{\"operation_id\":\"019d0000-0000-7000-8000-000000000001\",\"runtime\":{},\"admin_email\":\"$SMOKE_SUPER_ADMIN_EMAIL\",\"admin_password\":\"$ADMIN_PASSWORD\"}")"
+	[[ "$apply_status" == "202" ]]
+	local exit_status=0
+	if wait "$SERVER_PID"; then
+		exit_status=0
+	else
+		exit_status=$?
+	fi
+	SERVER_PID=""
+	if [[ "$exit_status" != "75" ]]; then
+		echo "Setup API exit status was $exit_status, want supervisor restart code 75. Log follows:" >&2
+		cat "$SERVER_LOG" >&2
+		exit 1
+	fi
 }
 
 assert_ordinary_startup_does_not_migrate() {
@@ -1390,13 +1508,12 @@ wait_for_task_status() {
 cd "$ROOT_DIR"
 go build -o "$API_BINARY" ./cmd/api
 go build -o "$WORKER_BINARY" ./cmd/worker
-go build -o "$MIGRATE_BINARY" ./cmd/db-migrate
 start_smoke_middleware
-write_smoke_config
+write_smoke_config true
 assert_api_port_free
 assert_ordinary_startup_does_not_migrate api "$API_BINARY"
 assert_ordinary_startup_does_not_migrate worker "$WORKER_BINARY"
-APP_ENV_FILE="$SMOKE_ENV_PATH" "$MIGRATE_BINARY"
+run_setup_initialization
 
 APP_ENV_FILE="$SMOKE_ENV_PATH" \
 "$API_BINARY" >"$SERVER_LOG" 2>&1 &
@@ -1584,22 +1701,8 @@ recharged_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "A
 recharge_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=10" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_ledger_entry "$recharge_ledger_body" "recharge" "recharge" "payment_order" >/dev/null
 
-SUPER_ADMIN_PASSWORD_HASH="$(python3 - "$ADMIN_PASSWORD" <<'PY'
-import base64
-import hashlib
-import sys
-
-admin_password = sys.argv[1]
-salt = "api-smoke-super-admin"
-digest = hashlib.sha256(f"{salt}:{admin_password}".encode()).digest()
-password_hash = f"sha256${salt}${base64.urlsafe_b64encode(digest).decode().rstrip('=')}"
-print(password_hash)
-PY
-)"
 psql_exec \
-  -v "user_id=$USER_ID" \
-  -v "super_admin_email=$SMOKE_SUPER_ADMIN_EMAIL" \
-  -v "password_hash=$SUPER_ADMIN_PASSWORD_HASH" <<'SQL'
+  -v "user_id=$USER_ID" <<'SQL'
 INSERT INTO point_ledgers (
   created_at, updated_at, user_id, ledger_type, change_points,
   balance_after, frozen_after, reason, idempotency_key
@@ -1607,10 +1710,6 @@ INSERT INTO point_ledgers (
 VALUES (
   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :'user_id'::bigint, 'admin_adjust', 100.00000,
   100.00000, 0.00000, 'api contract smoke seed', 'api-smoke-seed-' || :'user_id'
-);
-INSERT INTO admin_users (created_at, updated_at, email, password_hash, role, status)
-VALUES (
-  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :'super_admin_email', :'password_hash', 'super_admin', 'active'
 );
 SQL
 
@@ -1635,6 +1734,40 @@ assert_json_field "$models_body" "data.0.id" >/dev/null
 wrong_method_status="$(curl --silent --output "$TMP_DIR/wrong-method.json" --write-out "%{http_code}" -X POST "$BASE_URL/v1/models" -H "Authorization: Bearer $API_SECRET")"
 [[ "$wrong_method_status" == "405" ]]
 assert_json_field "$(cat "$TMP_DIR/wrong-method.json")" "error.code" >/dev/null
+
+super_admin_login_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  --data "$(ADMIN_PASSWORD="$ADMIN_PASSWORD" SMOKE_SUPER_ADMIN_EMAIL="$SMOKE_SUPER_ADMIN_EMAIL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "email": os.environ["SMOKE_SUPER_ADMIN_EMAIL"],
+    "password": os.environ["ADMIN_PASSWORD"],
+}))
+PY
+)")"
+SUPER_ADMIN_TOKEN="$(assert_json_field "$super_admin_login_body" "data.access_token")"
+[[ "$(assert_json_field "$super_admin_login_body" "data.role")" == "super_admin" ]]
+assert_json_array_contains "$super_admin_login_body" "data.permissions" "manage:admins" >/dev/null
+assert_json_array_contains "$super_admin_login_body" "data.permissions" "manage:dangerous_config" >/dev/null
+
+admin_create_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/admin-users" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(ADMIN_PASSWORD="$ADMIN_PASSWORD" SMOKE_ADMIN_EMAIL="$SMOKE_ADMIN_EMAIL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "email": os.environ["SMOKE_ADMIN_EMAIL"],
+    "password": os.environ["ADMIN_PASSWORD"],
+    "role": "admin",
+    "status": "active",
+}))
+PY
+)")"
+[[ "$(assert_json_field "$admin_create_body" "data.role")" == "admin" ]]
 
 admin_login_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/auth/login" \
   -H "Content-Type: application/json" \
@@ -1664,23 +1797,6 @@ admin_dangerous_config_status="$(curl --silent --output "$TMP_DIR/admin-dangerou
   --data "{\"version\":${payments_tab_version},\"items\":[{\"config_category\":\"payments\",\"config_key\":\"enabled\",\"config_value\":{\"value\":true},\"scope\":\"global\"}]}")"
 [[ "$admin_dangerous_config_status" == "403" ]]
 [[ "$(assert_json_field "$(cat "$TMP_DIR/admin-dangerous-config.json")" "error.code")" == "FORBIDDEN" ]]
-
-super_admin_login_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  --data "$(ADMIN_PASSWORD="$ADMIN_PASSWORD" SMOKE_SUPER_ADMIN_EMAIL="$SMOKE_SUPER_ADMIN_EMAIL" python3 - <<'PY'
-import json
-import os
-
-print(json.dumps({
-    "email": os.environ["SMOKE_SUPER_ADMIN_EMAIL"],
-    "password": os.environ["ADMIN_PASSWORD"],
-}))
-PY
-)")"
-SUPER_ADMIN_TOKEN="$(assert_json_field "$super_admin_login_body" "data.access_token")"
-[[ "$(assert_json_field "$super_admin_login_body" "data.role")" == "super_admin" ]]
-assert_json_array_contains "$super_admin_login_body" "data.permissions" "manage:admins" >/dev/null
-assert_json_array_contains "$super_admin_login_body" "data.permissions" "manage:dangerous_config" >/dev/null
 
 mkdir -p "$RUNTIME_STORAGE_ROOT"
 storage_draft_probe_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/storage-configs:probe" \

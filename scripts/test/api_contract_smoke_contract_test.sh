@@ -21,6 +21,21 @@ for marker in \
 done
 
 for marker in \
+  'run_setup_initialization' \
+  '/api/setup/v1/session' \
+  '/api/setup/v1/apply' \
+  'want supervisor restart code 75'; do
+  if ! grep -Fq "$marker" "$SMOKE"; then
+    echo "API smoke does not initialize through the approved setup transaction: $marker" >&2
+    exit 1
+  fi
+done
+if grep -Eq 'PIC_GALLERY_ADMIN_(EMAIL|PASSWORD|ROLE)=' "$SMOKE"; then
+  echo "API smoke still seeds an administrator from plaintext runtime extensions" >&2
+  exit 1
+fi
+
+for marker in \
   'CONFIG_REVISION=1' \
   'SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"' \
   '"phase": "completed"' \

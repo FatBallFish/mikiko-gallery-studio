@@ -89,9 +89,6 @@ services:
       CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: local-dev-cashier-provider-config-encryption-key
       PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: local-dev-secure-config-encryption-key
       PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY: local-dev-prompt-optimization-quote-signing-key
-      PIC_GALLERY_ADMIN_EMAIL: ${PIC_GALLERY_ADMIN_EMAIL:-admin@example.com}
-      PIC_GALLERY_ADMIN_PASSWORD: ${PIC_GALLERY_ADMIN_PASSWORD:-admin123456}
-      PIC_GALLERY_ADMIN_ROLE: super_admin
       CASHIER_ENABLED: "true"
       CASHIER_MOCK_ENABLED: "true"
       CASHIER_SITE_BASE_URL: http://localhost:${DEV_NGINX_PORT:-8088}

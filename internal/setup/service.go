@@ -267,6 +267,50 @@ func (service *Service) Progress(ctx context.Context, id string) (OperationView,
 	return service.progressAfterRestart(ctx, id)
 }
 
+// ReconcileCommit verifies the durable database binding against the exact
+// startup snapshot before finalizing a runtime-env rename crash window.
+func (service *Service) ReconcileCommit(ctx context.Context, bootstrap config.BootstrapConfig, state InstallState) (OperationView, error) {
+	if err := service.validateDependencies(); err != nil || state.Commit == nil {
+		return OperationView{}, ErrSetupReconciliation
+	}
+	decision, err := ResolveStartupDecision(bootstrap, state, true)
+	if err != nil || decision.Reconciliation != ReconciliationRequireDatabase {
+		return OperationView{}, ErrSetupReconciliation
+	}
+	prepared, err := service.preparedFromCompletedBootstrap(ctx, bootstrap, state)
+	if err != nil || service.verifyBinding(ctx, prepared) != nil {
+		return OperationView{}, ErrSetupReconciliation
+	}
+	now := service.now()
+	if _, err := service.dependencies.state.FinalizeCommit(prepared.proof, now); err != nil {
+		service.dependencies.auth.FailClosedCompletion()
+		return OperationView{}, ErrSetupReconciliation
+	}
+	service.dependencies.auth.FailClosedCompletion()
+	return OperationView{
+		OperationID: prepared.proof.OperationID, Phase: OperationPhaseComplete,
+		StartedAt: state.UpdatedAt, UpdatedAt: now,
+	}, nil
+}
+
+// VerifyCompletedBinding prevents a completed runtime/install-state pair from
+// entering normal mode without its transactionally created administrator and
+// installation binding.
+func (service *Service) VerifyCompletedBinding(ctx context.Context, bootstrap config.BootstrapConfig, state InstallState) error {
+	if err := service.validateDependencies(); err != nil {
+		return ErrSetupReconciliation
+	}
+	decision, err := ResolveStartupDecision(bootstrap, state, true)
+	if err != nil || decision.Mode != StartupModeNormal || decision.Reconciliation != ReconciliationNone {
+		return ErrSetupReconciliation
+	}
+	prepared, err := service.preparedFromCompletedBootstrap(ctx, bootstrap, state)
+	if err != nil || service.verifyBinding(ctx, prepared) != nil {
+		return ErrSetupReconciliation
+	}
+	return nil
+}
+
 func (service *Service) acquireOperation(request immutableApplyRequest) (*setupOperation, bool, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()

@@ -3,7 +3,9 @@ package router
 import (
 	"net/http"
 	stdpprof "net/http/pprof"
+	"strings"
 
+	openapispec "github.com/fatballfish/pic-gallery/api/openapi"
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
@@ -156,7 +158,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/docs/errors", api.HandleDocsErrors)
 	}
 
-	return wrapHandler(mux, corsAllowedOrigins)
+	return wrapHandler(mux, corsAllowedOrigins, normalPreflightPolicy(api != nil))
 }
 
 func registerSystemRoutes(mux *http.ServeMux, system *handlers.SystemAPI) {
@@ -165,11 +167,118 @@ func registerSystemRoutes(mux *http.ServeMux, system *handlers.SystemAPI) {
 	mux.HandleFunc("GET /api/system/v1/bootstrap-status", system.HandleBootstrapStatus)
 }
 
-func wrapHandler(mux http.Handler, corsAllowedOrigins []string) http.Handler {
+func wrapHandler(mux http.Handler, corsAllowedOrigins []string, preflight middleware.PreflightPolicy) http.Handler {
 	handler := middleware.Recovery(mux)
 	handler = middleware.Metrics(handler)
 	handler = middleware.RequestID(handler)
-	handler = middleware.CORSWithAllowedOrigins(corsAllowedOrigins, handler)
+	handler = middleware.CORSWithPreflightPolicy(corsAllowedOrigins, preflight, handler)
 	handler = observability.RequestLogger(handler)
 	return handler
+}
+
+func normalPreflightPolicy(businessRoutesRegistered bool) middleware.PreflightPolicy {
+	return func(path, method string) bool {
+		if path == "/setup" || strings.HasPrefix(path, "/setup/") || strings.HasPrefix(path, "/api/setup/") {
+			return false
+		}
+		if method == http.MethodGet {
+			switch path {
+			case "/", "/healthz", "/readyz", "/api/system/v1/bootstrap-status", "/metrics":
+				return true
+			}
+			if strings.HasPrefix(path, "/debug/pprof/") {
+				return true
+			}
+		}
+		if !businessRoutesRegistered {
+			return false
+		}
+		if openapispec.Allows(method, path) {
+			return true
+		}
+		return allowsSupplementalNormalRoute(path, method)
+	}
+}
+
+func allowsSupplementalNormalRoute(path, method string) bool {
+	if allowed, ok := supplementalNormalExactRoutes[path]; ok {
+		return allowed[method]
+	}
+	for template, allowed := range supplementalNormalTemplateRoutes {
+		if matchesSupplementalPathTemplate(template, path) {
+			return allowed[method]
+		}
+	}
+	return false
+}
+
+func matchesSupplementalPathTemplate(template, path string) bool {
+	templateSegments, templateOK := splitSupplementalAbsolutePath(template)
+	pathSegments, pathOK := splitSupplementalAbsolutePath(path)
+	if !templateOK || !pathOK {
+		return false
+	}
+	if len(templateSegments) != len(pathSegments) {
+		return false
+	}
+	for i, segment := range templateSegments {
+		open := strings.IndexByte(segment, '{')
+		close := strings.IndexByte(segment, '}')
+		if open < 0 || close < open {
+			if segment != pathSegments[i] {
+				return false
+			}
+			continue
+		}
+		prefix, suffix := segment[:open], segment[close+1:]
+		value := pathSegments[i]
+		if !strings.HasPrefix(value, prefix) || !strings.HasSuffix(value, suffix) || len(value) <= len(prefix)+len(suffix) {
+			return false
+		}
+	}
+	return true
+}
+
+func splitSupplementalAbsolutePath(path string) ([]string, bool) {
+	if path == "/" {
+		return nil, true
+	}
+	if !strings.HasPrefix(path, "/") || path == "" {
+		return nil, false
+	}
+	return strings.Split(strings.TrimPrefix(path, "/"), "/"), true
+}
+
+var supplementalNormalExactRoutes = map[string]map[string]bool{
+	"/api/agent/auth/v1/password/reset":                        {http.MethodPost: true},
+	"/api/agent/user/v1/preferences":                           {http.MethodPut: true},
+	"/api/agent/user/v1/avatar":                                {http.MethodPost: true},
+	"/api/agent/gallery/v1/images":                             {http.MethodGet: true},
+	"/api/agent/developer/v1/api-keys":                         {http.MethodGet: true, http.MethodPost: true},
+	"/api/agent/billing/v1/redeem-codes/redeem":                {http.MethodPost: true},
+	"/api/agent/image/v1/reference-assets:import-from-gallery": {http.MethodPost: true},
+	"/api/agent/image/v1/tasks/events":                         {http.MethodGet: true},
+	"/api/ops/admin/v1/auth/logout":                            {http.MethodPost: true},
+	"/api/ops/admin/v1/redeem-codes:batch-create":              {http.MethodPost: true},
+	"/api/ops/admin/v1/redeem-codes:export":                    {http.MethodPost: true},
+	"/api/ops/admin/v1/monitoring/snapshot":                    {http.MethodGet: true},
+	"/api/ops/admin/v1/storage-configs:probe":                  {http.MethodPost: true},
+	"/docs/openapi.yaml":                                       {http.MethodGet: true},
+	"/docs/openapi.json":                                       {http.MethodGet: true},
+	"/docs/examples":                                           {http.MethodGet: true},
+	"/docs/errors":                                             {http.MethodGet: true},
+}
+
+var supplementalNormalTemplateRoutes = map[string]map[string]bool{
+	"/api/agent/developer/v1/api-keys/{key_id}":              {http.MethodPut: true, http.MethodPatch: true, http.MethodDelete: true},
+	"/api/agent/developer/v1/api-keys/{key_id}/reset-secret": {http.MethodPost: true},
+	"/api/agent/gallery/v1/images/{image_id}":                {http.MethodDelete: true},
+	"/api/agent/gallery/v1/images/{image_id}/group":          {http.MethodPut: true, http.MethodPatch: true},
+	"/api/agent/gallery/v1/images/{image_id}/like":           {http.MethodPost: true},
+	"/api/agent/gallery/v1/images/{image_id}/favorite":       {http.MethodPost: true},
+	"/api/agent/gallery/v1/images/{image_id}/publish":        {http.MethodPost: true},
+	"/api/ops/admin/v1/image-reviews/{image_id}:approve":     {http.MethodPost: true},
+	"/api/ops/admin/v1/image-reviews/{image_id}:reject":      {http.MethodPost: true},
+	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":   {http.MethodPost: true},
+	"/api/ops/admin/v1/route-model-prices/{price_id}":        {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
 }

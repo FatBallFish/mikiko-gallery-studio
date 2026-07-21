@@ -12,9 +12,19 @@ func CORS(next http.Handler) http.Handler {
 }
 
 func CORSWithAllowedOrigins(origins []string, next http.Handler) http.Handler {
+	return CORSWithPreflightPolicy(origins, nil, next)
+}
+
+type PreflightPolicy func(path, requestedMethod string) bool
+
+func CORSWithPreflightPolicy(origins []string, policy PreflightPolicy, next http.Handler) http.Handler {
 	allowed := allowedOrigins(origins)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
+		if r.Method == http.MethodOptions && origin != "" && policy != nil && !policy(r.URL.Path, r.Header.Get("Access-Control-Request-Method")) {
+			http.NotFound(w, r)
+			return
+		}
 		if origin != "" && allowed[origin] {
 			setCORSHeaders(w, r, origin)
 		}

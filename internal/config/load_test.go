@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -246,6 +247,74 @@ func TestLoadRuntimeUsesFileValuesInsteadOfProcessEnvironment(t *testing.T) {
 	}
 	if cfg.Auth.AccessTokenSecret != values["AUTH_ACCESS_TOKEN_SECRET"] {
 		t.Fatalf("process secret overrode runtime file: %q", cfg.Auth.AccessTokenSecret)
+	}
+}
+
+func TestRuntimeFromBootstrapUsesOneImmutableDocumentSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	values["CONFIG_REVISION"] = "7"
+	values["PUBLIC_API_URL"] = "http://192.0.2.10:8080"
+	values["CORS_ALLOWED_ORIGINS"] = "https://user.example.test"
+	values["AUTH_ACCESS_TOKEN_SECRET"] = "snapshot-auth-secret"
+	values["REDIS_URL"] = "redis://snapshot-cache:6379/0"
+	writeRuntimeValuesForTest(t, path, values)
+	bootstrap, err := LoadBootstrap(path)
+	if err != nil {
+		t.Fatalf("LoadBootstrap: %v", err)
+	}
+
+	replaced := completeRuntimeValuesForTest()
+	replaced["CONFIG_REVISION"] = "7"
+	replaced["DATABASE_URL"] = "postgres://replacement:password@replacement-db:5432/app?sslmode=disable"
+	replaced["REDIS_URL"] = "redis://replacement-cache:6379/0"
+	replaced["STORAGE_LOCAL_ROOT"] = "/replacement/storage"
+	replaced["DEPLOYMENT_PROFILE"] = "full"
+	replaced["DEPLOYMENT_TOPOLOGY"] = "cluster"
+	replaced["POSTGRES_MANAGED"] = "true"
+	replaced["PIC_GALLERY_ADDR"] = "127.0.0.1:9999"
+	replaced["PUBLIC_API_URL"] = "http://replacement.example.test"
+	replaced["CORS_ALLOWED_ORIGINS"] = "https://replacement.example.test"
+	replaced["AUTH_ACCESS_TOKEN_SECRET"] = "replacement-auth-secret"
+	writeRuntimeValuesForTest(t, path, replaced)
+
+	cfg, err := RuntimeFromBootstrap(bootstrap)
+	if err != nil {
+		t.Fatalf("RuntimeFromBootstrap: %v", err)
+	}
+	if cfg.Database.URL != values["DATABASE_URL"] || cfg.Redis.URL != values["REDIS_URL"] || cfg.Storage.LocalRoot != values["STORAGE_LOCAL_ROOT"] {
+		t.Fatalf("middleware configuration mixed snapshots: db=%q redis=%q storage=%q", cfg.Database.URL, cfg.Redis.URL, cfg.Storage.LocalRoot)
+	}
+	if cfg.Auth.AccessTokenSecret != values["AUTH_ACCESS_TOKEN_SECRET"] || bootstrap.Values["PUBLIC_API_URL"] != values["PUBLIC_API_URL"] || bootstrap.Values["CORS_ALLOWED_ORIGINS"] != values["CORS_ALLOWED_ORIGINS"] {
+		t.Fatal("listener/public/auth configuration mixed runtime documents")
+	}
+	if bootstrap.Deployment.Profile != DeploymentProfileCore || bootstrap.Deployment.Topology != DeploymentTopologySingle || bootstrap.PostgresManaged {
+		t.Fatalf("deployment ownership mixed runtime documents: %#v", bootstrap)
+	}
+}
+
+func TestRuntimeIgnoresLegacyPlaintextAdministratorExtensions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	values["CONFIG_REVISION"] = "1"
+	writeRuntimeValuesForTest(t, path, values)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open runtime env: %v", err)
+	}
+	if _, err := file.WriteString("PIC_GALLERY_ADMIN_EMAIL=legacy@example.test\nPIC_GALLERY_ADMIN_PASSWORD=plaintext-secret\nPIC_GALLERY_ADMIN_ROLE=super_admin\n"); err != nil {
+		_ = file.Close()
+		t.Fatalf("append legacy admin extensions: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close runtime env: %v", err)
+	}
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime: %v", err)
+	}
+	if _, exists := reflect.TypeOf(cfg).FieldByName("Admin"); exists {
+		t.Fatal("runtime config still exposes the retired plaintext administrator seed")
 	}
 }
 

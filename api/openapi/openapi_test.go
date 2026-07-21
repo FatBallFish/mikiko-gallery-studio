@@ -114,6 +114,7 @@ func TestOpenAPISpecDocumentsBootstrapAndPendingSetupWithoutSecretExamples(t *te
 		t.Fatalf("unmarshal openapi spec: %v", err)
 	}
 	for _, path := range []string{
+		"/setup",
 		"/api/system/v1/bootstrap-status",
 		"/api/setup/v1/session",
 		"/api/setup/v1/probes/database",
@@ -124,6 +125,35 @@ func TestOpenAPISpecDocumentsBootstrapAndPendingSetupWithoutSecretExamples(t *te
 	} {
 		if _, ok := doc.Paths[path]; !ok {
 			t.Fatalf("expected setup path %q", path)
+		}
+	}
+
+	var operations struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]any `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &operations); err != nil {
+		t.Fatalf("unmarshal setup response contracts: %v", err)
+	}
+	expectedResponses := map[string][]string{
+		"GET /setup":                                {"200"},
+		"GET /api/system/v1/bootstrap-status":       {"200"},
+		"POST /api/setup/v1/session":                {"204", "400", "401", "409", "429", "500"},
+		"POST /api/setup/v1/probes/database":        {"200", "400", "401"},
+		"POST /api/setup/v1/probes/redis":           {"200", "400", "401"},
+		"POST /api/setup/v1/probes/storage":         {"200", "400", "401"},
+		"POST /api/setup/v1/apply":                  {"202", "400", "401", "404", "408", "409", "500", "504"},
+		"GET /api/setup/v1/progress/{operation_id}": {"200", "400", "401", "404", "408", "409", "500", "504"},
+	}
+	for operation, statuses := range expectedResponses {
+		parts := strings.SplitN(operation, " ", 2)
+		method, path := strings.ToLower(parts[0]), parts[1]
+		responses := operations.Paths[path][method].Responses
+		for _, status := range statuses {
+			if _, ok := responses[status]; !ok {
+				t.Fatalf("%s must document actual handler response %s", operation, status)
+			}
 		}
 	}
 

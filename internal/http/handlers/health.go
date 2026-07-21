@@ -27,21 +27,18 @@ type BootstrapStatus struct {
 	RetryAfterSeconds int            `json:"retry_after_seconds,omitempty"`
 	DiagnosticCode    string         `json:"diagnostic_code,omitempty"`
 	PublicAPIURL      string         `json:"-"`
-	FallbackAPIURL    string         `json:"-"`
 }
 
 type SystemAPI struct {
-	mu             sync.RWMutex
-	status         BootstrapStatus
-	publicAPIURL   string
-	fallbackAPIURL string
+	mu           sync.RWMutex
+	status       BootstrapStatus
+	publicAPIURL string
 }
 
 func NewSystemAPI(status BootstrapStatus) *SystemAPI {
 	publicAPIURL := status.PublicAPIURL
-	fallbackAPIURL := status.FallbackAPIURL
 	status = normalizeBootstrapStatus(status)
-	return &SystemAPI{status: status, publicAPIURL: publicAPIURL, fallbackAPIURL: fallbackAPIURL}
+	return &SystemAPI{status: status, publicAPIURL: publicAPIURL}
 }
 
 func (api *SystemAPI) SetBootstrapStatus(status BootstrapStatus) {
@@ -53,11 +50,6 @@ func (api *SystemAPI) SetBootstrapStatus(status BootstrapStatus) {
 		status.PublicAPIURL = api.publicAPIURL
 	} else {
 		api.publicAPIURL = status.PublicAPIURL
-	}
-	if strings.TrimSpace(status.FallbackAPIURL) == "" {
-		status.FallbackAPIURL = api.fallbackAPIURL
-	} else {
-		api.fallbackAPIURL = status.FallbackAPIURL
 	}
 	api.status = normalizeBootstrapStatus(status)
 	api.mu.Unlock()
@@ -102,24 +94,20 @@ func normalizeBootstrapStatus(status BootstrapStatus) BootstrapStatus {
 		status.RetryAfterSeconds = 0
 	}
 	if status.Phase == BootstrapPhaseSetupRequired || status.Phase == BootstrapPhaseInitializing || status.Phase == BootstrapPhaseRestartPending {
-		status.SetupURL = trustedSetupURL(status.PublicAPIURL, status.FallbackAPIURL)
+		status.SetupURL = trustedSetupURL(status.PublicAPIURL)
 	} else {
 		status.SetupURL = ""
 	}
 	status.PublicAPIURL = ""
-	status.FallbackAPIURL = ""
 	return status
 }
 
-func trustedSetupURL(publicAPIURL, fallbackAPIURL string) string {
-	for _, candidate := range []string{publicAPIURL, fallbackAPIURL, "http://127.0.0.1:8080"} {
-		parsed, err := url.Parse(strings.TrimSpace(candidate))
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
-			continue
-		}
-		return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: "/setup"}).String()
+func trustedSetupURL(publicAPIURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(publicAPIURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+		return "/setup"
 	}
-	return "http://127.0.0.1:8080/setup"
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: "/setup"}).String()
 }
 
 type statusResponse struct {

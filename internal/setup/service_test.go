@@ -921,6 +921,90 @@ func TestSetupProgressReconcilesRuntimeRenameBeforeStateFinalize(t *testing.T) {
 	}
 }
 
+func TestSetupReconcileCommitUsesProvidedSnapshotAndFinalizesMatchingBinding(t *testing.T) {
+	fixture := newServiceFixture(t)
+	fixture.failCheckpoint = "after_runtime_write"
+	if _, err := fixture.service.Apply(t.Context(), fixture.request()); !errors.Is(err, ErrSetupCommit) {
+		t.Fatalf("Apply error=%v", err)
+	}
+	snapshot := cloneBootstrap(fixture.bootstrap)
+	state := fixture.state.state
+	fixture.failLoadAfterWrite = true
+
+	view, err := fixture.newService().ReconcileCommit(t.Context(), snapshot, state)
+	if err != nil || view.Phase != OperationPhaseComplete {
+		t.Fatalf("ReconcileCommit=(%+v, %v)", view, err)
+	}
+	if fixture.state.state.Phase != InstallPhaseCompleted {
+		t.Fatalf("install state phase=%q, want completed", fixture.state.state.Phase)
+	}
+}
+
+func TestSetupReconcileCommitFailsClosedForBindingAndDatabaseFailures(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*serviceFixture, *Service)
+	}{
+		{name: "missing binding", mutate: func(fixture *serviceFixture, _ *Service) { fixture.store.binding = SetupBinding{} }},
+		{name: "mismatched binding", mutate: func(fixture *serviceFixture, _ *Service) {
+			fixture.store.binding.RequestDigest = strings.Repeat("f", 64)
+		}},
+		{name: "database unavailable", mutate: func(_ *serviceFixture, service *Service) {
+			service.dependencies.openStore = func(context.Context, string) (SetupStoreSession, error) {
+				return nil, errors.New("database unavailable")
+			}
+		}},
+		{name: "context cancelled", mutate: func(_ *serviceFixture, service *Service) {
+			service.dependencies.openStore = func(ctx context.Context, _ string) (SetupStoreSession, error) { return nil, ctx.Err() }
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newServiceFixture(t)
+			fixture.failCheckpoint = "after_runtime_write"
+			if _, err := fixture.service.Apply(t.Context(), fixture.request()); !errors.Is(err, ErrSetupCommit) {
+				t.Fatalf("Apply error=%v", err)
+			}
+			service := fixture.newService()
+			testCase.mutate(fixture, service)
+			ctx := t.Context()
+			if testCase.name == "context cancelled" {
+				cancelled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = cancelled
+			}
+			if _, err := service.ReconcileCommit(ctx, cloneBootstrap(fixture.bootstrap), fixture.state.state); !errors.Is(err, ErrSetupReconciliation) {
+				t.Fatalf("ReconcileCommit error=%v, want ErrSetupReconciliation", err)
+			}
+			if fixture.state.state.Phase != InstallPhaseCommitting {
+				t.Fatalf("failed reconciliation changed phase to %q", fixture.state.state.Phase)
+			}
+		})
+	}
+}
+
+func TestSetupVerifyCompletedBindingRejectsMissingOrMismatchedAdministratorBinding(t *testing.T) {
+	fixture := newServiceFixture(t)
+	if _, err := fixture.service.Apply(t.Context(), fixture.request()); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	service := fixture.newService()
+	if err := service.VerifyCompletedBinding(t.Context(), cloneBootstrap(fixture.bootstrap), fixture.state.state); err != nil {
+		t.Fatalf("VerifyCompletedBinding: %v", err)
+	}
+	fixture.store.binding = SetupBinding{}
+	if err := service.VerifyCompletedBinding(t.Context(), cloneBootstrap(fixture.bootstrap), fixture.state.state); !errors.Is(err, ErrSetupReconciliation) {
+		t.Fatalf("missing binding error=%v", err)
+	}
+	fixture.store.binding = SetupBinding{
+		OperationID: fixture.operationID, InstallationID: fixture.bootstrap.InstallationID,
+		ConfigRevision: fixture.bootstrap.ConfigRevision, RequestDigest: strings.Repeat("f", 64),
+		AdminID: 99, AdminEmail: "other@example.test",
+	}
+	if err := service.VerifyCompletedBinding(t.Context(), cloneBootstrap(fixture.bootstrap), fixture.state.state); !errors.Is(err, ErrSetupReconciliation) {
+		t.Fatalf("mismatched admin binding error=%v", err)
+	}
+}
+
 func TestSetupProgressDoesNotReportResumeUntilDatabaseBindingCanBeVerified(t *testing.T) {
 	fixture := newServiceFixture(t)
 	fixture.failCheckpoint = "before_runtime_write"

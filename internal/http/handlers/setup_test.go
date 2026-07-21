@@ -88,27 +88,34 @@ func TestBootstrapStatusUsesTrustedPublicAPIURLAndNeverRequestHost(t *testing.T)
 	}
 }
 
-func TestBootstrapStatusFallsBackToAbsoluteTrustedAPIURL(t *testing.T) {
-	system := NewSystemAPI(BootstrapStatus{
-		Phase:          BootstrapPhaseSetupRequired,
-		FallbackAPIURL: "http://192.0.2.10:9090",
-	})
-	request := httptest.NewRequest(http.MethodGet, "https://user-frontend.example/api/system/v1/bootstrap-status", nil)
-	request.Host = "user-frontend.example"
-	request.Header.Set("X-Forwarded-Proto", "https")
-	request.Header.Set("X-Forwarded-Host", "proxy-attacker.example")
-	recorder := httptest.NewRecorder()
-	system.HandleBootstrapStatus(recorder, request)
-
-	status := decodeSuccessData[BootstrapStatus](t, recorder)
-	if status.SetupURL != "http://192.0.2.10:9090/setup" {
-		t.Fatalf("setup_url = %q, want absolute trusted API fallback", status.SetupURL)
-	}
-	if strings.Contains(status.SetupURL, "frontend") || strings.Contains(status.SetupURL, "attacker") {
-		t.Fatalf("setup_url trusted browser or proxy host: %q", status.SetupURL)
-	}
-	if recorder.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Fatalf("public bootstrap status CORS = %q, want *", recorder.Header().Get("Access-Control-Allow-Origin"))
+func TestBootstrapStatusUsesRelativeFallbackWithoutTrustedPublicAPIURL(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		requestURL string
+		host       string
+		forwarded  string
+	}{
+		{name: "wildcard docker listener", requestURL: "http://127.0.0.1:8080/api/system/v1/bootstrap-status", host: "0.0.0.0:8080"},
+		{name: "remote IP", requestURL: "http://192.0.2.10:8080/api/system/v1/bootstrap-status", host: "192.0.2.10:8080"},
+		{name: "independent frontend", requestURL: "https://user.example.test/api/system/v1/bootstrap-status", host: "user.example.test"},
+		{name: "hostile proxy headers", requestURL: "http://internal-api/api/system/v1/bootstrap-status", host: "attacker.invalid", forwarded: "proxy-attacker.invalid"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			system := NewSystemAPI(BootstrapStatus{Phase: BootstrapPhaseSetupRequired})
+			request := httptest.NewRequest(http.MethodGet, testCase.requestURL, nil)
+			request.Host = testCase.host
+			request.Header.Set("X-Forwarded-Host", testCase.forwarded)
+			request.Header.Set("X-Forwarded-Proto", "https")
+			recorder := httptest.NewRecorder()
+			system.HandleBootstrapStatus(recorder, request)
+			status := decodeSuccessData[BootstrapStatus](t, recorder)
+			if status.SetupURL != "/setup" {
+				t.Fatalf("setup_url = %q, want relative API-base fallback", status.SetupURL)
+			}
+			if recorder.Header().Get("Access-Control-Allow-Origin") != "*" {
+				t.Fatalf("public bootstrap status CORS = %q, want *", recorder.Header().Get("Access-Control-Allow-Origin"))
+			}
+		})
 	}
 }
 
@@ -238,6 +245,46 @@ func TestSetupApplyFlushesAcceptedResponseBeforeOneRestartSignal(t *testing.T) {
 	}
 	if !flushedBeforeCallback.Load() {
 		t.Fatal("restart callback ran before accepted response was written and flushed")
+	}
+}
+
+func TestSetupStableErrorResponseTable(t *testing.T) {
+	testCases := []struct {
+		name       string
+		err        error
+		writer     func(http.ResponseWriter, *http.Request, error)
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "auth invalid", err: setup.ErrInvalidToken, writer: writeSetupAuthError, wantStatus: 401, wantCode: "SETUP_CREDENTIALS_INVALID"},
+		{name: "auth rate limited", err: setup.ErrRateLimited, writer: writeSetupAuthError, wantStatus: 429, wantCode: "RATE_LIMITED"},
+		{name: "auth completed", err: setup.ErrCompleted, writer: writeSetupAuthError, wantStatus: 409, wantCode: "SETUP_COMPLETED"},
+		{name: "auth internal", err: setup.ErrClock, writer: writeSetupAuthError, wantStatus: 500, wantCode: "SETUP_INTERNAL_ERROR"},
+		{name: "request cancelled", err: context.Canceled, writer: writeSetupServiceError, wantStatus: 408, wantCode: "SETUP_REQUEST_CANCELLED"},
+		{name: "request timeout", err: context.DeadlineExceeded, writer: writeSetupServiceError, wantStatus: 504, wantCode: "SETUP_REQUEST_TIMEOUT"},
+		{name: "validation", err: setup.ErrSetupValidation, writer: writeSetupServiceError, wantStatus: 400, wantCode: "SETUP_VALIDATION_FAILED"},
+		{name: "probe", err: setup.ErrSetupProbe, writer: writeSetupServiceError, wantStatus: 400, wantCode: "SETUP_PROBE_FAILED"},
+		{name: "gone", err: setup.ErrSetupOperationGone, writer: writeSetupServiceError, wantStatus: 404, wantCode: "SETUP_OPERATION_NOT_FOUND"},
+		{name: "conflict", err: setup.ErrSetupOperationConflict, writer: writeSetupServiceError, wantStatus: 409, wantCode: "SETUP_OPERATION_CONFLICT"},
+		{name: "binding mismatch", err: setup.ErrSetupBindingMismatch, writer: writeSetupServiceError, wantStatus: 409, wantCode: "SETUP_OPERATION_CONFLICT"},
+		{name: "internal", err: setup.ErrSetupCommit, writer: writeSetupServiceError, wantStatus: 500, wantCode: "SETUP_INTERNAL_ERROR"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/apply", nil)
+			testCase.writer(recorder, request, testCase.err)
+			if recorder.Code != testCase.wantStatus {
+				t.Fatalf("status=%d, want %d", recorder.Code, testCase.wantStatus)
+			}
+			var response httpx.ErrorResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if response.Error.Code != testCase.wantCode {
+				t.Fatalf("code=%q, want %q", response.Error.Code, testCase.wantCode)
+			}
+		})
 	}
 }
 

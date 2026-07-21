@@ -15,7 +15,6 @@ import (
 
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
-	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -181,6 +180,72 @@ func TestRunIncompleteSetupSkeletonServesBrokenDiagnostics(t *testing.T) {
 	}
 }
 
+func TestRunReconcilesDatabaseCommitBeforeAnyNormalDependencies(t *testing.T) {
+	bootstrap := completedAPIBootstrapForTest()
+	proof := setup.CommitProof{
+		OperationID: "019d0000-0000-7000-8000-000000000002", InstallationID: bootstrap.InstallationID,
+		RuntimeSchemaVersion: bootstrap.SchemaVersion, ConfigRevision: 1, RequestDigest: strings.Repeat("a", 64),
+	}
+	state := pendingAPIInstallStateForTest()
+	state.Phase, state.Commit = setup.InstallPhaseCommitting, &proof
+	reconciled, normalConstructed, setupConstructed, served := 0, 0, 0, 0
+	err := runAPI(apiRunDependencies{
+		runtimeEnvPath: func() string { return "runtime.env" },
+		startup: apiStartupDependencies{
+			loadBootstrap:    func(string) (config.BootstrapConfig, error) { return bootstrap, nil },
+			loadInstallState: func(string) (setup.InstallState, bool, error) { return state, true, nil },
+		},
+		reconcile: func(ctx context.Context, startup apiStartup) error {
+			reconciled++
+			if ctx.Err() != nil || startup.Decision.Reconciliation != setup.ReconciliationRequireDatabase {
+				t.Fatalf("unexpected reconciliation context/startup: %v %#v", ctx.Err(), startup)
+			}
+			return nil
+		},
+		newSetupHandler: func(config.BootstrapConfig) (http.Handler, error) { setupConstructed++; return nil, nil },
+		runNormal:       func(string, apiStartup) error { normalConstructed++; return nil },
+		serve:           func(string, http.Handler) error { served++; return nil },
+	})
+	if !errors.Is(err, ErrSupervisorRestart) || reconciled != 1 || normalConstructed != 0 || setupConstructed != 0 || served != 0 {
+		t.Fatalf("recovery = err %v reconcile %d normal %d setup %d serve %d", err, reconciled, normalConstructed, setupConstructed, served)
+	}
+}
+
+func TestRunFailedDatabaseReconciliationServesBrokenOnly(t *testing.T) {
+	bootstrap := completedAPIBootstrapForTest()
+	proof := setup.CommitProof{
+		OperationID: "019d0000-0000-7000-8000-000000000002", InstallationID: bootstrap.InstallationID,
+		RuntimeSchemaVersion: bootstrap.SchemaVersion, ConfigRevision: 1, RequestDigest: strings.Repeat("a", 64),
+	}
+	state := pendingAPIInstallStateForTest()
+	state.Phase, state.Commit = setup.InstallPhaseCommitting, &proof
+	for _, reconciliationErr := range []error{setup.ErrSetupReconciliation, context.Canceled, context.DeadlineExceeded} {
+		t.Run(reconciliationErr.Error(), func(t *testing.T) {
+			normalConstructed, setupConstructed := 0, 0
+			var served http.Handler
+			err := runAPI(apiRunDependencies{
+				runtimeEnvPath: func() string { return "runtime.env" },
+				startup: apiStartupDependencies{
+					loadBootstrap:    func(string) (config.BootstrapConfig, error) { return bootstrap, nil },
+					loadInstallState: func(string) (setup.InstallState, bool, error) { return state, true, nil },
+				},
+				reconcile:       func(context.Context, apiStartup) error { return reconciliationErr },
+				newSetupHandler: func(config.BootstrapConfig) (http.Handler, error) { setupConstructed++; return nil, nil },
+				runNormal:       func(string, apiStartup) error { normalConstructed++; return nil },
+				serve:           func(_ string, handler http.Handler) error { served = handler; return nil },
+			})
+			if err != nil || normalConstructed != 0 || setupConstructed != 0 || served == nil {
+				t.Fatalf("failed recovery = err %v normal %d setup %d served %v", err, normalConstructed, setupConstructed, served != nil)
+			}
+			recorder := httptest.NewRecorder()
+			served.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/system/v1/bootstrap-status", nil))
+			if !strings.Contains(recorder.Body.String(), `"diagnostic_code":"STARTUP_RECONCILIATION_FAILED"`) {
+				t.Fatalf("failed reconciliation response=%s", recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestNewSetupStartupHandlerBuildsWithoutOpeningMiddleware(t *testing.T) {
 	bootstrap := pendingAPIBootstrapForTest()
 	bootstrap.Path = "runtime.env"
@@ -217,6 +282,76 @@ func TestRuntimeSnapshotMatchRejectsRevisionOrVersionChange(t *testing.T) {
 	}
 }
 
+func TestRunNormalReceivesOriginalRuntimeDocumentWhenFileIsReplacedAfterModeLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	bootstrap := completedAPIBootstrapForTest()
+	bootstrap.Path = path
+	rendered, err := config.RenderRuntimeEnv(config.DefaultRuntimeSchema(), bootstrap.Values, nil)
+	if err != nil {
+		t.Fatalf("render runtime: %v", err)
+	}
+	if err := os.WriteFile(path, rendered, 0o600); err != nil {
+		t.Fatalf("write runtime: %v", err)
+	}
+	proof := setup.CommitProof{
+		OperationID: "019d0000-0000-7000-8000-000000000003", InstallationID: bootstrap.InstallationID,
+		RuntimeSchemaVersion: bootstrap.SchemaVersion, ConfigRevision: bootstrap.ConfigRevision, RequestDigest: strings.Repeat("a", 64),
+	}
+	state := setup.InstallState{
+		SchemaVersion: setup.CurrentInstallStateSchemaVersion, InstallationID: bootstrap.InstallationID,
+		DeploymentRole: bootstrap.Deployment.Role, Phase: setup.InstallPhaseCompleted, EverCompleted: true,
+		UpdatedAt: time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC), Commit: &proof,
+	}
+	normalCalls := 0
+	err = runAPI(apiRunDependencies{
+		runtimeEnvPath: func() string { return path },
+		startup: apiStartupDependencies{
+			loadInstallState: func(string) (setup.InstallState, bool, error) {
+				replacement := completedAPIBootstrapForTest().Values
+				replacement["DATABASE_URL"] = "postgres://replacement:password@db:5432/app?sslmode=disable"
+				replacement["REDIS_URL"] = "redis://replacement:6379/0"
+				replacement["AUTH_ACCESS_TOKEN_SECRET"] = "replacement-auth-secret"
+				data, renderErr := config.RenderRuntimeEnv(config.DefaultRuntimeSchema(), replacement, nil)
+				if renderErr != nil {
+					t.Fatalf("render replacement: %v", renderErr)
+				}
+				if writeErr := os.WriteFile(path, data, 0o600); writeErr != nil {
+					t.Fatalf("write replacement: %v", writeErr)
+				}
+				return state, true, nil
+			},
+		},
+		runNormal: func(_ string, startup apiStartup) error {
+			normalCalls++
+			if startup.Bootstrap.Values["DATABASE_URL"] != bootstrap.Values["DATABASE_URL"] ||
+				startup.Bootstrap.Values["REDIS_URL"] != bootstrap.Values["REDIS_URL"] ||
+				startup.Bootstrap.Values["AUTH_ACCESS_TOKEN_SECRET"] != bootstrap.Values["AUTH_ACCESS_TOKEN_SECRET"] {
+				t.Fatal("normal startup received mixed runtime documents")
+			}
+			return nil
+		},
+		serve: func(string, http.Handler) error {
+			t.Fatal("normal snapshot unexpectedly served bootstrap mode")
+			return nil
+		},
+	})
+	if err != nil || normalCalls != 1 {
+		t.Fatalf("runAPI=(%v), normal calls=%d", err, normalCalls)
+	}
+}
+
+func TestNormalStartupContainsNoLegacyAdministratorSeed(t *testing.T) {
+	contents, err := os.ReadFile("run.go")
+	if err != nil {
+		t.Fatalf("read run.go: %v", err)
+	}
+	for _, forbidden := range []string{"seedDefaultAdmin", "cfg.Admin", "PIC_GALLERY_ADMIN_PASSWORD"} {
+		if strings.Contains(string(contents), forbidden) {
+			t.Fatalf("normal startup retains legacy administrator seed path %q", forbidden)
+		}
+	}
+}
+
 func pendingAPIBootstrapForTest() config.BootstrapConfig {
 	deployment := config.DeploymentContext{
 		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore,
@@ -232,6 +367,27 @@ func pendingAPIBootstrapForTest() config.BootstrapConfig {
 		SchemaVersion: config.CurrentRuntimeSchemaVersion, Deployment: deployment,
 		InstallationID: values["INSTALLATION_ID"], Values: values,
 	}
+}
+
+func completedAPIBootstrapForTest() config.BootstrapConfig {
+	bootstrap := pendingAPIBootstrapForTest()
+	bootstrap.SetupCompleted = true
+	bootstrap.Deployment.SetupCompleted = true
+	bootstrap.ConfigRevision = 1
+	bootstrap.SetupTokenVersion = 1
+	bootstrap.ApplicationVersion = "v1"
+	for key, value := range map[string]string{
+		"DEPLOYMENT_MODULES": "api,worker", "POSTGRES_MANAGED": "false", "REDIS_MANAGED": "false", "OBJECT_STORAGE_MANAGED": "false",
+		"SETUP_COMPLETED": "true", "SETUP_TOKEN_VERSION": "1", "CONFIG_REVISION": "1",
+		"DATABASE_URL": "postgres://app:password@127.0.0.1:5432/app?sslmode=disable", "REDIS_URL": "redis://127.0.0.1:6379/0", "REDIS_KEY_PREFIX": "app",
+		"STORAGE_LOCAL_ROOT": "./data/storage", "STORAGE_SHARED_VOLUME": "true",
+		"AUTH_ACCESS_TOKEN_SECRET": "access-token-secret", "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY": "api-key-secret",
+		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY": "cashier-key", "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": "secure-config-key-which-is-long-enough",
+		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY": "quote-signing-key", "API_PORT": "8080", "IMAGE_TAG": "v1", "APPLICATION_VERSION": "v1",
+	} {
+		bootstrap.Values[key] = value
+	}
+	return bootstrap
 }
 
 func pendingAPIInstallStateForTest() setup.InstallState {
@@ -287,24 +443,6 @@ func TestOrdinaryAPIAndWorkerStartupContainNoMigrationCalls(t *testing.T) {
 				t.Fatalf("ordinary startup %s still contains database mutation %q", name, forbidden)
 			}
 		}
-	}
-}
-
-func TestDefaultAdminSeedRoleDefaultsToAdmin(t *testing.T) {
-	if got := defaultAdminSeedRole(""); got != domainadminauth.RoleAdmin {
-		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleAdmin)
-	}
-}
-
-func TestDefaultAdminSeedRoleAllowsExplicitSuperAdmin(t *testing.T) {
-	if got := defaultAdminSeedRole(" super_admin "); got != domainadminauth.RoleSuperAdmin {
-		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleSuperAdmin)
-	}
-}
-
-func TestDefaultAdminSeedRoleRejectsUnknownRole(t *testing.T) {
-	if got := defaultAdminSeedRole("ops_admin"); got != domainadminauth.RoleAdmin {
-		t.Fatalf("defaultAdminSeedRole() = %q, want %q", got, domainadminauth.RoleAdmin)
 	}
 }
 

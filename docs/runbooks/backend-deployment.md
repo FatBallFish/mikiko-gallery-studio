@@ -24,11 +24,9 @@ Runtime bootstrap configuration is injected from `.env.prod`. API and worker no 
    - `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`
    - `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`
    - `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`
-   - `PIC_GALLERY_ADMIN_EMAIL`
-   - `PIC_GALLERY_ADMIN_PASSWORD`
    - `CORS_ALLOWED_ORIGINS`
 
-   `PIC_GALLERY_ADMIN_EMAIL` and `PIC_GALLERY_ADMIN_PASSWORD` seed the independent Ops admin account only when no admin exists.
+   Create the first administrator through the API-hosted setup flow. Runtime environment variables never seed administrator credentials.
 
 2. Pull and start the stack:
 

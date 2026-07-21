@@ -9,8 +9,7 @@ components:
           enum: [setup_required, initializing, restart_pending, ready, broken]
         setup_url:
           type: string
-          format: uri
-          description: Absolute HTTP(S) location of the API-hosted setup page, derived only from trusted runtime configuration.
+          description: Absolute HTTP(S) API-hosted setup URL when PUBLIC_API_URL is configured; otherwise /setup for resolution against the configured API base.
         operation_id:
           type: string
           format: uuid

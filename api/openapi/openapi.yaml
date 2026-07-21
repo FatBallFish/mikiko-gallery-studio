@@ -79,6 +79,19 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /setup:
+    get:
+      tags: [Setup]
+      summary: Open the API-hosted first-run setup page
+      description: Registered only while setup is pending. Normal and broken startup modes return 404.
+      operationId: getSetupPage
+      responses:
+        '200':
+          description: No-store setup page with restrictive browser security headers
+          content:
+            text/html:
+              schema:
+                type: string
   /api/system/v1/bootstrap-status:
     get:
       tags: [Bootstrap]
@@ -106,14 +119,32 @@ paths:
       responses:
         '204':
           description: Setup session cookie created
+        '400':
+          description: SETUP_INVALID_JSON
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '401':
-          description: Invalid setup credential
+          description: SETUP_CREDENTIALS_INVALID
           content:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '429':
-          description: Setup authentication is temporarily rate limited
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: SETUP_COMPLETED
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '500':
+          description: SETUP_INTERNAL_ERROR
           content:
             application/json:
               schema:
@@ -137,6 +168,12 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/setup.yaml#/components/schemas/SetupProbeResponse
+        '400':
+          description: SETUP_INVALID_JSON
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '401':
           description: Invalid or missing setup session
           content:
@@ -162,6 +199,12 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/setup.yaml#/components/schemas/SetupProbeResponse
+        '400':
+          description: SETUP_INVALID_JSON
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '401':
           description: Invalid or missing setup session
           content:
@@ -187,6 +230,12 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/setup.yaml#/components/schemas/SetupProbeResponse
+        '400':
+          description: SETUP_INVALID_JSON
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '401':
           description: Invalid or missing setup session
           content:
@@ -213,7 +262,7 @@ paths:
               schema:
                 $ref: ./components/schemas/setup.yaml#/components/schemas/SetupOperationResponse
         '400':
-          description: Invalid configuration or failed middleware verification
+          description: SETUP_INVALID_JSON, SETUP_VALIDATION_FAILED, or SETUP_PROBE_FAILED
           content:
             application/json:
               schema:
@@ -225,7 +274,31 @@ paths:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '409':
-          description: Conflicting setup operation
+          description: SETUP_OPERATION_CONFLICT
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '404':
+          description: SETUP_OPERATION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '408':
+          description: SETUP_REQUEST_CANCELLED
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '500':
+          description: SETUP_INTERNAL_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '504':
+          description: SETUP_REQUEST_TIMEOUT
           content:
             application/json:
               schema:
@@ -250,6 +323,12 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/setup.yaml#/components/schemas/SetupOperationResponse
+        '400':
+          description: SETUP_VALIDATION_FAILED or SETUP_PROBE_FAILED
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '401':
           description: Invalid or missing setup session
           content:
@@ -257,7 +336,31 @@ paths:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
         '404':
-          description: Setup operation not found
+          description: SETUP_OPERATION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '408':
+          description: SETUP_REQUEST_CANCELLED
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: SETUP_OPERATION_CONFLICT
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '500':
+          description: SETUP_INTERNAL_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '504':
+          description: SETUP_REQUEST_TIMEOUT
           content:
             application/json:
               schema:

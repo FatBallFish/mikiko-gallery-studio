@@ -283,6 +283,8 @@ func writeSetupAuthError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, errs.New(http.StatusTooManyRequests, errs.CodeRateLimited, "setup authentication is temporarily rate limited"))
 	case errors.Is(err, setup.ErrCompleted):
 		httpx.WriteError(w, r, errs.New(http.StatusConflict, "SETUP_COMPLETED", "setup is already completed"))
+	case errors.Is(err, setup.ErrEntropy), errors.Is(err, setup.ErrClock), errors.Is(err, setup.ErrInvalidConfiguration):
+		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, "SETUP_INTERNAL_ERROR", "setup authentication failed"))
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusUnauthorized, "SETUP_CREDENTIALS_INVALID", "setup credentials are invalid"))
 	}

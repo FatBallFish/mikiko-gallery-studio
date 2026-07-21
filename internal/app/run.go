@@ -15,7 +15,6 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
 	"github.com/fatballfish/pic-gallery/internal/config"
-	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	apphttp "github.com/fatballfish/pic-gallery/internal/http/router"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
@@ -65,6 +64,7 @@ type apiStartupDependencies struct {
 type apiStartup struct {
 	Mode           setup.StartupMode
 	Bootstrap      config.BootstrapConfig
+	State          setup.InstallState
 	Decision       setup.StartupDecision
 	DiagnosticCode string
 }
@@ -85,53 +85,20 @@ func loadAPIStartup(runtimeEnvPath string, dependencies apiStartupDependencies) 
 	}
 	state, stateExists, stateErr := dependencies.loadInstallState(statePath)
 	if stateErr != nil {
-		return apiStartup{Mode: setup.StartupModeBroken, Bootstrap: bootstrap, DiagnosticCode: "INSTALL_STATE_INVALID"}
+		return apiStartup{Mode: setup.StartupModeBroken, Bootstrap: bootstrap, State: state, DiagnosticCode: "INSTALL_STATE_INVALID"}
 	}
 	if bootstrapErr != nil {
 		return apiStartup{Mode: setup.StartupModeBroken, DiagnosticCode: "BOOTSTRAP_CONFIG_INVALID"}
 	}
 	decision, err := setup.ResolveStartupDecision(bootstrap, state, stateExists)
 	if err != nil {
-		return apiStartup{Mode: setup.StartupModeBroken, Bootstrap: bootstrap, Decision: decision, DiagnosticCode: "STARTUP_STATE_INCONSISTENT"}
+		return apiStartup{Mode: setup.StartupModeBroken, Bootstrap: bootstrap, State: state, Decision: decision, DiagnosticCode: "STARTUP_STATE_INCONSISTENT"}
 	}
-	startup := apiStartup{Mode: decision.Mode, Bootstrap: bootstrap, Decision: decision}
+	startup := apiStartup{Mode: decision.Mode, Bootstrap: bootstrap, State: state, Decision: decision}
 	if decision.Mode == setup.StartupModeBroken {
 		startup.DiagnosticCode = "STARTUP_RECONCILIATION_REQUIRED"
 	}
 	return startup
-}
-
-func seedDefaultAdmin(ctx context.Context, cfg config.AdminConfig, store *entstore.AdminAuthStore) {
-	email := strings.TrimSpace(cfg.SeedEmail)
-	password := cfg.SeedPassword
-	if email == "" || password == "" {
-		return
-	}
-	if _, err := store.GetAdminByEmail(ctx, email); err == nil {
-		return
-	}
-	_, err := store.CreateAdmin(ctx, domainadminauth.AdminUser{
-		Email:        email,
-		PasswordHash: adminauthservice.HashPassword(password),
-		Role:         defaultAdminSeedRole(cfg.SeedRole),
-		Status:       "active",
-	})
-	if err != nil {
-		slog.Warn("failed to seed default admin", "err", err)
-	}
-}
-
-func defaultAdminSeedRole(value string) string {
-	role := strings.ToLower(strings.TrimSpace(value))
-	switch role {
-	case "":
-		return domainadminauth.RoleAdmin
-	case domainadminauth.RoleAdmin, domainadminauth.RoleSuperAdmin:
-		return role
-	default:
-		slog.Warn("invalid admin.seed_role, falling back to admin", "role", role)
-		return domainadminauth.RoleAdmin
-	}
 }
 
 type apiRunDependencies struct {
@@ -139,6 +106,7 @@ type apiRunDependencies struct {
 	startup         apiStartupDependencies
 	newSetupHandler func(config.BootstrapConfig) (http.Handler, error)
 	runNormal       func(string, apiStartup) error
+	reconcile       func(context.Context, apiStartup) error
 	serve           func(string, http.Handler) error
 }
 
@@ -157,11 +125,26 @@ func runAPI(dependencies apiRunDependencies) error {
 	if dependencies.runNormal == nil {
 		dependencies.runNormal = runNormalStartup
 	}
+	if dependencies.reconcile == nil {
+		dependencies.reconcile = reconcileStartupCommit
+	}
 	if dependencies.serve == nil {
 		dependencies.serve = serveBootstrapAPI
 	}
 	runtimeEnvPath := dependencies.runtimeEnvPath()
 	startup := loadAPIStartup(runtimeEnvPath, dependencies.startup)
+	if startup.Decision.Reconciliation == setup.ReconciliationRequireDatabase {
+		reconcileContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err := dependencies.reconcile(reconcileContext, startup)
+		cancel()
+		if err != nil {
+			slog.Error("startup commit reconciliation failed", "diagnostic_code", "STARTUP_RECONCILIATION_FAILED")
+			return dependencies.serve(bootstrapAddress(startup.Bootstrap), apphttp.NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{
+				Phase: handlers.BootstrapPhaseBroken, DiagnosticCode: "STARTUP_RECONCILIATION_FAILED", RetryAfterSeconds: 5,
+			})))
+		}
+		return ErrSupervisorRestart
+	}
 	switch startup.Mode {
 	case setup.StartupModeSetup:
 		handler, err := dependencies.newSetupHandler(startup.Bootstrap)
@@ -185,8 +168,49 @@ func runAPI(dependencies apiRunDependencies) error {
 	}
 }
 
-func runNormalStartup(runtimeEnvPath string, startup apiStartup) error {
-	cfg, err := config.Load(runtimeEnvPath)
+func reconcileStartupCommit(ctx context.Context, startup apiStartup) error {
+	const sessionTTL = 15 * time.Minute
+	auth, err := setup.NewAuthService(setup.AuthConfig{
+		Version: startup.Bootstrap.SetupTokenVersion, Completed: true,
+		SessionTTL: sessionTTL, RateLimit: setup.DefaultSetupRateLimitConfig(),
+	})
+	if err != nil {
+		return setup.ErrSetupReconciliation
+	}
+	service, err := setup.NewService(setup.ServiceOptions{
+		RuntimeEnvPath: startup.Bootstrap.Path,
+		StateStore:     setup.NewStateStore(startup.Bootstrap.Path), ProbeService: setup.NewProbeService(),
+		AuthService: auth, StoreOpener: entstore.OpenSetupStore,
+	})
+	if err != nil {
+		return setup.ErrSetupReconciliation
+	}
+	_, err = service.ReconcileCommit(ctx, startup.Bootstrap, startup.State)
+	return err
+}
+
+func verifyCompletedStartupBinding(ctx context.Context, startup apiStartup) error {
+	const sessionTTL = 15 * time.Minute
+	auth, err := setup.NewAuthService(setup.AuthConfig{
+		Version: startup.Bootstrap.SetupTokenVersion, Completed: true,
+		SessionTTL: sessionTTL, RateLimit: setup.DefaultSetupRateLimitConfig(),
+	})
+	if err != nil {
+		return setup.ErrSetupReconciliation
+	}
+	service, err := setup.NewService(setup.ServiceOptions{
+		RuntimeEnvPath: startup.Bootstrap.Path,
+		StateStore:     setup.NewStateStore(startup.Bootstrap.Path), ProbeService: setup.NewProbeService(),
+		AuthService: auth, StoreOpener: entstore.OpenSetupStore,
+	})
+	if err != nil {
+		return setup.ErrSetupReconciliation
+	}
+	return service.VerifyCompletedBinding(ctx, startup.Bootstrap, startup.State)
+}
+
+func runNormalStartup(_ string, startup apiStartup) error {
+	cfg, err := config.RuntimeFromBootstrap(startup.Bootstrap)
 	if err != nil {
 		slog.Error("normal runtime validation failed", "diagnostic_code", "RUNTIME_CONFIG_INVALID")
 		return serveBootstrapAPI(bootstrapAddress(startup.Bootstrap), apphttp.NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{
@@ -222,6 +246,9 @@ func runNormalStartup(runtimeEnvPath string, startup apiStartup) error {
 	defer client.Close()
 	if err := checkRuntimeSchemaCompatibility(context.Background(), client, cfg); err != nil {
 		return err
+	}
+	if err := verifyCompletedStartupBinding(context.Background(), startup); err != nil {
+		return fmt.Errorf("verify completed setup binding: %w", err)
 	}
 	redisClient, allowRedisFallback, err := newRedisClient(context.Background(), cfg)
 	if err != nil {
@@ -266,7 +293,6 @@ func runNormalStartup(runtimeEnvPath string, startup apiStartup) error {
 		return err
 	}
 	adminStore := entstore.NewAdminAuthStore(client)
-	seedDefaultAdmin(context.Background(), cfg.Admin, adminStore)
 	adminAuthSvc := adminauthservice.NewService(cfg.Auth, adminStore)
 	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
 	adminUserSvc := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
@@ -333,7 +359,7 @@ func newSetupStartupHandler(bootstrap config.BootstrapConfig) (http.Handler, err
 	}
 	system := handlers.NewSystemAPI(handlers.BootstrapStatus{
 		Phase: handlers.BootstrapPhaseSetupRequired, PublicAPIURL: bootstrap.Values["PUBLIC_API_URL"],
-		FallbackAPIURL: bootstrapFallbackAPIURL(bootstrap), RetryAfterSeconds: 2,
+		RetryAfterSeconds: 2,
 	})
 	restart := make(chan struct{})
 	var restartOnce sync.Once
@@ -371,18 +397,6 @@ func bootstrapAddress(bootstrap config.BootstrapConfig) string {
 		return ":" + strconv.Itoa(port)
 	}
 	return ":8080"
-}
-
-func bootstrapFallbackAPIURL(bootstrap config.BootstrapConfig) string {
-	host, port, err := net.SplitHostPort(bootstrapAddress(bootstrap))
-	if err != nil {
-		return "http://127.0.0.1:8080"
-	}
-	host = strings.Trim(strings.TrimSpace(host), "[]")
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-	return "http://" + net.JoinHostPort(host, port)
 }
 
 func serveBootstrapAPI(address string, handler http.Handler) error {

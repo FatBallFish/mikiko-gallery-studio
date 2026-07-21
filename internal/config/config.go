@@ -9,7 +9,6 @@ type Config struct {
 	Redis            RedisConfig            `yaml:"redis"`
 	Storage          StorageConfig          `yaml:"storage"`
 	Auth             AuthConfig             `yaml:"auth"`
-	Admin            AdminConfig            `yaml:"admin"`
 	APIKey           APIKeyConfig           `yaml:"api_key"`
 	HTTP             HTTPConfig             `yaml:"http"`
 	Billing          BillingConfig          `yaml:"billing"`
@@ -79,12 +78,6 @@ type AuthConfig struct {
 	FixedEmailCode         string        `yaml:"fixed_email_code"`
 	DevEmailCodes          bool          `yaml:"dev_email_codes"`
 	SMTP                   SMTPConfig    `yaml:"smtp"`
-}
-
-type AdminConfig struct {
-	SeedEmail    string `yaml:"seed_email"`
-	SeedPassword string `yaml:"seed_password"`
-	SeedRole     string `yaml:"seed_role"`
 }
 
 type SMTPConfig struct {

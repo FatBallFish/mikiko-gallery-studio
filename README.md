@@ -400,9 +400,9 @@ Set at least these values before the first start:
 - `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`
 - `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`
 - `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`
-- `PIC_GALLERY_ADMIN_EMAIL`
-- `PIC_GALLERY_ADMIN_PASSWORD`
 - `CORS_ALLOWED_ORIGINS`
+
+The first administrator is created through the API-hosted setup flow; plaintext administrator credentials are never loaded from runtime environment variables.
 
 Check the deployment:
 

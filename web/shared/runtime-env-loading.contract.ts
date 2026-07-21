@@ -33,25 +33,35 @@ for (const path of ['README.md', 'README.zh-CN.md']) {
 
 const smoke = read('scripts/test/api_contract_smoke.sh')
 for (const required of [
-  'SETUP_COMPLETED=true',
+  'SETUP_COMPLETED=$setup_completed',
+	'SETUP_TOKEN=$setup_token',
   'SETUP_TOKEN_VERSION=1',
   'POSTGRES_CONTAINER=',
   'REDIS_CONTAINER=',
   'postgres:16-alpine',
   'redis:7-alpine',
   'docker rm -f "$POSTGRES_CONTAINER" "$REDIS_CONTAINER"',
-	'go build -o "$MIGRATE_BINARY" ./cmd/db-migrate',
 	'assert_ordinary_startup_does_not_migrate',
-	'APP_ENV_FILE="$SMOKE_ENV_PATH" "$MIGRATE_BINARY"',
+	'run_setup_initialization',
+	'/api/setup/v1/session',
+	'/api/setup/v1/apply',
 ]) {
   if (!smoke.includes(required)) {
     throw new Error(`API contract smoke must include isolated runtime prerequisite: ${required}`)
   }
 }
-const migrationIndex = smoke.indexOf('APP_ENV_FILE="$SMOKE_ENV_PATH" "$MIGRATE_BINARY"')
-const apiStartIndex = smoke.indexOf('"$API_BINARY" >"$SERVER_LOG" 2>&1 &')
-if (migrationIndex < 0 || apiStartIndex < 0 || migrationIndex > apiStartIndex) {
-  throw new Error('API contract smoke must run explicit migration before ordinary API startup')
+for (const retired of ['MIGRATE_BINARY=', 'go build -o "$MIGRATE_BINARY"', '"$MIGRATE_BINARY"']) {
+	if (smoke.includes(retired)) {
+		throw new Error(`API contract smoke must initialize through setup instead of db-migrate: ${retired}`)
+	}
+}
+const setupInitializationIndex = smoke.indexOf('\nrun_setup_initialization\n')
+const normalAPIStartIndex = smoke.indexOf(
+	'\nAPP_ENV_FILE="$SMOKE_ENV_PATH" \\\n"$API_BINARY" >"$SERVER_LOG" 2>&1 &',
+	setupInitializationIndex,
+)
+if (setupInitializationIndex < 0 || normalAPIStartIndex < 0 || setupInitializationIndex > normalAPIStartIndex) {
+	throw new Error('API contract smoke must complete setup initialization before ordinary API startup')
 }
 for (const retired of ['DATABASE_URL=file:', 'import sqlite3', 'DB_PATH=']) {
   if (smoke.includes(retired)) {
