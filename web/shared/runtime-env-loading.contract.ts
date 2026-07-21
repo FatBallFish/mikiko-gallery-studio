@@ -31,6 +31,43 @@ for (const path of ['README.md', 'README.zh-CN.md']) {
   }
 }
 
+const currentDeploymentCredentialSurfaces = [
+  'README.md',
+  'README.zh-CN.md',
+  'docs/runbooks/backend-deployment.md',
+  '.env.example',
+  'config/runtime.env.example',
+  'deployments/devops/env/frontend.env.example',
+  'deployments/devops/middleware-compose.yml',
+  'deployments/docker-compose/.env.example',
+  'deployments/docker-compose/.env.prod.example',
+  'deployments/docker-compose/docker-compose.local.yml',
+  'deployments/docker-compose/docker-compose.prod.yml',
+]
+for (const path of currentDeploymentCredentialSurfaces) {
+  const source = read(path)
+  for (const forbidden of [
+    'admin123456',
+    'Default development admin login',
+    '开发环境默认管理员账号',
+  ]) {
+    if (source.includes(forbidden)) {
+      throw new Error(`${path} must not advertise default administrator credentials: ${forbidden}`)
+    }
+  }
+}
+for (const [path, required] of Object.entries({
+  'README.md': ['bootstrap-status', 'setup_url', 'setup token', 'super_admin'],
+  'README.zh-CN.md': ['bootstrap-status', 'setup_url', 'setup Token', 'super_admin'],
+})) {
+  const source = read(path)
+  for (const marker of required) {
+    if (!source.includes(marker)) {
+      throw new Error(`${path} must describe setup-created initial administrator flow: ${marker}`)
+    }
+  }
+}
+
 const smoke = read('scripts/test/api_contract_smoke.sh')
 for (const required of [
   'SETUP_COMPLETED=$setup_completed',

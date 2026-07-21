@@ -36,6 +36,28 @@ if grep -Eq 'PIC_GALLERY_ADMIN_(EMAIL|PASSWORD|ROLE)=' "$SMOKE"; then
 fi
 
 for marker in \
+  'wait_for_postgres_final_server()' \
+  'for _ in {1..80}' \
+  'psql -X -qAt' \
+  '-h 127.0.0.1' \
+  '-p 5432' \
+  "-c 'SELECT 1'" \
+  'PostgreSQL final server did not become ready within the bounded startup window'; do
+  if ! grep -Fq -- "$marker" "$SMOKE"; then
+    echo "API smoke does not wait for the persistent PostgreSQL TCP server: $marker" >&2
+    exit 1
+  fi
+done
+if grep -Fq 'pg_isready -U "$POSTGRES_SUPERUSER" -d postgres' "$SMOKE"; then
+  echo "API smoke still accepts the PostgreSQL image temporary init server as ready" >&2
+  exit 1
+fi
+if grep -Eq 'PostgreSQL final server.*(PASSWORD|password|postgres://|psql:)' "$SMOKE"; then
+  echo "API smoke PostgreSQL readiness diagnostic may expose connection details" >&2
+  exit 1
+fi
+
+for marker in \
   'CONFIG_REVISION=1' \
   'SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"' \
   '"phase": "completed"' \

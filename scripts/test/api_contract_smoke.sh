@@ -160,6 +160,20 @@ except OSError:
 PY
 }
 
+wait_for_postgres_final_server() {
+  local result=""
+  for _ in {1..80}; do
+    if result="$(docker exec -e "PGPASSWORD=$POSTGRES_SUPERUSER_PASSWORD" "$POSTGRES_CONTAINER" \
+      psql -X -qAt -h 127.0.0.1 -p 5432 -U "$POSTGRES_SUPERUSER" -d postgres -c 'SELECT 1' 2>/dev/null)" && \
+      [[ "$(printf '%s' "$result" | tr -d '[:space:]')" == "1" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "PostgreSQL final server did not become ready within the bounded startup window" >&2
+  return 1
+}
+
 start_smoke_middleware() {
   if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
     echo "API contract smoke requires a running Docker daemon for isolated PostgreSQL and Redis containers." >&2
@@ -176,13 +190,7 @@ start_smoke_middleware() {
     -p 127.0.0.1::6379 \
     redis:7-alpine >/dev/null
 
-  for _ in {1..80}; do
-    if docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_SUPERUSER" -d postgres >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.25
-  done
-  docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_SUPERUSER" -d postgres >/dev/null
+  wait_for_postgres_final_server
   docker exec -i "$POSTGRES_CONTAINER" \
     psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_SUPERUSER" -d postgres \
     -v "app_password=$POSTGRES_PASSWORD" <<SQL

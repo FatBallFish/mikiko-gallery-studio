@@ -121,10 +121,11 @@ make compose-up
 - 管理端 Web：`http://127.0.0.1:8088/admin/`
 - API 与文档：通过 `/api/*`、`/docs/*`、`/v1/*`、`/healthz`、`/readyz` 代理
 
-开发环境默认管理员账号：
+初始化管理员流程：
 
-- 邮箱：`admin@example.com`
-- 密码：`admin123456`
+1. 请求 `GET /api/system/v1/bootstrap-status`，打开返回的 `setup_url`。
+2. 使用部署工具首次输出的 setup Token；初始化完成前也可通过 `deployctl setup token show` 找回。
+3. 在 setup 中由运维人员自行填写首个管理员邮箱和密码。该账号会以 `super_admin` 身份创建，系统不预置默认管理员凭据。
 
 如果要把服务暴露到本机开发环境之外，请先完成 `config/runtime.env` 中由 setup 管理的配置，并在 `deployments/docker-compose/.env.example` 中覆盖 Compose 专用值。
 

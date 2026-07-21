@@ -121,10 +121,11 @@ Default entrypoint:
 - Admin web: `http://127.0.0.1:8088/admin/`
 - API and docs: proxied through `/api/*`, `/docs/*`, `/v1/*`, `/healthz`, and `/readyz`
 
-Default development admin login:
+Initial administrator setup:
 
-- Email: `admin@example.com`
-- Password: `admin123456`
+1. Query `GET /api/system/v1/bootstrap-status` and open the returned `setup_url`.
+2. Use the setup token printed by the deployment tool, or recover it with `deployctl setup token show` before initialization completes.
+3. Choose the initial administrator email and password in setup. That account is created as `super_admin`; no default administrator credentials are preset.
 
 Complete setup-managed runtime values in `config/runtime.env`, and override Compose-only values in `deployments/docker-compose/.env.example`, before exposing the service outside a local development machine.
 
