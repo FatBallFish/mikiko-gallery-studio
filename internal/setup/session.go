@@ -20,6 +20,7 @@ const (
 	setupSessionEncoded  = 107
 
 	SetupSessionCookieName = "setup_session"
+	SetupSessionCookiePath = "/api/setup/v1"
 )
 
 func signSession(version uint64, now time.Time, ttl time.Duration, nonce, signingKey []byte) (string, error) {
@@ -86,7 +87,7 @@ func NewSetupSessionCookie(value string, now time.Time, ttl time.Duration, secur
 		maxAge++
 	}
 	return &http.Cookie{
-		Name: SetupSessionCookieName, Value: value, Path: "/",
+		Name: SetupSessionCookieName, Value: value, Path: SetupSessionCookiePath,
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode,
 		Expires: expires, MaxAge: maxAge,
 	}, nil
@@ -94,7 +95,7 @@ func NewSetupSessionCookie(value string, now time.Time, ttl time.Duration, secur
 
 func ClearSetupSessionCookie(secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name: SetupSessionCookieName, Path: "/", HttpOnly: true,
+		Name: SetupSessionCookieName, Path: SetupSessionCookiePath, HttpOnly: true,
 		Secure: secure, SameSite: http.SameSiteStrictMode,
 		Expires: time.Unix(1, 0).UTC(), MaxAge: -1,
 	}

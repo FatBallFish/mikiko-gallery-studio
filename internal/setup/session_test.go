@@ -98,7 +98,7 @@ func TestSetupSessionCookieAttributesForHTTPAndHTTPS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewSetupSessionCookie returned error: %v", err)
 		}
-		if cookie.Name != SetupSessionCookieName || cookie.Value != "signed-session" || cookie.Path != "/" {
+		if cookie.Name != SetupSessionCookieName || cookie.Value != "signed-session" || cookie.Path != SetupSessionCookiePath {
 			t.Fatalf("unexpected cookie identity: %#v", cookie)
 		}
 		if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Secure != secure {
@@ -110,7 +110,7 @@ func TestSetupSessionCookieAttributesForHTTPAndHTTPS(t *testing.T) {
 	}
 
 	cleared := ClearSetupSessionCookie(false)
-	if cleared.Name != SetupSessionCookieName || cleared.Path != "/" || cleared.MaxAge != -1 || !cleared.HttpOnly || cleared.SameSite != http.SameSiteStrictMode {
+	if cleared.Name != SetupSessionCookieName || cleared.Path != SetupSessionCookiePath || cleared.MaxAge != -1 || !cleared.HttpOnly || cleared.SameSite != http.SameSiteStrictMode {
 		t.Fatalf("unexpected clearing cookie: %#v", cleared)
 	}
 }
@@ -151,7 +151,7 @@ func TestRateLimitTracksNormalizedIPAndTokenFingerprint(t *testing.T) {
 	}
 }
 
-func TestRateLimitCountsSuccessfulAttemptsAndBoundsMemory(t *testing.T) {
+func TestRateLimitCountsSuccessfulAttemptsEvictsOldestAndBoundsMemory(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	clock := &manualClock{now: now}
 	token := generatedTokenForTest(t, 16)
@@ -174,8 +174,8 @@ func TestRateLimitCountsSuccessfulAttemptsAndBoundsMemory(t *testing.T) {
 	if _, err := service.Exchange("192.0.2.71", generatedTokenForTest(t, 17)); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("first capacity attempt: %v", err)
 	}
-	if _, err := service.Exchange("192.0.2.72", generatedTokenForTest(t, 18)); !errors.Is(err, ErrRateLimited) {
-		t.Fatalf("bounded limiter did not fail closed at capacity: %v", err)
+	if _, err := service.Exchange("192.0.2.72", generatedTokenForTest(t, 18)); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("capacity pressure globally denied a new fingerprint: %v", err)
 	}
 	if ipEntries, tokenEntries := service.rateLimitEntryCountsForTest(); ipEntries > 2 || tokenEntries > 2 {
 		t.Fatalf("rate limiter exceeded bounds: ip=%d token=%d", ipEntries, tokenEntries)
@@ -184,6 +184,95 @@ func TestRateLimitCountsSuccessfulAttemptsAndBoundsMemory(t *testing.T) {
 	clock.Advance(time.Minute)
 	if _, err := service.Exchange("192.0.2.72", generatedTokenForTest(t, 18)); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("expired entries were not cleaned: %v", err)
+	}
+}
+
+func TestRateLimitUniqueFingerprintFloodCannotPermanentlyDenyAdministrator(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0).UTC()
+	clock := &manualClock{now: now}
+	adminToken := generatedTokenForTest(t, 30)
+	service, err := NewAuthService(AuthConfig{
+		Token: adminToken, Version: 1, SessionTTL: 5 * time.Minute, Rand: &sequenceReader{}, Clock: clock.Read,
+		RateLimit: RateLimitConfig{Window: time.Hour, IPAttempts: 3, TokenAttempts: 3, MaxEntries: 4},
+	})
+	if err != nil {
+		t.Fatalf("NewAuthService returned error: %v", err)
+	}
+	for index := 1; index <= 40; index++ {
+		candidate := generatedTokenForTest(t, byte(30+index))
+		if _, err := service.Exchange("198.51.100."+itoaForTest((index%90)+1), candidate); !errors.Is(err, ErrInvalidToken) {
+			t.Fatalf("flood attempt %d error = %v, want invalid token without global lockout", index, err)
+		}
+	}
+	if _, err := service.Exchange("203.0.113.200", adminToken); err != nil {
+		t.Fatalf("legitimate administrator remained denied after unique flood: %v", err)
+	}
+	if ipEntries, tokenEntries := service.rateLimitEntryCountsForTest(); ipEntries > 4 || tokenEntries > 4 {
+		t.Fatalf("rate limiter exceeded bounds after flood: ip=%d token=%d", ipEntries, tokenEntries)
+	}
+}
+
+func TestRateLimitExpiredCleanupIsAmortizedAndPreservesFingerprintLimits(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0).UTC()
+	clock := &manualClock{now: now}
+	token := generatedTokenForTest(t, 80)
+	service, err := NewAuthService(AuthConfig{
+		Token: token, Version: 1, SessionTTL: 5 * time.Minute, Rand: &sequenceReader{}, Clock: clock.Read,
+		RateLimit: RateLimitConfig{Window: time.Minute, IPAttempts: 2, TokenAttempts: 1000, MaxEntries: 512},
+	})
+	if err != nil {
+		t.Fatalf("NewAuthService returned error: %v", err)
+	}
+	for index := 1; index <= 500; index++ {
+		if _, err := service.Exchange("198.18.0."+itoaForTest((index%90)+1), generatedTokenForTest(t, byte(index))); err != nil && !errors.Is(err, ErrInvalidToken) && !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("seed attempt %d error = %v", index, err)
+		}
+	}
+	clock.Advance(time.Minute)
+	if _, err := service.Exchange("203.0.113.210", token); err != nil {
+		t.Fatalf("administrator failed after expiry cleanup: %v", err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := service.Exchange("203.0.113.211", generatedTokenForTest(t, byte(110+attempt))); !errors.Is(err, ErrInvalidToken) {
+			t.Fatalf("fingerprint-limit seed %d error = %v", attempt, err)
+		}
+	}
+	if _, err := service.Exchange("203.0.113.211", generatedTokenForTest(t, 120)); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("per-IP limit was lost after eviction redesign: %v", err)
+	}
+}
+
+func TestRateLimitTableMaintenanceWorkIsBoundedAndAmortized(t *testing.T) {
+	table := newRateLimitTable[int]()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	const entries = 100_000
+	for key := 0; key < entries; key++ {
+		if work := table.increment(now, key, entries); work != 0 {
+			t.Fatalf("initial insertion %d performed eviction work=%d", key, work)
+		}
+	}
+	if work := table.expire(now, time.Hour); work != 1 {
+		t.Fatalf("unexpired cleanup inspected %d entries, want one queue head", work)
+	}
+	if work := table.increment(now, entries, entries); work != 1 {
+		t.Fatalf("capacity admission work=%d, want one oldest eviction", work)
+	}
+	if got := len(table.entries); got != entries {
+		t.Fatalf("bounded table size=%d, want %d", got, entries)
+	}
+	if work := table.expire(now.Add(time.Hour), time.Hour); work != maxRateLimitExpiryStepsPerTable {
+		t.Fatalf("single-request expired cleanup work=%d, want fixed budget %d", work, maxRateLimitExpiryStepsPerTable)
+	}
+	totalWork := maxRateLimitExpiryStepsPerTable
+	for len(table.entries) > 0 {
+		work := table.expire(now.Add(time.Hour), time.Hour)
+		if work > maxRateLimitExpiryStepsPerTable {
+			t.Fatalf("expired cleanup exceeded per-request budget: %d", work)
+		}
+		totalWork += work
+	}
+	if totalWork != entries {
+		t.Fatalf("amortized cleanup work=%d, want one removal per retained entry=%d", totalWork, entries)
 	}
 }
 

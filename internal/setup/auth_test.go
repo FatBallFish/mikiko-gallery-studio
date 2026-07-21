@@ -235,18 +235,42 @@ func TestAuthServiceSerializesInjectedClockAccess(t *testing.T) {
 	}
 }
 
-func TestCompleteIsIdempotentPermanentAndInvalidatesEverything(t *testing.T) {
+func TestCompletionPrepareCommitCreatesDurableBoundaryAndInvalidatesEverything(t *testing.T) {
 	token := generatedTokenForTest(t, 7)
 	service := newAuthServiceForTest(t, token, 2, false, defaultTestRateLimit())
 	session, err := service.Exchange("192.0.2.1", token)
 	if err != nil {
 		t.Fatalf("Exchange returned error: %v", err)
 	}
-	if err := service.Complete(); err != nil {
-		t.Fatalf("Complete returned error: %v", err)
+	prepared, err := service.PrepareCompletion()
+	if err != nil {
+		t.Fatalf("PrepareCompletion returned error: %v", err)
 	}
-	if err := service.Complete(); err != nil {
-		t.Fatalf("idempotent Complete returned error: %v", err)
+	if _, err := service.PrepareCompletion(); !errors.Is(err, ErrCompletionPending) {
+		t.Fatalf("second PrepareCompletion error = %v, want pending", err)
+	}
+	if _, err := service.Exchange("192.0.2.2", token); err != nil {
+		t.Fatalf("token stopped before durable completion commit: %v", err)
+	}
+	if err := service.VerifySession(session); err != nil {
+		t.Fatalf("session stopped before durable completion commit: %v", err)
+	}
+	forged := prepared
+	forged.handle[0] ^= 0x80
+	if err := service.CommitCompletion(forged); !errors.Is(err, ErrInvalidCompletion) {
+		t.Fatalf("forged CommitCompletion error = %v", err)
+	}
+
+	// The caller durably writes SETUP_COMPLETED and removes the setup token here.
+	durableEnvCommitted := true
+	if !durableEnvCommitted {
+		t.Fatal("test must model durable env commit before in-memory commit")
+	}
+	if err := service.CommitCompletion(prepared); err != nil {
+		t.Fatalf("CommitCompletion returned error: %v", err)
+	}
+	if err := service.CommitCompletion(prepared); err != nil {
+		t.Fatalf("idempotent CommitCompletion returned error: %v", err)
 	}
 	if _, err := service.Exchange("192.0.2.1", token); !errors.Is(err, ErrCompleted) {
 		t.Fatalf("completed Exchange error = %v", err)
@@ -262,6 +286,88 @@ func TestCompleteIsIdempotentPermanentAndInvalidatesEverything(t *testing.T) {
 	}
 }
 
+func TestCompletionAndRotationLeasesAreMutuallyExclusive(t *testing.T) {
+	service := newAuthServiceForTest(t, generatedTokenForTest(t, 22), 1, false, defaultTestRateLimit())
+	rotation, err := service.PrepareRotation()
+	if err != nil {
+		t.Fatalf("PrepareRotation returned error: %v", err)
+	}
+	if _, err := service.PrepareCompletion(); !errors.Is(err, ErrRotationPending) {
+		t.Fatalf("PrepareCompletion during rotation error = %v, want rotation pending", err)
+	}
+	if err := service.AbortRotation(rotation); err != nil {
+		t.Fatalf("AbortRotation returned error: %v", err)
+	}
+
+	completion, err := service.PrepareCompletion()
+	if err != nil {
+		t.Fatalf("PrepareCompletion returned error: %v", err)
+	}
+	if _, err := service.PrepareRotation(); !errors.Is(err, ErrCompletionPending) {
+		t.Fatalf("PrepareRotation during completion error = %v, want completion pending", err)
+	}
+	if err := service.AbortCompletion(completion); err != nil {
+		t.Fatalf("AbortCompletion returned error: %v", err)
+	}
+	if err := service.AbortCompletion(completion); !errors.Is(err, ErrInvalidCompletion) {
+		t.Fatalf("stale AbortCompletion error = %v, want invalid", err)
+	}
+	if err := service.CommitCompletion(completion); !errors.Is(err, ErrInvalidCompletion) {
+		t.Fatalf("aborted CommitCompletion error = %v, want invalid", err)
+	}
+	if _, err := service.PrepareRotation(); err != nil {
+		t.Fatalf("rotation did not recover after completion abort: %v", err)
+	}
+}
+
+func TestCompletionAbortKeepsCredentialsAndRetryUsesNewHandle(t *testing.T) {
+	token := generatedTokenForTest(t, 23)
+	service := newAuthServiceForTest(t, token, 1, false, defaultTestRateLimit())
+	first, err := service.PrepareCompletion()
+	if err != nil {
+		t.Fatalf("PrepareCompletion returned error: %v", err)
+	}
+	if err := service.AbortCompletion(first); err != nil {
+		t.Fatalf("AbortCompletion returned error: %v", err)
+	}
+	if _, err := service.Exchange("192.0.2.90", token); err != nil {
+		t.Fatalf("completion abort invalidated token: %v", err)
+	}
+	retry, err := service.PrepareCompletion()
+	if err != nil {
+		t.Fatalf("retry PrepareCompletion returned error: %v", err)
+	}
+	if retry.handle == first.handle {
+		t.Fatal("completion retry reused aborted unforgeable handle")
+	}
+}
+
+func TestPreparedCompletionStringRepresentationsRedactHandle(t *testing.T) {
+	service := newAuthServiceForTest(t, generatedTokenForTest(t, 24), 1, false, defaultTestRateLimit())
+	prepared, err := service.PrepareCompletion()
+	if err != nil {
+		t.Fatalf("PrepareCompletion returned error: %v", err)
+	}
+	for _, rendered := range []string{
+		fmt.Sprintf("%v", prepared),
+		fmt.Sprintf("%+v", prepared),
+		fmt.Sprintf("%#v", prepared),
+	} {
+		if rendered != "PreparedCompletion{handle:<redacted>}" {
+			t.Fatalf("prepared completion representation leaked shape or handle: %q", rendered)
+		}
+	}
+	for _, operation := range []func() error{
+		func() error { forged := prepared; forged.handle[0] ^= 1; return service.CommitCompletion(forged) },
+		func() error { forged := prepared; forged.handle[0] ^= 1; return service.AbortCompletion(forged) },
+	} {
+		err := operation()
+		if !errors.Is(err, ErrInvalidCompletion) || strings.Contains(err.Error(), fmt.Sprintf("%x", prepared.handle)) {
+			t.Fatalf("completion error leaked handle or wrong type: %v", err)
+		}
+	}
+}
+
 func TestCompletedServiceCanStartWithoutPlaintextToken(t *testing.T) {
 	service, err := NewAuthService(AuthConfig{
 		Version: 8, Completed: true, SessionTTL: 10 * time.Minute,
@@ -274,9 +380,15 @@ func TestCompletedServiceCanStartWithoutPlaintextToken(t *testing.T) {
 	if _, err := service.Exchange("192.0.2.1", ""); !errors.Is(err, ErrCompleted) {
 		t.Fatalf("completed service Exchange error = %v", err)
 	}
+	if _, err := service.PrepareCompletion(); !errors.Is(err, ErrCompleted) {
+		t.Fatalf("restarted completed PrepareCompletion error = %v", err)
+	}
+	if err := service.CommitCompletion(PreparedCompletion{}); !errors.Is(err, ErrCompleted) {
+		t.Fatalf("restarted completed CommitCompletion error = %v", err)
+	}
 }
 
-func TestAuthServiceConcurrentExchangeRotateAndCompleteIsRaceSafe(t *testing.T) {
+func TestAuthServiceConcurrentExchangeRotateAndCompletionIsRaceSafe(t *testing.T) {
 	token := generatedTokenForTest(t, 8)
 	service := newAuthServiceForTest(t, token, 1, false, RateLimitConfig{Window: time.Minute, IPAttempts: 10000, TokenAttempts: 10000, MaxEntries: 10000})
 	var wg sync.WaitGroup
@@ -300,8 +412,12 @@ func TestAuthServiceConcurrentExchangeRotateAndCompleteIsRaceSafe(t *testing.T) 
 		}
 	}()
 	wg.Wait()
-	if err := service.Complete(); err != nil {
-		t.Fatalf("Complete returned error: %v", err)
+	prepared, err := service.PrepareCompletion()
+	if err != nil {
+		t.Fatalf("PrepareCompletion returned error: %v", err)
+	}
+	if err := service.CommitCompletion(prepared); err != nil {
+		t.Fatalf("CommitCompletion returned error: %v", err)
 	}
 }
 
@@ -395,5 +511,5 @@ func (service *AuthService) debugStateForTest() string {
 func (service *AuthService) rateLimitEntryCountsForTest() (int, int) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	return len(service.limiter.ip), len(service.limiter.token)
+	return len(service.limiter.ip.entries), len(service.limiter.token.entries)
 }

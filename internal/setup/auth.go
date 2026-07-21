@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"container/list"
 	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -16,12 +17,13 @@ import (
 )
 
 const (
-	setupTokenBytes       = 32
-	setupTokenEncodedSize = 43
-	rotationHandleBytes   = 32
-	minSessionTTL         = time.Minute
-	maxSessionTTL         = 24 * time.Hour
-	maxTokenInputBytes    = 256
+	setupTokenBytes                 = 32
+	setupTokenEncodedSize           = 43
+	rotationHandleBytes             = 32
+	minSessionTTL                   = time.Minute
+	maxSessionTTL                   = 24 * time.Hour
+	maxTokenInputBytes              = 256
+	maxRateLimitExpiryStepsPerTable = 8
 )
 
 var (
@@ -34,6 +36,8 @@ var (
 	ErrClock                = errors.New("setup authentication clock failed")
 	ErrRotationPending      = errors.New("setup token rotation is already pending")
 	ErrInvalidRotation      = errors.New("setup token rotation is invalid")
+	ErrCompletionPending    = errors.New("setup completion is already pending")
+	ErrInvalidCompletion    = errors.New("setup completion is invalid")
 	ErrVersionOverflow      = errors.New("setup token version cannot be incremented")
 	ErrInvalidClientIP      = errors.New("setup client IP is invalid")
 )
@@ -79,18 +83,44 @@ type rotationMaterial struct {
 	version    uint64
 }
 
+type PreparedCompletion struct {
+	handle [rotationHandleBytes]byte
+}
+
+func (PreparedCompletion) String() string {
+	return "PreparedCompletion{handle:<redacted>}"
+}
+
+func (PreparedCompletion) GoString() string {
+	return "PreparedCompletion{handle:<redacted>}"
+}
+
+type completionMaterial struct {
+	handle [rotationHandleBytes]byte
+}
+
 type attemptWindow struct {
 	started time.Time
 	count   int
 }
 
+type rateLimitEntry[K comparable] struct {
+	key    K
+	window attemptWindow
+}
+
+type rateLimitTable[K comparable] struct {
+	entries map[K]*list.Element
+	order   list.List
+}
+
 // setupRateLimiter counts every exchange attempt, including successful ones.
-// Capacity exhaustion fails closed; expired fixed-window entries are removed
-// before new entries are admitted.
+// Fixed-window insertion order is expiry order, so cleanup and oldest-entry
+// eviction are O(1) amortized instead of scanning the full maps per request.
 type setupRateLimiter struct {
 	config RateLimitConfig
-	ip     map[string]attemptWindow
-	token  map[[sha256.Size]byte]attemptWindow
+	ip     rateLimitTable[string]
+	token  rateLimitTable[[sha256.Size]byte]
 }
 
 type AuthService struct {
@@ -102,12 +132,15 @@ type AuthService struct {
 	limiter    setupRateLimiter
 	lastNow    time.Time
 
-	completed    bool
-	version      uint64
-	tokenHash    [sha256.Size]byte
-	hasTokenHash bool
-	signingKey   [sha256.Size]byte
-	pending      *rotationMaterial
+	completed          bool
+	version            uint64
+	tokenHash          [sha256.Size]byte
+	hasTokenHash       bool
+	signingKey         [sha256.Size]byte
+	pendingRotation    *rotationMaterial
+	pendingCompletion  *completionMaterial
+	completedHandle    [rotationHandleBytes]byte
+	hasCompletedHandle bool
 }
 
 func GenerateSetupToken(random io.Reader) (string, error) {
@@ -149,8 +182,8 @@ func NewAuthService(cfg AuthConfig) (*AuthService, error) {
 		completed: cfg.Completed, version: cfg.Version,
 		limiter: setupRateLimiter{
 			config: cfg.RateLimit,
-			ip:     make(map[string]attemptWindow),
-			token:  make(map[[sha256.Size]byte]attemptWindow),
+			ip:     newRateLimitTable[string](),
+			token:  newRateLimitTable[[sha256.Size]byte](),
 		},
 	}
 	if cfg.Completed {
@@ -248,7 +281,10 @@ func (service *AuthService) PrepareRotation() (PreparedRotation, error) {
 	if service.completed {
 		return PreparedRotation{}, ErrCompleted
 	}
-	if service.pending != nil {
+	if service.pendingCompletion != nil {
+		return PreparedRotation{}, ErrCompletionPending
+	}
+	if service.pendingRotation != nil {
 		return PreparedRotation{}, ErrRotationPending
 	}
 	if service.version == math.MaxUint64 {
@@ -274,7 +310,7 @@ func (service *AuthService) PrepareRotation() (PreparedRotation, error) {
 		material.clear()
 		return PreparedRotation{}, err
 	}
-	service.pending = material
+	service.pendingRotation = material
 	return PreparedRotation{Token: token, Version: material.version, handle: material.handle}, nil
 }
 
@@ -292,12 +328,12 @@ func (service *AuthService) CommitRotation(prepared PreparedRotation) error {
 		return ErrInvalidRotation
 	}
 
-	service.tokenHash = service.pending.tokenHash
-	service.signingKey = service.pending.signingKey
-	service.version = service.pending.version
+	service.tokenHash = service.pendingRotation.tokenHash
+	service.signingKey = service.pendingRotation.signingKey
+	service.version = service.pendingRotation.version
 	service.hasTokenHash = true
-	service.pending.clear()
-	service.pending = nil
+	service.pendingRotation.clear()
+	service.pendingRotation = nil
 	service.limiter.clear()
 	return nil
 }
@@ -308,22 +344,73 @@ func (service *AuthService) AbortRotation(prepared PreparedRotation) error {
 	if service.completed {
 		return ErrCompleted
 	}
-	if service.pending == nil || subtle.ConstantTimeCompare(service.pending.handle[:], prepared.handle[:]) != 1 {
+	if service.pendingRotation == nil || subtle.ConstantTimeCompare(service.pendingRotation.handle[:], prepared.handle[:]) != 1 {
 		return ErrInvalidRotation
 	}
-	service.pending.clear()
-	service.pending = nil
+	service.pendingRotation.clear()
+	service.pendingRotation = nil
 	return nil
 }
 
-func (service *AuthService) Complete() error {
+// PrepareCompletion acquires a process-local completion lease. The caller must
+// durably commit the completed runtime env before CommitCompletion. Task 13 is
+// responsible for deployctl's cross-process lock and compare-and-swap boundary.
+func (service *AuthService) PrepareCompletion() (PreparedCompletion, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	if service.completed {
-		return nil
+		return PreparedCompletion{}, ErrCompleted
 	}
+	if service.pendingRotation != nil {
+		return PreparedCompletion{}, ErrRotationPending
+	}
+	if service.pendingCompletion != nil {
+		return PreparedCompletion{}, ErrCompletionPending
+	}
+	material := &completionMaterial{}
+	if err := fillRandom(service.rand, material.handle[:]); err != nil {
+		material.clear()
+		return PreparedCompletion{}, err
+	}
+	service.pendingCompletion = material
+	return PreparedCompletion{handle: material.handle}, nil
+}
+
+func (service *AuthService) CommitCompletion(prepared PreparedCompletion) error {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.completed {
+		if service.hasCompletedHandle && subtle.ConstantTimeCompare(service.completedHandle[:], prepared.handle[:]) == 1 {
+			return nil
+		}
+		if service.hasCompletedHandle {
+			return ErrInvalidCompletion
+		}
+		return ErrCompleted
+	}
+	if !service.matchesPendingCompletionLocked(prepared) {
+		return ErrInvalidCompletion
+	}
+	service.completedHandle = service.pendingCompletion.handle
+	service.hasCompletedHandle = true
+	service.pendingCompletion.clear()
+	service.pendingCompletion = nil
 	service.completed = true
 	service.clearSecretsLocked()
+	return nil
+}
+
+func (service *AuthService) AbortCompletion(prepared PreparedCompletion) error {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.completed {
+		return ErrCompleted
+	}
+	if !service.matchesPendingCompletionLocked(prepared) {
+		return ErrInvalidCompletion
+	}
+	service.pendingCompletion.clear()
+	service.pendingCompletion = nil
 	return nil
 }
 
@@ -372,10 +459,10 @@ func (service *AuthService) acceptTimeLocked(now time.Time) error {
 }
 
 func (service *AuthService) matchesPendingLocked(prepared PreparedRotation) bool {
-	if service.pending == nil || prepared.Version != service.pending.version {
+	if service.pendingRotation == nil || prepared.Version != service.pendingRotation.version {
 		return false
 	}
-	if subtle.ConstantTimeCompare(service.pending.handle[:], prepared.handle[:]) != 1 {
+	if subtle.ConstantTimeCompare(service.pendingRotation.handle[:], prepared.handle[:]) != 1 {
 		return false
 	}
 	decoded, ok := decodeSetupToken(prepared.Token)
@@ -384,18 +471,26 @@ func (service *AuthService) matchesPendingLocked(prepared PreparedRotation) bool
 	}
 	hash := sha256.Sum256(decoded)
 	clear(decoded)
-	matched := subtle.ConstantTimeCompare(service.pending.tokenHash[:], hash[:]) == 1
+	matched := subtle.ConstantTimeCompare(service.pendingRotation.tokenHash[:], hash[:]) == 1
 	clear(hash[:])
 	return matched
+}
+
+func (service *AuthService) matchesPendingCompletionLocked(prepared PreparedCompletion) bool {
+	return service.pendingCompletion != nil && subtle.ConstantTimeCompare(service.pendingCompletion.handle[:], prepared.handle[:]) == 1
 }
 
 func (service *AuthService) clearSecretsLocked() {
 	clear(service.tokenHash[:])
 	clear(service.signingKey[:])
 	service.hasTokenHash = false
-	if service.pending != nil {
-		service.pending.clear()
-		service.pending = nil
+	if service.pendingRotation != nil {
+		service.pendingRotation.clear()
+		service.pendingRotation = nil
+	}
+	if service.pendingCompletion != nil {
+		service.pendingCompletion.clear()
+		service.pendingCompletion = nil
 	}
 	service.limiter.clear()
 }
@@ -405,6 +500,10 @@ func (material *rotationMaterial) clear() {
 	clear(material.tokenHash[:])
 	clear(material.signingKey[:])
 	material.version = 0
+}
+
+func (material *completionMaterial) clear() {
+	clear(material.handle[:])
 }
 
 func decodeSetupToken(token string) ([]byte, bool) {
@@ -448,42 +547,85 @@ func validateRateLimitConfig(cfg RateLimitConfig) error {
 }
 
 func (limiter *setupRateLimiter) allow(now time.Time, ip string, fingerprint [sha256.Size]byte) bool {
-	limiter.cleanup(now)
-	ipWindow, ipExists := limiter.ip[ip]
-	tokenWindow, tokenExists := limiter.token[fingerprint]
+	limiter.ip.expire(now, limiter.config.Window)
+	limiter.token.expire(now, limiter.config.Window)
+	ipWindow, ipExists := limiter.ip.lookup(now, limiter.config.Window, ip)
+	tokenWindow, tokenExists := limiter.token.lookup(now, limiter.config.Window, fingerprint)
 	if (ipExists && ipWindow.count >= limiter.config.IPAttempts) || (tokenExists && tokenWindow.count >= limiter.config.TokenAttempts) {
 		return false
 	}
-	if (!ipExists && len(limiter.ip) >= limiter.config.MaxEntries) || (!tokenExists && len(limiter.token) >= limiter.config.MaxEntries) {
-		return false
-	}
-	if !ipExists {
-		ipWindow = attemptWindow{started: now}
-	}
-	if !tokenExists {
-		tokenWindow = attemptWindow{started: now}
-	}
-	ipWindow.count++
-	tokenWindow.count++
-	limiter.ip[ip] = ipWindow
-	limiter.token[fingerprint] = tokenWindow
+	limiter.ip.increment(now, ip, limiter.config.MaxEntries)
+	limiter.token.increment(now, fingerprint, limiter.config.MaxEntries)
 	return true
 }
 
-func (limiter *setupRateLimiter) cleanup(now time.Time) {
-	for key, window := range limiter.ip {
-		if !now.Before(window.started.Add(limiter.config.Window)) {
-			delete(limiter.ip, key)
-		}
-	}
-	for key, window := range limiter.token {
-		if !now.Before(window.started.Add(limiter.config.Window)) {
-			delete(limiter.token, key)
-		}
-	}
+func newRateLimitTable[K comparable]() rateLimitTable[K] {
+	return rateLimitTable[K]{entries: make(map[K]*list.Element)}
 }
 
 func (limiter *setupRateLimiter) clear() {
-	clear(limiter.ip)
-	clear(limiter.token)
+	limiter.ip.clear()
+	limiter.token.clear()
+}
+
+func (table *rateLimitTable[K]) lookup(now time.Time, window time.Duration, key K) (attemptWindow, bool) {
+	element, exists := table.entries[key]
+	if !exists {
+		return attemptWindow{}, false
+	}
+	entry := element.Value.(rateLimitEntry[K])
+	if !now.Before(entry.window.started.Add(window)) {
+		table.removeElement(element)
+		return attemptWindow{}, false
+	}
+	return entry.window, true
+}
+
+func (table *rateLimitTable[K]) increment(now time.Time, key K, maxEntries int) int {
+	if element, exists := table.entries[key]; exists {
+		entry := element.Value.(rateLimitEntry[K])
+		entry.window.count++
+		element.Value = entry
+		return 0
+	}
+	work := 0
+	if len(table.entries) >= maxEntries {
+		table.removeOldest()
+		work++
+	}
+	element := table.order.PushBack(rateLimitEntry[K]{key: key, window: attemptWindow{started: now, count: 1}})
+	table.entries[key] = element
+	return work
+}
+
+func (table *rateLimitTable[K]) expire(now time.Time, window time.Duration) int {
+	work := 0
+	for element := table.order.Front(); element != nil && work < maxRateLimitExpiryStepsPerTable; element = table.order.Front() {
+		work++
+		entry := element.Value.(rateLimitEntry[K])
+		if now.Before(entry.window.started.Add(window)) {
+			break
+		}
+		table.removeElement(element)
+	}
+	return work
+}
+
+func (table *rateLimitTable[K]) removeOldest() {
+	element := table.order.Front()
+	if element == nil {
+		return
+	}
+	table.removeElement(element)
+}
+
+func (table *rateLimitTable[K]) removeElement(element *list.Element) {
+	entry := element.Value.(rateLimitEntry[K])
+	delete(table.entries, entry.key)
+	table.order.Remove(element)
+}
+
+func (table *rateLimitTable[K]) clear() {
+	clear(table.entries)
+	table.order.Init()
 }
