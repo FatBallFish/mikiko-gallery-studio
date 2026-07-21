@@ -1,0 +1,161 @@
+components:
+  schemas:
+    BootstrapStatus:
+      type: object
+      required: [phase]
+      properties:
+        phase:
+          type: string
+          enum: [setup_required, initializing, restart_pending, ready, broken]
+        setup_url:
+          type: string
+          format: uri
+          description: Absolute HTTP(S) location of the API-hosted setup page, derived only from trusted runtime configuration.
+        operation_id:
+          type: string
+          format: uuid
+        retry_after_seconds:
+          type: integer
+          minimum: 0
+        diagnostic_code:
+          type: string
+          description: Stable secret-free operational code present in fail-closed mode.
+    BootstrapStatusResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/BootstrapStatus'
+        meta:
+          type: object
+          additionalProperties: true
+    SetupSessionRequest:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          writeOnly: true
+    SetupDatabaseProbeRequest:
+      type: object
+      required: [database_url]
+      additionalProperties: false
+      properties:
+        database_url:
+          type: string
+          writeOnly: true
+    SetupRedisProbeRequest:
+      type: object
+      required: [redis_url, key_prefix]
+      additionalProperties: false
+      properties:
+        redis_url:
+          type: string
+          writeOnly: true
+        key_prefix:
+          type: string
+    SetupStorageProbeRequest:
+      type: object
+      required: [driver]
+      additionalProperties: false
+      properties:
+        driver:
+          type: string
+          enum: [local, s3]
+        local_root:
+          type: string
+        public_base_url:
+          type: string
+        shared_volume:
+          type: boolean
+        endpoint:
+          type: string
+        region:
+          type: string
+        bucket:
+          type: string
+        access_key_id:
+          type: string
+          writeOnly: true
+        secret_access_key:
+          type: string
+          writeOnly: true
+        force_path_style:
+          type: boolean
+        prefix:
+          type: string
+    SetupApplyRequest:
+      type: object
+      required: [operation_id, runtime, admin_email, admin_password]
+      additionalProperties: false
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        runtime:
+          type: object
+          additionalProperties:
+            type: string
+          writeOnly: true
+        admin_email:
+          type: string
+          format: email
+        admin_password:
+          type: string
+          format: password
+          writeOnly: true
+    SetupProbeResult:
+      type: object
+      required: [kind, success, code, message, latency_ms]
+      properties:
+        kind:
+          type: string
+        success:
+          type: boolean
+        code:
+          type: string
+        message:
+          type: string
+        latency_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        version:
+          type: string
+    SetupProbeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/SetupProbeResult'
+        meta:
+          type: object
+          additionalProperties: true
+    SetupOperation:
+      type: object
+      required: [operation_id, phase, started_at, updated_at]
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        phase:
+          type: string
+          enum: [pending, validating, initializing_database, creating_admin, committing_config, restart_pending, complete]
+        error_code:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SetupOperationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/SetupOperation'
+        meta:
+          type: object
+          additionalProperties: true

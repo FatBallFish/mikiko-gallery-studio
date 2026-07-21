@@ -1,0 +1,275 @@
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/fatballfish/pic-gallery/internal/setup"
+	"github.com/fatballfish/pic-gallery/pkg/httpx"
+)
+
+type setupAuthStub struct {
+	exchangedIP    string
+	exchangedToken string
+	session        string
+	exchangeErr    error
+	verifyErr      error
+}
+
+func (stub *setupAuthStub) Exchange(ip, token string) (string, error) {
+	stub.exchangedIP, stub.exchangedToken = ip, token
+	return stub.session, stub.exchangeErr
+}
+
+func (stub *setupAuthStub) VerifySession(string) error { return stub.verifyErr }
+
+type setupProbeStub struct {
+	database setup.PostgresProbeRequest
+	redis    setup.RedisProbeRequest
+	storage  setup.StorageProbeRequest
+}
+
+func (stub *setupProbeStub) ProbePostgres(_ context.Context, request setup.PostgresProbeRequest) setup.ProbeResult {
+	stub.database = request
+	return setup.ProbeResult{Kind: "database", Success: true, Code: setup.ProbeCodeOK}
+}
+
+func (stub *setupProbeStub) ProbeRedis(_ context.Context, request setup.RedisProbeRequest) setup.ProbeResult {
+	stub.redis = request
+	return setup.ProbeResult{Kind: "redis", Success: true, Code: setup.ProbeCodeOK}
+}
+
+func (stub *setupProbeStub) ProbeStorage(_ context.Context, request setup.StorageProbeRequest) setup.ProbeResult {
+	stub.storage = request
+	return setup.ProbeResult{Kind: "storage", Success: true, Code: setup.ProbeCodeOK}
+}
+
+type setupApplicationStub struct {
+	request setup.ApplyRequest
+	view    setup.OperationView
+	err     error
+}
+
+func (stub *setupApplicationStub) Apply(_ context.Context, request setup.ApplyRequest) (setup.OperationView, error) {
+	stub.request = request
+	return stub.view, stub.err
+}
+
+func (stub *setupApplicationStub) Progress(_ context.Context, _ string) (setup.OperationView, error) {
+	return stub.view, stub.err
+}
+
+func TestBootstrapStatusUsesTrustedPublicAPIURLAndNeverRequestHost(t *testing.T) {
+	system := NewSystemAPI(BootstrapStatus{
+		Phase:             handlersBootstrapPhaseForTest(),
+		PublicAPIURL:      "https://api.example.test/base",
+		RetryAfterSeconds: 2,
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "http://attacker.invalid/api/system/v1/bootstrap-status", nil)
+	request.Host = "attacker.invalid\r\nX-Injected: yes"
+	request.Header.Set("X-Forwarded-Host", "forwarded-attacker.invalid")
+	recorder := httptest.NewRecorder()
+	system.HandleBootstrapStatus(recorder, request)
+
+	status := decodeSuccessData[BootstrapStatus](t, recorder)
+	if status.SetupURL != "https://api.example.test/setup" {
+		t.Fatalf("setup_url = %q, want trusted public API origin", status.SetupURL)
+	}
+	if strings.Contains(recorder.Body.String(), "attacker") || strings.Contains(recorder.Body.String(), "Injected") {
+		t.Fatalf("bootstrap response trusted request host headers: %s", recorder.Body.String())
+	}
+}
+
+func TestBootstrapStatusFallsBackToAbsoluteTrustedAPIURL(t *testing.T) {
+	system := NewSystemAPI(BootstrapStatus{
+		Phase:          BootstrapPhaseSetupRequired,
+		FallbackAPIURL: "http://192.0.2.10:9090",
+	})
+	request := httptest.NewRequest(http.MethodGet, "https://user-frontend.example/api/system/v1/bootstrap-status", nil)
+	request.Host = "user-frontend.example"
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Forwarded-Host", "proxy-attacker.example")
+	recorder := httptest.NewRecorder()
+	system.HandleBootstrapStatus(recorder, request)
+
+	status := decodeSuccessData[BootstrapStatus](t, recorder)
+	if status.SetupURL != "http://192.0.2.10:9090/setup" {
+		t.Fatalf("setup_url = %q, want absolute trusted API fallback", status.SetupURL)
+	}
+	if strings.Contains(status.SetupURL, "frontend") || strings.Contains(status.SetupURL, "attacker") {
+		t.Fatalf("setup_url trusted browser or proxy host: %q", status.SetupURL)
+	}
+	if recorder.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("public bootstrap status CORS = %q, want *", recorder.Header().Get("Access-Control-Allow-Origin"))
+	}
+}
+
+func TestBootstrapStatusIsSecretFree(t *testing.T) {
+	secret := "setup-secret-that-must-not-leak"
+	system := NewSystemAPI(BootstrapStatus{
+		Phase:             BootstrapPhaseInitializing,
+		OperationID:       "019d0000-0000-7000-8000-000000000001",
+		RetryAfterSeconds: 2,
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/system/v1/bootstrap-status?token="+secret, nil)
+	system.HandleBootstrapStatus(recorder, request)
+	if strings.Contains(recorder.Body.String(), secret) || strings.Contains(recorder.Body.String(), "token") {
+		t.Fatalf("bootstrap response exposed request secret: %s", recorder.Body.String())
+	}
+}
+
+func TestSetupSessionUsesRemoteAddressAndSecureCookieOnlyForTLS(t *testing.T) {
+	auth := &setupAuthStub{session: "signed-session"}
+	api := newSetupAPIForHandlerTest(t, auth, &setupProbeStub{}, &setupApplicationStub{})
+	request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/session", strings.NewReader(`{"token":"operator-token"}`))
+	request.RemoteAddr = "192.0.2.10:4567"
+	request.Header.Set("X-Forwarded-For", "203.0.113.20")
+	recorder := httptest.NewRecorder()
+	api.HandleSession(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("session status = %d, want 204; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if auth.exchangedIP != "192.0.2.10" || auth.exchangedToken != "operator-token" {
+		t.Fatalf("Exchange = (%q, %q), want direct remote IP and supplied token", auth.exchangedIP, auth.exchangedToken)
+	}
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != setup.SetupSessionCookieName || !cookies[0].HttpOnly || cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("unexpected setup session cookie: %#v", cookies)
+	}
+}
+
+func TestSetupSessionCookieUsesTrustedHTTPSPublicAPIURLBehindProxy(t *testing.T) {
+	auth := &setupAuthStub{session: "signed-session"}
+	api, err := NewSetupAPI(SetupAPIOptions{
+		System: NewSystemAPI(BootstrapStatus{
+			Phase:        BootstrapPhaseSetupRequired,
+			PublicAPIURL: "https://api.example.test",
+		}),
+		Auth: auth, Prober: &setupProbeStub{}, Application: &setupApplicationStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewSetupAPI: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "http://internal-api/api/setup/v1/session", strings.NewReader(`{"token":"operator-token"}`))
+	request.RemoteAddr = "192.0.2.10:4567"
+	recorder := httptest.NewRecorder()
+	api.HandleSession(recorder, request)
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Secure {
+		t.Fatalf("trusted HTTPS public API must issue Secure setup cookie: %#v", cookies)
+	}
+}
+
+func TestSetupWriteHandlersRequireValidSession(t *testing.T) {
+	auth := &setupAuthStub{verifyErr: setup.ErrInvalidSession}
+	application := &setupApplicationStub{}
+	api := newSetupAPIForHandlerTest(t, auth, &setupProbeStub{}, application)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/apply", strings.NewReader(`{"operation_id":"op","admin_password":"secret"}`))
+	recorder := httptest.NewRecorder()
+	api.HandleApply(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("apply without session status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if application.request.OperationID != "" {
+		t.Fatal("unauthenticated apply reached setup service")
+	}
+}
+
+func TestSetupApplyPropagatesContextAndReturnsSanitizedStableError(t *testing.T) {
+	secret := "database-password-that-must-not-leak"
+	application := &setupApplicationStub{err: errors.New("dial postgres with " + secret)}
+	api := newSetupAPIForHandlerTest(t, &setupAuthStub{}, &setupProbeStub{}, application)
+	request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/apply", strings.NewReader(`{
+		"operation_id":"019d0000-0000-7000-8000-000000000001",
+		"runtime":{"DATABASE_URL":"postgres://app:`+secret+`@db/app"},
+		"admin_email":"admin@example.test",
+		"admin_password":"admin-password"
+	}`))
+	request.AddCookie(&http.Cookie{Name: setup.SetupSessionCookieName, Value: "valid-session"})
+	recorder := httptest.NewRecorder()
+	api.HandleApply(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("apply error status = %d, want 500; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), secret) || strings.Contains(recorder.Body.String(), "postgres://") {
+		t.Fatalf("apply error leaked secret: %s", recorder.Body.String())
+	}
+}
+
+func TestSetupApplyFlushesAcceptedResponseBeforeOneRestartSignal(t *testing.T) {
+	application := &setupApplicationStub{view: setup.OperationView{
+		OperationID: "019d0000-0000-7000-8000-000000000001",
+		Phase:       setup.OperationPhaseRestartPending,
+	}}
+	var callbackCount atomic.Int32
+	var flushedBeforeCallback atomic.Bool
+	recorder := httptest.NewRecorder()
+	api, err := NewSetupAPI(SetupAPIOptions{
+		System: NewSystemAPI(BootstrapStatus{Phase: BootstrapPhaseSetupRequired}),
+		Auth:   &setupAuthStub{}, Prober: &setupProbeStub{}, Application: application,
+		OnRestartPending: func() {
+			callbackCount.Add(1)
+			flushedBeforeCallback.Store(recorder.Flushed && recorder.Code == http.StatusAccepted && recorder.Body.Len() > 0)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSetupAPI: %v", err)
+	}
+	requestBody := `{"operation_id":"019d0000-0000-7000-8000-000000000001","runtime":{},"admin_email":"admin@example.test","admin_password":"password"}`
+	for range 2 {
+		request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/apply", strings.NewReader(requestBody))
+		request.AddCookie(&http.Cookie{Name: setup.SetupSessionCookieName, Value: "valid-session"})
+		api.HandleApply(recorder, request)
+	}
+	if callbackCount.Load() != 1 {
+		t.Fatalf("restart callback count = %d, want 1", callbackCount.Load())
+	}
+	if !flushedBeforeCallback.Load() {
+		t.Fatal("restart callback ran before accepted response was written and flushed")
+	}
+}
+
+func newSetupAPIForHandlerTest(t *testing.T, auth setupAuth, prober setupProber, application setupApplication) *SetupAPI {
+	t.Helper()
+	api, err := NewSetupAPI(SetupAPIOptions{
+		System: NewSystemAPI(BootstrapStatus{Phase: BootstrapPhaseSetupRequired}),
+		Auth:   auth, Prober: prober, Application: application,
+		SessionTTL: 15 * time.Minute,
+		Now:        func() time.Time { return time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("NewSetupAPI: %v", err)
+	}
+	return api
+}
+
+func handlersBootstrapPhaseForTest() BootstrapPhase { return BootstrapPhaseSetupRequired }
+
+func decodeSuccessData[T any](t *testing.T, recorder *httptest.ResponseRecorder) T {
+	t.Helper()
+	var envelope httpx.SuccessResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode success envelope: %v; body=%s", err, recorder.Body.String())
+	}
+	encoded, err := json.Marshal(envelope.Data)
+	if err != nil {
+		t.Fatalf("encode success data: %v", err)
+	}
+	var result T
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		t.Fatalf("decode success data: %v", err)
+	}
+	return result
+}

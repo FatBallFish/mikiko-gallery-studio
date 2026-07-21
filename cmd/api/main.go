@@ -9,7 +9,10 @@ import (
 
 func main() {
 	if err := app.Run(); err != nil {
-		log.Printf("pic-gallery api exited with error: %v", err)
-		os.Exit(1)
+		code := app.ExitCode(err)
+		if code != app.SupervisorRestartExitCode {
+			log.Printf("pic-gallery api exited with error: %v", err)
+		}
+		os.Exit(code)
 	}
 }

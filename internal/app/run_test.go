@@ -3,11 +3,15 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -16,7 +20,228 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
+	"github.com/fatballfish/pic-gallery/internal/setup"
 )
+
+func TestLoadAPIStartupSelectsSetupFromTolerantStateBeforeRuntimeLoad(t *testing.T) {
+	bootstrap := pendingAPIBootstrapForTest()
+	state := pendingAPIInstallStateForTest()
+	startup := loadAPIStartup("runtime.env", apiStartupDependencies{
+		loadBootstrap: func(path string) (config.BootstrapConfig, error) {
+			if path != "runtime.env" {
+				t.Fatalf("bootstrap path = %q", path)
+			}
+			return bootstrap, nil
+		},
+		loadInstallState: func(path string) (setup.InstallState, bool, error) {
+			if path != "runtime.env" {
+				t.Fatalf("install-state runtime path = %q", path)
+			}
+			return state, true, nil
+		},
+	})
+	if startup.Mode != setup.StartupModeSetup || startup.Bootstrap.InstallationID != bootstrap.InstallationID || startup.DiagnosticCode != "" {
+		t.Fatalf("startup = %#v, want setup mode with loaded bootstrap", startup)
+	}
+}
+
+func TestLoadAPIStartupFailsClosedToBrokenWithoutLeakingLoaderError(t *testing.T) {
+	secret := "postgres://operator:super-secret@database/app"
+	startup := loadAPIStartup("runtime.env", apiStartupDependencies{
+		loadBootstrap: func(string) (config.BootstrapConfig, error) {
+			return config.BootstrapConfig{}, errors.New("cannot read " + secret)
+		},
+		loadInstallState: func(string) (setup.InstallState, bool, error) {
+			return setup.InstallState{}, false, nil
+		},
+	})
+	if startup.Mode != setup.StartupModeBroken || startup.DiagnosticCode != "BOOTSTRAP_CONFIG_INVALID" {
+		t.Fatalf("startup = %#v, want broken bootstrap diagnostic", startup)
+	}
+	if strings.Contains(startup.DiagnosticCode, secret) {
+		t.Fatal("startup diagnostic leaked loader error")
+	}
+}
+
+func TestRunSetupModeNeverConstructsNormalDependencies(t *testing.T) {
+	setupConstructed := 0
+	normalConstructed := 0
+	served := 0
+	err := runAPI(apiRunDependencies{
+		runtimeEnvPath: func() string { return "runtime.env" },
+		startup: apiStartupDependencies{
+			loadBootstrap: func(string) (config.BootstrapConfig, error) { return pendingAPIBootstrapForTest(), nil },
+			loadInstallState: func(string) (setup.InstallState, bool, error) {
+				return pendingAPIInstallStateForTest(), true, nil
+			},
+		},
+		newSetupHandler: func(config.BootstrapConfig) (http.Handler, error) {
+			setupConstructed++
+			return http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), nil
+		},
+		runNormal: func(string, apiStartup) error {
+			normalConstructed++
+			return nil
+		},
+		serve: func(string, http.Handler) error {
+			served++
+			return nil
+		},
+	})
+	if err != nil || setupConstructed != 1 || normalConstructed != 0 || served != 1 {
+		t.Fatalf("runAPI setup = err %v, setup %d, normal %d, served %d", err, setupConstructed, normalConstructed, served)
+	}
+}
+
+func TestSupervisorRestartExitCodeIsStable(t *testing.T) {
+	if !errors.Is(ErrSupervisorRestart, ErrSupervisorRestart) {
+		t.Fatal("supervisor restart sentinel must support errors.Is")
+	}
+	if got := ExitCode(ErrSupervisorRestart); got != SupervisorRestartExitCode || got == 0 || got == 1 {
+		t.Fatalf("ExitCode(ErrSupervisorRestart) = %d, want stable dedicated code %d", got, SupervisorRestartExitCode)
+	}
+	if got := ExitCode(errors.New("ordinary failure")); got != 1 {
+		t.Fatalf("ExitCode(ordinary error) = %d, want 1", got)
+	}
+}
+
+func TestServeBootstrapAPIReturnsRestartSentinelAfterSignal(t *testing.T) {
+	restart := make(chan struct{})
+	close(restart)
+	handler := setupRestartHandler{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		restart: restart,
+	}
+	if err := serveBootstrapAPI("127.0.0.1:0", handler); !errors.Is(err, ErrSupervisorRestart) {
+		t.Fatalf("serveBootstrapAPI restart error = %v, want ErrSupervisorRestart", err)
+	}
+}
+
+func TestRunMissingRuntimeFailsClosedWithoutSetupOrNormalDependencies(t *testing.T) {
+	secret := "missing-runtime-secret"
+	setupConstructed := 0
+	normalConstructed := 0
+	var served http.Handler
+	err := runAPI(apiRunDependencies{
+		runtimeEnvPath: func() string { return "missing-runtime.env" },
+		startup: apiStartupDependencies{
+			loadBootstrap: func(string) (config.BootstrapConfig, error) {
+				return config.BootstrapConfig{}, errors.New("missing " + secret)
+			},
+			loadInstallState: func(string) (setup.InstallState, bool, error) {
+				return setup.InstallState{}, false, nil
+			},
+		},
+		newSetupHandler: func(config.BootstrapConfig) (http.Handler, error) {
+			setupConstructed++
+			return nil, nil
+		},
+		runNormal: func(string, apiStartup) error {
+			normalConstructed++
+			return nil
+		},
+		serve: func(_ string, handler http.Handler) error {
+			served = handler
+			return nil
+		},
+	})
+	if err != nil || setupConstructed != 0 || normalConstructed != 0 || served == nil {
+		t.Fatalf("missing runtime = err %v, setup %d, normal %d, served %v", err, setupConstructed, normalConstructed, served != nil)
+	}
+	recorder := httptest.NewRecorder()
+	served.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/system/v1/bootstrap-status", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"phase":"broken"`) || strings.Contains(recorder.Body.String(), secret) {
+		t.Fatalf("missing runtime bootstrap response = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRunIncompleteSetupSkeletonServesBrokenDiagnostics(t *testing.T) {
+	bootstrap := pendingAPIBootstrapForTest()
+	bootstrap.Path = "runtime.env"
+	var served http.Handler
+	err := runAPI(apiRunDependencies{
+		runtimeEnvPath: func() string { return bootstrap.Path },
+		startup: apiStartupDependencies{
+			loadBootstrap: func(string) (config.BootstrapConfig, error) { return bootstrap, nil },
+			loadInstallState: func(string) (setup.InstallState, bool, error) {
+				return pendingAPIInstallStateForTest(), true, nil
+			},
+		},
+		newSetupHandler: newSetupStartupHandler,
+		runNormal:       func(string, apiStartup) error { t.Fatal("incomplete setup opened normal dependencies"); return nil },
+		serve:           func(_ string, handler http.Handler) error { served = handler; return nil },
+	})
+	if err != nil || served == nil {
+		t.Fatalf("incomplete setup run = %v, served=%v", err, served != nil)
+	}
+	recorder := httptest.NewRecorder()
+	served.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/system/v1/bootstrap-status", nil))
+	if !strings.Contains(recorder.Body.String(), `"diagnostic_code":"SETUP_DEPENDENCIES_INVALID"`) {
+		t.Fatalf("incomplete setup response = %s", recorder.Body.String())
+	}
+}
+
+func TestNewSetupStartupHandlerBuildsWithoutOpeningMiddleware(t *testing.T) {
+	bootstrap := pendingAPIBootstrapForTest()
+	bootstrap.Path = "runtime.env"
+	bootstrap.SetupToken = base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	bootstrap.SetupTokenVersion = 1
+	bootstrap.Values["SETUP_TOKEN"] = bootstrap.SetupToken
+	bootstrap.Values["SETUP_TOKEN_VERSION"] = "1"
+	handler, err := newSetupStartupHandler(bootstrap)
+	if err != nil || handler == nil {
+		t.Fatalf("newSetupStartupHandler = (%T, %v), want setup handler without middleware connection", handler, err)
+	}
+}
+
+func TestRuntimeSnapshotMatchRejectsRevisionOrVersionChange(t *testing.T) {
+	bootstrap := config.BootstrapConfig{
+		InstallationID: "installation", SchemaVersion: 1, ConfigRevision: 7,
+		ApplicationVersion: "v1", Deployment: config.DeploymentContext{Role: config.DeploymentRoleSingle},
+	}
+	cfg := config.Config{Runtime: config.RuntimeConfig{
+		InstallationID: "installation", ConfigSchemaVersion: 1, ConfigRevision: 7,
+		ApplicationVersion: "v1", DeploymentRole: config.DeploymentRoleSingle,
+	}}
+	if !runtimeMatchesBootstrapSnapshot(cfg, bootstrap) {
+		t.Fatal("identical runtime snapshot did not match")
+	}
+	cfg.Runtime.ConfigRevision++
+	if runtimeMatchesBootstrapSnapshot(cfg, bootstrap) {
+		t.Fatal("changed config revision matched bootstrap snapshot")
+	}
+	cfg.Runtime.ConfigRevision = bootstrap.ConfigRevision
+	cfg.Runtime.ApplicationVersion = "v2"
+	if runtimeMatchesBootstrapSnapshot(cfg, bootstrap) {
+		t.Fatal("changed application version matched bootstrap snapshot")
+	}
+}
+
+func pendingAPIBootstrapForTest() config.BootstrapConfig {
+	deployment := config.DeploymentContext{
+		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore,
+		Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle,
+		StorageDriver: "local", SetupCompleted: false,
+	}
+	values := map[string]string{
+		"RUNTIME_SCHEMA_VERSION": "1", "DEPLOYMENT_MODE": "docker", "DEPLOYMENT_PROFILE": "core",
+		"DEPLOYMENT_TOPOLOGY": "single", "DEPLOYMENT_ROLE": "single", "STORAGE_DRIVER": "local",
+		"INSTALLATION_ID": "019d0000-0000-7000-8000-000000000001", "SETUP_COMPLETED": "false",
+	}
+	return config.BootstrapConfig{
+		SchemaVersion: config.CurrentRuntimeSchemaVersion, Deployment: deployment,
+		InstallationID: values["INSTALLATION_ID"], Values: values,
+	}
+}
+
+func pendingAPIInstallStateForTest() setup.InstallState {
+	return setup.InstallState{
+		SchemaVersion:  setup.CurrentInstallStateSchemaVersion,
+		InstallationID: "019d0000-0000-7000-8000-000000000001",
+		DeploymentRole: config.DeploymentRoleSingle, Phase: setup.InstallPhasePending,
+		UpdatedAt: time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC),
+	}
+}
 
 func TestRuntimeSchemaCheckDoesNotCreateOrMigrateTables(t *testing.T) {
 	dsn := "file:app-compatibility?mode=memory&cache=shared&_fk=1"

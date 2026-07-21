@@ -11,23 +11,28 @@ import (
 )
 
 func New() http.Handler {
-	return newMux(nil, nil)
+	return NewNormal(nil, config.Config{})
 }
 
 func NewWithAPI(api *handlers.API) http.Handler {
-	return newMux(api, nil)
+	return NewNormal(api, config.Config{})
 }
 
 func NewWithAPIAndConfig(api *handlers.API, cfg config.Config) http.Handler {
-	return newMux(api, cfg.HTTP.CORSAllowedOrigins)
+	return NewNormal(api, cfg)
 }
 
-func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
+func NewNormal(api *handlers.API, cfg config.Config) http.Handler {
+	return newNormalMux(api, handlers.NewSystemAPI(handlers.BootstrapStatus{Phase: handlers.BootstrapPhaseReady}), cfg.HTTP.CORSAllowedOrigins)
+}
+
+func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrigins []string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handlers.Root)
+	mux.HandleFunc("/setup", handlers.APINotFound)
+	mux.HandleFunc("/setup/", handlers.APINotFound)
 	mux.HandleFunc("/api/", handlers.APINotFound)
-	mux.HandleFunc("/healthz", handlers.Healthz)
-	mux.HandleFunc("/readyz", handlers.Readyz)
+	registerSystemRoutes(mux, system)
 	mux.Handle("/metrics", handlers.Metrics())
 	mux.HandleFunc("/debug/pprof/", stdpprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", stdpprof.Cmdline)
@@ -151,6 +156,16 @@ func newMux(api *handlers.API, corsAllowedOrigins []string) http.Handler {
 		mux.HandleFunc("/docs/errors", api.HandleDocsErrors)
 	}
 
+	return wrapHandler(mux, corsAllowedOrigins)
+}
+
+func registerSystemRoutes(mux *http.ServeMux, system *handlers.SystemAPI) {
+	mux.HandleFunc("GET /healthz", system.HandleHealthz)
+	mux.HandleFunc("GET /readyz", system.HandleReadyz)
+	mux.HandleFunc("GET /api/system/v1/bootstrap-status", system.HandleBootstrapStatus)
+}
+
+func wrapHandler(mux http.Handler, corsAllowedOrigins []string) http.Handler {
 	handler := middleware.Recovery(mux)
 	handler = middleware.Metrics(handler)
 	handler = middleware.RequestID(handler)

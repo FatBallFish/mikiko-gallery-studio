@@ -102,6 +102,72 @@ func TestOpenAPISpecCoversP0Paths(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsBootstrapAndPendingSetupWithoutSecretExamples(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var doc struct {
+		Paths map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal openapi spec: %v", err)
+	}
+	for _, path := range []string{
+		"/api/system/v1/bootstrap-status",
+		"/api/setup/v1/session",
+		"/api/setup/v1/probes/database",
+		"/api/setup/v1/probes/redis",
+		"/api/setup/v1/probes/storage",
+		"/api/setup/v1/apply",
+		"/api/setup/v1/progress/{operation_id}",
+	} {
+		if _, ok := doc.Paths[path]; !ok {
+			t.Fatalf("expected setup path %q", path)
+		}
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/setup.yaml")
+	if err != nil {
+		t.Fatalf("read setup schemas: %v", err)
+	}
+	var schemas struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					WriteOnly bool `yaml:"writeOnly"`
+					Example   any  `yaml:"example"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(schemaContent, &schemas); err != nil {
+		t.Fatalf("unmarshal setup schemas: %v", err)
+	}
+	secretFields := map[string][]string{
+		"SetupSessionRequest":       {"token"},
+		"SetupDatabaseProbeRequest": {"database_url"},
+		"SetupRedisProbeRequest":    {"redis_url"},
+		"SetupStorageProbeRequest":  {"access_key_id", "secret_access_key"},
+		"SetupApplyRequest":         {"runtime", "admin_password"},
+	}
+	for schemaName, fields := range secretFields {
+		schema, ok := schemas.Components.Schemas[schemaName]
+		if !ok {
+			t.Fatalf("expected setup schema %q", schemaName)
+		}
+		for _, field := range fields {
+			property, ok := schema.Properties[field]
+			if !ok || !property.WriteOnly {
+				t.Fatalf("%s.%s must be writeOnly", schemaName, field)
+			}
+			if property.Example != nil {
+				t.Fatalf("%s.%s must not contain a secret example", schemaName, field)
+			}
+		}
+	}
+}
+
 func TestOpenAPISpecDocumentsTextModelsAndPromptOptimization(t *testing.T) {
 	content, err := os.ReadFile("openapi.yaml")
 	if err != nil {

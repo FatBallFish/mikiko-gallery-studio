@@ -10,6 +10,8 @@ servers:
     description: Local API server
 tags:
   - name: Health
+  - name: Bootstrap
+  - name: Setup
   - name: Agent Auth
   - name: Agent User
   - name: Agent Billing
@@ -71,6 +73,195 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+        '503':
+          description: Normal business traffic is unavailable during setup or fail-closed startup
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/system/v1/bootstrap-status:
+    get:
+      tags: [Bootstrap]
+      summary: Get the secret-free API bootstrap state
+      operationId: getBootstrapStatus
+      responses:
+        '200':
+          description: Current setup, restart, ready, or fail-closed state
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/setup.yaml#/components/schemas/BootstrapStatusResponse
+  /api/setup/v1/session:
+    post:
+      tags: [Setup]
+      summary: Exchange the one-time setup credential for a browser session
+      description: Available only while setup is pending. The setup credential remains reusable until setup completes.
+      operationId: postSetupSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/setup.yaml#/components/schemas/SetupSessionRequest
+      responses:
+        '204':
+          description: Setup session cookie created
+        '401':
+          description: Invalid setup credential
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '429':
+          description: Setup authentication is temporarily rate limited
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/setup/v1/probes/database:
+    post:
+      tags: [Setup]
+      summary: Verify the proposed PostgreSQL connection and privileges
+      description: Available only while setup is pending and requires a setup session.
+      operationId: postSetupDatabaseProbe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/setup.yaml#/components/schemas/SetupDatabaseProbeRequest
+      responses:
+        '200':
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/setup.yaml#/components/schemas/SetupProbeResponse
+        '401':
+          description: Invalid or missing setup session
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/setup/v1/probes/redis:
+    post:
+      tags: [Setup]
+      summary: Verify the proposed Redis connection and read/write behavior
+      description: Available only while setup is pending and requires a setup session.
+      operationId: postSetupRedisProbe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/setup.yaml#/components/schemas/SetupRedisProbeRequest
+      responses:
+        '200':
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/setup.yaml#/components/schemas/SetupProbeResponse
+        '401':
+          description: Invalid or missing setup session
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/setup/v1/probes/storage:
+    post:
+      tags: [Setup]
+      summary: Verify the proposed local or S3-compatible object storage
+      description: Available only while setup is pending and requires a setup session.
+      operationId: postSetupStorageProbe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/setup.yaml#/components/schemas/SetupStorageProbeRequest
+      responses:
+        '200':
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/setup.yaml#/components/schemas/SetupProbeResponse
+        '401':
+          description: Invalid or missing setup session
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/setup/v1/apply:
+    post:
+      tags: [Setup]
+      summary: Validate and commit first-run initialization
+      description: Available only while setup is pending and requires a setup session.
+      operationId: postSetupApply
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/setup.yaml#/components/schemas/SetupApplyRequest
+      responses:
+        '202':
+          description: Setup operation accepted and advanced
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/setup.yaml#/components/schemas/SetupOperationResponse
+        '400':
+          description: Invalid configuration or failed middleware verification
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '401':
+          description: Invalid or missing setup session
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: Conflicting setup operation
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/setup/v1/progress/{operation_id}:
+    get:
+      tags: [Setup]
+      summary: Get setup operation progress
+      description: Available only while setup is pending and requires a setup session.
+      operationId: getSetupProgress
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current setup operation state
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/setup.yaml#/components/schemas/SetupOperationResponse
+        '401':
+          description: Invalid or missing setup session
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '404':
+          description: Setup operation not found
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /metrics:
     get:
       tags: [Health]

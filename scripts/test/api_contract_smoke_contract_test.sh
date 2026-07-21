@@ -20,6 +20,17 @@ for marker in \
   fi
 done
 
+for marker in \
+  'CONFIG_REVISION=1' \
+  'SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"' \
+  '"phase": "completed"' \
+  '"config_revision": 1'; do
+  if ! grep -Fq "$marker" "$SMOKE"; then
+    echo "API smoke completed runtime is missing matching install-state fixture: $marker" >&2
+    exit 1
+  fi
+done
+
 cleanup() {
   if [[ -n "$LISTENER_PID" ]] && kill -0 "$LISTENER_PID" >/dev/null 2>&1; then
     kill "$LISTENER_PID" >/dev/null 2>&1 || true

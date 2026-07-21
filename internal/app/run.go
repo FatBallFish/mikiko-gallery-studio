@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
@@ -33,8 +36,70 @@ import (
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
+	"github.com/fatballfish/pic-gallery/internal/setup"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
+
+// SupervisorRestartExitCode requests a clean service-manager restart.
+const SupervisorRestartExitCode = 75
+
+// ErrSupervisorRestart is returned only after the setup response is flushed and the HTTP server shuts down.
+var ErrSupervisorRestart = errors.New("api restart requested after setup completion")
+
+// ExitCode maps API termination causes to process exit codes used by cmd/api.
+func ExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errors.Is(err, ErrSupervisorRestart) {
+		return SupervisorRestartExitCode
+	}
+	return 1
+}
+
+type apiStartupDependencies struct {
+	loadBootstrap    func(string) (config.BootstrapConfig, error)
+	loadInstallState func(string) (setup.InstallState, bool, error)
+}
+
+type apiStartup struct {
+	Mode           setup.StartupMode
+	Bootstrap      config.BootstrapConfig
+	Decision       setup.StartupDecision
+	DiagnosticCode string
+}
+
+func loadAPIStartup(runtimeEnvPath string, dependencies apiStartupDependencies) apiStartup {
+	if dependencies.loadBootstrap == nil {
+		dependencies.loadBootstrap = config.LoadBootstrap
+	}
+	if dependencies.loadInstallState == nil {
+		dependencies.loadInstallState = func(path string) (setup.InstallState, bool, error) {
+			return setup.NewStateStore(path).Load()
+		}
+	}
+	bootstrap, bootstrapErr := dependencies.loadBootstrap(runtimeEnvPath)
+	statePath := runtimeEnvPath
+	if bootstrap.Path != "" {
+		statePath = bootstrap.Path
+	}
+	state, stateExists, stateErr := dependencies.loadInstallState(statePath)
+	if stateErr != nil {
+		return apiStartup{Mode: setup.StartupModeBroken, Bootstrap: bootstrap, DiagnosticCode: "INSTALL_STATE_INVALID"}
+	}
+	if bootstrapErr != nil {
+		return apiStartup{Mode: setup.StartupModeBroken, DiagnosticCode: "BOOTSTRAP_CONFIG_INVALID"}
+	}
+	decision, err := setup.ResolveStartupDecision(bootstrap, state, stateExists)
+	if err != nil {
+		return apiStartup{Mode: setup.StartupModeBroken, Bootstrap: bootstrap, Decision: decision, DiagnosticCode: "STARTUP_STATE_INCONSISTENT"}
+	}
+	startup := apiStartup{Mode: decision.Mode, Bootstrap: bootstrap, Decision: decision}
+	if decision.Mode == setup.StartupModeBroken {
+		startup.DiagnosticCode = "STARTUP_RECONCILIATION_REQUIRED"
+	}
+	return startup
+}
 
 func seedDefaultAdmin(ctx context.Context, cfg config.AdminConfig, store *entstore.AdminAuthStore) {
 	email := strings.TrimSpace(cfg.SeedEmail)
@@ -69,10 +134,70 @@ func defaultAdminSeedRole(value string) string {
 	}
 }
 
+type apiRunDependencies struct {
+	runtimeEnvPath  func() string
+	startup         apiStartupDependencies
+	newSetupHandler func(config.BootstrapConfig) (http.Handler, error)
+	runNormal       func(string, apiStartup) error
+	serve           func(string, http.Handler) error
+}
+
 func Run() error {
-	cfg, err := config.Load("")
+	return runAPI(apiRunDependencies{})
+}
+
+func runAPI(dependencies apiRunDependencies) error {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	if dependencies.runtimeEnvPath == nil {
+		dependencies.runtimeEnvPath = configuredRuntimeEnvPath
+	}
+	if dependencies.newSetupHandler == nil {
+		dependencies.newSetupHandler = newSetupStartupHandler
+	}
+	if dependencies.runNormal == nil {
+		dependencies.runNormal = runNormalStartup
+	}
+	if dependencies.serve == nil {
+		dependencies.serve = serveBootstrapAPI
+	}
+	runtimeEnvPath := dependencies.runtimeEnvPath()
+	startup := loadAPIStartup(runtimeEnvPath, dependencies.startup)
+	switch startup.Mode {
+	case setup.StartupModeSetup:
+		handler, err := dependencies.newSetupHandler(startup.Bootstrap)
+		if err != nil {
+			slog.Error("setup startup dependencies are invalid", "diagnostic_code", "SETUP_DEPENDENCIES_INVALID")
+			return dependencies.serve(bootstrapAddress(startup.Bootstrap), apphttp.NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{
+				Phase: handlers.BootstrapPhaseBroken, DiagnosticCode: "SETUP_DEPENDENCIES_INVALID", RetryAfterSeconds: 5,
+			})))
+		}
+		slog.Info("starting setup-only api", "addr", bootstrapAddress(startup.Bootstrap))
+		return dependencies.serve(bootstrapAddress(startup.Bootstrap), handler)
+	case setup.StartupModeBroken:
+		slog.Error("api startup is fail-closed", "diagnostic_code", startup.DiagnosticCode)
+		return dependencies.serve(bootstrapAddress(startup.Bootstrap), apphttp.NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{
+			Phase: handlers.BootstrapPhaseBroken, DiagnosticCode: startup.DiagnosticCode, RetryAfterSeconds: 5,
+		})))
+	case setup.StartupModeNormal:
+		return dependencies.runNormal(runtimeEnvPath, startup)
+	default:
+		return fmt.Errorf("unsupported API startup mode %q", startup.Mode)
+	}
+}
+
+func runNormalStartup(runtimeEnvPath string, startup apiStartup) error {
+	cfg, err := config.Load(runtimeEnvPath)
 	if err != nil {
-		return err
+		slog.Error("normal runtime validation failed", "diagnostic_code", "RUNTIME_CONFIG_INVALID")
+		return serveBootstrapAPI(bootstrapAddress(startup.Bootstrap), apphttp.NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{
+			Phase: handlers.BootstrapPhaseBroken, DiagnosticCode: "RUNTIME_CONFIG_INVALID", RetryAfterSeconds: 5,
+		})))
+	}
+	if !runtimeMatchesBootstrapSnapshot(cfg, startup.Bootstrap) {
+		slog.Error("runtime changed after bootstrap mode selection", "diagnostic_code", "RUNTIME_SNAPSHOT_CHANGED")
+		return serveBootstrapAPI(bootstrapAddress(startup.Bootstrap), apphttp.NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{
+			Phase: handlers.BootstrapPhaseBroken, DiagnosticCode: "RUNTIME_SNAPSHOT_CHANGED", RetryAfterSeconds: 5,
+		})))
 	}
 	if err := validateStorageTopology(cfg); err != nil {
 		return err
@@ -90,7 +215,6 @@ func Run() error {
 	defer stopMetrics()
 	observability.DefaultMetrics().Runtime().Start(metricsContext)
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	client, err := db.Open(cfg.Database.URL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -173,6 +297,143 @@ func Run() error {
 	}
 	return err
 }
+
+func runtimeMatchesBootstrapSnapshot(cfg config.Config, bootstrap config.BootstrapConfig) bool {
+	return cfg.Runtime.InstallationID == bootstrap.InstallationID &&
+		cfg.Runtime.ConfigSchemaVersion == bootstrap.SchemaVersion &&
+		cfg.Runtime.ConfigRevision == bootstrap.ConfigRevision &&
+		cfg.Runtime.ApplicationVersion == bootstrap.ApplicationVersion &&
+		cfg.Runtime.DeploymentRole == bootstrap.Deployment.Role
+}
+
+func configuredRuntimeEnvPath() string {
+	if path := strings.TrimSpace(os.Getenv("APP_ENV_FILE")); path != "" {
+		return path
+	}
+	return config.DefaultRuntimeEnvPath()
+}
+
+func newSetupStartupHandler(bootstrap config.BootstrapConfig) (http.Handler, error) {
+	const sessionTTL = 15 * time.Minute
+	auth, err := setup.NewAuthService(setup.AuthConfig{
+		Token: bootstrap.SetupToken, Version: bootstrap.SetupTokenVersion,
+		Completed: bootstrap.SetupCompleted, SessionTTL: sessionTTL,
+		RateLimit: setup.DefaultSetupRateLimitConfig(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize setup authentication: %w", err)
+	}
+	prober := setup.NewProbeService()
+	application, err := setup.NewService(setup.ServiceOptions{
+		RuntimeEnvPath: bootstrap.Path, StateStore: setup.NewStateStore(bootstrap.Path),
+		ProbeService: prober, AuthService: auth, StoreOpener: entstore.OpenSetupStore,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize setup service: %w", err)
+	}
+	system := handlers.NewSystemAPI(handlers.BootstrapStatus{
+		Phase: handlers.BootstrapPhaseSetupRequired, PublicAPIURL: bootstrap.Values["PUBLIC_API_URL"],
+		FallbackAPIURL: bootstrapFallbackAPIURL(bootstrap), RetryAfterSeconds: 2,
+	})
+	restart := make(chan struct{})
+	var restartOnce sync.Once
+	setupAPI, err := handlers.NewSetupAPI(handlers.SetupAPIOptions{
+		System: system, Auth: auth, Prober: prober, Application: application, SessionTTL: sessionTTL,
+		OnRestartPending: func() { restartOnce.Do(func() { close(restart) }) },
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize setup HTTP API: %w", err)
+	}
+	return setupRestartHandler{
+		Handler: apphttp.NewSetup(setupAPI, splitBootstrapCSV(bootstrap.Values["CORS_ALLOWED_ORIGINS"])),
+		restart: restart,
+	}, nil
+}
+
+func splitBootstrapCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func bootstrapAddress(bootstrap config.BootstrapConfig) string {
+	for _, key := range []string{"PIC_GALLERY_ADDR", "APP_ADDR"} {
+		if value := strings.TrimSpace(bootstrap.Values[key]); value != "" {
+			return value
+		}
+	}
+	if port, err := strconv.Atoi(strings.TrimSpace(bootstrap.Values["API_PORT"])); err == nil && port > 0 && port <= 65535 {
+		return ":" + strconv.Itoa(port)
+	}
+	return ":8080"
+}
+
+func bootstrapFallbackAPIURL(bootstrap config.BootstrapConfig) string {
+	host, port, err := net.SplitHostPort(bootstrapAddress(bootstrap))
+	if err != nil {
+		return "http://127.0.0.1:8080"
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
+func serveBootstrapAPI(address string, handler http.Handler) error {
+	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	restartHandler, restartEnabled := handler.(interface{ RestartSignal() <-chan struct{} })
+	if !restartEnabled {
+		err := server.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return err
+	}
+	serverErrors := make(chan error, 1)
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				serverErrors <- fmt.Errorf("bootstrap HTTP server panicked")
+			}
+		}()
+		serverErrors <- server.Serve(listener)
+	}()
+	select {
+	case err = <-serverErrors:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-restartHandler.RestartSignal():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutdownErr := server.Shutdown(shutdownContext); shutdownErr != nil {
+			_ = server.Close()
+			return fmt.Errorf("shutdown setup API for restart: %w", shutdownErr)
+		}
+		if serveErr := <-serverErrors; serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			return serveErr
+		}
+		return ErrSupervisorRestart
+	}
+}
+
+type setupRestartHandler struct {
+	http.Handler
+	restart <-chan struct{}
+}
+
+func (handler setupRestartHandler) RestartSignal() <-chan struct{} { return handler.restart }
 
 func validateSecureConfigEncryptionKey(cfg config.Config) error {
 	key := strings.TrimSpace(cfg.Security.SecureConfigEncryptionKey)

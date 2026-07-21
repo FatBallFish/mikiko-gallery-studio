@@ -51,6 +51,7 @@ API_ADDR="127.0.0.1:${SMOKE_PORT}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke.XXXXXX")"
 SMOKE_ID="$(basename "$TMP_DIR" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 SMOKE_ENV_PATH="$TMP_DIR/backend.env"
+SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"
 SERVER_LOG="$TMP_DIR/api.log"
 WORKER_LOG="$TMP_DIR/worker.log"
 FAKE_PROVIDER_LOG="$TMP_DIR/fake-provider.log"
@@ -1219,6 +1220,7 @@ REDIS_MANAGED=false
 OBJECT_STORAGE_MANAGED=false
 SETUP_COMPLETED=true
 SETUP_TOKEN_VERSION=1
+CONFIG_REVISION=1
 PIC_GALLERY_NAME=pic-gallery-smoke
 PIC_GALLERY_ENV=local
 PIC_GALLERY_ADDR=$API_ADDR
@@ -1266,6 +1268,23 @@ IMAGE_TAG=api-contract-smoke
 INSTALLATION_ID=api-contract-smoke-${SMOKE_ID}
 APPLICATION_VERSION=api-contract-smoke
 ENV
+  cat >"$SMOKE_INSTALL_STATE_PATH" <<JSON
+{
+  "schema_version": 1,
+  "installation_id": "api-contract-smoke-${SMOKE_ID}",
+  "deployment_role": "single",
+  "phase": "completed",
+  "ever_completed": true,
+  "updated_at": "2026-07-22T00:00:00Z",
+  "commit": {
+    "operation_id": "019d0000-0000-7000-8000-000000000001",
+    "installation_id": "api-contract-smoke-${SMOKE_ID}",
+    "runtime_schema_version": 1,
+    "config_revision": 1,
+    "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}
+JSON
 }
 
 assert_ordinary_startup_does_not_migrate() {
