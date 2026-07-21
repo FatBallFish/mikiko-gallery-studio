@@ -128,6 +128,18 @@ func TestSetupStoreRejectsForgedBcryptPrefix(t *testing.T) {
 	}
 }
 
+func TestSetupStoreMissingSchemaReportsBindingNotFound(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:setup-store-missing-schema?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open SQLite: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+	_, err = entstore.NewSetupStore(client).GetBinding(t.Context(), uuid.NewString())
+	if !errors.Is(err, setup.ErrSetupBindingNotFound) {
+		t.Fatalf("GetBinding missing schema error=%v", err)
+	}
+}
+
 func TestSetupStoreConcurrentPostgresInitializationIsIdempotent(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
 	if databaseURL == "" {

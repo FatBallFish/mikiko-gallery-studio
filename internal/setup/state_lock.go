@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,16 @@ type stateFileLock struct {
 func acquireStateFileLock(path string, timeout time.Duration, operations stateAtomicOps) (*stateFileLock, error) {
 	if timeout <= 0 {
 		return nil, fmt.Errorf("state file lock timeout must be positive")
+	}
+	return acquireStateFileLockUntil(context.Background(), path, time.Now().Add(timeout), operations)
+}
+
+func acquireStateFileLockUntil(ctx context.Context, path string, deadline time.Time, operations stateAtomicOps) (*stateFileLock, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if deadline.IsZero() || !deadline.After(time.Now()) {
+		return nil, fmt.Errorf("state file lock deadline must be in the future")
 	}
 	if err := operations.validate(); err != nil {
 		return nil, err
@@ -35,8 +46,11 @@ func acquireStateFileLock(path string, timeout time.Duration, operations stateAt
 		return nil, fmt.Errorf("secure state lock file %q: %w", path, err)
 	}
 
-	deadline := time.Now().Add(timeout)
 	for {
+		if err := ctx.Err(); err != nil {
+			_ = file.Close()
+			return nil, err
+		}
 		locked, err := tryLockStateFile(file)
 		if err != nil {
 			_ = file.Close()
@@ -49,7 +63,19 @@ func acquireStateFileLock(path string, timeout time.Duration, operations stateAt
 			_ = file.Close()
 			return nil, fmt.Errorf("%w: %q", ErrInstallStateLockTimeout, path)
 		}
-		time.Sleep(min(10*time.Millisecond, time.Until(deadline)))
+		timer := time.NewTimer(min(10*time.Millisecond, time.Until(deadline)))
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			_ = file.Close()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
 

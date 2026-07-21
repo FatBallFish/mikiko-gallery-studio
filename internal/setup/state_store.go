@@ -118,6 +118,77 @@ func (store *StateStore) Initialize(state InstallState) error {
 	return err
 }
 
+func (store *StateStore) BeginAttempt(attempt SetupAttempt, at time.Time) (InstallState, error) {
+	if err := store.validate(); err != nil {
+		return InstallState{}, err
+	}
+	at, err := validateTransitionTime(at)
+	if err != nil {
+		return InstallState{}, err
+	}
+	if err := attempt.Validate(); err != nil {
+		return InstallState{}, fmt.Errorf("validate setup attempt: %w", err)
+	}
+	return store.withMutationLock(func() (InstallState, error) {
+		state, exists, err := store.loadUnlocked()
+		if err != nil {
+			return InstallState{}, err
+		}
+		if !exists || state.Phase != InstallPhasePending {
+			return InstallState{}, fmt.Errorf("%w: setup attempt requires pending install state", ErrInstallStateInvalid)
+		}
+		if state.Attempt != nil {
+			if *state.Attempt == attempt {
+				return state, nil
+			}
+			if state.Attempt.OperationID != attempt.OperationID {
+				return InstallState{}, ErrSetupOperationConflict
+			}
+			return InstallState{}, ErrSetupBindingMismatch
+		}
+		state.Attempt = &attempt
+		state.UpdatedAt = at
+		if err := store.saveUnlocked(state); err != nil {
+			return InstallState{}, err
+		}
+		return state, nil
+	})
+}
+
+func (store *StateStore) ClearAttempt(attempt SetupAttempt, at time.Time) (InstallState, error) {
+	if err := store.validate(); err != nil {
+		return InstallState{}, err
+	}
+	at, err := validateTransitionTime(at)
+	if err != nil {
+		return InstallState{}, err
+	}
+	if err := attempt.Validate(); err != nil {
+		return InstallState{}, fmt.Errorf("validate setup attempt: %w", err)
+	}
+	return store.withMutationLock(func() (InstallState, error) {
+		state, exists, err := store.loadUnlocked()
+		if err != nil {
+			return InstallState{}, err
+		}
+		if !exists || state.Phase != InstallPhasePending || state.Attempt == nil {
+			return InstallState{}, fmt.Errorf("%w: no pending setup attempt", ErrInstallStateInvalid)
+		}
+		if *state.Attempt != attempt {
+			if state.Attempt.OperationID != attempt.OperationID {
+				return InstallState{}, ErrSetupOperationConflict
+			}
+			return InstallState{}, ErrSetupBindingMismatch
+		}
+		state.Attempt = nil
+		state.UpdatedAt = at
+		if err := store.saveUnlocked(state); err != nil {
+			return InstallState{}, err
+		}
+		return state, nil
+	})
+}
+
 func (store *StateStore) BeginCommit(proof CommitProof, at time.Time) (InstallState, error) {
 	if err := store.validate(); err != nil {
 		return InstallState{}, err
@@ -144,7 +215,17 @@ func (store *StateStore) BeginCommit(proof CommitProof, at time.Time) (InstallSt
 
 		switch state.Phase {
 		case InstallPhasePending:
+			if state.Attempt == nil {
+				return InstallState{}, fmt.Errorf("%w: cannot begin commit without a pending setup attempt", ErrInstallStateInvalid)
+			}
+			if state.Attempt.OperationID != proof.OperationID {
+				return InstallState{}, ErrSetupOperationConflict
+			}
+			if state.Attempt.ConfigRevision != proof.ConfigRevision || state.Attempt.RequestDigest != proof.RequestDigest {
+				return InstallState{}, ErrSetupBindingMismatch
+			}
 			state.Phase = InstallPhaseCommitting
+			state.Attempt = nil
 			state.Commit = &proof
 			state.UpdatedAt = at
 			if err := store.saveUnlocked(state); err != nil {
@@ -338,9 +419,16 @@ func installStatesEqual(left, right InstallState) bool {
 		return false
 	}
 	if left.Commit == nil || right.Commit == nil {
-		return left.Commit == nil && right.Commit == nil
+		if left.Commit != nil || right.Commit != nil {
+			return false
+		}
+	} else if *left.Commit != *right.Commit {
+		return false
 	}
-	return *left.Commit == *right.Commit
+	if left.Attempt == nil || right.Attempt == nil {
+		return left.Attempt == nil && right.Attempt == nil
+	}
+	return *left.Attempt == *right.Attempt
 }
 
 func (operations stateAtomicOps) validate() error {
@@ -436,6 +524,7 @@ func validateStrictStateJSON(content []byte) error {
 		"phase":           {},
 		"ever_completed":  {},
 		"updated_at":      {},
+		"attempt":         {},
 		"commit":          {},
 	}
 	for key := range topLevel {
@@ -459,6 +548,28 @@ func validateStrictStateJSON(content []byte) error {
 		}
 	}
 
+	attemptJSON, hasAttempt := topLevel["attempt"]
+	if hasAttempt {
+		var attempt map[string]json.RawMessage
+		if err := json.Unmarshal(attemptJSON, &attempt); err != nil || attempt == nil {
+			return fmt.Errorf("attempt must be a JSON object")
+		}
+		allowedAttempt := map[string]struct{}{"operation_id": {}, "config_revision": {}, "request_digest": {}}
+		for key, value := range attempt {
+			if _, allowed := allowedAttempt[key]; !allowed {
+				return fmt.Errorf("unknown setup attempt field %q", key)
+			}
+			if isJSONNull(value) {
+				return fmt.Errorf("setup attempt field %q must not be null", key)
+			}
+		}
+		for key := range allowedAttempt {
+			if _, exists := attempt[key]; !exists {
+				return fmt.Errorf("required setup attempt field %q is missing", key)
+			}
+		}
+	}
+
 	commitJSON, hasCommit := topLevel["commit"]
 	if !hasCommit {
 		return nil
@@ -472,13 +583,14 @@ func validateStrictStateJSON(content []byte) error {
 		"installation_id":        {},
 		"runtime_schema_version": {},
 		"config_revision":        {},
+		"request_digest":         {},
 	}
 	for key := range commit {
 		if _, allowed := allowedCommit[key]; !allowed {
 			return fmt.Errorf("unknown commit-journal field %q", key)
 		}
 	}
-	for _, key := range []string{"operation_id", "installation_id", "runtime_schema_version", "config_revision"} {
+	for _, key := range []string{"operation_id", "installation_id", "runtime_schema_version", "config_revision", "request_digest"} {
 		value, exists := commit[key]
 		if !exists {
 			return fmt.Errorf("required commit-journal field %q is missing", key)

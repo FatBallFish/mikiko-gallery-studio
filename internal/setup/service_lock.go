@@ -38,7 +38,7 @@ func newRuntimeApplyLocker(runtimeEnvPath string) applyLocker {
 			}
 		}
 
-		fileLock, err := acquireStateFileLock(lockPath, defaultApplyLockTimeout, platformStateAtomicOps())
+		fileLock, err := acquireStateFileLockUntil(ctx, lockPath, deadline, platformStateAtomicOps())
 		if err != nil {
 			processLock.Unlock()
 			return nil, err

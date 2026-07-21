@@ -110,6 +110,7 @@ func TestStateStoreInitializeCannotDowngradeCompletedInstallation(t *testing.T) 
 		t.Fatalf("Initialize() error = %v", err)
 	}
 	proof := validCommitProof()
+	reserveCommitAttempt(t, store, proof, testStateTime.Add(30*time.Second))
 	if _, err := store.BeginCommit(proof, testStateTime.Add(time.Minute)); err != nil {
 		t.Fatalf("BeginCommit() error = %v", err)
 	}
@@ -217,6 +218,10 @@ func TestStateStoresSerializeConcurrentBeginWithDifferentProofs(t *testing.T) {
 	if err := first.Initialize(pendingState()); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
+	firstProof := validCommitProof()
+	secondProof := validCommitProof()
+	secondProof.OperationID = "019d0000-0000-7000-8000-000000000099"
+	reserveCommitAttempt(t, first, firstProof, testStateTime.Add(30*time.Second))
 
 	reachedReplace := make(chan struct{})
 	releaseReplace := make(chan struct{})
@@ -227,10 +232,6 @@ func TestStateStoresSerializeConcurrentBeginWithDifferentProofs(t *testing.T) {
 		<-releaseReplace
 		return originalReplace(source, destination)
 	}
-	firstProof := validCommitProof()
-	secondProof := validCommitProof()
-	secondProof.OperationID = "019d0000-0000-7000-8000-000000000099"
-
 	type result struct {
 		proof CommitProof
 		state InstallState
@@ -285,6 +286,7 @@ func TestStateStoresSerializeConcurrentFinalizeAndMismatch(t *testing.T) {
 	if err := first.Initialize(pendingState()); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
+	reserveCommitAttempt(t, first, proof, testStateTime.Add(30*time.Second))
 	if _, err := first.BeginCommit(proof, testStateTime.Add(time.Minute)); err != nil {
 		t.Fatalf("BeginCommit() error = %v", err)
 	}
@@ -470,6 +472,11 @@ func TestStateStoreAtomicFailurePreservesTargetAndCleansTemporaryFile(t *testing
 			if err := store.Initialize(original); err != nil {
 				t.Fatalf("seed state: %v", err)
 			}
+			reserveCommitAttempt(t, store, validCommitProof(), testStateTime.Add(30*time.Second))
+			reserved, _, err := store.Load()
+			if err != nil {
+				t.Fatalf("load reserved attempt: %v", err)
+			}
 
 			operations := platformStateAtomicOps()
 			switch failure {
@@ -496,7 +503,7 @@ func TestStateStoreAtomicFailurePreservesTargetAndCleansTemporaryFile(t *testing
 				if err != nil || !exists {
 					t.Fatalf("Load() after failed write = (%v, %t, %v)", got, exists, err)
 				}
-				assertInstallStateEqual(t, got, original)
+				assertInstallStateEqual(t, got, reserved)
 			}
 			matches, err := filepath.Glob(filepath.Join(directory, ".install-state.json.tmp-*"))
 			if err != nil {
@@ -517,6 +524,7 @@ func TestStateStoreBeginAndFinalizeCommitAreIdempotentAndFailClosed(t *testing.T
 	}
 
 	proof := validCommitProof()
+	reserveCommitAttempt(t, store, proof, testStateTime.Add(30*time.Second))
 	committing, err := store.BeginCommit(proof, testStateTime.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("BeginCommit() error = %v", err)
@@ -577,6 +585,11 @@ func TestStateStoreBeginCommitRequiresCallerInstallationProof(t *testing.T) {
 		t.Fatalf("seed pending state: %v", err)
 	}
 	proof := validCommitProof()
+	reserveCommitAttempt(t, store, proof, testStateTime.Add(30*time.Second))
+	reserved, _, err := store.Load()
+	if err != nil {
+		t.Fatalf("load reserved attempt: %v", err)
+	}
 	proof.InstallationID = "019d0000-0000-7000-8000-000000000099"
 	if _, err := store.BeginCommit(proof, testStateTime.Add(time.Minute)); err == nil {
 		t.Fatal("BeginCommit() silently accepted mismatched installation proof")
@@ -585,7 +598,7 @@ func TestStateStoreBeginCommitRequiresCallerInstallationProof(t *testing.T) {
 	if err != nil || !exists {
 		t.Fatalf("Load() after rejected proof = (%+v, %t, %v)", got, exists, err)
 	}
-	assertInstallStateEqual(t, got, original)
+	assertInstallStateEqual(t, got, reserved)
 }
 
 func TestStateStoreBeginCommitRejectsUnsupportedRuntimeSchemaBeforeWritingJournal(t *testing.T) {
@@ -596,6 +609,11 @@ func TestStateStoreBeginCommitRejectsUnsupportedRuntimeSchemaBeforeWritingJourna
 		t.Fatalf("seed pending state: %v", err)
 	}
 	proof := validCommitProof()
+	reserveCommitAttempt(t, store, proof, testStateTime.Add(30*time.Second))
+	reserved, _, err := store.Load()
+	if err != nil {
+		t.Fatalf("load reserved attempt: %v", err)
+	}
 	proof.RuntimeSchemaVersion++
 	if _, err := store.BeginCommit(proof, testStateTime.Add(time.Minute)); err == nil {
 		t.Fatal("BeginCommit() with unsupported runtime schema succeeded")
@@ -604,7 +622,7 @@ func TestStateStoreBeginCommitRejectsUnsupportedRuntimeSchemaBeforeWritingJourna
 	if err != nil || !exists {
 		t.Fatalf("Load() after rejected BeginCommit = (%+v, %t, %v)", got, exists, err)
 	}
-	assertInstallStateEqual(t, got, original)
+	assertInstallStateEqual(t, got, reserved)
 }
 
 func TestStateStoreLoadRejectsUnsupportedRuntimeSchemaInJournal(t *testing.T) {
@@ -658,11 +676,21 @@ func validCommitJournal() *CommitJournal {
 		InstallationID:       testInstallationID,
 		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion,
 		ConfigRevision:       7,
+		RequestDigest:        strings.Repeat("a", 64),
 	}
 }
 
 func validCommitProof() CommitProof {
 	return CommitProof(*validCommitJournal())
+}
+
+func reserveCommitAttempt(t *testing.T, store *StateStore, proof CommitProof, at time.Time) {
+	t.Helper()
+	if _, err := store.BeginAttempt(SetupAttempt{
+		OperationID: proof.OperationID, ConfigRevision: proof.ConfigRevision, RequestDigest: strings.Repeat("a", 64),
+	}, at); err != nil {
+		t.Fatalf("BeginAttempt before commit: %v", err)
+	}
 }
 
 func commitProofMismatchTests() []struct {
@@ -689,7 +717,7 @@ func commitProofMismatchTests() []struct {
 }
 
 func committingStateJSON() string {
-	return `{"schema_version":1,"installation_id":"` + testInstallationID + `","deployment_role":"single","phase":"committing","ever_completed":false,"updated_at":"2026-07-21T06:00:00Z","commit":{"operation_id":"` + testOperationID + `","installation_id":"` + testInstallationID + `","runtime_schema_version":1,"config_revision":7}}`
+	return `{"schema_version":1,"installation_id":"` + testInstallationID + `","deployment_role":"single","phase":"committing","ever_completed":false,"updated_at":"2026-07-21T06:00:00Z","commit":{"operation_id":"` + testOperationID + `","installation_id":"` + testInstallationID + `","runtime_schema_version":1,"config_revision":7,"request_digest":"` + strings.Repeat("a", 64) + `"}}`
 }
 
 func validStateJSON(extra string) string {

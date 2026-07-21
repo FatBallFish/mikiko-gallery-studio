@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -32,6 +33,7 @@ const (
 	OperationPhaseCommittingConfig     OperationPhase = "committing_config"
 	OperationPhaseRestartPending       OperationPhase = "restart_pending"
 	OperationPhaseComplete             OperationPhase = "complete"
+	maxTerminalOperations                             = 128
 )
 
 var (
@@ -68,6 +70,8 @@ type ServiceOptions struct {
 
 type applyStateStore interface {
 	Load() (InstallState, bool, error)
+	BeginAttempt(SetupAttempt, time.Time) (InstallState, error)
+	ClearAttempt(SetupAttempt, time.Time) (InstallState, error)
 	BeginCommit(CommitProof, time.Time) (InstallState, error)
 	FinalizeCommit(CommitProof, time.Time) (InstallState, error)
 }
@@ -113,9 +117,11 @@ type serviceDependencies struct {
 type Service struct {
 	dependencies serviceDependencies
 
-	mu         sync.Mutex
-	activeID   string
-	operations map[string]*setupOperation
+	mu                 sync.Mutex
+	activeID           string
+	operations         map[string]*setupOperation
+	terminalOperations []*setupOperation
+	fingerprintKey     [sha256.Size]byte
 }
 
 type setupOperation struct {
@@ -136,18 +142,21 @@ type immutableApplyRequest struct {
 }
 
 type preparedApply struct {
-	bootstrap config.BootstrapConfig
-	state     InstallState
-	values    map[string]string
-	proof     CommitProof
-	digest    string
+	bootstrap  config.BootstrapConfig
+	state      InstallState
+	values     map[string]string
+	proof      CommitProof
+	attempt    SetupAttempt
+	digest     string
+	adminEmail string
+	completed  bool
 }
 
 func NewService(options ServiceOptions) (*Service, error) {
 	if strings.TrimSpace(options.RuntimeEnvPath) == "" || options.StateStore == nil || options.ProbeService == nil || options.AuthService == nil || options.StoreOpener == nil {
 		return nil, fmt.Errorf("setup service dependencies are incomplete")
 	}
-	return newService(serviceDependencies{
+	service := newService(serviceDependencies{
 		runtimeEnvPath: options.RuntimeEnvPath,
 		state:          options.StateStore,
 		prober:         options.ProbeService,
@@ -159,7 +168,11 @@ func NewService(options ServiceOptions) (*Service, error) {
 		renderRuntime:  config.RenderRuntimeEnv,
 		writeRuntime:   config.WriteRuntimeEnvAtomic,
 		now:            func() time.Time { return time.Now().UTC() },
-	}), nil
+	})
+	if _, err := cryptorand.Read(service.fingerprintKey[:]); err != nil {
+		return nil, fmt.Errorf("initialize setup request fingerprint key: %w", err)
+	}
+	return service, nil
 }
 
 func newService(dependencies serviceDependencies) *Service {
@@ -172,14 +185,18 @@ func newService(dependencies serviceDependencies) *Service {
 	if dependencies.lockApply == nil {
 		dependencies.lockApply = newRuntimeApplyLocker(dependencies.runtimeEnvPath)
 	}
-	return &Service{dependencies: dependencies, operations: make(map[string]*setupOperation)}
+	service := &Service{dependencies: dependencies, operations: make(map[string]*setupOperation)}
+	if _, err := cryptorand.Read(service.fingerprintKey[:]); err != nil {
+		service.fingerprintKey = sha256.Sum256([]byte(uuid.NewString()))
+	}
+	return service
 }
 
-func (service *Service) Apply(ctx context.Context, request ApplyRequest) (OperationView, error) {
+func (service *Service) Apply(ctx context.Context, request ApplyRequest) (view OperationView, returnErr error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	immutable, err := snapshotApplyRequest(request)
+	immutable, err := service.snapshotApplyRequest(request)
 	if err != nil {
 		return OperationView{}, ErrSetupValidation
 	}
@@ -198,17 +215,31 @@ func (service *Service) Apply(ctx context.Context, request ApplyRequest) (Operat
 
 	unlock, lockErr := service.dependencies.lockApply(ctx)
 	if lockErr != nil {
-		view, applyErr := service.failOperation(operation, ErrSetupCommit)
-		service.finishOperation(operation, view, applyErr)
-		return view, applyErr
+		view, returnErr = service.failOperation(operation, stableLockError(lockErr))
+		service.finishOperation(operation, view, returnErr)
+		return view, returnErr
 	}
-	view, applyErr := service.executeApply(ctx, operation, immutable)
-	if releaseErr := unlock(); releaseErr != nil && applyErr == nil {
-		service.dependencies.auth.FailClosedCompletion()
-		view, applyErr = service.failOperation(operation, ErrSetupCommit)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			view, returnErr = service.failOperation(operation, ErrSetupCommit)
+		}
+		if releaseErr := unlock(); releaseErr != nil && returnErr == nil {
+			service.dependencies.auth.FailClosedCompletion()
+			view, returnErr = service.failOperation(operation, ErrSetupCommit)
+		}
+		service.finishOperation(operation, view, returnErr)
+	}()
+	if err := ctx.Err(); err != nil {
+		return service.failOperation(operation, err)
 	}
-	service.finishOperation(operation, view, applyErr)
-	return view, applyErr
+	return service.executeApply(ctx, operation, immutable)
+}
+
+func stableLockError(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return ErrSetupCommit
 }
 
 func (service *Service) Progress(ctx context.Context, id string) (OperationView, error) {
@@ -270,8 +301,17 @@ func (service *Service) finishOperation(operation *setupOperation, view Operatio
 	defer service.mu.Unlock()
 	operation.view = view
 	operation.err = err
+	clear(operation.passwordFingerprint[:])
 	if service.activeID == view.OperationID {
 		service.activeID = ""
+	}
+	service.terminalOperations = append(service.terminalOperations, operation)
+	for len(service.terminalOperations) > maxTerminalOperations {
+		oldest := service.terminalOperations[0]
+		service.terminalOperations = service.terminalOperations[1:]
+		if service.operations[oldest.view.OperationID] == oldest && service.activeID != oldest.view.OperationID {
+			delete(service.operations, oldest.view.OperationID)
+		}
 	}
 	close(operation.done)
 }
@@ -292,24 +332,64 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 	service.setPhase(operation, OperationPhaseValidating)
 	prepared, err := service.prepareApply(request)
 	if err != nil {
-		if errors.Is(err, ErrSetupOperationConflict) || errors.Is(err, ErrSetupBindingMismatch) {
-			return service.failOperation(operation, err)
-		}
-		return service.failOperation(operation, ErrSetupValidation)
+		return service.failOperation(operation, stableSetupError(err, ErrSetupValidation))
 	}
 	if err := service.dependencies.checkpoint("after_validation"); err != nil {
 		return service.failOperation(operation, ErrSetupValidation)
+	}
+	if prepared.completed {
+		if err := service.verifyBinding(ctx, prepared); err != nil {
+			return service.failOperation(operation, stableSetupError(err, ErrSetupReconciliation))
+		}
+		service.dependencies.auth.FailClosedCompletion()
+		service.setPhase(operation, OperationPhaseComplete)
+		return service.operationSnapshot(operation), nil
 	}
 
 	if prepared.state.Phase == InstallPhaseCommitting {
 		return service.resumeCommit(ctx, operation, prepared)
 	}
+	hadAttempt := prepared.state.Attempt != nil
+	if !hadAttempt && request.adminPassword == "" {
+		return service.failOperation(operation, ErrSetupValidation)
+	}
+	reserved, err := service.dependencies.state.BeginAttempt(prepared.attempt, service.now())
+	if err != nil {
+		return service.failOperation(operation, stableSetupError(err, ErrSetupCommit))
+	}
+	prepared.state = reserved
+	databaseBound := false
+	if hadAttempt {
+		binding, found, lookupErr := service.lookupBinding(ctx, prepared)
+		if lookupErr != nil {
+			return service.failOperation(operation, stableSetupError(lookupErr, ErrSetupReconciliation))
+		}
+		if found {
+			if err := validateBinding(binding, prepared); err != nil {
+				return service.failOperation(operation, stableSetupError(err, ErrSetupReconciliation))
+			}
+			databaseBound = true
+		} else if request.adminPassword == "" {
+			return service.failOperation(operation, ErrSetupValidation)
+		}
+	}
 	if err := service.runFinalProbes(ctx, prepared.values); err != nil {
-		return service.failOperation(operation, ErrSetupProbe)
+		if !databaseBound {
+			if _, clearErr := service.dependencies.state.ClearAttempt(prepared.attempt, service.now()); clearErr != nil {
+				return service.failOperation(operation, stableSetupError(clearErr, ErrSetupCommit))
+			}
+		}
+		return service.failOperation(operation, stableSetupError(err, ErrSetupProbe))
+	}
+	if databaseBound {
+		return service.commitPreparedRuntime(operation, prepared)
 	}
 
 	service.setPhase(operation, OperationPhaseInitializingDatabase)
 	if err := service.dependencies.checkpoint("before_migration"); err != nil {
+		if _, clearErr := service.dependencies.state.ClearAttempt(prepared.attempt, service.now()); clearErr != nil {
+			return service.failOperation(operation, stableSetupError(clearErr, ErrSetupCommit))
+		}
 		return service.failOperation(operation, ErrSetupMigration)
 	}
 	if _, err := service.dependencies.migrate(ctx, prepared.values["DATABASE_URL"], db.MigrationRequest{
@@ -317,7 +397,7 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 		AppVersion:     prepared.values["APPLICATION_VERSION"],
 		ConfigVersion:  config.CurrentRuntimeSchemaVersion,
 	}); err != nil {
-		return service.failOperation(operation, ErrSetupMigration)
+		return service.failOperation(operation, stableSetupError(err, ErrSetupMigration))
 	}
 	if err := service.dependencies.checkpoint("after_migration"); err != nil {
 		return service.failOperation(operation, ErrSetupMigration)
@@ -342,7 +422,10 @@ func (service *Service) executeApply(ctx context.Context, operation *setupOperat
 	})
 	closeErr := store.Close()
 	passwordHash = ""
-	if initializeErr != nil || closeErr != nil {
+	if initializeErr != nil {
+		return service.failOperation(operation, stableSetupError(initializeErr, ErrSetupCommit))
+	}
+	if closeErr != nil {
 		return service.failOperation(operation, ErrSetupCommit)
 	}
 	if err := service.dependencies.checkpoint("after_database_binding"); err != nil {
@@ -371,63 +454,56 @@ func (service *Service) resumeCommit(ctx context.Context, operation *setupOperat
 	return service.commitPreparedRuntime(operation, prepared)
 }
 
-func (service *Service) commitPreparedRuntime(operation *setupOperation, prepared preparedApply) (OperationView, error) {
+func (service *Service) commitPreparedRuntime(operation *setupOperation, prepared preparedApply) (view OperationView, returnErr error) {
 	service.setPhase(operation, OperationPhaseCommittingConfig)
 	completion, err := service.dependencies.auth.PrepareCompletion()
 	if err != nil {
 		return service.failOperation(operation, ErrSetupCommit)
 	}
-	runtimeCommitted := false
-	abortOrSeal := func() {
-		if runtimeCommitted {
+	writerStarted := false
+	completionClosed := false
+	defer func() {
+		if completionClosed {
+			return
+		}
+		if writerStarted {
 			service.dependencies.auth.FailClosedCompletion()
 			return
 		}
 		_ = service.dependencies.auth.AbortCompletion(completion)
-	}
+	}()
 	if err := service.dependencies.checkpoint("before_state_begin"); err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
 	if _, err := service.dependencies.state.BeginCommit(prepared.proof, service.now()); err != nil {
-		abortOrSeal()
-		return service.failOperation(operation, ErrSetupCommit)
+		return service.failOperation(operation, stableSetupError(err, ErrSetupCommit))
 	}
 	data, err := service.dependencies.renderRuntime(config.DefaultRuntimeSchema(), prepared.values, nil)
 	if err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
+	defer clear(data)
 	if err := service.dependencies.checkpoint("before_runtime_write"); err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
+	writerStarted = true
 	if err := service.dependencies.writeRuntime(service.dependencies.runtimeEnvPath, data); err != nil {
-		if service.runtimeMatchesPrepared(prepared) {
-			runtimeCommitted = true
-		}
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
-	runtimeCommitted = true
 	if err := service.dependencies.checkpoint("after_runtime_write"); err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
 	if _, err := service.dependencies.state.FinalizeCommit(prepared.proof, service.now()); err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
 	if err := service.dependencies.checkpoint("after_state_finalize"); err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
 	if err := service.dependencies.auth.CommitCompletion(completion); err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
+	completionClosed = true
 	if err := service.dependencies.checkpoint("after_auth_commit"); err != nil {
-		abortOrSeal()
 		return service.failOperation(operation, ErrSetupCommit)
 	}
 	service.setPhase(operation, OperationPhaseRestartPending)
@@ -449,28 +525,59 @@ func (service *Service) prepareApply(request immutableApplyRequest) (preparedApp
 	if bootstrap.InstallationID != state.InstallationID || bootstrap.Deployment.Role != state.DeploymentRole || !setupAuthority(state.DeploymentRole) {
 		return preparedApply{}, ErrStartupStateInconsistent
 	}
-	if state.Commit != nil && state.Commit.OperationID != request.operationID {
-		return preparedApply{}, ErrSetupOperationConflict
-	}
-	if state.Phase == InstallPhaseCompleted || (bootstrap.SetupCompleted && state.Phase != InstallPhaseCommitting) {
-		return preparedApply{}, ErrCompleted
-	}
 	values, revision, err := mergeFinalRuntime(bootstrap, request.runtime)
 	if err != nil {
 		return preparedApply{}, err
 	}
-	digest, err := setupRequestDigest(values)
+	digest, err := setupRequestDigest(values, request.adminEmail)
 	if err != nil {
 		return preparedApply{}, err
 	}
 	proof := CommitProof{
 		OperationID: request.operationID, InstallationID: bootstrap.InstallationID,
-		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: revision,
+		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: revision, RequestDigest: digest,
 	}
 	if err := proof.Validate(); err != nil {
 		return preparedApply{}, err
 	}
-	return preparedApply{bootstrap: bootstrap, state: state, values: values, proof: proof, digest: digest}, nil
+	attempt := SetupAttempt{OperationID: request.operationID, ConfigRevision: revision, RequestDigest: digest}
+	if err := attempt.Validate(); err != nil {
+		return preparedApply{}, err
+	}
+	prepared := preparedApply{
+		bootstrap: bootstrap, state: state, values: values, proof: proof,
+		attempt: attempt, digest: digest, adminEmail: request.adminEmail,
+	}
+	switch state.Phase {
+	case InstallPhasePending:
+		if bootstrap.SetupCompleted {
+			return preparedApply{}, ErrStartupStateInconsistent
+		}
+		if state.Attempt != nil {
+			if state.Attempt.OperationID != attempt.OperationID {
+				return preparedApply{}, ErrSetupOperationConflict
+			}
+			if *state.Attempt != attempt {
+				return preparedApply{}, ErrSetupBindingMismatch
+			}
+		}
+	case InstallPhaseCommitting:
+		if state.Commit == nil || state.Commit.OperationID != request.operationID {
+			return preparedApply{}, ErrSetupOperationConflict
+		}
+	case InstallPhaseCompleted:
+		if state.Commit == nil || state.Commit.OperationID != request.operationID {
+			return preparedApply{}, ErrSetupOperationConflict
+		}
+		decision, decisionErr := ResolveStartupDecision(bootstrap, state, true)
+		if decisionErr != nil || decision.Mode != StartupModeNormal {
+			return preparedApply{}, ErrSetupReconciliation
+		}
+		prepared.completed = true
+	default:
+		return preparedApply{}, ErrStartupStateInconsistent
+	}
+	return prepared, nil
 }
 
 func (service *Service) runFinalProbes(ctx context.Context, values map[string]string) error {
@@ -478,6 +585,9 @@ func (service *Service) runFinalProbes(ctx context.Context, values map[string]st
 		service.dependencies.prober.ProbePostgres(ctx, PostgresProbeRequest{DatabaseURL: values["DATABASE_URL"]}),
 		service.dependencies.prober.ProbeRedis(ctx, RedisProbeRequest{RedisURL: values["REDIS_URL"], KeyPrefix: values["REDIS_KEY_PREFIX"]}),
 		service.dependencies.prober.ProbeStorage(ctx, StorageProbeRequest{Config: storageConfigFromRuntime(values)}),
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	for _, result := range results {
 		if !result.Success || result.Code != ProbeCodeOK {
@@ -511,18 +621,20 @@ func (service *Service) progressAfterRestart(ctx context.Context, operationID st
 		if mergeErr != nil {
 			return OperationView{}, ErrSetupReconciliation
 		}
-		digest, digestErr := setupRequestDigest(values)
-		if digestErr != nil {
+		prepared := preparedApply{bootstrap: bootstrap, state: state, values: values, proof: *state.Commit}
+		binding, found, bindingErr := service.lookupBinding(ctx, prepared)
+		if bindingErr != nil || !found {
 			return OperationView{}, ErrSetupReconciliation
 		}
-		prepared := preparedApply{bootstrap: bootstrap, state: state, values: values, proof: *state.Commit, digest: digest}
-		if service.verifyBinding(ctx, prepared) != nil {
+		prepared.adminEmail = binding.AdminEmail
+		prepared.digest, err = setupRequestDigest(values, binding.AdminEmail)
+		if err != nil || validateBinding(binding, prepared) != nil {
 			return OperationView{}, ErrSetupReconciliation
 		}
 		view.Phase = OperationPhaseCommittingConfig
 		return view, nil
 	case ReconciliationRequireDatabase:
-		prepared, err := service.preparedFromCompletedBootstrap(bootstrap, state)
+		prepared, err := service.preparedFromCompletedBootstrap(ctx, bootstrap, state)
 		if err != nil || service.verifyBinding(ctx, prepared) != nil {
 			return OperationView{}, ErrSetupReconciliation
 		}
@@ -537,7 +649,7 @@ func (service *Service) progressAfterRestart(ctx context.Context, operationID st
 		if decision.Mode != StartupModeNormal {
 			return OperationView{}, ErrSetupOperationGone
 		}
-		prepared, err := service.preparedFromCompletedBootstrap(bootstrap, state)
+		prepared, err := service.preparedFromCompletedBootstrap(ctx, bootstrap, state)
 		if err != nil || service.verifyBinding(ctx, prepared) != nil {
 			return OperationView{}, ErrSetupReconciliation
 		}
@@ -549,32 +661,78 @@ func (service *Service) progressAfterRestart(ctx context.Context, operationID st
 	}
 }
 
-func (service *Service) preparedFromCompletedBootstrap(bootstrap config.BootstrapConfig, state InstallState) (preparedApply, error) {
+func (service *Service) preparedFromCompletedBootstrap(ctx context.Context, bootstrap config.BootstrapConfig, state InstallState) (preparedApply, error) {
 	if state.Commit == nil || !bootstrap.SetupCompleted {
 		return preparedApply{}, ErrSetupReconciliation
 	}
-	digest, err := setupRequestDigest(bootstrap.Values)
-	if err != nil {
-		return preparedApply{}, err
+	prepared := preparedApply{bootstrap: bootstrap, state: state, values: cloneRuntimeValues(bootstrap.Values), proof: *state.Commit}
+	binding, found, err := service.lookupBinding(ctx, prepared)
+	if err != nil || !found {
+		return preparedApply{}, ErrSetupReconciliation
 	}
-	return preparedApply{bootstrap: bootstrap, state: state, values: cloneRuntimeValues(bootstrap.Values), proof: *state.Commit, digest: digest}, nil
+	prepared.adminEmail = binding.AdminEmail
+	prepared.digest, err = setupRequestDigest(bootstrap.Values, binding.AdminEmail)
+	if err != nil || validateBinding(binding, prepared) != nil {
+		return preparedApply{}, ErrSetupReconciliation
+	}
+	return prepared, nil
 }
 
 func (service *Service) verifyBinding(ctx context.Context, prepared preparedApply) error {
+	binding, found, err := service.lookupBinding(ctx, prepared)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrSetupBindingNotFound
+	}
+	return validateBinding(binding, prepared)
+}
+
+func (service *Service) lookupBinding(ctx context.Context, prepared preparedApply) (SetupBinding, bool, error) {
 	store, err := service.dependencies.openStore(ctx, prepared.values["DATABASE_URL"])
 	if err != nil {
-		return ErrSetupReconciliation
+		return SetupBinding{}, false, ErrSetupReconciliation
 	}
 	binding, lookupErr := store.GetBinding(ctx, prepared.bootstrap.InstallationID)
 	closeErr := store.Close()
-	if lookupErr != nil || closeErr != nil {
-		return ErrSetupReconciliation
+	if errors.Is(lookupErr, ErrSetupBindingNotFound) {
+		if closeErr != nil {
+			return SetupBinding{}, false, ErrSetupReconciliation
+		}
+		return SetupBinding{}, false, nil
 	}
-	if binding.OperationID != prepared.proof.OperationID || binding.InstallationID != prepared.proof.InstallationID ||
+	if lookupErr != nil || closeErr != nil {
+		return SetupBinding{}, false, stableSetupError(lookupErr, ErrSetupReconciliation)
+	}
+	return binding, true, nil
+}
+
+func validateBinding(binding SetupBinding, prepared preparedApply) error {
+	if binding.OperationID != prepared.proof.OperationID {
+		return ErrSetupOperationConflict
+	}
+	if prepared.proof.RequestDigest != prepared.digest || binding.InstallationID != prepared.proof.InstallationID ||
 		binding.ConfigRevision != prepared.proof.ConfigRevision || binding.RequestDigest != prepared.digest {
-		return ErrSetupReconciliation
+		return ErrSetupBindingMismatch
+	}
+	if prepared.adminEmail != "" && binding.AdminEmail != prepared.adminEmail {
+		return ErrFirstAdminConflict
 	}
 	return nil
+}
+
+func stableSetupError(err, fallback error) error {
+	for _, stable := range []error{
+		ErrSetupValidation, ErrSetupProbe, ErrSetupMigration, ErrSetupCommit, ErrSetupReconciliation,
+		ErrSetupOperationConflict, ErrSetupBindingMismatch, ErrSetupBindingCorrupt, ErrFirstAdminConflict,
+		context.Canceled, context.DeadlineExceeded,
+	} {
+		if errors.Is(err, stable) {
+			return stable
+		}
+	}
+	return fallback
 }
 
 func (service *Service) validateDependencies() error {
@@ -608,16 +766,16 @@ func (service *Service) now() time.Time {
 	return service.dependencies.now().UTC()
 }
 
-func snapshotApplyRequest(request ApplyRequest) (immutableApplyRequest, error) {
+func (service *Service) snapshotApplyRequest(request ApplyRequest) (immutableApplyRequest, error) {
 	if !canonicalUUID(request.OperationID) {
 		return immutableApplyRequest{}, ErrSetupValidation
 	}
 	email := strings.ToLower(strings.TrimSpace(request.AdminEmail))
 	parsed, err := mail.ParseAddress(email)
-	if err != nil || parsed.Address != email {
+	if err != nil || parsed.Address != email || len(email) > 255 {
 		return immutableApplyRequest{}, ErrSetupValidation
 	}
-	if request.AdminPassword != "" && len(strings.TrimSpace(request.AdminPassword)) < 6 {
+	if request.AdminPassword != "" && (len(strings.TrimSpace(request.AdminPassword)) < 6 || len([]byte(request.AdminPassword)) > 72) {
 		return immutableApplyRequest{}, ErrSetupValidation
 	}
 	runtime := cloneRuntimeValues(request.Runtime)
@@ -631,18 +789,28 @@ func snapshotApplyRequest(request ApplyRequest) (immutableApplyRequest, error) {
 	if err != nil {
 		return immutableApplyRequest{}, ErrSetupValidation
 	}
-	fingerprint := sha256.Sum256(encoded)
+	fingerprint := service.requestFingerprint("setup-request-v1", encoded)
 	clear(encoded)
 	passwordFingerprint := [sha256.Size]byte{}
 	if request.AdminPassword != "" {
 		passwordBytes := []byte(request.AdminPassword)
-		passwordFingerprint = sha256.Sum256(passwordBytes)
+		passwordFingerprint = service.requestFingerprint("setup-password-v1", passwordBytes)
 		clear(passwordBytes)
 	}
 	return immutableApplyRequest{
 		operationID: request.OperationID, runtime: runtime, adminEmail: email,
 		adminPassword: request.AdminPassword, fingerprint: fingerprint, passwordFingerprint: passwordFingerprint,
 	}, nil
+}
+
+func (service *Service) requestFingerprint(domain string, value []byte) [sha256.Size]byte {
+	digest := hmac.New(sha256.New, service.fingerprintKey[:])
+	_, _ = digest.Write([]byte(domain))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write(value)
+	var result [sha256.Size]byte
+	copy(result[:], digest.Sum(nil))
+	return result
 }
 
 func mergeFinalRuntime(bootstrap config.BootstrapConfig, submitted map[string]string) (map[string]string, int, error) {
@@ -667,6 +835,9 @@ func mergeFinalRuntime(bootstrap config.BootstrapConfig, submitted map[string]st
 		}
 		switch field.Owner {
 		case config.FieldOwnerSetup:
+			if managedSetupFieldReadOnly(bootstrap, key) && value != bootstrap.Values[key] {
+				return nil, 0, ErrSetupValidation
+			}
 			values[key] = value
 		case config.FieldOwnerDeployctl, config.FieldOwnerApplication:
 			if current, exists := bootstrap.Values[key]; !exists || current != value {
@@ -710,7 +881,26 @@ func mergeFinalRuntime(bootstrap config.BootstrapConfig, submitted map[string]st
 	return values, revision, nil
 }
 
-func setupRequestDigest(values map[string]string) (string, error) {
+func managedSetupFieldReadOnly(bootstrap config.BootstrapConfig, key string) bool {
+	if bootstrap.PostgresManaged && key == "DATABASE_URL" {
+		return true
+	}
+	if bootstrap.RedisManaged && key == "REDIS_URL" {
+		return true
+	}
+	if !bootstrap.ObjectStorageManaged {
+		return false
+	}
+	switch key {
+	case "STORAGE_DRIVER", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "STORAGE_S3_BUCKET",
+		"STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY", "STORAGE_S3_FORCE_PATH_STYLE":
+		return true
+	default:
+		return false
+	}
+}
+
+func setupRequestDigest(values map[string]string, adminEmail string) (string, error) {
 	key := []byte(values["PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"])
 	if len(key) < 32 {
 		clear(key)
@@ -722,7 +912,10 @@ func setupRequestDigest(values map[string]string) (string, error) {
 		entries = append(entries, config.EnvEntry{Key: name, Value: value})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
-	canonical, err := json.Marshal(entries)
+	canonical, err := json.Marshal(struct {
+		Runtime    []config.EnvEntry `json:"runtime"`
+		AdminEmail string            `json:"admin_email"`
+	}{Runtime: entries, AdminEmail: strings.ToLower(strings.TrimSpace(adminEmail))})
 	if err != nil {
 		return "", ErrSetupValidation
 	}
@@ -730,27 +923,6 @@ func setupRequestDigest(values map[string]string) (string, error) {
 	digest := hmac.New(sha256.New, key)
 	_, _ = digest.Write(canonical)
 	return hex.EncodeToString(digest.Sum(nil)), nil
-}
-
-func (service *Service) runtimeMatchesPrepared(prepared preparedApply) bool {
-	bootstrap, err := service.dependencies.loadBootstrap(service.dependencies.runtimeEnvPath)
-	if err != nil || !bootstrap.SetupCompleted || !runtimeValuesEqual(bootstrap.Values, prepared.values) {
-		return false
-	}
-	digest, err := setupRequestDigest(bootstrap.Values)
-	return err == nil && digest == prepared.digest
-}
-
-func runtimeValuesEqual(left, right map[string]string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for key, value := range left {
-		if right[key] != value {
-			return false
-		}
-	}
-	return true
 }
 
 func differentNonEmptyPassword(left, right [sha256.Size]byte) bool {
@@ -795,6 +967,16 @@ func setupErrorCode(err error) string {
 		return "DATABASE_INITIALIZATION_FAILED"
 	case errors.Is(err, ErrSetupReconciliation):
 		return "RECONCILIATION_FAILED"
+	case errors.Is(err, ErrSetupOperationConflict):
+		return "OPERATION_CONFLICT"
+	case errors.Is(err, ErrSetupBindingMismatch):
+		return "BINDING_MISMATCH"
+	case errors.Is(err, ErrFirstAdminConflict):
+		return "FIRST_ADMIN_CONFLICT"
+	case errors.Is(err, context.Canceled):
+		return "CANCELLED"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "TIMEOUT"
 	default:
 		return "COMMIT_FAILED"
 	}

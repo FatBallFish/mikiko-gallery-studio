@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
 
@@ -23,9 +25,16 @@ type CommitProof struct {
 	InstallationID       string `json:"installation_id"`
 	RuntimeSchemaVersion int    `json:"runtime_schema_version"`
 	ConfigRevision       int    `json:"config_revision"`
+	RequestDigest        string `json:"request_digest"`
 }
 
 type CommitJournal = CommitProof
+
+type SetupAttempt struct {
+	OperationID    string `json:"operation_id"`
+	ConfigRevision int    `json:"config_revision"`
+	RequestDigest  string `json:"request_digest"`
+}
 
 type InstallState struct {
 	SchemaVersion  int                   `json:"schema_version"`
@@ -34,10 +43,12 @@ type InstallState struct {
 	Phase          InstallPhase          `json:"phase"`
 	EverCompleted  bool                  `json:"ever_completed"`
 	UpdatedAt      time.Time             `json:"updated_at"`
+	Attempt        *SetupAttempt         `json:"attempt,omitempty"`
 	Commit         *CommitJournal        `json:"commit,omitempty"`
 }
 
 var installIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+var installDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func (state InstallState) Validate() error {
 	if state.SchemaVersion != CurrentInstallStateSchemaVersion {
@@ -74,12 +85,18 @@ func (state InstallState) Validate() error {
 		if state.Commit == nil {
 			return fmt.Errorf("committing state requires a commit journal")
 		}
+		if state.Attempt != nil {
+			return fmt.Errorf("committing state cannot contain a pending attempt")
+		}
 	case InstallPhaseCompleted:
 		if !state.EverCompleted {
 			return fmt.Errorf("completed state requires ever_completed=true")
 		}
 		if state.Commit == nil {
 			return fmt.Errorf("completed state requires the finalized commit journal")
+		}
+		if state.Attempt != nil {
+			return fmt.Errorf("completed state cannot contain a pending attempt")
 		}
 	default:
 		return fmt.Errorf("install phase %q is invalid", state.Phase)
@@ -92,6 +109,25 @@ func (state InstallState) Validate() error {
 		if state.Commit.InstallationID != state.InstallationID {
 			return fmt.Errorf("commit journal installation ID does not match install state")
 		}
+	}
+	if state.Attempt != nil {
+		if err := state.Attempt.Validate(); err != nil {
+			return fmt.Errorf("validate pending setup attempt: %w", err)
+		}
+	}
+	return nil
+}
+
+func (attempt SetupAttempt) Validate() error {
+	parsed, err := uuid.Parse(attempt.OperationID)
+	if err != nil || parsed.String() != attempt.OperationID {
+		return fmt.Errorf("operation ID must be a canonical UUID")
+	}
+	if attempt.ConfigRevision <= 0 {
+		return fmt.Errorf("config revision must be positive")
+	}
+	if !installDigestPattern.MatchString(attempt.RequestDigest) {
+		return fmt.Errorf("request digest must be a lowercase SHA-256 value")
 	}
 	return nil
 }
@@ -108,6 +144,9 @@ func (proof CommitProof) Validate() error {
 	}
 	if proof.ConfigRevision <= 0 {
 		return fmt.Errorf("config revision must be positive")
+	}
+	if !installDigestPattern.MatchString(proof.RequestDigest) {
+		return fmt.Errorf("request digest must be a lowercase SHA-256 value")
 	}
 	return nil
 }

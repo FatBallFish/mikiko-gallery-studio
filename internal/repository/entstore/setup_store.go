@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
@@ -174,6 +175,9 @@ func (store *SetupStore) GetBinding(ctx context.Context, installationID string) 
 	}
 	entities, err := store.client.Installation.Query().Limit(2).All(ctx)
 	if err != nil {
+		if setupSchemaMissing(err) {
+			return setup.SetupBinding{}, setup.ErrSetupBindingNotFound
+		}
 		return setup.SetupBinding{}, fmt.Errorf("load setup binding installation: %w", err)
 	}
 	if len(entities) == 0 {
@@ -186,6 +190,14 @@ func (store *SetupStore) GetBinding(ctx context.Context, installationID string) 
 		return setup.SetupBinding{}, setup.ErrSetupBindingMismatch
 	}
 	return setupBindingFromClient(ctx, store.client, entities[0])
+}
+
+func setupSchemaMissing(err error) bool {
+	var postgresError *pq.Error
+	if errors.As(err, &postgresError) && postgresError.Code == "42P01" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "no such table: installations")
 }
 
 func setupBindingFromClient(ctx context.Context, client *repoent.Client, entity *repoent.Installation) (setup.SetupBinding, error) {
