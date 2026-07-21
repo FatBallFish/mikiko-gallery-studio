@@ -15,6 +15,7 @@ run "go test" go test ./...
 run "go vet" go vet ./...
 run "local build service startup scripts" ./scripts/local/pgctl_contract_test.sh
 run "service configuration escaping contract" ./scripts/service/service_config_contract_test.sh
+run "API smoke BASE_URL safety contract" ./scripts/test/api_contract_smoke_contract_test.sh
 run "shared local E2E runner safety contract" ./scripts/e2e/run-docker-e2e.contract.sh
 
 run "frontend/shared contracts" ./scripts/workflow/verify-contracts.sh

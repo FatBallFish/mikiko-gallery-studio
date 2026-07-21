@@ -19,4 +19,4 @@ Run:
 
 Prerequisites are Bash, `curl`, Python 3, Go, a running Docker daemon, and access to `postgres:16-alpine` and `redis:7-alpine`.
 
-The script starts and cleans up its own API, Worker, fake provider, PostgreSQL, and Redis. `BASE_URL` only selects a free loopback listening address; do not start or target an existing API.
+The script starts and cleans up its own API, Worker, fake provider, PostgreSQL, and Redis. `BASE_URL` only accepts `http://127.0.0.1:<port>` or `http://localhost:<port>` with an explicit free port and no URL suffix; do not start or target an existing API.

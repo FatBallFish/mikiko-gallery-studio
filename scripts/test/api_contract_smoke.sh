@@ -2,19 +2,52 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-if [[ -z "${BASE_URL:-}" ]]; then
-  SMOKE_PORT="$(python3 - <<'PY'
+BASE_URL_DETAILS="$(BASE_URL_INPUT="${BASE_URL:-}" python3 - <<'PY'
+import os
+import re
 import socket
+import sys
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-    sock.bind(("127.0.0.1", 0))
-    print(sock.getsockname()[1])
+raw = os.environ["BASE_URL_INPUT"]
+if raw:
+    match = re.fullmatch(r"http://(127\.0\.0\.1|localhost):([0-9]+)", raw)
+    if not match:
+        print(
+            "BASE_URL must be exactly http://127.0.0.1:<port> or http://localhost:<port>",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    host, port_text = match.groups()
+    port = int(port_text)
+    if not 1 <= port <= 65535:
+        print("BASE_URL port must be between 1 and 65535", file=sys.stderr)
+        raise SystemExit(2)
+    # Requests must target the same IPv4 listener the smoke process owns. Keeping
+    # "localhost" here could resolve to an unrelated service bound on ::1.
+    base_url = f"http://127.0.0.1:{port}"
+else:
+    host = "127.0.0.1"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as selector:
+        selector.bind((host, 0))
+        port = selector.getsockname()[1]
+    base_url = f"http://{host}:{port}"
+
+try:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", port))
+except OSError:
+    print(f"BASE_URL port is already in use: {port}", file=sys.stderr)
+    raise SystemExit(2)
+
+print(f"{base_url}\t{port}")
 PY
-)"
-  BASE_URL="http://127.0.0.1:${SMOKE_PORT}"
+)" || exit $?
+IFS=$'\t' read -r BASE_URL SMOKE_PORT <<<"$BASE_URL_DETAILS"
+if [[ -z "$BASE_URL" || -z "$SMOKE_PORT" ]]; then
+  echo "failed to resolve isolated API smoke BASE_URL" >&2
+  exit 2
 fi
-API_ADDR="${BASE_URL#http://127.0.0.1}"
-API_ADDR="${API_ADDR#http://localhost}"
+API_ADDR="127.0.0.1:${SMOKE_PORT}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke.XXXXXX")"
 SMOKE_ID="$(basename "$TMP_DIR" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 SMOKE_ENV_PATH="$TMP_DIR/backend.env"
@@ -24,6 +57,7 @@ FAKE_PROVIDER_LOG="$TMP_DIR/fake-provider.log"
 STORAGE_ROOT="$TMP_DIR/storage"
 RUNTIME_STORAGE_ROOT="$TMP_DIR/runtime-storage"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
+API_BINARY="$TMP_DIR/pic-gallery-api"
 SMOKE_USER_EMAIL="smoke-user-${SMOKE_ID}@example.com"
 SMOKE_ADMIN_EMAIL="admin-smoke-${SMOKE_ID}@example.com"
 SMOKE_SUPER_ADMIN_EMAIL="super-admin-smoke-${SMOKE_ID}@example.com"
@@ -90,6 +124,21 @@ cleanup() {
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
+
+assert_api_port_free() {
+  python3 - "$SMOKE_PORT" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+try:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", port))
+except OSError:
+    print(f"BASE_URL port is already in use: {port}", file=sys.stderr)
+    raise SystemExit(2)
+PY
+}
 
 start_smoke_middleware() {
   if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
@@ -1204,7 +1253,7 @@ OPENROUTER_BASE_URL=${FAKE_PROVIDER_URL:-http://127.0.0.1:1}
 OPENROUTER_API_KEY=
 DOCS_TITLE=Pic Gallery API Docs
 DOCS_BASE_PATH=/developers/docs
-API_PORT=${API_ADDR#:}
+API_PORT=$SMOKE_PORT
 IMAGE_TAG=api-contract-smoke
 INSTALLATION_ID=api-contract-smoke-${SMOKE_ID}
 APPLICATION_VERSION=api-contract-smoke
@@ -1263,24 +1312,66 @@ wait_for_task_status() {
 }
 
 cd "$ROOT_DIR"
+go build -o "$API_BINARY" ./cmd/api
 start_smoke_middleware
 write_smoke_config
+assert_api_port_free
 
 APP_ENV_FILE="$SMOKE_ENV_PATH" \
-go run ./cmd/api >"$SERVER_LOG" 2>&1 &
+"$API_BINARY" >"$SERVER_LOG" 2>&1 &
 SERVER_PID="$!"
 
-for _ in {1..60}; do
-  if request --max-time 2 "$BASE_URL/readyz" >/dev/null 2>&1; then
-    break
-  fi
+server_listen_attempted=false
+for _ in {1..120}; do
   if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
-    echo "API server exited during startup. Log follows:" >&2
+    echo "API server exited before attempting to listen. Log follows:" >&2
     cat "$SERVER_LOG" >&2
     exit 1
   fi
+  if grep -Fq "starting pic-gallery api" "$SERVER_LOG"; then
+    server_listen_attempted=true
+    break
+  fi
+  sleep 0.25
+done
+if [[ "$server_listen_attempted" != true ]]; then
+  echo "API server did not reach its listen attempt. Log follows:" >&2
+  cat "$SERVER_LOG" >&2
+  exit 1
+fi
+
+sleep 0.5
+if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+  echo "API server exited during its listen stability window. Log follows:" >&2
+  cat "$SERVER_LOG" >&2
+  exit 1
+fi
+
+ready_observed=false
+for _ in {1..60}; do
+  if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    echo "API server exited during readiness probing. Log follows:" >&2
+    cat "$SERVER_LOG" >&2
+    exit 1
+  fi
+  if request --max-time 2 "$BASE_URL/readyz" >/dev/null 2>&1; then
+    ready_observed=true
+    break
+  fi
   sleep 0.5
 done
+if [[ "$ready_observed" != true ]]; then
+  echo "API server did not become ready. Log follows:" >&2
+  cat "$SERVER_LOG" >&2
+  exit 1
+fi
+
+sleep 0.5
+if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+  echo "API server exited after readiness. Log follows:" >&2
+  cat "$SERVER_LOG" >&2
+  exit 1
+fi
 
 ready_body="$(request "$BASE_URL/readyz")"
 [[ "$(assert_json_field "$ready_body" "data.status")" == "ready" ]]

@@ -18,7 +18,7 @@ Use the workflow entrypoint:
 ./scripts/workflow/api-smoke.sh
 ```
 
-The script chooses an unused loopback port by default. `BASE_URL` only selects the temporary API listening address; it does not point the smoke test at a live or pre-existing API. The override must be a free loopback HTTP address:
+The script chooses an unused loopback port by default. `BASE_URL` only accepts exactly `http://127.0.0.1:<port>` or `http://localhost:<port>` with an explicit free port and no path, query, fragment, or user info; it selects the temporary API listening address and never points the smoke test at a live or pre-existing API:
 
 ```bash
 BASE_URL=http://127.0.0.1:18081 ./scripts/workflow/api-smoke.sh

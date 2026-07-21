@@ -526,7 +526,7 @@ Docker 模式使用 Compose 和镜像仓库：
 BASE_URL=http://127.0.0.1:8080 ./scripts/workflow/api-smoke.sh
 ```
 
-前置条件是 Bash、`curl`、Python 3、Go、可用的 Docker daemon，以及本地已有或可从镜像仓库访问 `postgres:16-alpine` 和 `redis:7-alpine`。脚本会自行启动 API、Worker、fake provider、PostgreSQL 和 Redis；`BASE_URL` 仅用于选择临时 API 监听地址，不会连接预先运行的 API。退出时的清理（cleanup）会停止子进程、删除临时容器，并移除临时 runtime env、存储、日志和测试数据。
+前置条件是 Bash、`curl`、Python 3、Go、可用的 Docker daemon，以及本地已有或可从镜像仓库访问 `postgres:16-alpine` 和 `redis:7-alpine`。脚本会自行启动 API、Worker、fake provider、PostgreSQL 和 Redis；`BASE_URL` 只接受带显式空闲端口的 `http://127.0.0.1:<port>` 或 `http://localhost:<port>`，不得包含 path、query、fragment 或 user info，也不会连接预先运行的 API。退出时的清理（cleanup）会停止子进程、删除临时容器，并移除临时 runtime env、存储、日志和测试数据。
 
 运行 Docker E2E：
 

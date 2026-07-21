@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SMOKE="$ROOT_DIR/scripts/test/api_contract_smoke.sh"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke-contract.XXXXXX")"
+STUB_BIN="$TMP_DIR/stubs"
+INVOCATIONS="$TMP_DIR/invocations.log"
+LISTENER_PID=""
+
+cleanup() {
+  if [[ -n "$LISTENER_PID" ]] && kill -0 "$LISTENER_PID" >/dev/null 2>&1; then
+    kill "$LISTENER_PID" >/dev/null 2>&1 || true
+    wait "$LISTENER_PID" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+mkdir -p "$STUB_BIN"
+for command in docker curl go; do
+  cat >"$STUB_BIN/$command" <<'SH'
+#!/usr/bin/env sh
+printf '%s\n' "$(basename "$0") $*" >>"${SMOKE_CONTRACT_INVOCATIONS:?}"
+exit 97
+SH
+  chmod +x "$STUB_BIN/$command"
+done
+
+assert_rejected_before_side_effects() {
+  local name=$1
+  local base_url=$2
+  local expected=$3
+  local output="$TMP_DIR/$name.out"
+  : >"$INVOCATIONS"
+  if PATH="$STUB_BIN:$PATH" SMOKE_CONTRACT_INVOCATIONS="$INVOCATIONS" BASE_URL="$base_url" \
+    "$SMOKE" >"$output" 2>&1; then
+    echo "API smoke accepted invalid BASE_URL for $name: $base_url" >&2
+    exit 1
+  fi
+  if [[ -s "$INVOCATIONS" ]]; then
+    echo "API smoke performed side effects before rejecting $name:" >&2
+    cat "$INVOCATIONS" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$output"
+}
+
+assert_rejected_before_side_effects remote "http://example.com:18081" "BASE_URL must be"
+assert_rejected_before_side_effects https "https://127.0.0.1:18081" "BASE_URL must be"
+assert_rejected_before_side_effects path "http://127.0.0.1:18081/readyz" "BASE_URL must be"
+assert_rejected_before_side_effects query "http://127.0.0.1:18081?target=readyz" "BASE_URL must be"
+assert_rejected_before_side_effects fragment "http://127.0.0.1:18081#readyz" "BASE_URL must be"
+assert_rejected_before_side_effects userinfo "http://user@127.0.0.1:18081" "BASE_URL must be"
+assert_rejected_before_side_effects missing-port "http://127.0.0.1" "BASE_URL must be"
+assert_rejected_before_side_effects zero-port "http://127.0.0.1:0" "BASE_URL port must be between 1 and 65535"
+assert_rejected_before_side_effects high-port "http://localhost:65536" "BASE_URL port must be between 1 and 65535"
+assert_rejected_before_side_effects nonnumeric-port "http://localhost:http" "BASE_URL must be"
+
+if ! grep -Fq 'base_url = f"http://127.0.0.1:{port}"' "$SMOKE"; then
+  echo "API smoke does not canonicalize localhost requests to the owned IPv4 listener" >&2
+  exit 1
+fi
+if grep -Fq 'base_url = raw' "$SMOKE"; then
+  echo "API smoke may send localhost requests to an unowned IPv6 listener" >&2
+  exit 1
+fi
+
+PORT_FILE="$TMP_DIR/listener.port"
+python3 - "$PORT_FILE" <<'PY' &
+import socket
+import sys
+import time
+
+path = sys.argv[1]
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(str(listener.getsockname()[1]))
+    time.sleep(30)
+PY
+LISTENER_PID="$!"
+for _ in {1..40}; do
+  [[ -s "$PORT_FILE" ]] && break
+  kill -0 "$LISTENER_PID" >/dev/null 2>&1
+  sleep 0.05
+done
+[[ -s "$PORT_FILE" ]]
+OCCUPIED_PORT="$(cat "$PORT_FILE")"
+assert_rejected_before_side_effects occupied-port \
+  "http://127.0.0.1:$OCCUPIED_PORT" "BASE_URL port is already in use"
+
+echo "OK: API contract smoke BASE_URL safety contract passed"

@@ -53,6 +53,8 @@ Claude-compatible copies live under `.claude/skills/`.
   - `./scripts/workflow/check-review-gate.sh`
   - `./scripts/workflow/api-smoke.sh` when backend/API/config/deployment changed
 
+The isolated API smoke requires Bash, `curl`, Python 3, Go, a running Docker daemon, and access to `postgres:16-alpine` and `redis:7-alpine`. It starts and cleans up its own API, Worker, fake provider, PostgreSQL, and Redis. `BASE_URL` only accepts `http://127.0.0.1:<port>` or `http://localhost:<port>` with an explicit free port and no URL suffix; it never targets an existing API.
+
 ## Verification Commands
 
 Repository verification is centralized in:
@@ -83,4 +85,3 @@ The marker is `.review/gate.json`. It is valid only when it is `PASS`, scope is 
 ## Branch Policy
 
 Direct commits to `main` are blocked by `pre-commit`, except workflow bootstrap commits made by a human after review.
-

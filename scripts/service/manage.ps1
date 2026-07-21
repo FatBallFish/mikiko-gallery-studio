@@ -1,9 +1,13 @@
 param(
-  [Parameter(Mandatory=$true)]
+  [Parameter(Mandatory=$false)]
   [ValidateSet("install", "uninstall", "start", "stop", "restart", "status", "logs")]
   [string]$Action,
   [string]$Components = "api,worker",
-  [string]$EnvFile = ""
+  [string]$EnvFile = "",
+  [switch]$RenderCommandPayload,
+  [string]$PayloadRoot = "",
+  [string]$PayloadEnvFile = "",
+  [string]$PayloadExecutable = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,7 +43,35 @@ function Task-Name {
 
 function ConvertTo-SingleQuotedLiteral {
   param([AllowEmptyString()][string]$Value)
+  if ($Value.Contains("`r") -or $Value.Contains("`n")) {
+    throw "PowerShell command payload values must not contain line breaks"
+  }
   return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function New-ServiceCommandPayload {
+  param(
+    [AllowEmptyString()][string]$RootPath,
+    [AllowEmptyString()][string]$RuntimeEnvFile,
+    [AllowEmptyString()][string]$ExecutablePath
+  )
+  $RootLiteral = ConvertTo-SingleQuotedLiteral $RootPath
+  $EnvFileLiteral = ConvertTo-SingleQuotedLiteral $RuntimeEnvFile
+  $ExeLiteral = ConvertTo-SingleQuotedLiteral $ExecutablePath
+  $Command = "Set-Location -LiteralPath $RootLiteral; `$env:APP_ENV_FILE = $EnvFileLiteral; & $ExeLiteral"
+  return [PSCustomObject]@{
+    Command = $Command
+    EncodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($Command))
+  }
+}
+
+if ($RenderCommandPayload) {
+  $Payload = New-ServiceCommandPayload $PayloadRoot $PayloadEnvFile $PayloadExecutable
+  Write-Output $Payload.EncodedCommand
+  exit 0
+}
+if (-not $Action) {
+  throw "Action is required unless -RenderCommandPayload is used"
 }
 
 function Install-Component {
@@ -47,12 +79,8 @@ function Install-Component {
   Build-Component $Component
   $TaskName = Task-Name $Component
   $Exe = Component-Command $Component
-  $RootLiteral = ConvertTo-SingleQuotedLiteral $Root
-  $EnvFileLiteral = ConvertTo-SingleQuotedLiteral $EnvFile
-  $ExeLiteral = ConvertTo-SingleQuotedLiteral $Exe
-  $Command = "Set-Location -LiteralPath $RootLiteral; `$env:APP_ENV_FILE = $EnvFileLiteral; & $ExeLiteral"
-  $EncodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($Command))
-  $TaskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
+  $Payload = New-ServiceCommandPayload $Root $EnvFile $Exe
+  $TaskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $($Payload.EncodedCommand)"
   $Trigger = New-ScheduledTaskTrigger -AtStartup
   $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel LeastPrivilege
   $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)

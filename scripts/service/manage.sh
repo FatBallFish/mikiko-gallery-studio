@@ -93,7 +93,12 @@ systemd_exec_quote() {
 }
 
 xml_escape() {
-  printf '%s' "$1" | sed \
+  local value=$1
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    echo "launchd XML values must not contain line breaks" >&2
+    return 2
+  fi
+  printf '%s' "$value" | sed \
     -e 's/&/\&amp;/g' \
     -e 's/</\&lt;/g' \
     -e 's/>/\&gt;/g' \

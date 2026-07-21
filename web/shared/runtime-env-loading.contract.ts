@@ -55,8 +55,11 @@ const smokeDocs = [
   'README.zh-CN.md',
   'docs/ops/api-contract-smoke-test.md',
   'docs/org/workflow/DEVELOPMENT_WORKFLOW.md',
+  'AGENTS.md',
   '.agents/skills/dev-api-smoke/SKILL.md',
   '.claude/skills/dev-api-smoke/SKILL.md',
+  '.agents/skills/dev-ship/SKILL.md',
+  '.claude/skills/dev-ship/SKILL.md',
 ]
 for (const path of smokeDocs) {
   const source = read(path)
@@ -69,6 +72,7 @@ for (const path of smokeDocs) {
     'postgres:16-alpine',
     'redis:7-alpine',
     'BASE_URL',
+    'http://127.0.0.1:<port>',
   ]) {
     if (!source.includes(required)) {
       throw new Error(`${path} must document the API smoke prerequisite or behavior: ${required}`)
@@ -89,24 +93,33 @@ for (const stale of [
 }
 
 const smokeBehaviorMarkers: Record<string, string[]> = {
-  'README.md': ['starts its own API', '`BASE_URL` only selects', 'Exit cleanup'],
-  'README.zh-CN.md': ['脚本会自行启动 API', '`BASE_URL` 仅用于选择', '清理（cleanup）'],
+  'README.md': ['starts its own API', '`BASE_URL` only accepts', 'Exit cleanup'],
+  'README.zh-CN.md': ['脚本会自行启动 API', '`BASE_URL` 只接受', '清理（cleanup）'],
   'docs/ops/api-contract-smoke-test.md': [
     'starts its own API and Worker',
-    '`BASE_URL` only selects',
+    '`BASE_URL` only accepts',
     'The exit cleanup trap',
   ],
   'docs/org/workflow/DEVELOPMENT_WORKFLOW.md': [
     'starts and cleans up its own API',
-    '`BASE_URL` only selects',
+    '`BASE_URL` only accepts',
   ],
+  'AGENTS.md': ['starts and cleans up its own API', '`BASE_URL` only accepts'],
   '.agents/skills/dev-api-smoke/SKILL.md': [
     'starts and cleans up its own API',
-    '`BASE_URL` only selects',
+    '`BASE_URL` only accepts',
   ],
   '.claude/skills/dev-api-smoke/SKILL.md': [
     'starts and cleans up its own API',
-    '`BASE_URL` only selects',
+    '`BASE_URL` only accepts',
+  ],
+  '.agents/skills/dev-ship/SKILL.md': [
+    'starts and cleans up its own API',
+    '`BASE_URL` only accepts',
+  ],
+  '.claude/skills/dev-ship/SKILL.md': [
+    'starts and cleans up its own API',
+    '`BASE_URL` only accepts',
   ],
 }
 for (const [path, markers] of Object.entries(smokeBehaviorMarkers)) {

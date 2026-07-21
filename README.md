@@ -526,7 +526,7 @@ Run the isolated API contract smoke:
 BASE_URL=http://127.0.0.1:8080 ./scripts/workflow/api-smoke.sh
 ```
 
-Prerequisites are Bash, `curl`, Python 3, Go, a running Docker daemon, and local access to or registry access for the `postgres:16-alpine` and `redis:7-alpine` images. The script starts its own API, Worker, fake provider, PostgreSQL, and Redis processes; `BASE_URL` only selects the temporary API listening address and does not target a pre-existing API. Exit cleanup stops the child processes, removes the temporary containers, and deletes the temporary runtime env, storage, logs, and test data.
+Prerequisites are Bash, `curl`, Python 3, Go, a running Docker daemon, and local access to or registry access for the `postgres:16-alpine` and `redis:7-alpine` images. The script starts its own API, Worker, fake provider, PostgreSQL, and Redis processes; `BASE_URL` only accepts `http://127.0.0.1:<port>` or `http://localhost:<port>` with an explicit free port and no path, query, fragment, or user info, and does not target a pre-existing API. Exit cleanup stops the child processes, removes the temporary containers, and deletes the temporary runtime env, storage, logs, and test data.
 
 Run the Docker E2E suite:
 
