@@ -81,7 +81,7 @@ func (store *StateStore) Save(state InstallState) error {
 	return store.saveUnlocked(state)
 }
 
-func (store *StateStore) BeginCommit(operationID string, runtimeSchemaVersion, configRevision int, at time.Time) (InstallState, error) {
+func (store *StateStore) BeginCommit(proof CommitProof, at time.Time) (InstallState, error) {
 	if err := store.validate(); err != nil {
 		return InstallState{}, err
 	}
@@ -89,19 +89,8 @@ func (store *StateStore) BeginCommit(operationID string, runtimeSchemaVersion, c
 	if err != nil {
 		return InstallState{}, err
 	}
-	journal := CommitJournal{
-		OperationID:          operationID,
-		RuntimeSchemaVersion: runtimeSchemaVersion,
-		ConfigRevision:       configRevision,
-	}
-	if err := validateInstallIdentifier("operation ID", operationID); err != nil {
-		return InstallState{}, err
-	}
-	if runtimeSchemaVersion != config.CurrentRuntimeSchemaVersion {
-		return InstallState{}, fmt.Errorf("runtime schema version must be %d, got %d", config.CurrentRuntimeSchemaVersion, runtimeSchemaVersion)
-	}
-	if configRevision <= 0 {
-		return InstallState{}, fmt.Errorf("config revision must be positive")
+	if err := proof.Validate(); err != nil {
+		return InstallState{}, fmt.Errorf("validate commit proof: %w", err)
 	}
 
 	store.mu.Lock()
@@ -113,24 +102,26 @@ func (store *StateStore) BeginCommit(operationID string, runtimeSchemaVersion, c
 	if !exists {
 		return InstallState{}, fmt.Errorf("%w: cannot begin commit without install state", ErrInstallStateInvalid)
 	}
-	journal.InstallationID = state.InstallationID
+	if proof.InstallationID != state.InstallationID {
+		return InstallState{}, fmt.Errorf("%w: commit proof installation ID does not match install state", ErrInstallStateInvalid)
+	}
 
 	switch state.Phase {
 	case InstallPhasePending:
 		state.Phase = InstallPhaseCommitting
-		state.Commit = &journal
+		state.Commit = &proof
 		state.UpdatedAt = at
 		if err := store.saveUnlocked(state); err != nil {
 			return InstallState{}, err
 		}
 		return state, nil
 	case InstallPhaseCommitting:
-		if state.Commit != nil && *state.Commit == journal {
+		if state.Commit != nil && *state.Commit == proof {
 			return state, nil
 		}
 		return InstallState{}, fmt.Errorf("%w: active commit journal does not match requested operation", ErrInstallStateInvalid)
 	case InstallPhaseCompleted:
-		if state.Commit != nil && *state.Commit == journal {
+		if state.Commit != nil && *state.Commit == proof {
 			return state, nil
 		}
 		return InstallState{}, fmt.Errorf("%w: completed installation cannot begin a different setup commit", ErrInstallStateInvalid)
@@ -139,7 +130,7 @@ func (store *StateStore) BeginCommit(operationID string, runtimeSchemaVersion, c
 	}
 }
 
-func (store *StateStore) FinalizeCommit(operationID, installationID string, at time.Time) (InstallState, error) {
+func (store *StateStore) FinalizeCommit(proof CommitProof, at time.Time) (InstallState, error) {
 	if err := store.validate(); err != nil {
 		return InstallState{}, err
 	}
@@ -147,11 +138,8 @@ func (store *StateStore) FinalizeCommit(operationID, installationID string, at t
 	if err != nil {
 		return InstallState{}, err
 	}
-	if err := validateInstallIdentifier("operation ID", operationID); err != nil {
-		return InstallState{}, err
-	}
-	if err := validateInstallIdentifier("installation ID", installationID); err != nil {
-		return InstallState{}, err
+	if err := proof.Validate(); err != nil {
+		return InstallState{}, fmt.Errorf("validate commit proof: %w", err)
 	}
 
 	store.mu.Lock()
@@ -163,10 +151,10 @@ func (store *StateStore) FinalizeCommit(operationID, installationID string, at t
 	if !exists {
 		return InstallState{}, fmt.Errorf("%w: cannot finalize commit without install state", ErrInstallStateInvalid)
 	}
-	if state.InstallationID != installationID {
+	if state.InstallationID != proof.InstallationID {
 		return InstallState{}, fmt.Errorf("%w: installation ID does not match install state", ErrInstallStateInvalid)
 	}
-	if state.Commit == nil || state.Commit.OperationID != operationID || state.Commit.InstallationID != installationID {
+	if state.Commit == nil || *state.Commit != proof {
 		return InstallState{}, fmt.Errorf("%w: commit journal does not match requested operation", ErrInstallStateInvalid)
 	}
 

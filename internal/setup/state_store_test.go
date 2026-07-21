@@ -210,7 +210,8 @@ func TestStateStoreBeginAndFinalizeCommitAreIdempotentAndFailClosed(t *testing.T
 		t.Fatalf("seed pending state: %v", err)
 	}
 
-	committing, err := store.BeginCommit(testOperationID, config.CurrentRuntimeSchemaVersion, 7, testStateTime.Add(time.Minute))
+	proof := validCommitProof()
+	committing, err := store.BeginCommit(proof, testStateTime.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("BeginCommit() error = %v", err)
 	}
@@ -220,48 +221,65 @@ func TestStateStoreBeginAndFinalizeCommitAreIdempotentAndFailClosed(t *testing.T
 	if committing.Commit.OperationID != testOperationID || committing.Commit.InstallationID != testInstallationID || committing.Commit.RuntimeSchemaVersion != config.CurrentRuntimeSchemaVersion || committing.Commit.ConfigRevision != 7 {
 		t.Fatalf("BeginCommit() journal = %+v", committing.Commit)
 	}
-	second, err := store.BeginCommit(testOperationID, config.CurrentRuntimeSchemaVersion, 7, testStateTime.Add(2*time.Minute))
+	second, err := store.BeginCommit(proof, testStateTime.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("idempotent BeginCommit() error = %v", err)
 	}
 	assertInstallStateEqual(t, second, committing)
-	if _, err := store.BeginCommit("019d0000-0000-7000-8000-000000000099", config.CurrentRuntimeSchemaVersion, 7, testStateTime.Add(2*time.Minute)); err == nil {
-		t.Fatal("BeginCommit() with mismatched operation ID succeeded")
-	}
-	if _, err := store.BeginCommit(testOperationID, config.CurrentRuntimeSchemaVersion, 8, testStateTime.Add(2*time.Minute)); err == nil {
-		t.Fatal("BeginCommit() with mismatched revision succeeded")
-	}
-	if _, err := store.BeginCommit(testOperationID, config.CurrentRuntimeSchemaVersion+1, 7, testStateTime.Add(2*time.Minute)); err == nil {
-		t.Fatal("BeginCommit() with mismatched runtime schema succeeded")
-	}
-
-	if _, err := store.FinalizeCommit(testOperationID, "019d0000-0000-7000-8000-000000000099", testStateTime.Add(3*time.Minute)); err == nil {
-		t.Fatal("FinalizeCommit() with mismatched installation ID succeeded")
-	}
-	if _, err := store.FinalizeCommit("019d0000-0000-7000-8000-000000000099", testInstallationID, testStateTime.Add(3*time.Minute)); err == nil {
-		t.Fatal("FinalizeCommit() with mismatched operation ID succeeded")
+	for _, tt := range commitProofMismatchTests() {
+		t.Run("begin mismatch "+tt.name, func(t *testing.T) {
+			if _, err := store.BeginCommit(tt.proof, testStateTime.Add(2*time.Minute)); err == nil {
+				t.Fatalf("BeginCommit() with mismatched %s succeeded", tt.name)
+			}
+		})
+		t.Run("finalize mismatch "+tt.name, func(t *testing.T) {
+			if _, err := store.FinalizeCommit(tt.proof, testStateTime.Add(3*time.Minute)); err == nil {
+				t.Fatalf("FinalizeCommit() with mismatched %s succeeded", tt.name)
+			}
+		})
 	}
 
-	completed, err := store.FinalizeCommit(testOperationID, testInstallationID, testStateTime.Add(3*time.Minute))
+	completed, err := store.FinalizeCommit(proof, testStateTime.Add(3*time.Minute))
 	if err != nil {
 		t.Fatalf("FinalizeCommit() error = %v", err)
 	}
 	if completed.Phase != InstallPhaseCompleted || !completed.EverCompleted {
 		t.Fatalf("FinalizeCommit() state = %+v, want completed", completed)
 	}
-	idempotent, err := store.FinalizeCommit(testOperationID, testInstallationID, testStateTime.Add(4*time.Minute))
+	idempotent, err := store.FinalizeCommit(proof, testStateTime.Add(4*time.Minute))
 	if err != nil {
 		t.Fatalf("idempotent FinalizeCommit() error = %v", err)
 	}
 	assertInstallStateEqual(t, idempotent, completed)
-	if _, err := store.FinalizeCommit("019d0000-0000-7000-8000-000000000099", testInstallationID, testStateTime.Add(4*time.Minute)); err == nil {
+	wrongOperation := proof
+	wrongOperation.OperationID = "019d0000-0000-7000-8000-000000000099"
+	if _, err := store.FinalizeCommit(wrongOperation, testStateTime.Add(4*time.Minute)); err == nil {
 		t.Fatal("completed FinalizeCommit() with mismatched operation ID succeeded")
 	}
-	beginAfterFinalize, err := store.BeginCommit(testOperationID, config.CurrentRuntimeSchemaVersion, 7, testStateTime.Add(5*time.Minute))
+	beginAfterFinalize, err := store.BeginCommit(proof, testStateTime.Add(5*time.Minute))
 	if err != nil {
 		t.Fatalf("idempotent BeginCommit() after finalize error = %v", err)
 	}
 	assertInstallStateEqual(t, beginAfterFinalize, completed)
+}
+
+func TestStateStoreBeginCommitRequiresCallerInstallationProof(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json")
+	store := NewStateStoreAt(path)
+	original := pendingState()
+	if err := store.Save(original); err != nil {
+		t.Fatalf("seed pending state: %v", err)
+	}
+	proof := validCommitProof()
+	proof.InstallationID = "019d0000-0000-7000-8000-000000000099"
+	if _, err := store.BeginCommit(proof, testStateTime.Add(time.Minute)); err == nil {
+		t.Fatal("BeginCommit() silently accepted mismatched installation proof")
+	}
+	got, exists, err := store.Load()
+	if err != nil || !exists {
+		t.Fatalf("Load() after rejected proof = (%+v, %t, %v)", got, exists, err)
+	}
+	assertInstallStateEqual(t, got, original)
 }
 
 func TestStateStoreBeginCommitRejectsUnsupportedRuntimeSchemaBeforeWritingJournal(t *testing.T) {
@@ -271,7 +289,9 @@ func TestStateStoreBeginCommitRejectsUnsupportedRuntimeSchemaBeforeWritingJourna
 	if err := store.Save(original); err != nil {
 		t.Fatalf("seed pending state: %v", err)
 	}
-	if _, err := store.BeginCommit(testOperationID, config.CurrentRuntimeSchemaVersion+1, 7, testStateTime.Add(time.Minute)); err == nil {
+	proof := validCommitProof()
+	proof.RuntimeSchemaVersion++
+	if _, err := store.BeginCommit(proof, testStateTime.Add(time.Minute)); err == nil {
 		t.Fatal("BeginCommit() with unsupported runtime schema succeeded")
 	}
 	got, exists, err := store.Load()
@@ -279,6 +299,23 @@ func TestStateStoreBeginCommitRejectsUnsupportedRuntimeSchemaBeforeWritingJourna
 		t.Fatalf("Load() after rejected BeginCommit = (%+v, %t, %v)", got, exists, err)
 	}
 	assertInstallStateEqual(t, got, original)
+}
+
+func TestStateStoreLoadRejectsUnsupportedRuntimeSchemaInJournal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json")
+	contents := strings.Replace(
+		committingStateJSON(),
+		`"runtime_schema_version":1`,
+		`"runtime_schema_version":2`,
+		1,
+	)
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write future journal fixture: %v", err)
+	}
+	_, exists, err := NewStateStoreAt(path).Load()
+	if !exists || !errors.Is(err, ErrInstallStateInvalid) {
+		t.Fatalf("Load() = (exists=%t, err=%v), want invalid existing state", exists, err)
+	}
 }
 
 func TestInstallStateJSONContainsNoSecretMaterial(t *testing.T) {
@@ -316,6 +353,37 @@ func validCommitJournal() *CommitJournal {
 		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion,
 		ConfigRevision:       7,
 	}
+}
+
+func validCommitProof() CommitProof {
+	return CommitProof(*validCommitJournal())
+}
+
+func commitProofMismatchTests() []struct {
+	name  string
+	proof CommitProof
+} {
+	operation := validCommitProof()
+	operation.OperationID = "019d0000-0000-7000-8000-000000000099"
+	installation := validCommitProof()
+	installation.InstallationID = "019d0000-0000-7000-8000-000000000099"
+	runtimeSchema := validCommitProof()
+	runtimeSchema.RuntimeSchemaVersion++
+	revision := validCommitProof()
+	revision.ConfigRevision++
+	return []struct {
+		name  string
+		proof CommitProof
+	}{
+		{name: "operation ID", proof: operation},
+		{name: "installation ID", proof: installation},
+		{name: "runtime schema", proof: runtimeSchema},
+		{name: "config revision", proof: revision},
+	}
+}
+
+func committingStateJSON() string {
+	return `{"schema_version":1,"installation_id":"` + testInstallationID + `","deployment_role":"single","phase":"committing","ever_completed":false,"updated_at":"2026-07-21T06:00:00Z","commit":{"operation_id":"` + testOperationID + `","installation_id":"` + testInstallationID + `","runtime_schema_version":1,"config_revision":7}}`
 }
 
 func validStateJSON(extra string) string {

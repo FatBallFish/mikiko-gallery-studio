@@ -158,6 +158,22 @@ func TestResolveStartupDecisionRejectsInconsistentCommitJournalAndEnv(t *testing
 	}
 }
 
+func TestResolveStartupDecisionRejectsUnsupportedJournalBeforeEnvRename(t *testing.T) {
+	for name, version := range map[string]int{
+		"future": config.CurrentRuntimeSchemaVersion + 1,
+		"old":    0,
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := committingStateForRole(config.DeploymentRoleSingle)
+			state.Commit.RuntimeSchemaVersion = version
+			decision, err := ResolveStartupDecision(pendingBootstrap(config.DeploymentRoleSingle), state, true)
+			if decision.Mode != StartupModeBroken || decision.Reconciliation != ReconciliationNone || !errors.Is(err, ErrStartupStateInconsistent) {
+				t.Fatalf("ResolveStartupDecision() = (%+v, %v), want broken inconsistent", decision, err)
+			}
+		})
+	}
+}
+
 func pendingStateForRole(role config.DeploymentRole) InstallState {
 	state := pendingState()
 	state.DeploymentRole = role

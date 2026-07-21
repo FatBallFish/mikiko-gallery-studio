@@ -18,12 +18,14 @@ const (
 	InstallPhaseCompleted  InstallPhase = "completed"
 )
 
-type CommitJournal struct {
+type CommitProof struct {
 	OperationID          string `json:"operation_id"`
 	InstallationID       string `json:"installation_id"`
 	RuntimeSchemaVersion int    `json:"runtime_schema_version"`
 	ConfigRevision       int    `json:"config_revision"`
 }
+
+type CommitJournal = CommitProof
 
 type InstallState struct {
 	SchemaVersion  int                   `json:"schema_version"`
@@ -94,17 +96,17 @@ func (state InstallState) Validate() error {
 	return nil
 }
 
-func (journal CommitJournal) Validate() error {
-	if err := validateInstallIdentifier("operation ID", journal.OperationID); err != nil {
+func (proof CommitProof) Validate() error {
+	if err := validateInstallIdentifier("operation ID", proof.OperationID); err != nil {
 		return err
 	}
-	if err := validateInstallIdentifier("installation ID", journal.InstallationID); err != nil {
+	if err := validateInstallIdentifier("installation ID", proof.InstallationID); err != nil {
 		return err
 	}
-	if journal.RuntimeSchemaVersion <= 0 {
-		return fmt.Errorf("runtime schema version must be positive")
+	if proof.RuntimeSchemaVersion != config.CurrentRuntimeSchemaVersion {
+		return fmt.Errorf("runtime schema version must be %d, got %d", config.CurrentRuntimeSchemaVersion, proof.RuntimeSchemaVersion)
 	}
-	if journal.ConfigRevision <= 0 {
+	if proof.ConfigRevision <= 0 {
 		return fmt.Errorf("config revision must be positive")
 	}
 	return nil
