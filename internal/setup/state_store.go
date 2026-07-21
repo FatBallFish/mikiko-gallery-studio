@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -16,9 +17,14 @@ import (
 )
 
 var (
-	ErrInstallStateCorrupt = errors.New("install state is corrupt")
-	ErrInstallStateInvalid = errors.New("install state is invalid")
+	ErrInstallStateCorrupt     = errors.New("install state is corrupt")
+	ErrInstallStateInvalid     = errors.New("install state is invalid")
+	ErrInstallStateLockTimeout = errors.New("timed out acquiring install state lock")
 )
+
+const defaultStateLockTimeout = 10 * time.Second
+
+var stateProcessLocks sync.Map
 
 type stateAtomicOps struct {
 	secureDirectory func(string) error
@@ -28,9 +34,11 @@ type stateAtomicOps struct {
 }
 
 type StateStore struct {
-	path       string
-	operations stateAtomicOps
-	mu         *sync.Mutex
+	path        string
+	pathErr     error
+	operations  stateAtomicOps
+	processLock *sync.Mutex
+	lockTimeout time.Duration
 }
 
 func DefaultInstallStatePath() string {
@@ -49,10 +57,17 @@ func NewStateStore(runtimeEnvPath string) *StateStore {
 }
 
 func NewStateStoreAt(path string) *StateStore {
+	normalizedPath, pathErr := normalizeStatePath(path)
+	lockKey := normalizeProcessLockKey(normalizedPath, runtime.GOOS == "windows")
+	if pathErr != nil {
+		lockKey = normalizeProcessLockKey(filepath.Clean(path), runtime.GOOS == "windows")
+	}
 	return &StateStore{
-		path:       path,
-		operations: platformStateAtomicOps(),
-		mu:         &sync.Mutex{},
+		path:        normalizedPath,
+		pathErr:     pathErr,
+		operations:  platformStateAtomicOps(),
+		processLock: processLockForPath(lockKey),
+		lockTimeout: defaultStateLockTimeout,
 	}
 }
 
@@ -67,18 +82,40 @@ func (store *StateStore) Load() (InstallState, bool, error) {
 	if err := store.validate(); err != nil {
 		return InstallState{}, false, err
 	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
+	if err := acquireStateProcessLock(store.processLock, store.lockTimeout); err != nil {
+		return InstallState{}, false, err
+	}
+	defer store.processLock.Unlock()
 	return store.loadUnlocked()
 }
 
-func (store *StateStore) Save(state InstallState) error {
+func (store *StateStore) Initialize(state InstallState) error {
 	if err := store.validate(); err != nil {
 		return err
 	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	return store.saveUnlocked(state)
+	if err := state.Validate(); err != nil {
+		return fmt.Errorf("%w: validate initial state: %v", ErrInstallStateInvalid, err)
+	}
+	if state.Phase != InstallPhasePending || state.EverCompleted || state.Commit != nil || !setupAuthority(state.DeploymentRole) {
+		return fmt.Errorf("%w: Initialize accepts only a pending single/control installation", ErrInstallStateInvalid)
+	}
+	_, err := store.withMutationLock(func() (InstallState, error) {
+		existing, exists, err := store.loadUnlocked()
+		if err != nil {
+			return InstallState{}, err
+		}
+		if exists {
+			if installStatesEqual(existing, state) {
+				return existing, nil
+			}
+			return InstallState{}, fmt.Errorf("%w: install state already exists with different identity or phase", ErrInstallStateInvalid)
+		}
+		if err := store.saveUnlocked(state); err != nil {
+			return InstallState{}, err
+		}
+		return state, nil
+	})
+	return err
 }
 
 func (store *StateStore) BeginCommit(proof CommitProof, at time.Time) (InstallState, error) {
@@ -93,41 +130,41 @@ func (store *StateStore) BeginCommit(proof CommitProof, at time.Time) (InstallSt
 		return InstallState{}, fmt.Errorf("validate commit proof: %w", err)
 	}
 
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	state, exists, err := store.loadUnlocked()
-	if err != nil {
-		return InstallState{}, err
-	}
-	if !exists {
-		return InstallState{}, fmt.Errorf("%w: cannot begin commit without install state", ErrInstallStateInvalid)
-	}
-	if proof.InstallationID != state.InstallationID {
-		return InstallState{}, fmt.Errorf("%w: commit proof installation ID does not match install state", ErrInstallStateInvalid)
-	}
-
-	switch state.Phase {
-	case InstallPhasePending:
-		state.Phase = InstallPhaseCommitting
-		state.Commit = &proof
-		state.UpdatedAt = at
-		if err := store.saveUnlocked(state); err != nil {
+	return store.withMutationLock(func() (InstallState, error) {
+		state, exists, err := store.loadUnlocked()
+		if err != nil {
 			return InstallState{}, err
 		}
-		return state, nil
-	case InstallPhaseCommitting:
-		if state.Commit != nil && *state.Commit == proof {
-			return state, nil
+		if !exists {
+			return InstallState{}, fmt.Errorf("%w: cannot begin commit without install state", ErrInstallStateInvalid)
 		}
-		return InstallState{}, fmt.Errorf("%w: active commit journal does not match requested operation", ErrInstallStateInvalid)
-	case InstallPhaseCompleted:
-		if state.Commit != nil && *state.Commit == proof {
-			return state, nil
+		if proof.InstallationID != state.InstallationID {
+			return InstallState{}, fmt.Errorf("%w: commit proof installation ID does not match install state", ErrInstallStateInvalid)
 		}
-		return InstallState{}, fmt.Errorf("%w: completed installation cannot begin a different setup commit", ErrInstallStateInvalid)
-	default:
-		return InstallState{}, fmt.Errorf("%w: unsupported phase %q", ErrInstallStateInvalid, state.Phase)
-	}
+
+		switch state.Phase {
+		case InstallPhasePending:
+			state.Phase = InstallPhaseCommitting
+			state.Commit = &proof
+			state.UpdatedAt = at
+			if err := store.saveUnlocked(state); err != nil {
+				return InstallState{}, err
+			}
+			return state, nil
+		case InstallPhaseCommitting:
+			if state.Commit != nil && *state.Commit == proof {
+				return state, nil
+			}
+			return InstallState{}, fmt.Errorf("%w: active commit journal does not match requested proof", ErrInstallStateInvalid)
+		case InstallPhaseCompleted:
+			if state.Commit != nil && *state.Commit == proof {
+				return state, nil
+			}
+			return InstallState{}, fmt.Errorf("%w: completed installation cannot begin a different setup commit", ErrInstallStateInvalid)
+		default:
+			return InstallState{}, fmt.Errorf("%w: unsupported phase %q", ErrInstallStateInvalid, state.Phase)
+		}
+	})
 }
 
 func (store *StateStore) FinalizeCommit(proof CommitProof, at time.Time) (InstallState, error) {
@@ -142,36 +179,36 @@ func (store *StateStore) FinalizeCommit(proof CommitProof, at time.Time) (Instal
 		return InstallState{}, fmt.Errorf("validate commit proof: %w", err)
 	}
 
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	state, exists, err := store.loadUnlocked()
-	if err != nil {
-		return InstallState{}, err
-	}
-	if !exists {
-		return InstallState{}, fmt.Errorf("%w: cannot finalize commit without install state", ErrInstallStateInvalid)
-	}
-	if state.InstallationID != proof.InstallationID {
-		return InstallState{}, fmt.Errorf("%w: installation ID does not match install state", ErrInstallStateInvalid)
-	}
-	if state.Commit == nil || *state.Commit != proof {
-		return InstallState{}, fmt.Errorf("%w: commit journal does not match requested operation", ErrInstallStateInvalid)
-	}
-
-	switch state.Phase {
-	case InstallPhaseCommitting:
-		state.Phase = InstallPhaseCompleted
-		state.EverCompleted = true
-		state.UpdatedAt = at
-		if err := store.saveUnlocked(state); err != nil {
+	return store.withMutationLock(func() (InstallState, error) {
+		state, exists, err := store.loadUnlocked()
+		if err != nil {
 			return InstallState{}, err
 		}
-		return state, nil
-	case InstallPhaseCompleted:
-		return state, nil
-	default:
-		return InstallState{}, fmt.Errorf("%w: phase %q cannot be finalized", ErrInstallStateInvalid, state.Phase)
-	}
+		if !exists {
+			return InstallState{}, fmt.Errorf("%w: cannot finalize commit without install state", ErrInstallStateInvalid)
+		}
+		if state.InstallationID != proof.InstallationID {
+			return InstallState{}, fmt.Errorf("%w: installation ID does not match install state", ErrInstallStateInvalid)
+		}
+		if state.Commit == nil || *state.Commit != proof {
+			return InstallState{}, fmt.Errorf("%w: commit journal does not match requested proof", ErrInstallStateInvalid)
+		}
+
+		switch state.Phase {
+		case InstallPhaseCommitting:
+			state.Phase = InstallPhaseCompleted
+			state.EverCompleted = true
+			state.UpdatedAt = at
+			if err := store.saveUnlocked(state); err != nil {
+				return InstallState{}, err
+			}
+			return state, nil
+		case InstallPhaseCompleted:
+			return state, nil
+		default:
+			return InstallState{}, fmt.Errorf("%w: phase %q cannot be finalized", ErrInstallStateInvalid, state.Phase)
+		}
+	})
 }
 
 func (store *StateStore) loadUnlocked() (InstallState, bool, error) {
@@ -226,10 +263,84 @@ func (store *StateStore) validate() error {
 	if strings.TrimSpace(store.path) == "" {
 		return fmt.Errorf("install state path must not be empty")
 	}
-	if store.mu == nil {
-		return fmt.Errorf("state store mutex must not be nil")
+	if store.pathErr != nil {
+		return fmt.Errorf("normalize install state path: %w", store.pathErr)
+	}
+	if store.processLock == nil {
+		return fmt.Errorf("state store process lock must not be nil")
+	}
+	if store.lockTimeout <= 0 {
+		return fmt.Errorf("state store lock timeout must be positive")
 	}
 	return store.operations.validate()
+}
+
+func (store *StateStore) withMutationLock(operation func() (InstallState, error)) (state InstallState, returnErr error) {
+	if err := acquireStateProcessLock(store.processLock, store.lockTimeout); err != nil {
+		return InstallState{}, err
+	}
+	defer store.processLock.Unlock()
+
+	fileLock, err := acquireStateFileLock(store.path+".lock", store.lockTimeout, store.operations)
+	if err != nil {
+		return InstallState{}, err
+	}
+	defer func() {
+		if releaseErr := fileLock.release(); releaseErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("release install state file lock: %w", releaseErr))
+		}
+	}()
+	return operation()
+}
+
+func normalizeStatePath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("install state path must not be empty")
+	}
+	absolute, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute path: %w", err)
+	}
+	if resolvedDirectory, err := filepath.EvalSymlinks(filepath.Dir(absolute)); err == nil {
+		absolute = filepath.Join(resolvedDirectory, filepath.Base(absolute))
+	}
+	absolute = filepath.Clean(absolute)
+	return absolute, nil
+}
+
+func normalizeProcessLockKey(path string, caseInsensitive bool) string {
+	if caseInsensitive {
+		return strings.ToLower(path)
+	}
+	return path
+}
+
+func processLockForPath(path string) *sync.Mutex {
+	lock, _ := stateProcessLocks.LoadOrStore(path, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
+
+func acquireStateProcessLock(lock *sync.Mutex, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if lock.TryLock() {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return ErrInstallStateLockTimeout
+		}
+		time.Sleep(min(10*time.Millisecond, time.Until(deadline)))
+	}
+}
+
+func installStatesEqual(left, right InstallState) bool {
+	if left.SchemaVersion != right.SchemaVersion || left.InstallationID != right.InstallationID || left.DeploymentRole != right.DeploymentRole || left.Phase != right.Phase || left.EverCompleted != right.EverCompleted || !left.UpdatedAt.Equal(right.UpdatedAt) {
+		return false
+	}
+	if left.Commit == nil || right.Commit == nil {
+		return left.Commit == nil && right.Commit == nil
+	}
+	return *left.Commit == *right.Commit
 }
 
 func (operations stateAtomicOps) validate() error {
@@ -332,13 +443,25 @@ func validateStrictStateJSON(content []byte) error {
 			return fmt.Errorf("unknown install-state field %q", key)
 		}
 	}
+	requiredTopLevel := []string{"schema_version", "installation_id", "deployment_role", "phase", "ever_completed", "updated_at"}
+	for _, key := range requiredTopLevel {
+		value, exists := topLevel[key]
+		if !exists {
+			return fmt.Errorf("required install-state field %q is missing", key)
+		}
+		if isJSONNull(value) {
+			return fmt.Errorf("install-state field %q must not be null", key)
+		}
+	}
+	for key, value := range topLevel {
+		if isJSONNull(value) {
+			return fmt.Errorf("install-state field %q must not be null", key)
+		}
+	}
 
 	commitJSON, hasCommit := topLevel["commit"]
 	if !hasCommit {
 		return nil
-	}
-	if bytes.Equal(bytes.TrimSpace(commitJSON), []byte("null")) {
-		return fmt.Errorf("commit must be omitted instead of null")
 	}
 	var commit map[string]json.RawMessage
 	if err := json.Unmarshal(commitJSON, &commit); err != nil || commit == nil {
@@ -355,7 +478,20 @@ func validateStrictStateJSON(content []byte) error {
 			return fmt.Errorf("unknown commit-journal field %q", key)
 		}
 	}
+	for _, key := range []string{"operation_id", "installation_id", "runtime_schema_version", "config_revision"} {
+		value, exists := commit[key]
+		if !exists {
+			return fmt.Errorf("required commit-journal field %q is missing", key)
+		}
+		if isJSONNull(value) {
+			return fmt.Errorf("commit-journal field %q must not be null", key)
+		}
+	}
 	return nil
+}
+
+func isJSONNull(value json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
 }
 
 func walkJSONValueRejectingDuplicateKeys(decoder *json.Decoder) error {

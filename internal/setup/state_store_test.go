@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,8 +38,8 @@ func TestStateStoreRoundTripsPrivateAtomicState(t *testing.T) {
 	store := NewStateStoreAt(path)
 	state := pendingState()
 
-	if err := store.Save(state); err != nil {
-		t.Fatalf("Save() error = %v", err)
+	if err := store.Initialize(state); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
 	}
 	got, exists, err := store.Load()
 	if err != nil {
@@ -67,6 +68,309 @@ func TestStateStoreRoundTripsPrivateAtomicState(t *testing.T) {
 	}
 }
 
+func TestStateStoreInitializeIsCreateOnlyAndIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json")
+	store := NewStateStoreAt(path)
+	original := pendingState()
+	if err := store.Initialize(original); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if err := NewStateStoreAt(path).Initialize(original); err != nil {
+		t.Fatalf("idempotent Initialize() error = %v", err)
+	}
+
+	changes := []struct {
+		name   string
+		mutate func(*InstallState)
+	}{
+		{name: "identity", mutate: func(state *InstallState) { state.InstallationID = "019d0000-0000-7000-8000-000000000099" }},
+		{name: "role", mutate: func(state *InstallState) { state.DeploymentRole = config.DeploymentRoleControl }},
+	}
+	for _, tt := range changes {
+		t.Run(tt.name, func(t *testing.T) {
+			changed := original
+			tt.mutate(&changed)
+			if err := NewStateStoreAt(path).Initialize(changed); !errors.Is(err, ErrInstallStateInvalid) {
+				t.Fatalf("Initialize(changed %s) error = %v, want invalid", tt.name, err)
+			}
+			got, exists, err := store.Load()
+			if err != nil || !exists {
+				t.Fatalf("Load() = (%+v, %t, %v)", got, exists, err)
+			}
+			assertInstallStateEqual(t, got, original)
+		})
+	}
+}
+
+func TestStateStoreInitializeCannotDowngradeCompletedInstallation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json")
+	store := NewStateStoreAt(path)
+	pending := pendingState()
+	if err := store.Initialize(pending); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	proof := validCommitProof()
+	if _, err := store.BeginCommit(proof, testStateTime.Add(time.Minute)); err != nil {
+		t.Fatalf("BeginCommit() error = %v", err)
+	}
+	completed, err := store.FinalizeCommit(proof, testStateTime.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("FinalizeCommit() error = %v", err)
+	}
+
+	if err := NewStateStoreAt(path).Initialize(pending); !errors.Is(err, ErrInstallStateInvalid) {
+		t.Fatalf("Initialize(pending over completed) error = %v, want invalid", err)
+	}
+	got, exists, err := store.Load()
+	if err != nil || !exists {
+		t.Fatalf("Load() = (%+v, %t, %v)", got, exists, err)
+	}
+	assertInstallStateEqual(t, got, completed)
+}
+
+func TestStateStoreInitializeRejectsJoinedOrNonPendingState(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		mutate func(*InstallState)
+	}{
+		{name: "joined role", mutate: func(state *InstallState) { state.DeploymentRole = config.DeploymentRoleAPI }},
+		{name: "committing", mutate: func(state *InstallState) {
+			state.Phase = InstallPhaseCommitting
+			state.Commit = validCommitJournal()
+		}},
+		{name: "completed", mutate: func(state *InstallState) {
+			state.Phase = InstallPhaseCompleted
+			state.EverCompleted = true
+			state.Commit = validCommitJournal()
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			state := pendingState()
+			tt.mutate(&state)
+			store := NewStateStoreAt(filepath.Join(t.TempDir(), "install-state.json"))
+			if err := store.Initialize(state); !errors.Is(err, ErrInstallStateInvalid) {
+				t.Fatalf("Initialize() error = %v, want invalid", err)
+			}
+			if _, exists, err := store.Load(); err != nil || exists {
+				t.Fatalf("Load() after rejected Initialize = (exists=%t, err=%v)", exists, err)
+			}
+		})
+	}
+}
+
+func TestStateStoreInitializeDoesNotOverwriteCorruptState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json")
+	original := []byte(`{"schema_version":`)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatalf("write corrupt state: %v", err)
+	}
+	if err := NewStateStoreAt(path).Initialize(pendingState()); !errors.Is(err, ErrInstallStateCorrupt) {
+		t.Fatalf("Initialize() error = %v, want corrupt", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read state after rejected Initialize: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("corrupt state was overwritten: %q", got)
+	}
+}
+
+func TestStateStoresShareCanonicalProcessLock(t *testing.T) {
+	directory := t.TempDir()
+	canonical := filepath.Join(directory, "install-state.json")
+	alias := filepath.Join(directory, "nested", "..", "install-state.json")
+	first := NewStateStoreAt(canonical)
+	second := NewStateStoreAt(alias)
+	if first.Path() != second.Path() {
+		t.Fatalf("normalized paths differ: %q != %q", first.Path(), second.Path())
+	}
+	if first.processLock != second.processLock {
+		t.Fatal("stores for the same normalized path do not share a process lock")
+	}
+}
+
+func TestWindowsProcessLockKeyDoesNotRewriteIOPathCase(t *testing.T) {
+	mixedCasePath := filepath.Join(t.TempDir(), "CaseSensitive", "Install-State.JSON")
+	normalized, err := normalizeStatePath(mixedCasePath)
+	if err != nil {
+		t.Fatalf("normalizeStatePath() error = %v", err)
+	}
+	if filepath.Base(normalized) != "Install-State.JSON" {
+		t.Fatalf("I/O path case was rewritten: %q", normalized)
+	}
+	lockKey := normalizeProcessLockKey(normalized, true)
+	if lockKey != strings.ToLower(normalized) {
+		t.Fatalf("Windows lock key = %q, want case-folded %q", lockKey, strings.ToLower(normalized))
+	}
+	if filepath.Base(normalized) != "Install-State.JSON" {
+		t.Fatalf("building lock key mutated I/O path: %q", normalized)
+	}
+}
+
+func TestStateStoresSerializeConcurrentBeginWithDifferentProofs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json")
+	first := NewStateStoreAt(path)
+	second := NewStateStoreAt(path)
+	first.lockTimeout = 2 * time.Second
+	second.lockTimeout = 2 * time.Second
+	if err := first.Initialize(pendingState()); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+
+	reachedReplace := make(chan struct{})
+	releaseReplace := make(chan struct{})
+	originalReplace := first.operations.replaceFile
+	var signalOnce sync.Once
+	first.operations.replaceFile = func(source, destination string) error {
+		signalOnce.Do(func() { close(reachedReplace) })
+		<-releaseReplace
+		return originalReplace(source, destination)
+	}
+	firstProof := validCommitProof()
+	secondProof := validCommitProof()
+	secondProof.OperationID = "019d0000-0000-7000-8000-000000000099"
+
+	type result struct {
+		proof CommitProof
+		state InstallState
+		err   error
+	}
+	results := make(chan result, 2)
+	go func() {
+		state, err := first.BeginCommit(firstProof, testStateTime.Add(time.Minute))
+		results <- result{proof: firstProof, state: state, err: err}
+	}()
+	select {
+	case <-reachedReplace:
+	case <-time.After(time.Second):
+		t.Fatal("first BeginCommit did not reach atomic replacement")
+	}
+	go func() {
+		state, err := second.BeginCommit(secondProof, testStateTime.Add(time.Minute))
+		results <- result{proof: secondProof, state: state, err: err}
+	}()
+	select {
+	case early := <-results:
+		t.Fatalf("second store bypassed held lock: %+v", early)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseReplace)
+
+	firstResult := <-results
+	secondResult := <-results
+	succeeded := []result{}
+	for _, got := range []result{firstResult, secondResult} {
+		if got.err == nil {
+			succeeded = append(succeeded, got)
+		}
+	}
+	if len(succeeded) != 1 {
+		t.Fatalf("successful BeginCommit calls = %d, want exactly one; results=%+v %+v", len(succeeded), firstResult, secondResult)
+	}
+	disk, exists, err := NewStateStoreAt(path).Load()
+	if err != nil || !exists || disk.Commit == nil {
+		t.Fatalf("Load() after concurrent Begin = (%+v, %t, %v)", disk, exists, err)
+	}
+	if *disk.Commit != succeeded[0].proof {
+		t.Fatalf("disk journal = %+v, successful proof = %+v", *disk.Commit, succeeded[0].proof)
+	}
+}
+
+func TestStateStoresSerializeConcurrentFinalizeAndMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json")
+	first := NewStateStoreAt(path)
+	second := NewStateStoreAt(path)
+	proof := validCommitProof()
+	if err := first.Initialize(pendingState()); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if _, err := first.BeginCommit(proof, testStateTime.Add(time.Minute)); err != nil {
+		t.Fatalf("BeginCommit() error = %v", err)
+	}
+	mismatch := proof
+	mismatch.ConfigRevision++
+
+	type result struct {
+		proof CommitProof
+		state InstallState
+		err   error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for store, candidate := range map[*StateStore]CommitProof{first: proof, second: mismatch} {
+		go func() {
+			<-start
+			state, err := store.FinalizeCommit(candidate, testStateTime.Add(2*time.Minute))
+			results <- result{proof: candidate, state: state, err: err}
+		}()
+	}
+	close(start)
+	one, two := <-results, <-results
+	if (one.err == nil) == (two.err == nil) {
+		t.Fatalf("Finalize results = (%v, %v), want one success and one failure", one.err, two.err)
+	}
+	completed, exists, err := first.Load()
+	if err != nil || !exists || completed.Phase != InstallPhaseCompleted || completed.Commit == nil || *completed.Commit != proof {
+		t.Fatalf("completed disk state = (%+v, %t, %v)", completed, exists, err)
+	}
+}
+
+func TestStateFileLockIsPrivateAndTimesOutInsteadOfWaitingForever(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "install-state.json.lock")
+	lock, err := acquireStateFileLock(path, time.Second, platformStateAtomicOps())
+	if err != nil {
+		t.Fatalf("acquire first file lock: %v", err)
+	}
+	defer lock.release()
+	started := time.Now()
+	if _, err := acquireStateFileLock(path, 50*time.Millisecond, platformStateAtomicOps()); !errors.Is(err, ErrInstallStateLockTimeout) {
+		t.Fatalf("second lock error = %v, want timeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("lock timeout took %s", elapsed)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat lock file: %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("lock file mode = %o, want 600", got)
+		}
+	}
+}
+
+func TestStateStoreLoadTimesOutInsteadOfWaitingForeverForProcessLock(t *testing.T) {
+	store := NewStateStoreAt(filepath.Join(t.TempDir(), "install-state.json"))
+	store.lockTimeout = 40 * time.Millisecond
+	store.processLock.Lock()
+	cancelRelease := make(chan struct{})
+	releaseDone := make(chan struct{})
+	go func() {
+		defer close(releaseDone)
+		select {
+		case <-time.After(150 * time.Millisecond):
+			store.processLock.Unlock()
+		case <-cancelRelease:
+		}
+	}()
+	started := time.Now()
+	_, _, err := store.Load()
+	timedOut := errors.Is(err, ErrInstallStateLockTimeout)
+	close(cancelRelease)
+	<-releaseDone
+	if timedOut {
+		store.processLock.Unlock()
+	}
+	if !timedOut {
+		t.Fatalf("Load() error = %v, want lock timeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > 120*time.Millisecond {
+		t.Fatalf("Load() timeout took %s", elapsed)
+	}
+}
+
 func TestStateStoreLoadDistinguishesMissingCorruptAndInvalid(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -81,6 +385,10 @@ func TestStateStoreLoadDistinguishesMissingCorruptAndInvalid(t *testing.T) {
 		{name: "duplicate field", contents: strings.Replace(validStateJSON(""), `"phase":"pending"`, `"phase":"pending","phase":"pending"`, 1), wantExists: true, wantError: ErrInstallStateInvalid},
 		{name: "case folded field alias", contents: strings.Replace(validStateJSON(""), `"schema_version"`, `"Schema_Version"`, 1), wantExists: true, wantError: ErrInstallStateInvalid},
 		{name: "null commit field", contents: validStateJSON(`,"commit":null`), wantExists: true, wantError: ErrInstallStateInvalid},
+		{name: "missing required field", contents: strings.Replace(validStateJSON(""), `,"ever_completed":false`, ``, 1), wantExists: true, wantError: ErrInstallStateInvalid},
+		{name: "null required field", contents: strings.Replace(validStateJSON(""), `"ever_completed":false`, `"ever_completed":null`, 1), wantExists: true, wantError: ErrInstallStateInvalid},
+		{name: "commit missing required field", contents: strings.Replace(committingStateJSON(), `,"config_revision":7`, ``, 1), wantExists: true, wantError: ErrInstallStateInvalid},
+		{name: "commit null required field", contents: strings.Replace(committingStateJSON(), `"config_revision":7`, `"config_revision":null`, 1), wantExists: true, wantError: ErrInstallStateInvalid},
 		{name: "invalid phase", contents: validStateJSON(`,"phase_override":"bad"`), wantExists: true, wantError: ErrInstallStateInvalid},
 	}
 
@@ -159,7 +467,7 @@ func TestStateStoreAtomicFailurePreservesTargetAndCleansTemporaryFile(t *testing
 			path := filepath.Join(directory, "install-state.json")
 			store := NewStateStoreAt(path)
 			original := pendingState()
-			if err := store.Save(original); err != nil {
+			if err := store.Initialize(original); err != nil {
 				t.Fatalf("seed state: %v", err)
 			}
 
@@ -173,10 +481,8 @@ func TestStateStoreAtomicFailurePreservesTargetAndCleansTemporaryFile(t *testing
 				operations.syncDirectory = func(string) error { return errors.New("injected sync failure") }
 			}
 			store.operations = operations
-			changed := original
-			changed.UpdatedAt = changed.UpdatedAt.Add(time.Minute)
-			if err := store.Save(changed); err == nil {
-				t.Fatal("Save() error = nil, want injected failure")
+			if _, err := store.BeginCommit(validCommitProof(), testStateTime.Add(time.Minute)); err == nil {
+				t.Fatal("BeginCommit() error = nil, want injected failure")
 			}
 
 			got, exists, err := NewStateStoreAt(path).Load()
@@ -206,7 +512,7 @@ func TestStateStoreAtomicFailurePreservesTargetAndCleansTemporaryFile(t *testing
 func TestStateStoreBeginAndFinalizeCommitAreIdempotentAndFailClosed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "install-state.json")
 	store := NewStateStoreAt(path)
-	if err := store.Save(pendingState()); err != nil {
+	if err := store.Initialize(pendingState()); err != nil {
 		t.Fatalf("seed pending state: %v", err)
 	}
 
@@ -267,7 +573,7 @@ func TestStateStoreBeginCommitRequiresCallerInstallationProof(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "install-state.json")
 	store := NewStateStoreAt(path)
 	original := pendingState()
-	if err := store.Save(original); err != nil {
+	if err := store.Initialize(original); err != nil {
 		t.Fatalf("seed pending state: %v", err)
 	}
 	proof := validCommitProof()
@@ -286,7 +592,7 @@ func TestStateStoreBeginCommitRejectsUnsupportedRuntimeSchemaBeforeWritingJourna
 	path := filepath.Join(t.TempDir(), "install-state.json")
 	store := NewStateStoreAt(path)
 	original := pendingState()
-	if err := store.Save(original); err != nil {
+	if err := store.Initialize(original); err != nil {
 		t.Fatalf("seed pending state: %v", err)
 	}
 	proof := validCommitProof()
@@ -321,8 +627,8 @@ func TestStateStoreLoadRejectsUnsupportedRuntimeSchemaInJournal(t *testing.T) {
 func TestInstallStateJSONContainsNoSecretMaterial(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "install-state.json")
 	store := NewStateStoreAt(path)
-	if err := store.Save(pendingState()); err != nil {
-		t.Fatalf("Save() error = %v", err)
+	if err := store.Initialize(pendingState()); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {
