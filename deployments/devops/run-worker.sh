@@ -31,8 +31,40 @@ run_as_root() {
   exit 1
 }
 
+systemd_quote() {
+  value=$1
+  carriage_return=$(printf '\r')
+  case "$value" in
+    *"
+"*|*"$carriage_return"*) echo "systemd values must not contain line breaks" >&2; return 2 ;;
+  esac
+  escaped=$(printf '%s' "$value" | sed \
+    -e 's/\\/\\\\/g' \
+    -e 's/"/\\"/g' \
+    -e 's/%/%%/g')
+  printf '"%s"' "$escaped"
+}
+
+systemd_exec_quote() {
+  value=$1
+  carriage_return=$(printf '\r')
+  case "$value" in
+    *"
+"*|*"$carriage_return"*) echo "systemd values must not contain line breaks" >&2; return 2 ;;
+  esac
+  escaped=$(printf '%s' "$value" | sed \
+    -e 's/\\/\\\\/g' \
+    -e 's/"/\\"/g' \
+    -e 's/%/%%/g' \
+    -e 's/\$/$$/g')
+  printf '"%s"' "$escaped"
+}
+
 tmp_unit=$(mktemp)
 trap 'rm -f "$tmp_unit"' EXIT
+working_directory=$(systemd_quote "$APP_DIR")
+environment=$(systemd_quote "APP_ENV_FILE=$ENV_FILE")
+exec_start=$(systemd_exec_quote "$BIN_PATH")
 
 cat >"$tmp_unit" <<UNIT
 [Unit]
@@ -42,9 +74,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$APP_DIR
-Environment=APP_ENV_FILE=$ENV_FILE
-ExecStart=$BIN_PATH
+WorkingDirectory=$working_directory
+Environment=$environment
+ExecStart=$exec_start
 Restart=always
 RestartSec=5
 KillSignal=SIGTERM

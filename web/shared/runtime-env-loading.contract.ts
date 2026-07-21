@@ -49,3 +49,71 @@ for (const retired of ['DATABASE_URL=file:', 'import sqlite3', 'DB_PATH=']) {
     throw new Error(`API contract smoke must not retain SQLite runtime setup: ${retired}`)
   }
 }
+
+const smokeDocs = [
+  'README.md',
+  'README.zh-CN.md',
+  'docs/ops/api-contract-smoke-test.md',
+  'docs/org/workflow/DEVELOPMENT_WORKFLOW.md',
+  '.agents/skills/dev-api-smoke/SKILL.md',
+  '.claude/skills/dev-api-smoke/SKILL.md',
+]
+for (const path of smokeDocs) {
+  const source = read(path)
+  for (const required of [
+    'Bash',
+    'curl',
+    'Python 3',
+    'Go',
+    'Docker daemon',
+    'postgres:16-alpine',
+    'redis:7-alpine',
+    'BASE_URL',
+  ]) {
+    if (!source.includes(required)) {
+      throw new Error(`${path} must document the API smoke prerequisite or behavior: ${required}`)
+    }
+  }
+}
+
+const currentOperationalDocs = smokeDocs.map((path) => read(path)).join('\n')
+for (const stale of [
+  'against a live API',
+  '对运行中的 API',
+  'temporary SQLite database',
+  'If the API is not running',
+]) {
+  if (currentOperationalDocs.includes(stale)) {
+    throw new Error(`current API smoke documentation retains stale behavior: ${stale}`)
+  }
+}
+
+const smokeBehaviorMarkers: Record<string, string[]> = {
+  'README.md': ['starts its own API', '`BASE_URL` only selects', 'Exit cleanup'],
+  'README.zh-CN.md': ['脚本会自行启动 API', '`BASE_URL` 仅用于选择', '清理（cleanup）'],
+  'docs/ops/api-contract-smoke-test.md': [
+    'starts its own API and Worker',
+    '`BASE_URL` only selects',
+    'The exit cleanup trap',
+  ],
+  'docs/org/workflow/DEVELOPMENT_WORKFLOW.md': [
+    'starts and cleans up its own API',
+    '`BASE_URL` only selects',
+  ],
+  '.agents/skills/dev-api-smoke/SKILL.md': [
+    'starts and cleans up its own API',
+    '`BASE_URL` only selects',
+  ],
+  '.claude/skills/dev-api-smoke/SKILL.md': [
+    'starts and cleans up its own API',
+    '`BASE_URL` only selects',
+  ],
+}
+for (const [path, markers] of Object.entries(smokeBehaviorMarkers)) {
+  const source = read(path)
+  for (const marker of markers) {
+    if (!source.includes(marker)) {
+      throw new Error(`${path} must preserve API smoke lifecycle documentation: ${marker}`)
+    }
+  }
+}

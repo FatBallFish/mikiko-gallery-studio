@@ -69,4 +69,4 @@
 3. `APP_ENV=dev scripts/devops/package.sh api-server`
 4. `APP_ENV=pro scripts/devops/package.sh worker`
 5. `./scripts/workflow/verify.sh`
-6. `./scripts/workflow/api-smoke.sh` if a local API is available.
+6. `./scripts/workflow/api-smoke.sh` with Bash, curl, Python 3, Go, a Docker daemon, and access to `postgres:16-alpine` and `redis:7-alpine`; the smoke starts its own API and Worker.

@@ -50,6 +50,8 @@ If backend/API/config/deployment changed, run:
 ./scripts/workflow/api-smoke.sh
 ```
 
+This isolated smoke requires Bash, `curl`, Python 3, Go, a running Docker daemon, and access to `postgres:16-alpine` and `redis:7-alpine`. It starts and cleans up its own API, Worker, fake provider, PostgreSQL, and Redis; `BASE_URL` only selects a free loopback listening address.
+
 ## 6. Ship
 
 Use:
@@ -59,4 +61,3 @@ Use:
 ```
 
 This runs verification, review gate, and API smoke when needed.
-

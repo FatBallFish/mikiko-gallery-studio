@@ -63,6 +63,44 @@ service_command() {
   esac
 }
 
+systemd_quote() {
+  local value=$1
+  local escaped
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    echo "systemd values must not contain line breaks" >&2
+    return 2
+  fi
+  escaped="$(printf '%s' "$value" | sed \
+    -e 's/\\/\\\\/g' \
+    -e 's/"/\\"/g' \
+    -e 's/%/%%/g')"
+  printf '"%s"' "$escaped"
+}
+
+systemd_exec_quote() {
+  local value=$1
+  local escaped
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    echo "systemd values must not contain line breaks" >&2
+    return 2
+  fi
+  escaped="$(printf '%s' "$value" | sed \
+    -e 's/\\/\\\\/g' \
+    -e 's/"/\\"/g' \
+    -e 's/%/%%/g' \
+    -e 's/\$/$$/g')"
+  printf '"%s"' "$escaped"
+}
+
+xml_escape() {
+  printf '%s' "$1" | sed \
+    -e 's/&/\&amp;/g' \
+    -e 's/</\&lt;/g' \
+    -e 's/>/\&gt;/g' \
+    -e 's/"/\&quot;/g' \
+    -e "s/'/\&apos;/g"
+}
+
 build_component() {
   local component=$1
   mkdir -p "$ROOT_DIR/target/local/bin"
@@ -91,6 +129,10 @@ install_systemd() {
   build_component "$component"
   local command
   command="$(service_command "$component")"
+  local working_directory environment exec_start
+  working_directory="$(systemd_quote "$ROOT_DIR")"
+  environment="$(systemd_quote "APP_ENV_FILE=$ENV_FILE")"
+  exec_start="$(systemd_exec_quote "$command")"
   cat > "$unit_dir/$name.service" <<EOF
 [Unit]
 Description=Pic Gallery $component
@@ -98,9 +140,9 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$ROOT_DIR
-Environment=APP_ENV_FILE=$ENV_FILE
-ExecStart=$command
+WorkingDirectory=$working_directory
+Environment=$environment
+ExecStart=$exec_start
 Restart=always
 RestartSec=5
 
@@ -147,18 +189,25 @@ install_launchd() {
   local command
   command="$(service_command "$component")"
   local plist="$plist_dir/$label.plist"
+  local xml_label xml_root xml_command xml_env_file xml_stdout xml_stderr
+  xml_label="$(xml_escape "$label")"
+  xml_root="$(xml_escape "$ROOT_DIR")"
+  xml_command="$(xml_escape "$command")"
+  xml_env_file="$(xml_escape "$ENV_FILE")"
+  xml_stdout="$(xml_escape "$ROOT_DIR/tmp/$component.out.log")"
+  xml_stderr="$(xml_escape "$ROOT_DIR/tmp/$component.err.log")"
   cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>$label</string>
-  <key>WorkingDirectory</key><string>$ROOT_DIR</string>
-  <key>ProgramArguments</key><array><string>$command</string></array>
-  <key>EnvironmentVariables</key><dict><key>APP_ENV_FILE</key><string>$ENV_FILE</string></dict>
+  <key>Label</key><string>$xml_label</string>
+  <key>WorkingDirectory</key><string>$xml_root</string>
+  <key>ProgramArguments</key><array><string>$xml_command</string></array>
+  <key>EnvironmentVariables</key><dict><key>APP_ENV_FILE</key><string>$xml_env_file</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$ROOT_DIR/tmp/$component.out.log</string>
-  <key>StandardErrorPath</key><string>$ROOT_DIR/tmp/$component.err.log</string>
+  <key>StandardOutPath</key><string>$xml_stdout</string>
+  <key>StandardErrorPath</key><string>$xml_stderr</string>
 </dict></plist>
 EOF
   launchctl bootout "$domain" "$plist" >/dev/null 2>&1 || true

@@ -37,13 +37,22 @@ function Task-Name {
   return "PicGallery-$Component"
 }
 
+function ConvertTo-SingleQuotedLiteral {
+  param([AllowEmptyString()][string]$Value)
+  return "'" + $Value.Replace("'", "''") + "'"
+}
+
 function Install-Component {
   param([string]$Component)
   Build-Component $Component
   $TaskName = Task-Name $Component
   $Exe = Component-Command $Component
-  $Command = "cd `"$Root`"; `$env:APP_ENV_FILE=`"$EnvFile`"; & `"$Exe`""
-  $TaskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -Command $Command"
+  $RootLiteral = ConvertTo-SingleQuotedLiteral $Root
+  $EnvFileLiteral = ConvertTo-SingleQuotedLiteral $EnvFile
+  $ExeLiteral = ConvertTo-SingleQuotedLiteral $Exe
+  $Command = "Set-Location -LiteralPath $RootLiteral; `$env:APP_ENV_FILE = $EnvFileLiteral; & $ExeLiteral"
+  $EncodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($Command))
+  $TaskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
   $Trigger = New-ScheduledTaskTrigger -AtStartup
   $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel LeastPrivilege
   $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
