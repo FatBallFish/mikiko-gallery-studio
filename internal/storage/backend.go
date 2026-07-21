@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,7 +22,11 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
 
-var ErrNotFound = errors.New("storage object not found")
+var (
+	ErrNotFound                = errors.New("storage object not found")
+	ErrObjectTooLarge          = errors.New("storage object exceeds maximum size")
+	errInvalidBoundedReadLimit = errors.New("storage bounded read limit is invalid")
+)
 
 type Backend interface {
 	Driver() string
@@ -29,6 +34,18 @@ type Backend interface {
 	Get(ctx context.Context, objectKey string) ([]byte, error)
 	Delete(ctx context.Context, objectKey string) error
 }
+
+// BoundedGetter is an optional backend capability for callers that must not
+// allocate based on untrusted object sizes. Get remains unchanged for normal
+// asset reads.
+type BoundedGetter interface {
+	GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error)
+}
+
+var (
+	_ BoundedGetter = (*LocalBackend)(nil)
+	_ BoundedGetter = (*S3Backend)(nil)
+)
 
 func NewBackend(cfg config.StorageConfig) (Backend, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Driver)) {
@@ -78,6 +95,27 @@ func (b *LocalBackend) Get(_ context.Context, objectKey string) ([]byte, error) 
 		return nil, err
 	}
 	return content, nil
+}
+
+func (b *LocalBackend) GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error) {
+	if err := validateBoundedReadLimit(maxBytes); err != nil {
+		return nil, err
+	}
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
+	fullPath, ok := b.resolvePath(objectKey)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	file, err := os.Open(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return readBoundedAndClose(ctx, file, maxBytes)
 }
 
 func (b *LocalBackend) Delete(_ context.Context, objectKey string) error {
@@ -196,6 +234,97 @@ func (b *S3Backend) Get(ctx context.Context, objectKey string) ([]byte, error) {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return nil, fmt.Errorf("get s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
+}
+
+func (b *S3Backend) GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error) {
+	if err := validateBoundedReadLimit(maxBytes); err != nil {
+		return nil, err
+	}
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
+	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if err := contextError(ctx); err != nil {
+		_ = resp.Body.Close()
+		return nil, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return readBoundedAndClose(ctx, resp.Body, maxBytes)
+	case http.StatusNotFound:
+		_ = resp.Body.Close()
+		return nil, ErrNotFound
+	default:
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return nil, fmt.Errorf("get s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+}
+
+func validateBoundedReadLimit(maxBytes int64) error {
+	if maxBytes < 0 || maxBytes == math.MaxInt64 {
+		return errInvalidBoundedReadLimit
+	}
+	return nil
+}
+
+func readBounded(ctx context.Context, reader io.Reader, maxBytes int64) ([]byte, error) {
+	limited := &io.LimitedReader{R: contextReader{ctx: ctx, reader: reader}, N: maxBytes + 1}
+	content, err := io.ReadAll(limited)
+	if err != nil {
+		clear(content)
+		return nil, err
+	}
+	if int64(len(content)) > maxBytes {
+		clear(content)
+		return nil, ErrObjectTooLarge
+	}
+	if err := contextError(ctx); err != nil {
+		clear(content)
+		return nil, err
+	}
+	return content, nil
+}
+
+func readBoundedAndClose(ctx context.Context, reader io.ReadCloser, maxBytes int64) (content []byte, resultErr error) {
+	defer func() {
+		if closeErr := reader.Close(); closeErr != nil {
+			clear(content)
+			content = nil
+			resultErr = errors.Join(resultErr, closeErr)
+		}
+	}()
+	return readBounded(ctx, reader, maxBytes)
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader contextReader) Read(buffer []byte) (int, error) {
+	if err := contextError(reader.ctx); err != nil {
+		return 0, err
+	}
+	count, err := reader.reader.Read(buffer)
+	if contextErr := contextError(reader.ctx); contextErr != nil {
+		return count, contextErr
+	}
+	return count, err
+}
+
+func contextError(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Err()
 }
 
 func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {

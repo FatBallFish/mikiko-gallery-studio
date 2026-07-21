@@ -212,6 +212,45 @@ func TestProbeRunEnforcesHardDeadlineForContextIgnoringRunner(t *testing.T) {
 	}
 }
 
+func TestProbeRunDeadlineAndCancellationWinOverConcurrentRunnerError(t *testing.T) {
+	const attempts = 100
+	for range attempts {
+		service := newProbeService(probeDependencies{
+			timeout: time.Millisecond,
+			postgres: func(ctx context.Context, _ string) (string, error) {
+				<-ctx.Done()
+				return "", errors.New("provider error after deadline")
+			},
+		})
+		result := service.ProbePostgres(context.Background(), PostgresProbeRequest{DatabaseURL: "postgres://user:password@db/app"})
+		if result.Code != ProbeCodeTimeout {
+			t.Fatalf("deadline attempt returned %#v", result)
+		}
+	}
+
+	for range attempts {
+		started := make(chan struct{})
+		service := newProbeService(probeDependencies{
+			timeout: time.Second,
+			postgres: func(ctx context.Context, _ string) (string, error) {
+				close(started)
+				<-ctx.Done()
+				return "", errors.New("provider error after cancellation")
+			},
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		resultChannel := make(chan ProbeResult, 1)
+		go func() {
+			resultChannel <- service.ProbePostgres(ctx, PostgresProbeRequest{DatabaseURL: "postgres://user:password@db/app"})
+		}()
+		<-started
+		cancel()
+		if result := <-resultChannel; result.Code != ProbeCodeCancelled {
+			t.Fatalf("cancellation attempt returned %#v", result)
+		}
+	}
+}
+
 func TestProbeRunDoesNotStartCancelledOrUnboundedOperations(t *testing.T) {
 	var cancelledStarts atomic.Int32
 	service := newProbeService(probeDependencies{
@@ -435,6 +474,38 @@ func TestProbeStorageUsesBackendAndCleansAfterPartialFailure(t *testing.T) {
 	}
 }
 
+func TestProbeStorageRejectsOversizedReadAndCleansObject(t *testing.T) {
+	backend := &recordingProbeBackend{boundedGetErr: storage.ErrObjectTooLarge}
+	_, err := runStorageProbeWithFactory(t.Context(), config.StorageConfig{
+		Driver: "s3",
+		S3:     config.StorageS3Config{Endpoint: "http://s3.internal", Region: "us-east-1", Bucket: "assets", AccessKeyID: "access", SecretAccessKey: "secret"},
+	}, strings.NewReader(strings.Repeat("q", 32)), func(config.StorageConfig) (storage.Backend, error) {
+		return backend, nil
+	})
+	if code := classifyProbeError("storage", err); code != ProbeCodeReadWriteCheckFailed {
+		t.Fatalf("oversized storage probe code=%s err=%v", code, err)
+	}
+	if backend.boundedGetMax != 16 || backend.getCalls != 0 || backend.deleteCalls != 1 {
+		t.Fatalf("oversized storage probe backend=%#v", backend)
+	}
+}
+
+func TestProbeStorageRequiresBoundedReadCapability(t *testing.T) {
+	backend := &unboundedProbeBackend{}
+	_, err := runStorageProbeWithFactory(t.Context(), config.StorageConfig{
+		Driver: "s3",
+		S3:     config.StorageS3Config{Endpoint: "http://s3.internal", Region: "us-east-1", Bucket: "assets", AccessKeyID: "access", SecretAccessKey: "secret"},
+	}, strings.NewReader(strings.Repeat("u", 32)), func(config.StorageConfig) (storage.Backend, error) {
+		return backend, nil
+	})
+	if code := classifyProbeError("storage", err); code != ProbeCodeInternalError {
+		t.Fatalf("unbounded storage backend code=%s err=%v", code, err)
+	}
+	if backend.getCalls != 0 || backend.deleteCalls != 1 {
+		t.Fatalf("unbounded storage backend=%#v", backend)
+	}
+}
+
 func TestProbeStorageReturnsByDeadlineAndCleansAfterLatePut(t *testing.T) {
 	backend := &latePutProbeBackend{
 		putStarted: make(chan struct{}), putRelease: make(chan struct{}), deleted: make(chan struct{}),
@@ -554,8 +625,16 @@ func TestProbeServiceIsConcurrentAndDoesNotMutateDrafts(t *testing.T) {
 }
 
 type recordingProbeBackend struct {
-	putErr      error
-	deleteErr   error
+	putErr        error
+	boundedGetErr error
+	boundedGetMax int64
+	getCalls      int
+	deleteErr     error
+	deleteCalls   int
+}
+
+type unboundedProbeBackend struct {
+	getCalls    int
 	deleteCalls int
 }
 
@@ -626,6 +705,9 @@ func (backend *latePutProbeBackend) Put(context.Context, string, string, []byte)
 func (*latePutProbeBackend) Get(context.Context, string) ([]byte, error) {
 	return nil, errors.New("Get must not run after late Put")
 }
+func (*latePutProbeBackend) GetBounded(context.Context, string, int64) ([]byte, error) {
+	return nil, errors.New("GetBounded must not run after late Put")
+}
 func (backend *latePutProbeBackend) Delete(context.Context, string) error {
 	backend.deleteOnce.Do(func() { close(backend.deleted) })
 	return nil
@@ -636,9 +718,27 @@ func (backend *recordingProbeBackend) Put(context.Context, string, string, []byt
 	return backend.putErr
 }
 func (backend *recordingProbeBackend) Get(context.Context, string) ([]byte, error) {
+	backend.getCalls++
 	return nil, errors.New("unexpected get")
+}
+func (backend *recordingProbeBackend) GetBounded(_ context.Context, _ string, maxBytes int64) ([]byte, error) {
+	backend.boundedGetMax = maxBytes
+	return nil, backend.boundedGetErr
 }
 func (backend *recordingProbeBackend) Delete(context.Context, string) error {
 	backend.deleteCalls++
 	return backend.deleteErr
+}
+
+func (*unboundedProbeBackend) Driver() string { return "test-unbounded" }
+func (*unboundedProbeBackend) Put(context.Context, string, string, []byte) error {
+	return nil
+}
+func (backend *unboundedProbeBackend) Get(context.Context, string) ([]byte, error) {
+	backend.getCalls++
+	return []byte("must not be called"), nil
+}
+func (backend *unboundedProbeBackend) Delete(context.Context, string) error {
+	backend.deleteCalls++
+	return nil
 }

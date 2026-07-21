@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +20,26 @@ func TestLocalBackendRejectsTraversal(t *testing.T) {
 	}
 	if _, err := backend.Get(context.Background(), "../escape.txt"); err != ErrNotFound {
 		t.Fatalf("expected traversal get to behave like not found, got %v", err)
+	}
+}
+
+func TestLocalBackendGetBoundedHonorsLimitAndContext(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	content := []byte("probe-content")
+	if err := backend.Put(t.Context(), "probe-object", "application/octet-stream", content); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	loaded, err := backend.GetBounded(t.Context(), "probe-object", int64(len(content)))
+	if err != nil || string(loaded) != string(content) {
+		t.Fatalf("bounded local read: content=%q err=%v", loaded, err)
+	}
+	if loaded, err := backend.GetBounded(t.Context(), "probe-object", int64(len(content)-1)); !errors.Is(err, ErrObjectTooLarge) || loaded != nil {
+		t.Fatalf("oversized local read: bytes=%d err=%v", len(loaded), err)
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := backend.GetBounded(cancelled, "probe-object", int64(len(content))); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled local read error=%v", err)
 	}
 }
 
@@ -90,4 +112,164 @@ func TestS3BackendRoundTrip(t *testing.T) {
 	if _, err := backend.Get(context.Background(), "generated-images/result.png"); err != ErrNotFound {
 		t.Fatalf("expected deleted object to be gone, got %v", err)
 	}
+}
+
+func TestS3BackendGetBoundedStopsAfterLimitAndClosesBody(t *testing.T) {
+	body := &countingReadCloser{reader: strings.NewReader(strings.Repeat("x", 1<<20))}
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: "http://s3.invalid", Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	transport := &recordingRoundTripper{response: &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       body,
+		Header:     make(http.Header),
+	}}
+	backend.client = &http.Client{Transport: transport}
+
+	const maximum = int64(16)
+	loaded, err := backend.GetBounded(t.Context(), "probe-object", maximum)
+	if !errors.Is(err, ErrObjectTooLarge) || loaded != nil {
+		t.Fatalf("GetBounded oversized result: bytes=%d err=%v", len(loaded), err)
+	}
+	if body.bytesRead > maximum+1 {
+		t.Fatalf("GetBounded consumed %d bytes, want at most %d", body.bytesRead, maximum+1)
+	}
+	if !body.closed {
+		t.Fatal("GetBounded did not close the response body")
+	}
+	if transport.calls != 1 {
+		t.Fatalf("round trip calls=%d want 1", transport.calls)
+	}
+}
+
+func TestBoundedGetRejectsOverflowBeforeIO(t *testing.T) {
+	local := NewLocalBackend(t.TempDir())
+	if _, err := local.GetBounded(t.Context(), "object", math.MaxInt64); err == nil || errors.Is(err, ErrObjectTooLarge) {
+		t.Fatalf("local overflow limit error=%v", err)
+	}
+
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: "http://s3.invalid", Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	transport := &recordingRoundTripper{}
+	backend.client = &http.Client{Transport: transport}
+	if _, err := backend.GetBounded(t.Context(), "object", math.MaxInt64); err == nil || errors.Is(err, ErrObjectTooLarge) {
+		t.Fatalf("S3 overflow limit error=%v", err)
+	}
+	if transport.calls != 0 {
+		t.Fatalf("overflow limit performed %d round trips", transport.calls)
+	}
+}
+
+func TestReadBoundedClearsPartialContentAfterReaderError(t *testing.T) {
+	reader := &retainingErrorReader{content: []byte("sensitive-probe-content")}
+	loaded, err := readBounded(t.Context(), reader, 64)
+	if !errors.Is(err, errRetainingReader) || loaded != nil {
+		t.Fatalf("readBounded error result: bytes=%d err=%v", len(loaded), err)
+	}
+	if len(reader.retained) == 0 {
+		t.Fatal("test reader did not retain the destination buffer")
+	}
+	for index, value := range reader.retained {
+		if value != 0 {
+			t.Fatalf("partial content byte %d was not cleared", index)
+		}
+	}
+}
+
+func TestReadBoundedAndCloseClearsSuccessfulContentAfterCloseError(t *testing.T) {
+	reader := &retainingCloseErrorReader{content: []byte("sensitive-probe-content")}
+	loaded, err := readBoundedAndClose(t.Context(), reader, 64)
+	if !errors.Is(err, errRetainingClose) || loaded != nil {
+		t.Fatalf("readBoundedAndClose result: bytes=%d err=%v", len(loaded), err)
+	}
+	if !reader.closed {
+		t.Fatal("readBoundedAndClose did not close the reader")
+	}
+	if len(reader.retained) == 0 {
+		t.Fatal("test reader did not retain the destination buffer")
+	}
+	for index, value := range reader.retained {
+		if value != 0 {
+			t.Fatalf("close-error content byte %d was not cleared", index)
+		}
+	}
+}
+
+type countingReadCloser struct {
+	reader    io.Reader
+	bytesRead int64
+	closed    bool
+}
+
+func (reader *countingReadCloser) Read(buffer []byte) (int, error) {
+	count, err := reader.reader.Read(buffer)
+	reader.bytesRead += int64(count)
+	return count, err
+}
+
+func (reader *countingReadCloser) Close() error {
+	reader.closed = true
+	return nil
+}
+
+type recordingRoundTripper struct {
+	response *http.Response
+	err      error
+	calls    int
+}
+
+var errRetainingReader = errors.New("retaining reader failed")
+var errRetainingClose = errors.New("retaining reader close failed")
+
+type retainingErrorReader struct {
+	content  []byte
+	retained []byte
+}
+
+func (reader *retainingErrorReader) Read(buffer []byte) (int, error) {
+	count := copy(buffer, reader.content)
+	reader.retained = buffer[:count]
+	return count, errRetainingReader
+}
+
+type retainingCloseErrorReader struct {
+	content  []byte
+	retained []byte
+	closed   bool
+	read     bool
+}
+
+func (reader *retainingCloseErrorReader) Read(buffer []byte) (int, error) {
+	if reader.read {
+		return 0, io.EOF
+	}
+	reader.read = true
+	count := copy(buffer, reader.content)
+	reader.retained = buffer[:count]
+	return count, io.EOF
+}
+
+func (reader *retainingCloseErrorReader) Close() error {
+	reader.closed = true
+	return errRetainingClose
+}
+
+func (transport *recordingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	transport.calls++
+	return transport.response, transport.err
 }

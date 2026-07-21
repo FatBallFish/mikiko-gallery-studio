@@ -198,11 +198,11 @@ func (service *ProbeService) run(ctx context.Context, kind string, started time.
 	case <-runCtx.Done():
 		return failedProbeResult(kind, classifyProbeError(kind, runCtx.Err()), started)
 	}
-	if execution.err != nil {
-		return failedProbeResult(kind, classifyProbeError(kind, execution.err), started)
-	}
 	if err := runCtx.Err(); err != nil {
 		return failedProbeResult(kind, classifyProbeError(kind, err), started)
+	}
+	if execution.err != nil {
+		return failedProbeResult(kind, classifyProbeError(kind, execution.err), started)
 	}
 	version := sanitizeProbeVersion(execution.version)
 	return ProbeResult{

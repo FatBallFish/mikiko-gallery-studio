@@ -72,8 +72,8 @@ func normalizeStorageProbeConfig(ctx context.Context, storageConfig config.Stora
 		if err != nil {
 			return config.StorageConfig{}, err
 		}
-		// This canonical path is a point-in-time probe target only. The submitted
-		// draft remains unchanged and final setup apply must validate/probe again.
+		// Canonicalization is a point-in-time target check, not a filesystem
+		// sandbox: path state can change, so final setup apply probes again.
 		storageConfig.Driver = "local"
 		storageConfig.LocalRoot = resolved
 		return storageConfig, nil
@@ -218,7 +218,11 @@ func runStorageProbeWithFactory(ctx context.Context, storageConfig config.Storag
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	loaded, err := backend.Get(ctx, objectKey)
+	boundedGetter, ok := backend.(storage.BoundedGetter)
+	if !ok {
+		return "", probeFailureError(ProbeCodeInternalError, errors.New("storage backend does not support bounded reads"))
+	}
+	loaded, err := boundedGetter.GetBounded(ctx, objectKey, int64(len(content)))
 	if err != nil || !bytes.Equal(loaded, content) {
 		if err == nil {
 			err = errors.New("storage probe value mismatch")
