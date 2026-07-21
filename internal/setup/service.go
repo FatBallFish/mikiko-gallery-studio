@@ -1,0 +1,801 @@
+package setup
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/mail"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/fatballfish/pic-gallery/internal/config"
+	"github.com/fatballfish/pic-gallery/internal/repository/db"
+	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
+)
+
+type OperationPhase string
+
+const (
+	OperationPhasePending              OperationPhase = "pending"
+	OperationPhaseValidating           OperationPhase = "validating"
+	OperationPhaseInitializingDatabase OperationPhase = "initializing_database"
+	OperationPhaseCreatingAdmin        OperationPhase = "creating_admin"
+	OperationPhaseCommittingConfig     OperationPhase = "committing_config"
+	OperationPhaseRestartPending       OperationPhase = "restart_pending"
+	OperationPhaseComplete             OperationPhase = "complete"
+)
+
+var (
+	ErrSetupValidation     = errors.New("setup request validation failed")
+	ErrSetupProbe          = errors.New("setup middleware verification failed")
+	ErrSetupMigration      = errors.New("setup database initialization failed")
+	ErrSetupCommit         = errors.New("setup configuration commit failed")
+	ErrSetupReconciliation = errors.New("setup state reconciliation failed")
+	ErrSetupOperationGone  = errors.New("setup operation was not found")
+)
+
+type ApplyRequest struct {
+	OperationID   string            `json:"operation_id"`
+	Runtime       map[string]string `json:"runtime"`
+	AdminEmail    string            `json:"admin_email"`
+	AdminPassword string            `json:"admin_password"`
+}
+
+type OperationView struct {
+	OperationID string         `json:"operation_id"`
+	Phase       OperationPhase `json:"phase"`
+	ErrorCode   string         `json:"error_code,omitempty"`
+	StartedAt   time.Time      `json:"started_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+type ServiceOptions struct {
+	RuntimeEnvPath string
+	StateStore     *StateStore
+	ProbeService   *ProbeService
+	AuthService    *AuthService
+	StoreOpener    SetupStoreOpener
+}
+
+type applyStateStore interface {
+	Load() (InstallState, bool, error)
+	BeginCommit(CommitProof, time.Time) (InstallState, error)
+	FinalizeCommit(CommitProof, time.Time) (InstallState, error)
+}
+
+type applyProber interface {
+	ProbePostgres(context.Context, PostgresProbeRequest) ProbeResult
+	ProbeRedis(context.Context, RedisProbeRequest) ProbeResult
+	ProbeStorage(context.Context, StorageProbeRequest) ProbeResult
+}
+
+type completionAuth interface {
+	PrepareCompletion() (PreparedCompletion, error)
+	CommitCompletion(PreparedCompletion) error
+	AbortCompletion(PreparedCompletion) error
+	FailClosedCompletion()
+}
+
+type runtimeBootstrapLoader func(string) (config.BootstrapConfig, error)
+type databaseMigrator func(context.Context, string, db.MigrationRequest) (db.MigrationResult, error)
+type runtimeRenderer func(config.RuntimeSchema, map[string]string, []config.EnvEntry) ([]byte, error)
+type runtimeWriter func(string, []byte) error
+type passwordHasher func(string) (string, error)
+type applyUnlock func() error
+type applyLocker func(context.Context) (applyUnlock, error)
+
+type serviceDependencies struct {
+	runtimeEnvPath string
+	state          applyStateStore
+	prober         applyProber
+	auth           completionAuth
+	loadBootstrap  runtimeBootstrapLoader
+	migrate        databaseMigrator
+	openStore      SetupStoreOpener
+	hashPassword   passwordHasher
+	renderRuntime  runtimeRenderer
+	writeRuntime   runtimeWriter
+	now            func() time.Time
+	checkpoint     func(string) error
+	events         func(string)
+	lockApply      applyLocker
+}
+
+type Service struct {
+	dependencies serviceDependencies
+
+	mu         sync.Mutex
+	activeID   string
+	operations map[string]*setupOperation
+}
+
+type setupOperation struct {
+	view                OperationView
+	fingerprint         [sha256.Size]byte
+	passwordFingerprint [sha256.Size]byte
+	done                chan struct{}
+	err                 error
+}
+
+type immutableApplyRequest struct {
+	operationID         string
+	runtime             map[string]string
+	adminEmail          string
+	adminPassword       string
+	fingerprint         [sha256.Size]byte
+	passwordFingerprint [sha256.Size]byte
+}
+
+type preparedApply struct {
+	bootstrap config.BootstrapConfig
+	state     InstallState
+	values    map[string]string
+	proof     CommitProof
+	digest    string
+}
+
+func NewService(options ServiceOptions) (*Service, error) {
+	if strings.TrimSpace(options.RuntimeEnvPath) == "" || options.StateStore == nil || options.ProbeService == nil || options.AuthService == nil || options.StoreOpener == nil {
+		return nil, fmt.Errorf("setup service dependencies are incomplete")
+	}
+	return newService(serviceDependencies{
+		runtimeEnvPath: options.RuntimeEnvPath,
+		state:          options.StateStore,
+		prober:         options.ProbeService,
+		auth:           options.AuthService,
+		loadBootstrap:  config.LoadBootstrap,
+		migrate:        db.Migrate,
+		openStore:      options.StoreOpener,
+		hashPassword:   adminauthservice.HashPasswordChecked,
+		renderRuntime:  config.RenderRuntimeEnv,
+		writeRuntime:   config.WriteRuntimeEnvAtomic,
+		now:            func() time.Time { return time.Now().UTC() },
+	}), nil
+}
+
+func newService(dependencies serviceDependencies) *Service {
+	if dependencies.checkpoint == nil {
+		dependencies.checkpoint = func(string) error { return nil }
+	}
+	if dependencies.events == nil {
+		dependencies.events = func(string) {}
+	}
+	if dependencies.lockApply == nil {
+		dependencies.lockApply = newRuntimeApplyLocker(dependencies.runtimeEnvPath)
+	}
+	return &Service{dependencies: dependencies, operations: make(map[string]*setupOperation)}
+}
+
+func (service *Service) Apply(ctx context.Context, request ApplyRequest) (OperationView, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	immutable, err := snapshotApplyRequest(request)
+	if err != nil {
+		return OperationView{}, ErrSetupValidation
+	}
+	operation, leader, err := service.acquireOperation(immutable)
+	if err != nil {
+		return OperationView{}, err
+	}
+	if !leader {
+		select {
+		case <-operation.done:
+			return service.operationResult(operation)
+		case <-ctx.Done():
+			return service.operationSnapshot(operation), ctx.Err()
+		}
+	}
+
+	unlock, lockErr := service.dependencies.lockApply(ctx)
+	if lockErr != nil {
+		view, applyErr := service.failOperation(operation, ErrSetupCommit)
+		service.finishOperation(operation, view, applyErr)
+		return view, applyErr
+	}
+	view, applyErr := service.executeApply(ctx, operation, immutable)
+	if releaseErr := unlock(); releaseErr != nil && applyErr == nil {
+		service.dependencies.auth.FailClosedCompletion()
+		view, applyErr = service.failOperation(operation, ErrSetupCommit)
+	}
+	service.finishOperation(operation, view, applyErr)
+	return view, applyErr
+}
+
+func (service *Service) Progress(ctx context.Context, id string) (OperationView, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !canonicalUUID(id) {
+		return OperationView{}, ErrSetupValidation
+	}
+	service.mu.Lock()
+	operation := service.operations[id]
+	service.mu.Unlock()
+	if operation != nil {
+		return service.operationResult(operation)
+	}
+	return service.progressAfterRestart(ctx, id)
+}
+
+func (service *Service) acquireOperation(request immutableApplyRequest) (*setupOperation, bool, error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.activeID != "" {
+		operation := service.operations[service.activeID]
+		if service.activeID != request.operationID {
+			return nil, false, ErrSetupOperationConflict
+		}
+		if operation.fingerprint != request.fingerprint || differentNonEmptyPassword(operation.passwordFingerprint, request.passwordFingerprint) {
+			return nil, false, ErrSetupBindingMismatch
+		}
+		return operation, false, nil
+	}
+	if existing := service.operations[request.operationID]; existing != nil {
+		select {
+		case <-existing.done:
+			if existing.err == nil {
+				if existing.fingerprint != request.fingerprint || differentNonEmptyPassword(existing.passwordFingerprint, request.passwordFingerprint) {
+					return nil, false, ErrSetupBindingMismatch
+				}
+				return existing, false, nil
+			}
+			delete(service.operations, request.operationID)
+		default:
+			return existing, false, nil
+		}
+	}
+	now := service.now()
+	operation := &setupOperation{
+		view:        OperationView{OperationID: request.operationID, Phase: OperationPhasePending, StartedAt: now, UpdatedAt: now},
+		fingerprint: request.fingerprint, passwordFingerprint: request.passwordFingerprint, done: make(chan struct{}),
+	}
+	service.operations[request.operationID] = operation
+	service.activeID = request.operationID
+	service.dependencies.events("phase:" + string(OperationPhasePending))
+	return operation, true, nil
+}
+
+func (service *Service) finishOperation(operation *setupOperation, view OperationView, err error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	operation.view = view
+	operation.err = err
+	if service.activeID == view.OperationID {
+		service.activeID = ""
+	}
+	close(operation.done)
+}
+
+func (service *Service) operationResult(operation *setupOperation) (OperationView, error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return operation.view, operation.err
+}
+
+func (service *Service) operationSnapshot(operation *setupOperation) OperationView {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return operation.view
+}
+
+func (service *Service) executeApply(ctx context.Context, operation *setupOperation, request immutableApplyRequest) (OperationView, error) {
+	service.setPhase(operation, OperationPhaseValidating)
+	prepared, err := service.prepareApply(request)
+	if err != nil {
+		if errors.Is(err, ErrSetupOperationConflict) || errors.Is(err, ErrSetupBindingMismatch) {
+			return service.failOperation(operation, err)
+		}
+		return service.failOperation(operation, ErrSetupValidation)
+	}
+	if err := service.dependencies.checkpoint("after_validation"); err != nil {
+		return service.failOperation(operation, ErrSetupValidation)
+	}
+
+	if prepared.state.Phase == InstallPhaseCommitting {
+		return service.resumeCommit(ctx, operation, prepared)
+	}
+	if err := service.runFinalProbes(ctx, prepared.values); err != nil {
+		return service.failOperation(operation, ErrSetupProbe)
+	}
+
+	service.setPhase(operation, OperationPhaseInitializingDatabase)
+	if err := service.dependencies.checkpoint("before_migration"); err != nil {
+		return service.failOperation(operation, ErrSetupMigration)
+	}
+	if _, err := service.dependencies.migrate(ctx, prepared.values["DATABASE_URL"], db.MigrationRequest{
+		InstallationID: prepared.bootstrap.InstallationID,
+		AppVersion:     prepared.values["APPLICATION_VERSION"],
+		ConfigVersion:  config.CurrentRuntimeSchemaVersion,
+	}); err != nil {
+		return service.failOperation(operation, ErrSetupMigration)
+	}
+	if err := service.dependencies.checkpoint("after_migration"); err != nil {
+		return service.failOperation(operation, ErrSetupMigration)
+	}
+
+	service.setPhase(operation, OperationPhaseCreatingAdmin)
+	passwordHash := ""
+	if request.adminPassword != "" {
+		passwordHash, err = service.dependencies.hashPassword(request.adminPassword)
+		if err != nil {
+			return service.failOperation(operation, ErrSetupCommit)
+		}
+	}
+	store, err := service.dependencies.openStore(ctx, prepared.values["DATABASE_URL"])
+	if err != nil {
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	_, initializeErr := store.Initialize(ctx, SetupInitializationRequest{
+		OperationID: request.operationID, InstallationID: prepared.bootstrap.InstallationID,
+		ConfigRevision: prepared.proof.ConfigRevision, RequestDigest: prepared.digest,
+		AdminEmail: request.adminEmail, AdminPasswordHash: passwordHash,
+	})
+	closeErr := store.Close()
+	passwordHash = ""
+	if initializeErr != nil || closeErr != nil {
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if err := service.dependencies.checkpoint("after_database_binding"); err != nil {
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+
+	return service.commitPreparedRuntime(operation, prepared)
+}
+
+func (service *Service) resumeCommit(ctx context.Context, operation *setupOperation, prepared preparedApply) (OperationView, error) {
+	if prepared.state.Commit == nil || *prepared.state.Commit != prepared.proof {
+		return service.failOperation(operation, ErrSetupReconciliation)
+	}
+	if err := service.verifyBinding(ctx, prepared); err != nil {
+		return service.failOperation(operation, ErrSetupReconciliation)
+	}
+	if prepared.bootstrap.SetupCompleted {
+		if _, err := service.dependencies.state.FinalizeCommit(prepared.proof, service.now()); err != nil {
+			service.dependencies.auth.FailClosedCompletion()
+			return service.failOperation(operation, ErrSetupReconciliation)
+		}
+		service.dependencies.auth.FailClosedCompletion()
+		service.setPhase(operation, OperationPhaseComplete)
+		return service.operationSnapshot(operation), nil
+	}
+	return service.commitPreparedRuntime(operation, prepared)
+}
+
+func (service *Service) commitPreparedRuntime(operation *setupOperation, prepared preparedApply) (OperationView, error) {
+	service.setPhase(operation, OperationPhaseCommittingConfig)
+	completion, err := service.dependencies.auth.PrepareCompletion()
+	if err != nil {
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	runtimeCommitted := false
+	abortOrSeal := func() {
+		if runtimeCommitted {
+			service.dependencies.auth.FailClosedCompletion()
+			return
+		}
+		_ = service.dependencies.auth.AbortCompletion(completion)
+	}
+	if err := service.dependencies.checkpoint("before_state_begin"); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if _, err := service.dependencies.state.BeginCommit(prepared.proof, service.now()); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	data, err := service.dependencies.renderRuntime(config.DefaultRuntimeSchema(), prepared.values, nil)
+	if err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if err := service.dependencies.checkpoint("before_runtime_write"); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if err := service.dependencies.writeRuntime(service.dependencies.runtimeEnvPath, data); err != nil {
+		if service.runtimeMatchesPrepared(prepared) {
+			runtimeCommitted = true
+		}
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	runtimeCommitted = true
+	if err := service.dependencies.checkpoint("after_runtime_write"); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if _, err := service.dependencies.state.FinalizeCommit(prepared.proof, service.now()); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if err := service.dependencies.checkpoint("after_state_finalize"); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if err := service.dependencies.auth.CommitCompletion(completion); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	if err := service.dependencies.checkpoint("after_auth_commit"); err != nil {
+		abortOrSeal()
+		return service.failOperation(operation, ErrSetupCommit)
+	}
+	service.setPhase(operation, OperationPhaseRestartPending)
+	return service.operationSnapshot(operation), nil
+}
+
+func (service *Service) prepareApply(request immutableApplyRequest) (preparedApply, error) {
+	if err := service.validateDependencies(); err != nil {
+		return preparedApply{}, err
+	}
+	bootstrap, err := service.dependencies.loadBootstrap(service.dependencies.runtimeEnvPath)
+	if err != nil {
+		return preparedApply{}, err
+	}
+	state, exists, err := service.dependencies.state.Load()
+	if err != nil || !exists || state.Validate() != nil {
+		return preparedApply{}, ErrInstallStateInvalid
+	}
+	if bootstrap.InstallationID != state.InstallationID || bootstrap.Deployment.Role != state.DeploymentRole || !setupAuthority(state.DeploymentRole) {
+		return preparedApply{}, ErrStartupStateInconsistent
+	}
+	if state.Commit != nil && state.Commit.OperationID != request.operationID {
+		return preparedApply{}, ErrSetupOperationConflict
+	}
+	if state.Phase == InstallPhaseCompleted || (bootstrap.SetupCompleted && state.Phase != InstallPhaseCommitting) {
+		return preparedApply{}, ErrCompleted
+	}
+	values, revision, err := mergeFinalRuntime(bootstrap, request.runtime)
+	if err != nil {
+		return preparedApply{}, err
+	}
+	digest, err := setupRequestDigest(values)
+	if err != nil {
+		return preparedApply{}, err
+	}
+	proof := CommitProof{
+		OperationID: request.operationID, InstallationID: bootstrap.InstallationID,
+		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: revision,
+	}
+	if err := proof.Validate(); err != nil {
+		return preparedApply{}, err
+	}
+	return preparedApply{bootstrap: bootstrap, state: state, values: values, proof: proof, digest: digest}, nil
+}
+
+func (service *Service) runFinalProbes(ctx context.Context, values map[string]string) error {
+	results := []ProbeResult{
+		service.dependencies.prober.ProbePostgres(ctx, PostgresProbeRequest{DatabaseURL: values["DATABASE_URL"]}),
+		service.dependencies.prober.ProbeRedis(ctx, RedisProbeRequest{RedisURL: values["REDIS_URL"], KeyPrefix: values["REDIS_KEY_PREFIX"]}),
+		service.dependencies.prober.ProbeStorage(ctx, StorageProbeRequest{Config: storageConfigFromRuntime(values)}),
+	}
+	for _, result := range results {
+		if !result.Success || result.Code != ProbeCodeOK {
+			return ErrSetupProbe
+		}
+	}
+	return nil
+}
+
+func (service *Service) progressAfterRestart(ctx context.Context, operationID string) (OperationView, error) {
+	if err := service.validateDependencies(); err != nil {
+		return OperationView{}, ErrSetupReconciliation
+	}
+	bootstrap, err := service.dependencies.loadBootstrap(service.dependencies.runtimeEnvPath)
+	if err != nil {
+		return OperationView{}, ErrSetupReconciliation
+	}
+	state, exists, err := service.dependencies.state.Load()
+	if err != nil || !exists || state.Validate() != nil || state.Commit == nil || state.Commit.OperationID != operationID {
+		return OperationView{}, ErrSetupOperationGone
+	}
+	decision, err := ResolveStartupDecision(bootstrap, state, true)
+	if err != nil {
+		return OperationView{}, ErrSetupReconciliation
+	}
+	now := service.now()
+	view := OperationView{OperationID: operationID, StartedAt: state.UpdatedAt, UpdatedAt: now}
+	switch decision.Reconciliation {
+	case ReconciliationResumeSetup:
+		values, _, mergeErr := mergeFinalRuntime(bootstrap, nil)
+		if mergeErr != nil {
+			return OperationView{}, ErrSetupReconciliation
+		}
+		digest, digestErr := setupRequestDigest(values)
+		if digestErr != nil {
+			return OperationView{}, ErrSetupReconciliation
+		}
+		prepared := preparedApply{bootstrap: bootstrap, state: state, values: values, proof: *state.Commit, digest: digest}
+		if service.verifyBinding(ctx, prepared) != nil {
+			return OperationView{}, ErrSetupReconciliation
+		}
+		view.Phase = OperationPhaseCommittingConfig
+		return view, nil
+	case ReconciliationRequireDatabase:
+		prepared, err := service.preparedFromCompletedBootstrap(bootstrap, state)
+		if err != nil || service.verifyBinding(ctx, prepared) != nil {
+			return OperationView{}, ErrSetupReconciliation
+		}
+		if _, err := service.dependencies.state.FinalizeCommit(prepared.proof, now); err != nil {
+			service.dependencies.auth.FailClosedCompletion()
+			return OperationView{}, ErrSetupReconciliation
+		}
+		service.dependencies.auth.FailClosedCompletion()
+		view.Phase = OperationPhaseComplete
+		return view, nil
+	case ReconciliationNone:
+		if decision.Mode != StartupModeNormal {
+			return OperationView{}, ErrSetupOperationGone
+		}
+		prepared, err := service.preparedFromCompletedBootstrap(bootstrap, state)
+		if err != nil || service.verifyBinding(ctx, prepared) != nil {
+			return OperationView{}, ErrSetupReconciliation
+		}
+		service.dependencies.auth.FailClosedCompletion()
+		view.Phase = OperationPhaseComplete
+		return view, nil
+	default:
+		return OperationView{}, ErrSetupReconciliation
+	}
+}
+
+func (service *Service) preparedFromCompletedBootstrap(bootstrap config.BootstrapConfig, state InstallState) (preparedApply, error) {
+	if state.Commit == nil || !bootstrap.SetupCompleted {
+		return preparedApply{}, ErrSetupReconciliation
+	}
+	digest, err := setupRequestDigest(bootstrap.Values)
+	if err != nil {
+		return preparedApply{}, err
+	}
+	return preparedApply{bootstrap: bootstrap, state: state, values: cloneRuntimeValues(bootstrap.Values), proof: *state.Commit, digest: digest}, nil
+}
+
+func (service *Service) verifyBinding(ctx context.Context, prepared preparedApply) error {
+	store, err := service.dependencies.openStore(ctx, prepared.values["DATABASE_URL"])
+	if err != nil {
+		return ErrSetupReconciliation
+	}
+	binding, lookupErr := store.GetBinding(ctx, prepared.bootstrap.InstallationID)
+	closeErr := store.Close()
+	if lookupErr != nil || closeErr != nil {
+		return ErrSetupReconciliation
+	}
+	if binding.OperationID != prepared.proof.OperationID || binding.InstallationID != prepared.proof.InstallationID ||
+		binding.ConfigRevision != prepared.proof.ConfigRevision || binding.RequestDigest != prepared.digest {
+		return ErrSetupReconciliation
+	}
+	return nil
+}
+
+func (service *Service) validateDependencies() error {
+	dependencies := service.dependencies
+	if strings.TrimSpace(dependencies.runtimeEnvPath) == "" || dependencies.state == nil || dependencies.prober == nil || dependencies.auth == nil ||
+		dependencies.loadBootstrap == nil || dependencies.migrate == nil || dependencies.openStore == nil || dependencies.hashPassword == nil ||
+		dependencies.renderRuntime == nil || dependencies.writeRuntime == nil || dependencies.now == nil || dependencies.lockApply == nil {
+		return fmt.Errorf("setup service dependencies are incomplete")
+	}
+	return nil
+}
+
+func (service *Service) setPhase(operation *setupOperation, phase OperationPhase) {
+	service.mu.Lock()
+	operation.view.Phase = phase
+	operation.view.UpdatedAt = service.now()
+	service.mu.Unlock()
+	service.dependencies.events("phase:" + string(phase))
+}
+
+func (service *Service) failOperation(operation *setupOperation, stable error) (OperationView, error) {
+	service.mu.Lock()
+	operation.view.ErrorCode = setupErrorCode(stable)
+	operation.view.UpdatedAt = service.now()
+	view := operation.view
+	service.mu.Unlock()
+	return view, stable
+}
+
+func (service *Service) now() time.Time {
+	return service.dependencies.now().UTC()
+}
+
+func snapshotApplyRequest(request ApplyRequest) (immutableApplyRequest, error) {
+	if !canonicalUUID(request.OperationID) {
+		return immutableApplyRequest{}, ErrSetupValidation
+	}
+	email := strings.ToLower(strings.TrimSpace(request.AdminEmail))
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return immutableApplyRequest{}, ErrSetupValidation
+	}
+	if request.AdminPassword != "" && len(strings.TrimSpace(request.AdminPassword)) < 6 {
+		return immutableApplyRequest{}, ErrSetupValidation
+	}
+	runtime := cloneRuntimeValues(request.Runtime)
+	canonical := make([]config.EnvEntry, 0, len(runtime)+1)
+	for key, value := range runtime {
+		canonical = append(canonical, config.EnvEntry{Key: key, Value: value})
+	}
+	canonical = append(canonical, config.EnvEntry{Key: "ADMIN_EMAIL", Value: email})
+	sort.Slice(canonical, func(i, j int) bool { return canonical[i].Key < canonical[j].Key })
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return immutableApplyRequest{}, ErrSetupValidation
+	}
+	fingerprint := sha256.Sum256(encoded)
+	clear(encoded)
+	passwordFingerprint := [sha256.Size]byte{}
+	if request.AdminPassword != "" {
+		passwordBytes := []byte(request.AdminPassword)
+		passwordFingerprint = sha256.Sum256(passwordBytes)
+		clear(passwordBytes)
+	}
+	return immutableApplyRequest{
+		operationID: request.OperationID, runtime: runtime, adminEmail: email,
+		adminPassword: request.AdminPassword, fingerprint: fingerprint, passwordFingerprint: passwordFingerprint,
+	}, nil
+}
+
+func mergeFinalRuntime(bootstrap config.BootstrapConfig, submitted map[string]string) (map[string]string, int, error) {
+	schema := config.DefaultRuntimeSchema()
+	if err := schema.Validate(); err != nil || bootstrap.Values == nil {
+		return nil, 0, ErrSetupValidation
+	}
+	fields := make(map[string]config.RuntimeField, len(schema.Fields))
+	for _, field := range schema.Fields {
+		fields[field.Key] = field
+	}
+	values := cloneRuntimeValues(bootstrap.Values)
+	for _, field := range schema.Fields {
+		if _, exists := values[field.Key]; !exists {
+			values[field.Key] = field.DefaultValue
+		}
+	}
+	for key, value := range submitted {
+		field, exists := fields[key]
+		if !exists {
+			return nil, 0, ErrSetupValidation
+		}
+		switch field.Owner {
+		case config.FieldOwnerSetup:
+			values[key] = value
+		case config.FieldOwnerDeployctl, config.FieldOwnerApplication:
+			if current, exists := bootstrap.Values[key]; !exists || current != value {
+				return nil, 0, ErrSetupValidation
+			}
+		default:
+			return nil, 0, ErrSetupValidation
+		}
+	}
+	revision := bootstrap.ConfigRevision
+	if revision <= 0 {
+		revision = 1
+	}
+	values["RUNTIME_SCHEMA_VERSION"] = strconv.Itoa(schema.Version)
+	values["SETUP_COMPLETED"] = "true"
+	values["SETUP_TOKEN"] = ""
+	values["SETUP_TOKEN_VERSION"] = strconv.FormatUint(bootstrap.SetupTokenVersion, 10)
+	values["CONFIG_REVISION"] = strconv.Itoa(revision)
+
+	deployment := bootstrap.Deployment
+	deployment.SetupCompleted = true
+	deployment.StorageDriver = values["STORAGE_DRIVER"]
+	required, err := config.RequiredRuntimeFields(schema, deployment)
+	if err != nil {
+		return nil, 0, ErrSetupValidation
+	}
+	for _, field := range required {
+		if strings.TrimSpace(values[field.Key]) == "" {
+			return nil, 0, ErrSetupValidation
+		}
+	}
+	for _, field := range schema.Fields {
+		value, exists := values[field.Key]
+		if !exists || value == "" {
+			continue
+		}
+		if err := field.Validate(value); err != nil {
+			return nil, 0, ErrSetupValidation
+		}
+	}
+	return values, revision, nil
+}
+
+func setupRequestDigest(values map[string]string) (string, error) {
+	key := []byte(values["PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"])
+	if len(key) < 32 {
+		clear(key)
+		return "", ErrSetupValidation
+	}
+	defer clear(key)
+	entries := make([]config.EnvEntry, 0, len(values))
+	for name, value := range values {
+		entries = append(entries, config.EnvEntry{Key: name, Value: value})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
+	canonical, err := json.Marshal(entries)
+	if err != nil {
+		return "", ErrSetupValidation
+	}
+	defer clear(canonical)
+	digest := hmac.New(sha256.New, key)
+	_, _ = digest.Write(canonical)
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func (service *Service) runtimeMatchesPrepared(prepared preparedApply) bool {
+	bootstrap, err := service.dependencies.loadBootstrap(service.dependencies.runtimeEnvPath)
+	if err != nil || !bootstrap.SetupCompleted || !runtimeValuesEqual(bootstrap.Values, prepared.values) {
+		return false
+	}
+	digest, err := setupRequestDigest(bootstrap.Values)
+	return err == nil && digest == prepared.digest
+}
+
+func runtimeValuesEqual(left, right map[string]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		if right[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func differentNonEmptyPassword(left, right [sha256.Size]byte) bool {
+	empty := [sha256.Size]byte{}
+	return left != empty && right != empty && left != right
+}
+
+func storageConfigFromRuntime(values map[string]string) config.StorageConfig {
+	shared, _ := strconv.ParseBool(values["STORAGE_SHARED_VOLUME"])
+	forcePathStyle, _ := strconv.ParseBool(values["STORAGE_S3_FORCE_PATH_STYLE"])
+	return config.StorageConfig{
+		Driver: values["STORAGE_DRIVER"], LocalRoot: values["STORAGE_LOCAL_ROOT"],
+		PublicBaseURL: values["STORAGE_PUBLIC_BASE_URL"], SharedVolume: shared,
+		S3: config.StorageS3Config{
+			Endpoint: values["STORAGE_S3_ENDPOINT"], Region: values["STORAGE_S3_REGION"], Bucket: values["STORAGE_S3_BUCKET"],
+			AccessKeyID: values["STORAGE_S3_ACCESS_KEY_ID"], SecretAccessKey: values["STORAGE_S3_SECRET_ACCESS_KEY"],
+			ForcePathStyle: forcePathStyle, Prefix: values["STORAGE_S3_PREFIX"],
+		},
+	}
+}
+
+func cloneRuntimeValues(source map[string]string) map[string]string {
+	clone := make(map[string]string, len(source))
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
+}
+
+func canonicalUUID(value string) bool {
+	parsed, err := uuid.Parse(value)
+	return err == nil && parsed.String() == value
+}
+
+func setupErrorCode(err error) string {
+	switch {
+	case errors.Is(err, ErrSetupValidation):
+		return "VALIDATION_FAILED"
+	case errors.Is(err, ErrSetupProbe):
+		return "PROBE_FAILED"
+	case errors.Is(err, ErrSetupMigration):
+		return "DATABASE_INITIALIZATION_FAILED"
+	case errors.Is(err, ErrSetupReconciliation):
+		return "RECONCILIATION_FAILED"
+	default:
+		return "COMMIT_FAILED"
+	}
+}

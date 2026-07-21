@@ -539,6 +539,27 @@ func TestHashPasswordUsesBcryptAndLoginLocksAfterRepeatedFailures(t *testing.T) 
 	}
 }
 
+func TestHashPasswordCheckedUsesCurrentPolicyWithoutPlaintext(t *testing.T) {
+	hash, err := HashPasswordChecked("correct horse battery staple")
+	if err != nil {
+		t.Fatalf("HashPasswordChecked returned error: %v", err)
+	}
+	if strings.Contains(hash, "correct horse battery staple") || !strings.HasPrefix(hash, bcryptPasswordHashPrefix+"$") {
+		t.Fatalf("HashPasswordChecked returned unsafe hash shape %q", hash)
+	}
+	if !VerifyPassword(hash, "correct horse battery staple") {
+		t.Fatal("HashPasswordChecked result does not verify")
+	}
+	if !IsCurrentPasswordHash(hash) {
+		t.Fatal("HashPasswordChecked result is not recognized as a current hash")
+	}
+	for _, malformed := range []string{"bcrypt$garbage", "bcrypt$$2a$04$short", "sha256$salt$digest"} {
+		if IsCurrentPasswordHash(malformed) {
+			t.Fatalf("malformed or legacy hash accepted as current: %q", malformed)
+		}
+	}
+}
+
 func TestLoginRehashesLegacyPasswordAfterSuccessfulLogin(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()

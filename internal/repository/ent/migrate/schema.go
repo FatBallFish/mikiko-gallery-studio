@@ -516,6 +516,10 @@ var (
 		{Name: "config_schema_version", Type: field.TypeInt},
 		{Name: "database_schema_version", Type: field.TypeInt},
 		{Name: "app_version", Type: field.TypeString, Size: 128},
+		{Name: "setup_operation_id", Type: field.TypeString, Nullable: true, Size: 36},
+		{Name: "setup_admin_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "setup_config_revision", Type: field.TypeInt, Nullable: true},
+		{Name: "setup_request_digest", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "initialized_at", Type: field.TypeTime},
 		{Name: "migrated_at", Type: field.TypeTime},
 	}
@@ -529,6 +533,11 @@ var (
 				Name:    "installation_installation_id",
 				Unique:  true,
 				Columns: []*schema.Column{InstallationsColumns[4]},
+			},
+			{
+				Name:    "installation_setup_operation_id",
+				Unique:  true,
+				Columns: []*schema.Column{InstallationsColumns[8]},
 			},
 			{
 				Name:    "installation_database_schema_version_config_schema_version",

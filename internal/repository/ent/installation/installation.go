@@ -27,6 +27,14 @@ const (
 	FieldDatabaseSchemaVersion = "database_schema_version"
 	// FieldAppVersion holds the string denoting the app_version field in the database.
 	FieldAppVersion = "app_version"
+	// FieldSetupOperationID holds the string denoting the setup_operation_id field in the database.
+	FieldSetupOperationID = "setup_operation_id"
+	// FieldSetupAdminID holds the string denoting the setup_admin_id field in the database.
+	FieldSetupAdminID = "setup_admin_id"
+	// FieldSetupConfigRevision holds the string denoting the setup_config_revision field in the database.
+	FieldSetupConfigRevision = "setup_config_revision"
+	// FieldSetupRequestDigest holds the string denoting the setup_request_digest field in the database.
+	FieldSetupRequestDigest = "setup_request_digest"
 	// FieldInitializedAt holds the string denoting the initialized_at field in the database.
 	FieldInitializedAt = "initialized_at"
 	// FieldMigratedAt holds the string denoting the migrated_at field in the database.
@@ -45,6 +53,10 @@ var Columns = []string{
 	FieldConfigSchemaVersion,
 	FieldDatabaseSchemaVersion,
 	FieldAppVersion,
+	FieldSetupOperationID,
+	FieldSetupAdminID,
+	FieldSetupConfigRevision,
+	FieldSetupRequestDigest,
 	FieldInitializedAt,
 	FieldMigratedAt,
 }
@@ -76,6 +88,14 @@ var (
 	DatabaseSchemaVersionValidator func(int) error
 	// AppVersionValidator is a validator for the "app_version" field. It is called by the builders before save.
 	AppVersionValidator func(string) error
+	// SetupOperationIDValidator is a validator for the "setup_operation_id" field. It is called by the builders before save.
+	SetupOperationIDValidator func(string) error
+	// SetupAdminIDValidator is a validator for the "setup_admin_id" field. It is called by the builders before save.
+	SetupAdminIDValidator func(int64) error
+	// SetupConfigRevisionValidator is a validator for the "setup_config_revision" field. It is called by the builders before save.
+	SetupConfigRevisionValidator func(int) error
+	// SetupRequestDigestValidator is a validator for the "setup_request_digest" field. It is called by the builders before save.
+	SetupRequestDigestValidator func(string) error
 	// DefaultInitializedAt holds the default value on creation for the "initialized_at" field.
 	DefaultInitializedAt func() time.Time
 	// DefaultMigratedAt holds the default value on creation for the "migrated_at" field.
@@ -123,6 +143,26 @@ func ByDatabaseSchemaVersion(opts ...sql.OrderTermOption) OrderOption {
 // ByAppVersion orders the results by the app_version field.
 func ByAppVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAppVersion, opts...).ToFunc()
+}
+
+// BySetupOperationID orders the results by the setup_operation_id field.
+func BySetupOperationID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSetupOperationID, opts...).ToFunc()
+}
+
+// BySetupAdminID orders the results by the setup_admin_id field.
+func BySetupAdminID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSetupAdminID, opts...).ToFunc()
+}
+
+// BySetupConfigRevision orders the results by the setup_config_revision field.
+func BySetupConfigRevision(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSetupConfigRevision, opts...).ToFunc()
+}
+
+// BySetupRequestDigest orders the results by the setup_request_digest field.
+func BySetupRequestDigest(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSetupRequestDigest, opts...).ToFunc()
 }
 
 // ByInitializedAt orders the results by the initialized_at field.

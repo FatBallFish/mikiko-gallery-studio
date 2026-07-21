@@ -89,6 +89,26 @@ func AppVersion(v string) predicate.Installation {
 	return predicate.Installation(sql.FieldEQ(FieldAppVersion, v))
 }
 
+// SetupOperationID applies equality check predicate on the "setup_operation_id" field. It's identical to SetupOperationIDEQ.
+func SetupOperationID(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupOperationID, v))
+}
+
+// SetupAdminID applies equality check predicate on the "setup_admin_id" field. It's identical to SetupAdminIDEQ.
+func SetupAdminID(v int64) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupAdminID, v))
+}
+
+// SetupConfigRevision applies equality check predicate on the "setup_config_revision" field. It's identical to SetupConfigRevisionEQ.
+func SetupConfigRevision(v int) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupConfigRevision, v))
+}
+
+// SetupRequestDigest applies equality check predicate on the "setup_request_digest" field. It's identical to SetupRequestDigestEQ.
+func SetupRequestDigest(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupRequestDigest, v))
+}
+
 // InitializedAt applies equality check predicate on the "initialized_at" field. It's identical to InitializedAtEQ.
 func InitializedAt(v time.Time) predicate.Installation {
 	return predicate.Installation(sql.FieldEQ(FieldInitializedAt, v))
@@ -452,6 +472,256 @@ func AppVersionEqualFold(v string) predicate.Installation {
 // AppVersionContainsFold applies the ContainsFold predicate on the "app_version" field.
 func AppVersionContainsFold(v string) predicate.Installation {
 	return predicate.Installation(sql.FieldContainsFold(FieldAppVersion, v))
+}
+
+// SetupOperationIDEQ applies the EQ predicate on the "setup_operation_id" field.
+func SetupOperationIDEQ(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDNEQ applies the NEQ predicate on the "setup_operation_id" field.
+func SetupOperationIDNEQ(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldNEQ(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDIn applies the In predicate on the "setup_operation_id" field.
+func SetupOperationIDIn(vs ...string) predicate.Installation {
+	return predicate.Installation(sql.FieldIn(FieldSetupOperationID, vs...))
+}
+
+// SetupOperationIDNotIn applies the NotIn predicate on the "setup_operation_id" field.
+func SetupOperationIDNotIn(vs ...string) predicate.Installation {
+	return predicate.Installation(sql.FieldNotIn(FieldSetupOperationID, vs...))
+}
+
+// SetupOperationIDGT applies the GT predicate on the "setup_operation_id" field.
+func SetupOperationIDGT(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldGT(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDGTE applies the GTE predicate on the "setup_operation_id" field.
+func SetupOperationIDGTE(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldGTE(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDLT applies the LT predicate on the "setup_operation_id" field.
+func SetupOperationIDLT(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldLT(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDLTE applies the LTE predicate on the "setup_operation_id" field.
+func SetupOperationIDLTE(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldLTE(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDContains applies the Contains predicate on the "setup_operation_id" field.
+func SetupOperationIDContains(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldContains(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDHasPrefix applies the HasPrefix predicate on the "setup_operation_id" field.
+func SetupOperationIDHasPrefix(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldHasPrefix(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDHasSuffix applies the HasSuffix predicate on the "setup_operation_id" field.
+func SetupOperationIDHasSuffix(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldHasSuffix(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDIsNil applies the IsNil predicate on the "setup_operation_id" field.
+func SetupOperationIDIsNil() predicate.Installation {
+	return predicate.Installation(sql.FieldIsNull(FieldSetupOperationID))
+}
+
+// SetupOperationIDNotNil applies the NotNil predicate on the "setup_operation_id" field.
+func SetupOperationIDNotNil() predicate.Installation {
+	return predicate.Installation(sql.FieldNotNull(FieldSetupOperationID))
+}
+
+// SetupOperationIDEqualFold applies the EqualFold predicate on the "setup_operation_id" field.
+func SetupOperationIDEqualFold(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldEqualFold(FieldSetupOperationID, v))
+}
+
+// SetupOperationIDContainsFold applies the ContainsFold predicate on the "setup_operation_id" field.
+func SetupOperationIDContainsFold(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldContainsFold(FieldSetupOperationID, v))
+}
+
+// SetupAdminIDEQ applies the EQ predicate on the "setup_admin_id" field.
+func SetupAdminIDEQ(v int64) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupAdminID, v))
+}
+
+// SetupAdminIDNEQ applies the NEQ predicate on the "setup_admin_id" field.
+func SetupAdminIDNEQ(v int64) predicate.Installation {
+	return predicate.Installation(sql.FieldNEQ(FieldSetupAdminID, v))
+}
+
+// SetupAdminIDIn applies the In predicate on the "setup_admin_id" field.
+func SetupAdminIDIn(vs ...int64) predicate.Installation {
+	return predicate.Installation(sql.FieldIn(FieldSetupAdminID, vs...))
+}
+
+// SetupAdminIDNotIn applies the NotIn predicate on the "setup_admin_id" field.
+func SetupAdminIDNotIn(vs ...int64) predicate.Installation {
+	return predicate.Installation(sql.FieldNotIn(FieldSetupAdminID, vs...))
+}
+
+// SetupAdminIDGT applies the GT predicate on the "setup_admin_id" field.
+func SetupAdminIDGT(v int64) predicate.Installation {
+	return predicate.Installation(sql.FieldGT(FieldSetupAdminID, v))
+}
+
+// SetupAdminIDGTE applies the GTE predicate on the "setup_admin_id" field.
+func SetupAdminIDGTE(v int64) predicate.Installation {
+	return predicate.Installation(sql.FieldGTE(FieldSetupAdminID, v))
+}
+
+// SetupAdminIDLT applies the LT predicate on the "setup_admin_id" field.
+func SetupAdminIDLT(v int64) predicate.Installation {
+	return predicate.Installation(sql.FieldLT(FieldSetupAdminID, v))
+}
+
+// SetupAdminIDLTE applies the LTE predicate on the "setup_admin_id" field.
+func SetupAdminIDLTE(v int64) predicate.Installation {
+	return predicate.Installation(sql.FieldLTE(FieldSetupAdminID, v))
+}
+
+// SetupAdminIDIsNil applies the IsNil predicate on the "setup_admin_id" field.
+func SetupAdminIDIsNil() predicate.Installation {
+	return predicate.Installation(sql.FieldIsNull(FieldSetupAdminID))
+}
+
+// SetupAdminIDNotNil applies the NotNil predicate on the "setup_admin_id" field.
+func SetupAdminIDNotNil() predicate.Installation {
+	return predicate.Installation(sql.FieldNotNull(FieldSetupAdminID))
+}
+
+// SetupConfigRevisionEQ applies the EQ predicate on the "setup_config_revision" field.
+func SetupConfigRevisionEQ(v int) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupConfigRevision, v))
+}
+
+// SetupConfigRevisionNEQ applies the NEQ predicate on the "setup_config_revision" field.
+func SetupConfigRevisionNEQ(v int) predicate.Installation {
+	return predicate.Installation(sql.FieldNEQ(FieldSetupConfigRevision, v))
+}
+
+// SetupConfigRevisionIn applies the In predicate on the "setup_config_revision" field.
+func SetupConfigRevisionIn(vs ...int) predicate.Installation {
+	return predicate.Installation(sql.FieldIn(FieldSetupConfigRevision, vs...))
+}
+
+// SetupConfigRevisionNotIn applies the NotIn predicate on the "setup_config_revision" field.
+func SetupConfigRevisionNotIn(vs ...int) predicate.Installation {
+	return predicate.Installation(sql.FieldNotIn(FieldSetupConfigRevision, vs...))
+}
+
+// SetupConfigRevisionGT applies the GT predicate on the "setup_config_revision" field.
+func SetupConfigRevisionGT(v int) predicate.Installation {
+	return predicate.Installation(sql.FieldGT(FieldSetupConfigRevision, v))
+}
+
+// SetupConfigRevisionGTE applies the GTE predicate on the "setup_config_revision" field.
+func SetupConfigRevisionGTE(v int) predicate.Installation {
+	return predicate.Installation(sql.FieldGTE(FieldSetupConfigRevision, v))
+}
+
+// SetupConfigRevisionLT applies the LT predicate on the "setup_config_revision" field.
+func SetupConfigRevisionLT(v int) predicate.Installation {
+	return predicate.Installation(sql.FieldLT(FieldSetupConfigRevision, v))
+}
+
+// SetupConfigRevisionLTE applies the LTE predicate on the "setup_config_revision" field.
+func SetupConfigRevisionLTE(v int) predicate.Installation {
+	return predicate.Installation(sql.FieldLTE(FieldSetupConfigRevision, v))
+}
+
+// SetupConfigRevisionIsNil applies the IsNil predicate on the "setup_config_revision" field.
+func SetupConfigRevisionIsNil() predicate.Installation {
+	return predicate.Installation(sql.FieldIsNull(FieldSetupConfigRevision))
+}
+
+// SetupConfigRevisionNotNil applies the NotNil predicate on the "setup_config_revision" field.
+func SetupConfigRevisionNotNil() predicate.Installation {
+	return predicate.Installation(sql.FieldNotNull(FieldSetupConfigRevision))
+}
+
+// SetupRequestDigestEQ applies the EQ predicate on the "setup_request_digest" field.
+func SetupRequestDigestEQ(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldEQ(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestNEQ applies the NEQ predicate on the "setup_request_digest" field.
+func SetupRequestDigestNEQ(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldNEQ(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestIn applies the In predicate on the "setup_request_digest" field.
+func SetupRequestDigestIn(vs ...string) predicate.Installation {
+	return predicate.Installation(sql.FieldIn(FieldSetupRequestDigest, vs...))
+}
+
+// SetupRequestDigestNotIn applies the NotIn predicate on the "setup_request_digest" field.
+func SetupRequestDigestNotIn(vs ...string) predicate.Installation {
+	return predicate.Installation(sql.FieldNotIn(FieldSetupRequestDigest, vs...))
+}
+
+// SetupRequestDigestGT applies the GT predicate on the "setup_request_digest" field.
+func SetupRequestDigestGT(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldGT(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestGTE applies the GTE predicate on the "setup_request_digest" field.
+func SetupRequestDigestGTE(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldGTE(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestLT applies the LT predicate on the "setup_request_digest" field.
+func SetupRequestDigestLT(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldLT(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestLTE applies the LTE predicate on the "setup_request_digest" field.
+func SetupRequestDigestLTE(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldLTE(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestContains applies the Contains predicate on the "setup_request_digest" field.
+func SetupRequestDigestContains(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldContains(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestHasPrefix applies the HasPrefix predicate on the "setup_request_digest" field.
+func SetupRequestDigestHasPrefix(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldHasPrefix(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestHasSuffix applies the HasSuffix predicate on the "setup_request_digest" field.
+func SetupRequestDigestHasSuffix(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldHasSuffix(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestIsNil applies the IsNil predicate on the "setup_request_digest" field.
+func SetupRequestDigestIsNil() predicate.Installation {
+	return predicate.Installation(sql.FieldIsNull(FieldSetupRequestDigest))
+}
+
+// SetupRequestDigestNotNil applies the NotNil predicate on the "setup_request_digest" field.
+func SetupRequestDigestNotNil() predicate.Installation {
+	return predicate.Installation(sql.FieldNotNull(FieldSetupRequestDigest))
+}
+
+// SetupRequestDigestEqualFold applies the EqualFold predicate on the "setup_request_digest" field.
+func SetupRequestDigestEqualFold(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldEqualFold(FieldSetupRequestDigest, v))
+}
+
+// SetupRequestDigestContainsFold applies the ContainsFold predicate on the "setup_request_digest" field.
+func SetupRequestDigestContainsFold(v string) predicate.Installation {
+	return predicate.Installation(sql.FieldContainsFold(FieldSetupRequestDigest, v))
 }
 
 // InitializedAtEQ applies the EQ predicate on the "initialized_at" field.

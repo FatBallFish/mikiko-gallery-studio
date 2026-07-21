@@ -78,6 +78,62 @@ func (_c *InstallationCreate) SetAppVersion(v string) *InstallationCreate {
 	return _c
 }
 
+// SetSetupOperationID sets the "setup_operation_id" field.
+func (_c *InstallationCreate) SetSetupOperationID(v string) *InstallationCreate {
+	_c.mutation.SetSetupOperationID(v)
+	return _c
+}
+
+// SetNillableSetupOperationID sets the "setup_operation_id" field if the given value is not nil.
+func (_c *InstallationCreate) SetNillableSetupOperationID(v *string) *InstallationCreate {
+	if v != nil {
+		_c.SetSetupOperationID(*v)
+	}
+	return _c
+}
+
+// SetSetupAdminID sets the "setup_admin_id" field.
+func (_c *InstallationCreate) SetSetupAdminID(v int64) *InstallationCreate {
+	_c.mutation.SetSetupAdminID(v)
+	return _c
+}
+
+// SetNillableSetupAdminID sets the "setup_admin_id" field if the given value is not nil.
+func (_c *InstallationCreate) SetNillableSetupAdminID(v *int64) *InstallationCreate {
+	if v != nil {
+		_c.SetSetupAdminID(*v)
+	}
+	return _c
+}
+
+// SetSetupConfigRevision sets the "setup_config_revision" field.
+func (_c *InstallationCreate) SetSetupConfigRevision(v int) *InstallationCreate {
+	_c.mutation.SetSetupConfigRevision(v)
+	return _c
+}
+
+// SetNillableSetupConfigRevision sets the "setup_config_revision" field if the given value is not nil.
+func (_c *InstallationCreate) SetNillableSetupConfigRevision(v *int) *InstallationCreate {
+	if v != nil {
+		_c.SetSetupConfigRevision(*v)
+	}
+	return _c
+}
+
+// SetSetupRequestDigest sets the "setup_request_digest" field.
+func (_c *InstallationCreate) SetSetupRequestDigest(v string) *InstallationCreate {
+	_c.mutation.SetSetupRequestDigest(v)
+	return _c
+}
+
+// SetNillableSetupRequestDigest sets the "setup_request_digest" field if the given value is not nil.
+func (_c *InstallationCreate) SetNillableSetupRequestDigest(v *string) *InstallationCreate {
+	if v != nil {
+		_c.SetSetupRequestDigest(*v)
+	}
+	return _c
+}
+
 // SetInitializedAt sets the "initialized_at" field.
 func (_c *InstallationCreate) SetInitializedAt(v time.Time) *InstallationCreate {
 	_c.mutation.SetInitializedAt(v)
@@ -207,6 +263,26 @@ func (_c *InstallationCreate) check() error {
 			return &ValidationError{Name: "app_version", err: fmt.Errorf(`ent: validator failed for field "Installation.app_version": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.SetupOperationID(); ok {
+		if err := installation.SetupOperationIDValidator(v); err != nil {
+			return &ValidationError{Name: "setup_operation_id", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_operation_id": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SetupAdminID(); ok {
+		if err := installation.SetupAdminIDValidator(v); err != nil {
+			return &ValidationError{Name: "setup_admin_id", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_admin_id": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SetupConfigRevision(); ok {
+		if err := installation.SetupConfigRevisionValidator(v); err != nil {
+			return &ValidationError{Name: "setup_config_revision", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_config_revision": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SetupRequestDigest(); ok {
+		if err := installation.SetupRequestDigestValidator(v); err != nil {
+			return &ValidationError{Name: "setup_request_digest", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_request_digest": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.InitializedAt(); !ok {
 		return &ValidationError{Name: "initialized_at", err: errors.New(`ent: missing required field "Installation.initialized_at"`)}
 	}
@@ -266,6 +342,22 @@ func (_c *InstallationCreate) createSpec() (*Installation, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.AppVersion(); ok {
 		_spec.SetField(installation.FieldAppVersion, field.TypeString, value)
 		_node.AppVersion = value
+	}
+	if value, ok := _c.mutation.SetupOperationID(); ok {
+		_spec.SetField(installation.FieldSetupOperationID, field.TypeString, value)
+		_node.SetupOperationID = &value
+	}
+	if value, ok := _c.mutation.SetupAdminID(); ok {
+		_spec.SetField(installation.FieldSetupAdminID, field.TypeInt64, value)
+		_node.SetupAdminID = &value
+	}
+	if value, ok := _c.mutation.SetupConfigRevision(); ok {
+		_spec.SetField(installation.FieldSetupConfigRevision, field.TypeInt, value)
+		_node.SetupConfigRevision = &value
+	}
+	if value, ok := _c.mutation.SetupRequestDigest(); ok {
+		_spec.SetField(installation.FieldSetupRequestDigest, field.TypeString, value)
+		_node.SetupRequestDigest = &value
 	}
 	if value, ok := _c.mutation.InitializedAt(); ok {
 		_spec.SetField(installation.FieldInitializedAt, field.TypeTime, value)

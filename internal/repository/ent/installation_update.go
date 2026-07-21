@@ -90,6 +90,100 @@ func (_u *InstallationUpdate) SetNillableAppVersion(v *string) *InstallationUpda
 	return _u
 }
 
+// SetSetupOperationID sets the "setup_operation_id" field.
+func (_u *InstallationUpdate) SetSetupOperationID(v string) *InstallationUpdate {
+	_u.mutation.SetSetupOperationID(v)
+	return _u
+}
+
+// SetNillableSetupOperationID sets the "setup_operation_id" field if the given value is not nil.
+func (_u *InstallationUpdate) SetNillableSetupOperationID(v *string) *InstallationUpdate {
+	if v != nil {
+		_u.SetSetupOperationID(*v)
+	}
+	return _u
+}
+
+// ClearSetupOperationID clears the value of the "setup_operation_id" field.
+func (_u *InstallationUpdate) ClearSetupOperationID() *InstallationUpdate {
+	_u.mutation.ClearSetupOperationID()
+	return _u
+}
+
+// SetSetupAdminID sets the "setup_admin_id" field.
+func (_u *InstallationUpdate) SetSetupAdminID(v int64) *InstallationUpdate {
+	_u.mutation.ResetSetupAdminID()
+	_u.mutation.SetSetupAdminID(v)
+	return _u
+}
+
+// SetNillableSetupAdminID sets the "setup_admin_id" field if the given value is not nil.
+func (_u *InstallationUpdate) SetNillableSetupAdminID(v *int64) *InstallationUpdate {
+	if v != nil {
+		_u.SetSetupAdminID(*v)
+	}
+	return _u
+}
+
+// AddSetupAdminID adds value to the "setup_admin_id" field.
+func (_u *InstallationUpdate) AddSetupAdminID(v int64) *InstallationUpdate {
+	_u.mutation.AddSetupAdminID(v)
+	return _u
+}
+
+// ClearSetupAdminID clears the value of the "setup_admin_id" field.
+func (_u *InstallationUpdate) ClearSetupAdminID() *InstallationUpdate {
+	_u.mutation.ClearSetupAdminID()
+	return _u
+}
+
+// SetSetupConfigRevision sets the "setup_config_revision" field.
+func (_u *InstallationUpdate) SetSetupConfigRevision(v int) *InstallationUpdate {
+	_u.mutation.ResetSetupConfigRevision()
+	_u.mutation.SetSetupConfigRevision(v)
+	return _u
+}
+
+// SetNillableSetupConfigRevision sets the "setup_config_revision" field if the given value is not nil.
+func (_u *InstallationUpdate) SetNillableSetupConfigRevision(v *int) *InstallationUpdate {
+	if v != nil {
+		_u.SetSetupConfigRevision(*v)
+	}
+	return _u
+}
+
+// AddSetupConfigRevision adds value to the "setup_config_revision" field.
+func (_u *InstallationUpdate) AddSetupConfigRevision(v int) *InstallationUpdate {
+	_u.mutation.AddSetupConfigRevision(v)
+	return _u
+}
+
+// ClearSetupConfigRevision clears the value of the "setup_config_revision" field.
+func (_u *InstallationUpdate) ClearSetupConfigRevision() *InstallationUpdate {
+	_u.mutation.ClearSetupConfigRevision()
+	return _u
+}
+
+// SetSetupRequestDigest sets the "setup_request_digest" field.
+func (_u *InstallationUpdate) SetSetupRequestDigest(v string) *InstallationUpdate {
+	_u.mutation.SetSetupRequestDigest(v)
+	return _u
+}
+
+// SetNillableSetupRequestDigest sets the "setup_request_digest" field if the given value is not nil.
+func (_u *InstallationUpdate) SetNillableSetupRequestDigest(v *string) *InstallationUpdate {
+	if v != nil {
+		_u.SetSetupRequestDigest(*v)
+	}
+	return _u
+}
+
+// ClearSetupRequestDigest clears the value of the "setup_request_digest" field.
+func (_u *InstallationUpdate) ClearSetupRequestDigest() *InstallationUpdate {
+	_u.mutation.ClearSetupRequestDigest()
+	return _u
+}
+
 // SetMigratedAt sets the "migrated_at" field.
 func (_u *InstallationUpdate) SetMigratedAt(v time.Time) *InstallationUpdate {
 	_u.mutation.SetMigratedAt(v)
@@ -162,6 +256,26 @@ func (_u *InstallationUpdate) check() error {
 			return &ValidationError{Name: "app_version", err: fmt.Errorf(`ent: validator failed for field "Installation.app_version": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SetupOperationID(); ok {
+		if err := installation.SetupOperationIDValidator(v); err != nil {
+			return &ValidationError{Name: "setup_operation_id", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_operation_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SetupAdminID(); ok {
+		if err := installation.SetupAdminIDValidator(v); err != nil {
+			return &ValidationError{Name: "setup_admin_id", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_admin_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SetupConfigRevision(); ok {
+		if err := installation.SetupConfigRevisionValidator(v); err != nil {
+			return &ValidationError{Name: "setup_config_revision", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_config_revision": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SetupRequestDigest(); ok {
+		if err := installation.SetupRequestDigestValidator(v); err != nil {
+			return &ValidationError{Name: "setup_request_digest", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_request_digest": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -194,6 +308,36 @@ func (_u *InstallationUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.AppVersion(); ok {
 		_spec.SetField(installation.FieldAppVersion, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SetupOperationID(); ok {
+		_spec.SetField(installation.FieldSetupOperationID, field.TypeString, value)
+	}
+	if _u.mutation.SetupOperationIDCleared() {
+		_spec.ClearField(installation.FieldSetupOperationID, field.TypeString)
+	}
+	if value, ok := _u.mutation.SetupAdminID(); ok {
+		_spec.SetField(installation.FieldSetupAdminID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSetupAdminID(); ok {
+		_spec.AddField(installation.FieldSetupAdminID, field.TypeInt64, value)
+	}
+	if _u.mutation.SetupAdminIDCleared() {
+		_spec.ClearField(installation.FieldSetupAdminID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.SetupConfigRevision(); ok {
+		_spec.SetField(installation.FieldSetupConfigRevision, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSetupConfigRevision(); ok {
+		_spec.AddField(installation.FieldSetupConfigRevision, field.TypeInt, value)
+	}
+	if _u.mutation.SetupConfigRevisionCleared() {
+		_spec.ClearField(installation.FieldSetupConfigRevision, field.TypeInt)
+	}
+	if value, ok := _u.mutation.SetupRequestDigest(); ok {
+		_spec.SetField(installation.FieldSetupRequestDigest, field.TypeString, value)
+	}
+	if _u.mutation.SetupRequestDigestCleared() {
+		_spec.ClearField(installation.FieldSetupRequestDigest, field.TypeString)
 	}
 	if value, ok := _u.mutation.MigratedAt(); ok {
 		_spec.SetField(installation.FieldMigratedAt, field.TypeTime, value)
@@ -277,6 +421,100 @@ func (_u *InstallationUpdateOne) SetNillableAppVersion(v *string) *InstallationU
 	if v != nil {
 		_u.SetAppVersion(*v)
 	}
+	return _u
+}
+
+// SetSetupOperationID sets the "setup_operation_id" field.
+func (_u *InstallationUpdateOne) SetSetupOperationID(v string) *InstallationUpdateOne {
+	_u.mutation.SetSetupOperationID(v)
+	return _u
+}
+
+// SetNillableSetupOperationID sets the "setup_operation_id" field if the given value is not nil.
+func (_u *InstallationUpdateOne) SetNillableSetupOperationID(v *string) *InstallationUpdateOne {
+	if v != nil {
+		_u.SetSetupOperationID(*v)
+	}
+	return _u
+}
+
+// ClearSetupOperationID clears the value of the "setup_operation_id" field.
+func (_u *InstallationUpdateOne) ClearSetupOperationID() *InstallationUpdateOne {
+	_u.mutation.ClearSetupOperationID()
+	return _u
+}
+
+// SetSetupAdminID sets the "setup_admin_id" field.
+func (_u *InstallationUpdateOne) SetSetupAdminID(v int64) *InstallationUpdateOne {
+	_u.mutation.ResetSetupAdminID()
+	_u.mutation.SetSetupAdminID(v)
+	return _u
+}
+
+// SetNillableSetupAdminID sets the "setup_admin_id" field if the given value is not nil.
+func (_u *InstallationUpdateOne) SetNillableSetupAdminID(v *int64) *InstallationUpdateOne {
+	if v != nil {
+		_u.SetSetupAdminID(*v)
+	}
+	return _u
+}
+
+// AddSetupAdminID adds value to the "setup_admin_id" field.
+func (_u *InstallationUpdateOne) AddSetupAdminID(v int64) *InstallationUpdateOne {
+	_u.mutation.AddSetupAdminID(v)
+	return _u
+}
+
+// ClearSetupAdminID clears the value of the "setup_admin_id" field.
+func (_u *InstallationUpdateOne) ClearSetupAdminID() *InstallationUpdateOne {
+	_u.mutation.ClearSetupAdminID()
+	return _u
+}
+
+// SetSetupConfigRevision sets the "setup_config_revision" field.
+func (_u *InstallationUpdateOne) SetSetupConfigRevision(v int) *InstallationUpdateOne {
+	_u.mutation.ResetSetupConfigRevision()
+	_u.mutation.SetSetupConfigRevision(v)
+	return _u
+}
+
+// SetNillableSetupConfigRevision sets the "setup_config_revision" field if the given value is not nil.
+func (_u *InstallationUpdateOne) SetNillableSetupConfigRevision(v *int) *InstallationUpdateOne {
+	if v != nil {
+		_u.SetSetupConfigRevision(*v)
+	}
+	return _u
+}
+
+// AddSetupConfigRevision adds value to the "setup_config_revision" field.
+func (_u *InstallationUpdateOne) AddSetupConfigRevision(v int) *InstallationUpdateOne {
+	_u.mutation.AddSetupConfigRevision(v)
+	return _u
+}
+
+// ClearSetupConfigRevision clears the value of the "setup_config_revision" field.
+func (_u *InstallationUpdateOne) ClearSetupConfigRevision() *InstallationUpdateOne {
+	_u.mutation.ClearSetupConfigRevision()
+	return _u
+}
+
+// SetSetupRequestDigest sets the "setup_request_digest" field.
+func (_u *InstallationUpdateOne) SetSetupRequestDigest(v string) *InstallationUpdateOne {
+	_u.mutation.SetSetupRequestDigest(v)
+	return _u
+}
+
+// SetNillableSetupRequestDigest sets the "setup_request_digest" field if the given value is not nil.
+func (_u *InstallationUpdateOne) SetNillableSetupRequestDigest(v *string) *InstallationUpdateOne {
+	if v != nil {
+		_u.SetSetupRequestDigest(*v)
+	}
+	return _u
+}
+
+// ClearSetupRequestDigest clears the value of the "setup_request_digest" field.
+func (_u *InstallationUpdateOne) ClearSetupRequestDigest() *InstallationUpdateOne {
+	_u.mutation.ClearSetupRequestDigest()
 	return _u
 }
 
@@ -365,6 +603,26 @@ func (_u *InstallationUpdateOne) check() error {
 			return &ValidationError{Name: "app_version", err: fmt.Errorf(`ent: validator failed for field "Installation.app_version": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SetupOperationID(); ok {
+		if err := installation.SetupOperationIDValidator(v); err != nil {
+			return &ValidationError{Name: "setup_operation_id", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_operation_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SetupAdminID(); ok {
+		if err := installation.SetupAdminIDValidator(v); err != nil {
+			return &ValidationError{Name: "setup_admin_id", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_admin_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SetupConfigRevision(); ok {
+		if err := installation.SetupConfigRevisionValidator(v); err != nil {
+			return &ValidationError{Name: "setup_config_revision", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_config_revision": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SetupRequestDigest(); ok {
+		if err := installation.SetupRequestDigestValidator(v); err != nil {
+			return &ValidationError{Name: "setup_request_digest", err: fmt.Errorf(`ent: validator failed for field "Installation.setup_request_digest": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -414,6 +672,36 @@ func (_u *InstallationUpdateOne) sqlSave(ctx context.Context) (_node *Installati
 	}
 	if value, ok := _u.mutation.AppVersion(); ok {
 		_spec.SetField(installation.FieldAppVersion, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SetupOperationID(); ok {
+		_spec.SetField(installation.FieldSetupOperationID, field.TypeString, value)
+	}
+	if _u.mutation.SetupOperationIDCleared() {
+		_spec.ClearField(installation.FieldSetupOperationID, field.TypeString)
+	}
+	if value, ok := _u.mutation.SetupAdminID(); ok {
+		_spec.SetField(installation.FieldSetupAdminID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSetupAdminID(); ok {
+		_spec.AddField(installation.FieldSetupAdminID, field.TypeInt64, value)
+	}
+	if _u.mutation.SetupAdminIDCleared() {
+		_spec.ClearField(installation.FieldSetupAdminID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.SetupConfigRevision(); ok {
+		_spec.SetField(installation.FieldSetupConfigRevision, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSetupConfigRevision(); ok {
+		_spec.AddField(installation.FieldSetupConfigRevision, field.TypeInt, value)
+	}
+	if _u.mutation.SetupConfigRevisionCleared() {
+		_spec.ClearField(installation.FieldSetupConfigRevision, field.TypeInt)
+	}
+	if value, ok := _u.mutation.SetupRequestDigest(); ok {
+		_spec.SetField(installation.FieldSetupRequestDigest, field.TypeString, value)
+	}
+	if _u.mutation.SetupRequestDigestCleared() {
+		_spec.ClearField(installation.FieldSetupRequestDigest, field.TypeString)
 	}
 	if value, ok := _u.mutation.MigratedAt(); ok {
 		_spec.SetField(installation.FieldMigratedAt, field.TypeTime, value)

@@ -420,6 +420,24 @@ func TestCompletedServiceCanStartWithoutPlaintextToken(t *testing.T) {
 	}
 }
 
+func TestFailClosedCompletionPermanentlyInvalidatesSetupAuthentication(t *testing.T) {
+	token := generatedTokenForTest(t, 31)
+	service := newAuthServiceForTest(t, token, 4, false, defaultTestRateLimit())
+	if _, err := service.PrepareCompletion(); err != nil {
+		t.Fatalf("PrepareCompletion: %v", err)
+	}
+	service.FailClosedCompletion()
+	if _, err := service.Exchange("192.0.2.31", token); !errors.Is(err, ErrCompleted) {
+		t.Fatalf("Exchange after fail-close error=%v", err)
+	}
+	if _, err := service.PrepareCompletion(); !errors.Is(err, ErrCompleted) {
+		t.Fatalf("PrepareCompletion after fail-close error=%v", err)
+	}
+	if state := service.debugStateForTest(); strings.Contains(state, token) {
+		t.Fatalf("fail-closed state retained plaintext token: %s", state)
+	}
+}
+
 func TestAuthServiceConcurrentExchangeRotateAndCompletionIsRaceSafe(t *testing.T) {
 	token := generatedTokenForTest(t, 8)
 	service := newAuthServiceForTest(t, token, 1, false, testRateLimitConfig(time.Minute, 10000, 10000, 10000))

@@ -12757,6 +12757,12 @@ type InstallationMutation struct {
 	database_schema_version    *int
 	adddatabase_schema_version *int
 	app_version                *string
+	setup_operation_id         *string
+	setup_admin_id             *int64
+	addsetup_admin_id          *int64
+	setup_config_revision      *int
+	addsetup_config_revision   *int
+	setup_request_digest       *string
 	initialized_at             *time.Time
 	migrated_at                *time.Time
 	clearedFields              map[string]struct{}
@@ -13155,6 +13161,244 @@ func (m *InstallationMutation) ResetAppVersion() {
 	m.app_version = nil
 }
 
+// SetSetupOperationID sets the "setup_operation_id" field.
+func (m *InstallationMutation) SetSetupOperationID(s string) {
+	m.setup_operation_id = &s
+}
+
+// SetupOperationID returns the value of the "setup_operation_id" field in the mutation.
+func (m *InstallationMutation) SetupOperationID() (r string, exists bool) {
+	v := m.setup_operation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSetupOperationID returns the old "setup_operation_id" field's value of the Installation entity.
+// If the Installation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstallationMutation) OldSetupOperationID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSetupOperationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSetupOperationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSetupOperationID: %w", err)
+	}
+	return oldValue.SetupOperationID, nil
+}
+
+// ClearSetupOperationID clears the value of the "setup_operation_id" field.
+func (m *InstallationMutation) ClearSetupOperationID() {
+	m.setup_operation_id = nil
+	m.clearedFields[installation.FieldSetupOperationID] = struct{}{}
+}
+
+// SetupOperationIDCleared returns if the "setup_operation_id" field was cleared in this mutation.
+func (m *InstallationMutation) SetupOperationIDCleared() bool {
+	_, ok := m.clearedFields[installation.FieldSetupOperationID]
+	return ok
+}
+
+// ResetSetupOperationID resets all changes to the "setup_operation_id" field.
+func (m *InstallationMutation) ResetSetupOperationID() {
+	m.setup_operation_id = nil
+	delete(m.clearedFields, installation.FieldSetupOperationID)
+}
+
+// SetSetupAdminID sets the "setup_admin_id" field.
+func (m *InstallationMutation) SetSetupAdminID(i int64) {
+	m.setup_admin_id = &i
+	m.addsetup_admin_id = nil
+}
+
+// SetupAdminID returns the value of the "setup_admin_id" field in the mutation.
+func (m *InstallationMutation) SetupAdminID() (r int64, exists bool) {
+	v := m.setup_admin_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSetupAdminID returns the old "setup_admin_id" field's value of the Installation entity.
+// If the Installation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstallationMutation) OldSetupAdminID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSetupAdminID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSetupAdminID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSetupAdminID: %w", err)
+	}
+	return oldValue.SetupAdminID, nil
+}
+
+// AddSetupAdminID adds i to the "setup_admin_id" field.
+func (m *InstallationMutation) AddSetupAdminID(i int64) {
+	if m.addsetup_admin_id != nil {
+		*m.addsetup_admin_id += i
+	} else {
+		m.addsetup_admin_id = &i
+	}
+}
+
+// AddedSetupAdminID returns the value that was added to the "setup_admin_id" field in this mutation.
+func (m *InstallationMutation) AddedSetupAdminID() (r int64, exists bool) {
+	v := m.addsetup_admin_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSetupAdminID clears the value of the "setup_admin_id" field.
+func (m *InstallationMutation) ClearSetupAdminID() {
+	m.setup_admin_id = nil
+	m.addsetup_admin_id = nil
+	m.clearedFields[installation.FieldSetupAdminID] = struct{}{}
+}
+
+// SetupAdminIDCleared returns if the "setup_admin_id" field was cleared in this mutation.
+func (m *InstallationMutation) SetupAdminIDCleared() bool {
+	_, ok := m.clearedFields[installation.FieldSetupAdminID]
+	return ok
+}
+
+// ResetSetupAdminID resets all changes to the "setup_admin_id" field.
+func (m *InstallationMutation) ResetSetupAdminID() {
+	m.setup_admin_id = nil
+	m.addsetup_admin_id = nil
+	delete(m.clearedFields, installation.FieldSetupAdminID)
+}
+
+// SetSetupConfigRevision sets the "setup_config_revision" field.
+func (m *InstallationMutation) SetSetupConfigRevision(i int) {
+	m.setup_config_revision = &i
+	m.addsetup_config_revision = nil
+}
+
+// SetupConfigRevision returns the value of the "setup_config_revision" field in the mutation.
+func (m *InstallationMutation) SetupConfigRevision() (r int, exists bool) {
+	v := m.setup_config_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSetupConfigRevision returns the old "setup_config_revision" field's value of the Installation entity.
+// If the Installation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstallationMutation) OldSetupConfigRevision(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSetupConfigRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSetupConfigRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSetupConfigRevision: %w", err)
+	}
+	return oldValue.SetupConfigRevision, nil
+}
+
+// AddSetupConfigRevision adds i to the "setup_config_revision" field.
+func (m *InstallationMutation) AddSetupConfigRevision(i int) {
+	if m.addsetup_config_revision != nil {
+		*m.addsetup_config_revision += i
+	} else {
+		m.addsetup_config_revision = &i
+	}
+}
+
+// AddedSetupConfigRevision returns the value that was added to the "setup_config_revision" field in this mutation.
+func (m *InstallationMutation) AddedSetupConfigRevision() (r int, exists bool) {
+	v := m.addsetup_config_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSetupConfigRevision clears the value of the "setup_config_revision" field.
+func (m *InstallationMutation) ClearSetupConfigRevision() {
+	m.setup_config_revision = nil
+	m.addsetup_config_revision = nil
+	m.clearedFields[installation.FieldSetupConfigRevision] = struct{}{}
+}
+
+// SetupConfigRevisionCleared returns if the "setup_config_revision" field was cleared in this mutation.
+func (m *InstallationMutation) SetupConfigRevisionCleared() bool {
+	_, ok := m.clearedFields[installation.FieldSetupConfigRevision]
+	return ok
+}
+
+// ResetSetupConfigRevision resets all changes to the "setup_config_revision" field.
+func (m *InstallationMutation) ResetSetupConfigRevision() {
+	m.setup_config_revision = nil
+	m.addsetup_config_revision = nil
+	delete(m.clearedFields, installation.FieldSetupConfigRevision)
+}
+
+// SetSetupRequestDigest sets the "setup_request_digest" field.
+func (m *InstallationMutation) SetSetupRequestDigest(s string) {
+	m.setup_request_digest = &s
+}
+
+// SetupRequestDigest returns the value of the "setup_request_digest" field in the mutation.
+func (m *InstallationMutation) SetupRequestDigest() (r string, exists bool) {
+	v := m.setup_request_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSetupRequestDigest returns the old "setup_request_digest" field's value of the Installation entity.
+// If the Installation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstallationMutation) OldSetupRequestDigest(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSetupRequestDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSetupRequestDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSetupRequestDigest: %w", err)
+	}
+	return oldValue.SetupRequestDigest, nil
+}
+
+// ClearSetupRequestDigest clears the value of the "setup_request_digest" field.
+func (m *InstallationMutation) ClearSetupRequestDigest() {
+	m.setup_request_digest = nil
+	m.clearedFields[installation.FieldSetupRequestDigest] = struct{}{}
+}
+
+// SetupRequestDigestCleared returns if the "setup_request_digest" field was cleared in this mutation.
+func (m *InstallationMutation) SetupRequestDigestCleared() bool {
+	_, ok := m.clearedFields[installation.FieldSetupRequestDigest]
+	return ok
+}
+
+// ResetSetupRequestDigest resets all changes to the "setup_request_digest" field.
+func (m *InstallationMutation) ResetSetupRequestDigest() {
+	m.setup_request_digest = nil
+	delete(m.clearedFields, installation.FieldSetupRequestDigest)
+}
+
 // SetInitializedAt sets the "initialized_at" field.
 func (m *InstallationMutation) SetInitializedAt(t time.Time) {
 	m.initialized_at = &t
@@ -13261,7 +13505,7 @@ func (m *InstallationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InstallationMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 13)
 	if m.created_at != nil {
 		fields = append(fields, installation.FieldCreatedAt)
 	}
@@ -13282,6 +13526,18 @@ func (m *InstallationMutation) Fields() []string {
 	}
 	if m.app_version != nil {
 		fields = append(fields, installation.FieldAppVersion)
+	}
+	if m.setup_operation_id != nil {
+		fields = append(fields, installation.FieldSetupOperationID)
+	}
+	if m.setup_admin_id != nil {
+		fields = append(fields, installation.FieldSetupAdminID)
+	}
+	if m.setup_config_revision != nil {
+		fields = append(fields, installation.FieldSetupConfigRevision)
+	}
+	if m.setup_request_digest != nil {
+		fields = append(fields, installation.FieldSetupRequestDigest)
 	}
 	if m.initialized_at != nil {
 		fields = append(fields, installation.FieldInitializedAt)
@@ -13311,6 +13567,14 @@ func (m *InstallationMutation) Field(name string) (ent.Value, bool) {
 		return m.DatabaseSchemaVersion()
 	case installation.FieldAppVersion:
 		return m.AppVersion()
+	case installation.FieldSetupOperationID:
+		return m.SetupOperationID()
+	case installation.FieldSetupAdminID:
+		return m.SetupAdminID()
+	case installation.FieldSetupConfigRevision:
+		return m.SetupConfigRevision()
+	case installation.FieldSetupRequestDigest:
+		return m.SetupRequestDigest()
 	case installation.FieldInitializedAt:
 		return m.InitializedAt()
 	case installation.FieldMigratedAt:
@@ -13338,6 +13602,14 @@ func (m *InstallationMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldDatabaseSchemaVersion(ctx)
 	case installation.FieldAppVersion:
 		return m.OldAppVersion(ctx)
+	case installation.FieldSetupOperationID:
+		return m.OldSetupOperationID(ctx)
+	case installation.FieldSetupAdminID:
+		return m.OldSetupAdminID(ctx)
+	case installation.FieldSetupConfigRevision:
+		return m.OldSetupConfigRevision(ctx)
+	case installation.FieldSetupRequestDigest:
+		return m.OldSetupRequestDigest(ctx)
 	case installation.FieldInitializedAt:
 		return m.OldInitializedAt(ctx)
 	case installation.FieldMigratedAt:
@@ -13400,6 +13672,34 @@ func (m *InstallationMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAppVersion(v)
 		return nil
+	case installation.FieldSetupOperationID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSetupOperationID(v)
+		return nil
+	case installation.FieldSetupAdminID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSetupAdminID(v)
+		return nil
+	case installation.FieldSetupConfigRevision:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSetupConfigRevision(v)
+		return nil
+	case installation.FieldSetupRequestDigest:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSetupRequestDigest(v)
+		return nil
 	case installation.FieldInitializedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -13428,6 +13728,12 @@ func (m *InstallationMutation) AddedFields() []string {
 	if m.adddatabase_schema_version != nil {
 		fields = append(fields, installation.FieldDatabaseSchemaVersion)
 	}
+	if m.addsetup_admin_id != nil {
+		fields = append(fields, installation.FieldSetupAdminID)
+	}
+	if m.addsetup_config_revision != nil {
+		fields = append(fields, installation.FieldSetupConfigRevision)
+	}
 	return fields
 }
 
@@ -13440,6 +13746,10 @@ func (m *InstallationMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedConfigSchemaVersion()
 	case installation.FieldDatabaseSchemaVersion:
 		return m.AddedDatabaseSchemaVersion()
+	case installation.FieldSetupAdminID:
+		return m.AddedSetupAdminID()
+	case installation.FieldSetupConfigRevision:
+		return m.AddedSetupConfigRevision()
 	}
 	return nil, false
 }
@@ -13463,6 +13773,20 @@ func (m *InstallationMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddDatabaseSchemaVersion(v)
 		return nil
+	case installation.FieldSetupAdminID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSetupAdminID(v)
+		return nil
+	case installation.FieldSetupConfigRevision:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSetupConfigRevision(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Installation numeric field %s", name)
 }
@@ -13470,7 +13794,20 @@ func (m *InstallationMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *InstallationMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(installation.FieldSetupOperationID) {
+		fields = append(fields, installation.FieldSetupOperationID)
+	}
+	if m.FieldCleared(installation.FieldSetupAdminID) {
+		fields = append(fields, installation.FieldSetupAdminID)
+	}
+	if m.FieldCleared(installation.FieldSetupConfigRevision) {
+		fields = append(fields, installation.FieldSetupConfigRevision)
+	}
+	if m.FieldCleared(installation.FieldSetupRequestDigest) {
+		fields = append(fields, installation.FieldSetupRequestDigest)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -13483,6 +13820,20 @@ func (m *InstallationMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *InstallationMutation) ClearField(name string) error {
+	switch name {
+	case installation.FieldSetupOperationID:
+		m.ClearSetupOperationID()
+		return nil
+	case installation.FieldSetupAdminID:
+		m.ClearSetupAdminID()
+		return nil
+	case installation.FieldSetupConfigRevision:
+		m.ClearSetupConfigRevision()
+		return nil
+	case installation.FieldSetupRequestDigest:
+		m.ClearSetupRequestDigest()
+		return nil
+	}
 	return fmt.Errorf("unknown Installation nullable field %s", name)
 }
 
@@ -13510,6 +13861,18 @@ func (m *InstallationMutation) ResetField(name string) error {
 		return nil
 	case installation.FieldAppVersion:
 		m.ResetAppVersion()
+		return nil
+	case installation.FieldSetupOperationID:
+		m.ResetSetupOperationID()
+		return nil
+	case installation.FieldSetupAdminID:
+		m.ResetSetupAdminID()
+		return nil
+	case installation.FieldSetupConfigRevision:
+		m.ResetSetupConfigRevision()
+		return nil
+	case installation.FieldSetupRequestDigest:
+		m.ResetSetupRequestDigest()
 		return nil
 	case installation.FieldInitializedAt:
 		m.ResetInitializedAt()

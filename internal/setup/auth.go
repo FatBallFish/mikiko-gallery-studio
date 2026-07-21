@@ -440,6 +440,20 @@ func (service *AuthService) AbortCompletion(prepared PreparedCompletion) error {
 	return nil
 }
 
+// FailClosedCompletion permanently closes setup authentication after the
+// completed runtime file has crossed its atomic rename boundary. At that point
+// reopening setup would be less safe than requiring startup reconciliation.
+func (service *AuthService) FailClosedCompletion() {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.pendingCompletion != nil {
+		service.pendingCompletion.clear()
+		service.pendingCompletion = nil
+	}
+	service.completed = true
+	service.clearSecretsLocked()
+}
+
 func (service *AuthService) Version() uint64 {
 	service.mu.Lock()
 	defer service.mu.Unlock()

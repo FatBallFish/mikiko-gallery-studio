@@ -631,11 +631,19 @@ func (s *Service) evictSessionFamilyLocked(familyID string) {
 }
 
 func HashPassword(password string) string {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := HashPasswordChecked(password)
 	if err != nil {
 		panic(err)
 	}
-	return bcryptPasswordHashPrefix + "$" + string(hashed)
+	return hash
+}
+
+func HashPasswordChecked(password string) (string, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("hash admin password: %w", err)
+	}
+	return bcryptPasswordHashPrefix + "$" + string(hashed), nil
 }
 
 func HashPasswordForTest(password, salt string) string {
@@ -656,7 +664,15 @@ func VerifyPassword(encodedHash string, password string) bool {
 }
 
 func PasswordNeedsRehash(encodedHash string) bool {
-	return !strings.HasPrefix(encodedHash, bcryptPasswordHashPrefix+"$")
+	return !IsCurrentPasswordHash(encodedHash)
+}
+
+func IsCurrentPasswordHash(encodedHash string) bool {
+	if !strings.HasPrefix(encodedHash, bcryptPasswordHashPrefix+"$") {
+		return false
+	}
+	cost, err := bcrypt.Cost([]byte(strings.TrimPrefix(encodedHash, bcryptPasswordHashPrefix+"$")))
+	return err == nil && cost >= bcrypt.DefaultCost
 }
 
 func (s *Service) checkLoginLock(email string) error {

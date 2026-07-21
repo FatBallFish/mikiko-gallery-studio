@@ -81,6 +81,10 @@ func TestInstallationSchemaEnforcesSingletonIdentityAndVersions(t *testing.T) {
 		"config_schema_version",
 		"database_schema_version",
 		"app_version",
+		"setup_operation_id",
+		"setup_admin_id",
+		"setup_config_revision",
+		"setup_request_digest",
 		"initialized_at",
 		"migrated_at",
 	} {
@@ -93,6 +97,12 @@ func TestInstallationSchemaEnforcesSingletonIdentityAndVersions(t *testing.T) {
 	}
 	if !hasIndexFields(Installation{}.Indexes(), []string{"installation_id"}, true) {
 		t.Fatal("installations must uniquely index installation_id")
+	}
+	if !hasIndexFields(Installation{}.Indexes(), []string{"setup_operation_id"}, true) {
+		t.Fatal("installations must uniquely index setup_operation_id")
+	}
+	if !fields["setup_request_digest"].Sensitive {
+		t.Fatal("setup_request_digest must be marked sensitive")
 	}
 	annotations := Installation{}.Annotations()
 	if len(annotations) != 1 {

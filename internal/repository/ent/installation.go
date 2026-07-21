@@ -31,6 +31,14 @@ type Installation struct {
 	DatabaseSchemaVersion int `json:"database_schema_version,omitempty"`
 	// AppVersion holds the value of the "app_version" field.
 	AppVersion string `json:"app_version,omitempty"`
+	// SetupOperationID holds the value of the "setup_operation_id" field.
+	SetupOperationID *string `json:"setup_operation_id,omitempty"`
+	// SetupAdminID holds the value of the "setup_admin_id" field.
+	SetupAdminID *int64 `json:"setup_admin_id,omitempty"`
+	// SetupConfigRevision holds the value of the "setup_config_revision" field.
+	SetupConfigRevision *int `json:"setup_config_revision,omitempty"`
+	// SetupRequestDigest holds the value of the "setup_request_digest" field.
+	SetupRequestDigest *string `json:"-"`
 	// InitializedAt holds the value of the "initialized_at" field.
 	InitializedAt time.Time `json:"initialized_at,omitempty"`
 	// MigratedAt holds the value of the "migrated_at" field.
@@ -43,9 +51,9 @@ func (*Installation) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case installation.FieldID, installation.FieldConfigSchemaVersion, installation.FieldDatabaseSchemaVersion:
+		case installation.FieldID, installation.FieldConfigSchemaVersion, installation.FieldDatabaseSchemaVersion, installation.FieldSetupAdminID, installation.FieldSetupConfigRevision:
 			values[i] = new(sql.NullInt64)
-		case installation.FieldSingletonKey, installation.FieldInstallationID, installation.FieldAppVersion:
+		case installation.FieldSingletonKey, installation.FieldInstallationID, installation.FieldAppVersion, installation.FieldSetupOperationID, installation.FieldSetupRequestDigest:
 			values[i] = new(sql.NullString)
 		case installation.FieldCreatedAt, installation.FieldUpdatedAt, installation.FieldInitializedAt, installation.FieldMigratedAt:
 			values[i] = new(sql.NullTime)
@@ -111,6 +119,34 @@ func (_m *Installation) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field app_version", values[i])
 			} else if value.Valid {
 				_m.AppVersion = value.String
+			}
+		case installation.FieldSetupOperationID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field setup_operation_id", values[i])
+			} else if value.Valid {
+				_m.SetupOperationID = new(string)
+				*_m.SetupOperationID = value.String
+			}
+		case installation.FieldSetupAdminID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field setup_admin_id", values[i])
+			} else if value.Valid {
+				_m.SetupAdminID = new(int64)
+				*_m.SetupAdminID = value.Int64
+			}
+		case installation.FieldSetupConfigRevision:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field setup_config_revision", values[i])
+			} else if value.Valid {
+				_m.SetupConfigRevision = new(int)
+				*_m.SetupConfigRevision = int(value.Int64)
+			}
+		case installation.FieldSetupRequestDigest:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field setup_request_digest", values[i])
+			} else if value.Valid {
+				_m.SetupRequestDigest = new(string)
+				*_m.SetupRequestDigest = value.String
 			}
 		case installation.FieldInitializedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -180,6 +216,23 @@ func (_m *Installation) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("app_version=")
 	builder.WriteString(_m.AppVersion)
+	builder.WriteString(", ")
+	if v := _m.SetupOperationID; v != nil {
+		builder.WriteString("setup_operation_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.SetupAdminID; v != nil {
+		builder.WriteString("setup_admin_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.SetupConfigRevision; v != nil {
+		builder.WriteString("setup_config_revision=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("setup_request_digest=<sensitive>")
 	builder.WriteString(", ")
 	builder.WriteString("initialized_at=")
 	builder.WriteString(_m.InitializedAt.Format(time.ANSIC))

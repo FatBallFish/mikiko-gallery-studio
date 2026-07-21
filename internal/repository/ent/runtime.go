@@ -1041,12 +1041,56 @@ func init() {
 			return nil
 		}
 	}()
+	// installationDescSetupOperationID is the schema descriptor for setup_operation_id field.
+	installationDescSetupOperationID := installationFields[5].Descriptor()
+	// installation.SetupOperationIDValidator is a validator for the "setup_operation_id" field. It is called by the builders before save.
+	installation.SetupOperationIDValidator = func() func(string) error {
+		validators := installationDescSetupOperationID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(setup_operation_id string) error {
+			for _, fn := range fns {
+				if err := fn(setup_operation_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// installationDescSetupAdminID is the schema descriptor for setup_admin_id field.
+	installationDescSetupAdminID := installationFields[6].Descriptor()
+	// installation.SetupAdminIDValidator is a validator for the "setup_admin_id" field. It is called by the builders before save.
+	installation.SetupAdminIDValidator = installationDescSetupAdminID.Validators[0].(func(int64) error)
+	// installationDescSetupConfigRevision is the schema descriptor for setup_config_revision field.
+	installationDescSetupConfigRevision := installationFields[7].Descriptor()
+	// installation.SetupConfigRevisionValidator is a validator for the "setup_config_revision" field. It is called by the builders before save.
+	installation.SetupConfigRevisionValidator = installationDescSetupConfigRevision.Validators[0].(func(int) error)
+	// installationDescSetupRequestDigest is the schema descriptor for setup_request_digest field.
+	installationDescSetupRequestDigest := installationFields[8].Descriptor()
+	// installation.SetupRequestDigestValidator is a validator for the "setup_request_digest" field. It is called by the builders before save.
+	installation.SetupRequestDigestValidator = func() func(string) error {
+		validators := installationDescSetupRequestDigest.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(setup_request_digest string) error {
+			for _, fn := range fns {
+				if err := fn(setup_request_digest); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// installationDescInitializedAt is the schema descriptor for initialized_at field.
-	installationDescInitializedAt := installationFields[5].Descriptor()
+	installationDescInitializedAt := installationFields[9].Descriptor()
 	// installation.DefaultInitializedAt holds the default value on creation for the initialized_at field.
 	installation.DefaultInitializedAt = installationDescInitializedAt.Default.(func() time.Time)
 	// installationDescMigratedAt is the schema descriptor for migrated_at field.
-	installationDescMigratedAt := installationFields[6].Descriptor()
+	installationDescMigratedAt := installationFields[10].Descriptor()
 	// installation.DefaultMigratedAt holds the default value on creation for the migrated_at field.
 	installation.DefaultMigratedAt = installationDescMigratedAt.Default.(func() time.Time)
 	modelaccountMixin := schema.ModelAccount{}.Mixin()
