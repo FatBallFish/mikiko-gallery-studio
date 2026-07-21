@@ -6,6 +6,64 @@ import (
 	"testing"
 )
 
+func TestApplicationVersionValidationAndRuntimeRoundTrip(t *testing.T) {
+	valid := []string{
+		"v1.2.3",
+		"git-sha",
+		"build_2026+linux",
+		"sha256:abcdef0123456789",
+		strings.Repeat("a", 128),
+	}
+	for _, value := range valid {
+		if err := ValidateApplicationVersion(value); err != nil {
+			t.Fatalf("ValidateApplicationVersion(%q): %v", value, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		" v1.2.3",
+		"v1.2.3 ",
+		"v1 2",
+		"v1\t2",
+		"v1\rINJECTED=secret",
+		"v1\nINJECTED=secret",
+		"v1\x00secret",
+		"/v1",
+		strings.Repeat("a", 129),
+	}
+	for _, value := range invalid {
+		err := ValidateApplicationVersion(value)
+		if err == nil {
+			t.Fatalf("ValidateApplicationVersion accepted %q", value)
+		}
+		if (value != "" && strings.Contains(err.Error(), value)) || strings.ContainsAny(err.Error(), "\r\n\x00") {
+			t.Fatalf("application version error reflected unsafe input %q: %v", value, err)
+		}
+	}
+
+	versionField := runtimeSchemaFieldForTest(t, DefaultRuntimeSchema(), "APPLICATION_VERSION")
+	if err := versionField.Validate("v2.0.0+git-sha_1"); err != nil {
+		t.Fatalf("runtime schema rejected stable application version: %v", err)
+	}
+	if err := versionField.Validate("v2\nunsafe"); err == nil {
+		t.Fatal("runtime schema accepted an unsafe application version")
+	}
+	rendered, err := RenderRuntimeEnv(DefaultRuntimeSchema(), map[string]string{
+		"APPLICATION_VERSION": "v2.0.0+git-sha_1",
+	}, nil)
+	if err != nil {
+		t.Fatalf("render application version: %v", err)
+	}
+	document, err := ParseRuntimeEnv(rendered)
+	if err != nil {
+		t.Fatalf("parse rendered application version: %v", err)
+	}
+	if got := document.Values["APPLICATION_VERSION"]; got != "v2.0.0+git-sha_1" {
+		t.Fatalf("application version round trip = %q", got)
+	}
+}
+
 func TestRuntimeSchemaMetadataIsCompleteAndSafe(t *testing.T) {
 	schema := DefaultRuntimeSchema()
 	if schema.Version <= 0 {

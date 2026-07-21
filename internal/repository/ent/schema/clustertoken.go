@@ -16,7 +16,7 @@ func (ClusterToken) Mixin() []ent.Mixin { return []ent.Mixin{TimeMixin{}} }
 func (ClusterToken) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("token_id").MaxLen(128).NotEmpty().Match(stableIdentifierPattern).Immutable().Unique(),
-		field.String("token_hash").MaxLen(64).MinLen(64).Match(sha256HexPattern).Immutable().Unique(),
+		field.String("token_hash").MaxLen(64).MinLen(64).Match(sha256HexPattern).Immutable().Unique().Sensitive(),
 		field.String("installation_id").MaxLen(128).NotEmpty().Match(stableIdentifierPattern).Immutable(),
 		field.Enum("role").Values("api", "worker", "web"),
 		field.Time("expires_at").Immutable(),

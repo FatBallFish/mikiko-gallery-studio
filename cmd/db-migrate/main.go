@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/fatballfish/pic-gallery/internal/app"
+	"github.com/fatballfish/pic-gallery/internal/repository/db"
 )
 
 func main() {
@@ -28,8 +29,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf(
-		"database migration complete: installation=%s database_schema=%d config_schema=%d app=%s changed=%t backfilled=%d\n",
+	fmt.Println(formatMigrationResult(result))
+	return nil
+}
+
+func formatMigrationResult(result db.MigrationResult) string {
+	return fmt.Sprintf(
+		"database migration complete: installation=%s database_schema=%d config_schema=%d app=%q changed=%t backfilled=%d",
 		result.Current.InstallationID,
 		result.Current.DatabaseSchemaVersion,
 		result.Current.ConfigVersion,
@@ -37,5 +43,4 @@ func run() error {
 		result.Changed,
 		result.BackfilledRows,
 	)
-	return nil
 }

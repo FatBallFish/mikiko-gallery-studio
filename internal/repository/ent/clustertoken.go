@@ -24,7 +24,7 @@ type ClusterToken struct {
 	// TokenID holds the value of the "token_id" field.
 	TokenID string `json:"token_id,omitempty"`
 	// TokenHash holds the value of the "token_hash" field.
-	TokenHash string `json:"token_hash,omitempty"`
+	TokenHash string `json:"-"`
 	// InstallationID holds the value of the "installation_id" field.
 	InstallationID string `json:"installation_id,omitempty"`
 	// Role holds the value of the "role" field.
@@ -179,8 +179,7 @@ func (_m *ClusterToken) String() string {
 	builder.WriteString("token_id=")
 	builder.WriteString(_m.TokenID)
 	builder.WriteString(", ")
-	builder.WriteString("token_hash=")
-	builder.WriteString(_m.TokenHash)
+	builder.WriteString("token_hash=<sensitive>")
 	builder.WriteString(", ")
 	builder.WriteString("installation_id=")
 	builder.WriteString(_m.InstallationID)

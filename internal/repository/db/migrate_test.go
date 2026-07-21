@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect"
+	"github.com/fatballfish/pic-gallery/internal/config"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 )
 
@@ -63,8 +64,70 @@ func TestValidateSchemaVersionRejectsInvalidDatabaseVersion(t *testing.T) {
 	}
 }
 
+func TestPublicMigrationBoundariesRejectUnsupportedConfigSchemaBeforeDatabaseAccess(t *testing.T) {
+	for _, version := range []int{0, config.CurrentRuntimeSchemaVersion + 1, 999} {
+		t.Run(fmt.Sprintf("version_%d", version), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, err := Migrate(ctx, "postgres://app:do-not-leak@127.0.0.1:1/app", MigrationRequest{
+				InstallationID: "installation-test",
+				AppVersion:     "v1.2.3",
+				ConfigVersion:  version,
+			})
+			if err == nil {
+				t.Fatal("Migrate accepted unsupported configuration schema")
+			}
+			if errors.Is(err, context.Canceled) {
+				t.Fatalf("Migrate reached database access before rejecting schema %d: %v", version, err)
+			}
+			if !strings.Contains(err.Error(), fmt.Sprint(config.CurrentRuntimeSchemaVersion)) || strings.Contains(err.Error(), "do-not-leak") {
+				t.Fatalf("unsupported schema error is unsafe or unclear: %v", err)
+			}
+		})
+	}
+
+	client := openMigrationSQLite(t, "unsupported-expectation")
+	err := CheckSchemaCompatibility(context.Background(), client, SchemaVersion{
+		InstallationID:        "installation-test",
+		AppVersion:            "v1.2.3",
+		ConfigVersion:         999,
+		DatabaseSchemaVersion: CurrentDatabaseSchemaVersion,
+	})
+	if err == nil || strings.Contains(err.Error(), "no such table") {
+		t.Fatalf("CheckSchemaCompatibility did not reject unsupported expectation before query: %v", err)
+	}
+}
+
+func TestMigrationApplicationVersionUsesRuntimeValidator(t *testing.T) {
+	valid := []string{"v1.2.3", "git-sha", "build_1+linux", "sha256:abcdef"}
+	for _, version := range valid {
+		err := validateMigrationRequest("postgres://app:secret@localhost/app", MigrationRequest{
+			InstallationID: "installation-test",
+			AppVersion:     version,
+			ConfigVersion:  config.CurrentRuntimeSchemaVersion,
+		})
+		if err != nil {
+			t.Fatalf("valid application version %q rejected: %v", version, err)
+		}
+	}
+	invalid := []string{" v1", "v1 ", "v 1", "v1\tunsafe", "v1\rSECRET", "v1\nSECRET", "v1\x00SECRET"}
+	for _, version := range invalid {
+		err := validateMigrationRequest("postgres://app:secret@localhost/app", MigrationRequest{
+			InstallationID: "installation-test",
+			AppVersion:     version,
+			ConfigVersion:  config.CurrentRuntimeSchemaVersion,
+		})
+		if err == nil {
+			t.Fatalf("invalid application version %q accepted", version)
+		}
+		if strings.Contains(err.Error(), version) || strings.ContainsAny(err.Error(), "\r\n\x00") {
+			t.Fatalf("application version error reflected unsafe input %q: %v", version, err)
+		}
+	}
+}
+
 func TestPostgresAdvisoryLockerUsesFixedSessionLockKey(t *testing.T) {
-	session := &recordingSQLSession{}
+	session := &recordingSQLSession{unlockResult: true}
 	locker := newPostgresAdvisoryLocker(session)
 	if err := locker.Lock(context.Background()); err != nil {
 		t.Fatalf("Lock: %v", err)
@@ -84,6 +147,63 @@ func TestPostgresAdvisoryLockerUsesFixedSessionLockKey(t *testing.T) {
 			t.Fatalf("advisory lock must use fixed key %d: %#v", migrationAdvisoryLockKey, call.args)
 		}
 	}
+}
+
+func TestPostgresAdvisoryUnlockRequiresConfirmedTrueResult(t *testing.T) {
+	scanErr := errors.New("scan unlock result")
+	tests := []struct {
+		name      string
+		result    bool
+		scanErr   error
+		context   context.Context
+		wantError error
+		contains  string
+	}{
+		{name: "true", result: true},
+		{name: "false", contains: "was not held"},
+		{name: "scan error", result: true, scanErr: scanErr, wantError: scanErr},
+		{name: "context error", result: true, scanErr: context.Canceled, context: canceledContext(), wantError: context.Canceled},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := tt.context
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			session := &recordingSQLSession{unlockResult: tt.result, unlockErr: tt.scanErr}
+			err := newPostgresAdvisoryLocker(session).Unlock(ctx)
+			if tt.wantError == nil && tt.contains == "" {
+				if err != nil {
+					t.Fatalf("Unlock: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Unlock unexpectedly succeeded")
+			}
+			if tt.wantError != nil && !errors.Is(err, tt.wantError) {
+				t.Fatalf("Unlock error = %v, want cause %v", err, tt.wantError)
+			}
+			if tt.contains != "" && !strings.Contains(err.Error(), tt.contains) {
+				t.Fatalf("Unlock error = %v, want %q", err, tt.contains)
+			}
+		})
+	}
+}
+
+func TestPostgresAdvisoryLockPropagatesSQLAndContextErrors(t *testing.T) {
+	sqlErr := errors.New("lock SQL failed")
+	if err := newPostgresAdvisoryLocker(&recordingSQLSession{execErr: sqlErr}).Lock(context.Background()); !errors.Is(err, sqlErr) {
+		t.Fatalf("Lock SQL error = %v, want cause %v", err, sqlErr)
+	}
+	ctx := canceledContext()
+	if err := newPostgresAdvisoryLocker(&recordingSQLSession{execErr: sqlErr}).Lock(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Lock context error = %v, want context cancellation", err)
+	}
+}
+
+func TestSQLConnSessionImplementsMigrationAdapter(t *testing.T) {
+	var _ migrationSQLSession = (*sqlConnSession)(nil)
 }
 
 func TestMigrationLifecycleHoldsLockAcrossEveryMutation(t *testing.T) {
@@ -166,14 +286,14 @@ func TestCheckSchemaCompatibilityIsReadOnlyAndTyped(t *testing.T) {
 	expected := SchemaVersion{
 		InstallationID:        "installation-a",
 		AppVersion:            "v1.2.3",
-		ConfigVersion:         1,
+		ConfigVersion:         config.CurrentRuntimeSchemaVersion,
 		DatabaseSchemaVersion: CurrentDatabaseSchemaVersion,
 	}
 
 	err := CheckSchemaCompatibility(ctx, client, expected)
 	assertCompatibilityErrorKind(t, err, CompatibilityMissing)
 
-	if _, err := client.Installation.Create().
+	installation, err := client.Installation.Create().
 		SetSingletonKey("installation").
 		SetInstallationID(expected.InstallationID).
 		SetConfigSchemaVersion(expected.ConfigVersion).
@@ -181,7 +301,8 @@ func TestCheckSchemaCompatibilityIsReadOnlyAndTyped(t *testing.T) {
 		SetAppVersion(expected.AppVersion).
 		SetInitializedAt(time.Now().UTC()).
 		SetMigratedAt(time.Now().UTC()).
-		Save(ctx); err != nil {
+		Save(ctx)
+	if err != nil {
 		t.Fatalf("create installation: %v", err)
 	}
 	if err := CheckSchemaCompatibility(ctx, client, expected); err != nil {
@@ -195,7 +316,6 @@ func TestCheckSchemaCompatibilityIsReadOnlyAndTyped(t *testing.T) {
 	}{
 		{name: "installation", mutate: func(v *SchemaVersion) { v.InstallationID = "installation-b" }, wantKind: CompatibilityInstallationMismatch},
 		{name: "app", mutate: func(v *SchemaVersion) { v.AppVersion = "v2.0.0" }, wantKind: CompatibilityAppVersionMismatch},
-		{name: "config", mutate: func(v *SchemaVersion) { v.ConfigVersion++ }, wantKind: CompatibilityConfigSchemaMismatch},
 		{name: "database", mutate: func(v *SchemaVersion) { v.DatabaseSchemaVersion++ }, wantKind: CompatibilityDatabaseSchemaMismatch},
 	}
 	for _, tt := range mismatches {
@@ -205,6 +325,12 @@ func TestCheckSchemaCompatibilityIsReadOnlyAndTyped(t *testing.T) {
 			assertCompatibilityErrorKind(t, CheckSchemaCompatibility(ctx, client, want), tt.wantKind)
 		})
 	}
+	if _, err := client.Installation.UpdateOne(installation).
+		SetConfigSchemaVersion(config.CurrentRuntimeSchemaVersion + 1).
+		Save(ctx); err != nil {
+		t.Fatalf("simulate newer configuration schema: %v", err)
+	}
+	assertCompatibilityErrorKind(t, CheckSchemaCompatibility(ctx, client, expected), CompatibilityConfigSchemaMismatch)
 }
 
 func TestValidateInstallationSnapshotsRejectsDuplicateRows(t *testing.T) {
@@ -296,14 +422,32 @@ func TestMigrateSerializesAndIsIdempotentOnPostgres(t *testing.T) {
 		t.Fatalf("wrong-installation migration mutated legacy data before rejecting identity: %s", sentinel)
 	}
 
-	upgradeRequest := MigrationRequest{InstallationID: request.InstallationID, AppVersion: "integration-v2", ConfigVersion: 2}
-	if _, err := Migrate(context.Background(), databaseURL, upgradeRequest); err != nil {
-		t.Fatalf("upgrade migration: %v", err)
+	var beforeAppVersion string
+	var beforeConfigVersion int
+	var beforeMigratedAt time.Time
+	if err := database.QueryRow(`SELECT app_version, config_schema_version, migrated_at FROM `+schemaName+`.installations`).Scan(&beforeAppVersion, &beforeConfigVersion, &beforeMigratedAt); err != nil {
+		t.Fatalf("read installation before unsupported schema: %v", err)
+	}
+	_, err = Migrate(context.Background(), databaseURL, MigrationRequest{InstallationID: request.InstallationID, AppVersion: "integration-v999", ConfigVersion: 999})
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprint(config.CurrentRuntimeSchemaVersion)) {
+		t.Fatalf("unsupported schema migration error = %v", err)
+	}
+	var afterAppVersion string
+	var afterConfigVersion int
+	var afterMigratedAt time.Time
+	if err := database.QueryRow(`SELECT app_version, config_schema_version, migrated_at FROM `+schemaName+`.installations`).Scan(&afterAppVersion, &afterConfigVersion, &afterMigratedAt); err != nil {
+		t.Fatalf("read installation after unsupported schema: %v", err)
+	}
+	if afterAppVersion != beforeAppVersion || afterConfigVersion != beforeConfigVersion || !afterMigratedAt.Equal(beforeMigratedAt) {
+		t.Fatalf("unsupported schema mutated installation: before=(%q,%d,%s) after=(%q,%d,%s)", beforeAppVersion, beforeConfigVersion, beforeMigratedAt, afterAppVersion, afterConfigVersion, afterMigratedAt)
 	}
 	if _, err := database.Exec(`INSERT INTO ` + schemaName + `.system_configs
 		(config_category, config_key, config_value, scope, version, updated_by, updated_at)
 		VALUES ('migration_test', 'downgrade_guard', '{"value":{"reference_generate":true,"text_to_image":true}}', 'global', 1, 0, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatalf("insert downgrade mutation sentinel: %v", err)
+	}
+	if _, err := database.Exec(`UPDATE `+schemaName+`.installations SET config_schema_version = $1`, config.CurrentRuntimeSchemaVersion+1); err != nil {
+		t.Fatalf("simulate newer config schema: %v", err)
 	}
 	_, err = Migrate(context.Background(), databaseURL, request)
 	assertCompatibilityErrorKind(t, err, CompatibilityConfigSchemaMismatch)
@@ -313,10 +457,10 @@ func TestMigrateSerializesAndIsIdempotentOnPostgres(t *testing.T) {
 	if !strings.Contains(sentinel, "reference_generate") {
 		t.Fatalf("config downgrade mutated legacy data before rejection: %s", sentinel)
 	}
-	if _, err := database.Exec(`UPDATE `+schemaName+`.installations SET database_schema_version = $1`, CurrentDatabaseSchemaVersion+1); err != nil {
+	if _, err := database.Exec(`UPDATE `+schemaName+`.installations SET config_schema_version = $1, database_schema_version = $2`, config.CurrentRuntimeSchemaVersion, CurrentDatabaseSchemaVersion+1); err != nil {
 		t.Fatalf("simulate newer database schema: %v", err)
 	}
-	_, err = Migrate(context.Background(), databaseURL, upgradeRequest)
+	_, err = Migrate(context.Background(), databaseURL, request)
 	assertCompatibilityErrorKind(t, err, CompatibilityDatabaseSchemaMismatch)
 	if err := database.QueryRow(`SELECT config_value::text FROM ` + schemaName + `.system_configs WHERE config_key = 'downgrade_guard'`).Scan(&sentinel); err != nil {
 		t.Fatalf("query database downgrade mutation sentinel: %v", err)
@@ -415,12 +559,43 @@ type sqlCall struct {
 }
 
 type recordingSQLSession struct {
-	calls []sqlCall
+	calls        []sqlCall
+	execErr      error
+	unlockResult bool
+	unlockErr    error
 }
 
 func (s *recordingSQLSession) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
 	s.calls = append(s.calls, sqlCall{query: query, args: args})
-	return nil, nil
+	return nil, s.execErr
+}
+
+func (s *recordingSQLSession) QueryRowContext(_ context.Context, query string, args ...any) sqlRowScanner {
+	s.calls = append(s.calls, sqlCall{query: query, args: args})
+	return fakeSQLRow{value: s.unlockResult, err: s.unlockErr}
+}
+
+type fakeSQLRow struct {
+	value bool
+	err   error
+}
+
+func (r fakeSQLRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	value, ok := dest[0].(*bool)
+	if !ok {
+		return fmt.Errorf("unexpected scan destination %T", dest[0])
+	}
+	*value = r.value
+	return nil
+}
+
+func canceledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
 }
 
 type statefulMigrationLocker struct {

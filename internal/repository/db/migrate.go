@@ -12,6 +12,7 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/fatballfish/pic-gallery/internal/config"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/lib/pq"
 )
@@ -100,13 +101,28 @@ type migrationLock interface {
 	Unlock(context.Context) error
 }
 
-type sqlSession interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
+type sqlRowScanner interface {
+	Scan(...any) error
 }
 
-type postgresAdvisoryLocker struct{ session sqlSession }
+type migrationSQLSession interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) sqlRowScanner
+}
 
-func newPostgresAdvisoryLocker(session sqlSession) migrationLock {
+type sqlConnSession struct{ connection *sql.Conn }
+
+func (s *sqlConnSession) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return s.connection.ExecContext(ctx, query, args...)
+}
+
+func (s *sqlConnSession) QueryRowContext(ctx context.Context, query string, args ...any) sqlRowScanner {
+	return s.connection.QueryRowContext(ctx, query, args...)
+}
+
+type postgresAdvisoryLocker struct{ session migrationSQLSession }
+
+func newPostgresAdvisoryLocker(session migrationSQLSession) migrationLock {
 	return &postgresAdvisoryLocker{session: session}
 }
 
@@ -121,8 +137,15 @@ func (l *postgresAdvisoryLocker) Lock(ctx context.Context) error {
 }
 
 func (l *postgresAdvisoryLocker) Unlock(ctx context.Context) error {
-	if _, err := l.session.ExecContext(ctx, releaseMigrationLockSQL, migrationAdvisoryLockKey); err != nil {
+	var unlocked bool
+	if err := l.session.QueryRowContext(ctx, releaseMigrationLockSQL, migrationAdvisoryLockKey).Scan(&unlocked); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return fmt.Errorf("release database migration lock: %w", contextErr)
+		}
 		return fmt.Errorf("release database migration lock: %w", err)
+	}
+	if !unlocked {
+		return fmt.Errorf("release database migration lock: lock was not held by this session")
 	}
 	return nil
 }
@@ -170,7 +193,7 @@ func Migrate(ctx context.Context, databaseURL string, req MigrationRequest) (res
 		}
 	}()
 
-	err = runMigrationLifecycle(ctx, newPostgresAdvisoryLocker(connection), func(ctx context.Context) error {
+	err = runMigrationLifecycle(ctx, newPostgresAdvisoryLocker(&sqlConnSession{connection: connection}), func(ctx context.Context) error {
 		result, err = migrateLocked(ctx, database, req)
 		return err
 	})
@@ -366,11 +389,11 @@ func validateMigrationRequest(databaseURL string, req MigrationRequest) error {
 	if !migrationIdentifierPattern.MatchString(req.InstallationID) {
 		return fmt.Errorf("installation ID must be a stable identifier of at most 128 characters")
 	}
-	if strings.TrimSpace(req.AppVersion) == "" || len(req.AppVersion) > 128 {
-		return fmt.Errorf("application version must contain 1 to 128 characters")
+	if err := config.ValidateApplicationVersion(req.AppVersion); err != nil {
+		return err
 	}
-	if req.ConfigVersion <= 0 {
-		return fmt.Errorf("configuration schema version must be positive")
+	if req.ConfigVersion != config.CurrentRuntimeSchemaVersion {
+		return fmt.Errorf("configuration schema version must equal current runtime schema version %d", config.CurrentRuntimeSchemaVersion)
 	}
 	return nil
 }

@@ -157,6 +157,9 @@ func TestClusterTokenSchemaPersistsHashesAndAuditDataOnly(t *testing.T) {
 	if fields["token_hash"].Unique == false {
 		t.Fatal("cluster token_hash must be unique so token material cannot be reused")
 	}
+	if !fields["token_hash"].Sensitive {
+		t.Fatal("cluster token_hash must be marked sensitive")
+	}
 }
 
 func schemaFieldDescriptors(fields []ent.Field) map[string]*field.Descriptor {

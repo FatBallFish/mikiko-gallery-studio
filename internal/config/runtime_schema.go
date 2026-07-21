@@ -80,7 +80,19 @@ type RuntimeSchema struct {
 	Fields  []RuntimeField
 }
 
-var runtimeFieldKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+var (
+	runtimeFieldKeyPattern    = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	applicationVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$`)
+)
+
+// ValidateApplicationVersion ensures build identifiers are safe to persist and
+// include in operational output without accepting whitespace or control bytes.
+func ValidateApplicationVersion(value string) error {
+	if !applicationVersionPattern.MatchString(value) {
+		return fmt.Errorf("application version must be 1 to 128 safe identifier characters")
+	}
+	return nil
+}
 
 func DefaultRuntimeSchema() RuntimeSchema {
 	return RuntimeSchema{
@@ -149,7 +161,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("INSTALLATION_ID", "identity", "当前安装的稳定唯一标识，所有集群节点必须一致。", "Stable unique installation identifier shared by every cluster node.", "019d0000-0000-7000-8000-000000000000", "", FieldOwnerDeployctl, requiredAlways, validateIdentifier),
 			field("CLUSTER_NODE_ID", "identity", "当前集群节点的唯一标识；single 节点可留空。", "Unique identifier of the current cluster node; single-node deployments may leave it empty.", "019d0000-0000-7000-8000-000000000001", "", FieldOwnerDeployctl, requiredClusterNode, validateIdentifier),
 			field("CONFIG_REVISION", "identity", "节点当前配置修订号，用于检测集群配置漂移。", "Current node configuration revision used to detect cluster configuration drift.", "1", "1", FieldOwnerApplication, requiredClusterNode, validatePositiveInteger),
-			field("APPLICATION_VERSION", "identity", "当前 API、Worker 或 Web 构建版本，用于加入和健康检查兼容性判断。", "Current API, Worker, or Web build version used for enrollment and health compatibility checks.", "v1.0.0", "", FieldOwnerDeployctl, requiredAlways, validateNonEmpty),
+			field("APPLICATION_VERSION", "identity", "当前 API、Worker 或 Web 构建版本，用于加入和健康检查兼容性判断。", "Current API, Worker, or Web build version used for enrollment and health compatibility checks.", "v1.0.0", "", FieldOwnerDeployctl, requiredAlways, ValidateApplicationVersion),
 		},
 	}
 }
