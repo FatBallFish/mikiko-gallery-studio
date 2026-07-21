@@ -8,10 +8,15 @@ import (
 	"testing"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema/field"
 )
 
 func TestCoreSchemaFilesExist(t *testing.T) {
 	expected := []string{
+		"installation.go",
+		"clusternode.go",
+		"clustertoken.go",
 		"user.go",
 		"usergroup.go",
 		"adminuser.go",
@@ -50,6 +55,11 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 	}
 	migration := string(contents)
 	expectedMigrationSnippets := []string{
+		"create table if not exists installations",
+		"check (singleton_key = 'installation')",
+		"create table if not exists cluster_nodes",
+		"create table if not exists cluster_tokens",
+		"token_hash varchar(64) not null",
 		"create table if not exists api_key_quota_reservations",
 		"create index if not exists apikey_user_id on api_keys (user_id)",
 		"create index if not exists apikey_status on api_keys (status)",
@@ -61,6 +71,101 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 			t.Fatalf("expected initial migration to contain %q", snippet)
 		}
 	}
+}
+
+func TestInstallationSchemaEnforcesSingletonIdentityAndVersions(t *testing.T) {
+	fields := schemaFieldDescriptors(Installation{}.Fields())
+	for _, name := range []string{
+		"singleton_key",
+		"installation_id",
+		"config_schema_version",
+		"database_schema_version",
+		"app_version",
+		"initialized_at",
+		"migrated_at",
+	} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("installation schema is missing %s", name)
+		}
+	}
+	if fields["singleton_key"].Unique == false {
+		t.Fatal("installation singleton_key must be unique")
+	}
+	if !hasIndexFields(Installation{}.Indexes(), []string{"installation_id"}, true) {
+		t.Fatal("installations must uniquely index installation_id")
+	}
+	annotations := Installation{}.Annotations()
+	if len(annotations) != 1 {
+		t.Fatalf("installation annotations = %d, want 1", len(annotations))
+	}
+	annotation, ok := annotations[0].(entsql.Annotation)
+	if !ok || !strings.Contains(annotation.Check, "singleton_key = 'installation'") {
+		t.Fatalf("installation singleton_key must have a database CHECK constraint, got %#v", annotations[0])
+	}
+}
+
+func TestClusterNodeSchemaCarriesRuntimeCompatibilityAndHealth(t *testing.T) {
+	fields := schemaFieldDescriptors(ClusterNode{}.Fields())
+	for _, name := range []string{
+		"node_id",
+		"installation_id",
+		"role",
+		"app_version",
+		"runtime_schema_version",
+		"config_revision",
+		"health",
+		"last_error",
+		"last_heartbeat_at",
+	} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("cluster node schema is missing %s", name)
+		}
+	}
+	if fields["node_id"].Unique == false {
+		t.Fatal("cluster node_id must be unique")
+	}
+	if !hasIndexFields(ClusterNode{}.Indexes(), []string{"installation_id", "role"}, false) {
+		t.Fatal("cluster nodes must index installation_id and role")
+	}
+}
+
+func TestClusterTokenSchemaPersistsHashesAndAuditDataOnly(t *testing.T) {
+	fields := schemaFieldDescriptors(ClusterToken{}.Fields())
+	for _, name := range []string{
+		"token_id",
+		"token_hash",
+		"installation_id",
+		"role",
+		"expires_at",
+		"consumed_at",
+		"revoked_at",
+		"audit_actor",
+	} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("cluster token schema is missing %s", name)
+		}
+	}
+	for name := range fields {
+		lower := strings.ToLower(name)
+		if lower == "token" || strings.Contains(lower, "plaintext") || strings.Contains(lower, "secret") {
+			t.Fatalf("cluster token schema must not persist plaintext token material: %s", name)
+		}
+	}
+	if fields["token_id"].Unique == false {
+		t.Fatal("cluster token_id must be unique")
+	}
+	if fields["token_hash"].Unique == false {
+		t.Fatal("cluster token_hash must be unique so token material cannot be reused")
+	}
+}
+
+func schemaFieldDescriptors(fields []ent.Field) map[string]*field.Descriptor {
+	descriptors := make(map[string]*field.Descriptor, len(fields))
+	for _, schemaField := range fields {
+		descriptor := schemaField.Descriptor()
+		descriptors[descriptor.Name] = descriptor
+	}
+	return descriptors
 }
 
 func TestSubscriptionPlanSchemaCarriesPurchaseTypeContract(t *testing.T) {

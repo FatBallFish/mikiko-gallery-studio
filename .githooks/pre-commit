@@ -15,19 +15,7 @@ esac
 staged="$(git diff --cached --name-only)"
 [ -z "$staged" ] && exit 0
 
-secret_candidates="$(
-  printf '%s\n' "$staged" | awk '
-    /(^|\/)\.env(\.[^\/]*)?\.example$/ { next }
-    /(^|\/)\.env($|\.|\/)/ { print; next }
-    {
-      name=$0
-      sub(/^.*\//, "", name)
-      lower=tolower(name)
-      if (lower == "tokens.css") next
-      if (lower ~ /id_rsa|private[._-]?key|secret|token/) print
-    }
-  '
-)"
+secret_candidates="$(printf '%s\n' "$staged" | "$ROOT/.hook-scripts/staged-secret-candidates.sh")"
 if [ -n "$secret_candidates" ]; then
   echo "BLOCK: staged files look like secrets or local env files" >&2
   exit 1

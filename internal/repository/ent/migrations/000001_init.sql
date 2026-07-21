@@ -1,5 +1,58 @@
 -- Pic Gallery initial schema bootstrap.
 
+create table if not exists installations (
+  id bigserial primary key,
+  singleton_key varchar(32) not null unique check (singleton_key = 'installation'),
+  installation_id varchar(128) not null unique check (installation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  config_schema_version int not null check (config_schema_version > 0),
+  database_schema_version int not null check (database_schema_version > 0),
+  app_version varchar(128) not null check (length(app_version) > 0),
+  initialized_at timestamptz not null,
+  migrated_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists installation_database_schema_version_config_schema_version
+  on installations (database_schema_version, config_schema_version);
+
+create table if not exists cluster_nodes (
+  id bigserial primary key,
+  node_id varchar(128) not null unique check (node_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  installation_id varchar(128) not null check (installation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  role varchar(16) not null check (role in ('single', 'control', 'api', 'worker', 'web')),
+  app_version varchar(128) not null check (length(app_version) > 0),
+  runtime_schema_version int not null check (runtime_schema_version > 0),
+  config_revision bigint not null check (config_revision >= 0),
+  health varchar(16) not null default 'joining' check (health in ('joining', 'healthy', 'degraded', 'unready', 'offline')),
+  last_error varchar(1024) not null default '',
+  last_heartbeat_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists clusternode_installation_id_role on cluster_nodes (installation_id, role);
+create index if not exists clusternode_health on cluster_nodes (health);
+create index if not exists clusternode_last_heartbeat_at on cluster_nodes (last_heartbeat_at);
+
+create table if not exists cluster_tokens (
+  id bigserial primary key,
+  token_id varchar(128) not null unique check (token_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  token_hash varchar(64) not null unique check (token_hash ~ '^[a-f0-9]{64}$'),
+  installation_id varchar(128) not null check (installation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  role varchar(16) not null check (role in ('api', 'worker', 'web')),
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  revoked_at timestamptz,
+  audit_actor varchar(128) not null check (length(audit_actor) > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists clustertoken_installation_id_role on cluster_tokens (installation_id, role);
+create index if not exists clustertoken_expires_at on cluster_tokens (expires_at);
+create index if not exists clustertoken_consumed_at on cluster_tokens (consumed_at);
+
 create table if not exists user_groups (
   id bigserial primary key,
   group_code varchar(32) not null unique,

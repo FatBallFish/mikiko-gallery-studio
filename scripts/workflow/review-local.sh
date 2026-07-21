@@ -47,19 +47,7 @@ if [ -f .coding-context.json ] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-secret_candidates="$(
-  git diff --cached --name-only | awk '
-    /(^|\/)\.env(\.[^\/]*)?\.example$/ { next }
-    /(^|\/)\.env($|\.|\/)/ { print; next }
-    {
-      name=$0
-      sub(/^.*\//, "", name)
-      lower=tolower(name)
-      if (lower == "tokens.css") next
-      if (lower ~ /id_rsa|private[._-]?key|secret|token/) print
-    }
-  '
-)"
+secret_candidates="$(git diff --cached --name-only | "$ROOT/.hook-scripts/staged-secret-candidates.sh")"
 if [ -n "$secret_candidates" ]; then
   DECISION="BLOCK"
   FINDINGS+=("staged files look like secrets or local env files")

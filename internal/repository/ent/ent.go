@@ -16,9 +16,12 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
@@ -114,9 +117,12 @@ func checkColumn(t, c string) error {
 			apikeyquotareservation.Table:      apikeyquotareservation.ValidColumn,
 			adminuser.Table:                   adminuser.ValidColumn,
 			auditlog.Table:                    auditlog.ValidColumn,
+			clusternode.Table:                 clusternode.ValidColumn,
+			clustertoken.Table:                clustertoken.ValidColumn,
 			configitem.Table:                  configitem.ValidColumn,
 			imageresult.Table:                 imageresult.ValidColumn,
 			imagetask.Table:                   imagetask.ValidColumn,
+			installation.Table:                installation.ValidColumn,
 			modelaccount.Table:                modelaccount.ValidColumn,
 			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
 			modelprovider.Table:               modelprovider.ValidColumn,

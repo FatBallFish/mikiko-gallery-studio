@@ -19,9 +19,12 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
@@ -68,12 +71,18 @@ type Client struct {
 	AdminUser *AdminUserClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
+	// ClusterNode is the client for interacting with the ClusterNode builders.
+	ClusterNode *ClusterNodeClient
+	// ClusterToken is the client for interacting with the ClusterToken builders.
+	ClusterToken *ClusterTokenClient
 	// ConfigItem is the client for interacting with the ConfigItem builders.
 	ConfigItem *ConfigItemClient
 	// ImageResult is the client for interacting with the ImageResult builders.
 	ImageResult *ImageResultClient
 	// ImageTask is the client for interacting with the ImageTask builders.
 	ImageTask *ImageTaskClient
+	// Installation is the client for interacting with the Installation builders.
+	Installation *InstallationClient
 	// ModelAccount is the client for interacting with the ModelAccount builders.
 	ModelAccount *ModelAccountClient
 	// ModelAccountModel is the client for interacting with the ModelAccountModel builders.
@@ -151,9 +160,12 @@ func (c *Client) init() {
 	c.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(c.config)
 	c.AdminUser = NewAdminUserClient(c.config)
 	c.AuditLog = NewAuditLogClient(c.config)
+	c.ClusterNode = NewClusterNodeClient(c.config)
+	c.ClusterToken = NewClusterTokenClient(c.config)
 	c.ConfigItem = NewConfigItemClient(c.config)
 	c.ImageResult = NewImageResultClient(c.config)
 	c.ImageTask = NewImageTaskClient(c.config)
+	c.Installation = NewInstallationClient(c.config)
 	c.ModelAccount = NewModelAccountClient(c.config)
 	c.ModelAccountModel = NewModelAccountModelClient(c.config)
 	c.ModelProvider = NewModelProviderClient(c.config)
@@ -281,9 +293,12 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		APIKeyQuotaReservation:      NewAPIKeyQuotaReservationClient(cfg),
 		AdminUser:                   NewAdminUserClient(cfg),
 		AuditLog:                    NewAuditLogClient(cfg),
+		ClusterNode:                 NewClusterNodeClient(cfg),
+		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
+		Installation:                NewInstallationClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
@@ -338,9 +353,12 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		APIKeyQuotaReservation:      NewAPIKeyQuotaReservationClient(cfg),
 		AdminUser:                   NewAdminUserClient(cfg),
 		AuditLog:                    NewAuditLogClient(cfg),
+		ClusterNode:                 NewClusterNodeClient(cfg),
+		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
+		Installation:                NewInstallationClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
@@ -401,13 +419,14 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
-		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger,
-		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterNode,
+		c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask, c.Installation,
+		c.ModelAccount, c.ModelAccountModel, c.ModelProvider, c.ModelRoute,
+		c.ObjectStorageConfig, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PaymentWebhookEvent, c.PointLedger, c.PromptOptimizationRun,
+		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
+		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.WalletGrant, c.WalletReservationAllocation,
@@ -420,13 +439,14 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ConfigItem,
-		c.ImageResult, c.ImageTask, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger,
-		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterNode,
+		c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask, c.Installation,
+		c.ModelAccount, c.ModelAccountModel, c.ModelProvider, c.ModelRoute,
+		c.ObjectStorageConfig, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PaymentWebhookEvent, c.PointLedger, c.PromptOptimizationRun,
+		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
+		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
+		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.WalletGrant, c.WalletReservationAllocation,
@@ -446,12 +466,18 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AdminUser.mutate(ctx, m)
 	case *AuditLogMutation:
 		return c.AuditLog.mutate(ctx, m)
+	case *ClusterNodeMutation:
+		return c.ClusterNode.mutate(ctx, m)
+	case *ClusterTokenMutation:
+		return c.ClusterToken.mutate(ctx, m)
 	case *ConfigItemMutation:
 		return c.ConfigItem.mutate(ctx, m)
 	case *ImageResultMutation:
 		return c.ImageResult.mutate(ctx, m)
 	case *ImageTaskMutation:
 		return c.ImageTask.mutate(ctx, m)
+	case *InstallationMutation:
+		return c.Installation.mutate(ctx, m)
 	case *ModelAccountMutation:
 		return c.ModelAccount.mutate(ctx, m)
 	case *ModelAccountModelMutation:
@@ -1051,6 +1077,272 @@ func (c *AuditLogClient) mutate(ctx context.Context, m *AuditLogMutation) (Value
 	}
 }
 
+// ClusterNodeClient is a client for the ClusterNode schema.
+type ClusterNodeClient struct {
+	config
+}
+
+// NewClusterNodeClient returns a client for the ClusterNode from the given config.
+func NewClusterNodeClient(c config) *ClusterNodeClient {
+	return &ClusterNodeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `clusternode.Hooks(f(g(h())))`.
+func (c *ClusterNodeClient) Use(hooks ...Hook) {
+	c.hooks.ClusterNode = append(c.hooks.ClusterNode, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `clusternode.Intercept(f(g(h())))`.
+func (c *ClusterNodeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ClusterNode = append(c.inters.ClusterNode, interceptors...)
+}
+
+// Create returns a builder for creating a ClusterNode entity.
+func (c *ClusterNodeClient) Create() *ClusterNodeCreate {
+	mutation := newClusterNodeMutation(c.config, OpCreate)
+	return &ClusterNodeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ClusterNode entities.
+func (c *ClusterNodeClient) CreateBulk(builders ...*ClusterNodeCreate) *ClusterNodeCreateBulk {
+	return &ClusterNodeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ClusterNodeClient) MapCreateBulk(slice any, setFunc func(*ClusterNodeCreate, int)) *ClusterNodeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ClusterNodeCreateBulk{err: fmt.Errorf("calling to ClusterNodeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ClusterNodeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ClusterNodeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ClusterNode.
+func (c *ClusterNodeClient) Update() *ClusterNodeUpdate {
+	mutation := newClusterNodeMutation(c.config, OpUpdate)
+	return &ClusterNodeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ClusterNodeClient) UpdateOne(_m *ClusterNode) *ClusterNodeUpdateOne {
+	mutation := newClusterNodeMutation(c.config, OpUpdateOne, withClusterNode(_m))
+	return &ClusterNodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ClusterNodeClient) UpdateOneID(id int) *ClusterNodeUpdateOne {
+	mutation := newClusterNodeMutation(c.config, OpUpdateOne, withClusterNodeID(id))
+	return &ClusterNodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ClusterNode.
+func (c *ClusterNodeClient) Delete() *ClusterNodeDelete {
+	mutation := newClusterNodeMutation(c.config, OpDelete)
+	return &ClusterNodeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ClusterNodeClient) DeleteOne(_m *ClusterNode) *ClusterNodeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ClusterNodeClient) DeleteOneID(id int) *ClusterNodeDeleteOne {
+	builder := c.Delete().Where(clusternode.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ClusterNodeDeleteOne{builder}
+}
+
+// Query returns a query builder for ClusterNode.
+func (c *ClusterNodeClient) Query() *ClusterNodeQuery {
+	return &ClusterNodeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeClusterNode},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ClusterNode entity by its id.
+func (c *ClusterNodeClient) Get(ctx context.Context, id int) (*ClusterNode, error) {
+	return c.Query().Where(clusternode.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ClusterNodeClient) GetX(ctx context.Context, id int) *ClusterNode {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ClusterNodeClient) Hooks() []Hook {
+	return c.hooks.ClusterNode
+}
+
+// Interceptors returns the client interceptors.
+func (c *ClusterNodeClient) Interceptors() []Interceptor {
+	return c.inters.ClusterNode
+}
+
+func (c *ClusterNodeClient) mutate(ctx context.Context, m *ClusterNodeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ClusterNodeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ClusterNodeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ClusterNodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ClusterNodeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ClusterNode mutation op: %q", m.Op())
+	}
+}
+
+// ClusterTokenClient is a client for the ClusterToken schema.
+type ClusterTokenClient struct {
+	config
+}
+
+// NewClusterTokenClient returns a client for the ClusterToken from the given config.
+func NewClusterTokenClient(c config) *ClusterTokenClient {
+	return &ClusterTokenClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `clustertoken.Hooks(f(g(h())))`.
+func (c *ClusterTokenClient) Use(hooks ...Hook) {
+	c.hooks.ClusterToken = append(c.hooks.ClusterToken, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `clustertoken.Intercept(f(g(h())))`.
+func (c *ClusterTokenClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ClusterToken = append(c.inters.ClusterToken, interceptors...)
+}
+
+// Create returns a builder for creating a ClusterToken entity.
+func (c *ClusterTokenClient) Create() *ClusterTokenCreate {
+	mutation := newClusterTokenMutation(c.config, OpCreate)
+	return &ClusterTokenCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ClusterToken entities.
+func (c *ClusterTokenClient) CreateBulk(builders ...*ClusterTokenCreate) *ClusterTokenCreateBulk {
+	return &ClusterTokenCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ClusterTokenClient) MapCreateBulk(slice any, setFunc func(*ClusterTokenCreate, int)) *ClusterTokenCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ClusterTokenCreateBulk{err: fmt.Errorf("calling to ClusterTokenClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ClusterTokenCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ClusterTokenCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ClusterToken.
+func (c *ClusterTokenClient) Update() *ClusterTokenUpdate {
+	mutation := newClusterTokenMutation(c.config, OpUpdate)
+	return &ClusterTokenUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ClusterTokenClient) UpdateOne(_m *ClusterToken) *ClusterTokenUpdateOne {
+	mutation := newClusterTokenMutation(c.config, OpUpdateOne, withClusterToken(_m))
+	return &ClusterTokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ClusterTokenClient) UpdateOneID(id int) *ClusterTokenUpdateOne {
+	mutation := newClusterTokenMutation(c.config, OpUpdateOne, withClusterTokenID(id))
+	return &ClusterTokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ClusterToken.
+func (c *ClusterTokenClient) Delete() *ClusterTokenDelete {
+	mutation := newClusterTokenMutation(c.config, OpDelete)
+	return &ClusterTokenDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ClusterTokenClient) DeleteOne(_m *ClusterToken) *ClusterTokenDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ClusterTokenClient) DeleteOneID(id int) *ClusterTokenDeleteOne {
+	builder := c.Delete().Where(clustertoken.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ClusterTokenDeleteOne{builder}
+}
+
+// Query returns a query builder for ClusterToken.
+func (c *ClusterTokenClient) Query() *ClusterTokenQuery {
+	return &ClusterTokenQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeClusterToken},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ClusterToken entity by its id.
+func (c *ClusterTokenClient) Get(ctx context.Context, id int) (*ClusterToken, error) {
+	return c.Query().Where(clustertoken.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ClusterTokenClient) GetX(ctx context.Context, id int) *ClusterToken {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ClusterTokenClient) Hooks() []Hook {
+	return c.hooks.ClusterToken
+}
+
+// Interceptors returns the client interceptors.
+func (c *ClusterTokenClient) Interceptors() []Interceptor {
+	return c.inters.ClusterToken
+}
+
+func (c *ClusterTokenClient) mutate(ctx context.Context, m *ClusterTokenMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ClusterTokenCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ClusterTokenUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ClusterTokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ClusterTokenDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ClusterToken mutation op: %q", m.Op())
+	}
+}
+
 // ConfigItemClient is a client for the ConfigItem schema.
 type ConfigItemClient struct {
 	config
@@ -1447,6 +1739,139 @@ func (c *ImageTaskClient) mutate(ctx context.Context, m *ImageTaskMutation) (Val
 		return (&ImageTaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ImageTask mutation op: %q", m.Op())
+	}
+}
+
+// InstallationClient is a client for the Installation schema.
+type InstallationClient struct {
+	config
+}
+
+// NewInstallationClient returns a client for the Installation from the given config.
+func NewInstallationClient(c config) *InstallationClient {
+	return &InstallationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `installation.Hooks(f(g(h())))`.
+func (c *InstallationClient) Use(hooks ...Hook) {
+	c.hooks.Installation = append(c.hooks.Installation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `installation.Intercept(f(g(h())))`.
+func (c *InstallationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Installation = append(c.inters.Installation, interceptors...)
+}
+
+// Create returns a builder for creating a Installation entity.
+func (c *InstallationClient) Create() *InstallationCreate {
+	mutation := newInstallationMutation(c.config, OpCreate)
+	return &InstallationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Installation entities.
+func (c *InstallationClient) CreateBulk(builders ...*InstallationCreate) *InstallationCreateBulk {
+	return &InstallationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *InstallationClient) MapCreateBulk(slice any, setFunc func(*InstallationCreate, int)) *InstallationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &InstallationCreateBulk{err: fmt.Errorf("calling to InstallationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*InstallationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &InstallationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Installation.
+func (c *InstallationClient) Update() *InstallationUpdate {
+	mutation := newInstallationMutation(c.config, OpUpdate)
+	return &InstallationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *InstallationClient) UpdateOne(_m *Installation) *InstallationUpdateOne {
+	mutation := newInstallationMutation(c.config, OpUpdateOne, withInstallation(_m))
+	return &InstallationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *InstallationClient) UpdateOneID(id int) *InstallationUpdateOne {
+	mutation := newInstallationMutation(c.config, OpUpdateOne, withInstallationID(id))
+	return &InstallationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Installation.
+func (c *InstallationClient) Delete() *InstallationDelete {
+	mutation := newInstallationMutation(c.config, OpDelete)
+	return &InstallationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *InstallationClient) DeleteOne(_m *Installation) *InstallationDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *InstallationClient) DeleteOneID(id int) *InstallationDeleteOne {
+	builder := c.Delete().Where(installation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &InstallationDeleteOne{builder}
+}
+
+// Query returns a query builder for Installation.
+func (c *InstallationClient) Query() *InstallationQuery {
+	return &InstallationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeInstallation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Installation entity by its id.
+func (c *InstallationClient) Get(ctx context.Context, id int) (*Installation, error) {
+	return c.Query().Where(installation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *InstallationClient) GetX(ctx context.Context, id int) *Installation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *InstallationClient) Hooks() []Hook {
+	return c.hooks.Installation
+}
+
+// Interceptors returns the client interceptors.
+func (c *InstallationClient) Interceptors() []Interceptor {
+	return c.inters.Installation
+}
+
+func (c *InstallationClient) mutate(ctx context.Context, m *InstallationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&InstallationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&InstallationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&InstallationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&InstallationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Installation mutation op: %q", m.Op())
 	}
 }
 
@@ -5576,25 +6001,27 @@ func (c *WalletReservationAllocationClient) mutate(ctx context.Context, m *Walle
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
-		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
-		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Hook
+		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterNode, ClusterToken,
+		ConfigItem, ImageResult, ImageTask, Installation, ModelAccount,
+		ModelAccountModel, ModelProvider, ModelRoute, ObjectStorageConfig,
+		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
+		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
+		WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
-		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ConfigItem, ImageResult,
-		ImageTask, ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
-		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Interceptor
+		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterNode, ClusterToken,
+		ConfigItem, ImageResult, ImageTask, Installation, ModelAccount,
+		ModelAccountModel, ModelProvider, ModelRoute, ObjectStorageConfig,
+		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
+		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
+		WalletGrant, WalletReservationAllocation []ent.Interceptor
 	}
 )

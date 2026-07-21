@@ -1,12 +1,18 @@
 package schema
 
 import (
+	"regexp"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/mixin"
+)
+
+var (
+	stableIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+	sha256HexPattern        = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
 type TimeMixin struct{ mixin.Schema }

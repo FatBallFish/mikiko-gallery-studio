@@ -58,12 +58,15 @@ STORAGE_ROOT="$TMP_DIR/storage"
 RUNTIME_STORAGE_ROOT="$TMP_DIR/runtime-storage"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 API_BINARY="$TMP_DIR/pic-gallery-api"
+WORKER_BINARY="$TMP_DIR/pic-gallery-worker"
+MIGRATE_BINARY="$TMP_DIR/pic-gallery-db-migrate"
 SMOKE_USER_EMAIL="smoke-user-${SMOKE_ID}@example.com"
 SMOKE_ADMIN_EMAIL="admin-smoke-${SMOKE_ID}@example.com"
 SMOKE_SUPER_ADMIN_EMAIL="super-admin-smoke-${SMOKE_ID}@example.com"
 SERVER_PID=""
 WORKER_PID=""
 FAKE_PROVIDER_PID=""
+PREFLIGHT_PID=""
 POSTGRES_CONTAINER="pic-gallery-api-smoke-postgres-${SMOKE_ID}"
 REDIS_CONTAINER="pic-gallery-api-smoke-redis-${SMOKE_ID}"
 POSTGRES_USER="smoke"
@@ -108,6 +111,10 @@ PY
 )"
 
 cleanup() {
+  if [[ -n "$PREFLIGHT_PID" ]] && kill -0 "$PREFLIGHT_PID" >/dev/null 2>&1; then
+    kill "$PREFLIGHT_PID" >/dev/null 2>&1 || true
+    wait "$PREFLIGHT_PID" >/dev/null 2>&1 || true
+  fi
   if [[ -n "$WORKER_PID" ]] && kill -0 "$WORKER_PID" >/dev/null 2>&1; then
     kill "$WORKER_PID" >/dev/null 2>&1 || true
     wait "$WORKER_PID" >/dev/null 2>&1 || true
@@ -1259,9 +1266,58 @@ INSTALLATION_ID=api-contract-smoke-${SMOKE_ID}
 APPLICATION_VERSION=api-contract-smoke
 ENV
 }
+
+assert_ordinary_startup_does_not_migrate() {
+  local service="$1"
+  local binary="$2"
+  local log_file="$TMP_DIR/${service}-before-migration.log"
+  local exited=false
+  local exit_status=0
+  APP_ENV_FILE="$SMOKE_ENV_PATH" "$binary" >"$log_file" 2>&1 &
+  PREFLIGHT_PID="$!"
+  for _ in {1..80}; do
+    if ! kill -0 "$PREFLIGHT_PID" >/dev/null 2>&1; then
+      if wait "$PREFLIGHT_PID"; then
+        exit_status=0
+      else
+        exit_status=$?
+      fi
+      PREFLIGHT_PID=""
+      exited=true
+      break
+    fi
+    sleep 0.05
+  done
+  if [[ "$exited" != true ]]; then
+    kill "$PREFLIGHT_PID" >/dev/null 2>&1 || true
+    wait "$PREFLIGHT_PID" >/dev/null 2>&1 || true
+    PREFLIGHT_PID=""
+    echo "$service ordinary startup did not exit within 4 seconds against an unmigrated database" >&2
+    cat "$log_file" >&2
+    exit 1
+  fi
+  if [[ "$exit_status" == "0" ]]; then
+    echo "$service unexpectedly started against an unmigrated database" >&2
+    cat "$log_file" >&2
+    exit 1
+  fi
+  if ! grep -Fq "database schema is incompatible: missing" "$log_file"; then
+    echo "$service did not fail closed with a missing-schema compatibility error" >&2
+    cat "$log_file" >&2
+    exit 1
+  fi
+  local table_count
+  table_count="$(psql_query -c "SELECT count(*) FROM pg_tables WHERE schemaname = current_schema()")"
+  if [[ "$table_count" != "0" ]]; then
+    echo "$service ordinary startup mutated an unmigrated database ($table_count tables found)" >&2
+    psql_exec -c "SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename" >&2
+    exit 1
+  fi
+}
+
 start_worker() {
   APP_ENV_FILE="$SMOKE_ENV_PATH" \
-  go run ./cmd/worker >"$WORKER_LOG" 2>&1 &
+  "$WORKER_BINARY" >"$WORKER_LOG" 2>&1 &
   WORKER_PID="$!"
 }
 
@@ -1313,9 +1369,14 @@ wait_for_task_status() {
 
 cd "$ROOT_DIR"
 go build -o "$API_BINARY" ./cmd/api
+go build -o "$WORKER_BINARY" ./cmd/worker
+go build -o "$MIGRATE_BINARY" ./cmd/db-migrate
 start_smoke_middleware
 write_smoke_config
 assert_api_port_free
+assert_ordinary_startup_does_not_migrate api "$API_BINARY"
+assert_ordinary_startup_does_not_migrate worker "$WORKER_BINARY"
+APP_ENV_FILE="$SMOKE_ENV_PATH" "$MIGRATE_BINARY"
 
 APP_ENV_FILE="$SMOKE_ENV_PATH" \
 "$API_BINARY" >"$SERVER_LOG" 2>&1 &

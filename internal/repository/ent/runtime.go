@@ -9,9 +9,12 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
@@ -398,6 +401,181 @@ func init() {
 	auditlog.DefaultUserAgent = auditlogDescUserAgent.Default.(string)
 	// auditlog.UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
 	auditlog.UserAgentValidator = auditlogDescUserAgent.Validators[0].(func(string) error)
+	clusternodeMixin := schema.ClusterNode{}.Mixin()
+	clusternodeMixinFields0 := clusternodeMixin[0].Fields()
+	_ = clusternodeMixinFields0
+	clusternodeFields := schema.ClusterNode{}.Fields()
+	_ = clusternodeFields
+	// clusternodeDescCreatedAt is the schema descriptor for created_at field.
+	clusternodeDescCreatedAt := clusternodeMixinFields0[0].Descriptor()
+	// clusternode.DefaultCreatedAt holds the default value on creation for the created_at field.
+	clusternode.DefaultCreatedAt = clusternodeDescCreatedAt.Default.(func() time.Time)
+	// clusternodeDescUpdatedAt is the schema descriptor for updated_at field.
+	clusternodeDescUpdatedAt := clusternodeMixinFields0[1].Descriptor()
+	// clusternode.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	clusternode.DefaultUpdatedAt = clusternodeDescUpdatedAt.Default.(func() time.Time)
+	// clusternode.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	clusternode.UpdateDefaultUpdatedAt = clusternodeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// clusternodeDescNodeID is the schema descriptor for node_id field.
+	clusternodeDescNodeID := clusternodeFields[0].Descriptor()
+	// clusternode.NodeIDValidator is a validator for the "node_id" field. It is called by the builders before save.
+	clusternode.NodeIDValidator = func() func(string) error {
+		validators := clusternodeDescNodeID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(node_id string) error {
+			for _, fn := range fns {
+				if err := fn(node_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusternodeDescInstallationID is the schema descriptor for installation_id field.
+	clusternodeDescInstallationID := clusternodeFields[1].Descriptor()
+	// clusternode.InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
+	clusternode.InstallationIDValidator = func() func(string) error {
+		validators := clusternodeDescInstallationID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(installation_id string) error {
+			for _, fn := range fns {
+				if err := fn(installation_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusternodeDescAppVersion is the schema descriptor for app_version field.
+	clusternodeDescAppVersion := clusternodeFields[3].Descriptor()
+	// clusternode.AppVersionValidator is a validator for the "app_version" field. It is called by the builders before save.
+	clusternode.AppVersionValidator = func() func(string) error {
+		validators := clusternodeDescAppVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(app_version string) error {
+			for _, fn := range fns {
+				if err := fn(app_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusternodeDescRuntimeSchemaVersion is the schema descriptor for runtime_schema_version field.
+	clusternodeDescRuntimeSchemaVersion := clusternodeFields[4].Descriptor()
+	// clusternode.RuntimeSchemaVersionValidator is a validator for the "runtime_schema_version" field. It is called by the builders before save.
+	clusternode.RuntimeSchemaVersionValidator = clusternodeDescRuntimeSchemaVersion.Validators[0].(func(int) error)
+	// clusternodeDescConfigRevision is the schema descriptor for config_revision field.
+	clusternodeDescConfigRevision := clusternodeFields[5].Descriptor()
+	// clusternode.ConfigRevisionValidator is a validator for the "config_revision" field. It is called by the builders before save.
+	clusternode.ConfigRevisionValidator = clusternodeDescConfigRevision.Validators[0].(func(int64) error)
+	// clusternodeDescLastError is the schema descriptor for last_error field.
+	clusternodeDescLastError := clusternodeFields[7].Descriptor()
+	// clusternode.DefaultLastError holds the default value on creation for the last_error field.
+	clusternode.DefaultLastError = clusternodeDescLastError.Default.(string)
+	// clusternode.LastErrorValidator is a validator for the "last_error" field. It is called by the builders before save.
+	clusternode.LastErrorValidator = clusternodeDescLastError.Validators[0].(func(string) error)
+	clustertokenMixin := schema.ClusterToken{}.Mixin()
+	clustertokenMixinFields0 := clustertokenMixin[0].Fields()
+	_ = clustertokenMixinFields0
+	clustertokenFields := schema.ClusterToken{}.Fields()
+	_ = clustertokenFields
+	// clustertokenDescCreatedAt is the schema descriptor for created_at field.
+	clustertokenDescCreatedAt := clustertokenMixinFields0[0].Descriptor()
+	// clustertoken.DefaultCreatedAt holds the default value on creation for the created_at field.
+	clustertoken.DefaultCreatedAt = clustertokenDescCreatedAt.Default.(func() time.Time)
+	// clustertokenDescUpdatedAt is the schema descriptor for updated_at field.
+	clustertokenDescUpdatedAt := clustertokenMixinFields0[1].Descriptor()
+	// clustertoken.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	clustertoken.DefaultUpdatedAt = clustertokenDescUpdatedAt.Default.(func() time.Time)
+	// clustertoken.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	clustertoken.UpdateDefaultUpdatedAt = clustertokenDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// clustertokenDescTokenID is the schema descriptor for token_id field.
+	clustertokenDescTokenID := clustertokenFields[0].Descriptor()
+	// clustertoken.TokenIDValidator is a validator for the "token_id" field. It is called by the builders before save.
+	clustertoken.TokenIDValidator = func() func(string) error {
+		validators := clustertokenDescTokenID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(token_id string) error {
+			for _, fn := range fns {
+				if err := fn(token_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clustertokenDescTokenHash is the schema descriptor for token_hash field.
+	clustertokenDescTokenHash := clustertokenFields[1].Descriptor()
+	// clustertoken.TokenHashValidator is a validator for the "token_hash" field. It is called by the builders before save.
+	clustertoken.TokenHashValidator = func() func(string) error {
+		validators := clustertokenDescTokenHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(token_hash string) error {
+			for _, fn := range fns {
+				if err := fn(token_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clustertokenDescInstallationID is the schema descriptor for installation_id field.
+	clustertokenDescInstallationID := clustertokenFields[2].Descriptor()
+	// clustertoken.InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
+	clustertoken.InstallationIDValidator = func() func(string) error {
+		validators := clustertokenDescInstallationID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(installation_id string) error {
+			for _, fn := range fns {
+				if err := fn(installation_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clustertokenDescAuditActor is the schema descriptor for audit_actor field.
+	clustertokenDescAuditActor := clustertokenFields[7].Descriptor()
+	// clustertoken.AuditActorValidator is a validator for the "audit_actor" field. It is called by the builders before save.
+	clustertoken.AuditActorValidator = func() func(string) error {
+		validators := clustertokenDescAuditActor.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(audit_actor string) error {
+			for _, fn := range fns {
+				if err := fn(audit_actor); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	configitemFields := schema.ConfigItem{}.Fields()
 	_ = configitemFields
 	// configitemDescConfigCategory is the schema descriptor for config_category field.
@@ -784,6 +962,93 @@ func init() {
 	imagetaskDescID := imagetaskFields[0].Descriptor()
 	// imagetask.DefaultID holds the default value on creation for the id field.
 	imagetask.DefaultID = imagetaskDescID.Default.(func() uuid.UUID)
+	installationMixin := schema.Installation{}.Mixin()
+	installationMixinFields0 := installationMixin[0].Fields()
+	_ = installationMixinFields0
+	installationFields := schema.Installation{}.Fields()
+	_ = installationFields
+	// installationDescCreatedAt is the schema descriptor for created_at field.
+	installationDescCreatedAt := installationMixinFields0[0].Descriptor()
+	// installation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	installation.DefaultCreatedAt = installationDescCreatedAt.Default.(func() time.Time)
+	// installationDescUpdatedAt is the schema descriptor for updated_at field.
+	installationDescUpdatedAt := installationMixinFields0[1].Descriptor()
+	// installation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	installation.DefaultUpdatedAt = installationDescUpdatedAt.Default.(func() time.Time)
+	// installation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	installation.UpdateDefaultUpdatedAt = installationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// installationDescSingletonKey is the schema descriptor for singleton_key field.
+	installationDescSingletonKey := installationFields[0].Descriptor()
+	// installation.SingletonKeyValidator is a validator for the "singleton_key" field. It is called by the builders before save.
+	installation.SingletonKeyValidator = func() func(string) error {
+		validators := installationDescSingletonKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(singleton_key string) error {
+			for _, fn := range fns {
+				if err := fn(singleton_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// installationDescInstallationID is the schema descriptor for installation_id field.
+	installationDescInstallationID := installationFields[1].Descriptor()
+	// installation.InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
+	installation.InstallationIDValidator = func() func(string) error {
+		validators := installationDescInstallationID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(installation_id string) error {
+			for _, fn := range fns {
+				if err := fn(installation_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// installationDescConfigSchemaVersion is the schema descriptor for config_schema_version field.
+	installationDescConfigSchemaVersion := installationFields[2].Descriptor()
+	// installation.ConfigSchemaVersionValidator is a validator for the "config_schema_version" field. It is called by the builders before save.
+	installation.ConfigSchemaVersionValidator = installationDescConfigSchemaVersion.Validators[0].(func(int) error)
+	// installationDescDatabaseSchemaVersion is the schema descriptor for database_schema_version field.
+	installationDescDatabaseSchemaVersion := installationFields[3].Descriptor()
+	// installation.DatabaseSchemaVersionValidator is a validator for the "database_schema_version" field. It is called by the builders before save.
+	installation.DatabaseSchemaVersionValidator = installationDescDatabaseSchemaVersion.Validators[0].(func(int) error)
+	// installationDescAppVersion is the schema descriptor for app_version field.
+	installationDescAppVersion := installationFields[4].Descriptor()
+	// installation.AppVersionValidator is a validator for the "app_version" field. It is called by the builders before save.
+	installation.AppVersionValidator = func() func(string) error {
+		validators := installationDescAppVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(app_version string) error {
+			for _, fn := range fns {
+				if err := fn(app_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// installationDescInitializedAt is the schema descriptor for initialized_at field.
+	installationDescInitializedAt := installationFields[5].Descriptor()
+	// installation.DefaultInitializedAt holds the default value on creation for the initialized_at field.
+	installation.DefaultInitializedAt = installationDescInitializedAt.Default.(func() time.Time)
+	// installationDescMigratedAt is the schema descriptor for migrated_at field.
+	installationDescMigratedAt := installationFields[6].Descriptor()
+	// installation.DefaultMigratedAt holds the default value on creation for the migrated_at field.
+	installation.DefaultMigratedAt = installationDescMigratedAt.Default.(func() time.Time)
 	modelaccountMixin := schema.ModelAccount{}.Mixin()
 	modelaccountMixinFields0 := modelaccountMixin[0].Fields()
 	_ = modelaccountMixinFields0

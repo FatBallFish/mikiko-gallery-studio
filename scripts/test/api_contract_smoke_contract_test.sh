@@ -8,6 +8,18 @@ STUB_BIN="$TMP_DIR/stubs"
 INVOCATIONS="$TMP_DIR/invocations.log"
 LISTENER_PID=""
 
+bash -n "$SMOKE"
+for marker in \
+  'PREFLIGHT_PID=""' \
+  'ordinary startup did not exit within' \
+  'kill "$PREFLIGHT_PID"' \
+  'wait "$PREFLIGHT_PID"'; do
+  if ! grep -Fq "$marker" "$SMOKE"; then
+    echo "API smoke ordinary-startup migration guard is not bounded/cleaned up: $marker" >&2
+    exit 1
+  fi
+done
+
 cleanup() {
   if [[ -n "$LISTENER_PID" ]] && kill -0 "$LISTENER_PID" >/dev/null 2>&1; then
     kill "$LISTENER_PID" >/dev/null 2>&1 || true

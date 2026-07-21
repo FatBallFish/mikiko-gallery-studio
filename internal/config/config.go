@@ -3,6 +3,7 @@ package config
 import "time"
 
 type Config struct {
+	Runtime          RuntimeConfig          `yaml:"-"`
 	App              AppConfig              `yaml:"app"`
 	Database         DatabaseConfig         `yaml:"database"`
 	Redis            RedisConfig            `yaml:"redis"`
@@ -19,6 +20,16 @@ type Config struct {
 	Providers        ProvidersConfig        `yaml:"providers"`
 	Routing          RoutingConfig          `yaml:"routing"`
 	Docs             DocsConfig             `yaml:"docs"`
+}
+
+// RuntimeConfig is immutable identity metadata loaded from the same runtime.env
+// snapshot as Database.URL. It is intentionally not populated from process env.
+type RuntimeConfig struct {
+	Path                string
+	InstallationID      string
+	ApplicationVersion  string
+	ConfigSchemaVersion int
+	ConfigRevision      int
 }
 
 type AppConfig struct {

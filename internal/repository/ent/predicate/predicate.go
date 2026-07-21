@@ -18,6 +18,12 @@ type AdminUser func(*sql.Selector)
 // AuditLog is the predicate function for auditlog builders.
 type AuditLog func(*sql.Selector)
 
+// ClusterNode is the predicate function for clusternode builders.
+type ClusterNode func(*sql.Selector)
+
+// ClusterToken is the predicate function for clustertoken builders.
+type ClusterToken func(*sql.Selector)
+
 // ConfigItem is the predicate function for configitem builders.
 type ConfigItem func(*sql.Selector)
 
@@ -26,6 +32,9 @@ type ImageResult func(*sql.Selector)
 
 // ImageTask is the predicate function for imagetask builders.
 type ImageTask func(*sql.Selector)
+
+// Installation is the predicate function for installation builders.
+type Installation func(*sql.Selector)
 
 // ModelAccount is the predicate function for modelaccount builders.
 type ModelAccount func(*sql.Selector)

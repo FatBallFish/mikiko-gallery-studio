@@ -39,10 +39,18 @@ for (const required of [
   'postgres:16-alpine',
   'redis:7-alpine',
   'docker rm -f "$POSTGRES_CONTAINER" "$REDIS_CONTAINER"',
+	'go build -o "$MIGRATE_BINARY" ./cmd/db-migrate',
+	'assert_ordinary_startup_does_not_migrate',
+	'APP_ENV_FILE="$SMOKE_ENV_PATH" "$MIGRATE_BINARY"',
 ]) {
   if (!smoke.includes(required)) {
     throw new Error(`API contract smoke must include isolated runtime prerequisite: ${required}`)
   }
+}
+const migrationIndex = smoke.indexOf('APP_ENV_FILE="$SMOKE_ENV_PATH" "$MIGRATE_BINARY"')
+const apiStartIndex = smoke.indexOf('"$API_BINARY" >"$SERVER_LOG" 2>&1 &')
+if (migrationIndex < 0 || apiStartIndex < 0 || migrationIndex > apiStartIndex) {
+  throw new Error('API contract smoke must run explicit migration before ordinary API startup')
 }
 for (const retired of ['DATABASE_URL=file:', 'import sqlite3', 'DB_PATH=']) {
   if (smoke.includes(retired)) {

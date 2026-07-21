@@ -57,6 +57,30 @@ func (f AuditLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuditLogMutation", m)
 }
 
+// The ClusterNodeFunc type is an adapter to allow the use of ordinary
+// function as ClusterNode mutator.
+type ClusterNodeFunc func(context.Context, *ent.ClusterNodeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ClusterNodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ClusterNodeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ClusterNodeMutation", m)
+}
+
+// The ClusterTokenFunc type is an adapter to allow the use of ordinary
+// function as ClusterToken mutator.
+type ClusterTokenFunc func(context.Context, *ent.ClusterTokenMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ClusterTokenFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ClusterTokenMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ClusterTokenMutation", m)
+}
+
 // The ConfigItemFunc type is an adapter to allow the use of ordinary
 // function as ConfigItem mutator.
 type ConfigItemFunc func(context.Context, *ent.ConfigItemMutation) (ent.Value, error)
@@ -91,6 +115,18 @@ func (f ImageTaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ImageTaskMutation", m)
+}
+
+// The InstallationFunc type is an adapter to allow the use of ordinary
+// function as Installation mutator.
+type InstallationFunc func(context.Context, *ent.InstallationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f InstallationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.InstallationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.InstallationMutation", m)
 }
 
 // The ModelAccountFunc type is an adapter to allow the use of ordinary

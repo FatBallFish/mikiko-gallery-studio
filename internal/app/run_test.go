@@ -2,13 +2,68 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainapikey "github.com/fatballfish/pic-gallery/internal/domain/apikey"
+	"github.com/fatballfish/pic-gallery/internal/repository/db"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 )
+
+func TestRuntimeSchemaCheckDoesNotCreateOrMigrateTables(t *testing.T) {
+	dsn := "file:app-compatibility?mode=memory&cache=shared&_fk=1"
+	client, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer client.Close()
+	cfg := config.Config{Runtime: config.RuntimeConfig{
+		InstallationID:      "installation-test",
+		ApplicationVersion:  "v1",
+		ConfigSchemaVersion: config.CurrentRuntimeSchemaVersion,
+	}}
+
+	err = checkRuntimeSchemaCompatibility(context.Background(), client, cfg)
+	var compatibilityErr *db.CompatibilityError
+	if !errors.As(err, &compatibilityErr) || compatibilityErr.Kind != db.CompatibilityMissing {
+		t.Fatalf("compatibility check error = %T %v, want typed missing error", err, err)
+	}
+	database, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	defer database.Close()
+	var count int
+	if err := database.QueryRowContext(context.Background(), `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).Scan(&count); err != nil {
+		t.Fatalf("inspect sqlite schema: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("compatibility check created %d application tables", count)
+	}
+}
+
+func TestOrdinaryAPIAndWorkerStartupContainNoMigrationCalls(t *testing.T) {
+	for _, name := range []string{"run.go", "worker.go"} {
+		contents, err := os.ReadFile(filepath.Join(".", name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		source := string(contents)
+		for _, forbidden := range []string{"PrepareLegacyData(", ".Schema.Create(", "BackfillLegacyModelAccountCapabilities("} {
+			if strings.Contains(source, forbidden) {
+				t.Fatalf("ordinary startup %s still contains database mutation %q", name, forbidden)
+			}
+		}
+	}
+}
 
 func TestDefaultAdminSeedRoleDefaultsToAdmin(t *testing.T) {
 	if got := defaultAdminSeedRole(""); got != domainadminauth.RoleAdmin {

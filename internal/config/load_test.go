@@ -185,6 +185,41 @@ func TestLoadRuntimeUsesFileValuesInsteadOfProcessEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadRuntimeCarriesIdentityFromTheSameRuntimeSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	values["INSTALLATION_ID"] = "snapshot-installation"
+	values["APPLICATION_VERSION"] = "snapshot-v1"
+	values["CONFIG_REVISION"] = "7"
+	writeRuntimeValuesForTest(t, path, values)
+
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime returned error: %v", err)
+	}
+	if cfg.Runtime.Path != path {
+		t.Fatalf("runtime path = %q, want %q", cfg.Runtime.Path, path)
+	}
+	if cfg.Runtime.InstallationID != "snapshot-installation" {
+		t.Fatalf("runtime installation ID = %q", cfg.Runtime.InstallationID)
+	}
+	if cfg.Runtime.ApplicationVersion != "snapshot-v1" {
+		t.Fatalf("runtime app version = %q", cfg.Runtime.ApplicationVersion)
+	}
+	if cfg.Runtime.ConfigSchemaVersion != CurrentRuntimeSchemaVersion {
+		t.Fatalf("runtime config schema version = %d, want %d", cfg.Runtime.ConfigSchemaVersion, CurrentRuntimeSchemaVersion)
+	}
+	if cfg.Runtime.ConfigRevision != 7 {
+		t.Fatalf("runtime config revision = %d, want 7", cfg.Runtime.ConfigRevision)
+	}
+
+	values["INSTALLATION_ID"] = "changed-after-load"
+	writeRuntimeValuesForTest(t, path, values)
+	if cfg.Runtime.InstallationID != "snapshot-installation" {
+		t.Fatalf("loaded config changed after runtime file rewrite: %q", cfg.Runtime.InstallationID)
+	}
+}
+
 func TestLoadRuntimeUsesRoleSpecificRequiredMatrix(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "web-runtime.env")
 	writeRuntimeValuesForTest(t, path, map[string]string{

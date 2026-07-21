@@ -122,6 +122,13 @@ func LoadRuntime(path string) (Config, error) {
 	}
 
 	cfg := configFromRuntimeValues(bootstrap.Values)
+	cfg.Runtime = RuntimeConfig{
+		Path:                bootstrap.Path,
+		InstallationID:      bootstrap.InstallationID,
+		ApplicationVersion:  bootstrap.ApplicationVersion,
+		ConfigSchemaVersion: bootstrap.SchemaVersion,
+		ConfigRevision:      bootstrap.ConfigRevision,
+	}
 	applyDefaults(&cfg)
 	if bootstrap.Deployment.Role != DeploymentRoleWeb {
 		if err := validateEnvConfig(cfg); err != nil {

@@ -205,8 +205,22 @@ func PrepareLegacyData(ctx context.Context, url string) error {
 		return fmt.Errorf("open legacy migration database: %w", err)
 	}
 	defer database.Close()
-	if _, err := database.ExecContext(ctx, prepareLegacyDataSQL); err != nil {
+	if err := prepareLegacyDataWithExecutor(ctx, database); err != nil {
 		return fmt.Errorf("prepare legacy database data: %w", err)
+	}
+	return nil
+}
+
+type legacyMigrationExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func prepareLegacyDataWithExecutor(ctx context.Context, executor legacyMigrationExecer) error {
+	if executor == nil {
+		return fmt.Errorf("legacy migration executor is required")
+	}
+	if _, err := executor.ExecContext(ctx, prepareLegacyDataSQL); err != nil {
+		return err
 	}
 	return nil
 }

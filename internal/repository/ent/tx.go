@@ -20,12 +20,18 @@ type Tx struct {
 	AdminUser *AdminUserClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
+	// ClusterNode is the client for interacting with the ClusterNode builders.
+	ClusterNode *ClusterNodeClient
+	// ClusterToken is the client for interacting with the ClusterToken builders.
+	ClusterToken *ClusterTokenClient
 	// ConfigItem is the client for interacting with the ConfigItem builders.
 	ConfigItem *ConfigItemClient
 	// ImageResult is the client for interacting with the ImageResult builders.
 	ImageResult *ImageResultClient
 	// ImageTask is the client for interacting with the ImageTask builders.
 	ImageTask *ImageTaskClient
+	// Installation is the client for interacting with the Installation builders.
+	Installation *InstallationClient
 	// ModelAccount is the client for interacting with the ModelAccount builders.
 	ModelAccount *ModelAccountClient
 	// ModelAccountModel is the client for interacting with the ModelAccountModel builders.
@@ -223,9 +229,12 @@ func (tx *Tx) init() {
 	tx.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(tx.config)
 	tx.AdminUser = NewAdminUserClient(tx.config)
 	tx.AuditLog = NewAuditLogClient(tx.config)
+	tx.ClusterNode = NewClusterNodeClient(tx.config)
+	tx.ClusterToken = NewClusterTokenClient(tx.config)
 	tx.ConfigItem = NewConfigItemClient(tx.config)
 	tx.ImageResult = NewImageResultClient(tx.config)
 	tx.ImageTask = NewImageTaskClient(tx.config)
+	tx.Installation = NewInstallationClient(tx.config)
 	tx.ModelAccount = NewModelAccountClient(tx.config)
 	tx.ModelAccountModel = NewModelAccountModelClient(tx.config)
 	tx.ModelProvider = NewModelProviderClient(tx.config)

@@ -181,6 +181,81 @@ var (
 			},
 		},
 	}
+	// ClusterNodesColumns holds the columns for the "cluster_nodes" table.
+	ClusterNodesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "node_id", Type: field.TypeString, Unique: true, Size: 128},
+		{Name: "installation_id", Type: field.TypeString, Size: 128},
+		{Name: "role", Type: field.TypeEnum, Enums: []string{"single", "control", "api", "worker", "web"}},
+		{Name: "app_version", Type: field.TypeString, Size: 128},
+		{Name: "runtime_schema_version", Type: field.TypeInt},
+		{Name: "config_revision", Type: field.TypeInt64},
+		{Name: "health", Type: field.TypeEnum, Enums: []string{"joining", "healthy", "degraded", "unready", "offline"}, Default: "joining"},
+		{Name: "last_error", Type: field.TypeString, Size: 1024, Default: ""},
+		{Name: "last_heartbeat_at", Type: field.TypeTime, Nullable: true},
+	}
+	// ClusterNodesTable holds the schema information for the "cluster_nodes" table.
+	ClusterNodesTable = &schema.Table{
+		Name:       "cluster_nodes",
+		Columns:    ClusterNodesColumns,
+		PrimaryKey: []*schema.Column{ClusterNodesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "clusternode_installation_id_role",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterNodesColumns[4], ClusterNodesColumns[5]},
+			},
+			{
+				Name:    "clusternode_health",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterNodesColumns[9]},
+			},
+			{
+				Name:    "clusternode_last_heartbeat_at",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterNodesColumns[11]},
+			},
+		},
+	}
+	// ClusterTokensColumns holds the columns for the "cluster_tokens" table.
+	ClusterTokensColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "token_id", Type: field.TypeString, Unique: true, Size: 128},
+		{Name: "token_hash", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "installation_id", Type: field.TypeString, Size: 128},
+		{Name: "role", Type: field.TypeEnum, Enums: []string{"api", "worker", "web"}},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "consumed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "revoked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "audit_actor", Type: field.TypeString, Size: 128},
+	}
+	// ClusterTokensTable holds the schema information for the "cluster_tokens" table.
+	ClusterTokensTable = &schema.Table{
+		Name:       "cluster_tokens",
+		Columns:    ClusterTokensColumns,
+		PrimaryKey: []*schema.Column{ClusterTokensColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "clustertoken_installation_id_role",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterTokensColumns[5], ClusterTokensColumns[6]},
+			},
+			{
+				Name:    "clustertoken_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterTokensColumns[7]},
+			},
+			{
+				Name:    "clustertoken_consumed_at",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterTokensColumns[8]},
+			},
+		},
+	}
 	// SystemConfigsColumns holds the columns for the "system_configs" table.
 	SystemConfigsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -428,6 +503,37 @@ var (
 				Name:    "imagetask_deleted_at",
 				Unique:  false,
 				Columns: []*schema.Column{ImageTasksColumns[3]},
+			},
+		},
+	}
+	// InstallationsColumns holds the columns for the "installations" table.
+	InstallationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "singleton_key", Type: field.TypeString, Unique: true, Size: 32},
+		{Name: "installation_id", Type: field.TypeString, Size: 128},
+		{Name: "config_schema_version", Type: field.TypeInt},
+		{Name: "database_schema_version", Type: field.TypeInt},
+		{Name: "app_version", Type: field.TypeString, Size: 128},
+		{Name: "initialized_at", Type: field.TypeTime},
+		{Name: "migrated_at", Type: field.TypeTime},
+	}
+	// InstallationsTable holds the schema information for the "installations" table.
+	InstallationsTable = &schema.Table{
+		Name:       "installations",
+		Columns:    InstallationsColumns,
+		PrimaryKey: []*schema.Column{InstallationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "installation_installation_id",
+				Unique:  true,
+				Columns: []*schema.Column{InstallationsColumns[4]},
+			},
+			{
+				Name:    "installation_database_schema_version_config_schema_version",
+				Unique:  false,
+				Columns: []*schema.Column{InstallationsColumns[6], InstallationsColumns[5]},
 			},
 		},
 	}
@@ -1756,9 +1862,12 @@ var (
 		APIKeyQuotaReservationsTable,
 		AdminUsersTable,
 		AuditLogsTable,
+		ClusterNodesTable,
+		ClusterTokensTable,
 		SystemConfigsTable,
 		TaskImagesTable,
 		ImageTasksTable,
+		InstallationsTable,
 		ModelAccountsTable,
 		ModelAccountModelsTable,
 		ModelProvidersTable,
@@ -1794,11 +1903,21 @@ var (
 )
 
 func init() {
+	ClusterNodesTable.Annotation = &entsql.Annotation{
+		Table: "cluster_nodes",
+	}
+	ClusterTokensTable.Annotation = &entsql.Annotation{
+		Table: "cluster_tokens",
+	}
 	SystemConfigsTable.Annotation = &entsql.Annotation{
 		Table: "system_configs",
 	}
 	TaskImagesTable.Annotation = &entsql.Annotation{
 		Table: "task_images",
+	}
+	InstallationsTable.Annotation = &entsql.Annotation{
+		Table: "installations",
+		Check: "singleton_key = 'installation'",
 	}
 	ModelAccountsTable.Annotation = &entsql.Annotation{
 		Table: "model_accounts",
