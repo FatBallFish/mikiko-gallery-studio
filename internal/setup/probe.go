@@ -17,6 +17,7 @@ const (
 	ProbeCodeAuthenticationFailed   = "AUTHENTICATION_FAILED"
 	ProbeCodeConnectionFailed       = "CONNECTION_FAILED"
 	ProbeCodeInsufficientPrivileges = "INSUFFICIENT_PRIVILEGES"
+	ProbeCodeUnsafePrivileges       = "UNSAFE_PRIVILEGES"
 	ProbeCodeReadWriteCheckFailed   = "READ_WRITE_CHECK_FAILED"
 	ProbeCodeCleanupFailed          = "CLEANUP_FAILED"
 	ProbeCodeTimeout                = "PROBE_TIMEOUT"
@@ -26,6 +27,7 @@ const (
 	defaultProbeTimeout = 10 * time.Second
 	minimumProbeTimeout = time.Second
 	maximumProbeTimeout = 30 * time.Second
+	defaultProbeWorkers = 8
 )
 
 type ProbeResult struct {
@@ -55,10 +57,11 @@ type redisProbeRunner func(context.Context, RedisProbeRequest) (string, error)
 type storageProbeRunner func(context.Context, config.StorageConfig) (string, error)
 
 type probeDependencies struct {
-	timeout  time.Duration
-	postgres postgresProbeRunner
-	redis    redisProbeRunner
-	storage  storageProbeRunner
+	timeout       time.Duration
+	maxConcurrent int
+	postgres      postgresProbeRunner
+	redis         redisProbeRunner
+	storage       storageProbeRunner
 }
 
 type ProbeService struct {
@@ -66,6 +69,12 @@ type ProbeService struct {
 	postgres postgresProbeRunner
 	redis    redisProbeRunner
 	storage  storageProbeRunner
+	slots    chan struct{}
+}
+
+type probeExecution struct {
+	version string
+	err     error
 }
 
 type probeFailure struct {
@@ -95,6 +104,10 @@ func newProbeService(dependencies probeDependencies) *ProbeService {
 	if timeout > maximumProbeTimeout {
 		timeout = maximumProbeTimeout
 	}
+	maxConcurrent := dependencies.maxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = defaultProbeWorkers
+	}
 	if dependencies.postgres == nil {
 		dependencies.postgres = runPostgresProbe
 	}
@@ -107,6 +120,7 @@ func newProbeService(dependencies probeDependencies) *ProbeService {
 	return &ProbeService{
 		timeout: timeout, postgres: dependencies.postgres,
 		redis: dependencies.redis, storage: dependencies.storage,
+		slots: make(chan struct{}, maxConcurrent),
 	}
 }
 
@@ -132,12 +146,11 @@ func (service *ProbeService) ProbeRedis(ctx context.Context, request RedisProbeR
 
 func (service *ProbeService) ProbeStorage(ctx context.Context, request StorageProbeRequest) ProbeResult {
 	started := time.Now()
-	normalized, err := normalizeStorageProbeConfig(request.Config)
-	if err != nil {
+	if err := validateStorageProbeSyntax(request.Config); err != nil {
 		return failedProbeResult("storage", ProbeCodeInvalidConfiguration, started)
 	}
 	return service.run(ctx, "storage", started, func(runCtx context.Context) (string, error) {
-		return service.storage(runCtx, normalized)
+		return service.storage(runCtx, request.Config)
 	})
 }
 
@@ -147,14 +160,51 @@ func (service *ProbeService) run(ctx context.Context, kind string, started time.
 	}
 	runCtx, cancel := context.WithTimeout(ctx, service.timeout)
 	defer cancel()
-	version, err := runner(runCtx)
-	if err != nil {
+	if err := runCtx.Err(); err != nil {
 		return failedProbeResult(kind, classifyProbeError(kind, err), started)
+	}
+	select {
+	case service.slots <- struct{}{}:
+	case <-runCtx.Done():
+		return failedProbeResult(kind, classifyProbeError(kind, runCtx.Err()), started)
+	}
+	if err := runCtx.Err(); err != nil {
+		<-service.slots
+		return failedProbeResult(kind, classifyProbeError(kind, err), started)
+	}
+
+	resultChannel := make(chan probeExecution, 1)
+	go func() {
+		defer func() { <-service.slots }()
+		execution := probeExecution{}
+		func() {
+			defer func() {
+				if recover() != nil {
+					execution.err = probeFailureError(ProbeCodeInternalError, errors.New("probe runner panicked"))
+				}
+			}()
+			if err := runCtx.Err(); err != nil {
+				execution.err = err
+				return
+			}
+			execution.version, execution.err = runner(runCtx)
+		}()
+		resultChannel <- execution
+	}()
+
+	var execution probeExecution
+	select {
+	case execution = <-resultChannel:
+	case <-runCtx.Done():
+		return failedProbeResult(kind, classifyProbeError(kind, runCtx.Err()), started)
+	}
+	if execution.err != nil {
+		return failedProbeResult(kind, classifyProbeError(kind, execution.err), started)
 	}
 	if err := runCtx.Err(); err != nil {
 		return failedProbeResult(kind, classifyProbeError(kind, err), started)
 	}
-	version = sanitizeProbeVersion(version)
+	version := sanitizeProbeVersion(execution.version)
 	return ProbeResult{
 		Kind: kind, Success: true, Code: ProbeCodeOK,
 		Message: probeMessage(kind, ProbeCodeOK), LatencyMS: probeLatencyMS(started),
@@ -242,6 +292,8 @@ func probeMessage(kind, code string) string {
 		return "The middleware endpoint could not be reached."
 	case ProbeCodeInsufficientPrivileges:
 		return "The middleware account lacks required privileges."
+	case ProbeCodeUnsafePrivileges:
+		return "The database account has unsafe server-level privileges."
 	case ProbeCodeReadWriteCheckFailed:
 		return "The middleware read/write check failed."
 	case ProbeCodeCleanupFailed:

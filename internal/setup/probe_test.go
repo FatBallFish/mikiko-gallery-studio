@@ -135,6 +135,36 @@ func TestProbePostgresClassifiesAuthenticationAndSchemaPrivileges(t *testing.T) 
 	}
 }
 
+func TestPostgresProbeRejectsServerSuperuserBeforeDDL(t *testing.T) {
+	database := &recordingPostgresProbeDatabase{
+		version: "16.4", superuser: true,
+		transaction: &recordingPostgresProbeTransaction{value: "setup-probe"},
+	}
+	_, err := runPostgresProbeWithDatabase(t.Context(), database, strings.NewReader(strings.Repeat("z", 12)))
+	if code := classifyProbeError("database", err); code != ProbeCodeUnsafePrivileges {
+		t.Fatalf("superuser result code=%s err=%v", code, err)
+	}
+	if database.superuserCalls != 1 || database.versionCalls != 0 || database.beginCalls != 0 {
+		t.Fatalf("superuser reached version/DDL checks: %#v", database)
+	}
+	result := failedProbeResult("database", ProbeCodeUnsafePrivileges, time.Now())
+	if strings.Contains(strings.ToLower(result.Message), "secret") || result.Message == probeMessage("database", ProbeCodeInsufficientPrivileges) {
+		t.Fatalf("unsafe privilege message is not explicit and sanitized: %#v", result)
+	}
+
+	downscoped := &recordingPostgresProbeDatabase{
+		version: "16.4", sessionSuperuser: true,
+		transaction: &recordingPostgresProbeTransaction{value: "setup-probe"},
+	}
+	_, err = runPostgresProbeWithDatabase(t.Context(), downscoped, strings.NewReader(strings.Repeat("y", 12)))
+	if code := classifyProbeError("database", err); code != ProbeCodeUnsafePrivileges {
+		t.Fatalf("down-scoped superuser result code=%s err=%v", code, err)
+	}
+	if downscoped.superuserCalls != 1 || downscoped.versionCalls != 0 || downscoped.beginCalls != 0 {
+		t.Fatalf("down-scoped superuser reached version/DDL checks: %#v", downscoped)
+	}
+}
+
 func TestPostgresProbeExecutesSchemaReadWriteCheckAndAlwaysRollsBack(t *testing.T) {
 	transaction := &recordingPostgresProbeTransaction{value: "setup-probe"}
 	database := &recordingPostgresProbeDatabase{version: "16.4", transaction: transaction}
@@ -142,7 +172,7 @@ func TestPostgresProbeExecutesSchemaReadWriteCheckAndAlwaysRollsBack(t *testing.
 	if err != nil || version != "16.4" {
 		t.Fatalf("runPostgresProbeWithDatabase version=%q err=%v", version, err)
 	}
-	if database.pingCalls != 1 || database.versionCalls != 1 || database.beginCalls != 1 {
+	if database.pingCalls != 1 || database.superuserCalls != 1 || database.versionCalls != 1 || database.beginCalls != 1 {
 		t.Fatalf("database calls: %#v", database)
 	}
 	if len(transaction.statements) != 3 ||
@@ -154,6 +184,91 @@ func TestPostgresProbeExecutesSchemaReadWriteCheckAndAlwaysRollsBack(t *testing.
 	}
 	if transaction.rollbackCalls != 1 {
 		t.Fatalf("transaction rollback calls = %d", transaction.rollbackCalls)
+	}
+}
+
+func TestProbeRunEnforcesHardDeadlineForContextIgnoringRunner(t *testing.T) {
+	finished := make(chan struct{})
+	service := newProbeService(probeDependencies{
+		timeout: 20 * time.Millisecond,
+		postgres: func(context.Context, string) (string, error) {
+			time.Sleep(150 * time.Millisecond)
+			close(finished)
+			return "16.4", nil
+		},
+	})
+	started := time.Now()
+	result := service.ProbePostgres(t.Context(), PostgresProbeRequest{DatabaseURL: "postgres://user:password@db/app"})
+	if elapsed := time.Since(started); elapsed >= 100*time.Millisecond {
+		t.Fatalf("hard deadline response took %s", elapsed)
+	}
+	if result.Code != ProbeCodeTimeout || result.Success {
+		t.Fatalf("context-ignoring runner result = %#v", result)
+	}
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("late runner did not finish and release its slot")
+	}
+}
+
+func TestProbeRunDoesNotStartCancelledOrUnboundedOperations(t *testing.T) {
+	var cancelledStarts atomic.Int32
+	service := newProbeService(probeDependencies{
+		timeout:       25 * time.Millisecond,
+		maxConcurrent: 2,
+		postgres: func(context.Context, string) (string, error) {
+			cancelledStarts.Add(1)
+			return "16", nil
+		},
+	})
+	cancelledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result := service.ProbePostgres(cancelledCtx, PostgresProbeRequest{DatabaseURL: "postgres://user:password@db/app"})
+	if result.Code != ProbeCodeCancelled || cancelledStarts.Load() != 0 {
+		t.Fatalf("cancelled request result=%#v starts=%d", result, cancelledStarts.Load())
+	}
+
+	release := make(chan struct{})
+	var starts atomic.Int32
+	bounded := newProbeService(probeDependencies{
+		timeout:       30 * time.Millisecond,
+		maxConcurrent: 2,
+		postgres: func(context.Context, string) (string, error) {
+			starts.Add(1)
+			<-release
+			return "16", nil
+		},
+	})
+	const callers = 24
+	results := make(chan ProbeResult, callers)
+	for range callers {
+		go func() {
+			results <- bounded.ProbePostgres(context.Background(), PostgresProbeRequest{DatabaseURL: "postgres://user:password@db/app"})
+		}()
+	}
+	for range callers {
+		result := <-results
+		if result.Code != ProbeCodeTimeout {
+			t.Errorf("bounded runner result = %#v", result)
+		}
+	}
+	if starts.Load() != 2 {
+		t.Fatalf("bounded pool started %d operations, want 2", starts.Load())
+	}
+	close(release)
+}
+
+func TestProbeRunRecoversPanicsWithoutLeakingDetails(t *testing.T) {
+	service := newProbeService(probeDependencies{
+		postgres: func(context.Context, string) (string, error) {
+			panic("panic includes submitted-super-secret")
+		},
+	})
+	result := service.ProbePostgres(t.Context(), PostgresProbeRequest{DatabaseURL: "postgres://user:submitted-super-secret@db/app"})
+	encoded, _ := json.Marshal(result)
+	if result.Code != ProbeCodeInternalError || result.Success || strings.Contains(string(encoded), "submitted-super-secret") {
+		t.Fatalf("panic result leaked or was misclassified: %#v", result)
 	}
 }
 
@@ -248,11 +363,9 @@ func TestProbeLocalStorageRoundTripCleanupAndSymlinkSafety(t *testing.T) {
 
 func TestProbeLocalStorageRejectsTraversalAndResolvesAncestorSymlink(t *testing.T) {
 	var calls atomic.Int32
-	var receivedRoot string
 	service := newProbeService(probeDependencies{
-		storage: func(_ context.Context, storageConfig config.StorageConfig) (string, error) {
+		storage: func(_ context.Context, _ config.StorageConfig) (string, error) {
 			calls.Add(1)
-			receivedRoot = storageConfig.LocalRoot
 			return "local", nil
 		},
 	})
@@ -271,17 +384,17 @@ func TestProbeLocalStorageRejectsTraversalAndResolvesAncestorSymlink(t *testing.
 	}
 	requested := filepath.Join(link, "new-child")
 	request := StorageProbeRequest{Config: config.StorageConfig{Driver: "local", LocalRoot: requested}}
-	result = service.ProbeStorage(t.Context(), request)
-	if !result.Success || calls.Load() != 1 {
-		t.Fatalf("ancestor symlink result=%#v calls=%d", result, calls.Load())
+	normalized, err := normalizeStorageProbeConfig(t.Context(), request.Config)
+	if err != nil {
+		t.Fatalf("normalize ancestor symlink target: %v", err)
 	}
 	resolvedTarget, err := filepath.EvalSymlinks(target)
 	if err != nil {
 		t.Fatalf("resolve target fixture: %v", err)
 	}
 	wantRoot := filepath.Join(resolvedTarget, "new-child")
-	if receivedRoot != wantRoot {
-		t.Fatalf("storage runner root=%q want resolved %q", receivedRoot, wantRoot)
+	if normalized.LocalRoot != wantRoot {
+		t.Fatalf("normalized root=%q want resolved %q", normalized.LocalRoot, wantRoot)
 	}
 	if request.Config.LocalRoot != requested {
 		t.Fatalf("point-in-time path resolution mutated draft: got=%q want=%q", request.Config.LocalRoot, requested)
@@ -319,6 +432,51 @@ func TestProbeStorageUsesBackendAndCleansAfterPartialFailure(t *testing.T) {
 	})
 	if err == nil || classifyProbeError("storage", err) != ProbeCodeCleanupFailed || backend.deleteCalls != 1 {
 		t.Fatalf("partial failure cleanup: err=%v delete_calls=%d", err, backend.deleteCalls)
+	}
+}
+
+func TestProbeStorageReturnsByDeadlineAndCleansAfterLatePut(t *testing.T) {
+	backend := &latePutProbeBackend{
+		putStarted: make(chan struct{}), putRelease: make(chan struct{}), deleted: make(chan struct{}),
+	}
+	service := newProbeService(probeDependencies{
+		timeout:       25 * time.Millisecond,
+		maxConcurrent: 1,
+		storage: func(ctx context.Context, storageConfig config.StorageConfig) (string, error) {
+			return runStorageProbeWithFactory(ctx, storageConfig, strings.NewReader(strings.Repeat("e", 32)), func(config.StorageConfig) (storage.Backend, error) {
+				return backend, nil
+			})
+		},
+	})
+	root := t.TempDir()
+	resultChannel := make(chan ProbeResult, 1)
+	go func() {
+		resultChannel <- service.ProbeStorage(context.Background(), StorageProbeRequest{Config: config.StorageConfig{Driver: "local", LocalRoot: root}})
+	}()
+	select {
+	case <-backend.putStarted:
+	case <-time.After(time.Second):
+		t.Fatal("storage probe did not start Put")
+	}
+	returnedBeforeRelease := false
+	var result ProbeResult
+	select {
+	case result = <-resultChannel:
+		returnedBeforeRelease = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(backend.putRelease)
+	if !returnedBeforeRelease {
+		result = <-resultChannel
+		t.Error("storage probe did not honor hard response deadline")
+	}
+	if result.Code != ProbeCodeTimeout {
+		t.Errorf("late Put result = %#v", result)
+	}
+	select {
+	case <-backend.deleted:
+	case <-time.After(time.Second):
+		t.Fatal("late Put object was not cleaned")
 	}
 }
 
@@ -402,16 +560,23 @@ type recordingProbeBackend struct {
 }
 
 type recordingPostgresProbeDatabase struct {
-	pingCalls    int
-	versionCalls int
-	beginCalls   int
-	version      string
-	transaction  postgresProbeTransaction
+	pingCalls        int
+	superuserCalls   int
+	versionCalls     int
+	beginCalls       int
+	superuser        bool
+	sessionSuperuser bool
+	version          string
+	transaction      postgresProbeTransaction
 }
 
 func (database *recordingPostgresProbeDatabase) Ping(context.Context) error {
 	database.pingCalls++
 	return nil
+}
+func (database *recordingPostgresProbeDatabase) IsSuperuser(context.Context) (bool, error) {
+	database.superuserCalls++
+	return database.superuser || database.sessionSuperuser, nil
 }
 func (database *recordingPostgresProbeDatabase) ServerVersion(context.Context) (string, error) {
 	database.versionCalls++
@@ -443,6 +608,27 @@ func (transaction *recordingPostgresProbeTransaction) QueryValue(_ context.Conte
 func (transaction *recordingPostgresProbeTransaction) Rollback() error {
 	transaction.rollbackCalls++
 	return transaction.rollbackErr
+}
+
+type latePutProbeBackend struct {
+	putStarted chan struct{}
+	putRelease chan struct{}
+	deleted    chan struct{}
+	deleteOnce sync.Once
+}
+
+func (*latePutProbeBackend) Driver() string { return "local" }
+func (backend *latePutProbeBackend) Put(context.Context, string, string, []byte) error {
+	close(backend.putStarted)
+	<-backend.putRelease
+	return nil
+}
+func (*latePutProbeBackend) Get(context.Context, string) ([]byte, error) {
+	return nil, errors.New("Get must not run after late Put")
+}
+func (backend *latePutProbeBackend) Delete(context.Context, string) error {
+	backend.deleteOnce.Do(func() { close(backend.deleted) })
+	return nil
 }
 
 func (backend *recordingProbeBackend) Driver() string { return "s3" }

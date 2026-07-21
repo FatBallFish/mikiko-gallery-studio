@@ -16,6 +16,7 @@ import (
 
 type postgresProbeDatabase interface {
 	Ping(context.Context) error
+	IsSuperuser(context.Context) (bool, error)
 	ServerVersion(context.Context) (string, error)
 	Begin(context.Context) (postgresProbeTransaction, error)
 }
@@ -37,6 +38,17 @@ func (database sqlPostgresProbeDatabase) ServerVersion(ctx context.Context) (str
 	var version string
 	err := database.database.QueryRowContext(ctx, "SHOW server_version").Scan(&version)
 	return version, err
+}
+
+func (database sqlPostgresProbeDatabase) IsSuperuser(ctx context.Context) (bool, error) {
+	var superuser bool
+	err := database.database.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_catalog.pg_roles
+			WHERE rolname IN (session_user, current_user) AND rolsuper
+		)`).Scan(&superuser)
+	return superuser, err
 }
 
 func (database sqlPostgresProbeDatabase) Begin(ctx context.Context) (postgresProbeTransaction, error) {
@@ -86,7 +98,14 @@ func runPostgresProbeWithDatabase(ctx context.Context, database postgresProbeDat
 	if err := database.Ping(ctx); err != nil {
 		return "", postgresProbeFailure(err, ProbeCodeConnectionFailed)
 	}
-	version, err := database.ServerVersion(ctx)
+	superuser, err := database.IsSuperuser(ctx)
+	if err != nil {
+		return "", postgresProbeFailure(err, ProbeCodeReadWriteCheckFailed)
+	}
+	if superuser {
+		return "", probeFailureError(ProbeCodeUnsafePrivileges, errors.New("PostgreSQL probe account is a server superuser"))
+	}
+	version, err = database.ServerVersion(ctx)
 	if err != nil {
 		return "", postgresProbeFailure(err, ProbeCodeReadWriteCheckFailed)
 	}
