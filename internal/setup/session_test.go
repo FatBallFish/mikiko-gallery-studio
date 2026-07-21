@@ -3,6 +3,7 @@ package setup
 import (
 	"encoding/base64"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -91,6 +92,42 @@ func TestAuthConstructionAndClockFailuresFailClosed(t *testing.T) {
 	}
 }
 
+func TestRateLimitConfigurationRejectsUnsafeBounds(t *testing.T) {
+	token := generatedTokenForTest(t, 129)
+	valid := defaultTestRateLimit()
+	cases := []RateLimitConfig{
+		{Window: time.Minute, IPAttempts: 1, TokenAttempts: 1, MaxEntries: minimumRateLimitMemoryCells},
+		func() RateLimitConfig { cfg := valid; cfg.GlobalWindow = 0; return cfg }(),
+		func() RateLimitConfig { cfg := valid; cfg.GlobalWindow = 2 * time.Hour; return cfg }(),
+		func() RateLimitConfig { cfg := valid; cfg.GlobalAttempts = 0; return cfg }(),
+		func() RateLimitConfig { cfg := valid; cfg.MaxEntries = minimumRateLimitMemoryCells - 1; return cfg }(),
+	}
+	if uint64(^uint(0)) > math.MaxUint32 {
+		tooMany := int(uint64(math.MaxUint32) + 1)
+		for _, field := range []string{"ip", "token", "global"} {
+			cfg := valid
+			switch field {
+			case "ip":
+				cfg.IPAttempts = tooMany
+			case "token":
+				cfg.TokenAttempts = tooMany
+			case "global":
+				cfg.GlobalAttempts = tooMany
+			}
+			cases = append(cases, cfg)
+		}
+	}
+	for index, rateLimit := range cases {
+		_, err := NewAuthService(AuthConfig{
+			Token: token, Version: 1, SessionTTL: 5 * time.Minute,
+			Rand: &sequenceReader{}, Clock: fixedClock(time.Unix(1_800_000_000, 0)), RateLimit: rateLimit,
+		})
+		if !errors.Is(err, ErrInvalidConfiguration) {
+			t.Errorf("case %d NewAuthService error = %v", index, err)
+		}
+	}
+}
+
 func TestSetupSessionCookieAttributesForHTTPAndHTTPS(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	for _, secure := range []bool{false, true} {
@@ -121,7 +158,7 @@ func TestRateLimitTracksNormalizedIPAndTokenFingerprint(t *testing.T) {
 	token := generatedTokenForTest(t, 12)
 	service, err := NewAuthService(AuthConfig{
 		Token: token, Version: 1, SessionTTL: 5 * time.Minute, Rand: &sequenceReader{}, Clock: clock.Read,
-		RateLimit: RateLimitConfig{Window: time.Minute, IPAttempts: 2, TokenAttempts: 3, MaxEntries: 10},
+		RateLimit: testRateLimitConfig(time.Minute, 2, 3, 256),
 	})
 	if err != nil {
 		t.Fatalf("NewAuthService returned error: %v", err)
@@ -151,13 +188,14 @@ func TestRateLimitTracksNormalizedIPAndTokenFingerprint(t *testing.T) {
 	}
 }
 
-func TestRateLimitCountsSuccessfulAttemptsEvictsOldestAndBoundsMemory(t *testing.T) {
+func TestRateLimitCountsSuccessfulAttemptsAndBoundsMemory(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	clock := &manualClock{now: now}
 	token := generatedTokenForTest(t, 16)
+	config := testRateLimitConfig(time.Minute, 2, 10, 64)
 	service, err := NewAuthService(AuthConfig{
 		Token: token, Version: 1, SessionTTL: 5 * time.Minute, Rand: &sequenceReader{}, Clock: clock.Read,
-		RateLimit: RateLimitConfig{Window: time.Minute, IPAttempts: 2, TokenAttempts: 10, MaxEntries: 2},
+		RateLimit: config,
 	})
 	if err != nil {
 		t.Fatalf("NewAuthService returned error: %v", err)
@@ -177,8 +215,12 @@ func TestRateLimitCountsSuccessfulAttemptsEvictsOldestAndBoundsMemory(t *testing
 	if _, err := service.Exchange("192.0.2.72", generatedTokenForTest(t, 18)); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("capacity pressure globally denied a new fingerprint: %v", err)
 	}
-	if ipEntries, tokenEntries := service.rateLimitEntryCountsForTest(); ipEntries > 2 || tokenEntries > 2 {
-		t.Fatalf("rate limiter exceeded bounds: ip=%d token=%d", ipEntries, tokenEntries)
+	memoryCells := service.rateLimitMemoryCellsForTest()
+	if memoryCells > config.MaxEntries {
+		t.Fatalf("rate limiter exceeded memory budget: cells=%d budget=%d", memoryCells, config.MaxEntries)
+	}
+	if ipCells, tokenCells := service.rateLimitEntryCountsForTest(); ipCells > memoryCells || tokenCells > memoryCells {
+		t.Fatalf("active sketch cells exceeded allocation: ip=%d token=%d total=%d", ipCells, tokenCells, memoryCells)
 	}
 
 	clock.Advance(time.Minute)
@@ -187,28 +229,39 @@ func TestRateLimitCountsSuccessfulAttemptsEvictsOldestAndBoundsMemory(t *testing
 	}
 }
 
-func TestRateLimitUniqueFingerprintFloodCannotPermanentlyDenyAdministrator(t *testing.T) {
+func TestRateLimitUniqueFingerprintFloodCannotEraseLimitedKeyAndRecoversByEpoch(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	clock := &manualClock{now: now}
 	adminToken := generatedTokenForTest(t, 30)
 	service, err := NewAuthService(AuthConfig{
 		Token: adminToken, Version: 1, SessionTTL: 5 * time.Minute, Rand: &sequenceReader{}, Clock: clock.Read,
-		RateLimit: RateLimitConfig{Window: time.Hour, IPAttempts: 3, TokenAttempts: 3, MaxEntries: 4},
+		RateLimit: testRateLimitConfig(time.Hour, 3, 1000, 128),
 	})
 	if err != nil {
 		t.Fatalf("NewAuthService returned error: %v", err)
 	}
-	for index := 1; index <= 40; index++ {
-		candidate := generatedTokenForTest(t, byte(30+index))
-		if _, err := service.Exchange("198.51.100."+itoaForTest((index%90)+1), candidate); !errors.Is(err, ErrInvalidToken) {
-			t.Fatalf("flood attempt %d error = %v, want invalid token without global lockout", index, err)
+	limitedIP := "203.0.113.199"
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, err := service.Exchange(limitedIP, generatedTokenForTest(t, byte(90+attempt))); !errors.Is(err, ErrInvalidToken) {
+			t.Fatalf("limited-key seed %d error = %v", attempt, err)
 		}
 	}
-	if _, err := service.Exchange("203.0.113.200", adminToken); err != nil {
-		t.Fatalf("legitimate administrator remained denied after unique flood: %v", err)
+	if _, err := service.Exchange(limitedIP, generatedTokenForTest(t, 99)); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("limited key was not initially limited: %v", err)
 	}
-	if ipEntries, tokenEntries := service.rateLimitEntryCountsForTest(); ipEntries > 4 || tokenEntries > 4 {
-		t.Fatalf("rate limiter exceeded bounds after flood: ip=%d token=%d", ipEntries, tokenEntries)
+	for index := 1; index <= 400; index++ {
+		candidate := generatedTokenForTest(t, byte(30+index))
+		_, err := service.Exchange("198.51.100."+itoaForTest((index%90)+1), candidate)
+		if !errors.Is(err, ErrInvalidToken) && !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("flood attempt %d error = %v", index, err)
+		}
+	}
+	if _, err := service.Exchange(limitedIP, generatedTokenForTest(t, 100)); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("unrelated flood erased limited-key count: %v", err)
+	}
+	clock.Advance(time.Hour)
+	if _, err := service.Exchange("203.0.113.200", adminToken); err != nil {
+		t.Fatalf("rate limiter did not recover after retained epochs expired: %v", err)
 	}
 }
 
@@ -218,7 +271,7 @@ func TestRateLimitExpiredCleanupIsAmortizedAndPreservesFingerprintLimits(t *test
 	token := generatedTokenForTest(t, 80)
 	service, err := NewAuthService(AuthConfig{
 		Token: token, Version: 1, SessionTTL: 5 * time.Minute, Rand: &sequenceReader{}, Clock: clock.Read,
-		RateLimit: RateLimitConfig{Window: time.Minute, IPAttempts: 2, TokenAttempts: 1000, MaxEntries: 512},
+		RateLimit: testRateLimitConfig(time.Minute, 2, 1000, 512),
 	})
 	if err != nil {
 		t.Fatalf("NewAuthService returned error: %v", err)
@@ -242,37 +295,67 @@ func TestRateLimitExpiredCleanupIsAmortizedAndPreservesFingerprintLimits(t *test
 	}
 }
 
-func TestRateLimitTableMaintenanceWorkIsBoundedAndAmortized(t *testing.T) {
-	table := newRateLimitTable[int]()
+func TestRateLimitSketchHasFixedMemoryKeyedHashesAndConservativeCollisions(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
-	const entries = 100_000
-	for key := 0; key < entries; key++ {
-		if work := table.increment(now, key, entries); work != 0 {
-			t.Fatalf("initial insertion %d performed eviction work=%d", key, work)
+	config := testRateLimitConfig(time.Minute, 1, 100, minimumRateLimitMemoryCells)
+	service, err := NewAuthService(AuthConfig{
+		Token: generatedTokenForTest(t, 121), Version: 1, SessionTTL: 5 * time.Minute,
+		Rand: &sequenceReader{}, Clock: fixedClock(now), RateLimit: config,
+	})
+	if err != nil {
+		t.Fatalf("NewAuthService returned error: %v", err)
+	}
+	if cells := service.rateLimitMemoryCellsForTest(); cells > config.MaxEntries {
+		t.Fatalf("sketch allocated %d cells, budget=%d", cells, config.MaxEntries)
+	}
+	if _, err := service.Exchange("192.0.2.1", generatedTokenForTest(t, 122)); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("first collision seed error = %v", err)
+	}
+	if _, err := service.Exchange("192.0.2.2", generatedTokenForTest(t, 123)); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("width-one collision undercounted instead of conservatively limiting: %v", err)
+	}
+
+	wideConfig := testRateLimitConfig(time.Minute, 100, 100, 1024)
+	wideService, err := NewAuthService(AuthConfig{
+		Token: generatedTokenForTest(t, 131), Version: 1, SessionTTL: 5 * time.Minute,
+		Rand: &sequenceReader{}, Clock: fixedClock(now), RateLimit: wideConfig,
+	})
+	if err != nil {
+		t.Fatalf("NewAuthService for keyed positions returned error: %v", err)
+	}
+	firstKey := wideService.rateLimitPositionsForTest("ip", []byte("192.0.2.1"))
+	wideService.signingKey[0] ^= 0x80
+	secondKey := wideService.rateLimitPositionsForTest("ip", []byte("192.0.2.1"))
+	if firstKey == secondKey {
+		t.Fatal("keyed rate-limit positions did not change with signing key")
+	}
+}
+
+func TestRateLimitGlobalBudgetIsNonEvictableAndRecovers(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0).UTC()
+	clock := &manualClock{now: now}
+	token := generatedTokenForTest(t, 124)
+	config := testRateLimitConfig(time.Minute, 100, 100, 1024)
+	config.GlobalWindow = 10 * time.Second
+	config.GlobalAttempts = 3
+	service, err := NewAuthService(AuthConfig{
+		Token: token, Version: 1, SessionTTL: 5 * time.Minute,
+		Rand: &sequenceReader{}, Clock: clock.Read, RateLimit: config,
+	})
+	if err != nil {
+		t.Fatalf("NewAuthService returned error: %v", err)
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, err := service.Exchange("198.51.100."+itoaForTest(attempt+1), generatedTokenForTest(t, byte(125+attempt))); !errors.Is(err, ErrInvalidToken) {
+			t.Fatalf("global seed %d error = %v", attempt, err)
 		}
 	}
-	if work := table.expire(now, time.Hour); work != 1 {
-		t.Fatalf("unexpired cleanup inspected %d entries, want one queue head", work)
+	if _, err := service.Exchange("198.51.100.4", token); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("global attempt budget did not limit total work: %v", err)
 	}
-	if work := table.increment(now, entries, entries); work != 1 {
-		t.Fatalf("capacity admission work=%d, want one oldest eviction", work)
-	}
-	if got := len(table.entries); got != entries {
-		t.Fatalf("bounded table size=%d, want %d", got, entries)
-	}
-	if work := table.expire(now.Add(time.Hour), time.Hour); work != maxRateLimitExpiryStepsPerTable {
-		t.Fatalf("single-request expired cleanup work=%d, want fixed budget %d", work, maxRateLimitExpiryStepsPerTable)
-	}
-	totalWork := maxRateLimitExpiryStepsPerTable
-	for len(table.entries) > 0 {
-		work := table.expire(now.Add(time.Hour), time.Hour)
-		if work > maxRateLimitExpiryStepsPerTable {
-			t.Fatalf("expired cleanup exceeded per-request budget: %d", work)
-		}
-		totalWork += work
-	}
-	if totalWork != entries {
-		t.Fatalf("amortized cleanup work=%d, want one removal per retained entry=%d", totalWork, entries)
+	clock.Advance(10 * time.Second)
+	if _, err := service.Exchange("198.51.100.4", token); err != nil {
+		t.Fatalf("global attempt budget did not recover: %v", err)
 	}
 }
 

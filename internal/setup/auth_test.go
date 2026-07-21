@@ -2,6 +2,7 @@ package setup
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -144,6 +145,37 @@ func TestRotationPrepareCommitCreatesAtomicPersistenceBoundary(t *testing.T) {
 	}
 }
 
+func TestPreparedRotationDefaultRepresentationsRedactTokenAndHandle(t *testing.T) {
+	service := newAuthServiceForTest(t, generatedTokenForTest(t, 130), 4, false, defaultTestRateLimit())
+	prepared, err := service.PrepareRotation()
+	if err != nil {
+		t.Fatalf("PrepareRotation returned error: %v", err)
+	}
+	if prepared.Token == "" {
+		t.Fatal("explicit Token accessor must remain available for durable env persistence")
+	}
+	want := "PreparedRotation{Version:5, Token:<redacted>, handle:<redacted>}"
+	for _, rendered := range []string{
+		fmt.Sprintf("%v", prepared),
+		fmt.Sprintf("%+v", prepared),
+		fmt.Sprintf("%#v", prepared),
+	} {
+		if rendered != want || strings.Contains(rendered, prepared.Token) {
+			t.Fatalf("prepared rotation representation leaked token or handle: %q", rendered)
+		}
+	}
+	encoded, err := json.Marshal(prepared)
+	if err != nil {
+		t.Fatalf("Marshal prepared rotation: %v", err)
+	}
+	if strings.Contains(string(encoded), prepared.Token) || strings.Contains(string(encoded), fmt.Sprintf("%x", prepared.handle)) {
+		t.Fatalf("prepared rotation JSON leaked token or handle: %s", encoded)
+	}
+	if string(encoded) != `{"version":5,"token":"REDACTED"}` {
+		t.Fatalf("prepared rotation JSON = %s", encoded)
+	}
+}
+
 func TestRotationAbortAllowsRetryAndOverflowFailsClosed(t *testing.T) {
 	service := newAuthServiceForTest(t, generatedTokenForTest(t, 5), 1, false, defaultTestRateLimit())
 	prepared, err := service.PrepareRotation()
@@ -208,7 +240,7 @@ func TestAuthServiceSerializesInjectedClockAccess(t *testing.T) {
 	service, err := NewAuthService(AuthConfig{
 		Token: token, Version: 1, SessionTTL: 5 * time.Minute,
 		Rand: &sequenceReader{}, Clock: clock.Read,
-		RateLimit: RateLimitConfig{Window: time.Minute, IPAttempts: 1000, TokenAttempts: 1000, MaxEntries: 1000},
+		RateLimit: testRateLimitConfig(time.Minute, 1000, 1000, 4096),
 	})
 	if err != nil {
 		t.Fatalf("NewAuthService returned error: %v", err)
@@ -390,7 +422,7 @@ func TestCompletedServiceCanStartWithoutPlaintextToken(t *testing.T) {
 
 func TestAuthServiceConcurrentExchangeRotateAndCompletionIsRaceSafe(t *testing.T) {
 	token := generatedTokenForTest(t, 8)
-	service := newAuthServiceForTest(t, token, 1, false, RateLimitConfig{Window: time.Minute, IPAttempts: 10000, TokenAttempts: 10000, MaxEntries: 10000})
+	service := newAuthServiceForTest(t, token, 1, false, testRateLimitConfig(time.Minute, 10000, 10000, 10000))
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
 		wg.Add(1)
@@ -454,7 +486,14 @@ func fixedClock(now time.Time) Clock {
 }
 
 func defaultTestRateLimit() RateLimitConfig {
-	return RateLimitConfig{Window: time.Minute, IPAttempts: 100, TokenAttempts: 100, MaxEntries: 100}
+	return testRateLimitConfig(time.Minute, 100, 100, 1024)
+}
+
+func testRateLimitConfig(window time.Duration, ipAttempts, tokenAttempts, maxEntries int) RateLimitConfig {
+	return RateLimitConfig{
+		Window: window, IPAttempts: ipAttempts, TokenAttempts: tokenAttempts, MaxEntries: maxEntries,
+		GlobalWindow: 10 * time.Second, GlobalAttempts: 100_000,
+	}
 }
 
 type sequenceReader struct {
@@ -511,5 +550,17 @@ func (service *AuthService) debugStateForTest() string {
 func (service *AuthService) rateLimitEntryCountsForTest() (int, int) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	return len(service.limiter.ip.entries), len(service.limiter.token.entries)
+	return service.limiter.ip.activeCellCount(), service.limiter.token.activeCellCount()
+}
+
+func (service *AuthService) rateLimitMemoryCellsForTest() int {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return len(service.limiter.ip.cells) + len(service.limiter.token.cells)
+}
+
+func (service *AuthService) rateLimitPositionsForTest(domain string, value []byte) [countMinDepth]uint64 {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return service.limiter.ip.positions(service.signingKey[:], []byte(domain), value)
 }

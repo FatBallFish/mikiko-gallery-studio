@@ -1,11 +1,13 @@
 package setup
 
 import (
-	"container/list"
+	"crypto/hmac"
 	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,13 +19,19 @@ import (
 )
 
 const (
-	setupTokenBytes                 = 32
-	setupTokenEncodedSize           = 43
-	rotationHandleBytes             = 32
-	minSessionTTL                   = time.Minute
-	maxSessionTTL                   = 24 * time.Hour
-	maxTokenInputBytes              = 256
-	maxRateLimitExpiryStepsPerTable = 8
+	setupTokenBytes             = 32
+	setupTokenEncodedSize       = 43
+	rotationHandleBytes         = 32
+	minSessionTTL               = time.Minute
+	maxSessionTTL               = 24 * time.Hour
+	maxTokenInputBytes          = 256
+	countMinDepth               = 4
+	rateLimitDimensions         = 2
+	minimumRateLimitMemoryCells = countMinDepth * rateLimitDimensions
+	maxRateLimitMemoryCells     = 1_000_000
+	maxGlobalRateLimitWindow    = time.Hour
+	rateLimitIPDomain           = "setup-rate-ip-v1"
+	rateLimitTokenDomain        = "setup-rate-token-v1"
 )
 
 var (
@@ -45,18 +53,22 @@ var (
 type Clock func() (time.Time, error)
 
 type RateLimitConfig struct {
-	Window        time.Duration
-	IPAttempts    int
-	TokenAttempts int
-	MaxEntries    int
+	Window         time.Duration
+	IPAttempts     int
+	TokenAttempts  int
+	MaxEntries     int
+	GlobalWindow   time.Duration
+	GlobalAttempts int
 }
 
 func DefaultSetupRateLimitConfig() RateLimitConfig {
 	return RateLimitConfig{
-		Window:        15 * time.Minute,
-		IPAttempts:    10,
-		TokenAttempts: 10,
-		MaxEntries:    4096,
+		Window:         15 * time.Minute,
+		IPAttempts:     10,
+		TokenAttempts:  10,
+		MaxEntries:     4096,
+		GlobalWindow:   time.Minute,
+		GlobalAttempts: 1000,
 	}
 }
 
@@ -74,6 +86,21 @@ type PreparedRotation struct {
 	Token   string
 	Version uint64
 	handle  [rotationHandleBytes]byte
+}
+
+func (prepared PreparedRotation) String() string {
+	return fmt.Sprintf("PreparedRotation{Version:%d, Token:<redacted>, handle:<redacted>}", prepared.Version)
+}
+
+func (prepared PreparedRotation) GoString() string {
+	return prepared.String()
+}
+
+func (prepared PreparedRotation) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Version uint64 `json:"version"`
+		Token   string `json:"token"`
+	}{Version: prepared.Version, Token: "REDACTED"})
 }
 
 type rotationMaterial struct {
@@ -99,28 +126,27 @@ type completionMaterial struct {
 	handle [rotationHandleBytes]byte
 }
 
-type attemptWindow struct {
-	started time.Time
-	count   int
+type countMinCell struct {
+	generation uint64
+	epoch      int64
+	count      uint32
 }
 
-type rateLimitEntry[K comparable] struct {
-	key    K
-	window attemptWindow
-}
-
-type rateLimitTable[K comparable] struct {
-	entries map[K]*list.Element
-	order   list.List
+type timeBucketCountMinSketch struct {
+	width      uint64
+	generation uint64
+	cells      []countMinCell
 }
 
 // setupRateLimiter counts every exchange attempt, including successful ones.
-// Fixed-window insertion order is expiry order, so cleanup and oldest-entry
-// eviction are O(1) amortized instead of scanning the full maps per request.
+// Keyed Count-Min Sketches conservatively retain fixed-window counts with fixed
+// O(depth) work and memory; hash collisions can only over-limit, never undercount.
 type setupRateLimiter struct {
-	config RateLimitConfig
-	ip     rateLimitTable[string]
-	token  rateLimitTable[[sha256.Size]byte]
+	config      RateLimitConfig
+	ip          timeBucketCountMinSketch
+	token       timeBucketCountMinSketch
+	globalEpoch int64
+	globalCount uint32
 }
 
 type AuthService struct {
@@ -182,8 +208,8 @@ func NewAuthService(cfg AuthConfig) (*AuthService, error) {
 		completed: cfg.Completed, version: cfg.Version,
 		limiter: setupRateLimiter{
 			config: cfg.RateLimit,
-			ip:     newRateLimitTable[string](),
-			token:  newRateLimitTable[[sha256.Size]byte](),
+			ip:     newTimeBucketCountMinSketch(cfg.RateLimit.MaxEntries),
+			token:  newTimeBucketCountMinSketch(cfg.RateLimit.MaxEntries),
 		},
 	}
 	if cfg.Completed {
@@ -227,7 +253,7 @@ func (service *AuthService) Exchange(clientIP, token string) (string, error) {
 	if err := service.acceptTimeLocked(now); err != nil {
 		return "", err
 	}
-	if !service.limiter.allow(now, normalizedIP, fingerprint) {
+	if !service.limiter.allow(now, normalizedIP, fingerprint, service.signingKey[:]) {
 		return "", ErrRateLimited
 	}
 	candidateHash := sha256.Sum256(candidate)
@@ -540,92 +566,115 @@ func fillRandom(random io.Reader, target []byte) error {
 }
 
 func validateRateLimitConfig(cfg RateLimitConfig) error {
-	if cfg.Window < time.Second || cfg.Window > 24*time.Hour || cfg.IPAttempts <= 0 || cfg.TokenAttempts <= 0 || cfg.MaxEntries <= 0 || cfg.MaxEntries > 1_000_000 {
+	if cfg.Window < time.Second || cfg.Window > 24*time.Hour || cfg.Window.Milliseconds() <= 0 ||
+		cfg.GlobalWindow < time.Second || cfg.GlobalWindow > maxGlobalRateLimitWindow || cfg.GlobalWindow.Milliseconds() <= 0 ||
+		cfg.IPAttempts <= 0 || uint64(cfg.IPAttempts) > math.MaxUint32 ||
+		cfg.TokenAttempts <= 0 || uint64(cfg.TokenAttempts) > math.MaxUint32 ||
+		cfg.GlobalAttempts <= 0 || uint64(cfg.GlobalAttempts) > math.MaxUint32 ||
+		cfg.MaxEntries < minimumRateLimitMemoryCells || cfg.MaxEntries > maxRateLimitMemoryCells {
 		return fmt.Errorf("invalid setup rate limit")
 	}
 	return nil
 }
 
-func (limiter *setupRateLimiter) allow(now time.Time, ip string, fingerprint [sha256.Size]byte) bool {
-	limiter.ip.expire(now, limiter.config.Window)
-	limiter.token.expire(now, limiter.config.Window)
-	ipWindow, ipExists := limiter.ip.lookup(now, limiter.config.Window, ip)
-	tokenWindow, tokenExists := limiter.token.lookup(now, limiter.config.Window, fingerprint)
-	if (ipExists && ipWindow.count >= limiter.config.IPAttempts) || (tokenExists && tokenWindow.count >= limiter.config.TokenAttempts) {
+func (limiter *setupRateLimiter) allow(now time.Time, ip string, fingerprint [sha256.Size]byte, signingKey []byte) bool {
+	globalEpoch := now.UnixMilli() / limiter.config.GlobalWindow.Milliseconds()
+	if globalEpoch != limiter.globalEpoch {
+		limiter.globalEpoch = globalEpoch
+		limiter.globalCount = 0
+	}
+	if limiter.globalCount >= uint32(limiter.config.GlobalAttempts) {
 		return false
 	}
-	limiter.ip.increment(now, ip, limiter.config.MaxEntries)
-	limiter.token.increment(now, fingerprint, limiter.config.MaxEntries)
+	limiter.globalCount++
+
+	epoch := now.UnixMilli() / limiter.config.Window.Milliseconds()
+	ipPositions := limiter.ip.positions(signingKey, []byte(rateLimitIPDomain), []byte(ip))
+	tokenPositions := limiter.token.positions(signingKey, []byte(rateLimitTokenDomain), fingerprint[:])
+	if limiter.ip.estimate(epoch, ipPositions) >= uint64(limiter.config.IPAttempts) ||
+		limiter.token.estimate(epoch, tokenPositions) >= uint64(limiter.config.TokenAttempts) {
+		return false
+	}
+	limiter.ip.add(epoch, ipPositions)
+	limiter.token.add(epoch, tokenPositions)
 	return true
 }
 
-func newRateLimitTable[K comparable]() rateLimitTable[K] {
-	return rateLimitTable[K]{entries: make(map[K]*list.Element)}
+func newTimeBucketCountMinSketch(maxCells int) timeBucketCountMinSketch {
+	width := maxCells / (countMinDepth * rateLimitDimensions)
+	return timeBucketCountMinSketch{
+		width:      uint64(width),
+		generation: 1,
+		cells:      make([]countMinCell, countMinDepth*width),
+	}
 }
 
 func (limiter *setupRateLimiter) clear() {
-	limiter.ip.clear()
-	limiter.token.clear()
+	limiter.ip.reset()
+	limiter.token.reset()
+	limiter.globalEpoch = 0
+	limiter.globalCount = 0
 }
 
-func (table *rateLimitTable[K]) lookup(now time.Time, window time.Duration, key K) (attemptWindow, bool) {
-	element, exists := table.entries[key]
-	if !exists {
-		return attemptWindow{}, false
+func (sketch *timeBucketCountMinSketch) positions(key, domain, value []byte) [countMinDepth]uint64 {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write(domain)
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write(value)
+	var digest [sha256.Size]byte
+	sum := mac.Sum(digest[:0])
+	var positions [countMinDepth]uint64
+	for row := range countMinDepth {
+		positions[row] = binary.BigEndian.Uint64(sum[row*8:(row+1)*8]) % sketch.width
 	}
-	entry := element.Value.(rateLimitEntry[K])
-	if !now.Before(entry.window.started.Add(window)) {
-		table.removeElement(element)
-		return attemptWindow{}, false
-	}
-	return entry.window, true
+	clear(digest[:])
+	return positions
 }
 
-func (table *rateLimitTable[K]) increment(now time.Time, key K, maxEntries int) int {
-	if element, exists := table.entries[key]; exists {
-		entry := element.Value.(rateLimitEntry[K])
-		entry.window.count++
-		element.Value = entry
-		return 0
-	}
-	work := 0
-	if len(table.entries) >= maxEntries {
-		table.removeOldest()
-		work++
-	}
-	element := table.order.PushBack(rateLimitEntry[K]{key: key, window: attemptWindow{started: now, count: 1}})
-	table.entries[key] = element
-	return work
-}
-
-func (table *rateLimitTable[K]) expire(now time.Time, window time.Duration) int {
-	work := 0
-	for element := table.order.Front(); element != nil && work < maxRateLimitExpiryStepsPerTable; element = table.order.Front() {
-		work++
-		entry := element.Value.(rateLimitEntry[K])
-		if now.Before(entry.window.started.Add(window)) {
-			break
+func (sketch *timeBucketCountMinSketch) estimate(epoch int64, positions [countMinDepth]uint64) uint64 {
+	estimate := uint64(math.MaxUint32)
+	for row, position := range positions {
+		cell := sketch.cells[uint64(row)*sketch.width+position]
+		if cell.generation != sketch.generation || cell.epoch != epoch {
+			return 0
 		}
-		table.removeElement(element)
+		if uint64(cell.count) < estimate {
+			estimate = uint64(cell.count)
+		}
 	}
-	return work
+	return estimate
 }
 
-func (table *rateLimitTable[K]) removeOldest() {
-	element := table.order.Front()
-	if element == nil {
+func (sketch *timeBucketCountMinSketch) add(epoch int64, positions [countMinDepth]uint64) {
+	for row, position := range positions {
+		cell := &sketch.cells[uint64(row)*sketch.width+position]
+		if cell.generation != sketch.generation || cell.epoch != epoch {
+			cell.generation = sketch.generation
+			cell.epoch = epoch
+			cell.count = 1
+			continue
+		}
+		if cell.count < math.MaxUint32 {
+			cell.count++
+		}
+	}
+}
+
+func (sketch *timeBucketCountMinSketch) reset() {
+	if sketch.generation == math.MaxUint64 {
+		clear(sketch.cells)
+		sketch.generation = 1
 		return
 	}
-	table.removeElement(element)
+	sketch.generation++
 }
 
-func (table *rateLimitTable[K]) removeElement(element *list.Element) {
-	entry := element.Value.(rateLimitEntry[K])
-	delete(table.entries, entry.key)
-	table.order.Remove(element)
-}
-
-func (table *rateLimitTable[K]) clear() {
-	clear(table.entries)
-	table.order.Init()
+func (sketch *timeBucketCountMinSketch) activeCellCount() int {
+	count := 0
+	for index := range sketch.cells {
+		if sketch.cells[index].generation == sketch.generation && sketch.cells[index].count > 0 {
+			count++
+		}
+	}
+	return count
 }
