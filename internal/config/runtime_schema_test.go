@@ -266,6 +266,85 @@ func TestRuntimeSchemaSecretValidatorsRejectWhitespaceOnlyValues(t *testing.T) {
 	}
 }
 
+func TestRuntimeSchemaPersistsSetupTokenVersionForPendingAuthorities(t *testing.T) {
+	schema := DefaultRuntimeSchema()
+	versionField := runtimeSchemaFieldForTest(t, schema, "SETUP_TOKEN_VERSION")
+	if versionField.Secret {
+		t.Fatal("SETUP_TOKEN_VERSION must not be classified as secret")
+	}
+	if versionField.DefaultValue != "1" {
+		t.Fatalf("SETUP_TOKEN_VERSION default = %q, want 1", versionField.DefaultValue)
+	}
+	if strings.TrimSpace(versionField.DescriptionZH) == "" || strings.TrimSpace(versionField.DescriptionEN) == "" {
+		t.Fatal("SETUP_TOKEN_VERSION requires bilingual operational documentation")
+	}
+	for _, value := range []string{"", "0", "-1", "1.5", "18446744073709551616"} {
+		if err := versionField.Validate(value); err == nil {
+			t.Errorf("SETUP_TOKEN_VERSION validator accepted %q", value)
+		}
+	}
+	for _, value := range []string{"1", "2", "18446744073709551615"} {
+		if err := versionField.Validate(value); err != nil {
+			t.Errorf("SETUP_TOKEN_VERSION validator rejected %q: %v", value, err)
+		}
+	}
+
+	for _, role := range []DeploymentRole{DeploymentRoleSingle, DeploymentRoleControl} {
+		context := DeploymentContext{
+			Mode: DeploymentModeDocker, Profile: DeploymentProfileCore,
+			Topology: DeploymentTopologySingle, Role: role,
+			StorageDriver: "local", SetupCompleted: false,
+		}
+		if role == DeploymentRoleControl {
+			context.Topology = DeploymentTopologyCluster
+			context.StorageDriver = "s3"
+		}
+		fields, err := RequiredRuntimeFields(schema, context)
+		if err != nil {
+			t.Fatalf("RequiredRuntimeFields(%s): %v", role, err)
+		}
+		keys := make([]string, 0, len(fields))
+		for _, field := range fields {
+			keys = append(keys, field.Key)
+		}
+		if !slices.Contains(keys, "SETUP_TOKEN_VERSION") {
+			t.Errorf("pending %s must require SETUP_TOKEN_VERSION", role)
+		}
+	}
+
+	completed, err := RequiredRuntimeFields(schema, DeploymentContext{
+		Mode: DeploymentModeDocker, Profile: DeploymentProfileCore,
+		Topology: DeploymentTopologySingle, Role: DeploymentRoleSingle,
+		StorageDriver: "local", SetupCompleted: true,
+	})
+	if err != nil {
+		t.Fatalf("completed required fields: %v", err)
+	}
+	completedKeys := make([]string, 0, len(completed))
+	for _, field := range completed {
+		completedKeys = append(completedKeys, field.Key)
+	}
+	if slices.Contains(completedKeys, "SETUP_TOKEN") || !slices.Contains(completedKeys, "SETUP_TOKEN_VERSION") {
+		t.Fatalf("completed authority must drop token but retain its version: %v", completedKeys)
+	}
+
+	joined, err := RequiredRuntimeFields(schema, DeploymentContext{
+		Mode: DeploymentModeDocker, Profile: DeploymentProfileCore,
+		Topology: DeploymentTopologyCluster, Role: DeploymentRoleWorker,
+		StorageDriver: "s3", SetupCompleted: true,
+	})
+	if err != nil {
+		t.Fatalf("joined required fields: %v", err)
+	}
+	joinedKeys := make([]string, 0, len(joined))
+	for _, field := range joined {
+		joinedKeys = append(joinedKeys, field.Key)
+	}
+	if slices.Contains(joinedKeys, "SETUP_TOKEN") || slices.Contains(joinedKeys, "SETUP_TOKEN_VERSION") {
+		t.Fatalf("joined node must not receive setup credential material: %v", joinedKeys)
+	}
+}
+
 func TestRuntimeSchemaDurationValidationUsesGoDurationSyntax(t *testing.T) {
 	field := runtimeSchemaFieldForTest(t, DefaultRuntimeSchema(), "DATABASE_CONN_MAX_LIFETIME")
 	for _, value := range []string{"1h30m", "1.5s", "250ms"} {

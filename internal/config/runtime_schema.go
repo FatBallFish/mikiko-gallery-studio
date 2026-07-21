@@ -111,6 +111,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 
 			field("SETUP_COMPLETED", "setup", "首次初始化是否已经完整提交。不得通过手工修改此值绕过初始化。", "Whether first-run setup has been fully committed. Do not edit this value to bypass setup.", "false", "false", FieldOwnerApplication, requiredAlways, validateBool),
 			secretField("SETUP_TOKEN", "setup", "首次初始化使用的一次性访问凭证；初始化完成后会被移除。", "One-time access credential for first-run setup; removed after setup completes.", FieldOwnerDeployctl, requiredSetupAuthority),
+			field("SETUP_TOKEN_VERSION", "setup", "初始化访问凭证的单调递增版本。重置凭证时版本加一，用于立即作废旧凭证和会话；初始化完成后保留最后版本。", "Monotonically increasing setup credential version. Reset increments it to invalidate old credentials and sessions immediately; the final version is retained after setup completes.", "1", "1", FieldOwnerDeployctl, requiredSetupAuthorityRole, validateRequiredPositiveUint64),
 
 			field("POSTGRES_DATABASE", "managed middleware", "Docker 完整模式创建的 PostgreSQL 数据库名，仅由部署工具维护。", "PostgreSQL database name created in Docker full mode and managed only by the deployment tool.", "app", "", FieldOwnerDeployctl, requiredDockerFull, validateNonEmpty),
 			field("POSTGRES_USER", "managed middleware", "Docker 完整模式创建的 PostgreSQL 应用用户。", "PostgreSQL application user created in Docker full mode.", "app", "", FieldOwnerDeployctl, requiredDockerFull, validateNonEmpty),
@@ -291,6 +292,9 @@ func requiredClusterNode(context DeploymentContext) bool {
 func requiredSetupAuthority(context DeploymentContext) bool {
 	return !context.SetupCompleted && (context.Role == DeploymentRoleSingle || context.Role == DeploymentRoleControl)
 }
+func requiredSetupAuthorityRole(context DeploymentContext) bool {
+	return context.Role == DeploymentRoleSingle || context.Role == DeploymentRoleControl
+}
 func requiredDockerFull(context DeploymentContext) bool {
 	return context.Mode == DeploymentModeDocker && context.Profile == DeploymentProfileFull
 }
@@ -363,6 +367,17 @@ func validatePositiveInteger(value string) error {
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed <= 0 {
 		return fmt.Errorf("value %q must be a positive integer", value)
+	}
+	return nil
+}
+
+func validateRequiredPositiveUint64(value string) error {
+	if value == "" {
+		return fmt.Errorf("value must be a positive integer")
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || parsed == 0 {
+		return fmt.Errorf("value must be a positive integer")
 	}
 	return nil
 }

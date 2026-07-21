@@ -223,6 +223,10 @@ func completedBootstrap(role config.DeploymentRole) config.BootstrapConfig {
 	bootstrap.ConfigRevision = 7
 	bootstrap.Values["SETUP_COMPLETED"] = "true"
 	bootstrap.Values["CONFIG_REVISION"] = "7"
+	if role == config.DeploymentRoleSingle || role == config.DeploymentRoleControl {
+		bootstrap.SetupTokenVersion = 1
+		bootstrap.Values["SETUP_TOKEN_VERSION"] = "1"
+	}
 	bootstrap.Values["POSTGRES_MANAGED"] = "false"
 	bootstrap.Values["REDIS_MANAGED"] = "false"
 	bootstrap.Values["OBJECT_STORAGE_MANAGED"] = "false"

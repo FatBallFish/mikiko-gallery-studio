@@ -34,6 +34,7 @@ for (const path of ['README.md', 'README.zh-CN.md']) {
 const smoke = read('scripts/test/api_contract_smoke.sh')
 for (const required of [
   'SETUP_COMPLETED=true',
+  'SETUP_TOKEN_VERSION=1',
   'POSTGRES_CONTAINER=',
   'REDIS_CONTAINER=',
   'postgres:16-alpine',

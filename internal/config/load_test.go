@@ -118,6 +118,36 @@ func TestLoadBootstrapAllowsIncompletePendingRuntime(t *testing.T) {
 	}
 }
 
+func TestLoadBootstrapReadsSetupTokenVersionFromSameSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pending.env")
+	writeRuntimeValuesForTest(t, path, map[string]string{
+		"SETUP_COMPLETED":     "false",
+		"SETUP_TOKEN":         "pending-token",
+		"SETUP_TOKEN_VERSION": "7",
+	})
+
+	bootstrap, err := LoadBootstrap(path)
+	if err != nil {
+		t.Fatalf("LoadBootstrap returned error: %v", err)
+	}
+	if bootstrap.SetupTokenVersion != 7 {
+		t.Fatalf("setup token version = %d, want 7", bootstrap.SetupTokenVersion)
+	}
+	if bootstrap.Values["SETUP_TOKEN_VERSION"] != "7" {
+		t.Fatal("typed setup token version did not come from bootstrap Values snapshot")
+	}
+
+	for _, invalid := range []string{"0", "-1", "not-a-number", "18446744073709551616"} {
+		content := []byte("SETUP_COMPLETED=false\nSETUP_TOKEN=pending-token\nSETUP_TOKEN_VERSION=" + invalid + "\n")
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatalf("write invalid runtime env: %v", err)
+		}
+		if _, err := LoadBootstrap(path); err == nil || strings.Contains(err.Error(), invalid) {
+			t.Errorf("LoadBootstrap(%q) error = %v, want sanitized positive-version error", invalid, err)
+		}
+	}
+}
+
 func TestLoadRuntimeRequiresCompletedSetupAndRequiredFields(t *testing.T) {
 	pendingPath := filepath.Join(t.TempDir(), "pending.env")
 	writeRuntimeValuesForTest(t, pendingPath, map[string]string{"SETUP_COMPLETED": "false"})
@@ -131,6 +161,40 @@ func TestLoadRuntimeRequiresCompletedSetupAndRequiredFields(t *testing.T) {
 	writeRuntimeValuesForTest(t, missingRedisPath, values)
 	if _, err := LoadRuntime(missingRedisPath); err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
 		t.Fatalf("LoadRuntime missing required field error = %v, want REDIS_URL diagnostic", err)
+	}
+}
+
+func TestLoadRuntimeRequiresRetainedSetupTokenVersionOnlyOnAuthorities(t *testing.T) {
+	authorityPath := filepath.Join(t.TempDir(), "authority.env")
+	authorityValues := completeRuntimeValuesForTest()
+	writeRuntimeValuesForTest(t, authorityPath, authorityValues)
+	removeRuntimeFieldForTest(t, authorityPath, "SETUP_TOKEN_VERSION")
+	if _, err := LoadRuntime(authorityPath); err == nil || !strings.Contains(err.Error(), "SETUP_TOKEN_VERSION") {
+		t.Fatalf("completed authority missing token version error = %v", err)
+	}
+
+	joinedPath := filepath.Join(t.TempDir(), "joined.env")
+	writeRuntimeValuesForTest(t, joinedPath, map[string]string{
+		"RUNTIME_SCHEMA_VERSION": "1",
+		"DEPLOYMENT_MODE":        "native",
+		"DEPLOYMENT_PROFILE":     "core",
+		"DEPLOYMENT_TOPOLOGY":    "cluster",
+		"DEPLOYMENT_ROLE":        "web",
+		"DEPLOYMENT_MODULES":     "user-web,gateway",
+		"POSTGRES_MANAGED":       "false",
+		"REDIS_MANAGED":          "false",
+		"OBJECT_STORAGE_MANAGED": "false",
+		"SETUP_COMPLETED":        "true",
+		"PUBLIC_API_URL":         "http://api.internal:8080",
+		"RELEASE_VERSION":        "test",
+		"INSTALLATION_ID":        "installation-test",
+		"CLUSTER_NODE_ID":        "web-node-test",
+		"CONFIG_REVISION":        "1",
+		"APPLICATION_VERSION":    "test",
+	})
+	removeRuntimeFieldForTest(t, joinedPath, "SETUP_TOKEN_VERSION")
+	if _, err := LoadRuntime(joinedPath); err != nil {
+		t.Fatalf("joined node without setup token version was rejected: %v", err)
 	}
 }
 
@@ -356,5 +420,23 @@ func writeRuntimeValuesForTest(t *testing.T, path string, values map[string]stri
 	}
 	if err := os.WriteFile(path, rendered, 0o600); err != nil {
 		t.Fatalf("write runtime env: %v", err)
+	}
+}
+
+func removeRuntimeFieldForTest(t *testing.T, path, key string) {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read runtime env: %v", err)
+	}
+	lines := strings.Split(string(content), "\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if !strings.HasPrefix(line, key+"=") {
+			filtered = append(filtered, line)
+		}
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(filtered, "\n")), 0o600); err != nil {
+		t.Fatalf("write runtime env without %s: %v", key, err)
 	}
 }

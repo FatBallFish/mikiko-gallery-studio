@@ -23,6 +23,7 @@ type BootstrapConfig struct {
 	ObjectStorageManaged bool
 	SetupCompleted       bool
 	SetupToken           string
+	SetupTokenVersion    uint64
 	InstallationID       string
 	ClusterNodeID        string
 	ConfigRevision       int
@@ -91,6 +92,9 @@ func LoadBootstrap(path string) (BootstrapConfig, error) {
 		return BootstrapConfig{}, err
 	}
 	if bootstrap.ConfigRevision, err = optionalEnvInt(document.Values, "CONFIG_REVISION"); err != nil {
+		return BootstrapConfig{}, err
+	}
+	if bootstrap.SetupTokenVersion, err = optionalEnvPositiveUint64(document.Values, "SETUP_TOKEN_VERSION"); err != nil {
 		return BootstrapConfig{}, err
 	}
 	if bootstrap.SetupCompleted, err = optionalEnvBool(document.Values, "SETUP_COMPLETED"); err != nil {
@@ -256,6 +260,18 @@ func optionalEnvInt(values map[string]string, key string) (int, error) {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, fmt.Errorf("parse runtime field %s as integer: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func optionalEnvPositiveUint64(values map[string]string, key string) (uint64, error) {
+	value := strings.TrimSpace(values[key])
+	if value == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || parsed == 0 {
+		return 0, fmt.Errorf("parse runtime field %s as positive integer", key)
 	}
 	return parsed, nil
 }
