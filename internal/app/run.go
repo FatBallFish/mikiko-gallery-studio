@@ -210,6 +210,14 @@ func verifyCompletedStartupBinding(ctx context.Context, startup apiStartup) erro
 }
 
 func runNormalStartup(_ string, startup apiStartup) error {
+	return runNormalStartupWithOptions(startup, normalStartupOptions{})
+}
+
+type normalStartupOptions struct {
+	dependencyTimeout time.Duration
+}
+
+func runNormalStartupWithOptions(startup apiStartup, options normalStartupOptions) error {
 	cfg, err := config.RuntimeFromBootstrap(startup.Bootstrap)
 	if err != nil {
 		slog.Error("normal runtime validation failed", "diagnostic_code", "RUNTIME_CONFIG_INVALID")
@@ -235,22 +243,28 @@ func runNormalStartup(_ string, startup apiStartup) error {
 	if err := validatePromptOptimizationQuoteSigningKey(cfg); err != nil {
 		return err
 	}
+	dependencyTimeout := options.dependencyTimeout
+	if dependencyTimeout <= 0 {
+		dependencyTimeout = 15 * time.Second
+	}
+	startupContext, cancelStartup := context.WithTimeout(context.Background(), dependencyTimeout)
+	defer cancelStartup()
 	metricsContext, stopMetrics := context.WithCancel(context.Background())
 	defer stopMetrics()
 	observability.DefaultMetrics().Runtime().Start(metricsContext)
 
-	client, err := db.Open(cfg.Database.URL)
+	client, err := db.OpenContext(startupContext, cfg.Database.URL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer client.Close()
-	if err := checkRuntimeSchemaCompatibility(context.Background(), client, cfg); err != nil {
+	if err := checkRuntimeSchemaCompatibility(startupContext, client, cfg); err != nil {
 		return err
 	}
-	if err := verifyCompletedStartupBinding(context.Background(), startup); err != nil {
+	if err := verifyCompletedStartupBinding(startupContext, startup); err != nil {
 		return fmt.Errorf("verify completed setup binding: %w", err)
 	}
-	redisClient, allowRedisFallback, err := newRedisClient(context.Background(), cfg)
+	redisClient, allowRedisFallback, err := newRedisClient(startupContext, cfg)
 	if err != nil {
 		return err
 	}
@@ -265,7 +279,7 @@ func runNormalStartup(_ string, startup apiStartup) error {
 
 	secureConfigSvc := secureconfigservice.NewService(entstore.NewSecureConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Auth.SMTP, cfg.App.Env)
 	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
-	if err := storageConfigSvc.Bootstrap(context.Background(), 0); err != nil {
+	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
@@ -310,11 +324,7 @@ func runNormalStartup(_ string, startup apiStartup) error {
 	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 
-	srv := &http.Server{
-		Addr:              cfg.App.Addr,
-		Handler:           apphttp.NewWithAPIAndConfig(api, cfg),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	srv := newApplicationHTTPServer(cfg.App.Addr, apphttp.NewWithAPIAndConfig(api, cfg), bootstrapServeOptions{})
 
 	slog.Info("starting pic-gallery api", "name", cfg.App.Name, "env", cfg.App.Env, "addr", cfg.App.Addr)
 	err = srv.ListenAndServe()
@@ -400,7 +410,19 @@ func bootstrapAddress(bootstrap config.BootstrapConfig) string {
 }
 
 func serveBootstrapAPI(address string, handler http.Handler) error {
-	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	return serveBootstrapAPIWithOptions(address, handler, bootstrapServeOptions{})
+}
+
+type bootstrapServeOptions struct {
+	listener        net.Listener
+	shutdownTimeout time.Duration
+	readTimeout     time.Duration
+	idleTimeout     time.Duration
+	maxHeaderBytes  int
+}
+
+func serveBootstrapAPIWithOptions(address string, handler http.Handler, options bootstrapServeOptions) error {
+	server := newApplicationHTTPServer(address, handler, options)
 	restartHandler, restartEnabled := handler.(interface{ RestartSignal() <-chan struct{} })
 	if !restartEnabled {
 		err := server.ListenAndServe()
@@ -409,9 +431,13 @@ func serveBootstrapAPI(address string, handler http.Handler) error {
 		}
 		return err
 	}
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		return err
+	listener := options.listener
+	if listener == nil {
+		var err error
+		listener, err = net.Listen("tcp", address)
+		if err != nil {
+			return err
+		}
 	}
 	serverErrors := make(chan error, 1)
 	go func() {
@@ -423,22 +449,51 @@ func serveBootstrapAPI(address string, handler http.Handler) error {
 		serverErrors <- server.Serve(listener)
 	}()
 	select {
-	case err = <-serverErrors:
-		if errors.Is(err, http.ErrServerClosed) {
+	case serveErr := <-serverErrors:
+		if errors.Is(serveErr, http.ErrServerClosed) {
 			return nil
 		}
-		return err
+		return serveErr
 	case <-restartHandler.RestartSignal():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownTimeout := options.shutdownTimeout
+		if shutdownTimeout <= 0 {
+			shutdownTimeout = 5 * time.Second
+		}
+		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
+		var restartWarnings []error
 		if shutdownErr := server.Shutdown(shutdownContext); shutdownErr != nil {
-			_ = server.Close()
-			return fmt.Errorf("shutdown setup API for restart: %w", shutdownErr)
+			restartWarnings = append(restartWarnings, errors.New("bootstrap API graceful shutdown exceeded its deadline"))
+			if closeErr := server.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+				restartWarnings = append(restartWarnings, errors.New("bootstrap API forced close failed"))
+			}
 		}
 		if serveErr := <-serverErrors; serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			return serveErr
+			restartWarnings = append(restartWarnings, errors.New("bootstrap API server stopped unexpectedly during restart"))
 		}
-		return ErrSupervisorRestart
+		return errors.Join(append([]error{ErrSupervisorRestart}, restartWarnings...)...)
+	}
+}
+
+func newApplicationHTTPServer(address string, handler http.Handler, options bootstrapServeOptions) *http.Server {
+	readTimeout := options.readTimeout
+	if readTimeout <= 0 {
+		readTimeout = 15 * time.Second
+	}
+	idleTimeout := options.idleTimeout
+	if idleTimeout <= 0 {
+		idleTimeout = 60 * time.Second
+	}
+	maxHeaderBytes := options.maxHeaderBytes
+	if maxHeaderBytes <= 0 {
+		maxHeaderBytes = 1 << 20
+	}
+	return &http.Server{
+		Addr: address, Handler: handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
 	}
 }
 

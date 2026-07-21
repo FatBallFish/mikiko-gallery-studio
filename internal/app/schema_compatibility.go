@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
@@ -17,6 +20,13 @@ func checkRuntimeSchemaCompatibility(ctx context.Context, client *repoent.Client
 		DatabaseSchemaVersion: db.CurrentDatabaseSchemaVersion,
 	}
 	if err := db.CheckSchemaCompatibility(ctx, client, expected); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
+		var networkErr net.Error
+		if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) && errors.As(err, &networkErr) && networkErr.Timeout() {
+			return context.DeadlineExceeded
+		}
 		return fmt.Errorf("check database schema compatibility: %w", err)
 	}
 	return nil

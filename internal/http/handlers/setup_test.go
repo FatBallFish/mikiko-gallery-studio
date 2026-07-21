@@ -267,6 +267,7 @@ func TestSetupStableErrorResponseTable(t *testing.T) {
 		{name: "gone", err: setup.ErrSetupOperationGone, writer: writeSetupServiceError, wantStatus: 404, wantCode: "SETUP_OPERATION_NOT_FOUND"},
 		{name: "conflict", err: setup.ErrSetupOperationConflict, writer: writeSetupServiceError, wantStatus: 409, wantCode: "SETUP_OPERATION_CONFLICT"},
 		{name: "binding mismatch", err: setup.ErrSetupBindingMismatch, writer: writeSetupServiceError, wantStatus: 409, wantCode: "SETUP_OPERATION_CONFLICT"},
+		{name: "first administrator conflict", err: setup.ErrFirstAdminConflict, writer: writeSetupServiceError, wantStatus: 409, wantCode: "SETUP_FIRST_ADMIN_CONFLICT"},
 		{name: "internal", err: setup.ErrSetupCommit, writer: writeSetupServiceError, wantStatus: 500, wantCode: "SETUP_INTERNAL_ERROR"},
 	}
 	for _, testCase := range testCases {

@@ -34,8 +34,14 @@ func NewSetupStore(client *repoent.Client) *SetupStore {
 	return &SetupStore{client: client}
 }
 
-func OpenSetupStore(_ context.Context, databaseURL string) (setup.SetupStoreSession, error) {
-	client, err := db.Open(databaseURL)
+func OpenSetupStore(ctx context.Context, databaseURL string) (setup.SetupStoreSession, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	client, err := db.OpenContext(ctx, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("open setup database: %w", err)
 	}

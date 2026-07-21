@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,14 +13,42 @@ import (
 //go:embed openapi.yaml
 var document []byte
 
-var routeContract = mustLoadRouteContract(document)
+type RouteContract struct {
+	routes map[string]map[string]struct{}
+}
+
+var (
+	routeContractOnce sync.Once
+	routeContract     *RouteContract
+	routeContractErr  error
+)
+
+// LoadRouteContract validates and caches the embedded contract on first normal-router construction.
+func LoadRouteContract() (*RouteContract, error) {
+	routeContractOnce.Do(func() {
+		var routes map[string]map[string]struct{}
+		routes, routeContractErr = parseRouteContract(document)
+		if routeContractErr == nil {
+			routeContract = &RouteContract{routes: routes}
+		}
+	})
+	return routeContract, routeContractErr
+}
 
 // Allows reports whether the embedded OpenAPI contract contains the path and method.
 func Allows(method, path string) bool {
+	contract, err := LoadRouteContract()
+	return err == nil && contract.Allows(method, path)
+}
+
+func (contract *RouteContract) Allows(method, path string) bool {
+	if contract == nil {
+		return false
+	}
 	method = strings.ToLower(strings.TrimSpace(method))
 	bestSpecificity := -1
 	allowed := false
-	for template, methods := range routeContract {
+	for template, methods := range contract.routes {
 		if !matchPathTemplate(template, path) {
 			continue
 		}
@@ -65,14 +94,6 @@ func parseRouteContract(data []byte) (map[string]map[string]struct{}, error) {
 		return nil, fmt.Errorf("parse embedded OpenAPI route contract: operations are empty")
 	}
 	return contract, nil
-}
-
-func mustLoadRouteContract(data []byte) map[string]map[string]struct{} {
-	contract, err := parseRouteContract(data)
-	if err != nil {
-		panic(err)
-	}
-	return contract
 }
 
 func matchPathTemplate(template, path string) bool {

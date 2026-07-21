@@ -156,6 +156,9 @@ func TestOpenAPISpecDocumentsBootstrapAndPendingSetupWithoutSecretExamples(t *te
 			}
 		}
 	}
+	if !strings.Contains(string(content), "SETUP_FIRST_ADMIN_CONFLICT") {
+		t.Fatal("setup apply 409 response must document SETUP_FIRST_ADMIN_CONFLICT")
+	}
 
 	schemaContent, err := os.ReadFile("components/schemas/setup.yaml")
 	if err != nil {

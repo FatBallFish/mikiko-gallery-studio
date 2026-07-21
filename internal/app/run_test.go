@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -113,6 +117,107 @@ func TestServeBootstrapAPIReturnsRestartSentinelAfterSignal(t *testing.T) {
 	}
 	if err := serveBootstrapAPI("127.0.0.1:0", handler); !errors.Is(err, ErrSupervisorRestart) {
 		t.Fatalf("serveBootstrapAPI restart error = %v, want ErrSupervisorRestart", err)
+	}
+}
+
+func TestServeBootstrapAPIPreservesRestartExitAfterForcedDrain(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	restart := make(chan struct{})
+	requestStarted := make(chan struct{})
+	handler := setupRestartHandler{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(requestStarted)
+			<-r.Context().Done()
+		}),
+		restart: restart,
+	}
+	serveResult := make(chan error, 1)
+	go func() {
+		serveResult <- serveBootstrapAPIWithOptions("", handler, bootstrapServeOptions{
+			listener: listener, shutdownTimeout: 20 * time.Millisecond,
+		})
+	}()
+	requestResult := make(chan error, 1)
+	go func() {
+		response, requestErr := http.Get("http://" + listener.Addr().String() + "/blocking")
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		requestResult <- requestErr
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("blocking request did not reach bootstrap server")
+	}
+	close(restart)
+	select {
+	case serveErr := <-serveResult:
+		if !errors.Is(serveErr, ErrSupervisorRestart) || ExitCode(serveErr) != SupervisorRestartExitCode {
+			t.Fatalf("forced restart drain error=%v exit=%d, want wrapped restart sentinel and exit %d", serveErr, ExitCode(serveErr), SupervisorRestartExitCode)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap server did not finish forced restart drain")
+	}
+	select {
+	case <-requestResult:
+	case <-time.After(time.Second):
+		t.Fatal("blocking request goroutine did not terminate after forced close")
+	}
+	if connection, dialErr := net.DialTimeout("tcp", listener.Addr().String(), 20*time.Millisecond); dialErr == nil {
+		_ = connection.Close()
+		t.Fatal("bootstrap listener remained open after forced restart drain")
+	}
+}
+
+func TestServeBootstrapAPIBoundsSlowRequestBody(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	restart := make(chan struct{})
+	handler := setupRestartHandler{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusNoContent)
+		}),
+		restart: restart,
+	}
+	serveResult := make(chan error, 1)
+	go func() {
+		serveResult <- serveBootstrapAPIWithOptions("", handler, bootstrapServeOptions{
+			listener: listener, shutdownTimeout: time.Second,
+			readTimeout: 30 * time.Millisecond, idleTimeout: time.Second, maxHeaderBytes: 8 << 10,
+		})
+	}()
+	connection, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatalf("dial bootstrap server: %v", err)
+	}
+	if _, err := io.WriteString(connection, "POST /api/setup/v1/apply HTTP/1.1\r\nHost: setup.test\r\nContent-Length: 1048576\r\n\r\nx"); err != nil {
+		t.Fatalf("write partial slow request: %v", err)
+	}
+	if err := connection.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	buffer := make([]byte, 1)
+	if _, err := connection.Read(buffer); err != nil {
+		if networkErr, ok := err.(net.Error); ok && networkErr.Timeout() {
+			t.Fatal("bootstrap server left slow request body open beyond configured read timeout")
+		}
+	}
+	_ = connection.Close()
+	close(restart)
+	select {
+	case serveErr := <-serveResult:
+		if !errors.Is(serveErr, ErrSupervisorRestart) {
+			t.Fatalf("slow body cleanup returned %v, want restart sentinel", serveErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap server did not stop after slow body test")
 	}
 }
 
@@ -337,6 +442,70 @@ func TestRunNormalReceivesOriginalRuntimeDocumentWhenFileIsReplacedAfterModeLoad
 	})
 	if err != nil || normalCalls != 1 {
 		t.Fatalf("runAPI=(%v), normal calls=%d", err, normalCalls)
+	}
+}
+
+func TestRunNormalStartupBoundsDatabaseCompatibilityBeforeListen(t *testing.T) {
+	listener, closeSink := newTCPBlackhole(t)
+	defer closeSink()
+	secret := "startup-database-secret"
+	bootstrap := completedAPIBootstrapForTest()
+	bootstrap.Values["PIC_GALLERY_ENV"] = "local"
+	bootstrap.Values["DATABASE_URL"] = fmt.Sprintf("postgres://app:%s@%s/app?sslmode=disable", secret, listener.Addr())
+	result := make(chan error, 1)
+	started := time.Now()
+	go func() {
+		result <- runNormalStartupWithOptions(apiStartup{Bootstrap: bootstrap}, normalStartupOptions{
+			dependencyTimeout: 40 * time.Millisecond,
+		})
+	}()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("bounded normal startup error=%v, want context deadline", err)
+		}
+		if strings.Contains(err.Error(), secret) || time.Since(started) > 300*time.Millisecond {
+			t.Fatalf("bounded normal startup leaked secret or exceeded deadline: elapsed=%s err=%v", time.Since(started), err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		closeSink()
+		<-result
+		t.Fatal("normal startup database compatibility remained unbounded")
+	}
+}
+
+func newTCPBlackhole(t *testing.T) (net.Listener, func()) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen TCP blackhole: %v", err)
+	}
+	var mu sync.Mutex
+	connections := make([]net.Conn, 0, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			connection, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			mu.Lock()
+			connections = append(connections, connection)
+			mu.Unlock()
+		}
+	}()
+	var once sync.Once
+	return listener, func() {
+		once.Do(func() {
+			_ = listener.Close()
+			<-done
+			mu.Lock()
+			for _, connection := range connections {
+				_ = connection.Close()
+			}
+			mu.Unlock()
+		})
 	}
 }
 

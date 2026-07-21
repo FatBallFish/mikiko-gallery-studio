@@ -2,8 +2,20 @@ package openapi
 
 import (
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 )
+
+func TestRouteContractIsNotParsedDuringPackageInitialization(t *testing.T) {
+	source, err := os.ReadFile("routes.go")
+	if err != nil {
+		t.Fatalf("read routes.go: %v", err)
+	}
+	if strings.Contains(string(source), "var routeContract = mustLoadRouteContract(document)") {
+		t.Fatal("embedded OpenAPI route contract must load only when the normal router is constructed")
+	}
+}
 
 func TestAllowsMatchesEmbeddedRouteMethods(t *testing.T) {
 	testCases := []struct {

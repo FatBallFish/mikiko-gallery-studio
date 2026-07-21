@@ -158,7 +158,11 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/docs/errors", api.HandleDocsErrors)
 	}
 
-	return wrapHandler(mux, corsAllowedOrigins, normalPreflightPolicy(api != nil))
+	var routeContract *openapispec.RouteContract
+	if api != nil {
+		routeContract, _ = openapispec.LoadRouteContract()
+	}
+	return wrapHandler(mux, corsAllowedOrigins, normalPreflightPolicy(api != nil, routeContract))
 }
 
 func registerSystemRoutes(mux *http.ServeMux, system *handlers.SystemAPI) {
@@ -176,7 +180,7 @@ func wrapHandler(mux http.Handler, corsAllowedOrigins []string, preflight middle
 	return handler
 }
 
-func normalPreflightPolicy(businessRoutesRegistered bool) middleware.PreflightPolicy {
+func normalPreflightPolicy(businessRoutesRegistered bool, routeContract *openapispec.RouteContract) middleware.PreflightPolicy {
 	return func(path, method string) bool {
 		if path == "/setup" || strings.HasPrefix(path, "/setup/") || strings.HasPrefix(path, "/api/setup/") {
 			return false
@@ -193,7 +197,7 @@ func normalPreflightPolicy(businessRoutesRegistered bool) middleware.PreflightPo
 		if !businessRoutesRegistered {
 			return false
 		}
-		if openapispec.Allows(method, path) {
+		if routeContract != nil && routeContract.Allows(method, path) {
 			return true
 		}
 		return allowsSupplementalNormalRoute(path, method)
@@ -263,6 +267,7 @@ var supplementalNormalExactRoutes = map[string]map[string]bool{
 	"/api/ops/admin/v1/redeem-codes:export":                    {http.MethodPost: true},
 	"/api/ops/admin/v1/monitoring/snapshot":                    {http.MethodGet: true},
 	"/api/ops/admin/v1/storage-configs:probe":                  {http.MethodPost: true},
+	"/api/ops/admin/v1/cashier/visible-methods/":               {http.MethodGet: true, http.MethodPut: true},
 	"/docs/openapi.yaml":                                       {http.MethodGet: true},
 	"/docs/openapi.json":                                       {http.MethodGet: true},
 	"/docs/examples":                                           {http.MethodGet: true},

@@ -304,6 +304,8 @@ func writeSetupServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, "SETUP_OPERATION_NOT_FOUND", "setup operation was not found"))
 	case errors.Is(err, setup.ErrSetupOperationConflict), errors.Is(err, setup.ErrSetupBindingMismatch):
 		httpx.WriteError(w, r, errs.New(http.StatusConflict, "SETUP_OPERATION_CONFLICT", "another setup operation is already active"))
+	case errors.Is(err, setup.ErrFirstAdminConflict):
+		httpx.WriteError(w, r, errs.New(http.StatusConflict, "SETUP_FIRST_ADMIN_CONFLICT", "the first administrator already exists"))
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, "SETUP_INTERNAL_ERROR", "setup operation failed"))
 	}

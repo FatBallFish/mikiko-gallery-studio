@@ -174,6 +174,18 @@ func TestSetupStoreRecognizesOnlyExactCompletedMigration(t *testing.T) {
 	}
 }
 
+func TestOpenSetupStoreRejectsCancelledContextBeforeOpeningClient(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	store, err := entstore.OpenSetupStore(ctx, "file:cancelled-setup-store?mode=memory&cache=shared&_fk=1")
+	if store != nil {
+		_ = store.Close()
+	}
+	if store != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("OpenSetupStore(cancelled) = (%v, %v), want nil, context.Canceled", store, err)
+	}
+}
+
 func TestSetupStoreConcurrentPostgresInitializationIsIdempotent(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
 	if databaseURL == "" {
