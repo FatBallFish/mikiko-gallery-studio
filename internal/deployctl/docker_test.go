@@ -216,6 +216,27 @@ func TestDockerExecutorRejectsNativePlansBeforeRunningAProcess(t *testing.T) {
 	}
 }
 
+func TestDockerExecutorPreflightChecksDaemonAndComposeWithoutRuntimeConfig(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "cluster", Role: "worker", RuntimeDir: "runtime", StorageDriver: "s3", ApplicationVersion: "v1", InstallationInitialized: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingProcessRunner{}
+	executor := DockerExecutor{
+		Runner: runner,
+		ReadFile: func(string) ([]byte, error) {
+			t.Fatal("Docker preflight must not read unpublished runtime config")
+			return nil, nil
+		},
+	}
+	if err := executor.Preflight(t.Context(), plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.specs) != 2 || strings.Join(runner.specs[0].Arguments, " ") != "version --format {{.Server.Version}}" || strings.Join(runner.specs[1].Arguments, " ") != "compose version" {
+		t.Fatalf("Docker preflight specs = %#v", runner.specs)
+	}
+}
+
 type recordingProcessRunner struct {
 	specs  []ProcessSpec
 	failAt int

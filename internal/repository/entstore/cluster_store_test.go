@@ -3,6 +3,7 @@ package entstore_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,18 +42,18 @@ func TestClusterStorePersistsHashOnlyTokensAndAtomicallyConsumesThem(t *testing.
 			TokenID: uuid.NewString(), InstallationID: installationID, Role: domaincluster.JoinRoleWorker,
 			ExpiresAt: now.Add(time.Hour), CreatedBy: "admin-7", CreatedAt: now, UpdatedAt: now,
 		},
-		TokenHash: strings.Repeat("a", 64),
+		TokenHash: strings.Repeat("a", 64), TokenProofPublicKey: base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("p", 32))),
 	}
 	created, err := store.CreateToken(t.Context(), record)
 	if err != nil || created.TokenHash != record.TokenHash {
 		t.Fatalf("create token = %#v, %v", created, err)
 	}
 	entity, err := client.ClusterToken.Query().Where(clustertoken.TokenIDEQ(record.TokenID)).Only(t.Context())
-	if err != nil || entity.TokenHash != record.TokenHash {
+	if err != nil || entity.TokenHash != record.TokenHash || entity.TokenProofPublicKey != record.TokenProofPublicKey {
 		t.Fatalf("stored token = %#v, %v", entity, err)
 	}
 	encoded, err := json.Marshal(entity)
-	if err != nil || strings.Contains(string(encoded), record.TokenHash) || strings.Contains(string(encoded), "token_hash") {
+	if err != nil || strings.Contains(string(encoded), record.TokenHash) || strings.Contains(string(encoded), record.TokenProofPublicKey) || strings.Contains(string(encoded), "token_hash") || strings.Contains(string(encoded), "token_proof_public_key") {
 		t.Fatalf("stored token JSON exposed hash: %s, %v", encoded, err)
 	}
 	consumed, node, err := store.AcceptEnrollment(t.Context(), installationID, record.TokenID, record.TokenHash, domaincluster.Node{
@@ -100,7 +101,7 @@ func TestClusterStoreEnrollmentConflictRollsBackTokenAndAudit(t *testing.T) {
 		Token: domaincluster.Token{
 			TokenID: uuid.NewString(), InstallationID: installationID, Role: domaincluster.JoinRoleWorker,
 			ExpiresAt: now.Add(time.Hour), CreatedBy: "admin-1", CreatedAt: now, UpdatedAt: now,
-		}, TokenHash: strings.Repeat("f", 64),
+		}, TokenHash: strings.Repeat("f", 64), TokenProofPublicKey: testTokenProofPublicKey(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +158,7 @@ func TestClusterStoreConcurrentEnrollmentIsAtomicOnPostgres(t *testing.T) {
 		Token: domaincluster.Token{
 			TokenID: uuid.NewString(), InstallationID: installationID, Role: domaincluster.JoinRoleWorker,
 			ExpiresAt: now.Add(time.Hour), CreatedBy: "admin-1", CreatedAt: now, UpdatedAt: now,
-		}, TokenHash: strings.Repeat("9", 64),
+		}, TokenHash: strings.Repeat("9", 64), TokenProofPublicKey: testTokenProofPublicKey(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +214,7 @@ func TestClusterStoreListsRevokesAndKeepsInstallationBoundaries(t *testing.T) {
 		Token: domaincluster.Token{
 			TokenID: uuid.NewString(), InstallationID: installationID, Role: domaincluster.JoinRoleAPI,
 			ExpiresAt: now.Add(time.Hour), CreatedBy: "admin-1", CreatedAt: now, UpdatedAt: now,
-		}, TokenHash: strings.Repeat("c", 64),
+		}, TokenHash: strings.Repeat("c", 64), TokenProofPublicKey: testTokenProofPublicKey(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +237,7 @@ func TestClusterStoreListsRevokesAndKeepsInstallationBoundaries(t *testing.T) {
 		Token: domaincluster.Token{
 			TokenID: uuid.NewString(), InstallationID: installationID, Role: domaincluster.JoinRoleWorker,
 			ExpiresAt: now.Add(-time.Minute), CreatedBy: "admin-1", CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
-		}, TokenHash: strings.Repeat("e", 64),
+		}, TokenHash: strings.Repeat("e", 64), TokenProofPublicKey: testTokenProofPublicKey(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -332,4 +333,8 @@ func postgresURLWithSearchPath(t *testing.T, rawURL, searchPath string) string {
 	query.Set("search_path", searchPath)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
+}
+
+func testTokenProofPublicKey() string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("p", 32)))
 }

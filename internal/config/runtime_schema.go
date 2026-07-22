@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -145,6 +146,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			secretField("CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "application secrets", "加密支付渠道敏感配置的密钥；初始化后不得替换。", "Key encrypting sensitive payment-provider configuration; do not replace it after initialization.", FieldOwnerDeployctl, requiredAPINode),
 			secretField("PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "application secrets", "加密数据库中上游账号、对象存储和 SMTP 等敏感配置的共享密钥。", "Shared key encrypting provider, object-storage, SMTP, and other sensitive database configuration.", FieldOwnerDeployctl, requiredBackend),
 			secretField("PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY", "application secrets", "签名提示词优化报价的密钥；所有 API 节点必须一致。", "Key signing prompt-optimization quotes; it must be identical on every API node.", FieldOwnerDeployctl, requiredAPINode),
+			secretValidatedField("CLUSTER_ENROLLMENT_SEAL_KEY", "application secrets", "仅控制节点使用的集群入群临时密钥封装密钥；不得下发给 API、Worker 或 Web 加入节点。", "Control-node-only key wrapping ephemeral cluster enrollment keys; never send it to joined API, Worker, or Web nodes.", FieldOwnerDeployctl, requiredSetupAuthorityRole, validateOptionalBase64URL32),
 
 			field("PUBLIC_API_URL", "public endpoints", "浏览器和 Web 节点可访问的 API 公共基础地址，可使用 HTTP、域名或 IP 加端口。", "Public API base URL reachable by browsers and Web nodes; HTTP, domains, and IP-with-port are supported.", "http://127.0.0.1:8080", "", FieldOwnerSetup, requiredWebNode, validateHTTPURL),
 			field("CORS_ALLOWED_ORIGINS", "public endpoints", "允许跨域调用 API 的前端来源，多个来源使用逗号分隔；同源部署可留空。", "Frontend origins allowed to call the API, comma-separated; leave empty for same-origin deployments.", "http://127.0.0.1:5173,http://127.0.0.1:5174", "", FieldOwnerSetup, requiredNever, validateOptionalCSV),
@@ -419,6 +421,17 @@ func validateNonEmpty(value string) error {
 func validateOptionalNonEmpty(value string) error {
 	if value != "" && strings.TrimSpace(value) == "" {
 		return fmt.Errorf("provided value must not contain only whitespace")
+	}
+	return nil
+}
+
+func validateOptionalBase64URL32(value string) error {
+	if value == "" {
+		return nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || len(decoded) != 32 {
+		return errors.New("value must be a raw base64url encoding of exactly 32 bytes")
 	}
 	return nil
 }

@@ -20,11 +20,13 @@ type Terminal interface {
 }
 
 type CLIDependencies struct {
-	Terminal         Terminal
-	Stdout           io.Writer
-	Stderr           io.Writer
-	StdoutIsTerminal func(io.Writer) bool
-	Install          InstallDependencies
+	Terminal           Terminal
+	Stdout             io.Writer
+	Stderr             io.Writer
+	StdoutIsTerminal   func(io.Writer) bool
+	Install            InstallDependencies
+	ClusterJoin        ClusterJoinDependencies
+	ExecuteClusterJoin func(context.Context, ClusterJoinOptions, ClusterJoinDependencies) (ClusterJoinResult, error)
 }
 
 func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
@@ -44,6 +46,18 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 	if err != nil {
 		fmt.Fprintf(dependencies.Stderr, "deployctl: %v\n", err)
 		return 2
+	}
+	if command.Kind == CommandClusterJoin {
+		execute := dependencies.ExecuteClusterJoin
+		if execute == nil {
+			execute = ExecuteClusterJoin
+		}
+		result, executeErr := execute(ctx, *command.ClusterJoin, dependencies.ClusterJoin)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintf(dependencies.Stdout, "Joined cluster node %s as %s.\nRuntime configuration: %s\n", result.NodeID, result.Role, result.RuntimeEnvPath)
+		return 0
 	}
 	if command.Kind != CommandInstall {
 		fmt.Fprintf(dependencies.Stderr, "deployctl: command %q is not implemented in this build\n", command.Kind)

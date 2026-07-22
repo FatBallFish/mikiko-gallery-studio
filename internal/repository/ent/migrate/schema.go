@@ -181,6 +181,49 @@ var (
 			},
 		},
 	}
+	// ClusterChallengesColumns holds the columns for the "cluster_challenges" table.
+	ClusterChallengesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "challenge_id", Type: field.TypeString, Unique: true, Size: 128},
+		{Name: "installation_id", Type: field.TypeString, Size: 128},
+		{Name: "token_id", Type: field.TypeString, Size: 128},
+		{Name: "role", Type: field.TypeEnum, Enums: []string{"api", "worker", "web"}},
+		{Name: "node_id", Type: field.TypeString, Size: 128},
+		{Name: "node_public_key", Type: field.TypeString, Size: 43},
+		{Name: "server_public_key", Type: field.TypeString, Size: 43},
+		{Name: "server_nonce", Type: field.TypeString, Size: 43},
+		{Name: "app_version", Type: field.TypeString, Size: 128},
+		{Name: "runtime_schema_version", Type: field.TypeInt},
+		{Name: "config_revision", Type: field.TypeInt64},
+		{Name: "sealed_server_private_key", Type: field.TypeString, Size: 512},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "consumed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// ClusterChallengesTable holds the schema information for the "cluster_challenges" table.
+	ClusterChallengesTable = &schema.Table{
+		Name:       "cluster_challenges",
+		Columns:    ClusterChallengesColumns,
+		PrimaryKey: []*schema.Column{ClusterChallengesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "clusterchallenge_installation_id_token_id",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterChallengesColumns[4], ClusterChallengesColumns[5]},
+			},
+			{
+				Name:    "clusterchallenge_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterChallengesColumns[15]},
+			},
+			{
+				Name:    "clusterchallenge_consumed_at",
+				Unique:  false,
+				Columns: []*schema.Column{ClusterChallengesColumns[16]},
+			},
+		},
+	}
 	// ClusterNodesColumns holds the columns for the "cluster_nodes" table.
 	ClusterNodesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -226,6 +269,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "token_id", Type: field.TypeString, Unique: true, Size: 128},
 		{Name: "token_hash", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "token_proof_public_key", Type: field.TypeString, Size: 43},
 		{Name: "installation_id", Type: field.TypeString, Size: 128},
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"api", "worker", "web"}},
 		{Name: "expires_at", Type: field.TypeTime},
@@ -243,17 +287,17 @@ var (
 			{
 				Name:    "clustertoken_installation_id_role",
 				Unique:  false,
-				Columns: []*schema.Column{ClusterTokensColumns[5], ClusterTokensColumns[6]},
+				Columns: []*schema.Column{ClusterTokensColumns[6], ClusterTokensColumns[7]},
 			},
 			{
 				Name:    "clustertoken_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ClusterTokensColumns[7]},
+				Columns: []*schema.Column{ClusterTokensColumns[8]},
 			},
 			{
 				Name:    "clustertoken_consumed_at",
 				Unique:  false,
-				Columns: []*schema.Column{ClusterTokensColumns[8]},
+				Columns: []*schema.Column{ClusterTokensColumns[9]},
 			},
 		},
 	}
@@ -1872,6 +1916,7 @@ var (
 		APIKeyQuotaReservationsTable,
 		AdminUsersTable,
 		AuditLogsTable,
+		ClusterChallengesTable,
 		ClusterNodesTable,
 		ClusterTokensTable,
 		SystemConfigsTable,
@@ -1913,6 +1958,9 @@ var (
 )
 
 func init() {
+	ClusterChallengesTable.Annotation = &entsql.Annotation{
+		Table: "cluster_challenges",
+	}
 	ClusterNodesTable.Annotation = &entsql.Annotation{
 		Table: "cluster_nodes",
 	}

@@ -25,6 +25,8 @@ type ClusterToken struct {
 	TokenID string `json:"token_id,omitempty"`
 	// TokenHash holds the value of the "token_hash" field.
 	TokenHash string `json:"-"`
+	// TokenProofPublicKey holds the value of the "token_proof_public_key" field.
+	TokenProofPublicKey string `json:"-"`
 	// InstallationID holds the value of the "installation_id" field.
 	InstallationID string `json:"installation_id,omitempty"`
 	// Role holds the value of the "role" field.
@@ -49,7 +51,7 @@ func (*ClusterToken) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case clustertoken.FieldID:
 			values[i] = new(sql.NullInt64)
-		case clustertoken.FieldTokenID, clustertoken.FieldTokenHash, clustertoken.FieldInstallationID, clustertoken.FieldRole, clustertoken.FieldConsumedByNodeID, clustertoken.FieldAuditActor:
+		case clustertoken.FieldTokenID, clustertoken.FieldTokenHash, clustertoken.FieldTokenProofPublicKey, clustertoken.FieldInstallationID, clustertoken.FieldRole, clustertoken.FieldConsumedByNodeID, clustertoken.FieldAuditActor:
 			values[i] = new(sql.NullString)
 		case clustertoken.FieldCreatedAt, clustertoken.FieldUpdatedAt, clustertoken.FieldExpiresAt, clustertoken.FieldConsumedAt, clustertoken.FieldRevokedAt:
 			values[i] = new(sql.NullTime)
@@ -97,6 +99,12 @@ func (_m *ClusterToken) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field token_hash", values[i])
 			} else if value.Valid {
 				_m.TokenHash = value.String
+			}
+		case clustertoken.FieldTokenProofPublicKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field token_proof_public_key", values[i])
+			} else if value.Valid {
+				_m.TokenProofPublicKey = value.String
 			}
 		case clustertoken.FieldInstallationID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -189,6 +197,8 @@ func (_m *ClusterToken) String() string {
 	builder.WriteString(_m.TokenID)
 	builder.WriteString(", ")
 	builder.WriteString("token_hash=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("token_proof_public_key=<sensitive>")
 	builder.WriteString(", ")
 	builder.WriteString("installation_id=")
 	builder.WriteString(_m.InstallationID)

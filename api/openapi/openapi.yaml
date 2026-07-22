@@ -4066,8 +4066,18 @@ paths:
           application/json:
             schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterChallengeRequest }
       responses:
-        '501':
-          description: Encrypted enrollment is unavailable until the protocol implementation is enabled
+        '201':
+          description: Short-lived challenge bound to the token, node, installation, version, and runtime schema
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterChallengeResponse }
+        '400':
+          description: Invalid or incompatible enrollment metadata
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+        '401':
+          description: Token is invalid, unavailable, revoked, consumed, or expired
           content:
             application/json:
               schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
@@ -4082,8 +4092,23 @@ paths:
           application/json:
             schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterJoinRequest }
       responses:
-        '501':
-          description: Encrypted enrollment is unavailable until the protocol implementation is enabled
+        '201':
+          description: Node registration and role-minimized encrypted runtime envelope
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterJoinResponse }
+        '400':
+          description: Invalid enrollment request
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+        '401':
+          description: Challenge or proof is invalid or expired
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+        '409':
+          description: Challenge or token was already consumed, or the node identity conflicts
           content:
             application/json:
               schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }

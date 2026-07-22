@@ -18,6 +18,9 @@ type AdminUser func(*sql.Selector)
 // AuditLog is the predicate function for auditlog builders.
 type AuditLog func(*sql.Selector)
 
+// ClusterChallenge is the predicate function for clusterchallenge builders.
+type ClusterChallenge func(*sql.Selector)
+
 // ClusterNode is the predicate function for clusternode builders.
 type ClusterNode func(*sql.Selector)
 

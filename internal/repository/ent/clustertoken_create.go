@@ -60,6 +60,12 @@ func (_c *ClusterTokenCreate) SetTokenHash(v string) *ClusterTokenCreate {
 	return _c
 }
 
+// SetTokenProofPublicKey sets the "token_proof_public_key" field.
+func (_c *ClusterTokenCreate) SetTokenProofPublicKey(v string) *ClusterTokenCreate {
+	_c.mutation.SetTokenProofPublicKey(v)
+	return _c
+}
+
 // SetInstallationID sets the "installation_id" field.
 func (_c *ClusterTokenCreate) SetInstallationID(v string) *ClusterTokenCreate {
 	_c.mutation.SetInstallationID(v)
@@ -195,6 +201,14 @@ func (_c *ClusterTokenCreate) check() error {
 			return &ValidationError{Name: "token_hash", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.token_hash": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.TokenProofPublicKey(); !ok {
+		return &ValidationError{Name: "token_proof_public_key", err: errors.New(`ent: missing required field "ClusterToken.token_proof_public_key"`)}
+	}
+	if v, ok := _c.mutation.TokenProofPublicKey(); ok {
+		if err := clustertoken.TokenProofPublicKeyValidator(v); err != nil {
+			return &ValidationError{Name: "token_proof_public_key", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.token_proof_public_key": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.InstallationID(); !ok {
 		return &ValidationError{Name: "installation_id", err: errors.New(`ent: missing required field "ClusterToken.installation_id"`)}
 	}
@@ -268,6 +282,10 @@ func (_c *ClusterTokenCreate) createSpec() (*ClusterToken, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.TokenHash(); ok {
 		_spec.SetField(clustertoken.FieldTokenHash, field.TypeString, value)
 		_node.TokenHash = value
+	}
+	if value, ok := _c.mutation.TokenProofPublicKey(); ok {
+		_spec.SetField(clustertoken.FieldTokenProofPublicKey, field.TypeString, value)
+		_node.TokenProofPublicKey = value
 	}
 	if value, ok := _c.mutation.InstallationID(); ok {
 		_spec.SetField(clustertoken.FieldInstallationID, field.TypeString, value)

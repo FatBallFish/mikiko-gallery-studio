@@ -111,6 +111,7 @@ func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (R
 		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY":   derivedSecret(root, "cashier-encryption"),
 		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": derivedSecret(root, "secure-config-encryption"),
 		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY":    derivedSecret(root, "prompt-quote-signing"),
+		"CLUSTER_ENROLLMENT_SEAL_KEY":              derivedSecret(root, "cluster-enrollment-seal"),
 	}
 	if plan.Topology == config.DeploymentTopologyCluster {
 		values["CLUSTER_NODE_ID"] = derivedUUID(root, "cluster-node-id")

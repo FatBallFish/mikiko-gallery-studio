@@ -43,6 +43,7 @@ create table if not exists cluster_tokens (
   id bigserial primary key,
   token_id varchar(128) not null unique check (token_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
   token_hash varchar(64) not null unique check (token_hash ~ '^[a-f0-9]{64}$'),
+  token_proof_public_key varchar(43) not null check (token_proof_public_key ~ '^[A-Za-z0-9_-]{43}$'),
   installation_id varchar(128) not null check (installation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
   role varchar(16) not null check (role in ('api', 'worker', 'web')),
   expires_at timestamptz not null,
@@ -57,6 +58,30 @@ create table if not exists cluster_tokens (
 create index if not exists clustertoken_installation_id_role on cluster_tokens (installation_id, role);
 create index if not exists clustertoken_expires_at on cluster_tokens (expires_at);
 create index if not exists clustertoken_consumed_at on cluster_tokens (consumed_at);
+
+create table if not exists cluster_challenges (
+  id bigserial primary key,
+  challenge_id varchar(128) not null unique check (challenge_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  installation_id varchar(128) not null check (installation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  token_id varchar(128) not null check (token_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  role varchar(16) not null check (role in ('api', 'worker', 'web')),
+  node_id varchar(128) not null check (node_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'),
+  node_public_key varchar(43) not null check (node_public_key ~ '^[A-Za-z0-9_-]{43}$'),
+  server_public_key varchar(43) not null check (server_public_key ~ '^[A-Za-z0-9_-]{43}$'),
+  server_nonce varchar(43) not null check (server_nonce ~ '^[A-Za-z0-9_-]{43}$'),
+  app_version varchar(128) not null,
+  runtime_schema_version int not null check (runtime_schema_version > 0),
+  config_revision bigint not null check (config_revision > 0),
+  sealed_server_private_key varchar(512) not null,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists clusterchallenge_installation_id_token_id on cluster_challenges (installation_id, token_id);
+create index if not exists clusterchallenge_expires_at on cluster_challenges (expires_at);
+create index if not exists clusterchallenge_consumed_at on cluster_challenges (consumed_at);
 
 create table if not exists user_groups (
   id bigserial primary key,

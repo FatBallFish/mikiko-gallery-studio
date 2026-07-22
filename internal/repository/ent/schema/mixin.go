@@ -13,6 +13,7 @@ import (
 var (
 	stableIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 	sha256HexPattern        = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	base64URL32Pattern      = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 )
 
 type TimeMixin struct{ mixin.Schema }

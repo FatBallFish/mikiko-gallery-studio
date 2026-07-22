@@ -96,6 +96,40 @@ func TestRunReturnsUsageCodeWithoutLeakingSensitiveArguments(t *testing.T) {
 	}
 }
 
+func TestRunDispatchesClusterJoinWithoutRenderingTheCredential(t *testing.T) {
+	const credential = "pgjoin.v1.019d0000-0000-7000-8000-000000000999.secret"
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	var received ClusterJoinOptions
+	code := Run(context.Background(), []string{
+		"cluster", "join", "--server", "http://127.0.0.1:8080", "--token", credential,
+		"--runtime-dir", "joined", "--mode", "docker", "--application-version", "v1",
+	}, CLIDependencies{
+		Stdout: stdout,
+		Stderr: stderr,
+		ExecuteClusterJoin: func(_ context.Context, options ClusterJoinOptions, _ ClusterJoinDependencies) (ClusterJoinResult, error) {
+			received = options
+			return ClusterJoinResult{
+				RuntimeEnvPath: "joined/config/runtime.env",
+				InstallationID: "019d0000-0000-7000-8000-000000000951",
+				NodeID:         "019d0000-0000-7000-8000-000000000952",
+				Role:           "worker",
+			}, nil
+		},
+	})
+	if code != 0 || received.Token != credential || received.RuntimeDir != "joined" {
+		t.Fatalf("cluster join dispatch code=%d options=%#v stderr=%q", code, received, stderr.String())
+	}
+	for _, output := range []string{stdout.String(), stderr.String()} {
+		if strings.Contains(output, credential) {
+			t.Fatalf("cluster join output leaked credential: %q", output)
+		}
+	}
+	if !strings.Contains(stdout.String(), "joined/config/runtime.env") || !strings.Contains(stdout.String(), "worker") {
+		t.Fatalf("cluster join output = %q", stdout.String())
+	}
+}
+
 func testInstallDependencies(writes *[]string) InstallDependencies {
 	return InstallDependencies{
 		Entropy:       bytes.NewReader(bytes.Repeat([]byte{0x55}, 64)),

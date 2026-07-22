@@ -30,6 +30,33 @@ type DockerExecutor struct {
 	RuntimeUser func() string
 }
 
+func (executor DockerExecutor) Preflight(ctx context.Context, plan InstallPlan) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ValidateInstallPlan(plan); err != nil {
+		return fmt.Errorf("validate Docker plan: %w", err)
+	}
+	if plan.Mode != config.DeploymentModeDocker {
+		return fmt.Errorf("Docker executor cannot preflight deployment mode %q", plan.Mode)
+	}
+	if executor.Runner == nil {
+		return fmt.Errorf("Docker process runner is required")
+	}
+	for _, spec := range []ProcessSpec{
+		{Executable: "docker", Arguments: []string{"version", "--format", "{{.Server.Version}}"}, Directory: plan.RuntimeDir},
+		{Executable: "docker", Arguments: []string{"compose", "version"}, Directory: plan.RuntimeDir},
+	} {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := executor.Runner.Run(ctx, spec); err != nil {
+			return fmt.Errorf("Docker preflight %s: %w", strings.Join(spec.Arguments, " "), err)
+		}
+	}
+	return nil
+}
+
 func (executor DockerExecutor) Run(ctx context.Context, action DockerAction, plan InstallPlan) error {
 	if ctx == nil {
 		ctx = context.Background()

@@ -17,11 +17,12 @@ type MemoryStore struct {
 	installation domaincluster.Installation
 	tokens       map[string]domaincluster.TokenRecord
 	nodes        map[string]domaincluster.Node
+	challenges   map[string]domaincluster.ChallengeRecord
 	auditRecords []domainaudit.RecordRequest
 }
 
 func NewMemoryStore(installation domaincluster.Installation) *MemoryStore {
-	return &MemoryStore{installation: installation, tokens: map[string]domaincluster.TokenRecord{}, nodes: map[string]domaincluster.Node{}}
+	return &MemoryStore{installation: installation, tokens: map[string]domaincluster.TokenRecord{}, nodes: map[string]domaincluster.Node{}, challenges: map[string]domaincluster.ChallengeRecord{}}
 }
 
 func (s *MemoryStore) GetInstallation(_ context.Context, installationID string) (domaincluster.Installation, error) {
@@ -103,6 +104,74 @@ func (s *MemoryStore) RevokeToken(_ context.Context, installationID, tokenID, ac
 	s.tokens[tokenID] = record
 	s.auditRecords = append(s.auditRecords, TokenRevokeAuditRecord(record.Token, actorID))
 	return record, nil
+}
+
+func (s *MemoryStore) GetTokenForEnrollment(_ context.Context, installationID, tokenID string, at time.Time) (domaincluster.TokenRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, exists := s.tokens[tokenID]
+	if !exists || record.InstallationID != installationID || !record.ExpiresAt.After(at) {
+		return domaincluster.TokenRecord{}, ErrTokenNotFound
+	}
+	if record.ConsumedAt != nil || record.RevokedAt != nil {
+		return domaincluster.TokenRecord{}, ErrTokenUnavailable
+	}
+	return record, nil
+}
+
+func (s *MemoryStore) CreateChallenge(_ context.Context, record domaincluster.ChallengeRecord) (domaincluster.ChallengeRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.challenges[record.ChallengeID]; exists {
+		return domaincluster.ChallengeRecord{}, ErrChallengeUnavailable
+	}
+	s.challenges[record.ChallengeID] = record
+	return record, nil
+}
+
+func (s *MemoryStore) GetChallenge(_ context.Context, installationID, challengeID string) (domaincluster.ChallengeRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, exists := s.challenges[challengeID]
+	if !exists || record.InstallationID != installationID {
+		return domaincluster.ChallengeRecord{}, ErrChallengeNotFound
+	}
+	return record, nil
+}
+
+func (s *MemoryStore) AcceptEnrollmentWithChallenge(_ context.Context, installationID, challengeID, tokenID, tokenHash string, node domaincluster.Node, acceptedAt time.Time) (domaincluster.TokenRecord, domaincluster.Node, domaincluster.ChallengeRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	challenge, exists := s.challenges[challengeID]
+	if !exists || challenge.InstallationID != installationID || challenge.TokenID != tokenID || challenge.NodeID != node.NodeID || challenge.Role != domaincluster.JoinRole(node.Role) {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, ErrChallengeNotFound
+	}
+	if challenge.ConsumedAt != nil || !challenge.ExpiresAt.After(acceptedAt) {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, ErrChallengeUnavailable
+	}
+	if node.InstallationID != installationID {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, ErrNodeConflict
+	}
+	token, exists := s.tokens[tokenID]
+	if !exists || token.InstallationID != installationID || token.Role != domaincluster.JoinRole(node.Role) || subtle.ConstantTimeCompare([]byte(token.TokenHash), []byte(tokenHash)) != 1 || !token.ExpiresAt.After(acceptedAt) {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, ErrTokenNotFound
+	}
+	if token.ConsumedAt != nil || token.RevokedAt != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, ErrTokenUnavailable
+	}
+	if _, exists := s.nodes[node.NodeID]; exists {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, ErrNodeConflict
+	}
+	challenge.ConsumedAt = timePointer(acceptedAt)
+	challenge.UpdatedAt = acceptedAt
+	token.ConsumedAt = timePointer(acceptedAt)
+	token.ConsumedByNodeID = node.NodeID
+	token.UpdatedAt = acceptedAt
+	s.challenges[challengeID] = challenge
+	s.tokens[tokenID] = token
+	s.nodes[node.NodeID] = node
+	s.auditRecords = append(s.auditRecords, EnrollmentAuditRecords(token.Token, node)...)
+	return token, node, challenge, nil
 }
 
 func (s *MemoryStore) AcceptEnrollment(_ context.Context, installationID, tokenID, tokenHash string, node domaincluster.Node, acceptedAt time.Time) (domaincluster.TokenRecord, domaincluster.Node, error) {

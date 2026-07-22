@@ -16,6 +16,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
@@ -117,6 +118,7 @@ func checkColumn(t, c string) error {
 			apikeyquotareservation.Table:      apikeyquotareservation.ValidColumn,
 			adminuser.Table:                   adminuser.ValidColumn,
 			auditlog.Table:                    auditlog.ValidColumn,
+			clusterchallenge.Table:            clusterchallenge.ValidColumn,
 			clusternode.Table:                 clusternode.ValidColumn,
 			clustertoken.Table:                clustertoken.ValidColumn,
 			configitem.Table:                  configitem.ValidColumn,

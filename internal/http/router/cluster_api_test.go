@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -94,16 +95,59 @@ func TestClusterTokenAdministrationRequiresDangerousPermissionAndControlRole(t *
 	}
 }
 
-func TestClusterPublicProtocolRoutesAreExplicitlyUnavailableUntilEncryptedHandshake(t *testing.T) {
+func TestClusterPublicProtocolEncryptsEnrollmentWithoutCredentialInHTTPBodies(t *testing.T) {
 	harness := newClusterAPIHarness(t, domainadminauth.RoleSuperAdmin, domaincluster.NodeRoleControl)
-	for _, path := range []string{"/api/open/cluster/v1/challenges", "/api/open/cluster/v1/join"} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"credential":"must-not-echo"}`))
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		harness.handler.ServeHTTP(rec, req)
-		if rec.Code != http.StatusNotImplemented || strings.Contains(rec.Body.String(), "must-not-echo") {
-			t.Fatalf("protocol placeholder %s status=%d body=%s", path, rec.Code, rec.Body.String())
-		}
+	issued, err := harness.cluster.CreateToken(t.Context(), domaincluster.CreateTokenRequest{Role: domaincluster.JoinRoleWorker, TTL: time.Hour, ActorID: "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientKey, err := clusterservice.GenerateEphemeralKey(bytes.NewReader(bytes.Repeat([]byte{0x41}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	challengeBody := mustClusterJSON(t, domaincluster.CreateChallengeRequest{
+		Protocol: clusterservice.EnrollmentProtocolV1, TokenID: issued.Token.TokenID, NodeID: "worker-http-a",
+		NodePublicKey: clientKey.PublicKey(), ApplicationVersion: "v1", RuntimeSchemaVersion: 1,
+	})
+	challengeReq := httptest.NewRequest(http.MethodPost, "/api/open/cluster/v1/challenges", bytes.NewReader(challengeBody))
+	challengeReq.Header.Set("Content-Type", "application/json")
+	challengeRec := httptest.NewRecorder()
+	harness.handler.ServeHTTP(challengeRec, challengeReq)
+	if challengeRec.Code != http.StatusCreated || bytes.Contains(challengeBody, []byte(issued.Credential)) || strings.Contains(challengeRec.Body.String(), issued.Credential) {
+		t.Fatalf("challenge status=%d body=%s", challengeRec.Code, challengeRec.Body.String())
+	}
+	var challengeResponse struct {
+		Data domaincluster.EnrollmentChallenge `json:"data"`
+	}
+	if err := json.NewDecoder(challengeRec.Body).Decode(&challengeResponse); err != nil {
+		t.Fatal(err)
+	}
+	proofKey, err := clusterservice.TokenProofKeyFromCredential(issued.Credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proofKey.Clear()
+	proof, err := clusterservice.ComputeClientPossessionProof(proofKey, challengeResponse.Data, "worker-http-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joinBody := mustClusterJSON(t, domaincluster.JoinRequest{Protocol: clusterservice.EnrollmentProtocolV1, ChallengeID: challengeResponse.Data.ChallengeID, Proof: proof})
+	joinReq := httptest.NewRequest(http.MethodPost, "/api/open/cluster/v1/join", bytes.NewReader(joinBody))
+	joinReq.Header.Set("Content-Type", "application/json")
+	joinRec := httptest.NewRecorder()
+	harness.handler.ServeHTTP(joinRec, joinReq)
+	if joinRec.Code != http.StatusCreated || bytes.Contains(joinBody, []byte(issued.Credential)) || strings.Contains(joinRec.Body.String(), issued.Credential) || strings.Contains(joinRec.Body.String(), "postgres://") {
+		t.Fatalf("join status=%d body=%s", joinRec.Code, joinRec.Body.String())
+	}
+	var joinResponse struct {
+		Data domaincluster.JoinResponse `json:"data"`
+	}
+	if err := json.NewDecoder(joinRec.Body).Decode(&joinResponse); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := clusterservice.OpenRuntimeEnvelope(clientKey, proofKey, challengeResponse.Data, "worker-http-a", joinResponse.Data.EncryptedEnvelope)
+	if err != nil || payload.Values["DATABASE_URL"] != "postgres://app:password@db:5432/app" {
+		t.Fatalf("opened HTTP envelope = %#v, %v", payload, err)
 	}
 }
 
@@ -111,6 +155,7 @@ type clusterAPIHarness struct {
 	handler http.Handler
 	token   string
 	audit   *auditservice.Service
+	cluster *clusterservice.Service
 }
 
 func newClusterAPIHarness(t *testing.T, adminRole string, nodeRole domaincluster.NodeRole) clusterAPIHarness {
@@ -149,9 +194,26 @@ func newClusterAPIHarness(t *testing.T, adminRole string, nodeRole domaincluster
 	cluster := clusterservice.NewService(clusterservice.ServiceOptions{
 		Store: entstore.NewClusterStore(client), InstallationID: cfg.Runtime.InstallationID,
 		DeploymentRole: nodeRole, Now: func() time.Time { return time.Date(2026, 7, 23, 6, 0, 0, 0, time.UTC) },
+		RuntimeValues: map[string]string{
+			"DATABASE_URL": "postgres://app:password@db:5432/app", "REDIS_URL": "redis://redis:6379/0", "REDIS_KEY_PREFIX": "app",
+			"STORAGE_DRIVER": "s3", "STORAGE_S3_ENDPOINT": "http://minio:9000", "STORAGE_S3_REGION": "us-east-1",
+			"STORAGE_S3_BUCKET": "assets", "STORAGE_S3_ACCESS_KEY_ID": "access", "STORAGE_S3_SECRET_ACCESS_KEY": "secret",
+			"STORAGE_S3_FORCE_PATH_STYLE": "true", "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": "secure",
+		},
+		EnrollmentSealKey: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
+		Entropy:           bytes.NewReader(bytes.Repeat([]byte{0x43}, 4096)),
 	})
 	api := handlers.NewAPIWithCompletionServices(cfg, nil, nil, nil, nil, nil, nil, adminAuth, audit)
 	api.SetClusterService(cluster)
 	handler := NewWithAPI(api)
-	return clusterAPIHarness{handler: handler, token: loginAdminWithCredentials(t, handler, email, "password"), audit: audit}
+	return clusterAPIHarness{handler: handler, token: loginAdminWithCredentials(t, handler, email, "password"), audit: audit, cluster: cluster}
+}
+
+func mustClusterJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }

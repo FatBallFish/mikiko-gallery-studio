@@ -57,6 +57,18 @@ func (f AuditLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuditLogMutation", m)
 }
 
+// The ClusterChallengeFunc type is an adapter to allow the use of ordinary
+// function as ClusterChallenge mutator.
+type ClusterChallengeFunc func(context.Context, *ent.ClusterChallengeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ClusterChallengeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ClusterChallengeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ClusterChallengeMutation", m)
+}
+
 // The ClusterNodeFunc type is an adapter to allow the use of ordinary
 // function as ClusterNode mutator.
 type ClusterNodeFunc func(context.Context, *ent.ClusterNodeMutation) (ent.Value, error)

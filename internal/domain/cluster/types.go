@@ -53,7 +53,8 @@ type Token struct {
 
 type TokenRecord struct {
 	Token
-	TokenHash string `json:"-"`
+	TokenHash           string `json:"-"`
+	TokenProofPublicKey string `json:"-"`
 }
 
 type IssuedToken struct {
@@ -107,6 +108,74 @@ type RegisterNodeRequest struct {
 type Enrollment struct {
 	Token Token `json:"token"`
 	Node  Node  `json:"node"`
+}
+
+type EnrollmentChallenge struct {
+	Protocol             string    `json:"protocol"`
+	ChallengeID          string    `json:"challenge_id"`
+	InstallationID       string    `json:"installation_id"`
+	TokenID              string    `json:"token_id"`
+	Role                 JoinRole  `json:"role"`
+	NodeID               string    `json:"node_id"`
+	ClientPublicKey      string    `json:"client_public_key"`
+	ServerPublicKey      string    `json:"server_public_key"`
+	ServerNonce          string    `json:"server_nonce"`
+	ApplicationVersion   string    `json:"application_version"`
+	RuntimeSchemaVersion int       `json:"runtime_schema_version"`
+	ConfigRevision       int64     `json:"config_revision"`
+	ExpiresAt            time.Time `json:"expires_at"`
+}
+
+type RuntimeEnvelopePayload struct {
+	Protocol             string            `json:"protocol"`
+	InstallationID       string            `json:"installation_id"`
+	NodeID               string            `json:"node_id"`
+	Role                 NodeRole          `json:"role"`
+	ApplicationVersion   string            `json:"application_version"`
+	RuntimeSchemaVersion int               `json:"runtime_schema_version"`
+	ConfigRevision       int64             `json:"config_revision"`
+	Values               map[string]string `json:"values"`
+}
+
+type EncryptedRuntimeEnvelope struct {
+	Algorithm  string `json:"algorithm"`
+	Nonce      string `json:"nonce"`
+	Ciphertext string `json:"ciphertext"`
+}
+
+type ChallengeRecord struct {
+	EnrollmentChallenge
+	SealedServerPrivateKey string     `json:"-"`
+	ConsumedAt             *time.Time `json:"consumed_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+}
+
+type CreateChallengeRequest struct {
+	Protocol             string `json:"protocol"`
+	TokenID              string `json:"token_id"`
+	NodeID               string `json:"node_id"`
+	NodePublicKey        string `json:"node_public_key"`
+	ApplicationVersion   string `json:"application_version"`
+	RuntimeSchemaVersion int    `json:"runtime_schema_version"`
+}
+
+type JoinRequest struct {
+	Protocol    string `json:"protocol"`
+	ChallengeID string `json:"challenge_id"`
+	Proof       string `json:"proof"`
+}
+
+type JoinResponse struct {
+	Protocol             string                   `json:"protocol"`
+	InstallationID       string                   `json:"installation_id"`
+	NodeID               string                   `json:"node_id"`
+	Role                 NodeRole                 `json:"role"`
+	ApplicationVersion   string                   `json:"application_version"`
+	RuntimeSchemaVersion int                      `json:"runtime_schema_version"`
+	ConfigRevision       int64                    `json:"config_revision"`
+	ExpiresAt            time.Time                `json:"expires_at"`
+	EncryptedEnvelope    EncryptedRuntimeEnvelope `json:"encrypted_envelope"`
 }
 
 type HeartbeatRequest struct {

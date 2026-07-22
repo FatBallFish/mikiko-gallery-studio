@@ -267,8 +267,10 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	if err := checkRuntimeSchemaCompatibility(startupContext, client, cfg); err != nil {
 		return err
 	}
-	if err := verifyCompletedStartupBinding(startupContext, startup); err != nil {
-		return fmt.Errorf("verify completed setup binding: %w", err)
+	if shouldVerifyOriginalSetupBinding(cfg.Runtime.DeploymentRole) {
+		if err := verifyCompletedStartupBinding(startupContext, startup); err != nil {
+			return fmt.Errorf("verify completed setup binding: %w", err)
+		}
 	}
 	redisClient, err := newRedisClient(startupContext, cfg)
 	if err != nil {
@@ -321,6 +323,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	clusterSvc := clusterservice.NewService(clusterservice.ServiceOptions{
 		Store:          entstore.NewClusterStore(client),
 		InstallationID: cfg.Runtime.InstallationID, DeploymentRole: domaincluster.NodeRole(cfg.Runtime.DeploymentRole),
+		RuntimeValues: startup.Bootstrap.Values, EnrollmentSealKey: startup.Bootstrap.Values["CLUSTER_ENROLLMENT_SEAL_KEY"],
 	})
 	adminUserSvc := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
 	redeemSvc := redeemservice.NewServiceWithStore(entstore.NewRedeemAdminStore(client))
@@ -346,6 +349,10 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 		return nil
 	}
 	return err
+}
+
+func shouldVerifyOriginalSetupBinding(role config.DeploymentRole) bool {
+	return role == config.DeploymentRoleSingle || role == config.DeploymentRoleControl
 }
 
 type startupStorageResolver interface {

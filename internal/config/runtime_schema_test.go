@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
@@ -100,7 +102,7 @@ func TestRuntimeSchemaMetadataIsCompleteAndSafe(t *testing.T) {
 		"SETUP_COMPLETED", "SETUP_TOKEN",
 		"DATABASE_URL", "REDIS_URL", "STORAGE_DRIVER", "STORAGE_S3_ENDPOINT", "STORAGE_S3_SECRET_ACCESS_KEY",
 		"AUTH_ACCESS_TOKEN_SECRET", "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY",
-		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY",
+		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY", "CLUSTER_ENROLLMENT_SEAL_KEY",
 		"PUBLIC_API_URL", "CORS_ALLOWED_ORIGINS",
 		"API_PORT", "GATEWAY_PORT", "MONITORING_PORT", "IMAGE_REGISTRY", "IMAGE_TAG", "RELEASE_VERSION",
 		"INSTALLATION_ID", "CLUSTER_NODE_ID", "CONFIG_REVISION", "APPLICATION_VERSION",
@@ -263,6 +265,22 @@ func TestRuntimeSchemaSecretValidatorsRejectWhitespaceOnlyValues(t *testing.T) {
 		if err := field.Validate("generated-secret-value"); err != nil {
 			t.Errorf("%s rejected a provided secret: %v", key, err)
 		}
+	}
+}
+
+func TestClusterEnrollmentSealKeyRequiresA32ByteBase64URLValue(t *testing.T) {
+	field := runtimeSchemaFieldForTest(t, DefaultRuntimeSchema(), "CLUSTER_ENROLLMENT_SEAL_KEY")
+	if err := field.Validate(""); err != nil {
+		t.Fatalf("pending empty seal key: %v", err)
+	}
+	for _, invalid := range []string{"generated-secret-value", base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 31)), "not+base64url"} {
+		if err := field.Validate(invalid); err == nil {
+			t.Fatalf("accepted invalid seal key %q", invalid)
+		}
+	}
+	valid := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32))
+	if err := field.Validate(valid); err != nil {
+		t.Fatalf("rejected valid seal key: %v", err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,8 +36,19 @@ type ClusterTokenCreateOptions struct {
 }
 
 type ClusterJoinOptions struct {
-	Server string
-	Token  string
+	Server             string
+	Token              string
+	RuntimeDir         string
+	Mode               config.DeploymentMode
+	ApplicationVersion string
+	ImageRegistry      string
+	ImageTag           string
+	ReleaseVersion     string
+	APIPort            string
+	GatewayPort        string
+	UserWebPort        string
+	AdminWebPort       string
+	DocsWebPort        string
 }
 
 func (options ClusterJoinOptions) String() string {
@@ -47,9 +59,10 @@ func (options ClusterJoinOptions) GoString() string { return options.String() }
 
 func (options ClusterJoinOptions) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Server string `json:"server"`
-		Token  string `json:"token"`
-	}{Server: options.Server, Token: "REDACTED"})
+		Server string                `json:"server"`
+		Token  string                `json:"token"`
+		Mode   config.DeploymentMode `json:"mode"`
+	}{Server: options.Server, Token: "REDACTED", Mode: options.Mode})
 }
 
 type Command struct {
@@ -232,6 +245,16 @@ func parseClusterCommand(args []string) (Command, error) {
 		server := set.String("server", "", "control API URL")
 		token := set.String("token", "", "single-use join token")
 		runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+		mode := set.String("mode", "docker", "docker or native")
+		applicationVersion := set.String("application-version", DefaultApplicationVersion, "application version")
+		imageRegistry := set.String("image-registry", "", "Docker image registry")
+		imageTag := set.String("image-tag", "", "Docker image tag")
+		releaseVersion := set.String("release-version", "", "native release version")
+		apiPort := set.String("api-port", "8080", "API port")
+		gatewayPort := set.String("gateway-port", "80", "Gateway port")
+		userWebPort := set.String("user-web-port", "5173", "user web port")
+		adminWebPort := set.String("admin-web-port", "5174", "admin web port")
+		docsWebPort := set.String("docs-web-port", "5175", "documentation web port")
 		if err := set.Parse(args[1:]); err != nil || set.NArg() != 0 {
 			if err != nil {
 				return Command{}, err
@@ -244,7 +267,16 @@ func parseClusterCommand(args []string) (Command, error) {
 		if strings.TrimSpace(*token) == "" {
 			return Command{}, fmt.Errorf("cluster join requires --token")
 		}
-		return Command{Kind: CommandClusterJoin, RuntimeDir: *runtimeDir, ClusterJoin: &ClusterJoinOptions{Server: strings.TrimRight(*server, "/"), Token: *token}}, nil
+		if config.DeploymentMode(*mode) != config.DeploymentModeDocker && config.DeploymentMode(*mode) != config.DeploymentModeNative {
+			return Command{}, fmt.Errorf("cluster join mode must be docker or native")
+		}
+		options := &ClusterJoinOptions{
+			Server: strings.TrimRight(*server, "/"), Token: *token, RuntimeDir: filepath.Clean(*runtimeDir), Mode: config.DeploymentMode(*mode),
+			ApplicationVersion: *applicationVersion, ImageRegistry: *imageRegistry, ImageTag: defaultString(*imageTag, *applicationVersion),
+			ReleaseVersion: defaultString(*releaseVersion, *applicationVersion), APIPort: *apiPort,
+			GatewayPort: *gatewayPort, UserWebPort: *userWebPort, AdminWebPort: *adminWebPort, DocsWebPort: *docsWebPort,
+		}
+		return Command{Kind: CommandClusterJoin, RuntimeDir: *runtimeDir, ClusterJoin: options}, nil
 	}
 	return Command{}, fmt.Errorf("unknown cluster subcommand")
 }

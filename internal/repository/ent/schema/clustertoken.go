@@ -17,6 +17,7 @@ func (ClusterToken) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("token_id").MaxLen(128).NotEmpty().Match(stableIdentifierPattern).Immutable().Unique(),
 		field.String("token_hash").MaxLen(64).MinLen(64).Match(sha256HexPattern).Immutable().Unique().Sensitive(),
+		field.String("token_proof_public_key").MaxLen(43).MinLen(43).Match(base64URL32Pattern).Immutable().Sensitive(),
 		field.String("installation_id").MaxLen(128).NotEmpty().Match(stableIdentifierPattern).Immutable(),
 		field.Enum("role").Values("api", "worker", "web"),
 		field.Time("expires_at").Immutable(),

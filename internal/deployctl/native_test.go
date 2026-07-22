@@ -872,6 +872,32 @@ func TestNativeProcessSpecsRejectUnknownAction(t *testing.T) {
 	}
 }
 
+func TestNativeExecutorPreflightChecksPlatformAndPrivilegesWithoutInstalling(t *testing.T) {
+	plan := nativeCorePlanForTest(t)
+	checks := 0
+	executor := NativeExecutor{
+		Platform: func() NativePlatform { return NativePlatformLinux },
+		CheckPrivileges: func(platform NativePlatform) error {
+			checks++
+			if platform != NativePlatformLinux {
+				t.Fatalf("platform = %q", platform)
+			}
+			return nil
+		},
+		InstallRelease: func(context.Context, InstallPlan, NativePlatform) error {
+			t.Fatal("native preflight must not install a release")
+			return nil
+		},
+	}
+	if err := executor.Preflight(t.Context(), plan); err != nil || checks != 1 {
+		t.Fatalf("native preflight error=%v checks=%d", err, checks)
+	}
+	executor.Platform = func() NativePlatform { return NativePlatform("darwin") }
+	if err := executor.Preflight(t.Context(), plan); err == nil || checks != 1 {
+		t.Fatalf("unsupported native preflight error=%v checks=%d", err, checks)
+	}
+}
+
 func nativeCorePlanForTest(t *testing.T) InstallPlan {
 	t.Helper()
 	plan, err := BuildInstallPlan(InstallInput{

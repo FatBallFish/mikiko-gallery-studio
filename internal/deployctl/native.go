@@ -52,6 +52,35 @@ type NativeExecutor struct {
 	WriteServiceFile func(string, []byte) error
 }
 
+func (executor NativeExecutor) Preflight(ctx context.Context, plan InstallPlan) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ValidateInstallPlan(plan); err != nil {
+		return fmt.Errorf("validate native plan: %w", err)
+	}
+	if plan.Mode != config.DeploymentModeNative {
+		return fmt.Errorf("native executor cannot preflight deployment mode %q", plan.Mode)
+	}
+	if executor.Platform == nil {
+		executor.Platform = currentNativePlatform
+	}
+	if executor.CheckPrivileges == nil {
+		executor.CheckPrivileges = checkNativePrivileges
+	}
+	platform := executor.Platform()
+	if platform != NativePlatformLinux && platform != NativePlatformWindows {
+		return fmt.Errorf("native deployment is unsupported on platform %q", platform)
+	}
+	if err := executor.CheckPrivileges(platform); err != nil {
+		return fmt.Errorf("check native service privileges: %w", err)
+	}
+	return nil
+}
+
 func (executor NativeExecutor) Run(ctx context.Context, action NativeAction, plan InstallPlan) error {
 	if ctx == nil {
 		ctx = context.Background()

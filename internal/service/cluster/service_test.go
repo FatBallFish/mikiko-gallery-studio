@@ -36,14 +36,18 @@ func TestServiceIssuesHashOnlyRoleScopedSingleUseTokens(t *testing.T) {
 		t.Fatalf("issued token = %#v", issued)
 	}
 	stored := store.tokens[issued.Token.TokenID]
-	if stored.TokenHash == "" || strings.Contains(issued.Credential, stored.TokenHash) || stored.TokenHash == issued.Credential {
+	proofKey, proofErr := TokenProofKeyFromCredential(issued.Credential)
+	if proofErr != nil {
+		t.Fatal(proofErr)
+	}
+	if stored.TokenHash == "" || stored.TokenProofPublicKey != proofKey.PublicKey() || strings.Contains(issued.Credential, stored.TokenHash) || stored.TokenHash == issued.Credential {
 		t.Fatalf("stored credential was not a one-way hash: %#v", stored)
 	}
 	page, err := service.ListTokens(t.Context(), domaincluster.ListTokensRequest{Page: 1, PageSize: 20})
 	if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].TokenID != issued.Token.TokenID {
 		t.Fatalf("list tokens = %#v, %v", page, err)
 	}
-	if strings.Contains(string(mustJSON(t, page)), issued.Credential) || strings.Contains(string(mustJSON(t, page)), stored.TokenHash) {
+	if strings.Contains(string(mustJSON(t, page)), issued.Credential) || strings.Contains(string(mustJSON(t, page)), stored.TokenHash) || strings.Contains(string(mustJSON(t, page)), stored.TokenProofPublicKey) {
 		t.Fatal("token list exposed credential material")
 	}
 	enrollment, err := service.EnrollNode(t.Context(), issued.Credential, domaincluster.RegisterNodeRequest{

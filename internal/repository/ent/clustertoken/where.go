@@ -74,6 +74,11 @@ func TokenHash(v string) predicate.ClusterToken {
 	return predicate.ClusterToken(sql.FieldEQ(FieldTokenHash, v))
 }
 
+// TokenProofPublicKey applies equality check predicate on the "token_proof_public_key" field. It's identical to TokenProofPublicKeyEQ.
+func TokenProofPublicKey(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldEQ(FieldTokenProofPublicKey, v))
+}
+
 // InstallationID applies equality check predicate on the "installation_id" field. It's identical to InstallationIDEQ.
 func InstallationID(v string) predicate.ClusterToken {
 	return predicate.ClusterToken(sql.FieldEQ(FieldInstallationID, v))
@@ -312,6 +317,71 @@ func TokenHashEqualFold(v string) predicate.ClusterToken {
 // TokenHashContainsFold applies the ContainsFold predicate on the "token_hash" field.
 func TokenHashContainsFold(v string) predicate.ClusterToken {
 	return predicate.ClusterToken(sql.FieldContainsFold(FieldTokenHash, v))
+}
+
+// TokenProofPublicKeyEQ applies the EQ predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyEQ(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldEQ(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyNEQ applies the NEQ predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyNEQ(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldNEQ(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyIn applies the In predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyIn(vs ...string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldIn(FieldTokenProofPublicKey, vs...))
+}
+
+// TokenProofPublicKeyNotIn applies the NotIn predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyNotIn(vs ...string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldNotIn(FieldTokenProofPublicKey, vs...))
+}
+
+// TokenProofPublicKeyGT applies the GT predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyGT(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldGT(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyGTE applies the GTE predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyGTE(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldGTE(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyLT applies the LT predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyLT(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldLT(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyLTE applies the LTE predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyLTE(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldLTE(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyContains applies the Contains predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyContains(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldContains(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyHasPrefix applies the HasPrefix predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyHasPrefix(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldHasPrefix(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyHasSuffix applies the HasSuffix predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyHasSuffix(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldHasSuffix(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyEqualFold applies the EqualFold predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyEqualFold(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldEqualFold(FieldTokenProofPublicKey, v))
+}
+
+// TokenProofPublicKeyContainsFold applies the ContainsFold predicate on the "token_proof_public_key" field.
+func TokenProofPublicKeyContainsFold(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldContainsFold(FieldTokenProofPublicKey, v))
 }
 
 // InstallationIDEQ applies the EQ predicate on the "installation_id" field.

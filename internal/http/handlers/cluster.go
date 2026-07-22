@@ -104,19 +104,47 @@ func (a *API) HandleAdminClusterTokenDetail(w http.ResponseWriter, r *http.Reque
 }
 
 func (a *API) HandleClusterChallenge(w http.ResponseWriter, r *http.Request) {
-	writeClusterProtocolUnavailable(w, r)
-}
-
-func (a *API) HandleClusterJoin(w http.ResponseWriter, r *http.Request) {
-	writeClusterProtocolUnavailable(w, r)
-}
-
-func writeClusterProtocolUnavailable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	httpx.WriteError(w, r, errs.New(http.StatusNotImplemented, "CLUSTER_PROTOCOL_UNAVAILABLE", "encrypted cluster enrollment is not enabled"))
+	if a.cluster == nil {
+		httpx.WriteError(w, r, errs.Internal("cluster service is not configured"))
+		return
+	}
+	var request domaincluster.CreateChallengeRequest
+	if err := decodeClusterRequest(w, r, &request); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest(err.Error()))
+		return
+	}
+	challenge, err := a.cluster.CreateChallenge(r.Context(), request)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusCreated, challenge)
+}
+
+func (a *API) HandleClusterJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	if a.cluster == nil {
+		httpx.WriteError(w, r, errs.Internal("cluster service is not configured"))
+		return
+	}
+	var request domaincluster.JoinRequest
+	if err := decodeClusterRequest(w, r, &request); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest(err.Error()))
+		return
+	}
+	joined, err := a.cluster.Join(r.Context(), request)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusCreated, joined)
 }
 
 func parseClusterTokenRevokePath(requestPath string) (string, bool) {

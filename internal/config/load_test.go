@@ -471,6 +471,7 @@ func completeRuntimeValuesForTest() map[string]string {
 		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY":   "cashier-encryption-secret",
 		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": "secure-config-encryption-secret",
 		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY":    "quote-signing-secret",
+		"CLUSTER_ENROLLMENT_SEAL_KEY":              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		"API_PORT":                                 "8080",
 		"IMAGE_TAG":                                "test",
 		"INSTALLATION_ID":                          "installation-test",

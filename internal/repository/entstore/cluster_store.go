@@ -11,6 +11,7 @@ import (
 	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domaincluster "github.com/fatballfish/pic-gallery/internal/domain/cluster"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
@@ -81,6 +82,7 @@ func (s *ClusterStore) createToken(ctx context.Context, record domaincluster.Tok
 	entity, err := s.client.ClusterToken.Create().
 		SetTokenID(record.TokenID).
 		SetTokenHash(record.TokenHash).
+		SetTokenProofPublicKey(record.TokenProofPublicKey).
 		SetInstallationID(record.InstallationID).
 		SetRole(clustertoken.Role(record.Role)).
 		SetExpiresAt(record.ExpiresAt).
@@ -163,6 +165,51 @@ func (s *ClusterStore) RevokeToken(ctx context.Context, installationID, tokenID,
 	return revoked, nil
 }
 
+func (s *ClusterStore) GetTokenForEnrollment(ctx context.Context, installationID, tokenID string, at time.Time) (domaincluster.TokenRecord, error) {
+	record, err := s.getToken(ctx, installationID, tokenID)
+	if err != nil {
+		return domaincluster.TokenRecord{}, err
+	}
+	if !record.ExpiresAt.After(at) {
+		return domaincluster.TokenRecord{}, clusterservice.ErrTokenNotFound
+	}
+	if record.ConsumedAt != nil || record.RevokedAt != nil {
+		return domaincluster.TokenRecord{}, clusterservice.ErrTokenUnavailable
+	}
+	return record, nil
+}
+
+func (s *ClusterStore) CreateChallenge(ctx context.Context, record domaincluster.ChallengeRecord) (domaincluster.ChallengeRecord, error) {
+	entity, err := s.client.ClusterChallenge.Create().
+		SetChallengeID(record.ChallengeID).
+		SetInstallationID(record.InstallationID).
+		SetTokenID(record.TokenID).
+		SetRole(clusterchallenge.Role(record.Role)).
+		SetNodeID(record.NodeID).
+		SetNodePublicKey(record.ClientPublicKey).
+		SetServerPublicKey(record.ServerPublicKey).
+		SetServerNonce(record.ServerNonce).
+		SetAppVersion(record.ApplicationVersion).
+		SetRuntimeSchemaVersion(record.RuntimeSchemaVersion).
+		SetConfigRevision(record.ConfigRevision).
+		SetSealedServerPrivateKey(record.SealedServerPrivateKey).
+		SetExpiresAt(record.ExpiresAt).
+		SetCreatedAt(record.CreatedAt).
+		SetUpdatedAt(record.UpdatedAt).
+		Save(ctx)
+	if repoent.IsConstraintError(err) {
+		return domaincluster.ChallengeRecord{}, clusterservice.ErrChallengeUnavailable
+	}
+	if err != nil {
+		return domaincluster.ChallengeRecord{}, err
+	}
+	return mapClusterChallenge(entity), nil
+}
+
+func (s *ClusterStore) GetChallenge(ctx context.Context, installationID, challengeID string) (domaincluster.ChallengeRecord, error) {
+	return s.getChallenge(ctx, installationID, challengeID)
+}
+
 func (s *ClusterStore) revokeToken(ctx context.Context, installationID, tokenID string, revokedAt time.Time) (domaincluster.TokenRecord, error) {
 	updated, err := s.client.ClusterToken.Update().
 		Where(
@@ -235,6 +282,79 @@ func (s *ClusterStore) AcceptEnrollment(ctx context.Context, installationID, tok
 	}
 	committed = true
 	return record, registered, nil
+}
+
+func (s *ClusterStore) AcceptEnrollmentWithChallenge(ctx context.Context, installationID, challengeID, tokenID, tokenHash string, node domaincluster.Node, acceptedAt time.Time) (domaincluster.TokenRecord, domaincluster.Node, domaincluster.ChallengeRecord, error) {
+	if s == nil || s.client == nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, fmt.Errorf("cluster store is not configured")
+	}
+	if node.InstallationID != installationID {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, clusterservice.ErrNodeConflict
+	}
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, fmt.Errorf("begin cluster enrollment transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	txStore := NewClusterStore(tx.Client())
+	updated, err := tx.Client().ClusterChallenge.Update().Where(
+		clusterchallenge.InstallationIDEQ(installationID), clusterchallenge.ChallengeIDEQ(challengeID),
+		clusterchallenge.TokenIDEQ(tokenID), clusterchallenge.NodeIDEQ(node.NodeID),
+		clusterchallenge.RoleEQ(clusterchallenge.Role(node.Role)), clusterchallenge.ExpiresAtGT(acceptedAt), clusterchallenge.ConsumedAtIsNil(),
+	).SetConsumedAt(acceptedAt).SetUpdatedAt(acceptedAt).Save(ctx)
+	if err != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, err
+	}
+	if updated != 1 {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, txStore.classifyChallengeMutation(ctx, installationID, challengeID, acceptedAt)
+	}
+	record, err := txStore.ConsumeToken(ctx, installationID, tokenID, tokenHash, domaincluster.JoinRole(node.Role), node.NodeID, acceptedAt)
+	if err != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, err
+	}
+	registered, err := txStore.createNodeStrict(ctx, node)
+	if err != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, err
+	}
+	if err := txStore.createAuditRecords(ctx, clusterservice.EnrollmentAuditRecords(record.Token, registered), acceptedAt); err != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, err
+	}
+	challenge, err := txStore.getChallenge(ctx, installationID, challengeID)
+	if err != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domaincluster.TokenRecord{}, domaincluster.Node{}, domaincluster.ChallengeRecord{}, fmt.Errorf("commit cluster enrollment transaction: %w", err)
+	}
+	committed = true
+	return record, registered, challenge, nil
+}
+
+func (s *ClusterStore) classifyChallengeMutation(ctx context.Context, installationID, challengeID string, at time.Time) error {
+	record, err := s.getChallenge(ctx, installationID, challengeID)
+	if err != nil {
+		return err
+	}
+	if record.ConsumedAt != nil || !record.ExpiresAt.After(at) {
+		return clusterservice.ErrChallengeUnavailable
+	}
+	return clusterservice.ErrChallengeNotFound
+}
+
+func (s *ClusterStore) getChallenge(ctx context.Context, installationID, challengeID string) (domaincluster.ChallengeRecord, error) {
+	entity, err := s.client.ClusterChallenge.Query().Where(clusterchallenge.InstallationIDEQ(installationID), clusterchallenge.ChallengeIDEQ(challengeID)).Only(ctx)
+	if repoent.IsNotFound(err) {
+		return domaincluster.ChallengeRecord{}, clusterservice.ErrChallengeNotFound
+	}
+	if err != nil {
+		return domaincluster.ChallengeRecord{}, err
+	}
+	return mapClusterChallenge(entity), nil
 }
 
 func (s *ClusterStore) createAuditRecords(ctx context.Context, records []domainaudit.RecordRequest, at time.Time) error {
@@ -375,7 +495,7 @@ func mapClusterToken(entity *repoent.ClusterToken) domaincluster.TokenRecord {
 			CreatedBy: entity.AuditActor, CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt,
 			ConsumedByNodeID: clusterStringValue(entity.ConsumedByNodeID),
 		},
-		TokenHash: entity.TokenHash,
+		TokenHash: entity.TokenHash, TokenProofPublicKey: entity.TokenProofPublicKey,
 	}
 }
 
@@ -385,6 +505,20 @@ func mapClusterNode(entity *repoent.ClusterNode) domaincluster.Node {
 		ApplicationVersion: entity.AppVersion, RuntimeSchemaVersion: entity.RuntimeSchemaVersion,
 		ConfigRevision: entity.ConfigRevision, Health: domaincluster.NodeHealth(entity.Health), LastError: entity.LastError,
 		LastHeartbeatAt: entity.LastHeartbeatAt, CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt,
+	}
+}
+
+func mapClusterChallenge(entity *repoent.ClusterChallenge) domaincluster.ChallengeRecord {
+	return domaincluster.ChallengeRecord{
+		EnrollmentChallenge: domaincluster.EnrollmentChallenge{
+			Protocol: clusterservice.EnrollmentProtocolV1, ChallengeID: entity.ChallengeID,
+			InstallationID: entity.InstallationID, TokenID: entity.TokenID, Role: domaincluster.JoinRole(entity.Role), NodeID: entity.NodeID,
+			ClientPublicKey: entity.NodePublicKey, ServerPublicKey: entity.ServerPublicKey, ServerNonce: entity.ServerNonce,
+			ApplicationVersion: entity.AppVersion, RuntimeSchemaVersion: entity.RuntimeSchemaVersion,
+			ConfigRevision: entity.ConfigRevision, ExpiresAt: entity.ExpiresAt,
+		},
+		SealedServerPrivateKey: entity.SealedServerPrivateKey, ConsumedAt: entity.ConsumedAt,
+		CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt,
 	}
 }
 

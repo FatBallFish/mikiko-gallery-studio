@@ -20,6 +20,8 @@ type Tx struct {
 	AdminUser *AdminUserClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
+	// ClusterChallenge is the client for interacting with the ClusterChallenge builders.
+	ClusterChallenge *ClusterChallengeClient
 	// ClusterNode is the client for interacting with the ClusterNode builders.
 	ClusterNode *ClusterNodeClient
 	// ClusterToken is the client for interacting with the ClusterToken builders.
@@ -229,6 +231,7 @@ func (tx *Tx) init() {
 	tx.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(tx.config)
 	tx.AdminUser = NewAdminUserClient(tx.config)
 	tx.AuditLog = NewAuditLogClient(tx.config)
+	tx.ClusterChallenge = NewClusterChallengeClient(tx.config)
 	tx.ClusterNode = NewClusterNodeClient(tx.config)
 	tx.ClusterToken = NewClusterTokenClient(tx.config)
 	tx.ConfigItem = NewConfigItemClient(tx.config)

@@ -688,10 +688,28 @@ func completedAPIBootstrapForTest() config.BootstrapConfig {
 		"AUTH_ACCESS_TOKEN_SECRET": "access-token-secret", "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY": "api-key-secret",
 		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY": "cashier-key", "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": "secure-config-key-which-is-long-enough",
 		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY": "quote-signing-key", "API_PORT": "8080", "IMAGE_TAG": "v1", "APPLICATION_VERSION": "v1",
+		"CLUSTER_ENROLLMENT_SEAL_KEY": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 	} {
 		bootstrap.Values[key] = value
 	}
 	return bootstrap
+}
+
+func TestOnlySetupAuthorityRolesVerifyOriginalSetupBinding(t *testing.T) {
+	for _, testCase := range []struct {
+		role config.DeploymentRole
+		want bool
+	}{
+		{role: config.DeploymentRoleSingle, want: true},
+		{role: config.DeploymentRoleControl, want: true},
+		{role: config.DeploymentRoleAPI, want: false},
+		{role: config.DeploymentRoleWorker, want: false},
+		{role: config.DeploymentRoleWeb, want: false},
+	} {
+		if got := shouldVerifyOriginalSetupBinding(testCase.role); got != testCase.want {
+			t.Fatalf("shouldVerifyOriginalSetupBinding(%q) = %v, want %v", testCase.role, got, testCase.want)
+		}
+	}
 }
 
 func pendingAPIInstallStateForTest() setup.InstallState {

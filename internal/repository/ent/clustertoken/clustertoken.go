@@ -22,6 +22,8 @@ const (
 	FieldTokenID = "token_id"
 	// FieldTokenHash holds the string denoting the token_hash field in the database.
 	FieldTokenHash = "token_hash"
+	// FieldTokenProofPublicKey holds the string denoting the token_proof_public_key field in the database.
+	FieldTokenProofPublicKey = "token_proof_public_key"
 	// FieldInstallationID holds the string denoting the installation_id field in the database.
 	FieldInstallationID = "installation_id"
 	// FieldRole holds the string denoting the role field in the database.
@@ -47,6 +49,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldTokenID,
 	FieldTokenHash,
+	FieldTokenProofPublicKey,
 	FieldInstallationID,
 	FieldRole,
 	FieldExpiresAt,
@@ -77,6 +80,8 @@ var (
 	TokenIDValidator func(string) error
 	// TokenHashValidator is a validator for the "token_hash" field. It is called by the builders before save.
 	TokenHashValidator func(string) error
+	// TokenProofPublicKeyValidator is a validator for the "token_proof_public_key" field. It is called by the builders before save.
+	TokenProofPublicKeyValidator func(string) error
 	// InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
 	InstallationIDValidator func(string) error
 	// ConsumedByNodeIDValidator is a validator for the "consumed_by_node_id" field. It is called by the builders before save.
@@ -135,6 +140,11 @@ func ByTokenID(opts ...sql.OrderTermOption) OrderOption {
 // ByTokenHash orders the results by the token_hash field.
 func ByTokenHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTokenHash, opts...).ToFunc()
+}
+
+// ByTokenProofPublicKey orders the results by the token_proof_public_key field.
+func ByTokenProofPublicKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTokenProofPublicKey, opts...).ToFunc()
 }
 
 // ByInstallationID orders the results by the installation_id field.

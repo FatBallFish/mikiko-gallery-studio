@@ -9,6 +9,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
@@ -401,6 +402,198 @@ func init() {
 	auditlog.DefaultUserAgent = auditlogDescUserAgent.Default.(string)
 	// auditlog.UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
 	auditlog.UserAgentValidator = auditlogDescUserAgent.Validators[0].(func(string) error)
+	clusterchallengeMixin := schema.ClusterChallenge{}.Mixin()
+	clusterchallengeMixinFields0 := clusterchallengeMixin[0].Fields()
+	_ = clusterchallengeMixinFields0
+	clusterchallengeFields := schema.ClusterChallenge{}.Fields()
+	_ = clusterchallengeFields
+	// clusterchallengeDescCreatedAt is the schema descriptor for created_at field.
+	clusterchallengeDescCreatedAt := clusterchallengeMixinFields0[0].Descriptor()
+	// clusterchallenge.DefaultCreatedAt holds the default value on creation for the created_at field.
+	clusterchallenge.DefaultCreatedAt = clusterchallengeDescCreatedAt.Default.(func() time.Time)
+	// clusterchallengeDescUpdatedAt is the schema descriptor for updated_at field.
+	clusterchallengeDescUpdatedAt := clusterchallengeMixinFields0[1].Descriptor()
+	// clusterchallenge.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	clusterchallenge.DefaultUpdatedAt = clusterchallengeDescUpdatedAt.Default.(func() time.Time)
+	// clusterchallenge.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	clusterchallenge.UpdateDefaultUpdatedAt = clusterchallengeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// clusterchallengeDescChallengeID is the schema descriptor for challenge_id field.
+	clusterchallengeDescChallengeID := clusterchallengeFields[0].Descriptor()
+	// clusterchallenge.ChallengeIDValidator is a validator for the "challenge_id" field. It is called by the builders before save.
+	clusterchallenge.ChallengeIDValidator = func() func(string) error {
+		validators := clusterchallengeDescChallengeID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(challenge_id string) error {
+			for _, fn := range fns {
+				if err := fn(challenge_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescInstallationID is the schema descriptor for installation_id field.
+	clusterchallengeDescInstallationID := clusterchallengeFields[1].Descriptor()
+	// clusterchallenge.InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
+	clusterchallenge.InstallationIDValidator = func() func(string) error {
+		validators := clusterchallengeDescInstallationID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(installation_id string) error {
+			for _, fn := range fns {
+				if err := fn(installation_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescTokenID is the schema descriptor for token_id field.
+	clusterchallengeDescTokenID := clusterchallengeFields[2].Descriptor()
+	// clusterchallenge.TokenIDValidator is a validator for the "token_id" field. It is called by the builders before save.
+	clusterchallenge.TokenIDValidator = func() func(string) error {
+		validators := clusterchallengeDescTokenID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(token_id string) error {
+			for _, fn := range fns {
+				if err := fn(token_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescNodeID is the schema descriptor for node_id field.
+	clusterchallengeDescNodeID := clusterchallengeFields[4].Descriptor()
+	// clusterchallenge.NodeIDValidator is a validator for the "node_id" field. It is called by the builders before save.
+	clusterchallenge.NodeIDValidator = func() func(string) error {
+		validators := clusterchallengeDescNodeID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(node_id string) error {
+			for _, fn := range fns {
+				if err := fn(node_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescNodePublicKey is the schema descriptor for node_public_key field.
+	clusterchallengeDescNodePublicKey := clusterchallengeFields[5].Descriptor()
+	// clusterchallenge.NodePublicKeyValidator is a validator for the "node_public_key" field. It is called by the builders before save.
+	clusterchallenge.NodePublicKeyValidator = func() func(string) error {
+		validators := clusterchallengeDescNodePublicKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(node_public_key string) error {
+			for _, fn := range fns {
+				if err := fn(node_public_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescServerPublicKey is the schema descriptor for server_public_key field.
+	clusterchallengeDescServerPublicKey := clusterchallengeFields[6].Descriptor()
+	// clusterchallenge.ServerPublicKeyValidator is a validator for the "server_public_key" field. It is called by the builders before save.
+	clusterchallenge.ServerPublicKeyValidator = func() func(string) error {
+		validators := clusterchallengeDescServerPublicKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(server_public_key string) error {
+			for _, fn := range fns {
+				if err := fn(server_public_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescServerNonce is the schema descriptor for server_nonce field.
+	clusterchallengeDescServerNonce := clusterchallengeFields[7].Descriptor()
+	// clusterchallenge.ServerNonceValidator is a validator for the "server_nonce" field. It is called by the builders before save.
+	clusterchallenge.ServerNonceValidator = func() func(string) error {
+		validators := clusterchallengeDescServerNonce.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(server_nonce string) error {
+			for _, fn := range fns {
+				if err := fn(server_nonce); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescAppVersion is the schema descriptor for app_version field.
+	clusterchallengeDescAppVersion := clusterchallengeFields[8].Descriptor()
+	// clusterchallenge.AppVersionValidator is a validator for the "app_version" field. It is called by the builders before save.
+	clusterchallenge.AppVersionValidator = func() func(string) error {
+		validators := clusterchallengeDescAppVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(app_version string) error {
+			for _, fn := range fns {
+				if err := fn(app_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// clusterchallengeDescRuntimeSchemaVersion is the schema descriptor for runtime_schema_version field.
+	clusterchallengeDescRuntimeSchemaVersion := clusterchallengeFields[9].Descriptor()
+	// clusterchallenge.RuntimeSchemaVersionValidator is a validator for the "runtime_schema_version" field. It is called by the builders before save.
+	clusterchallenge.RuntimeSchemaVersionValidator = clusterchallengeDescRuntimeSchemaVersion.Validators[0].(func(int) error)
+	// clusterchallengeDescConfigRevision is the schema descriptor for config_revision field.
+	clusterchallengeDescConfigRevision := clusterchallengeFields[10].Descriptor()
+	// clusterchallenge.ConfigRevisionValidator is a validator for the "config_revision" field. It is called by the builders before save.
+	clusterchallenge.ConfigRevisionValidator = clusterchallengeDescConfigRevision.Validators[0].(func(int64) error)
+	// clusterchallengeDescSealedServerPrivateKey is the schema descriptor for sealed_server_private_key field.
+	clusterchallengeDescSealedServerPrivateKey := clusterchallengeFields[11].Descriptor()
+	// clusterchallenge.SealedServerPrivateKeyValidator is a validator for the "sealed_server_private_key" field. It is called by the builders before save.
+	clusterchallenge.SealedServerPrivateKeyValidator = func() func(string) error {
+		validators := clusterchallengeDescSealedServerPrivateKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(sealed_server_private_key string) error {
+			for _, fn := range fns {
+				if err := fn(sealed_server_private_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	clusternodeMixin := schema.ClusterNode{}.Mixin()
 	clusternodeMixinFields0 := clusternodeMixin[0].Fields()
 	_ = clusternodeMixinFields0
@@ -539,8 +732,27 @@ func init() {
 			return nil
 		}
 	}()
+	// clustertokenDescTokenProofPublicKey is the schema descriptor for token_proof_public_key field.
+	clustertokenDescTokenProofPublicKey := clustertokenFields[2].Descriptor()
+	// clustertoken.TokenProofPublicKeyValidator is a validator for the "token_proof_public_key" field. It is called by the builders before save.
+	clustertoken.TokenProofPublicKeyValidator = func() func(string) error {
+		validators := clustertokenDescTokenProofPublicKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(token_proof_public_key string) error {
+			for _, fn := range fns {
+				if err := fn(token_proof_public_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// clustertokenDescInstallationID is the schema descriptor for installation_id field.
-	clustertokenDescInstallationID := clustertokenFields[2].Descriptor()
+	clustertokenDescInstallationID := clustertokenFields[3].Descriptor()
 	// clustertoken.InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
 	clustertoken.InstallationIDValidator = func() func(string) error {
 		validators := clustertokenDescInstallationID.Validators
@@ -559,7 +771,7 @@ func init() {
 		}
 	}()
 	// clustertokenDescConsumedByNodeID is the schema descriptor for consumed_by_node_id field.
-	clustertokenDescConsumedByNodeID := clustertokenFields[6].Descriptor()
+	clustertokenDescConsumedByNodeID := clustertokenFields[7].Descriptor()
 	// clustertoken.ConsumedByNodeIDValidator is a validator for the "consumed_by_node_id" field. It is called by the builders before save.
 	clustertoken.ConsumedByNodeIDValidator = func() func(string) error {
 		validators := clustertokenDescConsumedByNodeID.Validators
@@ -577,7 +789,7 @@ func init() {
 		}
 	}()
 	// clustertokenDescAuditActor is the schema descriptor for audit_actor field.
-	clustertokenDescAuditActor := clustertokenFields[8].Descriptor()
+	clustertokenDescAuditActor := clustertokenFields[9].Descriptor()
 	// clustertoken.AuditActorValidator is a validator for the "audit_actor" field. It is called by the builders before save.
 	clustertoken.AuditActorValidator = func() func(string) error {
 		validators := clustertokenDescAuditActor.Validators

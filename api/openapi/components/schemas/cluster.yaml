@@ -61,18 +61,34 @@ components:
     ClusterChallengeRequest:
       type: object
       additionalProperties: false
-      required: [token_id, role, node_public_key, application_version]
+      required: [protocol, token_id, node_id, node_public_key, application_version, runtime_schema_version]
       properties:
+        protocol: { type: string, enum: [pg-cluster-enrollment-v1] }
         token_id: { type: string, format: uuid }
-        role: { type: string, enum: [api, worker, web] }
-        node_public_key: { type: string, writeOnly: true }
+        node_id: { type: string, format: uuid }
+        node_public_key:
+          type: string
+          minLength: 43
+          maxLength: 43
+          writeOnly: true
         application_version: { type: string }
+        runtime_schema_version: { type: integer, minimum: 1 }
     ClusterChallenge:
       type: object
-      required: [challenge_id, server_nonce, expires_at]
+      required: [protocol, challenge_id, installation_id, token_id, role, node_id, client_public_key, server_public_key, server_nonce, application_version, runtime_schema_version, config_revision, expires_at]
       properties:
+        protocol: { type: string, enum: [pg-cluster-enrollment-v1] }
         challenge_id: { type: string, format: uuid }
-        server_nonce: { type: string }
+        installation_id: { type: string, format: uuid }
+        token_id: { type: string, format: uuid }
+        role: { type: string, enum: [api, worker, web] }
+        node_id: { type: string, format: uuid }
+        client_public_key: { type: string, readOnly: true }
+        server_public_key: { type: string, readOnly: true }
+        server_nonce: { type: string, readOnly: true }
+        application_version: { type: string }
+        runtime_schema_version: { type: integer, minimum: 1 }
+        config_revision: { type: integer, format: int64, minimum: 1 }
         expires_at: { type: string, format: date-time }
     ClusterChallengeResponse:
       type: object
@@ -83,24 +99,33 @@ components:
     ClusterJoinRequest:
       type: object
       additionalProperties: false
-      required: [challenge_id, token_id, role, node_id, node_public_key, proof]
+      required: [protocol, challenge_id, proof]
       properties:
+        protocol: { type: string, enum: [pg-cluster-enrollment-v1] }
         challenge_id: { type: string, format: uuid }
-        token_id: { type: string, format: uuid }
-        role: { type: string, enum: [api, worker, web] }
-        node_id: { type: string }
-        node_public_key: { type: string, writeOnly: true }
-        proof: { type: string, writeOnly: true }
+        proof:
+          type: string
+          writeOnly: true
     ClusterJoinEnvelope:
       type: object
-      required: [installation_id, node_id, role, expires_at, encrypted_envelope]
+      required: [protocol, installation_id, node_id, role, application_version, runtime_schema_version, config_revision, expires_at, encrypted_envelope]
       properties:
-        installation_id: { type: string }
-        node_id: { type: string }
+        protocol: { type: string, enum: [pg-cluster-enrollment-v1] }
+        installation_id: { type: string, format: uuid }
+        node_id: { type: string, format: uuid }
         role: { type: string, enum: [api, worker, web] }
+        application_version: { type: string }
+        runtime_schema_version: { type: integer, minimum: 1 }
+        config_revision: { type: integer, format: int64, minimum: 1 }
         expires_at: { type: string, format: date-time }
         encrypted_envelope:
-          type: string
+          type: object
+          additionalProperties: false
+          required: [algorithm, nonce, ciphertext]
+          properties:
+            algorithm: { type: string, enum: [X25519-HKDF-SHA256-XCHACHA20-POLY1305] }
+            nonce: { type: string, readOnly: true }
+            ciphertext: { type: string, readOnly: true }
           readOnly: true
           description: Authenticated ciphertext containing only role-allowed runtime fields.
     ClusterJoinResponse:

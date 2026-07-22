@@ -79,8 +79,10 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	if err := options.checkSchemaCompatibility(startupContext, client, cfg); err != nil {
 		return err
 	}
-	if err := options.verifyCompletedBinding(startupContext, startup); err != nil {
-		return fmt.Errorf("verify completed setup binding: %w", err)
+	if shouldVerifyOriginalSetupBinding(cfg.Runtime.DeploymentRole) {
+		if err := options.verifyCompletedBinding(startupContext, startup); err != nil {
+			return fmt.Errorf("verify completed setup binding: %w", err)
+		}
 	}
 	redisClient, err := newRedisClient(startupContext, cfg)
 	if err != nil {

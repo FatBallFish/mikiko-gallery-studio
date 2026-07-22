@@ -1966,3 +1966,46 @@ func TestOpenAPISpecDocumentsLedgerContract(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPISpecDocumentsEncryptedClusterEnrollment(t *testing.T) {
+	content, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]struct {
+			Post struct {
+				Responses map[string]any `yaml:"responses"`
+			} `yaml:"post"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/open/cluster/v1/challenges", "/api/open/cluster/v1/join"} {
+		responses := doc.Paths[path].Post.Responses
+		if _, ok := responses["201"]; !ok {
+			t.Fatalf("%s does not document a 201 response: %#v", path, responses)
+		}
+		if _, ok := responses["501"]; ok {
+			t.Fatalf("%s still documents the retired 501 response", path)
+		}
+	}
+
+	schemaContent, err := os.ReadFile("components/schemas/cluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(schemaContent)
+	for _, required := range []string{
+		"required: [protocol, token_id, node_id, node_public_key, application_version, runtime_schema_version]",
+		"required: [protocol, challenge_id, proof]",
+		"writeOnly: true",
+		"X25519-HKDF-SHA256-XCHACHA20-POLY1305",
+		"readOnly: true",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("cluster schema missing %q", required)
+		}
+	}
+}

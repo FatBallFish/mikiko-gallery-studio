@@ -28,5 +28,27 @@ func main() {
 				return fmt.Errorf("unsupported deployment mode %q", plan.Mode)
 			}
 		}},
+		ClusterJoin: deployctl.ClusterJoinDependencies{
+			PreflightDeployment: func(ctx context.Context, plan deployctl.InstallPlan) error {
+				switch plan.Mode {
+				case "docker":
+					return dockerExecutor.Preflight(ctx, plan)
+				case "native":
+					return nativeExecutor.Preflight(ctx, plan)
+				default:
+					return fmt.Errorf("unsupported deployment mode %q", plan.Mode)
+				}
+			},
+			ApplyDeployment: func(ctx context.Context, plan deployctl.InstallPlan) error {
+				switch plan.Mode {
+				case "docker":
+					return dockerExecutor.Run(ctx, deployctl.DockerActionInstall, plan)
+				case "native":
+					return nativeExecutor.Run(ctx, deployctl.NativeActionInstall, plan)
+				default:
+					return fmt.Errorf("unsupported deployment mode %q", plan.Mode)
+				}
+			},
+		},
 	}))
 }

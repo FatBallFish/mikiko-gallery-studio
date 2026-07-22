@@ -15,6 +15,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
@@ -69,6 +70,7 @@ const (
 	TypeAPIKeyQuotaReservation      = "APIKeyQuotaReservation"
 	TypeAdminUser                   = "AdminUser"
 	TypeAuditLog                    = "AuditLog"
+	TypeClusterChallenge            = "ClusterChallenge"
 	TypeClusterNode                 = "ClusterNode"
 	TypeClusterToken                = "ClusterToken"
 	TypeConfigItem                  = "ConfigItem"
@@ -3907,6 +3909,1233 @@ func (m *AuditLogMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown AuditLog edge %s", name)
 }
 
+// ClusterChallengeMutation represents an operation that mutates the ClusterChallenge nodes in the graph.
+type ClusterChallengeMutation struct {
+	config
+	op                        Op
+	typ                       string
+	id                        *int
+	created_at                *time.Time
+	updated_at                *time.Time
+	challenge_id              *string
+	installation_id           *string
+	token_id                  *string
+	role                      *clusterchallenge.Role
+	node_id                   *string
+	node_public_key           *string
+	server_public_key         *string
+	server_nonce              *string
+	app_version               *string
+	runtime_schema_version    *int
+	addruntime_schema_version *int
+	config_revision           *int64
+	addconfig_revision        *int64
+	sealed_server_private_key *string
+	expires_at                *time.Time
+	consumed_at               *time.Time
+	clearedFields             map[string]struct{}
+	done                      bool
+	oldValue                  func(context.Context) (*ClusterChallenge, error)
+	predicates                []predicate.ClusterChallenge
+}
+
+var _ ent.Mutation = (*ClusterChallengeMutation)(nil)
+
+// clusterchallengeOption allows management of the mutation configuration using functional options.
+type clusterchallengeOption func(*ClusterChallengeMutation)
+
+// newClusterChallengeMutation creates new mutation for the ClusterChallenge entity.
+func newClusterChallengeMutation(c config, op Op, opts ...clusterchallengeOption) *ClusterChallengeMutation {
+	m := &ClusterChallengeMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeClusterChallenge,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withClusterChallengeID sets the ID field of the mutation.
+func withClusterChallengeID(id int) clusterchallengeOption {
+	return func(m *ClusterChallengeMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ClusterChallenge
+		)
+		m.oldValue = func(ctx context.Context) (*ClusterChallenge, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ClusterChallenge.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withClusterChallenge sets the old ClusterChallenge of the mutation.
+func withClusterChallenge(node *ClusterChallenge) clusterchallengeOption {
+	return func(m *ClusterChallengeMutation) {
+		m.oldValue = func(context.Context) (*ClusterChallenge, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ClusterChallengeMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ClusterChallengeMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ClusterChallengeMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ClusterChallengeMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ClusterChallenge.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ClusterChallengeMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ClusterChallengeMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ClusterChallengeMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ClusterChallengeMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ClusterChallengeMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ClusterChallengeMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetChallengeID sets the "challenge_id" field.
+func (m *ClusterChallengeMutation) SetChallengeID(s string) {
+	m.challenge_id = &s
+}
+
+// ChallengeID returns the value of the "challenge_id" field in the mutation.
+func (m *ClusterChallengeMutation) ChallengeID() (r string, exists bool) {
+	v := m.challenge_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChallengeID returns the old "challenge_id" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldChallengeID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChallengeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChallengeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChallengeID: %w", err)
+	}
+	return oldValue.ChallengeID, nil
+}
+
+// ResetChallengeID resets all changes to the "challenge_id" field.
+func (m *ClusterChallengeMutation) ResetChallengeID() {
+	m.challenge_id = nil
+}
+
+// SetInstallationID sets the "installation_id" field.
+func (m *ClusterChallengeMutation) SetInstallationID(s string) {
+	m.installation_id = &s
+}
+
+// InstallationID returns the value of the "installation_id" field in the mutation.
+func (m *ClusterChallengeMutation) InstallationID() (r string, exists bool) {
+	v := m.installation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInstallationID returns the old "installation_id" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldInstallationID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInstallationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInstallationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInstallationID: %w", err)
+	}
+	return oldValue.InstallationID, nil
+}
+
+// ResetInstallationID resets all changes to the "installation_id" field.
+func (m *ClusterChallengeMutation) ResetInstallationID() {
+	m.installation_id = nil
+}
+
+// SetTokenID sets the "token_id" field.
+func (m *ClusterChallengeMutation) SetTokenID(s string) {
+	m.token_id = &s
+}
+
+// TokenID returns the value of the "token_id" field in the mutation.
+func (m *ClusterChallengeMutation) TokenID() (r string, exists bool) {
+	v := m.token_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTokenID returns the old "token_id" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldTokenID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTokenID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTokenID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTokenID: %w", err)
+	}
+	return oldValue.TokenID, nil
+}
+
+// ResetTokenID resets all changes to the "token_id" field.
+func (m *ClusterChallengeMutation) ResetTokenID() {
+	m.token_id = nil
+}
+
+// SetRole sets the "role" field.
+func (m *ClusterChallengeMutation) SetRole(c clusterchallenge.Role) {
+	m.role = &c
+}
+
+// Role returns the value of the "role" field in the mutation.
+func (m *ClusterChallengeMutation) Role() (r clusterchallenge.Role, exists bool) {
+	v := m.role
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRole returns the old "role" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldRole(ctx context.Context) (v clusterchallenge.Role, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRole is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRole requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRole: %w", err)
+	}
+	return oldValue.Role, nil
+}
+
+// ResetRole resets all changes to the "role" field.
+func (m *ClusterChallengeMutation) ResetRole() {
+	m.role = nil
+}
+
+// SetNodeID sets the "node_id" field.
+func (m *ClusterChallengeMutation) SetNodeID(s string) {
+	m.node_id = &s
+}
+
+// NodeID returns the value of the "node_id" field in the mutation.
+func (m *ClusterChallengeMutation) NodeID() (r string, exists bool) {
+	v := m.node_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNodeID returns the old "node_id" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldNodeID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNodeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNodeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNodeID: %w", err)
+	}
+	return oldValue.NodeID, nil
+}
+
+// ResetNodeID resets all changes to the "node_id" field.
+func (m *ClusterChallengeMutation) ResetNodeID() {
+	m.node_id = nil
+}
+
+// SetNodePublicKey sets the "node_public_key" field.
+func (m *ClusterChallengeMutation) SetNodePublicKey(s string) {
+	m.node_public_key = &s
+}
+
+// NodePublicKey returns the value of the "node_public_key" field in the mutation.
+func (m *ClusterChallengeMutation) NodePublicKey() (r string, exists bool) {
+	v := m.node_public_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNodePublicKey returns the old "node_public_key" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldNodePublicKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNodePublicKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNodePublicKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNodePublicKey: %w", err)
+	}
+	return oldValue.NodePublicKey, nil
+}
+
+// ResetNodePublicKey resets all changes to the "node_public_key" field.
+func (m *ClusterChallengeMutation) ResetNodePublicKey() {
+	m.node_public_key = nil
+}
+
+// SetServerPublicKey sets the "server_public_key" field.
+func (m *ClusterChallengeMutation) SetServerPublicKey(s string) {
+	m.server_public_key = &s
+}
+
+// ServerPublicKey returns the value of the "server_public_key" field in the mutation.
+func (m *ClusterChallengeMutation) ServerPublicKey() (r string, exists bool) {
+	v := m.server_public_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldServerPublicKey returns the old "server_public_key" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldServerPublicKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldServerPublicKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldServerPublicKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldServerPublicKey: %w", err)
+	}
+	return oldValue.ServerPublicKey, nil
+}
+
+// ResetServerPublicKey resets all changes to the "server_public_key" field.
+func (m *ClusterChallengeMutation) ResetServerPublicKey() {
+	m.server_public_key = nil
+}
+
+// SetServerNonce sets the "server_nonce" field.
+func (m *ClusterChallengeMutation) SetServerNonce(s string) {
+	m.server_nonce = &s
+}
+
+// ServerNonce returns the value of the "server_nonce" field in the mutation.
+func (m *ClusterChallengeMutation) ServerNonce() (r string, exists bool) {
+	v := m.server_nonce
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldServerNonce returns the old "server_nonce" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldServerNonce(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldServerNonce is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldServerNonce requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldServerNonce: %w", err)
+	}
+	return oldValue.ServerNonce, nil
+}
+
+// ResetServerNonce resets all changes to the "server_nonce" field.
+func (m *ClusterChallengeMutation) ResetServerNonce() {
+	m.server_nonce = nil
+}
+
+// SetAppVersion sets the "app_version" field.
+func (m *ClusterChallengeMutation) SetAppVersion(s string) {
+	m.app_version = &s
+}
+
+// AppVersion returns the value of the "app_version" field in the mutation.
+func (m *ClusterChallengeMutation) AppVersion() (r string, exists bool) {
+	v := m.app_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAppVersion returns the old "app_version" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldAppVersion(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAppVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAppVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAppVersion: %w", err)
+	}
+	return oldValue.AppVersion, nil
+}
+
+// ResetAppVersion resets all changes to the "app_version" field.
+func (m *ClusterChallengeMutation) ResetAppVersion() {
+	m.app_version = nil
+}
+
+// SetRuntimeSchemaVersion sets the "runtime_schema_version" field.
+func (m *ClusterChallengeMutation) SetRuntimeSchemaVersion(i int) {
+	m.runtime_schema_version = &i
+	m.addruntime_schema_version = nil
+}
+
+// RuntimeSchemaVersion returns the value of the "runtime_schema_version" field in the mutation.
+func (m *ClusterChallengeMutation) RuntimeSchemaVersion() (r int, exists bool) {
+	v := m.runtime_schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRuntimeSchemaVersion returns the old "runtime_schema_version" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldRuntimeSchemaVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRuntimeSchemaVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRuntimeSchemaVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRuntimeSchemaVersion: %w", err)
+	}
+	return oldValue.RuntimeSchemaVersion, nil
+}
+
+// AddRuntimeSchemaVersion adds i to the "runtime_schema_version" field.
+func (m *ClusterChallengeMutation) AddRuntimeSchemaVersion(i int) {
+	if m.addruntime_schema_version != nil {
+		*m.addruntime_schema_version += i
+	} else {
+		m.addruntime_schema_version = &i
+	}
+}
+
+// AddedRuntimeSchemaVersion returns the value that was added to the "runtime_schema_version" field in this mutation.
+func (m *ClusterChallengeMutation) AddedRuntimeSchemaVersion() (r int, exists bool) {
+	v := m.addruntime_schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRuntimeSchemaVersion resets all changes to the "runtime_schema_version" field.
+func (m *ClusterChallengeMutation) ResetRuntimeSchemaVersion() {
+	m.runtime_schema_version = nil
+	m.addruntime_schema_version = nil
+}
+
+// SetConfigRevision sets the "config_revision" field.
+func (m *ClusterChallengeMutation) SetConfigRevision(i int64) {
+	m.config_revision = &i
+	m.addconfig_revision = nil
+}
+
+// ConfigRevision returns the value of the "config_revision" field in the mutation.
+func (m *ClusterChallengeMutation) ConfigRevision() (r int64, exists bool) {
+	v := m.config_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfigRevision returns the old "config_revision" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldConfigRevision(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfigRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfigRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfigRevision: %w", err)
+	}
+	return oldValue.ConfigRevision, nil
+}
+
+// AddConfigRevision adds i to the "config_revision" field.
+func (m *ClusterChallengeMutation) AddConfigRevision(i int64) {
+	if m.addconfig_revision != nil {
+		*m.addconfig_revision += i
+	} else {
+		m.addconfig_revision = &i
+	}
+}
+
+// AddedConfigRevision returns the value that was added to the "config_revision" field in this mutation.
+func (m *ClusterChallengeMutation) AddedConfigRevision() (r int64, exists bool) {
+	v := m.addconfig_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConfigRevision resets all changes to the "config_revision" field.
+func (m *ClusterChallengeMutation) ResetConfigRevision() {
+	m.config_revision = nil
+	m.addconfig_revision = nil
+}
+
+// SetSealedServerPrivateKey sets the "sealed_server_private_key" field.
+func (m *ClusterChallengeMutation) SetSealedServerPrivateKey(s string) {
+	m.sealed_server_private_key = &s
+}
+
+// SealedServerPrivateKey returns the value of the "sealed_server_private_key" field in the mutation.
+func (m *ClusterChallengeMutation) SealedServerPrivateKey() (r string, exists bool) {
+	v := m.sealed_server_private_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSealedServerPrivateKey returns the old "sealed_server_private_key" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldSealedServerPrivateKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSealedServerPrivateKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSealedServerPrivateKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSealedServerPrivateKey: %w", err)
+	}
+	return oldValue.SealedServerPrivateKey, nil
+}
+
+// ResetSealedServerPrivateKey resets all changes to the "sealed_server_private_key" field.
+func (m *ClusterChallengeMutation) ResetSealedServerPrivateKey() {
+	m.sealed_server_private_key = nil
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *ClusterChallengeMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *ClusterChallengeMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldExpiresAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *ClusterChallengeMutation) ResetExpiresAt() {
+	m.expires_at = nil
+}
+
+// SetConsumedAt sets the "consumed_at" field.
+func (m *ClusterChallengeMutation) SetConsumedAt(t time.Time) {
+	m.consumed_at = &t
+}
+
+// ConsumedAt returns the value of the "consumed_at" field in the mutation.
+func (m *ClusterChallengeMutation) ConsumedAt() (r time.Time, exists bool) {
+	v := m.consumed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConsumedAt returns the old "consumed_at" field's value of the ClusterChallenge entity.
+// If the ClusterChallenge object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterChallengeMutation) OldConsumedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConsumedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConsumedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConsumedAt: %w", err)
+	}
+	return oldValue.ConsumedAt, nil
+}
+
+// ClearConsumedAt clears the value of the "consumed_at" field.
+func (m *ClusterChallengeMutation) ClearConsumedAt() {
+	m.consumed_at = nil
+	m.clearedFields[clusterchallenge.FieldConsumedAt] = struct{}{}
+}
+
+// ConsumedAtCleared returns if the "consumed_at" field was cleared in this mutation.
+func (m *ClusterChallengeMutation) ConsumedAtCleared() bool {
+	_, ok := m.clearedFields[clusterchallenge.FieldConsumedAt]
+	return ok
+}
+
+// ResetConsumedAt resets all changes to the "consumed_at" field.
+func (m *ClusterChallengeMutation) ResetConsumedAt() {
+	m.consumed_at = nil
+	delete(m.clearedFields, clusterchallenge.FieldConsumedAt)
+}
+
+// Where appends a list predicates to the ClusterChallengeMutation builder.
+func (m *ClusterChallengeMutation) Where(ps ...predicate.ClusterChallenge) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ClusterChallengeMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ClusterChallengeMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ClusterChallenge, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ClusterChallengeMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ClusterChallengeMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ClusterChallenge).
+func (m *ClusterChallengeMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ClusterChallengeMutation) Fields() []string {
+	fields := make([]string, 0, 16)
+	if m.created_at != nil {
+		fields = append(fields, clusterchallenge.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, clusterchallenge.FieldUpdatedAt)
+	}
+	if m.challenge_id != nil {
+		fields = append(fields, clusterchallenge.FieldChallengeID)
+	}
+	if m.installation_id != nil {
+		fields = append(fields, clusterchallenge.FieldInstallationID)
+	}
+	if m.token_id != nil {
+		fields = append(fields, clusterchallenge.FieldTokenID)
+	}
+	if m.role != nil {
+		fields = append(fields, clusterchallenge.FieldRole)
+	}
+	if m.node_id != nil {
+		fields = append(fields, clusterchallenge.FieldNodeID)
+	}
+	if m.node_public_key != nil {
+		fields = append(fields, clusterchallenge.FieldNodePublicKey)
+	}
+	if m.server_public_key != nil {
+		fields = append(fields, clusterchallenge.FieldServerPublicKey)
+	}
+	if m.server_nonce != nil {
+		fields = append(fields, clusterchallenge.FieldServerNonce)
+	}
+	if m.app_version != nil {
+		fields = append(fields, clusterchallenge.FieldAppVersion)
+	}
+	if m.runtime_schema_version != nil {
+		fields = append(fields, clusterchallenge.FieldRuntimeSchemaVersion)
+	}
+	if m.config_revision != nil {
+		fields = append(fields, clusterchallenge.FieldConfigRevision)
+	}
+	if m.sealed_server_private_key != nil {
+		fields = append(fields, clusterchallenge.FieldSealedServerPrivateKey)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, clusterchallenge.FieldExpiresAt)
+	}
+	if m.consumed_at != nil {
+		fields = append(fields, clusterchallenge.FieldConsumedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ClusterChallengeMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case clusterchallenge.FieldCreatedAt:
+		return m.CreatedAt()
+	case clusterchallenge.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case clusterchallenge.FieldChallengeID:
+		return m.ChallengeID()
+	case clusterchallenge.FieldInstallationID:
+		return m.InstallationID()
+	case clusterchallenge.FieldTokenID:
+		return m.TokenID()
+	case clusterchallenge.FieldRole:
+		return m.Role()
+	case clusterchallenge.FieldNodeID:
+		return m.NodeID()
+	case clusterchallenge.FieldNodePublicKey:
+		return m.NodePublicKey()
+	case clusterchallenge.FieldServerPublicKey:
+		return m.ServerPublicKey()
+	case clusterchallenge.FieldServerNonce:
+		return m.ServerNonce()
+	case clusterchallenge.FieldAppVersion:
+		return m.AppVersion()
+	case clusterchallenge.FieldRuntimeSchemaVersion:
+		return m.RuntimeSchemaVersion()
+	case clusterchallenge.FieldConfigRevision:
+		return m.ConfigRevision()
+	case clusterchallenge.FieldSealedServerPrivateKey:
+		return m.SealedServerPrivateKey()
+	case clusterchallenge.FieldExpiresAt:
+		return m.ExpiresAt()
+	case clusterchallenge.FieldConsumedAt:
+		return m.ConsumedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ClusterChallengeMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case clusterchallenge.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case clusterchallenge.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case clusterchallenge.FieldChallengeID:
+		return m.OldChallengeID(ctx)
+	case clusterchallenge.FieldInstallationID:
+		return m.OldInstallationID(ctx)
+	case clusterchallenge.FieldTokenID:
+		return m.OldTokenID(ctx)
+	case clusterchallenge.FieldRole:
+		return m.OldRole(ctx)
+	case clusterchallenge.FieldNodeID:
+		return m.OldNodeID(ctx)
+	case clusterchallenge.FieldNodePublicKey:
+		return m.OldNodePublicKey(ctx)
+	case clusterchallenge.FieldServerPublicKey:
+		return m.OldServerPublicKey(ctx)
+	case clusterchallenge.FieldServerNonce:
+		return m.OldServerNonce(ctx)
+	case clusterchallenge.FieldAppVersion:
+		return m.OldAppVersion(ctx)
+	case clusterchallenge.FieldRuntimeSchemaVersion:
+		return m.OldRuntimeSchemaVersion(ctx)
+	case clusterchallenge.FieldConfigRevision:
+		return m.OldConfigRevision(ctx)
+	case clusterchallenge.FieldSealedServerPrivateKey:
+		return m.OldSealedServerPrivateKey(ctx)
+	case clusterchallenge.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case clusterchallenge.FieldConsumedAt:
+		return m.OldConsumedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ClusterChallenge field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ClusterChallengeMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case clusterchallenge.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case clusterchallenge.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case clusterchallenge.FieldChallengeID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChallengeID(v)
+		return nil
+	case clusterchallenge.FieldInstallationID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInstallationID(v)
+		return nil
+	case clusterchallenge.FieldTokenID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTokenID(v)
+		return nil
+	case clusterchallenge.FieldRole:
+		v, ok := value.(clusterchallenge.Role)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRole(v)
+		return nil
+	case clusterchallenge.FieldNodeID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNodeID(v)
+		return nil
+	case clusterchallenge.FieldNodePublicKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNodePublicKey(v)
+		return nil
+	case clusterchallenge.FieldServerPublicKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetServerPublicKey(v)
+		return nil
+	case clusterchallenge.FieldServerNonce:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetServerNonce(v)
+		return nil
+	case clusterchallenge.FieldAppVersion:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAppVersion(v)
+		return nil
+	case clusterchallenge.FieldRuntimeSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRuntimeSchemaVersion(v)
+		return nil
+	case clusterchallenge.FieldConfigRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfigRevision(v)
+		return nil
+	case clusterchallenge.FieldSealedServerPrivateKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSealedServerPrivateKey(v)
+		return nil
+	case clusterchallenge.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case clusterchallenge.FieldConsumedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConsumedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterChallenge field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ClusterChallengeMutation) AddedFields() []string {
+	var fields []string
+	if m.addruntime_schema_version != nil {
+		fields = append(fields, clusterchallenge.FieldRuntimeSchemaVersion)
+	}
+	if m.addconfig_revision != nil {
+		fields = append(fields, clusterchallenge.FieldConfigRevision)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ClusterChallengeMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case clusterchallenge.FieldRuntimeSchemaVersion:
+		return m.AddedRuntimeSchemaVersion()
+	case clusterchallenge.FieldConfigRevision:
+		return m.AddedConfigRevision()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ClusterChallengeMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case clusterchallenge.FieldRuntimeSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRuntimeSchemaVersion(v)
+		return nil
+	case clusterchallenge.FieldConfigRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConfigRevision(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterChallenge numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ClusterChallengeMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(clusterchallenge.FieldConsumedAt) {
+		fields = append(fields, clusterchallenge.FieldConsumedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ClusterChallengeMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ClusterChallengeMutation) ClearField(name string) error {
+	switch name {
+	case clusterchallenge.FieldConsumedAt:
+		m.ClearConsumedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterChallenge nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ClusterChallengeMutation) ResetField(name string) error {
+	switch name {
+	case clusterchallenge.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case clusterchallenge.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case clusterchallenge.FieldChallengeID:
+		m.ResetChallengeID()
+		return nil
+	case clusterchallenge.FieldInstallationID:
+		m.ResetInstallationID()
+		return nil
+	case clusterchallenge.FieldTokenID:
+		m.ResetTokenID()
+		return nil
+	case clusterchallenge.FieldRole:
+		m.ResetRole()
+		return nil
+	case clusterchallenge.FieldNodeID:
+		m.ResetNodeID()
+		return nil
+	case clusterchallenge.FieldNodePublicKey:
+		m.ResetNodePublicKey()
+		return nil
+	case clusterchallenge.FieldServerPublicKey:
+		m.ResetServerPublicKey()
+		return nil
+	case clusterchallenge.FieldServerNonce:
+		m.ResetServerNonce()
+		return nil
+	case clusterchallenge.FieldAppVersion:
+		m.ResetAppVersion()
+		return nil
+	case clusterchallenge.FieldRuntimeSchemaVersion:
+		m.ResetRuntimeSchemaVersion()
+		return nil
+	case clusterchallenge.FieldConfigRevision:
+		m.ResetConfigRevision()
+		return nil
+	case clusterchallenge.FieldSealedServerPrivateKey:
+		m.ResetSealedServerPrivateKey()
+		return nil
+	case clusterchallenge.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case clusterchallenge.FieldConsumedAt:
+		m.ResetConsumedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterChallenge field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ClusterChallengeMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ClusterChallengeMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ClusterChallengeMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ClusterChallengeMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ClusterChallengeMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ClusterChallengeMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ClusterChallengeMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ClusterChallenge unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ClusterChallengeMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ClusterChallenge edge %s", name)
+}
+
 // ClusterNodeMutation represents an operation that mutates the ClusterNode nodes in the graph.
 type ClusterNodeMutation struct {
 	config
@@ -4867,24 +6096,25 @@ func (m *ClusterNodeMutation) ResetEdge(name string) error {
 // ClusterTokenMutation represents an operation that mutates the ClusterToken nodes in the graph.
 type ClusterTokenMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	created_at          *time.Time
-	updated_at          *time.Time
-	token_id            *string
-	token_hash          *string
-	installation_id     *string
-	role                *clustertoken.Role
-	expires_at          *time.Time
-	consumed_at         *time.Time
-	consumed_by_node_id *string
-	revoked_at          *time.Time
-	audit_actor         *string
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*ClusterToken, error)
-	predicates          []predicate.ClusterToken
+	op                     Op
+	typ                    string
+	id                     *int
+	created_at             *time.Time
+	updated_at             *time.Time
+	token_id               *string
+	token_hash             *string
+	token_proof_public_key *string
+	installation_id        *string
+	role                   *clustertoken.Role
+	expires_at             *time.Time
+	consumed_at            *time.Time
+	consumed_by_node_id    *string
+	revoked_at             *time.Time
+	audit_actor            *string
+	clearedFields          map[string]struct{}
+	done                   bool
+	oldValue               func(context.Context) (*ClusterToken, error)
+	predicates             []predicate.ClusterToken
 }
 
 var _ ent.Mutation = (*ClusterTokenMutation)(nil)
@@ -5127,6 +6357,42 @@ func (m *ClusterTokenMutation) OldTokenHash(ctx context.Context) (v string, err 
 // ResetTokenHash resets all changes to the "token_hash" field.
 func (m *ClusterTokenMutation) ResetTokenHash() {
 	m.token_hash = nil
+}
+
+// SetTokenProofPublicKey sets the "token_proof_public_key" field.
+func (m *ClusterTokenMutation) SetTokenProofPublicKey(s string) {
+	m.token_proof_public_key = &s
+}
+
+// TokenProofPublicKey returns the value of the "token_proof_public_key" field in the mutation.
+func (m *ClusterTokenMutation) TokenProofPublicKey() (r string, exists bool) {
+	v := m.token_proof_public_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTokenProofPublicKey returns the old "token_proof_public_key" field's value of the ClusterToken entity.
+// If the ClusterToken object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterTokenMutation) OldTokenProofPublicKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTokenProofPublicKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTokenProofPublicKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTokenProofPublicKey: %w", err)
+	}
+	return oldValue.TokenProofPublicKey, nil
+}
+
+// ResetTokenProofPublicKey resets all changes to the "token_proof_public_key" field.
+func (m *ClusterTokenMutation) ResetTokenProofPublicKey() {
+	m.token_proof_public_key = nil
 }
 
 // SetInstallationID sets the "installation_id" field.
@@ -5454,7 +6720,7 @@ func (m *ClusterTokenMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ClusterTokenMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.created_at != nil {
 		fields = append(fields, clustertoken.FieldCreatedAt)
 	}
@@ -5466,6 +6732,9 @@ func (m *ClusterTokenMutation) Fields() []string {
 	}
 	if m.token_hash != nil {
 		fields = append(fields, clustertoken.FieldTokenHash)
+	}
+	if m.token_proof_public_key != nil {
+		fields = append(fields, clustertoken.FieldTokenProofPublicKey)
 	}
 	if m.installation_id != nil {
 		fields = append(fields, clustertoken.FieldInstallationID)
@@ -5504,6 +6773,8 @@ func (m *ClusterTokenMutation) Field(name string) (ent.Value, bool) {
 		return m.TokenID()
 	case clustertoken.FieldTokenHash:
 		return m.TokenHash()
+	case clustertoken.FieldTokenProofPublicKey:
+		return m.TokenProofPublicKey()
 	case clustertoken.FieldInstallationID:
 		return m.InstallationID()
 	case clustertoken.FieldRole:
@@ -5535,6 +6806,8 @@ func (m *ClusterTokenMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldTokenID(ctx)
 	case clustertoken.FieldTokenHash:
 		return m.OldTokenHash(ctx)
+	case clustertoken.FieldTokenProofPublicKey:
+		return m.OldTokenProofPublicKey(ctx)
 	case clustertoken.FieldInstallationID:
 		return m.OldInstallationID(ctx)
 	case clustertoken.FieldRole:
@@ -5585,6 +6858,13 @@ func (m *ClusterTokenMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTokenHash(v)
+		return nil
+	case clustertoken.FieldTokenProofPublicKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTokenProofPublicKey(v)
 		return nil
 	case clustertoken.FieldInstallationID:
 		v, ok := value.(string)
@@ -5716,6 +6996,9 @@ func (m *ClusterTokenMutation) ResetField(name string) error {
 		return nil
 	case clustertoken.FieldTokenHash:
 		m.ResetTokenHash()
+		return nil
+	case clustertoken.FieldTokenProofPublicKey:
+		m.ResetTokenProofPublicKey()
 		return nil
 	case clustertoken.FieldInstallationID:
 		m.ResetInstallationID()
