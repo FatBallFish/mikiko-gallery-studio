@@ -46,7 +46,7 @@ const setupDocumentBody = `</style>
     <div class="status-line" id="auth-status" role="status" aria-live="polite"></div>
   </section>
 
-  <div class="workspace" id="workspace" hidden>
+  <div class="workspace" id="workspace" tabindex="-1" hidden>
     <aside class="step-rail" aria-label="初始化步骤 / Setup steps">
       <ol>
         <li class="active" data-nav-step="deployment"><span>01</span><div>部署信息<small>Deployment</small></div></li>
@@ -139,7 +139,7 @@ const setupDocumentBody = `</style>
           <div class="step-index">→</div>
           <div><h2 id="progress-title">正在初始化</h2><p>Initialization in progress</p></div>
         </div>
-        <progress id="setup-progress" max="6" value="0">0%</progress>
+        <progress id="setup-progress" max="6" value="0" aria-label="初始化进度 / Setup progress">0%</progress>
         <ol class="phase-list" id="phase-list"></ol>
         <div class="countdown" id="restart-countdown" role="status" aria-live="polite"></div>
       </section>
@@ -299,6 +299,7 @@ const setupPageScript = `'use strict';
   };
   const hasReturnHistory = history.length > 1 && document.referrer !== '';
   let operationId = '';
+  let preserveOperationID = false;
   let applying = false;
 
   const phaseOrder = [
@@ -316,7 +317,9 @@ const setupPageScript = `'use strict';
     SETUP_SESSION_INVALID: '会话已失效，请重新验证 Token。 / Session expired; authenticate again.',
     SETUP_VALIDATION_FAILED: '配置校验失败，请检查必填项。 / Configuration validation failed.',
     SETUP_PROBE_FAILED: '中间件检测失败，请分别重新检测。 / Middleware verification failed.',
+    SETUP_OPERATION_NOT_FOUND: '无法确认初始化进度，请重新填写敏感字段后使用原配置和操作编号重试。 / Progress is unavailable; re-enter secrets and retry the original operation with the same configuration.',
     SETUP_OPERATION_CONFLICT: '存在冲突的初始化操作，请保持配置不变后重试。 / Conflicting setup operation.',
+    SETUP_REQUEST_CANCELLED: '初始化请求已取消，正在确认服务端状态。 / Setup request was cancelled; checking server state.',
     SETUP_REQUEST_TIMEOUT: '初始化请求超时，可使用相同配置重试。 / Setup request timed out; retry unchanged.',
     SETUP_NETWORK_ERROR: 'API 暂时不可访问，正在等待服务恢复。 / API is temporarily unavailable.',
     SETUP_INTERNAL_ERROR: '初始化服务发生内部错误，请运行 deployctl doctor。 / Internal setup error; run deployctl doctor.',
@@ -351,6 +354,7 @@ const setupPageScript = `'use strict';
       if (!response.ok) throw { code: payload.error?.code || 'SETUP_INTERNAL_ERROR' };
       return payload.data;
     } catch (error) {
+      if (controller.signal.aborted) throw { code: 'SETUP_REQUEST_TIMEOUT' };
       if (typeof error?.code === 'string') throw error;
       throw { code: 'SETUP_NETWORK_ERROR' };
     } finally {
@@ -583,6 +587,12 @@ const setupPageScript = `'use strict';
     setStatus(authStatus, errors[code] || errors.SETUP_SESSION_INVALID, 'error');
   }
 
+  function focusSetupWorkspace() {
+    const first = Array.from(inputs.values()).find((input) => !input.readOnly && !input.disabled && input.offsetParent !== null);
+    if (first) first.focus();
+    else workspace.focus();
+  }
+
   authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const token = tokenInput.value;
@@ -598,8 +608,7 @@ const setupPageScript = `'use strict';
       authPanel.hidden = true;
       workspace.hidden = false;
       setStatus(authStatus, '');
-      const first = inputs.get('DATABASE_URL');
-      if (first && !first.readOnly) first.focus();
+      focusSetupWorkspace();
     } catch (error) {
       setStatus(authStatus, errors[error.code] || errors.SETUP_INTERNAL_ERROR, 'error');
     } finally {
@@ -626,15 +635,46 @@ const setupPageScript = `'use strict';
     });
   }
 
-  async function pollOperation() {
-    while (operationId) {
+  async function recoverApplyOperation() {
+    const recoveryDeadline = Date.now() + 300000;
+    renderPhase({ phase: 'pending' });
+    while (operationId && Date.now() < recoveryDeadline) {
+      const remaining = recoveryDeadline - Date.now();
+      let bootstrap;
+      try {
+        bootstrap = await requestJSON('/api/system/v1/bootstrap-status', { timeout: Math.min(5000, remaining) });
+      } catch (_) {}
+      if (bootstrap?.phase === 'ready') return finish();
+      if (bootstrap?.phase === 'broken') {
+        showRestartRecovery('服务在初始化恢复期间进入故障状态。 / Service entered broken mode during setup recovery.');
+        return;
+      }
       let view;
       try {
-        view = await requestJSON('/api/setup/v1/progress/' + encodeURIComponent(operationId));
+        view = await requestJSON('/api/setup/v1/progress/' + encodeURIComponent(operationId), { timeout: Math.min(5000, remaining) });
       } catch (error) {
-        if (error.code === 'SETUP_SESSION_INVALID') return waitForRestart();
-        setStatus(globalStatus, errors[error.code] || errors.SETUP_NETWORK_ERROR, 'error');
-        await delay(2000);
+        if (bootstrap?.phase === 'setup_required' && error.code === 'SETUP_OPERATION_NOT_FOUND') {
+          applying = false;
+          applyButton.disabled = false;
+          preserveOperationID = true;
+          progressPanel.hidden = true;
+          setStatus(applyStatus, errors.SETUP_OPERATION_NOT_FOUND, 'error');
+          return;
+        }
+        if (bootstrap?.phase === 'setup_required' && error.code === 'SETUP_SESSION_INVALID') {
+          applying = false;
+          applyButton.disabled = false;
+          preserveOperationID = true;
+          return resetAuthentication(error.code);
+        }
+        if (!['SETUP_OPERATION_NOT_FOUND', 'SETUP_SESSION_INVALID', 'SETUP_NETWORK_ERROR', 'SETUP_REQUEST_TIMEOUT', 'SETUP_REQUEST_CANCELLED'].includes(error.code)) {
+          applying = false;
+          applyButton.disabled = false;
+          setStatus(applyStatus, errors[error.code] || errors.SETUP_INTERNAL_ERROR, 'error');
+          return;
+        }
+        const wait = Math.min(2000, Math.max(0, recoveryDeadline - Date.now()));
+        if (wait > 0) await delay(wait);
         continue;
       }
       renderPhase(view);
@@ -645,8 +685,10 @@ const setupPageScript = `'use strict';
         return;
       }
       if (view.phase === 'restart_pending' || view.phase === 'complete') return waitForRestart();
-      await delay(1500);
+      const wait = Math.min(1500, Math.max(0, recoveryDeadline - Date.now()));
+      if (wait > 0) await delay(wait);
     }
+    showRestartRecovery('无法确认初始化操作的最终状态。 / Could not confirm the final setup operation state.');
   }
 
   async function waitForRestart() {
@@ -720,6 +762,7 @@ const setupPageScript = `'use strict';
     applying = true;
     applyButton.disabled = true;
     operationId = operationId || createOperationID();
+    preserveOperationID = true;
     const body = {
       operation_id: operationId,
       runtime: runtimePayload(),
@@ -734,12 +777,22 @@ const setupPageScript = `'use strict';
       renderPhase(view);
       setStatus(applyStatus, '初始化操作已接受。 / Setup operation accepted.', 'success');
       if (view.phase === 'restart_pending' || view.phase === 'complete') await waitForRestart();
-      else await pollOperation();
+      else await recoverApplyOperation();
     } catch (error) {
-      applying = false;
-      applyButton.disabled = false;
-      if (error.code === 'SETUP_SESSION_INVALID') resetAuthentication(error.code);
-      else setStatus(applyStatus, errors[error.code] || errors.SETUP_INTERNAL_ERROR, 'error');
+      if (error.code === 'SETUP_SESSION_INVALID') {
+        applying = false;
+        applyButton.disabled = false;
+        preserveOperationID = true;
+        resetAuthentication(error.code);
+      }
+      else if (error.code === 'SETUP_NETWORK_ERROR' || error.code === 'SETUP_REQUEST_TIMEOUT' || error.code === 'SETUP_REQUEST_CANCELLED') {
+        setStatus(applyStatus, errors[error.code] || errors.SETUP_NETWORK_ERROR, 'error');
+        await recoverApplyOperation();
+      } else {
+        applying = false;
+        applyButton.disabled = false;
+        setStatus(applyStatus, errors[error.code] || errors.SETUP_INTERNAL_ERROR, 'error');
+      }
     } finally {
       clearApplyPayload(body);
     }
@@ -753,7 +806,7 @@ const setupPageScript = `'use strict';
   updateReview();
   for (const input of document.querySelectorAll('input, select')) {
     input.addEventListener('input', () => {
-      if (!applying) operationId = '';
+      if (!applying && !preserveOperationID) operationId = '';
       if (input.name === 'STORAGE_DRIVER') updateStorageVisibility();
       const field = model.fields.find((item) => item.key === input.name);
       if (field && ['database', 'redis', 'storage'].includes(field.group)) invalidateProbe(field.group);

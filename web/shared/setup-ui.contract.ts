@@ -47,6 +47,7 @@ for (const endpoint of [
 for (const required of [
   'deployctl setup token show', 'deployctl setup token reset', 'history.back()', 'history.length',
   'document.referrer', 'aria-live="polite"', 'role="status"', '<progress', ':focus-visible',
+  'aria-label="初始化进度 / Setup progress"',
   '@media (max-width: 720px)', '@media (prefers-reduced-motion: reduce)', 'overflow-x: hidden',
   'credentials: \'same-origin\'', 'crypto.randomUUID()',
   'crypto.getRandomValues', 'function createOperationID()',
@@ -58,6 +59,7 @@ for (const required of [
   'new AbortController()', 'controller.abort()',
   'const timeout = options.timeout || 15000;',
   'if (controller.signal.aborted) throw error;',
+  "if (controller.signal.aborted) throw { code: 'SETUP_REQUEST_TIMEOUT' };",
   "if (typeof error?.code === 'string') throw error;",
   "requestJSON('/api/setup/v1/apply', { method: 'POST', body, timeout: 300000 })",
   'deployctl status', 'deployctl logs', 'deployctl doctor', 'deployctl restart',
@@ -65,12 +67,35 @@ for (const required of [
   'probeVersions[kind] += 1;',
   'if (version !== probeVersions[kind]) return;',
   "if (field && ['database', 'redis', 'storage'].includes(field.group)) invalidateProbe(field.group);",
+  'async function recoverApplyOperation() {',
+  'let preserveOperationID = false;',
+  'preserveOperationID = true;',
+  'if (!applying && !preserveOperationID) operationId = \'\';',
+  'const recoveryDeadline = Date.now() + 300000;',
+  "bootstrap?.phase === 'setup_required' && error.code === 'SETUP_OPERATION_NOT_FOUND'",
+  "error.code === 'SETUP_NETWORK_ERROR' || error.code === 'SETUP_REQUEST_TIMEOUT' || error.code === 'SETUP_REQUEST_CANCELLED'",
+  'await recoverApplyOperation();',
+  'id="workspace" tabindex="-1" hidden',
+  'function focusSetupWorkspace() {',
+  'input.offsetParent !== null',
 ]) {
   if (!setupSources.includes(required)) throw new Error(`embedded setup UI missing contract ${required}`)
 }
 
+if (setupSources.includes("bootstrap?.phase === 'setup_required' && error.code === 'SETUP_OPERATION_NOT_FOUND') {\n          operationId = '';")) {
+  throw new Error('a durable setup attempt must retain its original operation id after restart')
+}
+
+if (!setupSources.includes("error.code === 'SETUP_SESSION_INVALID') {\n        applying = false;\n        applyButton.disabled = false;\n        preserveOperationID = true;")) {
+  throw new Error('apply session expiry must unlock the form while preserving the operation id')
+}
+
 if (setupSources.includes('async function pollReadiness() {\n    while (true)')) {
   throw new Error('setup readiness polling must stop at a bounded recovery state')
+}
+
+if (setupSources.includes('while (operationId)')) {
+  throw new Error('setup operation recovery must be bounded and phase-aware')
 }
 
 if (setupSources.includes('const controller = options.timeout ?')) {
