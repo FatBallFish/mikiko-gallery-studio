@@ -16,6 +16,7 @@ func TestParseCommandSupportsTheApprovedCommandTree(t *testing.T) {
 		kind CommandKind
 	}{
 		{args: []string{"install"}, kind: CommandInstall},
+		{args: []string{"import-config", "--source", ".env"}, kind: CommandImportConfig},
 		{args: []string{"status"}, kind: CommandStatus},
 		{args: []string{"doctor"}, kind: CommandDoctor},
 		{args: []string{"restart"}, kind: CommandRestart},
@@ -34,6 +35,56 @@ func TestParseCommandSupportsTheApprovedCommandTree(t *testing.T) {
 				t.Fatalf("ParseCommand(%v) = %#v, %v; want kind %q", testCase.args, command, err, testCase.kind)
 			}
 		})
+	}
+}
+
+func TestParseCommandCapturesOperationalOptionsAndRequiresExactDestructiveIntent(t *testing.T) {
+	importCommand, err := ParseCommand([]string{
+		"import-config", "--source", ".env.prod", "--runtime-dir", "runtime",
+		"--mode", "docker", "--profile", "core", "--topology", "single", "--role", "single",
+		"--application-version", "v2.1.0",
+	})
+	if err != nil {
+		t.Fatalf("ParseCommand(import-config): %v", err)
+	}
+	if importCommand.ImportConfig == nil || importCommand.ImportConfig.Source != ".env.prod" || importCommand.RuntimeDir != "runtime" {
+		t.Fatalf("import command parsed incorrectly: %#v", importCommand)
+	}
+
+	upgrade, err := ParseCommand([]string{
+		"upgrade", "--runtime-dir", "runtime", "--application-version", "v2.2.0",
+		"--image-tag", "sha-123", "--release-version", "v2.2.0", "--migrate=false",
+	})
+	if err != nil {
+		t.Fatalf("ParseCommand(upgrade): %v", err)
+	}
+	if upgrade.Upgrade == nil || upgrade.Upgrade.ApplicationVersion != "v2.2.0" || upgrade.Upgrade.ImageTag != "sha-123" || upgrade.Upgrade.Migrate {
+		t.Fatalf("upgrade command parsed incorrectly: %#v", upgrade)
+	}
+
+	const installationID = "019d0000-0000-7000-8000-000000000123"
+	phrase := DestructiveUninstallConfirmation(installationID)
+	destructive, err := ParseCommand([]string{
+		"uninstall", "--runtime-dir", "runtime", "--delete-data", "--confirm", phrase,
+	})
+	if err != nil {
+		t.Fatalf("ParseCommand(destructive uninstall): %v", err)
+	}
+	if destructive.Uninstall == nil || !destructive.Uninstall.DeleteData || destructive.Uninstall.Confirmation != phrase {
+		t.Fatalf("destructive uninstall parsed incorrectly: %#v", destructive)
+	}
+
+	for _, args := range [][]string{
+		{"import-config"},
+		{"import-config", "--source", ".env", "--source", ".env.prod"},
+		{"upgrade", "--image-tag", "one", "--image-tag", "two"},
+		{"uninstall", "--delete-data"},
+		{"uninstall", "--confirm", phrase},
+		{"uninstall", "--delete-data", "--yes"},
+	} {
+		if _, err := ParseCommand(args); err == nil {
+			t.Errorf("ParseCommand(%v) unexpectedly succeeded", args)
+		}
 	}
 }
 

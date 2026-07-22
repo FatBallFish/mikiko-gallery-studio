@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
@@ -20,13 +21,24 @@ type Terminal interface {
 }
 
 type CLIDependencies struct {
-	Terminal           Terminal
-	Stdout             io.Writer
-	Stderr             io.Writer
-	StdoutIsTerminal   func(io.Writer) bool
-	Install            InstallDependencies
-	ClusterJoin        ClusterJoinDependencies
-	ExecuteClusterJoin func(context.Context, ClusterJoinOptions, ClusterJoinDependencies) (ClusterJoinResult, error)
+	Terminal             Terminal
+	Stdout               io.Writer
+	Stderr               io.Writer
+	StdoutIsTerminal     func(io.Writer) bool
+	Install              InstallDependencies
+	ImportConfig         ImportConfigDependencies
+	Doctor               DoctorDependencies
+	Upgrade              UpgradeDependencies
+	Uninstall            UninstallDependencies
+	SetupTokenReset      SetupTokenResetDependencies
+	ClusterJoin          ClusterJoinDependencies
+	ExecuteRuntimeAction func(context.Context, CommandKind, string) error
+	ExecuteImportConfig  func(context.Context, ImportConfigOptions, ImportConfigDependencies) (ImportConfigResult, error)
+	ExecuteDoctor        func(context.Context, string, DoctorDependencies) DoctorReport
+	ExecuteUpgrade       func(context.Context, UpgradeOptions, UpgradeDependencies) (UpgradeResult, error)
+	ExecuteUninstall     func(context.Context, UninstallOptions, UninstallDependencies) error
+	CreateClusterToken   func(context.Context, string, ClusterTokenCreateOptions) (ClusterTokenCreateResult, error)
+	ExecuteClusterJoin   func(context.Context, ClusterJoinOptions, ClusterJoinDependencies) (ClusterJoinResult, error)
 }
 
 func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
@@ -47,6 +59,94 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		fmt.Fprintf(dependencies.Stderr, "deployctl: %v\n", err)
 		return 2
 	}
+	switch command.Kind {
+	case CommandImportConfig:
+		execute := dependencies.ExecuteImportConfig
+		if execute == nil {
+			execute = ImportConfig
+		}
+		result, executeErr := execute(ctx, *command.ImportConfig, dependencies.ImportConfig)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintf(dependencies.Stdout, "Imported runtime configuration: %s\nSetup completed: %t\n", result.RuntimeEnvPath, result.Completed)
+		return 0
+	case CommandStatus, CommandRestart:
+		if dependencies.ExecuteRuntimeAction == nil {
+			return writeRunError(dependencies.Stderr, fmt.Errorf("runtime action dependency is required"))
+		}
+		if executeErr := dependencies.ExecuteRuntimeAction(ctx, command.Kind, command.RuntimeDir); executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		return 0
+	case CommandDoctor:
+		execute := dependencies.ExecuteDoctor
+		if execute == nil {
+			execute = Doctor
+		}
+		report := execute(ctx, command.RuntimeDir, dependencies.Doctor)
+		fmt.Fprint(dependencies.Stdout, report.String())
+		if !report.Healthy() {
+			return 1
+		}
+		return 0
+	case CommandUpgrade:
+		execute := dependencies.ExecuteUpgrade
+		if execute == nil {
+			execute = Upgrade
+		}
+		result, executeErr := execute(ctx, *command.Upgrade, dependencies.Upgrade)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintf(dependencies.Stdout, "Upgraded application from %s to %s. Migration executed: %t.\n", result.PreviousVersion, result.CurrentVersion, result.Migrated)
+		return 0
+	case CommandUninstall:
+		execute := dependencies.ExecuteUninstall
+		if execute == nil {
+			execute = Uninstall
+		}
+		if executeErr := execute(ctx, *command.Uninstall, dependencies.Uninstall); executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		if command.Uninstall.DeleteData {
+			fmt.Fprintln(dependencies.Stdout, "Services, persistent data, and runtime configuration removed.")
+		} else {
+			fmt.Fprintln(dependencies.Stdout, "Services stopped. Runtime configuration and persistent data were preserved.")
+		}
+		return 0
+	case CommandSetupStatus:
+		status, executeErr := LoadSetupStatus(command.RuntimeDir)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintf(dependencies.Stdout, "Installation: %s\nRole: %s\nSetup phase: %s\nCompleted: %t\nToken version: %d\n", status.InstallationID, status.Role, status.Phase, status.Completed, status.TokenVersion)
+		return 0
+	case CommandSetupTokenShow:
+		token, executeErr := ShowSetupToken(command.RuntimeDir)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintf(dependencies.Stdout, "Setup token: %s\n", token)
+		return 0
+	case CommandSetupTokenReset:
+		token, executeErr := ResetSetupToken(ctx, command.RuntimeDir, dependencies.SetupTokenReset)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintf(dependencies.Stdout, "Setup token reset. New token: %s\n", token)
+		return 0
+	case CommandClusterTokenCreate:
+		if dependencies.CreateClusterToken == nil {
+			return writeRunError(dependencies.Stderr, fmt.Errorf("cluster token creation dependency is required"))
+		}
+		result, executeErr := dependencies.CreateClusterToken(ctx, command.RuntimeDir, *command.ClusterTokenCreate)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		fmt.Fprintf(dependencies.Stdout, "Cluster join token (%s, expires %s): %s\n", result.Role, result.ExpiresAt.UTC().Format(time.RFC3339), result.Credential)
+		return 0
+	}
 	if command.Kind == CommandClusterJoin {
 		execute := dependencies.ExecuteClusterJoin
 		if execute == nil {
@@ -60,8 +160,7 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		return 0
 	}
 	if command.Kind != CommandInstall {
-		fmt.Fprintf(dependencies.Stderr, "deployctl: command %q is not implemented in this build\n", command.Kind)
-		return 1
+		return writeRunError(dependencies.Stderr, fmt.Errorf("unsupported command %q", command.Kind))
 	}
 	input := *command.Install
 	if input.Interactive {

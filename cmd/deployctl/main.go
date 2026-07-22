@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/fatballfish/pic-gallery/internal/app"
 	"github.com/fatballfish/pic-gallery/internal/deployctl"
 )
 
@@ -16,8 +17,21 @@ func main() {
 	runner := deployctl.OSProcessRunner{Stdout: os.Stdout, Stderr: os.Stderr}
 	dockerExecutor := deployctl.DockerExecutor{Runner: runner}
 	nativeExecutor := deployctl.NativeExecutor{Runner: runner}
+	executors := deployctl.RuntimeExecutors{Docker: dockerExecutor, Native: nativeExecutor}
 	os.Exit(deployctl.Run(ctx, os.Args[1:], deployctl.CLIDependencies{
 		Terminal: deployctl.NewStdioTerminal(os.Stdin, os.Stderr), Stdout: os.Stdout, Stderr: os.Stderr,
+		ImportConfig: deployctl.ImportConfigDependencies{ProbeCompletion: deployctl.ProbeLegacyCompletion},
+		Doctor:       deployctl.ProductionDoctorDependencies(),
+		Upgrade: deployctl.UpgradeDeploymentDependencies(executors, func(ctx context.Context, runtimeEnvPath string) error {
+			_, err := app.RunDatabaseMigration(ctx, runtimeEnvPath)
+			return err
+		}),
+		Uninstall:       deployctl.UninstallRuntimeDependencies(executors),
+		SetupTokenReset: deployctl.SetupTokenResetRuntimeDependencies(executors),
+		ExecuteRuntimeAction: func(ctx context.Context, kind deployctl.CommandKind, runtimeDir string) error {
+			return deployctl.ExecuteRuntimeAction(ctx, kind, runtimeDir, executors)
+		},
+		CreateClusterToken: deployctl.CreateClusterToken,
 		Install: deployctl.InstallDependencies{ApplyDeployment: func(ctx context.Context, plan deployctl.InstallPlan) error {
 			switch plan.Mode {
 			case "docker":

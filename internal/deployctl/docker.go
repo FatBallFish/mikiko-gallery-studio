@@ -21,6 +21,7 @@ const (
 	DockerActionRestart   DockerAction = "restart"
 	DockerActionStatus    DockerAction = "status"
 	DockerActionUninstall DockerAction = "uninstall"
+	DockerActionDestroy   DockerAction = "destroy"
 )
 
 type DockerExecutor struct {
@@ -157,6 +158,8 @@ func BuildDockerProcessSpecs(action DockerAction, plan InstallPlan, installation
 		return []ProcessSpec{newSpec("ps", "--all")}, nil
 	case DockerActionUninstall:
 		return []ProcessSpec{newSpec("down", "--remove-orphans")}, nil
+	case DockerActionDestroy:
+		return []ProcessSpec{newSpec("down", "--volumes", "--remove-orphans")}, nil
 	default:
 		return nil, fmt.Errorf("unsupported Docker action %q", action)
 	}

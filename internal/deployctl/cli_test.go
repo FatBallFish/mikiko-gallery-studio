@@ -130,6 +130,74 @@ func TestRunDispatchesClusterJoinWithoutRenderingTheCredential(t *testing.T) {
 	}
 }
 
+func TestRunDispatchesOperationalCommands(t *testing.T) {
+	t.Run("import", func(t *testing.T) {
+		called := false
+		stdout := new(bytes.Buffer)
+		code := Run(context.Background(), []string{"import-config", "--source", ".env", "--runtime-dir", "runtime"}, CLIDependencies{
+			Stdout: stdout, Stderr: new(bytes.Buffer),
+			ExecuteImportConfig: func(_ context.Context, options ImportConfigOptions, _ ImportConfigDependencies) (ImportConfigResult, error) {
+				called = options.Source == ".env" && options.RuntimeDir == "runtime"
+				return ImportConfigResult{RuntimeEnvPath: "runtime/config/runtime.env"}, nil
+			},
+		})
+		if code != 0 || !called || !strings.Contains(stdout.String(), "runtime/config/runtime.env") {
+			t.Fatalf("import dispatch code=%d called=%t stdout=%q", code, called, stdout.String())
+		}
+	})
+
+	t.Run("runtime action", func(t *testing.T) {
+		var gotKind CommandKind
+		code := Run(context.Background(), []string{"status", "--runtime-dir", "runtime"}, CLIDependencies{
+			Stdout: io.Discard, Stderr: new(bytes.Buffer),
+			ExecuteRuntimeAction: func(_ context.Context, kind CommandKind, runtimeDir string) error {
+				gotKind = kind
+				if runtimeDir != "runtime" {
+					t.Fatalf("runtime dir = %q", runtimeDir)
+				}
+				return nil
+			},
+		})
+		if code != 0 || gotKind != CommandStatus {
+			t.Fatalf("status dispatch code=%d kind=%q", code, gotKind)
+		}
+	})
+
+	t.Run("doctor failure", func(t *testing.T) {
+		stdout := new(bytes.Buffer)
+		code := Run(context.Background(), []string{"doctor"}, CLIDependencies{
+			Stdout: stdout, Stderr: new(bytes.Buffer),
+			ExecuteDoctor: func(context.Context, string, DoctorDependencies) DoctorReport {
+				return DoctorReport{Checks: []DoctorCheck{{Code: "SCHEMA_DRIFT", Message: "schema mismatch"}}}
+			},
+		})
+		if code != 1 || !strings.Contains(stdout.String(), "SCHEMA_DRIFT") {
+			t.Fatalf("doctor dispatch code=%d stdout=%q", code, stdout.String())
+		}
+	})
+
+	t.Run("upgrade and uninstall", func(t *testing.T) {
+		upgradeCalled, uninstallCalled := false, false
+		upgradeCode := Run(context.Background(), []string{"upgrade", "--application-version", "v2"}, CLIDependencies{
+			Stdout: io.Discard, Stderr: new(bytes.Buffer),
+			ExecuteUpgrade: func(_ context.Context, options UpgradeOptions, _ UpgradeDependencies) (UpgradeResult, error) {
+				upgradeCalled = options.ApplicationVersion == "v2" && options.Migrate
+				return UpgradeResult{PreviousVersion: "v1", CurrentVersion: "v2", Migrated: true}, nil
+			},
+		})
+		uninstallCode := Run(context.Background(), []string{"uninstall", "--yes"}, CLIDependencies{
+			Stdout: io.Discard, Stderr: new(bytes.Buffer),
+			ExecuteUninstall: func(_ context.Context, options UninstallOptions, _ UninstallDependencies) error {
+				uninstallCalled = !options.DeleteData
+				return nil
+			},
+		})
+		if upgradeCode != 0 || uninstallCode != 0 || !upgradeCalled || !uninstallCalled {
+			t.Fatalf("operational dispatch upgrade=(%d,%t) uninstall=(%d,%t)", upgradeCode, upgradeCalled, uninstallCode, uninstallCalled)
+		}
+	})
+}
+
 func testInstallDependencies(writes *[]string) InstallDependencies {
 	return InstallDependencies{
 		Entropy:       bytes.NewReader(bytes.Repeat([]byte{0x55}, 64)),

@@ -82,6 +82,7 @@ func TestBuildDockerProcessSpecsUsesPortableRuntimeWithoutSecrets(t *testing.T) 
 		{action: DockerActionRestart, verbs: []string{"restart"}, count: 1},
 		{action: DockerActionStatus, verbs: []string{"ps"}, count: 1},
 		{action: DockerActionUninstall, verbs: []string{"down"}, count: 1},
+		{action: DockerActionDestroy, verbs: []string{"down"}, count: 1},
 	}
 	for _, testCase := range tests {
 		t.Run(string(testCase.action), func(t *testing.T) {
@@ -117,6 +118,9 @@ func TestBuildDockerProcessSpecsUsesPortableRuntimeWithoutSecrets(t *testing.T) 
 				if strings.Contains(joined, "--volumes") || strings.Contains(joined, " -v") {
 					t.Fatalf("ordinary uninstall deletes persistent data: %q", joined)
 				}
+			}
+			if testCase.action == DockerActionDestroy && !strings.Contains(strings.Join(specs[0].Arguments, " "), "--volumes") {
+				t.Fatal("destructive Docker removal did not request named-volume deletion")
 			}
 		})
 	}

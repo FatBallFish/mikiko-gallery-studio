@@ -18,6 +18,7 @@ type CommandKind string
 
 const (
 	CommandInstall            CommandKind = "install"
+	CommandImportConfig       CommandKind = "import-config"
 	CommandStatus             CommandKind = "status"
 	CommandDoctor             CommandKind = "doctor"
 	CommandRestart            CommandKind = "restart"
@@ -33,6 +34,21 @@ const (
 type ClusterTokenCreateOptions struct {
 	Role config.DeploymentRole
 	TTL  time.Duration
+}
+
+type UpgradeOptions struct {
+	RuntimeDir         string
+	ApplicationVersion string
+	ImageRegistry      string
+	ImageTag           string
+	ReleaseVersion     string
+	Migrate            bool
+}
+
+type UninstallOptions struct {
+	RuntimeDir   string
+	DeleteData   bool
+	Confirmation string
 }
 
 type ClusterJoinOptions struct {
@@ -70,6 +86,9 @@ type Command struct {
 	RuntimeDir         string
 	Yes                bool
 	Install            *InstallInput
+	ImportConfig       *ImportConfigOptions
+	Upgrade            *UpgradeOptions
+	Uninstall          *UninstallOptions
 	ClusterTokenCreate *ClusterTokenCreateOptions
 	ClusterJoin        *ClusterJoinOptions
 }
@@ -119,6 +138,8 @@ func ParseCommand(args []string) (Command, error) {
 	switch args[0] {
 	case "install":
 		return parseInstallCommand(args[1:])
+	case "import-config":
+		return parseImportConfigCommand(args[1:])
 	case "status":
 		return parseRuntimeCommand(CommandStatus, args[1:])
 	case "doctor":
@@ -126,9 +147,9 @@ func ParseCommand(args []string) (Command, error) {
 	case "restart":
 		return parseRuntimeCommand(CommandRestart, args[1:])
 	case "upgrade":
-		return parseRuntimeCommand(CommandUpgrade, args[1:])
+		return parseUpgradeCommand(args[1:])
 	case "uninstall":
-		return parseRuntimeCommand(CommandUninstall, args[1:])
+		return parseUninstallCommand(args[1:])
 	case "setup":
 		return parseSetupCommand(args[1:])
 	case "cluster":
@@ -136,6 +157,86 @@ func ParseCommand(args []string) (Command, error) {
 	default:
 		return Command{}, fmt.Errorf("unknown deployctl command %q", args[0])
 	}
+}
+
+func parseImportConfigCommand(args []string) (Command, error) {
+	set := newFlagSet("import-config")
+	source := set.String("source", "", "legacy .env, .env.prod, or backend.env path")
+	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+	mode := set.String("mode", string(config.DeploymentModeDocker), "docker or native")
+	profile := set.String("profile", string(config.DeploymentProfileCore), "full, core, or custom")
+	topology := set.String("topology", string(config.DeploymentTopologySingle), "single or cluster")
+	role := set.String("role", string(config.DeploymentRoleSingle), "single or control")
+	components := set.String("components", "", "comma-separated components")
+	storageDriver := set.String("storage-driver", "", "local or s3")
+	publicAPIURL := set.String("public-api-url", "", "public API URL")
+	applicationVersion := set.String("application-version", DefaultApplicationVersion, "application version")
+	imageRegistry := set.String("image-registry", "", "Docker image registry")
+	imageTag := set.String("image-tag", "", "Docker image tag")
+	releaseVersion := set.String("release-version", "", "native release version")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("import-config does not accept positional arguments")
+	}
+	if strings.TrimSpace(*source) == "" {
+		return Command{}, fmt.Errorf("import-config requires --source")
+	}
+	options := &ImportConfigOptions{
+		Source: *source, RuntimeDir: filepath.Clean(*runtimeDir), Mode: config.DeploymentMode(*mode),
+		Profile: config.DeploymentProfile(*profile), Topology: config.DeploymentTopology(*topology), Role: config.DeploymentRole(*role),
+		Components: parseComponents(*components), StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL,
+		ApplicationVersion: *applicationVersion, ImageRegistry: *imageRegistry, ImageTag: defaultString(*imageTag, *applicationVersion),
+		ReleaseVersion: defaultString(*releaseVersion, *applicationVersion),
+	}
+	return Command{Kind: CommandImportConfig, RuntimeDir: *runtimeDir, ImportConfig: options}, nil
+}
+
+func parseUpgradeCommand(args []string) (Command, error) {
+	set := newFlagSet("upgrade")
+	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+	applicationVersion := set.String("application-version", "", "target application version")
+	imageRegistry := set.String("image-registry", "", "target Docker image registry")
+	imageTag := set.String("image-tag", "", "target Docker image tag")
+	releaseVersion := set.String("release-version", "", "target native release version")
+	migrate := set.Bool("migrate", true, "run the control-node database migration")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("upgrade does not accept positional arguments")
+	}
+	options := &UpgradeOptions{
+		RuntimeDir: filepath.Clean(*runtimeDir), ApplicationVersion: *applicationVersion,
+		ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion, Migrate: *migrate,
+	}
+	return Command{Kind: CommandUpgrade, RuntimeDir: *runtimeDir, Upgrade: options}, nil
+}
+
+func parseUninstallCommand(args []string) (Command, error) {
+	set := newFlagSet("uninstall")
+	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+	deleteData := set.Bool("delete-data", false, "permanently delete persistent data and configuration")
+	confirmation := set.String("confirm", "", "exact destructive confirmation phrase")
+	yes := set.Bool("yes", false, "non-interactive confirmation for the non-destructive stop")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("uninstall does not accept positional arguments")
+	}
+	if *deleteData && strings.TrimSpace(*confirmation) == "" {
+		return Command{}, fmt.Errorf("destructive uninstall requires --confirm with the installation-specific phrase")
+	}
+	if !*deleteData && *confirmation != "" {
+		return Command{}, fmt.Errorf("--confirm is accepted only with --delete-data")
+	}
+	if *deleteData && *yes {
+		return Command{}, fmt.Errorf("--yes cannot authorize persistent data deletion; use the exact --confirm phrase")
+	}
+	options := &UninstallOptions{RuntimeDir: filepath.Clean(*runtimeDir), DeleteData: *deleteData, Confirmation: *confirmation}
+	return Command{Kind: CommandUninstall, RuntimeDir: *runtimeDir, Yes: *yes, Uninstall: options}, nil
 }
 
 func parseInstallCommand(args []string) (Command, error) {
