@@ -22,24 +22,37 @@ import (
 )
 
 func RunWorker() error {
-	cfg, err := config.Load("")
+	return RunWorkerContext(context.Background())
+}
+
+func RunWorkerContext(ctx context.Context) error {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	return runWorker(ctx, workerRunDependencies{})
+}
+
+func runNormalWorker(ctx context.Context, startup workerBootstrap) error {
+	cfg, err := config.RuntimeFromBootstrap(startup.Bootstrap)
 	if err != nil {
 		return err
+	}
+	if !runtimeMatchesBootstrapSnapshot(cfg, startup.Bootstrap) {
+		return fmt.Errorf("worker runtime changed after bootstrap mode selection")
 	}
 	if err := validateStorageTopology(cfg); err != nil {
 		return err
 	}
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	client, err := db.Open(cfg.Database.URL)
+	startupContext, cancelStartup := context.WithTimeout(ctx, 15*time.Second)
+	defer cancelStartup()
+	client, err := db.OpenContext(startupContext, cfg.Database.URL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer client.Close()
-	if err := checkRuntimeSchemaCompatibility(context.Background(), client, cfg); err != nil {
+	if err := checkRuntimeSchemaCompatibility(startupContext, client, cfg); err != nil {
 		return err
 	}
-	redisClient, err := newRedisClient(context.Background(), cfg)
+	redisClient, err := newRedisClient(startupContext, cfg)
 	if err != nil {
 		return err
 	}
@@ -48,13 +61,14 @@ func RunWorker() error {
 	}
 
 	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
-	if err := storageConfigSvc.Bootstrap(context.Background(), 0); err != nil {
+	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
+	cancelStartup()
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
 	if redisClient != nil {
 		storageInvalidationBus := storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)
-		subscriber := startStorageInvalidationSubscriber(context.Background(), storageInvalidationBus, storageRegistry.Invalidate, time.Second, 30*time.Second)
+		subscriber := startStorageInvalidationSubscriber(ctx, storageInvalidationBus, storageRegistry.Invalidate, time.Second, 30*time.Second)
 		defer subscriber.Stop()
 	}
 
@@ -90,7 +104,7 @@ func RunWorker() error {
 	runner.SetCompensationService(billingSvc)
 
 	slog.Info("starting pic-gallery worker")
-	err = runner.Run(context.Background())
+	err = runner.Run(ctx)
 	if err == context.Canceled {
 		return nil
 	}
