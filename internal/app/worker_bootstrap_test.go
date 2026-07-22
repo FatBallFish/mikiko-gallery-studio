@@ -108,6 +108,34 @@ func TestWorkerBootstrapWaitsThroughControlNodeCommitReconciliation(t *testing.T
 	}
 }
 
+func TestWorkerBootstrapRetriesAnInconsistentCrossFileSnapshotBeforeFailingClosed(t *testing.T) {
+	pendingBootstrap := pendingAPIBootstrapForTest()
+	completedBootstrap := completedAPIBootstrapForTest()
+	completedState := completedWorkerInstallStateForTest(completedBootstrap)
+	iteration := 0
+	waits := 0
+
+	startup, err := waitForWorkerBootstrap(context.Background(), "runtime.env", workerBootstrapDependencies{
+		loadBootstrap: func(string) (config.BootstrapConfig, error) {
+			iteration++
+			if iteration == 1 {
+				return pendingBootstrap, nil
+			}
+			return completedBootstrap, nil
+		},
+		loadInstallState: func(string) (setup.InstallState, bool, error) {
+			return completedState, true, nil
+		},
+		wait: func(context.Context, time.Duration) error {
+			waits++
+			return nil
+		},
+	})
+	if err != nil || startup.State.Phase != setup.InstallPhaseCompleted || iteration != 2 || waits != 1 {
+		t.Fatalf("cross-file commit snapshot = startup %#v, err %v, loads %d, waits %d; want retry into completed state", startup, err, iteration, waits)
+	}
+}
+
 func TestWorkerBootstrapRejectsUninitializedJoinedWorkerAndIdentityMismatch(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -150,8 +178,8 @@ func TestWorkerBootstrapRejectsUninitializedJoinedWorkerAndIdentityMismatch(t *t
 				},
 				wait: func(context.Context, time.Duration) error { waits++; return nil },
 			})
-			if !errors.Is(err, ErrWorkerBootstrapInvalid) || waits != 0 {
-				t.Fatalf("waitForWorkerBootstrap = %v, waits %d; want fail-closed invalid bootstrap", err, waits)
+			if !errors.Is(err, ErrWorkerBootstrapInvalid) || waits != 1 {
+				t.Fatalf("waitForWorkerBootstrap = %v, waits %d; want one stability read then fail-closed invalid bootstrap", err, waits)
 			}
 		})
 	}
