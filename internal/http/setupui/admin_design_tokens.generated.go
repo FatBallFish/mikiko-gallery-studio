@@ -1,0 +1,87 @@
+package setupui
+
+// Code generated from web/shared/admin-design-tokens.css; DO NOT EDIT.
+const adminDesignTokensCSS = `:root {
+  --admin-font-ui: 'Geist Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --admin-font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --admin-type-label: 11px;
+  --admin-type-support: 12px;
+  --admin-type-body: 14px;
+  --admin-type-section: 16px;
+  --admin-type-page: 24px;
+  --admin-motion-fast: 120ms;
+  --admin-motion-base: 180ms;
+  --admin-motion-slow: 240ms;
+  --bg: oklch(96.7% 0.008 250);
+  --canvas: oklch(98.6% 0.004 250);
+  --shell: oklch(94.9% 0.01 250);
+  --topbar: oklch(99.2% 0.003 250 / 0.86);
+  --surface: oklch(99.1% 0.003 250 / 0.82);
+  --surface-solid: oklch(99.1% 0.003 250);
+  --elevated: oklch(100% 0 0 / 0.92);
+  --fg: oklch(24% 0.02 255);
+  --muted: oklch(50% 0.02 255);
+  --dim: oklch(59% 0.016 255);
+  --border: oklch(38% 0.015 255 / 0.14);
+  --border-strong: oklch(34% 0.015 255 / 0.21);
+  --accent: oklch(65% 0.18 280);
+  --accent-rgb: 110 98 232;
+  --accent-coral: oklch(66% 0.15 40);
+  --accent-purple: oklch(64% 0.16 300);
+  --accent-emerald: oklch(65% 0.12 160);
+  --blue: var(--accent);
+  --green: var(--accent-emerald);
+  --amber: oklch(74% 0.14 75);
+  --red: oklch(62% 0.17 27);
+  --surface-frost: color-mix(in oklch, var(--surface-solid) 88%, white 12%);
+  --text: var(--fg);
+  --soft: var(--muted);
+  --muted-strong: var(--dim);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --pg-admin-bg-app: var(--bg);
+  --pg-admin-bg-subtle: oklch(94% 0.008 250);
+  --pg-admin-text-main: var(--text);
+  --pg-admin-text-dim: var(--soft);
+  --pg-admin-border-base: var(--line);
+  --pg-admin-color-primary: var(--accent);
+  --pg-admin-color-success: var(--green);
+  --pg-admin-color-warning: var(--amber);
+  --pg-admin-color-danger: var(--red);
+  --pg-radius-xs: 6px;
+  --pg-radius-sm: 8px;
+  --pg-radius-md: 12px;
+  --pg-radius-lg: 12px;
+  --pg-admin-card-border-alpha: 0.10;
+  --pg-admin-glow-alpha: 0.10;
+  --pg-topbar-height: 64px;
+  --pg-sidebar-admin-width: 216px;
+}
+
+[data-theme='dark'] {
+  --bg: oklch(16% 0.014 258);
+  --canvas: oklch(14% 0.012 258);
+  --shell: oklch(13% 0.012 258);
+  --topbar: oklch(14% 0.012 258 / 0.82);
+  --surface: oklch(19% 0.013 258 / 0.84);
+  --surface-solid: oklch(19% 0.013 258);
+  --elevated: oklch(23% 0.013 258 / 0.92);
+  --fg: oklch(94% 0.005 240);
+  --muted: oklch(81% 0.008 240 / 0.8);
+  --dim: oklch(73% 0.008 240 / 0.64);
+  --border: oklch(86% 0.004 240 / 0.11);
+  --border-strong: oklch(86% 0.004 240 / 0.18);
+  --accent: oklch(71% 0.17 280);
+  --accent-rgb: 149 132 255;
+  --accent-coral: oklch(68% 0.15 40);
+  --accent-purple: oklch(68% 0.16 300);
+  --accent-emerald: oklch(75% 0.12 160);
+  --amber: oklch(79% 0.13 75);
+  --red: oklch(69% 0.17 27);
+  --surface-frost: color-mix(in oklch, var(--surface-solid) 84%, black 16%);
+  --text: var(--fg);
+  --soft: var(--muted);
+  --muted-strong: var(--dim);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+}`

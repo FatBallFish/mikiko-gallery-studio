@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { adminButton, adminSurface, adminTokens } from './classes'
 
 const stylesSource = readFileSync(new URL('../styles.css', import.meta.url), 'utf8')
+const tokenSource = readFileSync(new URL('../../../shared/admin-design-tokens.css', import.meta.url), 'utf8')
 const mainSource = readFileSync(new URL('../main.tsx', import.meta.url), 'utf8')
 const classesSource = readFileSync(new URL('./classes.ts', import.meta.url), 'utf8')
 const componentsSource = readFileSync(new URL('../components.tsx', import.meta.url), 'utf8')
@@ -29,7 +30,7 @@ for (const dependency of ['@fontsource-variable/geist', '@fontsource-variable/ge
 }
 
 for (const forbiddenFont of ['Inter', 'Fraunces', 'JetBrains Mono', 'fonts.googleapis.com']) {
-  if (stylesSource.includes(forbiddenFont)) {
+  if ((stylesSource + tokenSource).includes(forbiddenFont)) {
     throw new Error(`admin typography must not depend on ${forbiddenFont}`)
   }
 }
@@ -48,7 +49,7 @@ for (const token of [
   '--pg-topbar-height: 64px',
   '--pg-sidebar-admin-width: 216px',
 ]) {
-  if (!stylesSource.includes(token)) throw new Error(`admin design tokens must define ${token}`)
+  if (!tokenSource.includes(token)) throw new Error(`canonical admin design tokens must define ${token}`)
 }
 
 for (const forbiddenClass of ['rounded-2xl', 'rounded-3xl', 'tracking-tight', 'tracking-tighter', 'text-[10px]']) {

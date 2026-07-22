@@ -10,6 +10,8 @@ awk '
   /^internal\/repository\/ent\/clustertoken\.go$/ { next }
   /^internal\/repository\/ent\/clustertoken_(create|delete|query|update)\.go$/ { next }
   /^internal\/repository\/ent\/clustertoken\/(clustertoken|where)\.go$/ { next }
+  /^internal\/http\/setupui\/admin_design_tokens\.generated\.go$/ { next }
+  /^web\/shared\/admin-design-tokens\.css$/ { next }
   {
     name=$0
     sub(/^.*\//, "", name)

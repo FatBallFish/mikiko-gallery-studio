@@ -16,6 +16,8 @@ allowed=(
   "internal/repository/ent/clustertoken/clustertoken.go"
   "internal/repository/ent/clustertoken/where.go"
   "web/shared/tokens.css"
+  "web/shared/admin-design-tokens.css"
+  "internal/http/setupui/admin_design_tokens.generated.go"
   ".env.example"
 )
 if candidates="$(printf '%s\n' "${allowed[@]}" | "$SCANNER")" && [[ -n "$candidates" ]]; then

@@ -4,16 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	"github.com/fatballfish/pic-gallery/internal/http/setupui"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
@@ -42,6 +45,7 @@ type setupApplication interface {
 
 type SetupAPIOptions struct {
 	System           *SystemAPI
+	Bootstrap        config.BootstrapConfig
 	Auth             setupAuth
 	Prober           setupProber
 	Application      setupApplication
@@ -52,6 +56,8 @@ type SetupAPIOptions struct {
 
 type SetupAPI struct {
 	system           *SystemAPI
+	probeDraft       setupProbeDraft
+	page             *setupui.Page
 	auth             setupAuth
 	prober           setupProber
 	application      setupApplication
@@ -59,6 +65,13 @@ type SetupAPI struct {
 	now              func() time.Time
 	onRestartPending func()
 	restartOnce      sync.Once
+}
+
+type setupProbeDraft struct {
+	postgresManaged      bool
+	redisManaged         bool
+	objectStorageManaged bool
+	values               map[string]string
 }
 
 func NewSetupAPI(options SetupAPIOptions) (*SetupAPI, error) {
@@ -74,8 +87,16 @@ func NewSetupAPI(options SetupAPIOptions) (*SetupAPI, error) {
 	if options.Now == nil {
 		options.Now = func() time.Time { return time.Now().UTC() }
 	}
+	pageModel, err := setupui.NewModel(config.DefaultRuntimeSchema(), options.Bootstrap)
+	if err != nil {
+		return nil, fmt.Errorf("initialize setup page model: %w", err)
+	}
+	page, err := setupui.NewPage(pageModel)
+	if err != nil {
+		return nil, fmt.Errorf("initialize setup page: %w", err)
+	}
 	return &SetupAPI{
-		system: options.System, auth: options.Auth, prober: options.Prober,
+		system: options.System, probeDraft: newSetupProbeDraft(options.Bootstrap), page: page, auth: options.Auth, prober: options.Prober,
 		application: options.Application, sessionTTL: options.SessionTTL, now: options.Now,
 		onRestartPending: options.OnRestartPending,
 	}, nil
@@ -83,14 +104,8 @@ func NewSetupAPI(options SetupAPIOptions) (*SetupAPI, error) {
 
 func (api *SetupAPI) System() *SystemAPI { return api.system }
 
-func (api *SetupAPI) HandleSetupPage(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, "<!doctype html><html><head><meta charset=\"utf-8\"><title>Setup</title></head><body><main><h1>Setup required</h1><p>Use deployctl setup token show or deployctl setup token reset to retrieve setup access.</p></main></body></html>")
+func (api *SetupAPI) HandleSetupPage(w http.ResponseWriter, r *http.Request) {
+	api.page.ServeHTTP(w, r)
 }
 
 func (api *SetupAPI) HandleSession(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +147,12 @@ func (api *SetupAPI) HandleDatabaseProbe(w http.ResponseWriter, r *http.Request)
 	if !decodeSetupJSON(w, r, &request) {
 		return
 	}
+	databaseURL, ok := api.resolveManagedProbeValue(w, r, api.probeDraft.postgresManaged, "DATABASE_URL", request.DatabaseURL)
+	if !ok {
+		request.DatabaseURL = ""
+		return
+	}
+	request.DatabaseURL = databaseURL
 	result := api.prober.ProbePostgres(r.Context(), request)
 	request.DatabaseURL = ""
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
@@ -145,6 +166,12 @@ func (api *SetupAPI) HandleRedisProbe(w http.ResponseWriter, r *http.Request) {
 	if !decodeSetupJSON(w, r, &request) {
 		return
 	}
+	redisURL, ok := api.resolveManagedProbeValue(w, r, api.probeDraft.redisManaged, "REDIS_URL", request.RedisURL)
+	if !ok {
+		request.RedisURL = ""
+		return
+	}
+	request.RedisURL = redisURL
 	result := api.prober.ProbeRedis(r.Context(), request)
 	request.RedisURL = ""
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
@@ -172,6 +199,10 @@ func (api *SetupAPI) HandleStorageProbe(w http.ResponseWriter, r *http.Request) 
 	if !decodeSetupJSON(w, r, &request) {
 		return
 	}
+	if api.probeDraft.objectStorageManaged && !api.resolveManagedStorageProbe(w, r, &request) {
+		request.AccessKeyID, request.SecretAccessKey = "", ""
+		return
+	}
 	probeRequest := setup.StorageProbeRequest{Config: config.StorageConfig{
 		Driver: request.Driver, LocalRoot: request.LocalRoot, PublicBaseURL: request.PublicBaseURL, SharedVolume: request.SharedVolume,
 		S3: config.StorageS3Config{
@@ -184,6 +215,72 @@ func (api *SetupAPI) HandleStorageProbe(w http.ResponseWriter, r *http.Request) 
 	request.AccessKeyID, request.SecretAccessKey = "", ""
 	probeRequest.Config.S3.AccessKeyID, probeRequest.Config.S3.SecretAccessKey = "", ""
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
+func (api *SetupAPI) resolveManagedProbeValue(w http.ResponseWriter, r *http.Request, managed bool, key, submitted string) (string, bool) {
+	if !managed {
+		return submitted, true
+	}
+	configured := api.probeDraft.values[key]
+	if submitted != "" && submitted != configured {
+		writeSetupProbeDraftError(w, r)
+		return "", false
+	}
+	return configured, true
+}
+
+func (api *SetupAPI) resolveManagedStorageProbe(w http.ResponseWriter, r *http.Request, request *setupStorageProbeRequest) bool {
+	stringsByKey := []struct {
+		key   string
+		value *string
+	}{
+		{key: "STORAGE_DRIVER", value: &request.Driver},
+		{key: "STORAGE_S3_ENDPOINT", value: &request.Endpoint},
+		{key: "STORAGE_S3_REGION", value: &request.Region},
+		{key: "STORAGE_S3_BUCKET", value: &request.Bucket},
+		{key: "STORAGE_S3_ACCESS_KEY_ID", value: &request.AccessKeyID},
+		{key: "STORAGE_S3_SECRET_ACCESS_KEY", value: &request.SecretAccessKey},
+		{key: "STORAGE_S3_PREFIX", value: &request.Prefix},
+	}
+	for _, field := range stringsByKey {
+		resolved, ok := api.resolveManagedProbeValue(w, r, true, field.key, *field.value)
+		if !ok {
+			return false
+		}
+		*field.value = resolved
+	}
+	configuredForcePathStyle, err := strconv.ParseBool(api.probeDraft.values["STORAGE_S3_FORCE_PATH_STYLE"])
+	if err != nil || request.ForcePathStyle != configuredForcePathStyle {
+		writeSetupProbeDraftError(w, r)
+		return false
+	}
+	return true
+}
+
+func writeSetupProbeDraftError(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteError(w, r, errs.New(http.StatusBadRequest, "SETUP_VALIDATION_FAILED", "managed setup configuration cannot be overridden"))
+}
+
+func newSetupProbeDraft(bootstrap config.BootstrapConfig) setupProbeDraft {
+	draft := setupProbeDraft{
+		postgresManaged: bootstrap.PostgresManaged, redisManaged: bootstrap.RedisManaged,
+		objectStorageManaged: bootstrap.ObjectStorageManaged, values: make(map[string]string, 9),
+	}
+	keys := make([]string, 0, 9)
+	if draft.postgresManaged {
+		keys = append(keys, "DATABASE_URL")
+	}
+	if draft.redisManaged {
+		keys = append(keys, "REDIS_URL")
+	}
+	if draft.objectStorageManaged {
+		keys = append(keys, "STORAGE_DRIVER", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "STORAGE_S3_BUCKET",
+			"STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY", "STORAGE_S3_FORCE_PATH_STYLE", "STORAGE_S3_PREFIX")
+	}
+	for _, key := range keys {
+		draft.values[key] = bootstrap.Values[key]
+	}
+	return draft
 }
 
 func (api *SetupAPI) HandleApply(w http.ResponseWriter, r *http.Request) {

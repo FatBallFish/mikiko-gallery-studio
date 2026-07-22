@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
 )
@@ -155,6 +156,81 @@ func TestSetupSessionUsesRemoteAddressAndSecureCookieOnlyForTLS(t *testing.T) {
 	}
 }
 
+func TestSetupPageUsesEmbeddedAdminConsole(t *testing.T) {
+	api := newSetupAPIForHandlerTest(t, &setupAuthStub{}, &setupProbeStub{}, &setupApplicationStub{})
+	recorder := httptest.NewRecorder()
+	api.HandleSetupPage(recorder, httptest.NewRequest(http.MethodGet, "/setup", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "id=\"setup-console\"") {
+		t.Fatalf("GET /setup did not serve embedded setup console: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Header().Get("Content-Security-Policy"), "unsafe-inline") {
+		t.Fatalf("setup page CSP permits unsafe inline content: %q", recorder.Header().Get("Content-Security-Policy"))
+	}
+}
+
+func TestManagedDatabaseProbeUsesServerDraftWithoutExposingItToPage(t *testing.T) {
+	secretURL := "postgres://app:managed-secret@postgres/app?sslmode=disable"
+	bootstrap := setupBootstrapForHandlerTest()
+	bootstrap.PostgresManaged = true
+	bootstrap.Values["POSTGRES_MANAGED"] = "true"
+	bootstrap.Values["DATABASE_URL"] = secretURL
+	prober := &setupProbeStub{}
+	api := newSetupAPIForHandlerTestWithBootstrap(t, bootstrap, &setupAuthStub{}, prober, &setupApplicationStub{})
+
+	pageRecorder := httptest.NewRecorder()
+	api.HandleSetupPage(pageRecorder, httptest.NewRequest(http.MethodGet, "/setup", nil))
+	if strings.Contains(pageRecorder.Body.String(), secretURL) || strings.Contains(pageRecorder.Body.String(), "managed-secret") {
+		t.Fatal("managed database URL leaked into embedded page")
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/probes/database", strings.NewReader(`{"database_url":""}`))
+	request.AddCookie(&http.Cookie{Name: setup.SetupSessionCookieName, Value: "valid-session"})
+	recorder := httptest.NewRecorder()
+	api.HandleDatabaseProbe(recorder, request)
+	if recorder.Code != http.StatusOK || prober.database.DatabaseURL != secretURL {
+		t.Fatalf("managed database probe status=%d request=%#v", recorder.Code, prober.database)
+	}
+	if strings.Contains(recorder.Body.String(), secretURL) || strings.Contains(recorder.Body.String(), "managed-secret") {
+		t.Fatal("managed database probe response leaked configured URL")
+	}
+}
+
+func TestManagedProbeRejectsBrowserOverride(t *testing.T) {
+	bootstrap := setupBootstrapForHandlerTest()
+	bootstrap.RedisManaged = true
+	bootstrap.Values["REDIS_MANAGED"] = "true"
+	bootstrap.Values["REDIS_URL"] = "redis://:managed-secret@redis:6379/0"
+	prober := &setupProbeStub{}
+	api := newSetupAPIForHandlerTestWithBootstrap(t, bootstrap, &setupAuthStub{}, prober, &setupApplicationStub{})
+	request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/probes/redis", strings.NewReader(`{"redis_url":"redis://attacker:6379/0","key_prefix":"app"}`))
+	request.AddCookie(&http.Cookie{Name: setup.SetupSessionCookieName, Value: "valid-session"})
+	recorder := httptest.NewRecorder()
+	api.HandleRedisProbe(recorder, request)
+	if recorder.Code != http.StatusBadRequest || prober.redis.RedisURL != "" {
+		t.Fatalf("managed Redis override status=%d reachedProbe=%#v body=%s", recorder.Code, prober.redis, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "managed-secret") || strings.Contains(recorder.Body.String(), "attacker") {
+		t.Fatalf("managed override error leaked connection material: %s", recorder.Body.String())
+	}
+}
+
+func TestSetupAPIRetainsOnlyManagedProbeDraftValues(t *testing.T) {
+	bootstrap := setupBootstrapForHandlerTest()
+	bootstrap.PostgresManaged = true
+	bootstrap.Values["DATABASE_URL"] = "postgres://app:managed-secret@postgres/app"
+	bootstrap.Values["SETUP_TOKEN"] = "setup-token-not-needed-by-http-page"
+	bootstrap.Values["AUTH_ACCESS_TOKEN_SECRET"] = "application-secret-not-needed-by-http-page"
+	api := newSetupAPIForHandlerTestWithBootstrap(t, bootstrap, &setupAuthStub{}, &setupProbeStub{}, &setupApplicationStub{})
+	if api.probeDraft.values["DATABASE_URL"] == "" {
+		t.Fatal("managed probe draft lost the database URL required for server-side probing")
+	}
+	for _, forbidden := range []string{"SETUP_TOKEN", "AUTH_ACCESS_TOKEN_SECRET"} {
+		if _, exists := api.probeDraft.values[forbidden]; exists {
+			t.Fatalf("SetupAPI retained unrelated secret %s", forbidden)
+		}
+	}
+}
+
 func TestSetupSessionCookieUsesTrustedHTTPSPublicAPIURLBehindProxy(t *testing.T) {
 	auth := &setupAuthStub{session: "signed-session"}
 	api, err := NewSetupAPI(SetupAPIOptions{
@@ -162,7 +238,8 @@ func TestSetupSessionCookieUsesTrustedHTTPSPublicAPIURLBehindProxy(t *testing.T)
 			Phase:        BootstrapPhaseSetupRequired,
 			PublicAPIURL: "https://api.example.test",
 		}),
-		Auth: auth, Prober: &setupProbeStub{}, Application: &setupApplicationStub{},
+		Bootstrap: setupBootstrapForHandlerTest(),
+		Auth:      auth, Prober: &setupProbeStub{}, Application: &setupApplicationStub{},
 	})
 	if err != nil {
 		t.Fatalf("NewSetupAPI: %v", err)
@@ -224,8 +301,9 @@ func TestSetupApplyFlushesAcceptedResponseBeforeOneRestartSignal(t *testing.T) {
 	var flushedBeforeCallback atomic.Bool
 	recorder := httptest.NewRecorder()
 	api, err := NewSetupAPI(SetupAPIOptions{
-		System: NewSystemAPI(BootstrapStatus{Phase: BootstrapPhaseSetupRequired}),
-		Auth:   &setupAuthStub{}, Prober: &setupProbeStub{}, Application: application,
+		System:    NewSystemAPI(BootstrapStatus{Phase: BootstrapPhaseSetupRequired}),
+		Bootstrap: setupBootstrapForHandlerTest(),
+		Auth:      &setupAuthStub{}, Prober: &setupProbeStub{}, Application: application,
 		OnRestartPending: func() {
 			callbackCount.Add(1)
 			flushedBeforeCallback.Store(recorder.Flushed && recorder.Code == http.StatusAccepted && recorder.Body.Len() > 0)
@@ -291,9 +369,15 @@ func TestSetupStableErrorResponseTable(t *testing.T) {
 
 func newSetupAPIForHandlerTest(t *testing.T, auth setupAuth, prober setupProber, application setupApplication) *SetupAPI {
 	t.Helper()
+	return newSetupAPIForHandlerTestWithBootstrap(t, setupBootstrapForHandlerTest(), auth, prober, application)
+}
+
+func newSetupAPIForHandlerTestWithBootstrap(t *testing.T, bootstrap config.BootstrapConfig, auth setupAuth, prober setupProber, application setupApplication) *SetupAPI {
+	t.Helper()
 	api, err := NewSetupAPI(SetupAPIOptions{
-		System: NewSystemAPI(BootstrapStatus{Phase: BootstrapPhaseSetupRequired}),
-		Auth:   auth, Prober: prober, Application: application,
+		System:    NewSystemAPI(BootstrapStatus{Phase: BootstrapPhaseSetupRequired}),
+		Bootstrap: bootstrap,
+		Auth:      auth, Prober: prober, Application: application,
 		SessionTTL: 15 * time.Minute,
 		Now:        func() time.Time { return time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC) },
 	})
@@ -301,6 +385,19 @@ func newSetupAPIForHandlerTest(t *testing.T, auth setupAuth, prober setupProber,
 		t.Fatalf("NewSetupAPI: %v", err)
 	}
 	return api
+}
+
+func setupBootstrapForHandlerTest() config.BootstrapConfig {
+	values := map[string]string{
+		"DEPLOYMENT_MODE": "docker", "DEPLOYMENT_PROFILE": "core", "DEPLOYMENT_TOPOLOGY": "single", "DEPLOYMENT_ROLE": "single",
+		"POSTGRES_MANAGED": "false", "REDIS_MANAGED": "false", "OBJECT_STORAGE_MANAGED": "false",
+		"STORAGE_DRIVER": "local", "STORAGE_LOCAL_ROOT": "./data/storage", "STORAGE_SHARED_VOLUME": "true", "REDIS_KEY_PREFIX": "app",
+	}
+	return config.BootstrapConfig{
+		SchemaVersion: config.CurrentRuntimeSchemaVersion,
+		Deployment:    config.DeploymentContext{Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle, StorageDriver: "local"},
+		Values:        values,
+	}
 }
 
 func handlersBootstrapPhaseForTest() BootstrapPhase { return BootstrapPhaseSetupRequired }

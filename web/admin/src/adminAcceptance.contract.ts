@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs'
 
 const stylesSource = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+const tokenSource = readFileSync(new URL('../../shared/admin-design-tokens.css', import.meta.url), 'utf8')
 const classesSource = readFileSync(new URL('./ui/classes.ts', import.meta.url), 'utf8')
 const componentsSource = readFileSync(new URL('./components.tsx', import.meta.url), 'utf8')
 const motionSource = readFileSync(new URL('./ui/adminMotion.ts', import.meta.url), 'utf8')
@@ -25,7 +26,7 @@ for (const themeToken of [
   '--border:',
   '--surface-solid:',
 ]) {
-  if (!stylesSource.includes(themeToken)) throw new Error(`admin light/dark themes must define ${themeToken}`)
+  if (!tokenSource.includes(themeToken)) throw new Error(`shared admin light/dark themes must define ${themeToken}`)
 }
 
 for (const cssContract of [

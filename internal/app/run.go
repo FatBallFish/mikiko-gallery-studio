@@ -429,6 +429,7 @@ func newSetupStartupHandler(bootstrap config.BootstrapConfig) (http.Handler, err
 	var restartOnce sync.Once
 	setupAPI, err := handlers.NewSetupAPI(handlers.SetupAPIOptions{
 		System: system, Auth: auth, Prober: prober, Application: application, SessionTTL: sessionTTL,
+		Bootstrap:        bootstrap,
 		OnRestartPending: func() { restartOnce.Do(func() { close(restart) }) },
 	})
 	if err != nil {

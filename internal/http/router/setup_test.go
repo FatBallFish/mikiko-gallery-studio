@@ -177,7 +177,12 @@ func TestStartupModePreflightMethodMatrix(t *testing.T) {
 func newSetupAPIForRouterTest(t *testing.T, status handlers.BootstrapStatus) *handlers.SetupAPI {
 	t.Helper()
 	api, err := handlers.NewSetupAPI(handlers.SetupAPIOptions{
-		System:      handlers.NewSystemAPI(status),
+		System: handlers.NewSystemAPI(status),
+		Bootstrap: config.BootstrapConfig{
+			SchemaVersion: config.CurrentRuntimeSchemaVersion,
+			Deployment:    config.DeploymentContext{Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle, StorageDriver: "local"},
+			Values:        map[string]string{"STORAGE_DRIVER": "local", "REDIS_KEY_PREFIX": "app"},
+		},
 		Auth:        setupAuthStub{},
 		Prober:      setupProbeStub{},
 		Application: setupApplicationStub{},
