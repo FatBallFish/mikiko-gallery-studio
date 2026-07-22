@@ -3,29 +3,35 @@ package deployctl
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
 type InstallDependencies struct {
-	Entropy            io.Reader
-	Now                func() time.Time
-	PathExists         func(string) (bool, error)
-	MakeDirectory      func(string, os.FileMode) error
-	AcquireInstallLock func(context.Context, string) (func() error, error)
-	RecoverIncomplete  func(string, string, string) error
-	WriteRuntimeEnv    func(string, []byte) error
-	InitializeState    func(string, setup.InstallState) error
-	WriteManifest      func(string, []byte) error
-	RemovePath         func(string) error
-	ApplyDeployment    func(context.Context, InstallPlan) error
+	Entropy             io.Reader
+	Now                 func() time.Time
+	ReadFile            func(string) ([]byte, error)
+	PathExists          func(string) (bool, error)
+	MakeDirectory       func(string, os.FileMode) error
+	AcquireInstallLock  func(context.Context, string) (func() error, error)
+	RecoverIncomplete   func(string, string, string, []string) error
+	WriteRuntimeEnv     func(string, []byte) error
+	InitializeState     func(string, setup.InstallState) error
+	WriteManifest       func(string, []byte) error
+	WriteDeploymentFile func(string, []byte) error
+	RemovePath          func(string) error
+	ApplyDeployment     func(context.Context, InstallPlan) error
 }
 
 type ProcessSpec struct {
@@ -75,7 +81,11 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 	runtimeEnvPath := filepath.Join(plan.RuntimeDir, "config", "runtime.env")
 	manifestPath := filepath.Join(plan.RuntimeDir, "deployment.json")
 	statePath := filepath.Join(plan.RuntimeDir, "config", "install-state.json")
-	installTargets := []string{runtimeEnvPath, statePath, manifestPath}
+	deploymentPaths, err := deploymentFilePaths(plan)
+	if err != nil {
+		return InstallResult{}, err
+	}
+	installTargets := append([]string{runtimeEnvPath, statePath, manifestPath}, deploymentPaths...)
 	for _, directory := range []string{plan.RuntimeDir, filepath.Join(plan.RuntimeDir, "config")} {
 		if err := dependencies.MakeDirectory(directory, 0o700); err != nil {
 			return InstallResult{}, fmt.Errorf("create runtime directory: %w", err)
@@ -93,17 +103,37 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 	if err := ctx.Err(); err != nil {
 		return InstallResult{}, err
 	}
-	if err := dependencies.RecoverIncomplete(runtimeEnvPath, statePath, manifestPath); err != nil {
+	if err := dependencies.RecoverIncomplete(runtimeEnvPath, statePath, manifestPath, deploymentPaths); err != nil {
 		return InstallResult{}, fmt.Errorf("recover incomplete install: %w", err)
 	}
+	firstExisting := ""
+	allTargetsExist := true
 	for _, path := range installTargets {
 		exists, err := dependencies.PathExists(path)
 		if err != nil {
 			return InstallResult{}, fmt.Errorf("inspect install target: %w", err)
 		}
-		if exists {
-			return InstallResult{}, fmt.Errorf("install target already exists: %s", path)
+		if exists && firstExisting == "" {
+			firstExisting = path
 		}
+		if !exists {
+			allTargetsExist = false
+		}
+	}
+	if firstExisting != "" {
+		if allTargetsExist && dependencies.ApplyDeployment != nil {
+			resumed, matched, err := loadResumableInstall(plan, runtimeEnvPath, statePath, manifestPath, dependencies.ReadFile)
+			if err != nil {
+				return InstallResult{}, err
+			}
+			if matched {
+				if err := dependencies.ApplyDeployment(ctx, plan); err != nil {
+					return InstallResult{}, fmt.Errorf("resume deployment: %w", err)
+				}
+				return resumed, nil
+			}
+		}
+		return InstallResult{}, fmt.Errorf("install target already exists: %s", firstExisting)
 	}
 	artifacts, err := BuildRuntimeArtifacts(plan, dependencies.Entropy, dependencies.Now())
 	if err != nil {
@@ -123,8 +153,16 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 	if err := dependencies.WriteManifest(manifestPath, artifacts.Manifest); err != nil {
 		return InstallResult{}, installArtifactError("write deployment manifest", err, rollbackInstallArtifacts(dependencies, statePath))
 	}
+	published := []string{manifestPath, statePath}
+	for index, file := range artifacts.DeploymentFiles {
+		path := deploymentPaths[index]
+		if err := dependencies.WriteDeploymentFile(path, file.Content); err != nil {
+			return InstallResult{}, installArtifactError("write deployment asset", err, rollbackInstallArtifacts(dependencies, published...))
+		}
+		published = append([]string{path}, published...)
+	}
 	if err := dependencies.WriteRuntimeEnv(runtimeEnvPath, artifacts.RuntimeEnv); err != nil {
-		return InstallResult{}, installArtifactError("write runtime env", err, rollbackInstallArtifacts(dependencies, manifestPath, statePath))
+		return InstallResult{}, installArtifactError("write runtime env", err, rollbackInstallArtifacts(dependencies, published...))
 	}
 	if dependencies.ApplyDeployment != nil {
 		if err := dependencies.ApplyDeployment(ctx, plan); err != nil {
@@ -158,6 +196,9 @@ func defaultInstallDependencies(dependencies InstallDependencies) InstallDepende
 	}
 	if dependencies.Now == nil {
 		dependencies.Now = func() time.Time { return time.Now().UTC() }
+	}
+	if dependencies.ReadFile == nil {
+		dependencies.ReadFile = os.ReadFile
 	}
 	if dependencies.PathExists == nil {
 		dependencies.PathExists = func(path string) (bool, error) {
@@ -200,8 +241,62 @@ func defaultInstallDependencies(dependencies InstallDependencies) InstallDepende
 	if dependencies.WriteManifest == nil {
 		dependencies.WriteManifest = writePrivateFileAtomicNoReplace
 	}
+	if dependencies.WriteDeploymentFile == nil {
+		dependencies.WriteDeploymentFile = writeDeploymentFileAtomicNoReplace
+	}
 	if dependencies.RemovePath == nil {
 		dependencies.RemovePath = os.Remove
 	}
 	return dependencies
+}
+
+func loadResumableInstall(plan InstallPlan, runtimeEnvPath, statePath, manifestPath string, readFile func(string) ([]byte, error)) (InstallResult, bool, error) {
+	manifestContent, err := readFile(manifestPath)
+	if err != nil {
+		return InstallResult{}, false, nil
+	}
+	var manifest deploymentManifest
+	if err := json.Unmarshal(manifestContent, &manifest); err != nil || manifest.SchemaVersion != 1 || !reflect.DeepEqual(manifest.Plan, plan) {
+		return InstallResult{}, false, nil
+	}
+	expectedFiles, err := buildDeploymentFiles(plan)
+	if err != nil || len(manifest.Files) != len(expectedFiles) {
+		return InstallResult{}, false, nil
+	}
+	for _, file := range expectedFiles {
+		relativePath := filepath.ToSlash(file.RelativePath)
+		wantHash, exists := manifest.Files[relativePath]
+		if !exists {
+			return InstallResult{}, false, nil
+		}
+		content, err := readFile(filepath.Join(plan.RuntimeDir, file.RelativePath))
+		if err != nil {
+			return InstallResult{}, false, nil
+		}
+		digest := sha256.Sum256(content)
+		if fmt.Sprintf("%x", digest) != wantHash {
+			return InstallResult{}, false, nil
+		}
+	}
+	stateContent, err := readFile(statePath)
+	if err != nil {
+		return InstallResult{}, false, nil
+	}
+	var state setup.InstallState
+	if err := json.Unmarshal(stateContent, &state); err != nil || state.Validate() != nil || state.Phase != setup.InstallPhasePending || state.EverCompleted || state.InstallationID != manifest.InstallationID {
+		return InstallResult{}, false, nil
+	}
+	runtimeContent, err := readFile(runtimeEnvPath)
+	if err != nil {
+		return InstallResult{}, false, nil
+	}
+	document, err := config.ParseRuntimeEnv(runtimeContent)
+	if err != nil || document.Values["INSTALLATION_ID"] != manifest.InstallationID || document.Values["SETUP_TOKEN"] == "" {
+		return InstallResult{}, false, nil
+	}
+	setupCompleted, err := strconv.ParseBool(document.Values["SETUP_COMPLETED"])
+	if err != nil || setupCompleted {
+		return InstallResult{}, false, nil
+	}
+	return InstallResult{RuntimeEnvPath: runtimeEnvPath, ManifestPath: manifestPath, SetupToken: document.Values["SETUP_TOKEN"]}, true, nil
 }

@@ -25,7 +25,7 @@ func acquireInstallLock(ctx context.Context, path string) (func() error, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := secureInstallFile(path, file); err != nil {
+	if err := secureInstallFile(path, file, 0o600); err != nil {
 		_ = file.Close()
 		return nil, err
 	}

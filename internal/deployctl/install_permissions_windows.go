@@ -30,7 +30,7 @@ func secureInstallDirectory(path string) error {
 	return applyRestrictedInstallDACL(handle)
 }
 
-func secureInstallFile(path string, file *os.File) error {
+func secureInstallFile(path string, file *os.File, _ os.FileMode) error {
 	pathPointer, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err

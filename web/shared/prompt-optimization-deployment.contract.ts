@@ -21,17 +21,21 @@ for (const path of ['deployments/docker-compose/docker-compose.local.yml']) {
 }
 
 const prodCompose = read('deployments/docker-compose/docker-compose.prod.yml')
-const requiredExpression = `${key}: \${${key}:?set ${key} in the env file}`
-if ((prodCompose.split(requiredExpression).length - 1) < 2) {
-  throw new Error('production compose must require the quote signing key for API and worker runtimes')
+if (prodCompose.includes(key) || (prodCompose.split('target: /app/config').length - 1) < 2) {
+  throw new Error('production API and worker must load the quote signing key from mounted config/runtime.env')
 }
 
 const prodEnv = read('deployments/docker-compose/.env.prod.example')
-if (!prodEnv.includes(`${key}=change_me_with_openssl_rand_hex_32`)) {
-  throw new Error('production env template must include a strong quote signing key placeholder')
+if (prodEnv.includes(`${key}=`)) {
+  throw new Error('legacy production env template must not duplicate runtime secrets')
 }
 
 const prepare = read('deployments/docker-compose/prepare.sh')
-if (!prepare.includes(`replace_env ${key} "$(generate_secret)"`)) {
-  throw new Error('deployment prepare script must generate the quote signing key')
+if (prepare.includes(key) || !prepare.includes('scripts/install.sh')) {
+  throw new Error('deployment prepare script must delegate quote signing key generation to deployctl')
+}
+
+const deployctlRuntime = read('internal/deployctl/runtime.go')
+if (!deployctlRuntime.includes(`"${key}":`) || !deployctlRuntime.includes('derivedSecret(root, "prompt-quote-signing")')) {
+  throw new Error('deployctl must generate a purpose-separated prompt optimization quote signing key')
 }

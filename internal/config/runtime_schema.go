@@ -154,6 +154,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("USER_WEB_PORT", "ports", "用户前端模块的内部监听端口。", "Internal listening port for the user frontend module.", "5173", "", FieldOwnerDeployctl, requiredNever, validateOptionalPort),
 			field("ADMIN_WEB_PORT", "ports", "管理后台模块的内部监听端口。", "Internal listening port for the admin frontend module.", "5174", "", FieldOwnerDeployctl, requiredNever, validateOptionalPort),
 			field("DOCS_WEB_PORT", "ports", "文档前端模块的内部监听端口。", "Internal listening port for the documentation frontend module.", "5175", "", FieldOwnerDeployctl, requiredNever, validateOptionalPort),
+			field("MONITORING_PORT", "ports", "可选监控模块映射到宿主机的 Prometheus 监听端口；未部署监控模块时可留空。", "Host port mapped to Prometheus by the optional monitoring module; leave empty when monitoring is not deployed.", "9090", "", FieldOwnerDeployctl, requiredNever, validateOptionalPort),
 
 			field("IMAGE_REGISTRY", "release", "Docker 镜像仓库地址；原生部署可留空。", "Docker image registry; leave empty for native deployments.", "registry.example.com/project", "", FieldOwnerDeployctl, requiredNever, validateOptionalNonEmpty),
 			field("IMAGE_TAG", "release", "Docker 各模块使用的不可变镜像标签。", "Immutable Docker image tag used by application modules.", "v1.0.0", "", FieldOwnerDeployctl, requiredDocker, validateNonEmpty),

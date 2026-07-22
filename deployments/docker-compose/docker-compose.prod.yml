@@ -1,183 +1,183 @@
-name: ${COMPOSE_PROJECT_NAME:-pic-gallery-prod}
-
 services:
   postgres:
+    profiles: ["full", "postgres"]
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-pic_gallery}
-      POSTGRES_USER: ${POSTGRES_USER:-pic_gallery}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-}
+      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pic_gallery} -d ${POSTGRES_DB:-pic_gallery}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   redis:
+    profiles: ["full", "redis"]
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+
+  minio:
+    profiles: ["full", "minio"]
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    profiles: ["full", "minio"]
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+      STORAGE_S3_ACCESS_KEY_ID: ${STORAGE_S3_ACCESS_KEY_ID:-}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY:-}
+    entrypoint: ["/bin/sh", "/opt/deploy/minio-init.sh"]
+    volumes:
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/minio-init.sh
+        target: /opt/deploy/minio-init.sh
+        read_only: true
 
   api:
-    image: ${PIC_GALLERY_IMAGE_REGISTRY:-docker.io/your-org}/pic-gallery-api:${PIC_GALLERY_IMAGE_TAG:-latest}
+    profiles: ["full", "core", "api"]
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-api:${IMAGE_TAG:-latest}
+    user: ${DEPLOYCTL_RUNTIME_USER:-picgallery}
+    working_dir: /app
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      PIC_GALLERY_ENV: ${PIC_GALLERY_ENV:-production}
-      PIC_GALLERY_ADDR: ${PIC_GALLERY_ADDR:-:8080}
-      PIC_GALLERY_TIMEZONE: ${PIC_GALLERY_TIMEZONE:-Asia/Shanghai}
-      DATABASE_URL: postgres://${POSTGRES_USER:-pic_gallery}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
-      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
-      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-10}
-      DATABASE_CONN_MAX_LIFETIME: ${DATABASE_CONN_MAX_LIFETIME:-30m}
-      REDIS_URL: redis://redis:6379/0
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-pic-gallery}
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
-      STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-/var/lib/pic-gallery/storage}
-      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
-      STORAGE_SHARED_VOLUME: ${STORAGE_SHARED_VOLUME:-true}
-      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
-      AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-10m}
-      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-30m}
-      AUTH_ISSUER: ${AUTH_ISSUER:-pic-gallery}
-      AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:-pg_refresh_token}
-      AUTH_ADMIN_REFRESH_COOKIE_NAME: ${AUTH_ADMIN_REFRESH_COOKIE_NAME:-pg_admin_refresh_token}
-      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: ${API_KEY_SIGNING_SECRET_ENCRYPTION_KEY:?set API_KEY_SIGNING_SECRET_ENCRYPTION_KEY in the env file}
-      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: ${CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY:?set CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY in the env file}
-      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: ${PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY:?set PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY in the env file}
-      PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY: ${PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY:?set PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY in the env file}
-      WORKER_MAX_CONCURRENT_TASKS: ${WORKER_MAX_CONCURRENT_TASKS:-4}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "${API_PORT:-8080}:${API_PORT:-8080}"
     volumes:
-      - shared-storage:/var/lib/pic-gallery/storage
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/config
+        target: /app/config
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/data
+        target: /app/data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
-      interval: 15s
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${API_PORT:-8080}/healthz"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   worker:
-    image: ${PIC_GALLERY_IMAGE_REGISTRY:-docker.io/your-org}/pic-gallery-worker:${PIC_GALLERY_IMAGE_TAG:-latest}
+    profiles: ["full", "core", "worker"]
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-worker:${IMAGE_TAG:-latest}
+    user: ${DEPLOYCTL_RUNTIME_USER:-picgallery}
+    working_dir: /app
     restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      PIC_GALLERY_ENV: ${PIC_GALLERY_ENV:-production}
-      PIC_GALLERY_ADDR: ${PIC_GALLERY_ADDR:-:8080}
-      PIC_GALLERY_TIMEZONE: ${PIC_GALLERY_TIMEZONE:-Asia/Shanghai}
-      DATABASE_URL: postgres://${POSTGRES_USER:-pic_gallery}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}@postgres:5432/${POSTGRES_DB:-pic_gallery}?sslmode=disable
-      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
-      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-10}
-      DATABASE_CONN_MAX_LIFETIME: ${DATABASE_CONN_MAX_LIFETIME:-30m}
-      REDIS_URL: redis://redis:6379/0
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-pic-gallery}
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
-      STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-/var/lib/pic-gallery/storage}
-      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
-      STORAGE_SHARED_VOLUME: ${STORAGE_SHARED_VOLUME:-true}
-      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET in the env file}
-      AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-10m}
-      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-30m}
-      AUTH_ISSUER: ${AUTH_ISSUER:-pic-gallery}
-      AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:-pg_refresh_token}
-      AUTH_ADMIN_REFRESH_COOKIE_NAME: ${AUTH_ADMIN_REFRESH_COOKIE_NAME:-pg_admin_refresh_token}
-      API_KEY_SIGNING_SECRET_ENCRYPTION_KEY: ${API_KEY_SIGNING_SECRET_ENCRYPTION_KEY:?set API_KEY_SIGNING_SECRET_ENCRYPTION_KEY in the env file}
-      CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY: ${CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY:?set CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY in the env file}
-      PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY: ${PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY:?set PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY in the env file}
-      PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY: ${PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY:?set PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY in the env file}
-      WORKER_MAX_CONCURRENT_TASKS: ${WORKER_MAX_CONCURRENT_TASKS:-4}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     volumes:
-      - shared-storage:/var/lib/pic-gallery/storage
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/config
+        target: /app/config
+        read_only: true
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/data
+        target: /app/data
 
   user-web:
-    image: ${PIC_GALLERY_IMAGE_REGISTRY:-docker.io/your-org}/pic-gallery-user-web:${PIC_GALLERY_IMAGE_TAG:-latest}
+    profiles: ["full", "core", "user-web"]
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-user-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    ports:
+      - "${USER_WEB_PORT:-5173}:80"
     environment:
-      PIC_GALLERY_DOCS_URL: ${PIC_GALLERY_DOCS_URL:-/developer-docs/}
-    depends_on:
-      api:
-        condition: service_healthy
+      PIC_GALLERY_DOCS_URL: /developer-docs/
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
-      interval: 15s
+      interval: 5s
       timeout: 5s
-      retries: 10
-
-  docs-web:
-    image: ${PIC_GALLERY_IMAGE_REGISTRY:-docker.io/your-org}/pic-gallery-docs-web:${PIC_GALLERY_IMAGE_TAG:-latest}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
+      retries: 20
 
   admin-web:
-    image: ${PIC_GALLERY_IMAGE_REGISTRY:-docker.io/your-org}/pic-gallery-admin-web:${PIC_GALLERY_IMAGE_TAG:-latest}
+    profiles: ["full", "core", "admin-web"]
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-admin-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
+    ports:
+      - "${ADMIN_WEB_PORT:-5174}:80"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
-      interval: 15s
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
-  nginx:
+  docs-web:
+    profiles: ["full", "core", "docs-web"]
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-docs-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${DOCS_WEB_PORT:-5175}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  gateway:
+    profiles: ["full", "core", "gateway"]
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
-        restart: true
+        required: false
       user-web:
         condition: service_healthy
-        restart: true
       admin-web:
         condition: service_healthy
-        restart: true
       docs-web:
         condition: service_healthy
-        restart: true
     ports:
-      - "${NGINX_PORT:-80}:80"
+      - "${GATEWAY_PORT:-80}:80"
     volumes:
-      - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/nginx-default.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/readyz"]
-      interval: 15s
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
-  prometheus:
+  monitoring:
+    profiles: ["monitoring"]
     image: prom/prometheus:v3.0.1
     restart: unless-stopped
-    profiles: ["monitoring"]
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "${MONITORING_PORT:-9090}:9090"
     volumes:
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -186,5 +186,5 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  shared-storage:
+  minio-data:
   prometheus-data:

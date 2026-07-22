@@ -1,6 +1,7 @@
 package deployctl
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,14 @@ import (
 const installStagePrefix = ".deployctl-stage-"
 
 func writePrivateFileAtomicNoReplace(path string, content []byte) (returnErr error) {
+	return writeFileAtomicNoReplace(path, content, 0o600)
+}
+
+func writeDeploymentFileAtomicNoReplace(path string, content []byte) error {
+	return writeFileAtomicNoReplace(path, content, 0o644)
+}
+
+func writeFileAtomicNoReplace(path string, content []byte, mode os.FileMode) (returnErr error) {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
@@ -45,7 +54,7 @@ func writePrivateFileAtomicNoReplace(path string, content []byte) (returnErr err
 			}
 		}
 	}()
-	if err := secureInstallFile(temporaryPath, temporary); err != nil {
+	if err := secureInstallFile(temporaryPath, temporary, mode); err != nil {
 		return err
 	}
 	if _, err := temporary.Write(content); err != nil {
@@ -78,13 +87,14 @@ func writePrivateFileAtomicNoReplace(path string, content []byte) (returnErr err
 	return nil
 }
 
-func recoverIncompleteInstall(runtimeEnvPath, statePath, manifestPath string) error {
+func recoverIncompleteInstall(runtimeEnvPath, statePath, manifestPath string, currentDeploymentPaths []string) error {
+	cleanupPaths := append([]string{runtimeEnvPath, statePath, manifestPath}, currentDeploymentPaths...)
 	runtimeExists, err := regularFileExists(runtimeEnvPath)
 	if err != nil {
 		return err
 	}
 	if runtimeExists {
-		return cleanupInstallStages(runtimeEnvPath, statePath, manifestPath)
+		return cleanupInstallStages(cleanupPaths...)
 	}
 	stateExists, err := regularFileExists(statePath)
 	if err != nil {
@@ -95,7 +105,7 @@ func recoverIncompleteInstall(runtimeEnvPath, statePath, manifestPath string) er
 		return err
 	}
 	if !stateExists && !manifestExists {
-		return cleanupInstallStages(runtimeEnvPath, statePath, manifestPath)
+		return cleanupInstallStages(cleanupPaths...)
 	}
 
 	var state setup.InstallState
@@ -128,12 +138,41 @@ func recoverIncompleteInstall(runtimeEnvPath, statePath, manifestPath string) er
 	if stateExists && manifestExists && state.InstallationID != manifest.InstallationID {
 		return fmt.Errorf("partial install state and manifest have different installation identities")
 	}
-	for _, path := range []string{manifestPath, statePath} {
+	partialDeploymentPaths := make([]string, 0)
+	if manifestExists {
+		files, err := buildDeploymentFiles(manifest.Plan)
+		if err != nil {
+			return err
+		}
+		if len(manifest.Files) != len(files) {
+			return fmt.Errorf("refuse to remove partial deployment with an incomplete asset manifest")
+		}
+		runtimeDirectory := filepath.Dir(manifestPath)
+		for _, file := range files {
+			path := filepath.Join(runtimeDirectory, file.RelativePath)
+			exists, err := regularFileExists(path)
+			if err != nil {
+				return err
+			}
+			if exists {
+				content, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				digest := sha256.Sum256(content)
+				if manifest.Files[filepath.ToSlash(file.RelativePath)] != fmt.Sprintf("%x", digest) {
+					return fmt.Errorf("refuse to remove modified partial deployment asset %s", file.RelativePath)
+				}
+				partialDeploymentPaths = append(partialDeploymentPaths, path)
+			}
+		}
+	}
+	for _, path := range append(partialDeploymentPaths, manifestPath, statePath) {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
-	return cleanupInstallStages(runtimeEnvPath, statePath, manifestPath)
+	return cleanupInstallStages(cleanupPaths...)
 }
 
 func regularFileExists(path string) (bool, error) {

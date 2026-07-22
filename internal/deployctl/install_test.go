@@ -113,6 +113,94 @@ func TestBuildRuntimeArtifactsPrepopulatesOnlySelectedDockerCustomMiddleware(t *
 	}
 }
 
+func TestBuildRuntimeArtifactsIncludesSelfContainedDockerAssets(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: ".", StorageDriver: "local", ApplicationVersion: "v1", APIPort: "18080"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := BuildRuntimeArtifacts(plan, bytes.NewReader(bytes.Repeat([]byte{0x39}, 32)), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPaths := []string{"compose.yml", filepath.Join("assets", "nginx-default.conf"), filepath.Join("assets", "minio-init.sh"), filepath.Join("assets", "prometheus.yml")}
+	if len(artifacts.DeploymentFiles) != len(wantPaths) {
+		t.Fatalf("deployment files = %#v", artifacts.DeploymentFiles)
+	}
+	for index, file := range artifacts.DeploymentFiles {
+		if file.RelativePath != wantPaths[index] || len(file.Content) == 0 {
+			t.Errorf("deployment file %d = %#v", index, file)
+		}
+	}
+	if !bytes.Contains(artifacts.DeploymentFiles[1].Content, []byte("server api:18080;")) {
+		t.Fatal("materialized Nginx config did not use the configured API port")
+	}
+	if !bytes.Contains(artifacts.DeploymentFiles[3].Content, []byte("api:18080")) {
+		t.Fatal("materialized Prometheus config did not use the configured API port")
+	}
+}
+
+func TestBuildDeploymentFilesRoutesWebNodesToThePublicAPIBaseURL(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: "docker", Profile: "core", Topology: "cluster", Role: "web", RuntimeDir: ".",
+		PublicAPIURL: "https://api.example.test:8443/base", ApplicationVersion: "v1", InstallationInitialized: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := buildDeploymentFiles(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nginx := string(files[1].Content)
+	for _, required := range []string{
+		"server api.example.test:8443;",
+		"proxy_pass https://pic_gallery_api/base$request_uri;",
+		"proxy_set_header Host api.example.test:8443;",
+		"proxy_ssl_server_name on;",
+		"proxy_ssl_name api.example.test;",
+	} {
+		if !strings.Contains(nginx, required) {
+			t.Errorf("web-node Nginx config missing %q:\n%s", required, nginx)
+		}
+	}
+	if strings.Contains(nginx, "server api:8080;") {
+		t.Fatal("web-node Nginx config still depends on a local API container")
+	}
+	if got := strings.Count(nginx, "proxy_set_header Host api.example.test:8443;"); got != 8 {
+		t.Fatalf("external API Host header count = %d, want 8", got)
+	}
+	for _, preserved := range []string{
+		"proxy_pass http://pic_gallery_docs_web/;\n        proxy_set_header Host $host;",
+		"proxy_pass http://pic_gallery_admin_web/;\n        proxy_set_header Host $host;",
+		"proxy_pass http://pic_gallery_user_web/;\n        proxy_set_header Host $host;",
+	} {
+		if !strings.Contains(nginx, preserved) {
+			t.Errorf("frontend proxy headers were changed: missing %q", preserved)
+		}
+	}
+}
+
+func TestBuildRuntimeArtifactsPersistsMonitoringPort(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: "docker", Profile: "custom", Topology: "single", Role: "single", RuntimeDir: ".",
+		StorageDriver: "local", ApplicationVersion: "v1", Components: []Component{ComponentAPI, ComponentMonitoring}, MonitoringPort: "19090",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := BuildRuntimeArtifacts(plan, bytes.NewReader(bytes.Repeat([]byte{0x29}, 64)), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := config.ParseRuntimeEnv(artifacts.RuntimeEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.MonitoringPort != "19090" || document.Values["MONITORING_PORT"] != "19090" {
+		t.Fatalf("monitoring port was not preserved: plan=%q env=%q", plan.MonitoringPort, document.Values["MONITORING_PORT"])
+	}
+}
+
 func TestBuildRuntimeArtifactsRejectsJoinedPlansAndDerivesDistinctSecrets(t *testing.T) {
 	joined, err := BuildInstallPlan(InstallInput{
 		Mode: config.DeploymentModeNative, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologyCluster,
@@ -259,6 +347,38 @@ func TestExistingInstallCleansDeferredStageFilesBeforeReturningCollision(t *test
 	}
 	if _, err := os.Stat(stagePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("deferred stage was not cleaned: %v", err)
+	}
+}
+
+func TestExecuteInstallResumesTheSamePendingDockerPlanAfterApplyFailure(t *testing.T) {
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyCalls := 0
+	firstDependencies := InstallDependencies{
+		Entropy: bytes.NewReader(bytes.Repeat([]byte{0x61}, 32)),
+		ApplyDeployment: func(context.Context, InstallPlan) error {
+			applyCalls++
+			return errors.New("registry unavailable")
+		},
+	}
+	if _, err := ExecuteInstall(context.Background(), plan, firstDependencies); err == nil || !strings.Contains(err.Error(), "apply deployment") {
+		t.Fatalf("first install error = %v", err)
+	}
+	result, err := ExecuteInstall(context.Background(), plan, InstallDependencies{
+		Entropy: errorReader("resume must not regenerate entropy"),
+		ApplyDeployment: func(context.Context, InstallPlan) error {
+			applyCalls++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("resume pending install: %v", err)
+	}
+	if applyCalls != 2 || result.SetupToken == "" || result.RuntimeEnvPath != filepath.Join(runtimeDirectory, "config", "runtime.env") {
+		t.Fatalf("resume result = %#v, apply calls %d", result, applyCalls)
 	}
 }
 

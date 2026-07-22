@@ -56,6 +56,7 @@ type InstallInput struct {
 	UserWebPort                string
 	AdminWebPort               string
 	DocsWebPort                string
+	MonitoringPort             string
 	RuntimeDirExplicit         bool
 	ApplicationVersionExplicit bool
 	ImageTagExplicit           bool
@@ -65,6 +66,7 @@ type InstallInput struct {
 	UserWebPortExplicit        bool
 	AdminWebPortExplicit       bool
 	DocsWebPortExplicit        bool
+	MonitoringPortExplicit     bool
 }
 
 type InstallPlan struct {
@@ -87,6 +89,7 @@ type InstallPlan struct {
 	UserWebPort              string                    `json:"user_web_port,omitempty"`
 	AdminWebPort             string                    `json:"admin_web_port,omitempty"`
 	DocsWebPort              string                    `json:"docs_web_port,omitempty"`
+	MonitoringPort           string                    `json:"monitoring_port,omitempty"`
 	RequiresEnrollment       bool                      `json:"requires_enrollment"`
 }
 
@@ -133,7 +136,7 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 	input.APIPort = defaultString(input.APIPort, "8080")
 	for name, value := range map[string]string{
 		"API": input.APIPort, "Gateway": input.GatewayPort, "user web": input.UserWebPort,
-		"admin web": input.AdminWebPort, "documentation web": input.DocsWebPort,
+		"admin web": input.AdminWebPort, "documentation web": input.DocsWebPort, "monitoring": input.MonitoringPort,
 	} {
 		if err := validateInstallPort(name, value); err != nil {
 			return InstallPlan{}, err
@@ -143,6 +146,21 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 	components, err := componentsForInput(input)
 	if err != nil {
 		return InstallPlan{}, err
+	}
+	if slices.Contains(components, ComponentGateway) {
+		input.GatewayPort = defaultString(input.GatewayPort, "80")
+	}
+	if slices.Contains(components, ComponentUserWeb) {
+		input.UserWebPort = defaultString(input.UserWebPort, "5173")
+	}
+	if slices.Contains(components, ComponentAdminWeb) {
+		input.AdminWebPort = defaultString(input.AdminWebPort, "5174")
+	}
+	if slices.Contains(components, ComponentDocsWeb) {
+		input.DocsWebPort = defaultString(input.DocsWebPort, "5175")
+	}
+	if slices.Contains(components, ComponentMonitoring) {
+		input.MonitoringPort = defaultString(input.MonitoringPort, "9090")
 	}
 	if err := validateComponents(input, components); err != nil {
 		return InstallPlan{}, err
@@ -157,6 +175,7 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 		ReleaseVersion: defaultString(input.ReleaseVersion, input.ApplicationVersion),
 		APIPort:        input.APIPort, GatewayPort: input.GatewayPort,
 		UserWebPort: input.UserWebPort, AdminWebPort: input.AdminWebPort, DocsWebPort: input.DocsWebPort,
+		MonitoringPort:     input.MonitoringPort,
 		RequiresEnrollment: joined,
 	}, nil
 }
@@ -191,7 +210,7 @@ func ValidateInstallPlan(plan InstallPlan) error {
 	}
 	for name, value := range map[string]string{
 		"API": plan.APIPort, "Gateway": plan.GatewayPort, "user web": plan.UserWebPort,
-		"admin web": plan.AdminWebPort, "documentation web": plan.DocsWebPort,
+		"admin web": plan.AdminWebPort, "documentation web": plan.DocsWebPort, "monitoring": plan.MonitoringPort,
 	} {
 		if err := validateInstallPort(name, value); err != nil {
 			return err
@@ -282,6 +301,17 @@ func validateComponents(input InstallInput, components []Component) error {
 	}
 	if slices.Contains(components, ComponentMinIO) && input.StorageDriver != "s3" {
 		return fmt.Errorf("MinIO component requires s3 object storage")
+	}
+	if slices.Contains(components, ComponentGateway) {
+		requiredComponents := []Component{ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb}
+		if input.Role != config.DeploymentRoleWeb {
+			requiredComponents = append([]Component{ComponentAPI}, requiredComponents...)
+		}
+		for _, required := range requiredComponents {
+			if !slices.Contains(components, required) {
+				return fmt.Errorf("gateway component requires local component %q", required)
+			}
+		}
 	}
 	if input.Role == config.DeploymentRoleSingle || input.Role == config.DeploymentRoleControl {
 		if !slices.Contains(components, ComponentAPI) {

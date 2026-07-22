@@ -177,6 +177,7 @@ func resolveInteractiveInstall(ctx context.Context, input InstallInput, terminal
 		{ComponentUserWeb, input.UserWebPortExplicit, "User web port", "5173", &input.UserWebPort},
 		{ComponentAdminWeb, input.AdminWebPortExplicit, "Admin web port", "5174", &input.AdminWebPort},
 		{ComponentDocsWeb, input.DocsWebPortExplicit, "Documentation web port", "5175", &input.DocsWebPort},
+		{ComponentMonitoring, input.MonitoringPortExplicit, "Monitoring port", "9090", &input.MonitoringPort},
 	}
 	for _, prompt := range portPrompts {
 		if !slices.Contains(components, prompt.component) || prompt.explicit {

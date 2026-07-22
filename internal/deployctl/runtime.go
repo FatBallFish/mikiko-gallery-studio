@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,15 +18,22 @@ import (
 
 	"github.com/google/uuid"
 
+	deploymentassets "github.com/fatballfish/pic-gallery/deployments"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
 type RuntimeArtifacts struct {
-	RuntimeEnv   []byte
-	InstallState setup.InstallState
-	Manifest     []byte
-	SetupToken   string
+	RuntimeEnv      []byte
+	InstallState    setup.InstallState
+	Manifest        []byte
+	SetupToken      string
+	DeploymentFiles []DeploymentFile
+}
+
+type DeploymentFile struct {
+	RelativePath string
+	Content      []byte
 }
 
 func (RuntimeArtifacts) String() string {
@@ -42,10 +50,11 @@ func (artifacts RuntimeArtifacts) MarshalJSON() ([]byte, error) {
 }
 
 type deploymentManifest struct {
-	SchemaVersion  int         `json:"schema_version"`
-	InstallationID string      `json:"installation_id"`
-	CreatedAt      time.Time   `json:"created_at"`
-	Plan           InstallPlan `json:"plan"`
+	SchemaVersion  int               `json:"schema_version"`
+	InstallationID string            `json:"installation_id"`
+	CreatedAt      time.Time         `json:"created_at"`
+	Plan           InstallPlan       `json:"plan"`
+	Files          map[string]string `json:"files,omitempty"`
 }
 
 func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (RuntimeArtifacts, error) {
@@ -95,6 +104,7 @@ func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (R
 		"APPLICATION_VERSION": plan.ApplicationVersion, "API_PORT": plan.APIPort,
 		"GATEWAY_PORT": plan.GatewayPort, "USER_WEB_PORT": plan.UserWebPort,
 		"ADMIN_WEB_PORT": plan.AdminWebPort, "DOCS_WEB_PORT": plan.DocsWebPort,
+		"MONITORING_PORT":                          plan.MonitoringPort,
 		"PUBLIC_API_URL":                           plan.PublicAPIURL,
 		"AUTH_ACCESS_TOKEN_SECRET":                 derivedSecret(root, "auth-access-token"),
 		"API_KEY_SIGNING_SECRET_ENCRYPTION_KEY":    derivedSecret(root, "api-key-encryption"),
@@ -127,12 +137,101 @@ func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (R
 		SchemaVersion: setup.CurrentInstallStateSchemaVersion, InstallationID: installationID,
 		DeploymentRole: plan.Role, Phase: setup.InstallPhasePending, UpdatedAt: now,
 	}
-	manifest, err := json.MarshalIndent(deploymentManifest{SchemaVersion: 1, InstallationID: installationID, CreatedAt: now, Plan: plan}, "", "  ")
+	deploymentFiles, err := buildDeploymentFiles(plan)
+	if err != nil {
+		return RuntimeArtifacts{}, err
+	}
+	fileHashes := make(map[string]string, len(deploymentFiles))
+	for _, file := range deploymentFiles {
+		digest := sha256.Sum256(file.Content)
+		fileHashes[filepath.ToSlash(file.RelativePath)] = fmt.Sprintf("%x", digest)
+	}
+	manifest, err := json.MarshalIndent(deploymentManifest{SchemaVersion: 1, InstallationID: installationID, CreatedAt: now, Plan: plan, Files: fileHashes}, "", "  ")
 	if err != nil {
 		return RuntimeArtifacts{}, fmt.Errorf("render deployment manifest: %w", err)
 	}
 	manifest = append(manifest, '\n')
-	return RuntimeArtifacts{RuntimeEnv: runtimeEnv, InstallState: state, Manifest: manifest, SetupToken: setupToken}, nil
+	return RuntimeArtifacts{RuntimeEnv: runtimeEnv, InstallState: state, Manifest: manifest, SetupToken: setupToken, DeploymentFiles: deploymentFiles}, nil
+}
+
+func buildDeploymentFiles(plan InstallPlan) ([]DeploymentFile, error) {
+	if plan.Mode != config.DeploymentModeDocker {
+		return nil, nil
+	}
+	nginxConfig, err := materializeNginxConfig(plan, deploymentassets.NginxDefault())
+	if err != nil {
+		return nil, err
+	}
+	prometheusConfig := deploymentassets.Prometheus()
+	oldPrometheusTarget := []byte("host.docker.internal:8080")
+	newPrometheusTarget := []byte("api:" + plan.APIPort)
+	if bytes.Count(prometheusConfig, oldPrometheusTarget) != 1 {
+		return nil, fmt.Errorf("embedded Prometheus API target is not canonical")
+	}
+	prometheusConfig = bytes.Replace(prometheusConfig, oldPrometheusTarget, newPrometheusTarget, 1)
+	return []DeploymentFile{
+		{RelativePath: "compose.yml", Content: deploymentassets.DockerCompose()},
+		{RelativePath: filepath.Join("assets", "nginx-default.conf"), Content: nginxConfig},
+		{RelativePath: filepath.Join("assets", "minio-init.sh"), Content: deploymentassets.MinIOInit()},
+		{RelativePath: filepath.Join("assets", "prometheus.yml"), Content: prometheusConfig},
+	}, nil
+}
+
+func materializeNginxConfig(plan InstallPlan, template []byte) ([]byte, error) {
+	const canonicalUpstream = "server api:8080;"
+	if bytes.Count(template, []byte(canonicalUpstream)) != 1 {
+		return nil, fmt.Errorf("embedded Nginx API upstream is not canonical")
+	}
+	if plan.Role != config.DeploymentRoleWeb {
+		return bytes.Replace(template, []byte(canonicalUpstream), []byte("server api:"+plan.APIPort+";"), 1), nil
+	}
+	publicAPI, err := url.Parse(plan.PublicAPIURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse public API URL: %w", err)
+	}
+	upstreamAddress := publicAPI.Host
+	if publicAPI.Port() == "" {
+		if publicAPI.Scheme == "https" {
+			upstreamAddress += ":443"
+		} else {
+			upstreamAddress += ":80"
+		}
+	}
+	configContent := bytes.Replace(template, []byte(canonicalUpstream), []byte("server "+upstreamAddress+";"), 1)
+	apiStart := bytes.Index(configContent, []byte("    location = /healthz {"))
+	apiEnd := bytes.Index(configContent, []byte("    location = /developer-docs {"))
+	if apiStart < 0 || apiEnd <= apiStart {
+		return nil, fmt.Errorf("embedded Nginx API proxy section is not canonical")
+	}
+	apiSection := configContent[apiStart:apiEnd]
+	const canonicalProxy = "proxy_pass http://pic_gallery_api;"
+	if bytes.Count(apiSection, []byte(canonicalProxy)) != 8 {
+		return nil, fmt.Errorf("embedded Nginx API proxy count is not canonical")
+	}
+	basePath := strings.TrimSuffix(publicAPI.EscapedPath(), "/")
+	proxyTarget := "proxy_pass " + publicAPI.Scheme + "://pic_gallery_api" + basePath + "$request_uri;"
+	apiSection = bytes.ReplaceAll(apiSection, []byte(canonicalProxy), []byte(proxyTarget))
+	apiSection = bytes.ReplaceAll(apiSection, []byte("proxy_set_header Host $host;"), []byte("proxy_set_header Host "+publicAPI.Host+";"))
+	if publicAPI.Scheme == "https" {
+		apiSection = bytes.ReplaceAll(apiSection, []byte(proxyTarget), []byte(proxyTarget+"\n        proxy_ssl_server_name on;\n        proxy_ssl_name "+publicAPI.Hostname()+";"))
+	}
+	materialized := make([]byte, 0, len(configContent)+len(apiSection))
+	materialized = append(materialized, configContent[:apiStart]...)
+	materialized = append(materialized, apiSection...)
+	materialized = append(materialized, configContent[apiEnd:]...)
+	return materialized, nil
+}
+
+func deploymentFilePaths(plan InstallPlan) ([]string, error) {
+	files, err := buildDeploymentFiles(plan)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, filepath.Join(plan.RuntimeDir, file.RelativePath))
+	}
+	return paths, nil
 }
 
 func populateManagedResources(values map[string]string, root []byte, postgres, redis, storage bool) {

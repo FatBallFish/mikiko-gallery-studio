@@ -112,6 +112,19 @@ func TestBuildInstallPlanRejectsUnsafeDeploymentCombinations(t *testing.T) {
 			input.Components = []Component{ComponentAPI, ComponentMinIO}
 			input.StorageDriver = "local"
 		}},
+		{name: "gateway without local web suite", mutate: func(input *InstallInput) {
+			input.Profile = config.DeploymentProfileCustom
+			input.Components = []Component{ComponentAPI, ComponentGateway}
+		}},
+		{name: "web role gateway with partial local web suite", mutate: func(input *InstallInput) {
+			input.Profile = config.DeploymentProfileCustom
+			input.Topology = config.DeploymentTopologyCluster
+			input.Role = config.DeploymentRoleWeb
+			input.StorageDriver = ""
+			input.InstallationInitialized = true
+			input.PublicAPIURL = "https://api.example.test"
+			input.Components = []Component{ComponentUserWeb, ComponentGateway}
+		}},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {

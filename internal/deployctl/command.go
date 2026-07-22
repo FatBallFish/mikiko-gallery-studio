@@ -144,6 +144,7 @@ func parseInstallCommand(args []string) (Command, error) {
 	userWebPort := set.String("user-web-port", "", "user web port")
 	adminWebPort := set.String("admin-web-port", "", "admin web port")
 	docsWebPort := set.String("docs-web-port", "", "documentation web port")
+	monitoringPort := set.String("monitoring-port", "", "monitoring port")
 	externalGateway := set.Bool("external-gateway", false, "confirm external web hosting/proxy")
 	migrate := set.Bool("migrate", false, "request a control migration")
 	yes := set.Bool("yes", false, "non-interactive confirmation")
@@ -173,12 +174,13 @@ func parseInstallCommand(args []string) (Command, error) {
 		RuntimeDir: *runtimeDir, StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL,
 		ExternalGatewayConfirmed: *externalGateway, MigrationRequested: *migrate,
 		ApplicationVersion: *applicationVersion, ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion,
-		APIPort: *apiPort, GatewayPort: *gatewayPort, UserWebPort: *userWebPort, AdminWebPort: *adminWebPort, DocsWebPort: *docsWebPort,
+		APIPort: *apiPort, GatewayPort: *gatewayPort, UserWebPort: *userWebPort, AdminWebPort: *adminWebPort, DocsWebPort: *docsWebPort, MonitoringPort: *monitoringPort,
 		RuntimeDirExplicit: flagWasProvided(args, "runtime-dir"), ApplicationVersionExplicit: flagWasProvided(args, "application-version"),
 		ImageTagExplicit: flagWasProvided(args, "image-tag"), ReleaseVersionExplicit: flagWasProvided(args, "release-version"),
 		APIPortExplicit: flagWasProvided(args, "api-port"), GatewayPortExplicit: flagWasProvided(args, "gateway-port"),
 		UserWebPortExplicit: flagWasProvided(args, "user-web-port"), AdminWebPortExplicit: flagWasProvided(args, "admin-web-port"),
-		DocsWebPortExplicit: flagWasProvided(args, "docs-web-port"),
+		DocsWebPortExplicit:    flagWasProvided(args, "docs-web-port"),
+		MonitoringPortExplicit: flagWasProvided(args, "monitoring-port"),
 	}
 	return Command{Kind: CommandInstall, RuntimeDir: *runtimeDir, Yes: *yes, Install: input}, nil
 }

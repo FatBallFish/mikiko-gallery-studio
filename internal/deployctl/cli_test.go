@@ -47,7 +47,7 @@ func TestRunNonInteractiveInstallUsesNoTerminalAndInjectedFilesystemOnly(t *test
 	if code != 0 || terminal.prompts != 0 {
 		t.Fatalf("Run(non-interactive) = %d, prompts %d, stdout %q", code, terminal.prompts, stdout.String())
 	}
-	if strings.Join(writes, ",") != "state,deployment.json,runtime.env" || strings.Contains(stdout.String(), "Setup token:") || !strings.Contains(stdout.String(), "deployctl setup token show") {
+	if strings.Join(writes, ",") != "state,deployment.json,asset:compose.yml,asset:nginx-default.conf,asset:minio-init.sh,asset:prometheus.yml,runtime.env" || strings.Contains(stdout.String(), "Setup token:") || !strings.Contains(stdout.String(), "deployctl setup token show") {
 		t.Fatalf("install side effects/output = %v, %q", writes, stdout.String())
 	}
 }
@@ -105,10 +105,14 @@ func testInstallDependencies(writes *[]string) InstallDependencies {
 		AcquireInstallLock: func(context.Context, string) (func() error, error) {
 			return func() error { return nil }, nil
 		},
-		RecoverIncomplete: func(string, string, string) error { return nil },
+		RecoverIncomplete: func(string, string, string, []string) error { return nil },
 		WriteRuntimeEnv:   func(string, []byte) error { *writes = append(*writes, "runtime.env"); return nil },
 		InitializeState:   func(string, setup.InstallState) error { *writes = append(*writes, "state"); return nil },
 		WriteManifest:     func(string, []byte) error { *writes = append(*writes, "deployment.json"); return nil },
+		WriteDeploymentFile: func(path string, _ []byte) error {
+			*writes = append(*writes, "asset:"+filepath.Base(path))
+			return nil
+		},
 	}
 }
 
@@ -126,7 +130,7 @@ func TestExecuteInstallStopsBeforeEntropyOrWritesOnCollisionAndBeforeWritesOnEnt
 		AcquireInstallLock: func(context.Context, string) (func() error, error) {
 			return func() error { return nil }, nil
 		},
-		RecoverIncomplete: func(string, string, string) error { return nil },
+		RecoverIncomplete: func(string, string, string, []string) error { return nil },
 	})
 	if err == nil || directories != 2 || collisionEntropy.reads != 0 {
 		t.Fatalf("collision = err %v, directories %d, entropy reads %d", err, directories, collisionEntropy.reads)
@@ -140,7 +144,7 @@ func TestExecuteInstallStopsBeforeEntropyOrWritesOnCollisionAndBeforeWritesOnEnt
 		AcquireInstallLock: func(context.Context, string) (func() error, error) {
 			return func() error { return nil }, nil
 		},
-		RecoverIncomplete: func(string, string, string) error { return nil },
+		RecoverIncomplete: func(string, string, string, []string) error { return nil },
 	})
 	if err == nil || directories != 2 {
 		t.Fatalf("entropy failure = err %v, directories %d", err, directories)
@@ -165,7 +169,7 @@ func TestExecuteInstallHoldsAnExclusiveInstallLockAndRollsBackPartialArtifacts(t
 			events = append(events, "lock:"+path)
 			return func() error { events = append(events, "unlock"); return nil }, nil
 		},
-		RecoverIncomplete: func(string, string, string) error { return nil },
+		RecoverIncomplete: func(string, string, string, []string) error { return nil },
 		PathExists: func(path string) (bool, error) {
 			events = append(events, "inspect:"+path)
 			return false, nil
@@ -261,6 +265,15 @@ func TestExecuteInstallSecuresExistingRuntimeDirectories(t *testing.T) {
 			t.Errorf("%s permissions = %#o, want 0700", directory, permissions)
 		}
 	}
+	for _, path := range []string{filepath.Join(runtimeDirectory, "compose.yml"), filepath.Join(runtimeDirectory, "assets", "minio-init.sh"), filepath.Join(runtimeDirectory, "assets", "nginx-default.conf"), filepath.Join(runtimeDirectory, "assets", "prometheus.yml")} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if permissions := info.Mode().Perm(); permissions != 0o644 {
+			t.Errorf("%s permissions = %#o, want 0644", path, permissions)
+		}
+	}
 }
 
 func TestExecuteInstallDoesNotDeleteAFileThatWinsANoClobberRace(t *testing.T) {
@@ -274,13 +287,48 @@ func TestExecuteInstallDoesNotDeleteAFileThatWinsANoClobberRace(t *testing.T) {
 		Entropy:            bytes.NewReader(bytes.Repeat([]byte{0x77}, 32)),
 		PathExists:         func(string) (bool, error) { return false, nil },
 		MakeDirectory:      func(string, os.FileMode) error { return nil },
-		RecoverIncomplete:  func(string, string, string) error { return nil },
+		RecoverIncomplete:  func(string, string, string, []string) error { return nil },
 		AcquireInstallLock: func(context.Context, string) (func() error, error) { return func() error { return nil }, nil },
 		InitializeState:    func(string, setup.InstallState) error { writes++; return os.ErrExist },
 		RemovePath:         func(path string) error { removed = append(removed, path); return nil },
 	})
 	if err == nil || writes != 1 || len(removed) != 0 {
 		t.Fatalf("no-clobber race = err %v, writes %d, removed %v", err, writes, removed)
+	}
+}
+
+func TestExecuteInstallRollsBackOnlyPublishedDeploymentAssets(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: "runtime", StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetWrites := 0
+	removed := make([]string, 0)
+	_, err = ExecuteInstall(context.Background(), plan, InstallDependencies{
+		Entropy:       bytes.NewReader(bytes.Repeat([]byte{0x79}, 32)),
+		PathExists:    func(string) (bool, error) { return false, nil },
+		MakeDirectory: func(string, os.FileMode) error { return nil },
+		AcquireInstallLock: func(context.Context, string) (func() error, error) {
+			return func() error { return nil }, nil
+		},
+		RecoverIncomplete: func(string, string, string, []string) error { return nil },
+		InitializeState:   func(string, setup.InstallState) error { return nil },
+		WriteManifest:     func(string, []byte) error { return nil },
+		WriteDeploymentFile: func(string, []byte) error {
+			assetWrites++
+			if assetWrites == 2 {
+				return errors.New("asset disk full")
+			}
+			return nil
+		},
+		RemovePath: func(path string) error { removed = append(removed, path); return nil },
+	})
+	if err == nil || assetWrites != 2 {
+		t.Fatalf("asset failure = %v, writes %d", err, assetWrites)
+	}
+	want := "runtime/compose.yml,runtime/deployment.json,runtime/config/install-state.json"
+	if got := strings.Join(removed, ","); got != want {
+		t.Fatalf("asset rollback = %q, want %q", got, want)
 	}
 }
 
