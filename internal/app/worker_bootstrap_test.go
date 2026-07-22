@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
@@ -200,13 +202,42 @@ func TestWorkerBootstrapErrorsDoNotExposeLoaderSecrets(t *testing.T) {
 	}
 }
 
+func TestWorkerNormalStartupVerifiesCompletedBindingBeforeRuntimeServices(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:worker-binding-order?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open test client: %v", err)
+	}
+	bindingErr := errors.New("completed binding rejected")
+	checks := make([]string, 0, 2)
+	startup := workerBootstrap{
+		Bootstrap: completedAPIBootstrapForTest(),
+		State:     completedWorkerInstallStateForTest(completedAPIBootstrapForTest()),
+	}
+	err = runNormalWorkerWithOptions(context.Background(), startup, workerNormalStartupOptions{
+		openDatabase: func(context.Context, string) (*repoent.Client, error) {
+			return client, nil
+		},
+		checkSchemaCompatibility: func(context.Context, *repoent.Client, config.Config) error {
+			checks = append(checks, "schema")
+			return nil
+		},
+		verifyCompletedBinding: func(context.Context, workerBootstrap) error {
+			checks = append(checks, "binding")
+			return bindingErr
+		},
+	})
+	if !errors.Is(err, bindingErr) || strings.Join(checks, ",") != "schema,binding" {
+		t.Fatalf("runNormalWorkerWithOptions = err %v, checks %v; want schema then binding rejection before runtime services", err, checks)
+	}
+}
+
 func TestWorkerStartupKeepsCompatibilityCheckAndContainsNoMigration(t *testing.T) {
 	workerSource, err := os.ReadFile("worker.go")
 	if err != nil {
 		t.Fatalf("read worker.go: %v", err)
 	}
 	source := string(workerSource)
-	for _, required := range []string{"db.OpenContext(startupContext", "checkRuntimeSchemaCompatibility(startupContext", "runner.Run(ctx)"} {
+	for _, required := range []string{"options.openDatabase = db.OpenContext", "options.checkSchemaCompatibility = checkRuntimeSchemaCompatibility", "verifyCompletedStartupBinding(ctx", "runner.Run(ctx)"} {
 		if !strings.Contains(source, required) {
 			t.Errorf("worker startup missing %q", required)
 		}

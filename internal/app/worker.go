@@ -11,6 +11,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
@@ -31,6 +32,17 @@ func RunWorkerContext(ctx context.Context) error {
 }
 
 func runNormalWorker(ctx context.Context, startup workerBootstrap) error {
+	return runNormalWorkerWithOptions(ctx, startup, workerNormalStartupOptions{})
+}
+
+type workerNormalStartupOptions struct {
+	dependencyTimeout        time.Duration
+	openDatabase             func(context.Context, string) (*repoent.Client, error)
+	checkSchemaCompatibility func(context.Context, *repoent.Client, config.Config) error
+	verifyCompletedBinding   func(context.Context, workerBootstrap) error
+}
+
+func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, options workerNormalStartupOptions) error {
 	cfg, err := config.RuntimeFromBootstrap(startup.Bootstrap)
 	if err != nil {
 		return err
@@ -42,15 +54,33 @@ func runNormalWorker(ctx context.Context, startup workerBootstrap) error {
 		return err
 	}
 
-	startupContext, cancelStartup := context.WithTimeout(ctx, 15*time.Second)
+	if options.dependencyTimeout <= 0 {
+		options.dependencyTimeout = 15 * time.Second
+	}
+	if options.openDatabase == nil {
+		options.openDatabase = db.OpenContext
+	}
+	if options.checkSchemaCompatibility == nil {
+		options.checkSchemaCompatibility = checkRuntimeSchemaCompatibility
+	}
+	if options.verifyCompletedBinding == nil {
+		options.verifyCompletedBinding = func(ctx context.Context, startup workerBootstrap) error {
+			return verifyCompletedStartupBinding(ctx, apiStartup{Bootstrap: startup.Bootstrap, State: startup.State})
+		}
+	}
+
+	startupContext, cancelStartup := context.WithTimeout(ctx, options.dependencyTimeout)
 	defer cancelStartup()
-	client, err := db.OpenContext(startupContext, cfg.Database.URL)
+	client, err := options.openDatabase(startupContext, cfg.Database.URL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer client.Close()
-	if err := checkRuntimeSchemaCompatibility(startupContext, client, cfg); err != nil {
+	if err := options.checkSchemaCompatibility(startupContext, client, cfg); err != nil {
 		return err
+	}
+	if err := options.verifyCompletedBinding(startupContext, startup); err != nil {
+		return fmt.Errorf("verify completed setup binding: %w", err)
 	}
 	redisClient, err := newRedisClient(startupContext, cfg)
 	if err != nil {
