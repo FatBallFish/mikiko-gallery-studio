@@ -558,8 +558,26 @@ func init() {
 			return nil
 		}
 	}()
+	// clustertokenDescConsumedByNodeID is the schema descriptor for consumed_by_node_id field.
+	clustertokenDescConsumedByNodeID := clustertokenFields[6].Descriptor()
+	// clustertoken.ConsumedByNodeIDValidator is a validator for the "consumed_by_node_id" field. It is called by the builders before save.
+	clustertoken.ConsumedByNodeIDValidator = func() func(string) error {
+		validators := clustertokenDescConsumedByNodeID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(consumed_by_node_id string) error {
+			for _, fn := range fns {
+				if err := fn(consumed_by_node_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// clustertokenDescAuditActor is the schema descriptor for audit_actor field.
-	clustertokenDescAuditActor := clustertokenFields[7].Descriptor()
+	clustertokenDescAuditActor := clustertokenFields[8].Descriptor()
 	// clustertoken.AuditActorValidator is a validator for the "audit_actor" field. It is called by the builders before save.
 	clustertoken.AuditActorValidator = func() func(string) error {
 		validators := clustertokenDescAuditActor.Validators

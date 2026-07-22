@@ -12,10 +12,10 @@ func (AuditLog) Mixin() []ent.Mixin { return []ent.Mixin{TimeMixin{}} }
 func (AuditLog) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("actor_type").MaxLen(16).NotEmpty(),
-		field.String("actor_id").MaxLen(64).NotEmpty(),
+		field.String("actor_id").MaxLen(128).NotEmpty(),
 		field.String("action").MaxLen(64).NotEmpty(),
 		field.String("target_type").MaxLen(32).NotEmpty(),
-		field.String("target_id").MaxLen(64).NotEmpty(),
+		field.String("target_id").MaxLen(128).NotEmpty(),
 		field.String("result").MaxLen(16).Default("success"),
 		field.JSON("metadata", map[string]any{}).Optional(),
 		field.String("ip_addr").MaxLen(64).Default(""),

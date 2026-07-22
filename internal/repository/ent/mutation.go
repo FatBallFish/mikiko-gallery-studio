@@ -4867,23 +4867,24 @@ func (m *ClusterNodeMutation) ResetEdge(name string) error {
 // ClusterTokenMutation represents an operation that mutates the ClusterToken nodes in the graph.
 type ClusterTokenMutation struct {
 	config
-	op              Op
-	typ             string
-	id              *int
-	created_at      *time.Time
-	updated_at      *time.Time
-	token_id        *string
-	token_hash      *string
-	installation_id *string
-	role            *clustertoken.Role
-	expires_at      *time.Time
-	consumed_at     *time.Time
-	revoked_at      *time.Time
-	audit_actor     *string
-	clearedFields   map[string]struct{}
-	done            bool
-	oldValue        func(context.Context) (*ClusterToken, error)
-	predicates      []predicate.ClusterToken
+	op                  Op
+	typ                 string
+	id                  *int
+	created_at          *time.Time
+	updated_at          *time.Time
+	token_id            *string
+	token_hash          *string
+	installation_id     *string
+	role                *clustertoken.Role
+	expires_at          *time.Time
+	consumed_at         *time.Time
+	consumed_by_node_id *string
+	revoked_at          *time.Time
+	audit_actor         *string
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*ClusterToken, error)
+	predicates          []predicate.ClusterToken
 }
 
 var _ ent.Mutation = (*ClusterTokenMutation)(nil)
@@ -5285,6 +5286,55 @@ func (m *ClusterTokenMutation) ResetConsumedAt() {
 	delete(m.clearedFields, clustertoken.FieldConsumedAt)
 }
 
+// SetConsumedByNodeID sets the "consumed_by_node_id" field.
+func (m *ClusterTokenMutation) SetConsumedByNodeID(s string) {
+	m.consumed_by_node_id = &s
+}
+
+// ConsumedByNodeID returns the value of the "consumed_by_node_id" field in the mutation.
+func (m *ClusterTokenMutation) ConsumedByNodeID() (r string, exists bool) {
+	v := m.consumed_by_node_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConsumedByNodeID returns the old "consumed_by_node_id" field's value of the ClusterToken entity.
+// If the ClusterToken object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterTokenMutation) OldConsumedByNodeID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConsumedByNodeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConsumedByNodeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConsumedByNodeID: %w", err)
+	}
+	return oldValue.ConsumedByNodeID, nil
+}
+
+// ClearConsumedByNodeID clears the value of the "consumed_by_node_id" field.
+func (m *ClusterTokenMutation) ClearConsumedByNodeID() {
+	m.consumed_by_node_id = nil
+	m.clearedFields[clustertoken.FieldConsumedByNodeID] = struct{}{}
+}
+
+// ConsumedByNodeIDCleared returns if the "consumed_by_node_id" field was cleared in this mutation.
+func (m *ClusterTokenMutation) ConsumedByNodeIDCleared() bool {
+	_, ok := m.clearedFields[clustertoken.FieldConsumedByNodeID]
+	return ok
+}
+
+// ResetConsumedByNodeID resets all changes to the "consumed_by_node_id" field.
+func (m *ClusterTokenMutation) ResetConsumedByNodeID() {
+	m.consumed_by_node_id = nil
+	delete(m.clearedFields, clustertoken.FieldConsumedByNodeID)
+}
+
 // SetRevokedAt sets the "revoked_at" field.
 func (m *ClusterTokenMutation) SetRevokedAt(t time.Time) {
 	m.revoked_at = &t
@@ -5404,7 +5454,7 @@ func (m *ClusterTokenMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ClusterTokenMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 11)
 	if m.created_at != nil {
 		fields = append(fields, clustertoken.FieldCreatedAt)
 	}
@@ -5428,6 +5478,9 @@ func (m *ClusterTokenMutation) Fields() []string {
 	}
 	if m.consumed_at != nil {
 		fields = append(fields, clustertoken.FieldConsumedAt)
+	}
+	if m.consumed_by_node_id != nil {
+		fields = append(fields, clustertoken.FieldConsumedByNodeID)
 	}
 	if m.revoked_at != nil {
 		fields = append(fields, clustertoken.FieldRevokedAt)
@@ -5459,6 +5512,8 @@ func (m *ClusterTokenMutation) Field(name string) (ent.Value, bool) {
 		return m.ExpiresAt()
 	case clustertoken.FieldConsumedAt:
 		return m.ConsumedAt()
+	case clustertoken.FieldConsumedByNodeID:
+		return m.ConsumedByNodeID()
 	case clustertoken.FieldRevokedAt:
 		return m.RevokedAt()
 	case clustertoken.FieldAuditActor:
@@ -5488,6 +5543,8 @@ func (m *ClusterTokenMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldExpiresAt(ctx)
 	case clustertoken.FieldConsumedAt:
 		return m.OldConsumedAt(ctx)
+	case clustertoken.FieldConsumedByNodeID:
+		return m.OldConsumedByNodeID(ctx)
 	case clustertoken.FieldRevokedAt:
 		return m.OldRevokedAt(ctx)
 	case clustertoken.FieldAuditActor:
@@ -5557,6 +5614,13 @@ func (m *ClusterTokenMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetConsumedAt(v)
 		return nil
+	case clustertoken.FieldConsumedByNodeID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConsumedByNodeID(v)
+		return nil
 	case clustertoken.FieldRevokedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -5604,6 +5668,9 @@ func (m *ClusterTokenMutation) ClearedFields() []string {
 	if m.FieldCleared(clustertoken.FieldConsumedAt) {
 		fields = append(fields, clustertoken.FieldConsumedAt)
 	}
+	if m.FieldCleared(clustertoken.FieldConsumedByNodeID) {
+		fields = append(fields, clustertoken.FieldConsumedByNodeID)
+	}
 	if m.FieldCleared(clustertoken.FieldRevokedAt) {
 		fields = append(fields, clustertoken.FieldRevokedAt)
 	}
@@ -5623,6 +5690,9 @@ func (m *ClusterTokenMutation) ClearField(name string) error {
 	switch name {
 	case clustertoken.FieldConsumedAt:
 		m.ClearConsumedAt()
+		return nil
+	case clustertoken.FieldConsumedByNodeID:
+		m.ClearConsumedByNodeID()
 		return nil
 	case clustertoken.FieldRevokedAt:
 		m.ClearRevokedAt()
@@ -5658,6 +5728,9 @@ func (m *ClusterTokenMutation) ResetField(name string) error {
 		return nil
 	case clustertoken.FieldConsumedAt:
 		m.ResetConsumedAt()
+		return nil
+	case clustertoken.FieldConsumedByNodeID:
+		m.ResetConsumedByNodeID()
 		return nil
 	case clustertoken.FieldRevokedAt:
 		m.ResetRevokedAt()

@@ -33,6 +33,8 @@ type ClusterToken struct {
 	ExpiresAt time.Time `json:"expires_at,omitempty"`
 	// ConsumedAt holds the value of the "consumed_at" field.
 	ConsumedAt *time.Time `json:"consumed_at,omitempty"`
+	// ConsumedByNodeID holds the value of the "consumed_by_node_id" field.
+	ConsumedByNodeID *string `json:"consumed_by_node_id,omitempty"`
 	// RevokedAt holds the value of the "revoked_at" field.
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 	// AuditActor holds the value of the "audit_actor" field.
@@ -47,7 +49,7 @@ func (*ClusterToken) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case clustertoken.FieldID:
 			values[i] = new(sql.NullInt64)
-		case clustertoken.FieldTokenID, clustertoken.FieldTokenHash, clustertoken.FieldInstallationID, clustertoken.FieldRole, clustertoken.FieldAuditActor:
+		case clustertoken.FieldTokenID, clustertoken.FieldTokenHash, clustertoken.FieldInstallationID, clustertoken.FieldRole, clustertoken.FieldConsumedByNodeID, clustertoken.FieldAuditActor:
 			values[i] = new(sql.NullString)
 		case clustertoken.FieldCreatedAt, clustertoken.FieldUpdatedAt, clustertoken.FieldExpiresAt, clustertoken.FieldConsumedAt, clustertoken.FieldRevokedAt:
 			values[i] = new(sql.NullTime)
@@ -121,6 +123,13 @@ func (_m *ClusterToken) assignValues(columns []string, values []any) error {
 				_m.ConsumedAt = new(time.Time)
 				*_m.ConsumedAt = value.Time
 			}
+		case clustertoken.FieldConsumedByNodeID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field consumed_by_node_id", values[i])
+			} else if value.Valid {
+				_m.ConsumedByNodeID = new(string)
+				*_m.ConsumedByNodeID = value.String
+			}
 		case clustertoken.FieldRevokedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field revoked_at", values[i])
@@ -193,6 +202,11 @@ func (_m *ClusterToken) String() string {
 	if v := _m.ConsumedAt; v != nil {
 		builder.WriteString("consumed_at=")
 		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.ConsumedByNodeID; v != nil {
+		builder.WriteString("consumed_by_node_id=")
+		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
 	if v := _m.RevokedAt; v != nil {

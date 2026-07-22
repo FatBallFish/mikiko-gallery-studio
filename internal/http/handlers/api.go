@@ -63,6 +63,7 @@ import (
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	capserv "github.com/fatballfish/pic-gallery/internal/service/capabilities"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
+	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
@@ -99,6 +100,7 @@ type API struct {
 	storagePub storage.InvalidationPublisher
 	redeem     *redeemservice.Service
 	audit      *auditservice.Service
+	cluster    *clusterservice.Service
 	adminPerms domainadminauth.PermissionResolver
 	docsReady  DocsReadinessChecker
 	cfg        config.Config
@@ -275,6 +277,10 @@ func (a *API) SetStorageConfigService(service *storageconfigservice.Service, reg
 	a.storageCfg = service
 	a.storageReg = registry
 	a.storagePub = publisher
+}
+
+func (a *API) SetClusterService(service *clusterservice.Service) {
+	a.cluster = service
 }
 
 func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {

@@ -1,0 +1,111 @@
+components:
+  schemas:
+    ClusterToken:
+      type: object
+      required: [token_id, installation_id, role, expires_at, created_by, created_at, updated_at]
+      properties:
+        token_id: { type: string, format: uuid }
+        installation_id: { type: string }
+        role: { type: string, enum: [api, worker, web] }
+        expires_at: { type: string, format: date-time }
+        consumed_at: { type: string, format: date-time }
+        consumed_by_node_id: { type: string }
+        revoked_at: { type: string, format: date-time }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ClusterTokenCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [role, ttl_seconds]
+      properties:
+        role: { type: string, enum: [api, worker, web] }
+        ttl_seconds: { type: integer, minimum: 60, maximum: 86400 }
+    ClusterTokenIssued:
+      type: object
+      required: [token, credential]
+      properties:
+        token:
+          $ref: '#/components/schemas/ClusterToken'
+        credential:
+          type: string
+          format: password
+          readOnly: true
+          description: Returned once. The server persists only a one-way hash.
+    ClusterTokenResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ClusterToken'
+    ClusterTokenIssuedResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ClusterTokenIssued'
+    ClusterTokenListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ClusterToken'
+            pagination:
+              $ref: './common.yaml#/components/schemas/Pagination'
+    ClusterChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [token_id, role, node_public_key, application_version]
+      properties:
+        token_id: { type: string, format: uuid }
+        role: { type: string, enum: [api, worker, web] }
+        node_public_key: { type: string, writeOnly: true }
+        application_version: { type: string }
+    ClusterChallenge:
+      type: object
+      required: [challenge_id, server_nonce, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        server_nonce: { type: string }
+        expires_at: { type: string, format: date-time }
+    ClusterChallengeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ClusterChallenge'
+    ClusterJoinRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, token_id, role, node_id, node_public_key, proof]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        token_id: { type: string, format: uuid }
+        role: { type: string, enum: [api, worker, web] }
+        node_id: { type: string }
+        node_public_key: { type: string, writeOnly: true }
+        proof: { type: string, writeOnly: true }
+    ClusterJoinEnvelope:
+      type: object
+      required: [installation_id, node_id, role, expires_at, encrypted_envelope]
+      properties:
+        installation_id: { type: string }
+        node_id: { type: string }
+        role: { type: string, enum: [api, worker, web] }
+        expires_at: { type: string, format: date-time }
+        encrypted_envelope:
+          type: string
+          readOnly: true
+          description: Authenticated ciphertext containing only role-allowed runtime fields.
+    ClusterJoinResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ClusterJoinEnvelope'

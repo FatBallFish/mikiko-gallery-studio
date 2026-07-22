@@ -30,6 +30,8 @@ const (
 	FieldExpiresAt = "expires_at"
 	// FieldConsumedAt holds the string denoting the consumed_at field in the database.
 	FieldConsumedAt = "consumed_at"
+	// FieldConsumedByNodeID holds the string denoting the consumed_by_node_id field in the database.
+	FieldConsumedByNodeID = "consumed_by_node_id"
 	// FieldRevokedAt holds the string denoting the revoked_at field in the database.
 	FieldRevokedAt = "revoked_at"
 	// FieldAuditActor holds the string denoting the audit_actor field in the database.
@@ -49,6 +51,7 @@ var Columns = []string{
 	FieldRole,
 	FieldExpiresAt,
 	FieldConsumedAt,
+	FieldConsumedByNodeID,
 	FieldRevokedAt,
 	FieldAuditActor,
 }
@@ -76,6 +79,8 @@ var (
 	TokenHashValidator func(string) error
 	// InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
 	InstallationIDValidator func(string) error
+	// ConsumedByNodeIDValidator is a validator for the "consumed_by_node_id" field. It is called by the builders before save.
+	ConsumedByNodeIDValidator func(string) error
 	// AuditActorValidator is a validator for the "audit_actor" field. It is called by the builders before save.
 	AuditActorValidator func(string) error
 )
@@ -150,6 +155,11 @@ func ByExpiresAt(opts ...sql.OrderTermOption) OrderOption {
 // ByConsumedAt orders the results by the consumed_at field.
 func ByConsumedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldConsumedAt, opts...).ToFunc()
+}
+
+// ByConsumedByNodeID orders the results by the consumed_by_node_id field.
+func ByConsumedByNodeID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConsumedByNodeID, opts...).ToFunc()
 }
 
 // ByRevokedAt orders the results by the revoked_at field.

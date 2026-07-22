@@ -8,6 +8,7 @@ servers:
     description: Local API server
 tags:
   - name: Open Image API
+  - name: Cluster Enrollment
   - name: OpenAI Compat
 paths:
   /api/open/image/v1/reference-assets/uploads:
@@ -371,6 +372,44 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/CapabilitiesResponse
+  /api/open/cluster/v1/challenges:
+    post:
+      tags:
+        - Cluster Enrollment
+      summary: Begin encrypted cluster enrollment
+      operationId: createClusterChallenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterChallengeRequest
+      responses:
+        "501":
+          description: Encrypted enrollment is unavailable until the protocol implementation is enabled
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/cluster/v1/join:
+    post:
+      tags:
+        - Cluster Enrollment
+      summary: Complete encrypted cluster enrollment
+      operationId: joinCluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterJoinRequest
+      responses:
+        "501":
+          description: Encrypted enrollment is unavailable until the protocol implementation is enabled
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
 components:
   securitySchemes:
     bearerAuth:

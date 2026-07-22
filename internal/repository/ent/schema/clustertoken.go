@@ -21,6 +21,7 @@ func (ClusterToken) Fields() []ent.Field {
 		field.Enum("role").Values("api", "worker", "web"),
 		field.Time("expires_at").Immutable(),
 		field.Time("consumed_at").Optional().Nillable(),
+		field.String("consumed_by_node_id").MaxLen(128).Match(stableIdentifierPattern).Optional().Nillable(),
 		field.Time("revoked_at").Optional().Nillable(),
 		field.String("audit_actor").MaxLen(128).NotEmpty(),
 	}

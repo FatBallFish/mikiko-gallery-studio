@@ -68,6 +68,26 @@ func (_u *ClusterTokenUpdate) ClearConsumedAt() *ClusterTokenUpdate {
 	return _u
 }
 
+// SetConsumedByNodeID sets the "consumed_by_node_id" field.
+func (_u *ClusterTokenUpdate) SetConsumedByNodeID(v string) *ClusterTokenUpdate {
+	_u.mutation.SetConsumedByNodeID(v)
+	return _u
+}
+
+// SetNillableConsumedByNodeID sets the "consumed_by_node_id" field if the given value is not nil.
+func (_u *ClusterTokenUpdate) SetNillableConsumedByNodeID(v *string) *ClusterTokenUpdate {
+	if v != nil {
+		_u.SetConsumedByNodeID(*v)
+	}
+	return _u
+}
+
+// ClearConsumedByNodeID clears the value of the "consumed_by_node_id" field.
+func (_u *ClusterTokenUpdate) ClearConsumedByNodeID() *ClusterTokenUpdate {
+	_u.mutation.ClearConsumedByNodeID()
+	return _u
+}
+
 // SetRevokedAt sets the "revoked_at" field.
 func (_u *ClusterTokenUpdate) SetRevokedAt(v time.Time) *ClusterTokenUpdate {
 	_u.mutation.SetRevokedAt(v)
@@ -150,6 +170,11 @@ func (_u *ClusterTokenUpdate) check() error {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.role": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ConsumedByNodeID(); ok {
+		if err := clustertoken.ConsumedByNodeIDValidator(v); err != nil {
+			return &ValidationError{Name: "consumed_by_node_id", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.consumed_by_node_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.AuditActor(); ok {
 		if err := clustertoken.AuditActorValidator(v); err != nil {
 			return &ValidationError{Name: "audit_actor", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.audit_actor": %w`, err)}
@@ -181,6 +206,12 @@ func (_u *ClusterTokenUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if _u.mutation.ConsumedAtCleared() {
 		_spec.ClearField(clustertoken.FieldConsumedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ConsumedByNodeID(); ok {
+		_spec.SetField(clustertoken.FieldConsumedByNodeID, field.TypeString, value)
+	}
+	if _u.mutation.ConsumedByNodeIDCleared() {
+		_spec.ClearField(clustertoken.FieldConsumedByNodeID, field.TypeString)
 	}
 	if value, ok := _u.mutation.RevokedAt(); ok {
 		_spec.SetField(clustertoken.FieldRevokedAt, field.TypeTime, value)
@@ -248,6 +279,26 @@ func (_u *ClusterTokenUpdateOne) SetNillableConsumedAt(v *time.Time) *ClusterTok
 // ClearConsumedAt clears the value of the "consumed_at" field.
 func (_u *ClusterTokenUpdateOne) ClearConsumedAt() *ClusterTokenUpdateOne {
 	_u.mutation.ClearConsumedAt()
+	return _u
+}
+
+// SetConsumedByNodeID sets the "consumed_by_node_id" field.
+func (_u *ClusterTokenUpdateOne) SetConsumedByNodeID(v string) *ClusterTokenUpdateOne {
+	_u.mutation.SetConsumedByNodeID(v)
+	return _u
+}
+
+// SetNillableConsumedByNodeID sets the "consumed_by_node_id" field if the given value is not nil.
+func (_u *ClusterTokenUpdateOne) SetNillableConsumedByNodeID(v *string) *ClusterTokenUpdateOne {
+	if v != nil {
+		_u.SetConsumedByNodeID(*v)
+	}
+	return _u
+}
+
+// ClearConsumedByNodeID clears the value of the "consumed_by_node_id" field.
+func (_u *ClusterTokenUpdateOne) ClearConsumedByNodeID() *ClusterTokenUpdateOne {
+	_u.mutation.ClearConsumedByNodeID()
 	return _u
 }
 
@@ -346,6 +397,11 @@ func (_u *ClusterTokenUpdateOne) check() error {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.role": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ConsumedByNodeID(); ok {
+		if err := clustertoken.ConsumedByNodeIDValidator(v); err != nil {
+			return &ValidationError{Name: "consumed_by_node_id", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.consumed_by_node_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.AuditActor(); ok {
 		if err := clustertoken.AuditActorValidator(v); err != nil {
 			return &ValidationError{Name: "audit_actor", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.audit_actor": %w`, err)}
@@ -394,6 +450,12 @@ func (_u *ClusterTokenUpdateOne) sqlSave(ctx context.Context) (_node *ClusterTok
 	}
 	if _u.mutation.ConsumedAtCleared() {
 		_spec.ClearField(clustertoken.FieldConsumedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ConsumedByNodeID(); ok {
+		_spec.SetField(clustertoken.FieldConsumedByNodeID, field.TypeString, value)
+	}
+	if _u.mutation.ConsumedByNodeIDCleared() {
+		_spec.ClearField(clustertoken.FieldConsumedByNodeID, field.TypeString)
 	}
 	if value, ok := _u.mutation.RevokedAt(); ok {
 		_spec.SetField(clustertoken.FieldRevokedAt, field.TypeTime, value)

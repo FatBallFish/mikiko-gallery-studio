@@ -92,6 +92,20 @@ func (_c *ClusterTokenCreate) SetNillableConsumedAt(v *time.Time) *ClusterTokenC
 	return _c
 }
 
+// SetConsumedByNodeID sets the "consumed_by_node_id" field.
+func (_c *ClusterTokenCreate) SetConsumedByNodeID(v string) *ClusterTokenCreate {
+	_c.mutation.SetConsumedByNodeID(v)
+	return _c
+}
+
+// SetNillableConsumedByNodeID sets the "consumed_by_node_id" field if the given value is not nil.
+func (_c *ClusterTokenCreate) SetNillableConsumedByNodeID(v *string) *ClusterTokenCreate {
+	if v != nil {
+		_c.SetConsumedByNodeID(*v)
+	}
+	return _c
+}
+
 // SetRevokedAt sets the "revoked_at" field.
 func (_c *ClusterTokenCreate) SetRevokedAt(v time.Time) *ClusterTokenCreate {
 	_c.mutation.SetRevokedAt(v)
@@ -200,6 +214,11 @@ func (_c *ClusterTokenCreate) check() error {
 	if _, ok := _c.mutation.ExpiresAt(); !ok {
 		return &ValidationError{Name: "expires_at", err: errors.New(`ent: missing required field "ClusterToken.expires_at"`)}
 	}
+	if v, ok := _c.mutation.ConsumedByNodeID(); ok {
+		if err := clustertoken.ConsumedByNodeIDValidator(v); err != nil {
+			return &ValidationError{Name: "consumed_by_node_id", err: fmt.Errorf(`ent: validator failed for field "ClusterToken.consumed_by_node_id": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.AuditActor(); !ok {
 		return &ValidationError{Name: "audit_actor", err: errors.New(`ent: missing required field "ClusterToken.audit_actor"`)}
 	}
@@ -265,6 +284,10 @@ func (_c *ClusterTokenCreate) createSpec() (*ClusterToken, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.ConsumedAt(); ok {
 		_spec.SetField(clustertoken.FieldConsumedAt, field.TypeTime, value)
 		_node.ConsumedAt = &value
+	}
+	if value, ok := _c.mutation.ConsumedByNodeID(); ok {
+		_spec.SetField(clustertoken.FieldConsumedByNodeID, field.TypeString, value)
+		_node.ConsumedByNodeID = &value
 	}
 	if value, ok := _c.mutation.RevokedAt(); ok {
 		_spec.SetField(clustertoken.FieldRevokedAt, field.TypeTime, value)

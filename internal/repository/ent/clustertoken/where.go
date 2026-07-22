@@ -89,6 +89,11 @@ func ConsumedAt(v time.Time) predicate.ClusterToken {
 	return predicate.ClusterToken(sql.FieldEQ(FieldConsumedAt, v))
 }
 
+// ConsumedByNodeID applies equality check predicate on the "consumed_by_node_id" field. It's identical to ConsumedByNodeIDEQ.
+func ConsumedByNodeID(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldEQ(FieldConsumedByNodeID, v))
+}
+
 // RevokedAt applies equality check predicate on the "revoked_at" field. It's identical to RevokedAtEQ.
 func RevokedAt(v time.Time) predicate.ClusterToken {
 	return predicate.ClusterToken(sql.FieldEQ(FieldRevokedAt, v))
@@ -482,6 +487,81 @@ func ConsumedAtIsNil() predicate.ClusterToken {
 // ConsumedAtNotNil applies the NotNil predicate on the "consumed_at" field.
 func ConsumedAtNotNil() predicate.ClusterToken {
 	return predicate.ClusterToken(sql.FieldNotNull(FieldConsumedAt))
+}
+
+// ConsumedByNodeIDEQ applies the EQ predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDEQ(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldEQ(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDNEQ applies the NEQ predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDNEQ(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldNEQ(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDIn applies the In predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDIn(vs ...string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldIn(FieldConsumedByNodeID, vs...))
+}
+
+// ConsumedByNodeIDNotIn applies the NotIn predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDNotIn(vs ...string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldNotIn(FieldConsumedByNodeID, vs...))
+}
+
+// ConsumedByNodeIDGT applies the GT predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDGT(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldGT(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDGTE applies the GTE predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDGTE(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldGTE(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDLT applies the LT predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDLT(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldLT(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDLTE applies the LTE predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDLTE(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldLTE(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDContains applies the Contains predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDContains(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldContains(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDHasPrefix applies the HasPrefix predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDHasPrefix(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldHasPrefix(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDHasSuffix applies the HasSuffix predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDHasSuffix(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldHasSuffix(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDIsNil applies the IsNil predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDIsNil() predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldIsNull(FieldConsumedByNodeID))
+}
+
+// ConsumedByNodeIDNotNil applies the NotNil predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDNotNil() predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldNotNull(FieldConsumedByNodeID))
+}
+
+// ConsumedByNodeIDEqualFold applies the EqualFold predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDEqualFold(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldEqualFold(FieldConsumedByNodeID, v))
+}
+
+// ConsumedByNodeIDContainsFold applies the ContainsFold predicate on the "consumed_by_node_id" field.
+func ConsumedByNodeIDContainsFold(v string) predicate.ClusterToken {
+	return predicate.ClusterToken(sql.FieldContainsFold(FieldConsumedByNodeID, v))
 }
 
 // RevokedAtEQ applies the EQ predicate on the "revoked_at" field.

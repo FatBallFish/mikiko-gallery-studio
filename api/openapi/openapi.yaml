@@ -31,6 +31,8 @@ tags:
   - name: Admin Gallery
   - name: Admin Metrics
   - name: Admin Readiness
+  - name: Admin Cluster
+  - name: Cluster Enrollment
   - name: Admin Cashier
   - name: OpenAI Compat
 paths:
@@ -3972,6 +3974,116 @@ paths:
               schema: { $ref: ./components/schemas/text.yaml#/components/schemas/TextModelConnectionTestResponse }
         '502':
           description: Connection test failed without exposing upstream credentials or response bodies
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+  /api/ops/admin/v1/cluster/tokens:
+    get:
+      tags: [Admin Cluster]
+      summary: List cluster join tokens without credential material
+      operationId: listClusterTokens
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: role
+          in: query
+          schema: { type: string, enum: [api, worker, web] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, consumed, revoked, expired] }
+      responses:
+        '200':
+          description: Role-scoped join tokens with secrets and hashes omitted
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterTokenListResponse }
+        '403':
+          description: Requires dangerous-configuration permission on the initialized control node
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+    post:
+      tags: [Admin Cluster]
+      summary: Create a short-lived single-use cluster join token
+      operationId: createClusterToken
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterTokenCreateRequest }
+      responses:
+        '201':
+          description: Token created; its credential is returned only in this response
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterTokenIssuedResponse }
+        '403':
+          description: Requires dangerous-configuration permission on the initialized control node
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+  /api/ops/admin/v1/cluster/tokens/{token_id}:revoke:
+    post:
+      tags: [Admin Cluster]
+      summary: Revoke an unused cluster join token
+      operationId: revokeClusterToken
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Token revoked
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterTokenResponse }
+        '404':
+          description: Token does not exist in this installation
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+        '409':
+          description: Token was already consumed, revoked, or expired
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+  /api/open/cluster/v1/challenges:
+    post:
+      tags: [Cluster Enrollment]
+      summary: Begin encrypted cluster enrollment
+      operationId: createClusterChallenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterChallengeRequest }
+      responses:
+        '501':
+          description: Encrypted enrollment is unavailable until the protocol implementation is enabled
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+  /api/open/cluster/v1/join:
+    post:
+      tags: [Cluster Enrollment]
+      summary: Complete encrypted cluster enrollment
+      operationId: joinCluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterJoinRequest }
+      responses:
+        '501':
+          description: Encrypted enrollment is unavailable until the protocol implementation is enabled
           content:
             application/json:
               schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }

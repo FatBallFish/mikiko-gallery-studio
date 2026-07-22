@@ -15,6 +15,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domaincluster "github.com/fatballfish/pic-gallery/internal/domain/cluster"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	apphttp "github.com/fatballfish/pic-gallery/internal/http/router"
@@ -29,6 +30,7 @@ import (
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
@@ -316,6 +318,10 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	adminStore := entstore.NewAdminAuthStore(client)
 	adminAuthSvc := adminauthservice.NewService(cfg.Auth, adminStore)
 	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
+	clusterSvc := clusterservice.NewService(clusterservice.ServiceOptions{
+		Store:          entstore.NewClusterStore(client),
+		InstallationID: cfg.Runtime.InstallationID, DeploymentRole: domaincluster.NodeRole(cfg.Runtime.DeploymentRole),
+	})
 	adminUserSvc := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
 	redeemSvc := redeemservice.NewServiceWithStore(entstore.NewRedeemAdminStore(client))
 	callRecordSvc := admincallrecordservice.NewServiceWithStore(entstore.NewAdminCallRecordStore(client))
@@ -330,6 +336,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	api.SetSecureConfigService(secureConfigSvc)
 	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
+	api.SetClusterService(clusterSvc)
 
 	srv := newApplicationHTTPServer(cfg.App.Addr, apphttp.NewWithAPIAndConfig(api, cfg), bootstrapServeOptions{})
 
