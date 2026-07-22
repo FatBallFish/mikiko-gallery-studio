@@ -22,7 +22,7 @@ if (resolveSetupURL('/setup', 'https://api.example.test/base', 'https://admin.ex
 if (resolveSetupURL('setup', '/gateway', 'https://user.example.test/app') !== 'https://user.example.test/setup') {
   throw new Error('same-origin relative API bases must resolve setup against the gateway origin')
 }
-for (const unsafe of ['javascript:alert(1)', 'data:text/html,x', 'ftp://api.example.test/setup', '//evil.example/setup', 'https://user:pass@api.example.test/setup']) {
+for (const unsafe of ['javascript:alert(1)', 'data:text/html,x', 'ftp://api.example.test/setup', '//evil.example/setup', '\\\\evil.example/setup', 'https://user:pass@api.example.test/setup']) {
   try {
     resolveSetupURL(unsafe, 'https://api.example.test', 'https://user.example.test')
     throw new Error(`unsafe setup URL was accepted: ${unsafe}`)
@@ -59,7 +59,7 @@ for (const malformed of [null, {}, { phase: 'unknown' }, { phase: 'setup_require
 
 let requestURL = ''
 let requestInit: RequestInit | undefined
-const fetched = await fetchBootstrapStatus({
+void fetchBootstrapStatus({
   apiBaseUrl: 'https://api.example.test/root/',
   frontendOrigin: 'https://admin.example.test',
   fetchImpl: async (input, init) => {
@@ -70,10 +70,11 @@ const fetched = await fetchBootstrapStatus({
       headers: { 'Content-Type': 'application/json' },
     })
   },
+}).then((fetched) => {
+  if (fetched.phase !== 'ready' || requestURL !== 'https://api.example.test/root/api/system/v1/bootstrap-status') {
+    throw new Error(`bootstrap request used the wrong API base: ${requestURL}`)
+  }
+  if (requestInit?.method !== 'GET' || requestInit.credentials !== 'omit' || requestInit.cache !== 'no-store') {
+    throw new Error(`bootstrap request must be credential-free and no-store: ${JSON.stringify(requestInit)}`)
+  }
 })
-if (fetched.phase !== 'ready' || requestURL !== 'https://api.example.test/root/api/system/v1/bootstrap-status') {
-  throw new Error(`bootstrap request used the wrong API base: ${requestURL}`)
-}
-if (requestInit?.method !== 'GET' || requestInit.credentials !== 'omit' || requestInit.cache !== 'no-store') {
-  throw new Error(`bootstrap request must be credential-free and no-store: ${JSON.stringify(requestInit)}`)
-}

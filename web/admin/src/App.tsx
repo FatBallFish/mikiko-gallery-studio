@@ -38,7 +38,7 @@ function BootstrapFailure({ message, onRetry }: { message: string; onRetry: () =
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--bg)] p-6">
       <section className="w-full max-w-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-[var(--fg)]" role="alert">
-        <p className="text-xs font-semibold uppercase text-[var(--accent)]">Bootstrap status</p>
+        <p className="text-xs font-semibold text-[var(--accent)]">Bootstrap status</p>
         <h1 className="mt-2 text-lg font-semibold">后台服务暂不可用</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--muted-strong)]">{message}</p>
         <button className="mt-5 min-h-10 border border-[var(--border)] px-4 text-sm hover:border-[var(--accent)]" type="button" onClick={onRetry}>重新检测</button>

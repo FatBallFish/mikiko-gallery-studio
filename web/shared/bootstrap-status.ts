@@ -52,7 +52,11 @@ export function resolveSetupURL(setupURL: string, apiBaseUrl: string, frontendOr
   if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(value)) return parseHTTPURL(value).href
 
   const apiOrigin = resolveAPIBaseURL(apiBaseUrl, frontendOrigin).origin
-  return parseHTTPURL(value, `${apiOrigin}/`).href
+  const resolved = parseHTTPURL(value, `${apiOrigin}/`)
+  if (resolved.origin !== apiOrigin) {
+    throw new BootstrapStatusError('Relative bootstrap setup URL escaped the configured API origin')
+  }
+  return resolved.href
 }
 
 function optionalString(value: unknown) {
