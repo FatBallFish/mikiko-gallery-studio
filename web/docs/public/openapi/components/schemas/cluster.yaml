@@ -14,6 +14,38 @@ components:
         created_by: { type: string }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    ClusterNodeStatus:
+      type: object
+      required: [node_id, installation_id, role, application_version, runtime_schema_version, config_revision, health, effective_health, application_version_drift, runtime_schema_drift, config_revision_drift, created_at, updated_at]
+      properties:
+        node_id: { type: string }
+        installation_id: { type: string }
+        role: { type: string, enum: [single, control, api, worker, web] }
+        application_version: { type: string }
+        runtime_schema_version: { type: integer, minimum: 1 }
+        config_revision: { type: integer, format: int64, minimum: 0 }
+        health: { type: string, enum: [joining, healthy, degraded, unready, offline] }
+        effective_health: { type: string, enum: [joining, healthy, degraded, unready, offline] }
+        last_error: { type: string, maxLength: 1024 }
+        last_heartbeat_at: { type: string, format: date-time }
+        application_version_drift: { type: boolean }
+        runtime_schema_drift: { type: boolean }
+        config_revision_drift: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ClusterNodeListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/ClusterNodeStatus' }
+            pagination:
+              $ref: './common.yaml#/components/schemas/Pagination'
     ClusterTokenCreateRequest:
       type: object
       additionalProperties: false

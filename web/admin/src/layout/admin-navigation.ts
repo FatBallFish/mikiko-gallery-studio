@@ -3,6 +3,7 @@ import type { AdminNavGroup, AdminRouteId, ProtectedAdminRouteId } from '../type
 export const protectedRoutes: ProtectedAdminRouteId[] = [
   'dashboard',
   'monitoring',
+  'cluster',
   'users',
   'user-groups',
   'call-records',
@@ -25,6 +26,7 @@ export const navGroups: AdminNavGroup[] = [
     items: [
       { id: 'dashboard', label: '运营总览' },
       { id: 'monitoring', label: '系统健康' },
+      { id: 'cluster', label: '集群节点' },
     ],
   },
   {
@@ -81,6 +83,7 @@ const routeAliases: Partial<Record<string, ProtectedAdminRouteId>> = {
 export const routeTitles: Record<ProtectedAdminRouteId, string> = {
   dashboard: '运营总览',
   monitoring: '系统健康',
+  cluster: '集群节点',
   users: '用户管理',
   'user-groups': '用户分组',
   'call-records': '调用记录',

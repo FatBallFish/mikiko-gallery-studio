@@ -18,6 +18,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Network,
   NotebookText,
   Package,
   Route,
@@ -40,6 +41,7 @@ function withDefaults(Icon: LucideIcon) {
 
 export const DashboardIcon = withDefaults(LayoutDashboard)
 export const MonitoringIcon = withDefaults(Activity)
+export const ClusterIcon = withDefaults(Network)
 export const UsersIcon = withDefaults(Users)
 export const UserGroupsIcon = withDefaults(UsersRound)
 export const CallRecordsIcon = withDefaults(NotebookText)

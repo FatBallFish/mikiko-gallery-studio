@@ -366,13 +366,13 @@ func TestNewSetupStartupHandlerBuildsWithoutOpeningMiddleware(t *testing.T) {
 	}
 }
 
-func TestRuntimeSnapshotMatchRejectsRevisionOrVersionChange(t *testing.T) {
+func TestRuntimeSnapshotMatchRejectsIdentityRevisionOrVersionChange(t *testing.T) {
 	bootstrap := config.BootstrapConfig{
-		InstallationID: "installation", SchemaVersion: 1, ConfigRevision: 7,
+		InstallationID: "installation", ClusterNodeID: "node-a", SchemaVersion: 1, ConfigRevision: 7,
 		ApplicationVersion: "v1", Deployment: config.DeploymentContext{Role: config.DeploymentRoleSingle},
 	}
 	cfg := config.Config{Runtime: config.RuntimeConfig{
-		InstallationID: "installation", ConfigSchemaVersion: 1, ConfigRevision: 7,
+		InstallationID: "installation", ClusterNodeID: "node-a", ConfigSchemaVersion: 1, ConfigRevision: 7,
 		ApplicationVersion: "v1", DeploymentRole: config.DeploymentRoleSingle,
 	}}
 	if !runtimeMatchesBootstrapSnapshot(cfg, bootstrap) {
@@ -386,6 +386,11 @@ func TestRuntimeSnapshotMatchRejectsRevisionOrVersionChange(t *testing.T) {
 	cfg.Runtime.ApplicationVersion = "v2"
 	if runtimeMatchesBootstrapSnapshot(cfg, bootstrap) {
 		t.Fatal("changed application version matched bootstrap snapshot")
+	}
+	cfg.Runtime.ApplicationVersion = bootstrap.ApplicationVersion
+	cfg.Runtime.ClusterNodeID = "node-b"
+	if runtimeMatchesBootstrapSnapshot(cfg, bootstrap) {
+		t.Fatal("changed cluster node ID matched bootstrap snapshot")
 	}
 }
 

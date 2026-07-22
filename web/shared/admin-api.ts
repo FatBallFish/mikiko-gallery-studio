@@ -10,6 +10,7 @@ import type {
   AdminUserDetail,
   AuditLog,
   CallRecord,
+  ClusterNode,
   CashierCustomAmountConfig,
   CashierOverview,
   CashierPlan,
@@ -167,6 +168,10 @@ export const adminApi = {
   getMonitoringSnapshot: (window: MonitoringWindow): Promise<AdminMonitoringSnapshot> =>
     sharedApiClient.request<AdminMonitoringSnapshot>(API_PATHS.ops.monitoringSnapshot, { query: { window } }),
   getReadiness: async () => toReadinessReport(await sharedApiClient.request(API_PATHS.ops.readiness)),
+  listClusterNodes: async (page = 1, page_size = 20, role = ''): Promise<PageResult<ClusterNode>> => {
+    const result = normalizePage<ClusterNode>(await sharedApiClient.request(API_PATHS.ops.clusterNodes, { query: { page, page_size, role: role || undefined } }))
+    return result
+  },
   listConfig: async () => {
     const tabs = (await sharedApiClient.request<{ items: any[] }>(API_PATHS.ops.configTabs)).items ?? []
     return tabs.flatMap(toConfigItems)

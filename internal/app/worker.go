@@ -91,6 +91,12 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	if redisClient != nil {
 		defer redisClient.Close()
 	}
+	clusterStore := entstore.NewClusterStore(client)
+	heartbeat, err := startRuntimeHeartbeat(ctx, cfg, clusterStore)
+	if err != nil {
+		return err
+	}
+	defer heartbeat.Stop()
 
 	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
 	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {

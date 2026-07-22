@@ -1449,6 +1449,7 @@ func pendingRuntimeValues() map[string]string {
 		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY":   strings.Repeat("c", 64),
 		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": strings.Repeat("d", 64),
 		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY":    strings.Repeat("e", 64),
+		"CLUSTER_ENROLLMENT_SEAL_KEY":              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		"API_PORT":                                 "8080", "RELEASE_VERSION": "v1.0.0", "INSTALLATION_ID": uuid.NewString(),
 		"CONFIG_REVISION": "1", "APPLICATION_VERSION": "v1.0.0",
 	}

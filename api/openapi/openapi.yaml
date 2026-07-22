@@ -3977,6 +3977,37 @@ paths:
           content:
             application/json:
               schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+  /api/ops/admin/v1/cluster/nodes:
+    get:
+      tags: [Admin]
+      summary: List cluster node heartbeat, compatibility, and drift status
+      operationId: listAdminClusterNodes
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: role, in: query, schema: { type: string, enum: [single, control, api, worker, web] } }
+      responses:
+        '200':
+          description: Paginated read-only cluster node status
+          content:
+            application/json:
+              schema: { $ref: ./components/schemas/cluster.yaml#/components/schemas/ClusterNodeListResponse }
+        '400':
+          description: Invalid pagination or role filter
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+        '401':
+          description: Administrator authentication required
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
+        '403':
+          description: Read permission or API node authority required
+          content:
+            application/json:
+              schema: { $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse }
   /api/ops/admin/v1/cluster/tokens:
     get:
       tags: [Admin Cluster]

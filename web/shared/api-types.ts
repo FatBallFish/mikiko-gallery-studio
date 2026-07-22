@@ -99,6 +99,7 @@ export const API_PATHS = {
     refreshSession: '/api/ops/admin/v1/auth/session/refresh',
     logout: '/api/ops/admin/v1/auth/logout',
     auditLogs: '/api/ops/admin/v1/audit-logs',
+    clusterNodes: '/api/ops/admin/v1/cluster/nodes',
     adminUsers: '/api/ops/admin/v1/admin-users',
     adminUserDetail: '/api/ops/admin/v1/admin-users/{admin_id}',
     adminUserResetPassword: '/api/ops/admin/v1/admin-users/{admin_id}/reset-password',
@@ -729,6 +730,25 @@ export const ADMIN_PERMISSIONS = {
   viewAudit: 'view:audit',
 } as const satisfies Record<string, AdminPermission>
 export type AdminSession = { token: string; access_token?: string; expires_in_seconds?: number; admin_id?: number; email?: string; admin_name: string; role: AdminRole; permissions?: AdminPermission[] }
+export type ClusterNodeRole = 'single' | 'control' | 'api' | 'worker' | 'web' | string
+export type ClusterNodeHealth = 'joining' | 'healthy' | 'degraded' | 'unready' | 'offline' | string
+export type ClusterNode = {
+  node_id: string
+  installation_id: string
+  role: ClusterNodeRole
+  application_version: string
+  runtime_schema_version: number
+  config_revision: number
+  health: ClusterNodeHealth
+  effective_health: ClusterNodeHealth
+  last_error?: string
+  last_heartbeat_at?: string | null
+  application_version_drift: boolean
+  runtime_schema_drift: boolean
+  config_revision_drift: boolean
+  created_at: string
+  updated_at: string
+}
 export type AdminLoginResult = { access_token: string; expires_in_seconds: number; admin_id: number; email: string; role: string; permissions?: AdminPermission[] }
 export type AdminMetric = { key?: string; label: string; value: string; trend: string; detail?: string; tone: 'good' | 'warn' | 'bad' | 'danger' | 'neutral' }
 export type ProviderHealth = { provider: string; provider_code?: string; provider_type?: string; status: 'healthy' | 'degraded' | 'down' | string; health_status?: string; latency_ms: number; error_rate: string; note: string; enabled?: boolean }

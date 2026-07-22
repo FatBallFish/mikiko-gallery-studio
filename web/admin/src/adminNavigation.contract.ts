@@ -32,6 +32,10 @@ if (!(protectedRoutes as readonly string[]).includes('system-settings')) {
   throw new Error('system-settings should be the single navigable protected settings route')
 }
 
+if (!(protectedRoutes as readonly string[]).includes('cluster') || routeTitles.cluster !== '集群节点') {
+  throw new Error('cluster should be a read-only protected operations route')
+}
+
 if (navGroups.length !== 5 || navGroups.some((group) => group.items.length === 0)) {
   throw new Error('admin navigation must keep five populated operational groups')
 }

@@ -104,6 +104,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/auth/session/refresh", api.HandleAdminRefresh)
 		mux.HandleFunc("/api/ops/admin/v1/auth/logout", api.HandleAdminLogout)
 		mux.HandleFunc("/api/ops/admin/v1/audit-logs", api.HandleAdminAuditLogs)
+		mux.HandleFunc("/api/ops/admin/v1/cluster/nodes", api.HandleAdminClusterNodes)
 		mux.HandleFunc("/api/ops/admin/v1/cluster/tokens", api.HandleAdminClusterTokens)
 		mux.HandleFunc("/api/ops/admin/v1/cluster/tokens/", api.HandleAdminClusterTokenDetail)
 		mux.HandleFunc("/api/ops/admin/v1/image-reviews", api.HandleAdminImageReviews)

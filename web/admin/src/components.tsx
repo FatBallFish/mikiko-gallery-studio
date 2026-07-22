@@ -16,6 +16,7 @@ import {
   CallRecordsIcon,
   CashierIcon,
   ChevronRightIcon,
+  ClusterIcon,
   DashboardIcon,
   EmptyIcon,
   ImageEmptyIcon,
@@ -1105,6 +1106,7 @@ function routeIcon(route: ProtectedAdminRouteId) {
   const icons: Record<ProtectedAdminRouteId, React.ReactNode> = {
     dashboard: <DashboardIcon className={navIconClass} />,
     monitoring: <MonitoringIcon className={navIconClass} />,
+    cluster: <ClusterIcon className={navIconClass} />,
     users: <UsersIcon />,
     'user-groups': <UserGroupsIcon className={navIconClass} />,
     'call-records': <CallRecordsIcon className={navIconClass} />,

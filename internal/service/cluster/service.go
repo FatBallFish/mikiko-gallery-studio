@@ -45,10 +45,14 @@ type Store interface {
 	GetTokenForEnrollment(ctx context.Context, installationID, tokenID string, at time.Time) (domaincluster.TokenRecord, error)
 	CreateChallenge(ctx context.Context, record domaincluster.ChallengeRecord) (domaincluster.ChallengeRecord, error)
 	GetChallenge(ctx context.Context, installationID, challengeID string) (domaincluster.ChallengeRecord, error)
+	ListNodes(ctx context.Context, installationID string, request domaincluster.ListNodesRequest) ([]domaincluster.Node, int, error)
+	CreateNode(ctx context.Context, node domaincluster.Node) (domaincluster.Node, error)
 	AcceptEnrollment(ctx context.Context, installationID, tokenID, tokenHash string, node domaincluster.Node, acceptedAt time.Time) (domaincluster.TokenRecord, domaincluster.Node, error)
 	AcceptEnrollmentWithChallenge(ctx context.Context, installationID, challengeID, tokenID, tokenHash string, node domaincluster.Node, acceptedAt time.Time) (domaincluster.TokenRecord, domaincluster.Node, domaincluster.ChallengeRecord, error)
 	HeartbeatNode(ctx context.Context, installationID string, request domaincluster.HeartbeatRequest, heartbeatAt time.Time) (domaincluster.Node, error)
 }
+
+const nodeOfflineAfter = 30 * time.Second
 
 type ServiceOptions struct {
 	Store             Store
@@ -321,7 +325,7 @@ func (s *Service) HeartbeatNode(ctx context.Context, request domaincluster.Heart
 	request.NodeID = strings.TrimSpace(request.NodeID)
 	request.ApplicationVersion = strings.TrimSpace(request.ApplicationVersion)
 	request.LastError = strings.TrimSpace(request.LastError)
-	if request.NodeID == "" || !validNodeHealth(request.Health) || request.ApplicationVersion == "" || request.RuntimeSchemaVersion <= 0 || request.ConfigRevision < 0 || len(request.LastError) > 1024 {
+	if request.NodeID == "" || !validNodeRole(request.Role) || !validNodeHealth(request.Health) || request.ApplicationVersion == "" || request.RuntimeSchemaVersion <= 0 || request.ConfigRevision < 0 || len(request.LastError) > 1024 {
 		return domaincluster.Node{}, errs.BadRequest("invalid node heartbeat")
 	}
 	node, err := s.store.HeartbeatNode(ctx, s.installationID, request, s.now().UTC())
@@ -329,6 +333,59 @@ func (s *Service) HeartbeatNode(ctx context.Context, request domaincluster.Heart
 		return domaincluster.Node{}, normalizeStoreError(err)
 	}
 	return node, nil
+}
+
+func (s *Service) ListNodes(ctx context.Context, request domaincluster.ListNodesRequest) (domaincluster.NodePage, error) {
+	installation, err := s.requireReadableInstallation(ctx)
+	if err != nil {
+		return domaincluster.NodePage{}, err
+	}
+	if request.Role != "" && !validNodeRole(request.Role) {
+		return domaincluster.NodePage{}, errs.BadRequest("invalid node role")
+	}
+	if request.Page <= 0 {
+		request.Page = 1
+	}
+	if request.PageSize <= 0 {
+		request.PageSize = 20
+	}
+	if request.PageSize > 100 {
+		return domaincluster.NodePage{}, errs.BadRequest("page_size must be at most 100")
+	}
+	nodes, total, err := s.store.ListNodes(ctx, s.installationID, request)
+	if err != nil {
+		return domaincluster.NodePage{}, normalizeStoreError(err)
+	}
+	now := s.now().UTC()
+	items := make([]domaincluster.NodeStatus, 0, len(nodes))
+	for _, node := range nodes {
+		effective := node.Health
+		lastContact := node.CreatedAt
+		if node.LastHeartbeatAt != nil {
+			lastContact = *node.LastHeartbeatAt
+		}
+		if !lastContact.IsZero() && !lastContact.Add(nodeOfflineAfter).After(now) {
+			effective = domaincluster.NodeHealthOffline
+		}
+		items = append(items, domaincluster.NodeStatus{
+			Node: node, EffectiveHealth: effective,
+			ApplicationVersionDrift: node.ApplicationVersion != installation.ApplicationVersion,
+			RuntimeSchemaDrift:      node.RuntimeSchemaVersion != installation.RuntimeSchemaVersion,
+			ConfigRevisionDrift:     node.ConfigRevision != installation.ConfigRevision,
+		})
+	}
+	return domaincluster.NodePage{Items: items, Page: request.Page, PageSize: request.PageSize, Total: total}, nil
+}
+
+func (s *Service) requireReadableInstallation(ctx context.Context) (domaincluster.Installation, error) {
+	if s.installationID == "" || (s.deploymentRole != domaincluster.NodeRoleSingle && s.deploymentRole != domaincluster.NodeRoleControl && s.deploymentRole != domaincluster.NodeRoleAPI) {
+		return domaincluster.Installation{}, errs.New(http.StatusForbidden, errs.CodeForbidden, "cluster API authority is required")
+	}
+	installation, err := s.store.GetInstallation(ctx, s.installationID)
+	if err != nil || installation.InstallationID != s.installationID || !installation.Initialized {
+		return domaincluster.Installation{}, errs.New(http.StatusForbidden, errs.CodeForbidden, "initialized cluster installation is required")
+	}
+	return installation, nil
 }
 
 func (s *Service) requireControlInstallation(ctx context.Context) (domaincluster.Installation, error) {
@@ -369,6 +426,15 @@ func validJoinedNodeRole(role domaincluster.NodeRole) bool {
 func validNodeHealth(health domaincluster.NodeHealth) bool {
 	switch health {
 	case domaincluster.NodeHealthJoining, domaincluster.NodeHealthHealthy, domaincluster.NodeHealthDegraded, domaincluster.NodeHealthUnready, domaincluster.NodeHealthOffline:
+		return true
+	default:
+		return false
+	}
+}
+
+func validNodeRole(role domaincluster.NodeRole) bool {
+	switch role {
+	case domaincluster.NodeRoleSingle, domaincluster.NodeRoleControl, domaincluster.NodeRoleAPI, domaincluster.NodeRoleWorker, domaincluster.NodeRoleWeb:
 		return true
 	default:
 		return false

@@ -97,6 +97,27 @@ type Node struct {
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
+type ListNodesRequest struct {
+	Page     int
+	PageSize int
+	Role     NodeRole
+}
+
+type NodeStatus struct {
+	Node
+	EffectiveHealth         NodeHealth `json:"effective_health"`
+	ApplicationVersionDrift bool       `json:"application_version_drift"`
+	RuntimeSchemaDrift      bool       `json:"runtime_schema_drift"`
+	ConfigRevisionDrift     bool       `json:"config_revision_drift"`
+}
+
+type NodePage struct {
+	Items    []NodeStatus `json:"items"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"page_size"`
+	Total    int          `json:"total"`
+}
+
 type RegisterNodeRequest struct {
 	NodeID               string
 	Role                 NodeRole
@@ -180,6 +201,7 @@ type JoinResponse struct {
 
 type HeartbeatRequest struct {
 	NodeID               string
+	Role                 NodeRole
 	Health               NodeHealth
 	LastError            string
 	ApplicationVersion   string

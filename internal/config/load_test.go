@@ -194,8 +194,12 @@ func TestLoadRuntimeRequiresRetainedSetupTokenVersionOnlyOnAuthorities(t *testin
 		"APPLICATION_VERSION":    "test",
 	})
 	removeRuntimeFieldForTest(t, joinedPath, "SETUP_TOKEN_VERSION")
-	if _, err := LoadRuntime(joinedPath); err != nil {
+	joined, err := LoadRuntime(joinedPath)
+	if err != nil {
 		t.Fatalf("joined node without setup token version was rejected: %v", err)
+	}
+	if joined.Runtime.ClusterNodeID != "web-node-test" {
+		t.Fatalf("joined runtime cluster node ID = %q", joined.Runtime.ClusterNodeID)
 	}
 }
 

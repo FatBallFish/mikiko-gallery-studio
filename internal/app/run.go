@@ -320,8 +320,9 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	adminStore := entstore.NewAdminAuthStore(client)
 	adminAuthSvc := adminauthservice.NewService(cfg.Auth, adminStore)
 	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
+	clusterStore := entstore.NewClusterStore(client)
 	clusterSvc := clusterservice.NewService(clusterservice.ServiceOptions{
-		Store:          entstore.NewClusterStore(client),
+		Store:          clusterStore,
 		InstallationID: cfg.Runtime.InstallationID, DeploymentRole: domaincluster.NodeRole(cfg.Runtime.DeploymentRole),
 		RuntimeValues: startup.Bootstrap.Values, EnrollmentSealKey: startup.Bootstrap.Values["CLUSTER_ENROLLMENT_SEAL_KEY"],
 	})
@@ -340,6 +341,11 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 	api.SetClusterService(clusterSvc)
+	heartbeat, err := startRuntimeHeartbeat(metricsContext, cfg, clusterStore)
+	if err != nil {
+		return err
+	}
+	defer heartbeat.Stop()
 
 	srv := newApplicationHTTPServer(cfg.App.Addr, apphttp.NewWithAPIAndConfig(api, cfg), bootstrapServeOptions{})
 
@@ -404,6 +410,7 @@ func sanitizedStartupDependencyError(ctx context.Context, err, fallback error) e
 
 func runtimeMatchesBootstrapSnapshot(cfg config.Config, bootstrap config.BootstrapConfig) bool {
 	return cfg.Runtime.InstallationID == bootstrap.InstallationID &&
+		cfg.Runtime.ClusterNodeID == bootstrap.ClusterNodeID &&
 		cfg.Runtime.ConfigSchemaVersion == bootstrap.SchemaVersion &&
 		cfg.Runtime.ConfigRevision == bootstrap.ConfigRevision &&
 		cfg.Runtime.ApplicationVersion == bootstrap.ApplicationVersion &&

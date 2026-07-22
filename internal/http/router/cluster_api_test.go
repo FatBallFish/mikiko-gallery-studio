@@ -95,6 +95,40 @@ func TestClusterTokenAdministrationRequiresDangerousPermissionAndControlRole(t *
 	}
 }
 
+func TestClusterNodeListIsReadOnlyAndAvailableThroughAPIReplicas(t *testing.T) {
+	harness := newClusterAPIHarness(t, domainadminauth.RoleAdmin, domaincluster.NodeRoleAPI)
+	now := time.Date(2026, 7, 23, 5, 59, 50, 0, time.UTC)
+	if _, err := harness.store.CreateNode(t.Context(), domaincluster.Node{
+		NodeID: "worker-list-a", InstallationID: harness.installationID, Role: domaincluster.NodeRoleWorker,
+		ApplicationVersion: "v1", RuntimeSchemaVersion: 1, ConfigRevision: 5,
+		Health: domaincluster.NodeHealthHealthy, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cluster/nodes?page=1&page_size=20", nil)
+	req.Header.Set("Authorization", "Bearer "+harness.token)
+	rec := httptest.NewRecorder()
+	harness.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list cluster nodes status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Items []domaincluster.NodeStatus `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil || len(response.Data.Items) != 1 || response.Data.Items[0].NodeID != "worker-list-a" {
+		t.Fatalf("list cluster nodes response=%#v err=%v", response, err)
+	}
+	post := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cluster/nodes", strings.NewReader(`{}`))
+	post.Header.Set("Authorization", "Bearer "+harness.token)
+	postRec := httptest.NewRecorder()
+	harness.handler.ServeHTTP(postRec, post)
+	if postRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("cluster nodes accepted mutation status=%d body=%s", postRec.Code, postRec.Body.String())
+	}
+}
+
 func TestClusterPublicProtocolEncryptsEnrollmentWithoutCredentialInHTTPBodies(t *testing.T) {
 	harness := newClusterAPIHarness(t, domainadminauth.RoleSuperAdmin, domaincluster.NodeRoleControl)
 	issued, err := harness.cluster.CreateToken(t.Context(), domaincluster.CreateTokenRequest{Role: domaincluster.JoinRoleWorker, TTL: time.Hour, ActorID: "1"})
@@ -152,10 +186,12 @@ func TestClusterPublicProtocolEncryptsEnrollmentWithoutCredentialInHTTPBodies(t 
 }
 
 type clusterAPIHarness struct {
-	handler http.Handler
-	token   string
-	audit   *auditservice.Service
-	cluster *clusterservice.Service
+	handler        http.Handler
+	token          string
+	audit          *auditservice.Service
+	cluster        *clusterservice.Service
+	store          *entstore.ClusterStore
+	installationID string
 }
 
 func newClusterAPIHarness(t *testing.T, adminRole string, nodeRole domaincluster.NodeRole) clusterAPIHarness {
@@ -191,8 +227,9 @@ func newClusterAPIHarness(t *testing.T, adminRole string, nodeRole domaincluster
 		t.Fatal(err)
 	}
 	audit := auditservice.NewService(entstore.NewAuditStore(client))
+	clusterStore := entstore.NewClusterStore(client)
 	cluster := clusterservice.NewService(clusterservice.ServiceOptions{
-		Store: entstore.NewClusterStore(client), InstallationID: cfg.Runtime.InstallationID,
+		Store: clusterStore, InstallationID: cfg.Runtime.InstallationID,
 		DeploymentRole: nodeRole, Now: func() time.Time { return time.Date(2026, 7, 23, 6, 0, 0, 0, time.UTC) },
 		RuntimeValues: map[string]string{
 			"DATABASE_URL": "postgres://app:password@db:5432/app", "REDIS_URL": "redis://redis:6379/0", "REDIS_KEY_PREFIX": "app",
@@ -206,7 +243,10 @@ func newClusterAPIHarness(t *testing.T, adminRole string, nodeRole domaincluster
 	api := handlers.NewAPIWithCompletionServices(cfg, nil, nil, nil, nil, nil, nil, adminAuth, audit)
 	api.SetClusterService(cluster)
 	handler := NewWithAPI(api)
-	return clusterAPIHarness{handler: handler, token: loginAdminWithCredentials(t, handler, email, "password"), audit: audit, cluster: cluster}
+	return clusterAPIHarness{
+		handler: handler, token: loginAdminWithCredentials(t, handler, email, "password"), audit: audit, cluster: cluster,
+		store: clusterStore, installationID: cfg.Runtime.InstallationID,
+	}
 }
 
 func mustClusterJSON(t *testing.T, value any) []byte {

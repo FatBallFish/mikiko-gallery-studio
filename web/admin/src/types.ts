@@ -4,6 +4,7 @@ export type AdminRouteId =
   | 'login'
   | 'dashboard'
   | 'monitoring'
+  | 'cluster'
   | 'users'
   | 'user-groups'
   | 'call-records'
@@ -33,6 +34,7 @@ export const ROLE_PERMISSION_MAP: Partial<Record<AdminRole, AdminPermission[]>> 
 export const ADMIN_ROUTE_PERMISSION_MAP: Record<ProtectedAdminRouteId, AdminPermission> = {
   dashboard: 'read:all',
   monitoring: 'read:all',
+  cluster: 'read:all',
   users: 'manage:users',
   'user-groups': 'manage:users',
   'call-records': 'read:all',
@@ -52,6 +54,7 @@ export const ADMIN_ROUTE_PERMISSION_MAP: Record<ProtectedAdminRouteId, AdminPerm
 export const ADMIN_ROUTE_ORDER: ProtectedAdminRouteId[] = [
   'dashboard',
   'monitoring',
+  'cluster',
   'users',
   'user-groups',
   'call-records',

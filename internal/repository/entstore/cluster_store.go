@@ -210,6 +210,27 @@ func (s *ClusterStore) GetChallenge(ctx context.Context, installationID, challen
 	return s.getChallenge(ctx, installationID, challengeID)
 }
 
+func (s *ClusterStore) ListNodes(ctx context.Context, installationID string, request domaincluster.ListNodesRequest) ([]domaincluster.Node, int, error) {
+	query := s.client.ClusterNode.Query().Where(clusternode.InstallationIDEQ(installationID))
+	if request.Role != "" {
+		query = query.Where(clusternode.RoleEQ(clusternode.Role(request.Role)))
+	}
+	total, err := query.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	entities, err := query.Order(repoent.Desc(clusternode.FieldUpdatedAt), repoent.Desc(clusternode.FieldID)).
+		Offset((request.Page - 1) * request.PageSize).Limit(request.PageSize).All(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]domaincluster.Node, 0, len(entities))
+	for _, entity := range entities {
+		items = append(items, mapClusterNode(entity))
+	}
+	return items, total, nil
+}
+
 func (s *ClusterStore) revokeToken(ctx context.Context, installationID, tokenID string, revokedAt time.Time) (domaincluster.TokenRecord, error) {
 	updated, err := s.client.ClusterToken.Update().
 		Where(
@@ -462,7 +483,7 @@ func (s *ClusterStore) createNodeStrict(ctx context.Context, node domaincluster.
 
 func (s *ClusterStore) HeartbeatNode(ctx context.Context, installationID string, request domaincluster.HeartbeatRequest, heartbeatAt time.Time) (domaincluster.Node, error) {
 	updated, err := s.client.ClusterNode.Update().
-		Where(clusternode.InstallationIDEQ(installationID), clusternode.NodeIDEQ(request.NodeID)).
+		Where(clusternode.InstallationIDEQ(installationID), clusternode.NodeIDEQ(request.NodeID), clusternode.RoleEQ(clusternode.Role(request.Role))).
 		SetHealth(clusternode.Health(request.Health)).
 		SetLastError(request.LastError).
 		SetAppVersion(request.ApplicationVersion).

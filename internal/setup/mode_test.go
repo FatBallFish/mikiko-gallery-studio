@@ -226,6 +226,7 @@ func completedBootstrap(role config.DeploymentRole) config.BootstrapConfig {
 	if role == config.DeploymentRoleSingle || role == config.DeploymentRoleControl {
 		bootstrap.SetupTokenVersion = 1
 		bootstrap.Values["SETUP_TOKEN_VERSION"] = "1"
+		bootstrap.Values["CLUSTER_ENROLLMENT_SEAL_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	}
 	bootstrap.Values["POSTGRES_MANAGED"] = "false"
 	bootstrap.Values["REDIS_MANAGED"] = "false"

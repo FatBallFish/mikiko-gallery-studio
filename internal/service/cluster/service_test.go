@@ -178,7 +178,7 @@ func TestServiceRegistersUniqueNodesAndUpdatesHeartbeatMetadata(t *testing.T) {
 	}
 	now = now.Add(15 * time.Second)
 	updated, err := service.HeartbeatNode(t.Context(), domaincluster.HeartbeatRequest{
-		NodeID: "worker-a", Health: domaincluster.NodeHealthHealthy,
+		NodeID: "worker-a", Role: domaincluster.NodeRoleWorker, Health: domaincluster.NodeHealthHealthy,
 		ApplicationVersion: "v1", RuntimeSchemaVersion: 1, ConfigRevision: 10,
 	})
 	if err != nil || updated.LastHeartbeatAt == nil || !updated.LastHeartbeatAt.Equal(now) || updated.ConfigRevision != 10 {
@@ -186,6 +186,32 @@ func TestServiceRegistersUniqueNodesAndUpdatesHeartbeatMetadata(t *testing.T) {
 	}
 	if len(store.auditRecords) != 5 || store.auditRecords[2].Action != "cluster.node.register" {
 		t.Fatalf("node audit records = %#v", store.auditRecords)
+	}
+}
+
+func TestListNodesComputesOfflineAndVersionConfigDrift(t *testing.T) {
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(domaincluster.Installation{
+		InstallationID: clusterTestInstallationID, Initialized: true,
+		ApplicationVersion: "v2", RuntimeSchemaVersion: 2, ConfigRevision: 9,
+	})
+	oldHeartbeat := now.Add(-time.Minute)
+	store.nodes["worker-old"] = domaincluster.Node{
+		NodeID: "worker-old", InstallationID: clusterTestInstallationID, Role: domaincluster.NodeRoleWorker,
+		ApplicationVersion: "v1", RuntimeSchemaVersion: 1, ConfigRevision: 8, Health: domaincluster.NodeHealthHealthy,
+		LastHeartbeatAt: &oldHeartbeat, CreatedAt: oldHeartbeat, UpdatedAt: oldHeartbeat,
+	}
+	service := NewService(ServiceOptions{
+		Store: store, InstallationID: clusterTestInstallationID, DeploymentRole: domaincluster.NodeRoleControl,
+		Now: func() time.Time { return now },
+	})
+	page, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("list nodes = %#v, %v", page, err)
+	}
+	item := page.Items[0]
+	if item.EffectiveHealth != domaincluster.NodeHealthOffline || !item.ApplicationVersionDrift || !item.RuntimeSchemaDrift || !item.ConfigRevisionDrift {
+		t.Fatalf("node status = %#v", item)
 	}
 }
 

@@ -4,7 +4,7 @@ import { useBootstrapGuard } from './bootstrapGuard'
 import { adminApi } from '../../shared/admin-api'
 import { EmptyBlock, ToastRail, useHashRoute, useToasts } from './components'
 import { AdminLayout, normalizeRoute, protectedRoutes, routeHref } from './layout/AdminLayout'
-import { AuditPage, CallRecordsPage, CashierPage, LoginPage, MonitoringPage, OrdersPage, OverviewPage, PackagesPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, SystemSettingsPage, SystemUsersPage, UserGroupsPage, UsersPage } from './pages/index'
+import { AuditPage, CallRecordsPage, CashierPage, ClusterPage, LoginPage, MonitoringPage, OrdersPage, OverviewPage, PackagesPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, SystemSettingsPage, SystemUsersPage, UserGroupsPage, UsersPage } from './pages/index'
 import { canAccessAdminRoute, firstAccessibleAdminRoute } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId } from './types'
 import { useAdminPageMotion } from './ui/adminMotion'
@@ -217,6 +217,8 @@ function AdminApplication() {
         return <OverviewPage />
       case 'monitoring':
         return <MonitoringPage />
+      case 'cluster':
+        return <ClusterPage />
       case 'routing':
         return <RoutingPage onFeedback={feedback} />
       case 'pricing':

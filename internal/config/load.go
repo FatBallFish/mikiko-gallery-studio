@@ -136,6 +136,7 @@ func RuntimeFromBootstrap(bootstrap BootstrapConfig) (Config, error) {
 		DeploymentRole:      bootstrap.Deployment.Role,
 		Path:                bootstrap.Path,
 		InstallationID:      bootstrap.InstallationID,
+		ClusterNodeID:       bootstrap.ClusterNodeID,
 		ApplicationVersion:  bootstrap.ApplicationVersion,
 		ConfigSchemaVersion: bootstrap.SchemaVersion,
 		ConfigRevision:      bootstrap.ConfigRevision,

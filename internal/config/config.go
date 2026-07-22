@@ -27,6 +27,7 @@ type RuntimeConfig struct {
 	DeploymentRole      DeploymentRole
 	Path                string
 	InstallationID      string
+	ClusterNodeID       string
 	ApplicationVersion  string
 	ConfigSchemaVersion int
 	ConfigRevision      int

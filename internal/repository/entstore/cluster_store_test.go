@@ -275,17 +275,21 @@ func TestClusterStoreEnforcesNodeIdentityAndUpdatesHeartbeat(t *testing.T) {
 	}
 	heartbeatAt := now.Add(10 * time.Second)
 	updated, err := store.HeartbeatNode(t.Context(), installationID, domaincluster.HeartbeatRequest{
-		NodeID: "api-node-1", Health: domaincluster.NodeHealthHealthy, ApplicationVersion: "v1",
+		NodeID: "api-node-1", Role: domaincluster.NodeRoleAPI, Health: domaincluster.NodeHealthHealthy, ApplicationVersion: "v1",
 		RuntimeSchemaVersion: 1, ConfigRevision: 5,
 	}, heartbeatAt)
 	if err != nil || updated.LastHeartbeatAt == nil || !updated.LastHeartbeatAt.Equal(heartbeatAt) || updated.ConfigRevision != 5 {
 		t.Fatalf("heartbeat = %#v, %v", updated, err)
 	}
 	if _, err := store.HeartbeatNode(t.Context(), "wrong-installation", domaincluster.HeartbeatRequest{
-		NodeID: "api-node-1", Health: domaincluster.NodeHealthHealthy, ApplicationVersion: "v1",
+		NodeID: "api-node-1", Role: domaincluster.NodeRoleAPI, Health: domaincluster.NodeHealthHealthy, ApplicationVersion: "v1",
 		RuntimeSchemaVersion: 1, ConfigRevision: 5,
 	}, heartbeatAt); !errors.Is(err, clusterservice.ErrNodeNotFound) {
 		t.Fatalf("cross-installation heartbeat error = %v", err)
+	}
+	items, total, err := store.ListNodes(t.Context(), installationID, domaincluster.ListNodesRequest{Page: 1, PageSize: 20, Role: domaincluster.NodeRoleAPI})
+	if err != nil || total != 1 || len(items) != 1 || items[0].NodeID != "api-node-1" {
+		t.Fatalf("list cluster nodes = %#v total=%d err=%v", items, total, err)
 	}
 }
 

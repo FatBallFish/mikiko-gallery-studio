@@ -24,9 +24,11 @@ func TestClusterCredentialHashIsQueryableButNotSerializableOrPrintable(t *testin
 		t.Fatalf("create schema: %v", err)
 	}
 	hash := strings.Repeat("a", 64)
+	proofPublicKey := strings.Repeat("A", 43)
 	created, err := client.ClusterToken.Create().
 		SetTokenID("token-test").
 		SetTokenHash(hash).
+		SetTokenProofPublicKey(proofPublicKey).
 		SetInstallationID("installation-test").
 		SetRole(clustertoken.RoleAPI).
 		SetExpiresAt(time.Now().Add(time.Hour)).
@@ -46,10 +48,10 @@ func TestClusterCredentialHashIsQueryableButNotSerializableOrPrintable(t *testin
 	if err != nil {
 		t.Fatalf("marshal cluster token: %v", err)
 	}
-	if strings.Contains(string(encoded), hash) || strings.Contains(string(encoded), "token_hash") {
+	if strings.Contains(string(encoded), hash) || strings.Contains(string(encoded), proofPublicKey) || strings.Contains(string(encoded), "token_hash") || strings.Contains(string(encoded), "token_proof_public_key") {
 		t.Fatalf("cluster token JSON exposed hash: %s", encoded)
 	}
-	if printable := queried.String(); strings.Contains(printable, hash) {
+	if printable := queried.String(); strings.Contains(printable, hash) || strings.Contains(printable, proofPublicKey) {
 		t.Fatalf("cluster token String exposed hash: %s", printable)
 	}
 }

@@ -1974,6 +1974,9 @@ func TestOpenAPISpecDocumentsEncryptedClusterEnrollment(t *testing.T) {
 	}
 	var doc struct {
 		Paths map[string]struct {
+			Get struct {
+				Responses map[string]any `yaml:"responses"`
+			} `yaml:"get"`
 			Post struct {
 				Responses map[string]any `yaml:"responses"`
 			} `yaml:"post"`
@@ -1991,6 +1994,12 @@ func TestOpenAPISpecDocumentsEncryptedClusterEnrollment(t *testing.T) {
 			t.Fatalf("%s still documents the retired 501 response", path)
 		}
 	}
+	if responses := doc.Paths["/api/ops/admin/v1/cluster/nodes"].Post.Responses; responses != nil {
+		t.Fatalf("cluster nodes must not document a POST operation: %#v", responses)
+	}
+	if _, ok := doc.Paths["/api/ops/admin/v1/cluster/nodes"].Get.Responses["200"]; !ok {
+		t.Fatal("cluster nodes does not document a 200 response")
+	}
 
 	schemaContent, err := os.ReadFile("components/schemas/cluster.yaml")
 	if err != nil {
@@ -2003,6 +2012,8 @@ func TestOpenAPISpecDocumentsEncryptedClusterEnrollment(t *testing.T) {
 		"writeOnly: true",
 		"X25519-HKDF-SHA256-XCHACHA20-POLY1305",
 		"readOnly: true",
+		"effective_health",
+		"application_version_drift",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("cluster schema missing %q", required)

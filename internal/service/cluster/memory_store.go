@@ -139,6 +139,28 @@ func (s *MemoryStore) GetChallenge(_ context.Context, installationID, challengeI
 	return record, nil
 }
 
+func (s *MemoryStore) ListNodes(_ context.Context, installationID string, request domaincluster.ListNodesRequest) ([]domaincluster.Node, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]domaincluster.Node, 0, len(s.nodes))
+	for _, node := range s.nodes {
+		if node.InstallationID == installationID && (request.Role == "" || node.Role == request.Role) {
+			items = append(items, node)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	total := len(items)
+	start := (request.Page - 1) * request.PageSize
+	if start > total {
+		start = total
+	}
+	end := start + request.PageSize
+	if end > total {
+		end = total
+	}
+	return items[start:end], total, nil
+}
+
 func (s *MemoryStore) AcceptEnrollmentWithChallenge(_ context.Context, installationID, challengeID, tokenID, tokenHash string, node domaincluster.Node, acceptedAt time.Time) (domaincluster.TokenRecord, domaincluster.Node, domaincluster.ChallengeRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,7 +238,7 @@ func (s *MemoryStore) HeartbeatNode(_ context.Context, installationID string, re
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	node, exists := s.nodes[request.NodeID]
-	if !exists || node.InstallationID != installationID {
+	if !exists || node.InstallationID != installationID || node.Role != request.Role {
 		return domaincluster.Node{}, ErrNodeNotFound
 	}
 	node.Health = request.Health

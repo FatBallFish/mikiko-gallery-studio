@@ -19,6 +19,44 @@ import (
 
 const maxClusterAdminBodyBytes = 16 << 10
 
+func (a *API) HandleAdminClusterNodes(w http.ResponseWriter, r *http.Request) {
+	if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	if a.cluster == nil {
+		httpx.WriteError(w, r, errs.Internal("cluster service is not configured"))
+		return
+	}
+	page, queryErr := parsePositiveIntQuery(r, "page", 1)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	pageSize, queryErr := parsePositiveIntQuery(r, "page_size", 20)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	result, err := a.cluster.ListNodes(r.Context(), domaincluster.ListNodesRequest{
+		Page: page, PageSize: pageSize, Role: domaincluster.NodeRole(strings.TrimSpace(r.URL.Query().Get("role"))),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items": result.Items,
+		"pagination": map[string]any{
+			"page": result.Page, "page_size": result.PageSize, "total": result.Total,
+		},
+	})
+}
+
 func (a *API) HandleAdminClusterTokens(w http.ResponseWriter, r *http.Request) {
 	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
 	if appErr != nil {
