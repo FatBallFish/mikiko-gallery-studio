@@ -1,0 +1,308 @@
+package deployctl
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/fatballfish/pic-gallery/internal/config"
+)
+
+const DefaultApplicationVersion = "dev"
+
+type CommandKind string
+
+const (
+	CommandInstall            CommandKind = "install"
+	CommandStatus             CommandKind = "status"
+	CommandDoctor             CommandKind = "doctor"
+	CommandRestart            CommandKind = "restart"
+	CommandUpgrade            CommandKind = "upgrade"
+	CommandUninstall          CommandKind = "uninstall"
+	CommandSetupStatus        CommandKind = "setup status"
+	CommandSetupTokenShow     CommandKind = "setup token show"
+	CommandSetupTokenReset    CommandKind = "setup token reset"
+	CommandClusterTokenCreate CommandKind = "cluster token create"
+	CommandClusterJoin        CommandKind = "cluster join"
+)
+
+type ClusterTokenCreateOptions struct {
+	Role config.DeploymentRole
+	TTL  time.Duration
+}
+
+type ClusterJoinOptions struct {
+	Server string
+	Token  string
+}
+
+func (options ClusterJoinOptions) String() string {
+	return fmt.Sprintf("ClusterJoinOptions{Server:%q, Token:<redacted>}", options.Server)
+}
+
+func (options ClusterJoinOptions) GoString() string { return options.String() }
+
+func (options ClusterJoinOptions) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Server string `json:"server"`
+		Token  string `json:"token"`
+	}{Server: options.Server, Token: "REDACTED"})
+}
+
+type Command struct {
+	Kind               CommandKind
+	RuntimeDir         string
+	Yes                bool
+	Install            *InstallInput
+	ClusterTokenCreate *ClusterTokenCreateOptions
+	ClusterJoin        *ClusterJoinOptions
+}
+
+func (command Command) String() string {
+	switch command.Kind {
+	case CommandClusterJoin:
+		if command.ClusterJoin == nil {
+			return "deployctl cluster join"
+		}
+		return fmt.Sprintf("deployctl cluster join --server %s --token <redacted>", command.ClusterJoin.Server)
+	case CommandClusterTokenCreate:
+		if command.ClusterTokenCreate == nil {
+			return "deployctl cluster token create"
+		}
+		return fmt.Sprintf("deployctl cluster token create --role %s --ttl %s", command.ClusterTokenCreate.Role, command.ClusterTokenCreate.TTL)
+	default:
+		return "deployctl " + string(command.Kind)
+	}
+}
+
+func (command Command) GoString() string { return command.String() }
+
+func (command Command) MarshalJSON() ([]byte, error) {
+	type safeCommand struct {
+		Kind       CommandKind `json:"kind"`
+		RuntimeDir string      `json:"runtime_dir,omitempty"`
+		Yes        bool        `json:"yes,omitempty"`
+		Server     string      `json:"server,omitempty"`
+		Token      string      `json:"token,omitempty"`
+	}
+	safe := safeCommand{Kind: command.Kind, RuntimeDir: command.RuntimeDir, Yes: command.Yes}
+	if command.ClusterJoin != nil {
+		safe.Server = command.ClusterJoin.Server
+		safe.Token = "REDACTED"
+	}
+	return json.Marshal(safe)
+}
+
+func ParseCommand(args []string) (Command, error) {
+	if len(args) == 0 {
+		return Command{}, fmt.Errorf("a deployctl command is required")
+	}
+	if err := rejectDuplicateFlags(args); err != nil {
+		return Command{}, err
+	}
+	switch args[0] {
+	case "install":
+		return parseInstallCommand(args[1:])
+	case "status":
+		return parseRuntimeCommand(CommandStatus, args[1:])
+	case "doctor":
+		return parseRuntimeCommand(CommandDoctor, args[1:])
+	case "restart":
+		return parseRuntimeCommand(CommandRestart, args[1:])
+	case "upgrade":
+		return parseRuntimeCommand(CommandUpgrade, args[1:])
+	case "uninstall":
+		return parseRuntimeCommand(CommandUninstall, args[1:])
+	case "setup":
+		return parseSetupCommand(args[1:])
+	case "cluster":
+		return parseClusterCommand(args[1:])
+	default:
+		return Command{}, fmt.Errorf("unknown deployctl command %q", args[0])
+	}
+}
+
+func parseInstallCommand(args []string) (Command, error) {
+	set := newFlagSet("install")
+	mode := set.String("mode", "", "docker or native")
+	profile := set.String("profile", "", "full, core, or custom")
+	topology := set.String("topology", "", "single or cluster")
+	role := set.String("role", "", "single or control")
+	components := set.String("components", "", "comma-separated components")
+	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+	storageDriver := set.String("storage-driver", "", "local or s3")
+	publicAPIURL := set.String("public-api-url", "", "public API URL")
+	applicationVersion := set.String("application-version", DefaultApplicationVersion, "application version")
+	imageRegistry := set.String("image-registry", "", "Docker image registry")
+	imageTag := set.String("image-tag", "", "Docker image tag")
+	releaseVersion := set.String("release-version", "", "native release version")
+	apiPort := set.String("api-port", "", "API port")
+	gatewayPort := set.String("gateway-port", "", "Gateway port")
+	userWebPort := set.String("user-web-port", "", "user web port")
+	adminWebPort := set.String("admin-web-port", "", "admin web port")
+	docsWebPort := set.String("docs-web-port", "", "documentation web port")
+	externalGateway := set.Bool("external-gateway", false, "confirm external web hosting/proxy")
+	migrate := set.Bool("migrate", false, "request a control migration")
+	yes := set.Bool("yes", false, "non-interactive confirmation")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("install does not accept positional arguments")
+	}
+	if *yes && (*mode == "" || *profile == "" || *topology == "") {
+		return Command{}, fmt.Errorf("non-interactive install requires --mode, --profile, and --topology")
+	}
+	resolvedRole := config.DeploymentRole(*role)
+	if resolvedRole == "" {
+		if config.DeploymentTopology(*topology) == config.DeploymentTopologyCluster {
+			resolvedRole = config.DeploymentRoleControl
+		} else if *topology != "" {
+			resolvedRole = config.DeploymentRoleSingle
+		}
+	}
+	if resolvedRole == config.DeploymentRoleAPI || resolvedRole == config.DeploymentRoleWorker || resolvedRole == config.DeploymentRoleWeb {
+		return Command{}, fmt.Errorf("joined roles must use deployctl cluster join")
+	}
+	input := &InstallInput{
+		Interactive: !*yes, Mode: config.DeploymentMode(*mode), Profile: config.DeploymentProfile(*profile),
+		Topology: config.DeploymentTopology(*topology), Role: resolvedRole, Components: parseComponents(*components),
+		RuntimeDir: *runtimeDir, StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL,
+		ExternalGatewayConfirmed: *externalGateway, MigrationRequested: *migrate,
+		ApplicationVersion: *applicationVersion, ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion,
+		APIPort: *apiPort, GatewayPort: *gatewayPort, UserWebPort: *userWebPort, AdminWebPort: *adminWebPort, DocsWebPort: *docsWebPort,
+		RuntimeDirExplicit: flagWasProvided(args, "runtime-dir"), ApplicationVersionExplicit: flagWasProvided(args, "application-version"),
+		ImageTagExplicit: flagWasProvided(args, "image-tag"), ReleaseVersionExplicit: flagWasProvided(args, "release-version"),
+		APIPortExplicit: flagWasProvided(args, "api-port"), GatewayPortExplicit: flagWasProvided(args, "gateway-port"),
+		UserWebPortExplicit: flagWasProvided(args, "user-web-port"), AdminWebPortExplicit: flagWasProvided(args, "admin-web-port"),
+		DocsWebPortExplicit: flagWasProvided(args, "docs-web-port"),
+	}
+	return Command{Kind: CommandInstall, RuntimeDir: *runtimeDir, Yes: *yes, Install: input}, nil
+}
+
+func parseSetupCommand(args []string) (Command, error) {
+	if len(args) == 0 {
+		return Command{}, fmt.Errorf("setup subcommand is required")
+	}
+	if args[0] == "status" {
+		return parseRuntimeCommand(CommandSetupStatus, args[1:])
+	}
+	if len(args) >= 2 && args[0] == "token" {
+		switch args[1] {
+		case "show":
+			return parseRuntimeCommand(CommandSetupTokenShow, args[2:])
+		case "reset":
+			return parseRuntimeCommand(CommandSetupTokenReset, args[2:])
+		}
+	}
+	return Command{}, fmt.Errorf("unknown setup subcommand")
+}
+
+func parseClusterCommand(args []string) (Command, error) {
+	if len(args) == 0 {
+		return Command{}, fmt.Errorf("cluster subcommand is required")
+	}
+	if len(args) >= 2 && args[0] == "token" && args[1] == "create" {
+		set := newFlagSet("cluster token create")
+		role := set.String("role", "", "api, worker, or web")
+		ttl := set.Duration("ttl", 10*time.Minute, "token lifetime")
+		runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+		if err := set.Parse(args[2:]); err != nil || set.NArg() != 0 {
+			if err != nil {
+				return Command{}, err
+			}
+			return Command{}, fmt.Errorf("cluster token create does not accept positional arguments")
+		}
+		parsedRole := config.DeploymentRole(*role)
+		if parsedRole != config.DeploymentRoleAPI && parsedRole != config.DeploymentRoleWorker && parsedRole != config.DeploymentRoleWeb {
+			return Command{}, fmt.Errorf("cluster token role must be api, worker, or web")
+		}
+		if *ttl <= 0 || *ttl > 24*time.Hour {
+			return Command{}, fmt.Errorf("cluster token TTL must be between zero and 24h")
+		}
+		return Command{Kind: CommandClusterTokenCreate, RuntimeDir: *runtimeDir, ClusterTokenCreate: &ClusterTokenCreateOptions{Role: parsedRole, TTL: *ttl}}, nil
+	}
+	if args[0] == "join" {
+		set := newFlagSet("cluster join")
+		server := set.String("server", "", "control API URL")
+		token := set.String("token", "", "single-use join token")
+		runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+		if err := set.Parse(args[1:]); err != nil || set.NArg() != 0 {
+			if err != nil {
+				return Command{}, err
+			}
+			return Command{}, fmt.Errorf("cluster join does not accept positional arguments")
+		}
+		if err := validateServerURL(*server); err != nil {
+			return Command{}, err
+		}
+		if strings.TrimSpace(*token) == "" {
+			return Command{}, fmt.Errorf("cluster join requires --token")
+		}
+		return Command{Kind: CommandClusterJoin, RuntimeDir: *runtimeDir, ClusterJoin: &ClusterJoinOptions{Server: strings.TrimRight(*server, "/"), Token: *token}}, nil
+	}
+	return Command{}, fmt.Errorf("unknown cluster subcommand")
+}
+
+func parseRuntimeCommand(kind CommandKind, args []string) (Command, error) {
+	set := newFlagSet(string(kind))
+	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
+	yes := set.Bool("yes", false, "non-interactive confirmation")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("%s does not accept positional arguments", kind)
+	}
+	return Command{Kind: kind, RuntimeDir: *runtimeDir, Yes: *yes}, nil
+}
+
+func newFlagSet(name string) *flag.FlagSet {
+	set := flag.NewFlagSet(name, flag.ContinueOnError)
+	set.SetOutput(io.Discard)
+	return set
+}
+
+func parseComponents(value string) []Component {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	components := make([]Component, 0, len(parts))
+	for _, part := range parts {
+		components = append(components, Component(strings.TrimSpace(part)))
+	}
+	return components
+}
+
+func rejectDuplicateFlags(args []string) error {
+	seen := make(map[string]struct{})
+	for _, argument := range args {
+		if !strings.HasPrefix(argument, "--") || argument == "--" {
+			continue
+		}
+		name := strings.TrimPrefix(strings.SplitN(argument, "=", 2)[0], "--")
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("flag --%s may be provided only once", name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+func flagWasProvided(args []string, name string) bool {
+	flagName := "--" + name
+	for _, argument := range args {
+		if argument == flagName || strings.HasPrefix(argument, flagName+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+func validateServerURL(value string) error {
+	return validateHTTPBaseURL(value, "cluster server")
+}
