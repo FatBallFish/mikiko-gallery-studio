@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminSession, ProviderHealth } from '../../shared/api-types'
+import { useBootstrapGuard } from './bootstrapGuard'
 import { adminApi } from '../../shared/admin-api'
 import { EmptyBlock, ToastRail, useHashRoute, useToasts } from './components'
 import { AdminLayout, normalizeRoute, protectedRoutes, routeHref } from './layout/AdminLayout'
@@ -21,6 +22,32 @@ function readStoredSession(): AdminSession | null {
 }
 
 export default function App() {
+  const bootstrap = useBootstrapGuard()
+
+  if (bootstrap.phase === 'ready') return <AdminApplication />
+  if (bootstrap.phase === 'broken') {
+    return <BootstrapFailure message={`运行配置异常${bootstrap.diagnostic_code ? ` (${bootstrap.diagnostic_code})` : ''}，请在部署节点运行 deployctl doctor。`} onRetry={bootstrap.retry} />
+  }
+  if (bootstrap.phase === 'error') {
+    return <BootstrapFailure message="无法连接 API 以确认初始化状态，请检查服务地址、网络与 API 健康状态。" onRetry={bootstrap.retry} />
+  }
+  return <div className="grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-[var(--muted-strong)]" role="status">正在检查服务状态...</div>
+}
+
+function BootstrapFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[var(--bg)] p-6">
+      <section className="w-full max-w-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-[var(--fg)]" role="alert">
+        <p className="text-xs font-semibold uppercase text-[var(--accent)]">Bootstrap status</p>
+        <h1 className="mt-2 text-lg font-semibold">后台服务暂不可用</h1>
+        <p className="mt-2 text-sm leading-6 text-[var(--muted-strong)]">{message}</p>
+        <button className="mt-5 min-h-10 border border-[var(--border)] px-4 text-sm hover:border-[var(--accent)]" type="button" onClick={onRetry}>重新检测</button>
+      </section>
+    </main>
+  )
+}
+
+function AdminApplication() {
   const [route, setRoute] = useHashRoute()
   const [session, setSession] = useState<AdminSession | null>(() => readStoredSession())
   const [sessionResolved, setSessionResolved] = useState(() => session !== null)

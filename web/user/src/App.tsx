@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Balance, UserProfile, UserThemePreference } from '../../shared/api-types'
+import { useBootstrapGuard } from './bootstrapGuard'
 import { userApi } from '../../shared/user-api'
 import { AppContext, protectedRoutes, Shell, ToastViewport } from './components'
 import type { RouteId, SessionState, Toast, ToastTone } from './types'
@@ -37,6 +38,31 @@ function readStoredSession(): SessionState | null {
 }
 
 export default function App() {
+  const bootstrap = useBootstrapGuard()
+
+  if (bootstrap.phase === 'ready') return <UserApplication />
+  if (bootstrap.phase === 'broken') {
+    return <BootstrapFailure message={`服务初始化配置异常${bootstrap.diagnostic_code ? ` (${bootstrap.diagnostic_code})` : ''}，请联系运维人员处理。`} onRetry={bootstrap.retry} />
+  }
+  if (bootstrap.phase === 'error') {
+    return <BootstrapFailure message="暂时无法确认服务初始化状态，请检查 API 地址或网络连接后重试。" onRetry={bootstrap.retry} />
+  }
+  return <div className="grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-[var(--muted)]" role="status">正在检查服务状态...</div>
+}
+
+function BootstrapFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[var(--bg)] p-6">
+      <section className="w-full max-w-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-[var(--fg)]" role="alert">
+        <h1 className="text-lg font-semibold">服务暂不可用</h1>
+        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{message}</p>
+        <button className="mt-5 min-h-10 border border-[var(--border)] px-4 text-sm hover:border-[var(--accent)]" type="button" onClick={onRetry}>重试</button>
+      </section>
+    </main>
+  )
+}
+
+function UserApplication() {
   const initial = parseHash()
   const [route, setRoute] = useState<RouteId>(initial.route)
   const [returnTo, setReturnTo] = useState<RouteId | undefined>(initial.returnTo)

@@ -3,7 +3,21 @@ export type ApiEnvelope<T> = { data: T; meta?: ApiMeta; code?: string; message?:
 export type LegacyApiEnvelope<T> = { code: string; message: string; data: T; request_id: string }
 export type ApiErrorPayload = { error: { code?: string; message?: string; status_code?: number }; meta?: ApiMeta }
 
+export type BootstrapPhase = 'setup_required' | 'initializing' | 'restart_pending' | 'ready' | 'broken'
+export type BootstrapSetupStatus = {
+  phase: 'setup_required' | 'initializing' | 'restart_pending'
+  setup_url: string
+  operation_id?: string
+  retry_after_seconds?: number
+}
+export type BootstrapReadyStatus = { phase: 'ready'; setup_url?: never }
+export type BootstrapBrokenStatus = { phase: 'broken'; diagnostic_code?: string; setup_url?: never }
+export type BootstrapStatus = BootstrapSetupStatus | BootstrapReadyStatus | BootstrapBrokenStatus
+
 export const API_PATHS = {
+  system: {
+    bootstrapStatus: '/api/system/v1/bootstrap-status',
+  },
   agent: {
     sendEmailCode: '/api/agent/auth/v1/email/send-code',
     loginEmailCode: '/api/agent/auth/v1/login/email-code',
