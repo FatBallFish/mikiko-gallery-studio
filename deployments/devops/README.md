@@ -1,11 +1,11 @@
-# DevOps Packaging and Release (Compatibility)
+# Native Packaging and Legacy Compatibility
 
-The primary deployment paths are now:
+The production deployment paths are:
 
-- Local mode: `scripts/local/pgctl.sh` plus `scripts/service/manage.sh`.
-- Docker mode: `deployments/docker-compose/docker-compose.prod.yml` with prebuilt images from `PIC_GALLERY_IMAGE_REGISTRY`.
+- Docker full/core/custom through `deployctl install --mode docker`.
+- Linux or Windows native core/custom through `deployctl install --mode native`.
 
-This directory is kept for compatibility with older binary-package workflows. New production deployments should prefer Docker mode and should not depend on packaged `config.yaml`.
+Both modes use `./config/runtime.env` and the same API-hosted setup flow. Native mode downloads a SHA-256-verified release bundle, installs API/Worker/Gateway under the portable runtime directory, and registers systemd units or Windows SCM services. It does not install PostgreSQL, Redis, or object-storage middleware.
 
 ## Build Packages
 
@@ -16,6 +16,8 @@ scripts/devops/package.sh user-web
 scripts/devops/package.sh admin-web
 scripts/devops/package.sh api-server
 scripts/devops/package.sh worker
+scripts/devops/package.sh gateway
+scripts/devops/package.sh native
 scripts/devops/package.sh all
 ```
 
@@ -28,6 +30,31 @@ DEVOPS_GOARCH=amd64 \
 DEVOPS_CGO_ENABLED=0 \
 scripts/devops/package.sh all
 ```
+
+The native output is:
+
+```text
+target/devops/pic-gallery-native-<os>-<arch>.tar.gz
+target/devops/pic-gallery-native-<os>-<arch>.tar.gz.sha256
+```
+
+The archive contains `bin/`, `web/`, and `api/`. Windows bundles also contain the SCM-aware `pic-gallery-service-host.exe`. Publish the archive and checksum beside the matching `deployctl` release artifact.
+
+Operators normally deploy it through:
+
+```bash
+./scripts/install.sh install --mode native --profile core --topology single
+```
+
+or on Windows:
+
+```powershell
+.\scripts\install.ps1 install --mode native --profile core --topology single
+```
+
+The project accepts HTTP and IP-plus-port access. Domain names, TLS certificates, and external load balancers remain the deployer's responsibility.
+
+## Legacy Packages
 
 Compatibility behavior:
 

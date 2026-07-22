@@ -388,10 +388,14 @@ func TestWindowsInstallPermissionsUseAProtectedHandleDACL(t *testing.T) {
 		t.Fatal("locate Windows permissions implementation")
 	}
 	content := string(mustReadFile(t, filepath.Join(filepath.Dir(sourceFile), "install_permissions_windows.go")))
-	for _, required := range []string{"windows.SetSecurityInfo", "windows.PROTECTED_DACL_SECURITY_INFORMATION", "windows.WinBuiltinAdministratorsSid", "windows.WinLocalSystemSid"} {
+	for _, required := range []string{"windows.SetSecurityInfo", "windows.PROTECTED_DACL_SECURITY_INFORMATION", "windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT", "windows.WinBuiltinAdministratorsSid", "windows.WinLocalSystemSid"} {
 		if !strings.Contains(content, required) {
 			t.Errorf("Windows permission implementation missing %q", required)
 		}
+	}
+	nativeRelease := string(mustReadFile(t, filepath.Join(filepath.Dir(sourceFile), "native_release.go")))
+	if !strings.Contains(nativeRelease, "secureInstallDirectory(plan.RuntimeDir)") {
+		t.Error("native release installer does not secure its runtime root before creating release files")
 	}
 }
 

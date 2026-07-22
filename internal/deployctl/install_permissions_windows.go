@@ -106,6 +106,7 @@ func fullControlForInstallSID(sid *windows.SID, trusteeType windows.TRUSTEE_TYPE
 	return windows.EXPLICIT_ACCESS{
 		AccessPermissions: windows.ACCESS_MASK(windows.GENERIC_ALL),
 		AccessMode:        windows.GRANT_ACCESS,
+		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
 		Trustee: windows.TRUSTEE{
 			TrusteeForm:  windows.TRUSTEE_IS_SID,
 			TrusteeType:  trusteeType,

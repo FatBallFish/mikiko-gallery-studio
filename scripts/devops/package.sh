@@ -9,7 +9,7 @@ CGO_TARGET=${DEVOPS_CGO_ENABLED:-0}
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/devops/package.sh <user-web|admin-web|docs-web|api-server|worker|all>
+Usage: scripts/devops/package.sh <user-web|admin-web|docs-web|api-server|worker|gateway|native|all>
 
 Environment overrides:
   DEVOPS_TARGET_ROOT   Output root, default target/devops
@@ -72,6 +72,11 @@ package_backend() {
       bin_name="pic-gallery-worker"
       run_script="run-worker.sh"
       ;;
+    gateway)
+      cmd_pkg="./cmd/gateway"
+      bin_name="pic-gallery-gateway"
+      run_script=""
+      ;;
     *)
       echo "unknown backend target: $target" >&2
       exit 2
@@ -89,10 +94,12 @@ package_backend() {
       go build -trimpath -ldflags="-s -w" -o "$out_dir/bin/$bin_name" "$cmd_pkg"
   )
 
-  mkdir -p "$out_dir/config"
-  copy_file "$ROOT_DIR/config/runtime.env.example" "$out_dir/config/runtime.env.example"
-  copy_file "$ROOT_DIR/deployments/devops/$run_script" "$out_dir/$run_script"
-  chmod +x "$out_dir/$run_script"
+  if [[ -n "$run_script" ]]; then
+    mkdir -p "$out_dir/config"
+    copy_file "$ROOT_DIR/config/runtime.env.example" "$out_dir/config/runtime.env.example"
+    copy_file "$ROOT_DIR/deployments/devops/$run_script" "$out_dir/$run_script"
+    chmod +x "$out_dir/$run_script"
+  fi
 
   if [[ "$target" == "api-server" ]]; then
     mkdir -p "$out_dir/api"
@@ -102,12 +109,54 @@ package_backend() {
   fi
 }
 
+package_native() {
+  local bundle="$TARGET_ROOT/native-$GOOS_TARGET-$GOARCH_TARGET"
+  local extension=""
+  [[ "$GOOS_TARGET" == "windows" ]] && extension=".exe"
+  local archive="$TARGET_ROOT/pic-gallery-native-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz"
+
+  echo "==> Building native bundle ($GOOS_TARGET/$GOARCH_TARGET, CGO_ENABLED=$CGO_TARGET)"
+  rm -rf "$bundle"
+  mkdir -p "$bundle/bin" "$bundle/web/user" "$bundle/web/admin" "$bundle/web/docs" "$bundle/api/openapi"
+
+  for app in user admin docs; do
+    local base_path="/"
+    [[ "$app" == "admin" ]] && base_path="/admin/"
+    [[ "$app" == "docs" ]] && base_path="/developer-docs/"
+    (cd "$ROOT_DIR/web/$app" && VITE_BASE_PATH="$base_path" VITE_API_BASE_URL="" npm run build)
+    cp -R "$ROOT_DIR/web/$app/dist/." "$bundle/web/$app/"
+  done
+
+  (
+    cd "$ROOT_DIR"
+    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-api$extension" ./cmd/api
+    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-worker$extension" ./cmd/worker
+    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-gateway$extension" ./cmd/gateway
+    if [[ "$GOOS_TARGET" == "windows" ]]; then
+      GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-service-host.exe" ./cmd/servicehost
+    fi
+  )
+  cp "$ROOT_DIR/api/openapi/openapi.yaml" "$bundle/api/openapi/openapi.yaml"
+  cp -R "$ROOT_DIR/api/openapi/components" "$bundle/api/openapi/components"
+
+  COPYFILE_DISABLE=1 tar --format=ustar -C "$bundle" -czf "$archive" bin web api
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$archive" > "$archive.sha256"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$archive" > "$archive.sha256"
+  else
+    echo "sha256 tool is required to package a native release" >&2
+    exit 1
+  fi
+}
+
 package_all() {
   package_frontend user
   package_frontend admin
   package_frontend docs
   package_backend api-server
   package_backend worker
+  package_native
   mkdir -p "$TARGET_ROOT"
   copy_file "$ROOT_DIR/deployments/devops/middleware-compose.yml" "$TARGET_ROOT/middleware-compose.yml"
   copy_file "$ROOT_DIR/deployments/devops/README.md" "$TARGET_ROOT/README.md"
@@ -130,8 +179,11 @@ main() {
     docs-web)
       package_frontend docs
       ;;
-    api-server|worker)
+    api-server|worker|gateway)
       package_backend "$target"
+      ;;
+    native)
+      package_native
       ;;
     all)
       package_all

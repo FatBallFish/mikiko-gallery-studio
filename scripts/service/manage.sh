@@ -2,15 +2,15 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPONENTS="api,worker"
+COMPONENTS="api,worker,gateway"
 USER_MODE=false
 ENV_FILE="${APP_ENV_FILE:-$ROOT_DIR/config/runtime.env}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/service/manage.sh <install|uninstall|start|stop|restart|status|logs> [--components api,worker] [--user] [--env-file PATH]
+Usage: scripts/service/manage.sh <install|uninstall|start|stop|restart|status|logs> [--components api,worker,gateway] [--user] [--env-file PATH]
 
-Manages local api and worker services.
+Manages local API, Worker, and Gateway development services.
 
 Linux uses systemd. macOS uses launchd. Windows should use scripts/service/manage.ps1.
 USAGE
@@ -59,6 +59,7 @@ service_command() {
   case "$component" in
     api) echo "$ROOT_DIR/target/local/bin/pic-gallery-api" ;;
     worker) echo "$ROOT_DIR/target/local/bin/pic-gallery-worker" ;;
+    gateway) echo "$ROOT_DIR/target/local/bin/pic-gallery-gateway" ;;
     *) echo "unknown component: $component" >&2; exit 2 ;;
   esac
 }
@@ -112,6 +113,7 @@ build_component() {
   case "$component" in
     api) (cd "$ROOT_DIR" && go build -o target/local/bin/pic-gallery-api ./cmd/api) ;;
     worker) (cd "$ROOT_DIR" && go build -o target/local/bin/pic-gallery-worker ./cmd/worker) ;;
+    gateway) (cd "$ROOT_DIR" && go build -o target/local/bin/pic-gallery-gateway ./cmd/gateway) ;;
   esac
 }
 
@@ -247,7 +249,7 @@ manage_launchd() {
   esac
 }
 
-for component in api worker; do
+for component in api worker gateway; do
   has_component "$component" || continue
   case "$(uname -s)" in
     Linux)
