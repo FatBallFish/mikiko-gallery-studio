@@ -126,6 +126,34 @@ func TestBuildDockerProcessSpecsUsesPortableRuntimeWithoutSecrets(t *testing.T) 
 	}
 }
 
+func TestBuildDockerProcessSpecsUsesNodeSpecificProjectNamesForCoLocatedClusterNodes(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: "docker", Profile: "core", Topology: "cluster", Role: "worker", RuntimeDir: "runtime",
+		StorageDriver: "s3", ApplicationVersion: "v1", InstallationInitialized: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const installationID = "019d0000-0000-7000-8000-000000000123"
+	nodes := []string{"019d0000-0000-7000-8000-000000000201", "019d0000-0000-7000-8000-000000000202"}
+	projects := make([]string, 0, len(nodes))
+	for _, nodeID := range nodes {
+		specs, err := BuildDockerProcessSpecsForNode(DockerActionStatus, plan, installationID, nodeID, "1000:1000", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		arguments := specs[0].Arguments
+		index := slices.Index(arguments, "--project-name")
+		if index < 0 || index+1 >= len(arguments) {
+			t.Fatalf("project name missing from %#v", arguments)
+		}
+		projects = append(projects, arguments[index+1])
+	}
+	if projects[0] == projects[1] || !strings.HasPrefix(projects[0], "app-019d0000000070008000000000000123-") {
+		t.Fatalf("cluster project names are not node-specific: %v", projects)
+	}
+}
+
 func TestBuildDockerProcessSpecsPreparesManagedServicesBeforeApplications(t *testing.T) {
 	tests := []struct {
 		name         string

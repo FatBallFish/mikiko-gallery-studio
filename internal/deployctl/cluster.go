@@ -345,6 +345,9 @@ func postClusterJSON(ctx context.Context, client *http.Client, endpoint string, 
 	}
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
+		Meta struct {
+			RequestID string `json:"request_id,omitempty"`
+		} `json:"meta,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
@@ -376,7 +379,7 @@ func validateRemoteChallenge(challenge domaincluster.EnrollmentChallenge, reques
 }
 
 func validateJoinResponse(joined domaincluster.JoinResponse, challenge domaincluster.EnrollmentChallenge, now time.Time) error {
-	if joined.Protocol != clusterservice.EnrollmentProtocolV1 || joined.InstallationID != challenge.InstallationID || joined.NodeID != challenge.NodeID || joined.Role != domaincluster.NodeRole(challenge.Role) || joined.ApplicationVersion != challenge.ApplicationVersion || joined.RuntimeSchemaVersion != challenge.RuntimeSchemaVersion || joined.ConfigRevision != challenge.ConfigRevision || !joined.ExpiresAt.Equal(challenge.ExpiresAt) || !joined.ExpiresAt.After(now.UTC()) {
+	if joined.Protocol != clusterservice.EnrollmentProtocolV1 || joined.InstallationID != challenge.InstallationID || joined.NodeID != challenge.NodeID || joined.Role != domaincluster.NodeRole(challenge.Role) || joined.ApplicationVersion != challenge.ApplicationVersion || joined.RuntimeSchemaVersion != challenge.RuntimeSchemaVersion || joined.ConfigRevision != challenge.ConfigRevision || joined.ExpiresAt.UTC().Unix() != challenge.ExpiresAt.UTC().Unix() || !joined.ExpiresAt.After(now.UTC()) {
 		return errors.New("cluster join response binding is invalid")
 	}
 	return nil

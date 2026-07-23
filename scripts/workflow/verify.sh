@@ -37,4 +37,6 @@ if [ -f web/docs/package.json ]; then
   run "web/docs build" npm --prefix web/docs run build
 fi
 
+run "Linux/Windows native package contract" ./scripts/workflow/native-package-contract.sh
+
 printf '\nOK: verification passed\n'

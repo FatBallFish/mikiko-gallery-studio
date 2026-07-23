@@ -5,10 +5,24 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DATABASE:-}
-      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      APP_POSTGRES_USER: ${POSTGRES_USER:-}
+      APP_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        cp /opt/deploy/postgres-init.sh /docker-entrypoint-initdb.d/10-app-role.sh
+        chown postgres:postgres /docker-entrypoint-initdb.d/10-app-role.sh
+        chmod 0700 /docker-entrypoint-initdb.d/10-app-role.sh
+        exec docker-entrypoint.sh postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - type: bind
+        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/postgres-init.sh
+        target: /opt/deploy/postgres-init.sh
+        read_only: true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
@@ -74,6 +88,8 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-8080}:${API_PORT:-8080}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - type: bind
         source: ${DEPLOYCTL_RUNTIME_DIR:-.}/config
@@ -93,6 +109,8 @@ services:
     user: ${DEPLOYCTL_RUNTIME_USER:-picgallery}
     working_dir: /app
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - type: bind
         source: ${DEPLOYCTL_RUNTIME_DIR:-.}/config

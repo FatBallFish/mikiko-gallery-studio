@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
@@ -49,14 +53,16 @@ func (report DoctorReport) String() string {
 }
 
 type DoctorDependencies struct {
-	ReadFile        func(string) ([]byte, error)
-	Stat            func(string) (os.FileInfo, error)
-	ProbeMiddleware func(context.Context, map[string]string) error
-	CheckSchema     func(context.Context, map[string]string) error
+	ReadFile              func(string) ([]byte, error)
+	Stat                  func(string) (os.FileInfo, error)
+	CheckRuntimeReadiness func(context.Context, map[string]string) error
+	ProbeMiddleware       func(context.Context, map[string]string) error
+	CheckSchema           func(context.Context, map[string]string) error
 }
 
 func ProductionDoctorDependencies() DoctorDependencies {
 	return DoctorDependencies{
+		CheckRuntimeReadiness: probeDockerAPIReadiness,
 		ProbeMiddleware: func(ctx context.Context, values map[string]string) error {
 			prober := setup.NewProbeService()
 			results := []setup.ProbeResult{
@@ -91,6 +97,34 @@ func ProductionDoctorDependencies() DoctorDependencies {
 			})
 		},
 	}
+}
+
+func probeDockerAPIReadiness(ctx context.Context, values map[string]string) error {
+	port, err := strconv.Atoi(strings.TrimSpace(values["API_PORT"]))
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("Docker API port is invalid")
+	}
+	endpoint := (&url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), Path: "/readyz"}).String()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("build Docker API readiness request: %w", err)
+	}
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("Docker API readiness request failed: %w", err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("Docker API readiness returned HTTP %d", response.StatusCode)
+	}
+	return nil
 }
 
 func storageConfigFromValues(values map[string]string) config.StorageConfig {
@@ -161,7 +195,16 @@ func Doctor(ctx context.Context, runtimeDir string, dependencies DoctorDependenc
 		report.add("INSTALLATION_MISMATCH", false, "runtime, manifest, or install state identity does not match")
 	}
 
-	if dependencies.ProbeMiddleware == nil {
+	useDockerReadiness := values["DEPLOYMENT_MODE"] == string(config.DeploymentModeDocker) && runtimeHasModule(values, "api") && dependencies.CheckRuntimeReadiness != nil
+	var runtimeReadinessErr error
+	if useDockerReadiness {
+		runtimeReadinessErr = dependencies.CheckRuntimeReadiness(ctx, cloneRuntimeValues(values))
+	}
+	if useDockerReadiness && runtimeReadinessErr != nil {
+		report.add("MIDDLEWARE", false, sanitizeDiagnostic(runtimeReadinessErr.Error(), values))
+	} else if useDockerReadiness {
+		report.add("MIDDLEWARE", true, "Docker API readiness confirms middleware connectivity")
+	} else if dependencies.ProbeMiddleware == nil {
 		report.add("MIDDLEWARE", true, "middleware probe was not requested")
 	} else if probeErr := dependencies.ProbeMiddleware(ctx, runtimeProbeValues(values, runtimeDir)); probeErr != nil {
 		report.add("MIDDLEWARE", false, sanitizeDiagnostic(probeErr.Error(), values))
@@ -175,7 +218,12 @@ func Doctor(ctx context.Context, runtimeDir string, dependencies DoctorDependenc
 	if !schemaOK {
 		schemaMessage = fmt.Sprintf("runtime schema version must be %d", config.CurrentRuntimeSchemaVersion)
 	}
-	if dependencies.CheckSchema != nil {
+	if useDockerReadiness && runtimeReadinessErr != nil {
+		schemaOK = false
+		schemaMessage = sanitizeDiagnostic(runtimeReadinessErr.Error(), values)
+	} else if useDockerReadiness {
+		schemaMessage = "Docker API readiness confirms schema compatibility"
+	} else if dependencies.CheckSchema != nil {
 		if schemaErr := dependencies.CheckSchema(ctx, cloneRuntimeValues(values)); schemaErr != nil {
 			schemaOK = false
 			schemaMessage = sanitizeDiagnostic(schemaErr.Error(), values)
@@ -183,6 +231,15 @@ func Doctor(ctx context.Context, runtimeDir string, dependencies DoctorDependenc
 	}
 	report.add("SCHEMA_DRIFT", schemaOK, schemaMessage)
 	return report
+}
+
+func runtimeHasModule(values map[string]string, module string) bool {
+	for _, configured := range strings.Split(values["DEPLOYMENT_MODULES"], ",") {
+		if strings.TrimSpace(configured) == module {
+			return true
+		}
+	}
+	return false
 }
 
 func runtimeProbeValues(values map[string]string, runtimeDir string) map[string]string {

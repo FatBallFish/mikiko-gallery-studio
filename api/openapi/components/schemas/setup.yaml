@@ -36,6 +36,22 @@ components:
         token:
           type: string
           writeOnly: true
+    SetupSession:
+      type: object
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+          description: Persisted interrupted setup operation that this authenticated browser must reuse.
+    SetupSessionResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/SetupSession'
+        meta:
+          type: object
+          additionalProperties: true
     SetupDatabaseProbeRequest:
       type: object
       required: [database_url]

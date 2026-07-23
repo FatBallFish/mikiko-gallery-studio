@@ -5,6 +5,7 @@ import {
   fetchBootstrapStatus,
   normalizeBootstrapStatus,
   resolveSetupURL,
+  setupURLWithReturnTarget,
 } from './bootstrap-status.ts'
 
 const apiTypes = readFileSync(new URL('./api-types.ts', import.meta.url), 'utf8')
@@ -21,6 +22,18 @@ if (resolveSetupURL('/setup', 'https://api.example.test/base', 'https://admin.ex
 }
 if (resolveSetupURL('setup', '/gateway', 'https://user.example.test/app') !== 'https://user.example.test/setup') {
   throw new Error('same-origin relative API bases must resolve setup against the gateway origin')
+}
+const setupWithReturn = setupURLWithReturnTarget('https://api.example.test/setup', 'https://user.example.test/#/workspace')
+if (setupWithReturn !== 'https://api.example.test/setup#return_to=https%3A%2F%2Fuser.example.test%2F%23%2Fworkspace') {
+  throw new Error(`setup return target was not encoded into the URL fragment: ${setupWithReturn}`)
+}
+for (const unsafeReturn of ['javascript:alert(1)', 'https://user:pass@example.test/workspace']) {
+  try {
+    setupURLWithReturnTarget('https://api.example.test/setup', unsafeReturn)
+    throw new Error(`unsafe setup return target was accepted: ${unsafeReturn}`)
+  } catch (error) {
+    if (!(error instanceof BootstrapStatusError)) throw error
+  }
 }
 for (const unsafe of ['javascript:alert(1)', 'data:text/html,x', 'ftp://api.example.test/setup', '//evil.example/setup', '\\\\evil.example/setup', 'https://user:pass@api.example.test/setup']) {
   try {

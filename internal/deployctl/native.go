@@ -26,11 +26,12 @@ const (
 type NativeAction string
 
 const (
-	NativeActionInstall   NativeAction = "install"
-	NativeActionUpdate    NativeAction = "update"
-	NativeActionRestart   NativeAction = "restart"
-	NativeActionStatus    NativeAction = "status"
-	NativeActionUninstall NativeAction = "uninstall"
+	NativeActionInstall          NativeAction = "install"
+	NativeActionUpdate           NativeAction = "update"
+	NativeActionRestart          NativeAction = "restart"
+	NativeActionReloadSetupToken NativeAction = "reload-setup-token"
+	NativeActionStatus           NativeAction = "status"
+	NativeActionUninstall        NativeAction = "uninstall"
 )
 
 type NativeService struct {
@@ -231,12 +232,17 @@ func BuildNativeServiceFiles(plan InstallPlan, installationID string, platform N
 }
 
 func BuildNativeProcessSpecs(action NativeAction, plan InstallPlan, installationID string, platform NativePlatform) ([]ProcessSpec, error) {
-	if action != NativeActionInstall && action != NativeActionUpdate && action != NativeActionRestart && action != NativeActionStatus && action != NativeActionUninstall {
+	if action != NativeActionInstall && action != NativeActionUpdate && action != NativeActionRestart && action != NativeActionReloadSetupToken && action != NativeActionStatus && action != NativeActionUninstall {
 		return nil, fmt.Errorf("unsupported native action %q", action)
 	}
 	services, err := BuildNativeServicePlan(plan, installationID, platform)
 	if err != nil {
 		return nil, err
+	}
+	if action == NativeActionReloadSetupToken {
+		services = slices.DeleteFunc(services, func(service NativeService) bool {
+			return service.Component != ComponentAPI && service.Component != ComponentGateway
+		})
 	}
 	if len(services) == 0 {
 		return []ProcessSpec{}, nil
@@ -312,7 +318,7 @@ func buildSystemdProcessSpecs(action NativeAction, services []NativeService) []P
 			specs = append(specs, newSpec("is-active", "--quiet", serviceName))
 		}
 		return specs
-	case NativeActionRestart:
+	case NativeActionRestart, NativeActionReloadSetupToken:
 		specs := make([]ProcessSpec, 0, len(serviceNames)*2)
 		for _, serviceName := range serviceNames {
 			specs = append(specs, newSpec("restart", serviceName))
@@ -399,7 +405,7 @@ func buildWindowsServiceProcessSpecs(action NativeAction, services []NativeServi
 			specs = append(specs, windowsServiceHealthSpec(runtimeDirectory, service.Name))
 		}
 		return specs, nil
-	case NativeActionRestart:
+	case NativeActionRestart, NativeActionReloadSetupToken:
 		specs := make([]ProcessSpec, 0, len(services)*4)
 		for index := len(services) - 1; index >= 0; index-- {
 			specs = append(specs, newSpec("stop", services[index].Name))
@@ -564,8 +570,8 @@ func nativeProcessErrorIsIdempotent(action NativeAction, platform NativePlatform
 	verb := spec.Arguments[0]
 	code := exitError.ExitCode()
 	return action == NativeActionInstall && verb == "create" && code == 1073 ||
-		(action == NativeActionInstall || action == NativeActionUpdate || action == NativeActionRestart) && verb == "start" && code == 1056 ||
-		(action == NativeActionUpdate || action == NativeActionRestart) && verb == "stop" && code == 1062 ||
+		(action == NativeActionInstall || action == NativeActionUpdate || action == NativeActionRestart || action == NativeActionReloadSetupToken) && verb == "start" && code == 1056 ||
+		(action == NativeActionUpdate || action == NativeActionRestart || action == NativeActionReloadSetupToken) && verb == "stop" && code == 1062 ||
 		action == NativeActionUninstall && verb == "stop" && (code == 1060 || code == 1062 || code == 1072) ||
 		action == NativeActionUninstall && verb == "delete" && (code == 1060 || code == 1072)
 }

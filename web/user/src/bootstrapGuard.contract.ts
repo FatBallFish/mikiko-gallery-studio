@@ -20,7 +20,7 @@ for (const forbidden of ['userApi.', 'refreshSession(', 'getProfile(', 'getBalan
   if (wrapper.includes(forbidden)) throw new Error(`user bootstrap wrapper must not run business/session behavior: ${forbidden}`)
 }
 for (const required of [
-  'window.location.assign(status.setup_url)',
+  'window.location.assign(setupURLWithReturnTarget(status.setup_url, window.location.href))',
   "status.phase === 'setup_required' || status.phase === 'initializing' || status.phase === 'restart_pending'",
   "credentials: 'omit'",
 ]) {

@@ -2,6 +2,7 @@ package deployctl
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,12 +17,13 @@ import (
 type DockerAction string
 
 const (
-	DockerActionInstall   DockerAction = "install"
-	DockerActionUpdate    DockerAction = "update"
-	DockerActionRestart   DockerAction = "restart"
-	DockerActionStatus    DockerAction = "status"
-	DockerActionUninstall DockerAction = "uninstall"
-	DockerActionDestroy   DockerAction = "destroy"
+	DockerActionInstall          DockerAction = "install"
+	DockerActionUpdate           DockerAction = "update"
+	DockerActionRestart          DockerAction = "restart"
+	DockerActionReloadSetupToken DockerAction = "reload-setup-token"
+	DockerActionStatus           DockerAction = "status"
+	DockerActionUninstall        DockerAction = "uninstall"
+	DockerActionDestroy          DockerAction = "destroy"
 )
 
 type DockerExecutor struct {
@@ -87,7 +89,7 @@ func (executor DockerExecutor) Run(ctx context.Context, action DockerAction, pla
 		return fmt.Errorf("parse Docker runtime environment: %w", err)
 	}
 	installationID := document.Values["INSTALLATION_ID"]
-	specs, err := BuildDockerProcessSpecs(action, plan, installationID, executor.RuntimeUser(), executor.Environment())
+	specs, err := BuildDockerProcessSpecsForNode(action, plan, installationID, document.Values["CLUSTER_NODE_ID"], executor.RuntimeUser(), executor.Environment())
 	if err != nil {
 		return err
 	}
@@ -103,6 +105,10 @@ func (executor DockerExecutor) Run(ctx context.Context, action DockerAction, pla
 }
 
 func BuildDockerProcessSpecs(action DockerAction, plan InstallPlan, installationID, runtimeUser string, baseEnvironment []string) ([]ProcessSpec, error) {
+	return BuildDockerProcessSpecsForNode(action, plan, installationID, "", runtimeUser, baseEnvironment)
+}
+
+func BuildDockerProcessSpecsForNode(action DockerAction, plan InstallPlan, installationID, nodeID, runtimeUser string, baseEnvironment []string) ([]ProcessSpec, error) {
 	if err := ValidateInstallPlan(plan); err != nil {
 		return nil, fmt.Errorf("validate Docker plan: %w", err)
 	}
@@ -122,6 +128,14 @@ func BuildDockerProcessSpecs(action DockerAction, plan InstallPlan, installation
 		return nil, err
 	}
 	projectName := "app-" + strings.ReplaceAll(parsedInstallationID.String(), "-", "")
+	if strings.TrimSpace(nodeID) != "" {
+		parsedNodeID, err := uuid.Parse(nodeID)
+		if err != nil {
+			return nil, fmt.Errorf("validate Docker cluster node identity: %w", err)
+		}
+		nodeDigest := sha256.Sum256([]byte(parsedNodeID.String()))
+		projectName += fmt.Sprintf("-%x", nodeDigest[:6])
+	}
 	baseArguments := []string{
 		"compose",
 		"--project-directory", absoluteRuntime,
@@ -154,6 +168,12 @@ func BuildDockerProcessSpecs(action DockerAction, plan InstallPlan, installation
 		return specs, nil
 	case DockerActionRestart:
 		return []ProcessSpec{newSpec("restart")}, nil
+	case DockerActionReloadSetupToken:
+		services := []string{"api"}
+		if slices.Contains(plan.Components, ComponentGateway) {
+			services = append(services, "gateway")
+		}
+		return []ProcessSpec{newSpec(append([]string{"restart"}, services...)...)}, nil
 	case DockerActionStatus:
 		return []ProcessSpec{newSpec("ps", "--all")}, nil
 	case DockerActionUninstall:

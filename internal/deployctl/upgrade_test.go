@@ -2,7 +2,12 @@ package deployctl
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -63,11 +68,13 @@ func TestUpgradeRefusesMigrationOutsideSingleOrControlAndDoesNotWrite(t *testing
 	}
 }
 
-func TestUpgradeRestoresRuntimeConfigWhenMigrationOrRollFails(t *testing.T) {
-	for _, failure := range []string{"migration", "roll"} {
+func TestUpgradeRestoresRuntimeConfigWhenMigrationOrUnmigratedRollFails(t *testing.T) {
+	for _, failure := range []string{"migration", "roll_without_migration"} {
 		t.Run(failure, func(t *testing.T) {
 			writes := make([]string, 0, 2)
-			_, err := Upgrade(context.Background(), UpgradeOptions{RuntimeDir: "runtime", ApplicationVersion: "v2", Migrate: true}, UpgradeDependencies{
+			appliedVersions := make([]string, 0, 2)
+			migrate := failure == "migration"
+			_, err := Upgrade(context.Background(), UpgradeOptions{RuntimeDir: "runtime", ApplicationVersion: "v2", Migrate: migrate}, UpgradeDependencies{
 				LoadInstallation: func(string) (InstallPlan, config.RuntimeEnvDocument, error) {
 					return upgradeTestPlan(config.DeploymentRoleControl), upgradeTestDocument(config.DeploymentRoleControl), nil
 				},
@@ -78,8 +85,9 @@ func TestUpgradeRestoresRuntimeConfigWhenMigrationOrRollFails(t *testing.T) {
 					}
 					return nil
 				},
-				ApplyDeployment: func(context.Context, InstallPlan) error {
-					if failure == "roll" {
+				ApplyDeployment: func(_ context.Context, plan InstallPlan) error {
+					appliedVersions = append(appliedVersions, plan.ApplicationVersion)
+					if len(appliedVersions) == 1 {
 						return errors.New("roll failed")
 					}
 					return nil
@@ -92,7 +100,76 @@ func TestUpgradeRestoresRuntimeConfigWhenMigrationOrRollFails(t *testing.T) {
 			if parseErr != nil || restored.Values["APPLICATION_VERSION"] != "v1" {
 				t.Fatalf("runtime config was not restored: %v, %#v", parseErr, restored.Values)
 			}
+			if failure == "roll_without_migration" && strings.Join(appliedVersions, ",") != "v2,v1" {
+				t.Fatalf("roll recovery plans = %q, want v2,v1", strings.Join(appliedVersions, ","))
+			}
 		})
+	}
+}
+
+func TestUpgradeRollbackUsesBoundedContextAfterRollContextIsCanceled(t *testing.T) {
+	upgradeContext, cancelUpgrade := context.WithCancel(context.Background())
+	appliedVersions := make([]string, 0, 2)
+	_, err := Upgrade(upgradeContext, UpgradeOptions{RuntimeDir: "runtime", ApplicationVersion: "v2"}, UpgradeDependencies{
+		LoadInstallation: func(string) (InstallPlan, config.RuntimeEnvDocument, error) {
+			return upgradeTestPlan(config.DeploymentRoleControl), upgradeTestDocument(config.DeploymentRoleControl), nil
+		},
+		WriteRuntimeEnv: func(string, []byte) error { return nil },
+		WriteManifest:   func(string, InstallPlan) error { return nil },
+		ApplyDeployment: func(ctx context.Context, plan InstallPlan) error {
+			appliedVersions = append(appliedVersions, plan.ApplicationVersion)
+			if len(appliedVersions) == 1 {
+				cancelUpgrade()
+				return context.Canceled
+			}
+			if ctx.Err() != nil {
+				return fmt.Errorf("rollback context is already canceled: %w", ctx.Err())
+			}
+			if _, ok := ctx.Deadline(); !ok {
+				return errors.New("rollback context has no deadline")
+			}
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("Upgrade error = %v, want original cancellation", err)
+	}
+	if strings.Contains(err.Error(), "restore previous deployment") {
+		t.Fatalf("Upgrade rollback failed after cancellation: %v", err)
+	}
+	if got := strings.Join(appliedVersions, ","); got != "v2,v1" {
+		t.Fatalf("applied versions = %q, want v2,v1", got)
+	}
+}
+
+func TestUpgradeRetainsTargetPlanForRetryAfterSuccessfulMigrationAndRollFailure(t *testing.T) {
+	writes := make([]string, 0, 2)
+	manifestVersions := make([]string, 0, 2)
+	migrations := 0
+	_, err := Upgrade(context.Background(), UpgradeOptions{RuntimeDir: "runtime", ApplicationVersion: "v2", Migrate: true}, UpgradeDependencies{
+		LoadInstallation: func(string) (InstallPlan, config.RuntimeEnvDocument, error) {
+			return upgradeTestPlan(config.DeploymentRoleControl), upgradeTestDocument(config.DeploymentRoleControl), nil
+		},
+		WriteRuntimeEnv: func(_ string, content []byte) error {
+			writes = append(writes, string(content))
+			return nil
+		},
+		WriteManifest: func(_ string, plan InstallPlan) error {
+			manifestVersions = append(manifestVersions, plan.ApplicationVersion)
+			return nil
+		},
+		Migrate:         func(context.Context, string) error { migrations++; return nil },
+		ApplyDeployment: func(context.Context, InstallPlan) error { return errors.New("roll failed") },
+	})
+	if err == nil || !strings.Contains(err.Error(), "rerun upgrade") {
+		t.Fatalf("roll failure error=%v, want explicit forward recovery guidance", err)
+	}
+	if migrations != 1 || len(writes) != 1 || len(manifestVersions) != 1 || manifestVersions[0] != "v2" {
+		t.Fatalf("forward recovery mutated target state: migrations=%d writes=%d manifests=%v", migrations, len(writes), manifestVersions)
+	}
+	document, parseErr := config.ParseRuntimeEnv([]byte(writes[0]))
+	if parseErr != nil || document.Values["APPLICATION_VERSION"] != "v2" {
+		t.Fatalf("target runtime was not retained: %v, %#v", parseErr, document.Values)
 	}
 }
 
@@ -120,6 +197,7 @@ func TestUninstallPreservesRuntimeByDefaultAndRequiresExactPhraseForDestruction(
 	stops, destroys, removals := 0, 0, 0
 	deps := UninstallDependencies{
 		LoadInstallation:           func(string) (InstallPlan, string, error) { return plan, installationID, nil },
+		ValidateRuntimeDirectory:   func(InstallPlan) error { return nil },
 		StopDeployment:             func(context.Context, InstallPlan) error { stops++; return nil },
 		DestroyPersistentResources: func(context.Context, InstallPlan) error { destroys++; return nil },
 		RemoveRuntimeDirectory:     func(string) error { removals++; return nil },
@@ -144,4 +222,140 @@ func TestUninstallPreservesRuntimeByDefaultAndRequiresExactPhraseForDestruction(
 	if stops != 2 || destroys != 1 || removals != 1 {
 		t.Fatalf("destructive uninstall side effects = stops %d, destroys %d, removals %d", stops, destroys, removals)
 	}
+}
+
+func TestDestructiveUninstallValidatesManagedRuntimeBeforeDestroyingData(t *testing.T) {
+	const installationID = "019d0000-0000-7000-8000-000000000123"
+	plan := InstallPlan{RuntimeDir: "runtime"}
+	validated, stops, destroys, removals := 0, 0, 0, 0
+	err := Uninstall(context.Background(), UninstallOptions{
+		RuntimeDir: "runtime", DeleteData: true, Confirmation: DestructiveUninstallConfirmation(installationID),
+	}, UninstallDependencies{
+		LoadInstallation: func(string) (InstallPlan, string, error) { return plan, installationID, nil },
+		ValidateRuntimeDirectory: func(InstallPlan) error {
+			validated++
+			return errors.New("runtime contains unmanaged file")
+		},
+		StopDeployment:             func(context.Context, InstallPlan) error { stops++; return nil },
+		DestroyPersistentResources: func(context.Context, InstallPlan) error { destroys++; return nil },
+		RemoveRuntimeDirectory:     func(string) error { removals++; return nil },
+	})
+	if err == nil || !strings.Contains(err.Error(), "unmanaged") || validated != 1 || stops != 0 || destroys != 0 || removals != 0 {
+		t.Fatalf("unsafe uninstall = err %v validated=%d stops=%d destroys=%d removals=%d", err, validated, stops, destroys, removals)
+	}
+}
+
+func TestValidateManagedRuntimeDirectoryRejectsUnmanagedFiles(t *testing.T) {
+	runtimeDir := t.TempDir()
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore,
+		Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle,
+		RuntimeDir: runtimeDir, StorageDriver: "local", ApplicationVersion: "v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "operator-notes.txt"), []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateManagedRuntimeDirectory(plan); err == nil || !strings.Contains(err.Error(), "operator-notes.txt") {
+		t.Fatalf("validateManagedRuntimeDirectory error=%v, want unmanaged path", err)
+	}
+}
+
+func TestValidateManagedNativeRuntimeRejectsUnmanagedReleaseAndServiceFiles(t *testing.T) {
+	for _, testCase := range []struct {
+		relativePath string
+		errorPath    string
+	}{
+		{relativePath: filepath.Join("web", "operator-notes.txt"), errorPath: "native release target web"},
+		{relativePath: filepath.Join("services", "custom.service"), errorPath: filepath.Join("services", "custom.service")},
+	} {
+		t.Run(testCase.relativePath, func(t *testing.T) {
+			runtimeDir := t.TempDir()
+			plan := writeManagedNativeRuntimeForUninstallTest(t, runtimeDir, NativePlatformLinux)
+			if err := validateManagedRuntimeDirectoryForPlatform(plan, NativePlatformLinux); err != nil {
+				t.Fatalf("managed native runtime was rejected: %v", err)
+			}
+			unmanagedPath := filepath.Join(runtimeDir, testCase.relativePath)
+			if err := os.MkdirAll(filepath.Dir(unmanagedPath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(unmanagedPath, []byte("preserve"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := validateManagedRuntimeDirectoryForPlatform(plan, NativePlatformLinux); err == nil || !strings.Contains(err.Error(), testCase.errorPath) {
+				t.Fatalf("validateManagedRuntimeDirectory error=%v, want unmanaged path %s", err, testCase.relativePath)
+			}
+		})
+	}
+}
+
+func writeManagedNativeRuntimeForUninstallTest(t *testing.T, runtimeDir string, platform NativePlatform) InstallPlan {
+	t.Helper()
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: config.DeploymentModeNative, Profile: config.DeploymentProfileCore,
+		Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle,
+		RuntimeDir: runtimeDir, StorageDriver: "s3", ApplicationVersion: "v1", ReleaseVersion: "v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := upgradeTestDocument(config.DeploymentRoleSingle)
+	document.Values["DEPLOYMENT_MODE"] = string(config.DeploymentModeNative)
+	document.Values["DEPLOYMENT_PROFILE"] = string(config.DeploymentProfileCore)
+	document.Values["DEPLOYMENT_TOPOLOGY"] = string(config.DeploymentTopologySingle)
+	document.Values["DEPLOYMENT_ROLE"] = string(config.DeploymentRoleSingle)
+	document.Values["RELEASE_VERSION"] = "v1"
+	runtimeEnv, err := config.RenderRuntimeEnv(config.DefaultRuntimeSchema(), document.Values, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(runtimeDir, "config"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config", "runtime.env"), runtimeEnv, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	releaseFile := filepath.Join(runtimeDir, "web", "index.html")
+	if err := os.MkdirAll(filepath.Dir(releaseFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("managed")
+	if err := os.WriteFile(releaseFile, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	releaseInfo, err := os.Stat(releaseFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseHasher := sha256.New()
+	_, _ = fmt.Fprintf(releaseHasher, "native-release-file-v1 mode=%04o\n", releaseInfo.Mode().Perm())
+	_, _ = releaseHasher.Write(content)
+	archiveDigest := sha256.Sum256([]byte("archive"))
+	manifest := nativeReleaseJournal{
+		SchemaVersion: nativeReleaseJournalSchema,
+		ArchiveSHA256: hex.EncodeToString(archiveDigest[:]),
+		Files:         map[string]string{"web/index.html": hex.EncodeToString(releaseHasher.Sum(nil))},
+	}
+	if err := writeNativeReleaseJournal(filepath.Join(runtimeDir, ".native-release.manifest.json"), manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, ".native-release.sha256"), []byte(manifest.ArchiveSHA256+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	serviceFiles, err := BuildNativeServiceFiles(plan, document.Values["INSTALLATION_ID"], platform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range serviceFiles {
+		path := filepath.Join(runtimeDir, file.RelativePath)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, file.Content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return plan
 }

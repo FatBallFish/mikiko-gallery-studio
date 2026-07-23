@@ -59,6 +59,13 @@ export function resolveSetupURL(setupURL: string, apiBaseUrl: string, frontendOr
   return resolved.href
 }
 
+export function setupURLWithReturnTarget(setupURL: string, currentURL: string) {
+  const setup = parseHTTPURL(setupURL)
+  const returnTarget = parseHTTPURL(currentURL)
+  setup.hash = `return_to=${encodeURIComponent(returnTarget.href)}`
+  return setup.href
+}
+
 function optionalString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value : undefined
 }

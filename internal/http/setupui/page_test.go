@@ -113,7 +113,7 @@ func TestPageServesCompleteOperationalSetupConsole(t *testing.T) {
 		"role=\"status\"", "aria-live=\"polite\"", "<progress", "prefers-reduced-motion",
 		"/api/setup/v1/session", "/api/setup/v1/probes/database", "/api/setup/v1/probes/redis",
 		"/api/setup/v1/probes/storage", "/api/setup/v1/apply", "/api/setup/v1/progress/",
-		"/api/system/v1/bootstrap-status", "history.back()",
+		"/api/system/v1/bootstrap-status", "history.back()", "session?.operation_id",
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("setup page missing %q", required)

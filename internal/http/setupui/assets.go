@@ -298,6 +298,7 @@ const setupPageScript = `'use strict';
     storage: '/api/setup/v1/probes/storage',
   };
   const hasReturnHistory = history.length > 1 && document.referrer !== '';
+  const returnURL = returnURLFromHash();
   let operationId = '';
   let preserveOperationID = false;
   let applying = false;
@@ -329,6 +330,22 @@ const setupPageScript = `'use strict';
     element.textContent = message || '';
     element.classList.toggle('error', kind === 'error');
     element.classList.toggle('success', kind === 'success');
+  }
+
+  function returnURLFromHash() {
+    const marker = '#return_to=';
+    if (!location.hash.startsWith(marker)) return '';
+    try {
+      const target = new URL(decodeURIComponent(location.hash.slice(marker.length)));
+      if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) return '';
+      if (document.referrer) {
+        const referrer = new URL(document.referrer);
+        if (target.origin !== referrer.origin) return '';
+      }
+      return target.href;
+    } catch (_) {
+      return '';
+    }
   }
 
   async function requestJSON(path, options = {}) {
@@ -604,11 +621,16 @@ const setupPageScript = `'use strict';
     byId('authenticate').disabled = true;
     setStatus(authStatus, '正在验证… / Authenticating…');
     try {
-      await requestJSON('/api/setup/v1/session', { method: 'POST', body: { token } });
-      authPanel.hidden = true;
-      workspace.hidden = false;
-      setStatus(authStatus, '');
-      focusSetupWorkspace();
+	      const session = await requestJSON('/api/setup/v1/session', { method: 'POST', body: { token } });
+	      operationId = session?.operation_id || operationId;
+	      preserveOperationID = Boolean(operationId);
+	      authPanel.hidden = true;
+	      workspace.hidden = false;
+	      setStatus(authStatus, '');
+	      if (operationId) {
+	        setStatus(applyStatus, '检测到未完成的初始化操作。请重新填写相同配置和敏感字段，完成检测后继续。 / An unfinished setup operation was found. Re-enter the same configuration and secrets, run the probes, then continue.', 'error');
+	      }
+	      focusSetupWorkspace();
     } catch (error) {
       setStatus(authStatus, errors[error.code] || errors.SETUP_INTERNAL_ERROR, 'error');
     } finally {
@@ -732,7 +754,10 @@ const setupPageScript = `'use strict';
     progressPanel.hidden = true;
     completionPanel.hidden = false;
     setStatus(globalStatus, '');
-    if (hasReturnHistory) {
+    if (returnURL) {
+      byId('completion-message').textContent = '服务已就绪，正在返回原页面… / Ready; returning to the original page…';
+      window.setTimeout(() => location.assign(returnURL), 900);
+    } else if (hasReturnHistory) {
       byId('completion-message').textContent = '服务已就绪，正在返回原页面… / Ready; returning to the previous page…';
       window.setTimeout(() => history.back(), 900);
     } else {

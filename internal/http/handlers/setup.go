@@ -41,6 +41,7 @@ type setupProber interface {
 type setupApplication interface {
 	Apply(context.Context, setup.ApplyRequest) (setup.OperationView, error)
 	Progress(context.Context, string) (setup.OperationView, error)
+	RecoveryOperationID() (string, error)
 }
 
 type SetupAPIOptions struct {
@@ -121,6 +122,11 @@ func (api *SetupAPI) HandleSession(w http.ResponseWriter, r *http.Request) {
 		writeSetupAuthError(w, r, err)
 		return
 	}
+	operationID, err := api.application.RecoveryOperationID()
+	if err != nil {
+		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, "SETUP_INTERNAL_ERROR", "setup recovery state could not be loaded"))
+		return
+	}
 	cookie, err := setup.NewSetupSessionCookie(session, api.now(), api.sessionTTL, api.secureSessionCookie(r))
 	if err != nil {
 		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, "SETUP_INTERNAL_ERROR", "setup session could not be created"))
@@ -128,7 +134,9 @@ func (api *SetupAPI) HandleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, cookie)
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNoContent)
+	httpx.WriteSuccess(w, r, http.StatusOK, struct {
+		OperationID string `json:"operation_id,omitempty"`
+	}{OperationID: operationID})
 }
 
 func (api *SetupAPI) secureSessionCookie(r *http.Request) bool {

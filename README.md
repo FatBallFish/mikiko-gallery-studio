@@ -374,114 +374,79 @@ Admin-managed sensitive settings are write-only by contract:
 - Payment provider instances are configured in the admin cashier page. Merchant secrets should be submitted through the secret fields and are preserved on update unless rotated or explicitly cleared.
 - Run the admin console behind HTTPS/TLS before entering production merchant or SMTP credentials.
 
-## Docker Compose Deployment
+## Production Deployment
 
-The production compose file is located at [`deployments/docker-compose/docker-compose.prod.yml`](./deployments/docker-compose/docker-compose.prod.yml). It pulls prebuilt images from `PIC_GALLERY_IMAGE_REGISTRY`; it does not build from local source and does not mount `config.yaml`.
+`deployctl` is the supported deployment entrypoint. It generates a portable runtime directory and one bilingual `./config/runtime.env`; no application secrets or middleware URLs need to be prepared manually before a Docker full install.
 
-### First Deployment After Clone
+| Mode | Profile | Application services | Middleware |
+| --- | --- | --- | --- |
+| Docker | `full` | API, Worker, user/admin/docs Web, Gateway | Managed PostgreSQL, Redis, MinIO |
+| Docker | `core` | API, Worker, user/admin/docs Web, Gateway | Existing PostgreSQL, Redis, object storage |
+| Native Linux/Windows | `core` | API, Worker, portable Gateway and Web assets | Existing PostgreSQL, Redis, object storage |
 
-Use this path on a new server when the repository has just been cloned and you want Docker Compose to manage PostgreSQL, Redis, API, worker, frontend containers, and Nginx.
+Native `full` is intentionally unsupported. Docker and native `core` support cluster control/API/Worker/Web roles. Multi-API nodes are exposed by an operator-managed load balancer; the project handles node enrollment and health, not public ingress.
 
-```bash
-cp deployments/docker-compose/.env.prod.example deployments/docker-compose/.env.prod
-$EDITOR deployments/docker-compose/.env.prod
+### One-Command Install
 
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml pull
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml up -d
-```
-
-Set at least these values before the first start:
-
-- `PIC_GALLERY_IMAGE_REGISTRY`
-- `PIC_GALLERY_IMAGE_TAG`
-- `POSTGRES_PASSWORD`
-- `AUTH_ACCESS_TOKEN_SECRET`
-- `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`
-- `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`
-- `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`
-- `CORS_ALLOWED_ORIGINS`
-
-The first administrator is created through the API-hosted setup flow; plaintext administrator credentials are never loaded from runtime environment variables.
-
-Check the deployment:
+Docker full:
 
 ```bash
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml ps
-curl http://localhost:${NGINX_PORT:-80}/readyz
+./scripts/install.sh install --mode docker --profile full --topology single --yes
 ```
 
-To prepare a standalone deployment directory with generated secrets, keep the `docker-compose/` directory beside `nginx/` so the relative Nginx mount in the compose file resolves correctly:
+Docker core or native core:
 
 ```bash
-mkdir -p pic-gallery-deploy && cd pic-gallery-deploy
-mkdir -p docker-compose
-cd docker-compose
-/path/to/pic-gallery/deployments/docker-compose/prepare.sh
-cd ..
-cp -R /path/to/pic-gallery/deployments/nginx ./nginx
-cd docker-compose
-$EDITOR .env.prod
-docker compose --env-file .env.prod -f docker-compose.yml pull
-docker compose --env-file .env.prod -f docker-compose.yml up -d
+./scripts/install.sh install --mode docker --profile core --topology single --yes
+./scripts/install.sh install --mode native --profile core --topology single --yes
 ```
 
-The production stack includes PostgreSQL, Redis, API, worker, user web, admin web, Nginx, shared storage, and optional Prometheus. PostgreSQL, Redis, API, worker, and frontend containers are on the same Compose network and are not published to the host. Nginx is the public entrypoint.
+On Windows, invoke `./scripts/install.ps1` with the same arguments. Omit `--yes` for the interactive selector. The wrappers download and verify a release-compatible `deployctl`; `DEPLOYCTL_BIN` can point to a preinstalled binary.
 
-Default public routes:
-
-- User web: `http://localhost:${NGINX_PORT:-80}/`
-- Admin web: `http://localhost:${NGINX_PORT:-80}/admin/`
-- API and docs: proxied through `/api/*`, `/docs/*`, `/v1/*`, `/healthz`, and `/readyz`
-
-See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md) for a deployment runbook.
-
-### Version Updates
-
-For Docker deployments, publish the new images first, then update only `PIC_GALLERY_IMAGE_TAG` in `.env.prod` and restart the stack:
+Before initialization, only health, bootstrap status, and the API-hosted `/setup` UI are available. User and admin Web apps redirect to the backend-provided Setup URL, including the exact original return route. Retrieve or rotate the one-time credential on the deployment host:
 
 ```bash
-$EDITOR deployments/docker-compose/.env.prod
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml pull
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml up -d
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml ps
-curl http://localhost:${NGINX_PORT:-80}/readyz
+deployctl setup status
+deployctl setup token show
+deployctl setup token reset
 ```
 
-For local source deployments, pull the new code, rebuild, and restart the installed services:
+Setup probes PostgreSQL, Redis, and storage, writes all required values to `./config/runtime.env`, migrates the database, creates the first administrator, and restarts into normal mode. Full-profile connection fields are managed/read-only; core-profile fields are editable. Afterward, configure providers, models, routes, prices, plans, registration, payments, and SMTP in the admin console.
+
+### Cluster Join
+
+On the initialized control node:
 
 ```bash
-git pull
-./scripts/local/pgctl.sh build --components api,worker
-./scripts/local/pgctl.sh restart --components api,worker --user
-curl http://127.0.0.1:8080/readyz
+deployctl cluster token create --role api --ttl 10m
+deployctl cluster token create --role worker --ttl 10m
 ```
 
-Rollback is the same flow with `PIC_GALLERY_IMAGE_TAG` set back to the previous image tag, or with Git checked out to the previous source revision for local mode.
-
-### Local vs Docker Mode
-
-Local source-run mode uses [`scripts/local/pgctl.sh`](./scripts/local/pgctl.sh):
+On a new node:
 
 ```bash
-mkdir -p config
-cp config/runtime.env.example config/runtime.env
-./scripts/local/pgctl.sh build --components api,worker
-./scripts/local/pgctl.sh up --components api,worker --background
-./scripts/service/manage.sh status --user
+deployctl cluster join --server http://10.0.0.10:8080 --token '<single-use-token>' --mode docker --runtime-dir .
 ```
 
-Docker mode uses Compose and images from the configured registry:
+Enrollment credentials are short-lived, role-scoped, single-use, and exchanged through an authenticated encrypted envelope. Cluster nodes must share PostgreSQL, Redis, S3-compatible storage, and compatible application/schema versions.
 
-- `docker-compose.local.yml` is the single local environment for development and Docker E2E. It builds local images and preserves local PostgreSQL and object-storage volumes.
-- `docker-compose.prod.yml` is optimized for deployment and only pulls prebuilt images.
+### Operations
 
-Build and publish images with:
+```bash
+deployctl status
+deployctl doctor
+deployctl restart
+deployctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag
+deployctl uninstall --yes
+```
+
+Ordinary uninstall preserves config and persistent data. Permanent deletion requires the exact installation-specific confirmation phrase printed by `deployctl`; back up the database and object storage first.
+
+Destructive uninstall refuses runtime trees containing unmanaged paths before it stops services or deletes volumes. Interrupted Setup sessions recover their persisted operation ID after Token authentication. Upgrade migrations are forward-only: after migration succeeds, rerun the same upgrade command to resume any failed service rollout.
+
+The application accepts plain HTTP and IP-plus-port access. DNS, TLS certificates, reverse proxies, and external load balancers are deployment responsibilities. See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md) for prerequisites, custom modules, native services, upgrades, recovery, and destructive-operation safeguards.
+
+Build and publish Docker images with:
 
 ```bash
 ./scripts/docker/images.sh build --tag test --registry docker.io/your-org

@@ -23,6 +23,8 @@ done
 for marker in \
   'run_setup_initialization' \
   '/api/setup/v1/session' \
+  'if [[ "$session_status" != "200" ]]' \
+  'assert_json_path_exists "$(cat "$TMP_DIR/setup-session.json")" "data"' \
   '/api/setup/v1/apply' \
   'want supervisor restart code 75'; do
   if ! grep -Fq "$marker" "$SMOKE"; then
@@ -59,6 +61,7 @@ fi
 
 for marker in \
   'CONFIG_REVISION=1' \
+  'CLUSTER_ENROLLMENT_SEAL_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
   'SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"' \
   '"phase": "completed"' \
   '"config_revision": 1'; do

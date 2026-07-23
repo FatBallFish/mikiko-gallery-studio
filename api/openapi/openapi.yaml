@@ -119,8 +119,12 @@ paths:
             schema:
               $ref: ./components/schemas/setup.yaml#/components/schemas/SetupSessionRequest
       responses:
-        '204':
-          description: Setup session cookie created
+        '200':
+          description: Setup session cookie created with an optional interrupted operation to resume
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/setup.yaml#/components/schemas/SetupSessionResponse
         '400':
           description: SETUP_INVALID_JSON
           content:

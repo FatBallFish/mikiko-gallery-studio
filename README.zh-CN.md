@@ -374,112 +374,77 @@ powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 status -Comp
 - 支付渠道实例在管理后台收银台页面配置。商户密钥应通过密钥字段提交；更新实例时默认保留旧密钥，只有显式轮换或清空才会变更。
 - 生产环境输入商户密钥或 SMTP 密码前，请确保管理后台和 Admin API 已通过 HTTPS/TLS 访问。
 
-## Docker Compose 部署
+## 生产部署
 
-生产 Compose 文件位于 [`deployments/docker-compose/docker-compose.prod.yml`](./deployments/docker-compose/docker-compose.prod.yml)。生产 Compose 从 `PIC_GALLERY_IMAGE_REGISTRY` 拉取预构建镜像，不再从本地源码构建，也不再挂载 `config.yaml`。
+`deployctl` 是唯一受支持的部署入口。它会生成可移动的运行目录和一份带中英文注释的 `./config/runtime.env`；Docker 完整模式首次启动前无需手工准备应用密钥或中间件连接信息。
 
-### 新项目 Clone 后首次部署
+| 模式 | Profile | 应用服务 | 中间件 |
+| --- | --- | --- | --- |
+| Docker | `full` | API、Worker、用户/管理/文档 Web、Gateway | 托管 PostgreSQL、Redis、MinIO |
+| Docker | `core` | API、Worker、用户/管理/文档 Web、Gateway | 已有 PostgreSQL、Redis、对象存储 |
+| 原生 Linux/Windows | `core` | API、Worker、便携 Gateway 与 Web 资产 | 已有 PostgreSQL、Redis、对象存储 |
 
-当一台新服务器刚 clone 仓库，并希望由 Docker Compose 管理 PostgreSQL、Redis、API、Worker、前端容器和 Nginx 时，使用这个流程。
+原生模式明确不支持 `full`。Docker 和原生 `core` 都支持 control/API/Worker/Web 集群角色。多 API 节点由部署者已有的负载均衡统一暴露；项目只负责节点加入与健康状态，不负责公网入口。
 
-```bash
-cp deployments/docker-compose/.env.prod.example deployments/docker-compose/.env.prod
-$EDITOR deployments/docker-compose/.env.prod
+### 一条命令安装
 
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml pull
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml up -d
-```
-
-首次启动前至少要设置这些值：
-
-- `PIC_GALLERY_IMAGE_REGISTRY`
-- `PIC_GALLERY_IMAGE_TAG`
-- `POSTGRES_PASSWORD`
-- `AUTH_ACCESS_TOKEN_SECRET`
-- `API_KEY_SIGNING_SECRET_ENCRYPTION_KEY`
-- `CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY`
-- `PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY`
-- `CORS_ALLOWED_ORIGINS`
-
-首个管理员通过 API 托管的初始化流程创建；运行时环境变量不会读取管理员明文凭据。
-
-检查部署状态：
+Docker 完整模式：
 
 ```bash
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml ps
-curl http://localhost:${NGINX_PORT:-80}/readyz
+./scripts/install.sh install --mode docker --profile full --topology single --yes
 ```
 
-也可以生成独立部署目录并自动生成密钥。注意保持 `docker-compose/` 目录和 `nginx/` 目录同级，这样 Compose 文件里的 Nginx 相对挂载路径才能正确解析：
+Docker 核心模式或原生核心模式：
 
 ```bash
-mkdir -p pic-gallery-deploy && cd pic-gallery-deploy
-mkdir -p docker-compose
-cd docker-compose
-/path/to/pic-gallery/deployments/docker-compose/prepare.sh
-cd ..
-cp -R /path/to/pic-gallery/deployments/nginx ./nginx
-cd docker-compose
-$EDITOR .env.prod
-docker compose --env-file .env.prod -f docker-compose.yml pull
-docker compose --env-file .env.prod -f docker-compose.yml up -d
+./scripts/install.sh install --mode docker --profile core --topology single --yes
+./scripts/install.sh install --mode native --profile core --topology single --yes
 ```
 
-生产栈包含 PostgreSQL、Redis、API、Worker、用户端 Web、管理端 Web、Nginx、共享存储和可选 Prometheus。PostgreSQL、Redis、API、Worker 和前端容器都在同一个 Compose network 中，不对宿主机发布端口；Nginx 是唯一公开入口。
+Windows 使用 `./scripts/install.ps1` 并传入相同参数。去掉 `--yes` 可进入交互式选择。包装脚本会下载并校验版本匹配的 `deployctl`；也可用 `DEPLOYCTL_BIN` 指向已安装的二进制。
 
-默认公开路由：
-
-- 用户端 Web：`http://localhost:${NGINX_PORT:-80}/`
-- 管理端 Web：`http://localhost:${NGINX_PORT:-80}/admin/`
-- API 与文档：通过 `/api/*`、`/docs/*`、`/v1/*`、`/healthz`、`/readyz` 代理
-
-部署细节见 [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md)。
-
-### 后续版本更新
-
-Docker 部署更新时，先发布新镜像，再只修改 `.env.prod` 里的 `PIC_GALLERY_IMAGE_TAG`，然后拉取并重启：
+初始化完成前，API 只开放健康检查、bootstrap 状态和自身托管的 `/setup` 页面。用户端与管理端会跳转到后端返回的 Setup URL，并保留精确的原访问路由。可在部署主机查询或轮换一次性凭证：
 
 ```bash
-$EDITOR deployments/docker-compose/.env.prod
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml pull
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml up -d
-docker compose --env-file deployments/docker-compose/.env.prod \
-  -f deployments/docker-compose/docker-compose.prod.yml ps
-curl http://localhost:${NGINX_PORT:-80}/readyz
+deployctl setup status
+deployctl setup token show
+deployctl setup token reset
 ```
 
-本机源码部署更新时，拉取新代码、重新构建并重启已安装服务：
+Setup 会探测 PostgreSQL、Redis 和存储，将全部必填值写入 `./config/runtime.env`，执行数据库迁移、创建首个管理员并重启进入正常模式。`full` 的连接字段由部署工具托管且只读，`core` 的连接字段可编辑。完成后再到管理后台配置供应商、模型、路由、价格、套餐、注册、支付和 SMTP。
+
+### 集群加入
+
+在已初始化的控制节点签发凭证：
 
 ```bash
-git pull
-./scripts/local/pgctl.sh build --components api,worker
-./scripts/local/pgctl.sh restart --components api,worker --user
-curl http://127.0.0.1:8080/readyz
+deployctl cluster token create --role api --ttl 10m
+deployctl cluster token create --role worker --ttl 10m
 ```
 
-回滚使用同一套流程：Docker 模式把 `PIC_GALLERY_IMAGE_TAG` 改回上一个镜像标签；本机模式把 Git 代码切回上一个版本后重新构建并重启。
-
-### 本地模式与 Docker 模式
-
-本地源码运行使用 [`scripts/local/pgctl.sh`](./scripts/local/pgctl.sh)：
+在新节点执行：
 
 ```bash
-mkdir -p config
-cp config/runtime.env.example config/runtime.env
-./scripts/local/pgctl.sh build --components api,worker
-./scripts/local/pgctl.sh up --components api,worker --background
-./scripts/service/manage.sh status --user
+deployctl cluster join --server http://10.0.0.10:8080 --token '<single-use-token>' --mode docker --runtime-dir .
 ```
 
-Docker 模式使用 Compose 和镜像仓库：
+加入凭证短时有效、限定角色且只能使用一次，配置通过认证加密信封交换。集群节点必须共享 PostgreSQL、Redis、S3 兼容存储，并使用兼容的应用与 schema 版本。
 
-- `docker-compose.local.yml` 是开发与 Docker E2E 共用的唯一环境，构建本地镜像并保留 PostgreSQL 和对象存储卷。
-- `docker-compose.prod.yml` 面向部署，只拉取预构建镜像。
+### 日常运维
+
+```bash
+deployctl status
+deployctl doctor
+deployctl restart
+deployctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag
+deployctl uninstall --yes
+```
+
+普通卸载会保留配置和持久化数据。永久删除必须输入 `deployctl` 输出的、绑定 installation ID 的精确确认短语；执行前先备份数据库与对象存储。
+
+破坏性卸载会在停止服务或删除卷之前检查运行目录，存在任何非受管路径时拒绝执行。Setup 中断后重新用 Token 认证会取回持久化的 operation ID。升级迁移只支持前滚：迁移成功后如果服务滚动失败，应使用完全相同的参数重新执行升级以继续。
+
+项目接受纯 HTTP 和 IP+端口访问。DNS、HTTPS 证书、反向代理和外部负载均衡由部署者负责。环境要求、自定义模块、原生服务、升级恢复与危险操作保护详见 [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md)。
 
 镜像构建与发布：
 

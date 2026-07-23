@@ -87,6 +87,13 @@ func TestBuildRuntimeArtifactsPrepopulatesManagedDockerFullMiddleware(t *testing
 	if document.Values["STORAGE_S3_ACCESS_KEY_ID"] == document.Values["MINIO_ROOT_USER"] || document.Values["STORAGE_S3_SECRET_ACCESS_KEY"] == document.Values["MINIO_ROOT_PASSWORD"] {
 		t.Fatal("application object storage credentials must not reuse MinIO root credentials")
 	}
+	for key, prefix := range map[string]string{
+		"POSTGRES_PASSWORD": "pg_", "REDIS_PASSWORD": "redis_", "MINIO_ROOT_PASSWORD": "minio_", "STORAGE_S3_SECRET_ACCESS_KEY": "s3_",
+	} {
+		if !strings.HasPrefix(document.Values[key], prefix) {
+			t.Errorf("managed credential %s must use a CLI-safe prefix %q", key, prefix)
+		}
+	}
 }
 
 func TestBuildRuntimeArtifactsPrepopulatesOnlySelectedDockerCustomMiddleware(t *testing.T) {
@@ -122,7 +129,7 @@ func TestBuildRuntimeArtifactsIncludesSelfContainedDockerAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantPaths := []string{"compose.yml", filepath.Join("assets", "nginx-default.conf"), filepath.Join("assets", "minio-init.sh"), filepath.Join("assets", "prometheus.yml")}
+	wantPaths := []string{"compose.yml", filepath.Join("assets", "nginx-default.conf"), filepath.Join("assets", "minio-init.sh"), filepath.Join("assets", "postgres-init.sh"), filepath.Join("assets", "prometheus.yml")}
 	if len(artifacts.DeploymentFiles) != len(wantPaths) {
 		t.Fatalf("deployment files = %#v", artifacts.DeploymentFiles)
 	}
@@ -134,7 +141,7 @@ func TestBuildRuntimeArtifactsIncludesSelfContainedDockerAssets(t *testing.T) {
 	if !bytes.Contains(artifacts.DeploymentFiles[1].Content, []byte("server api:18080;")) {
 		t.Fatal("materialized Nginx config did not use the configured API port")
 	}
-	if !bytes.Contains(artifacts.DeploymentFiles[3].Content, []byte("api:18080")) {
+	if !bytes.Contains(artifacts.DeploymentFiles[4].Content, []byte("api:18080")) {
 		t.Fatal("materialized Prometheus config did not use the configured API port")
 	}
 }

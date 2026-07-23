@@ -9,6 +9,9 @@ var (
 	//go:embed docker-compose/minio-init.sh
 	minioInit []byte
 
+	//go:embed docker-compose/postgres-init.sh
+	postgresInit []byte
+
 	//go:embed nginx/default.conf
 	nginxDefault []byte
 
@@ -18,5 +21,6 @@ var (
 
 func DockerCompose() []byte { return append([]byte(nil), dockerCompose...) }
 func MinIOInit() []byte     { return append([]byte(nil), minioInit...) }
+func PostgresInit() []byte  { return append([]byte(nil), postgresInit...) }
 func NginxDefault() []byte  { return append([]byte(nil), nginxDefault...) }
 func Prometheus() []byte    { return append([]byte(nil), prometheus...) }

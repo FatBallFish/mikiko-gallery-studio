@@ -174,6 +174,7 @@ func buildDeploymentFiles(plan InstallPlan) ([]DeploymentFile, error) {
 		{RelativePath: "compose.yml", Content: deploymentassets.DockerCompose()},
 		{RelativePath: filepath.Join("assets", "nginx-default.conf"), Content: nginxConfig},
 		{RelativePath: filepath.Join("assets", "minio-init.sh"), Content: deploymentassets.MinIOInit()},
+		{RelativePath: filepath.Join("assets", "postgres-init.sh"), Content: deploymentassets.PostgresInit()},
 		{RelativePath: filepath.Join("assets", "prometheus.yml"), Content: prometheusConfig},
 	}, nil
 }
@@ -237,20 +238,20 @@ func deploymentFilePaths(plan InstallPlan) ([]string, error) {
 
 func populateManagedResources(values map[string]string, root []byte, postgres, redis, storage bool) {
 	if postgres {
-		postgresPassword := derivedSecret(root, "postgres-password")
+		postgresPassword := "pg_" + derivedSecret(root, "postgres-password")
 		values["POSTGRES_DATABASE"] = "app"
 		values["POSTGRES_USER"] = "app"
 		values["POSTGRES_PASSWORD"] = postgresPassword
 		values["DATABASE_URL"] = (&url.URL{Scheme: "postgres", User: url.UserPassword("app", postgresPassword), Host: "postgres:5432", Path: "/app", RawQuery: "sslmode=disable"}).String()
 	}
 	if redis {
-		redisPassword := derivedSecret(root, "redis-password")
+		redisPassword := "redis_" + derivedSecret(root, "redis-password")
 		values["REDIS_PASSWORD"] = redisPassword
 		values["REDIS_URL"] = (&url.URL{Scheme: "redis", User: url.UserPassword("", redisPassword), Host: "redis:6379", Path: "/0"}).String()
 		values["REDIS_KEY_PREFIX"] = "app"
 	}
 	if storage {
-		minioPassword := derivedSecret(root, "minio-root-password")
+		minioPassword := "minio_" + derivedSecret(root, "minio-root-password")
 		storageAccessIDSecret := derivedSecret(root, "minio-app-access-id")
 		values["MINIO_ROOT_USER"] = "minio-admin"
 		values["MINIO_ROOT_PASSWORD"] = minioPassword
@@ -259,7 +260,7 @@ func populateManagedResources(values map[string]string, root []byte, postgres, r
 		values["STORAGE_S3_REGION"] = "us-east-1"
 		values["STORAGE_S3_BUCKET"] = "app-assets"
 		values["STORAGE_S3_ACCESS_KEY_ID"] = "app-" + storageAccessIDSecret[:20]
-		values["STORAGE_S3_SECRET_ACCESS_KEY"] = derivedSecret(root, "minio-app-secret")
+		values["STORAGE_S3_SECRET_ACCESS_KEY"] = "s3_" + derivedSecret(root, "minio-app-secret")
 		values["STORAGE_S3_FORCE_PATH_STYLE"] = "true"
 	}
 }

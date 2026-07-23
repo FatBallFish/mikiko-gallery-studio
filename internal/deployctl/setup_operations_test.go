@@ -50,6 +50,54 @@ func TestSetupTokenResetRotatesVersionAtomicallyAndRestartsDeployment(t *testing
 	}
 }
 
+func TestSetupTokenResetRuntimeDependenciesRestartOnlyAPIAndGatewayServices(t *testing.T) {
+	const installationID = "019d0000-0000-7000-8000-000000000123"
+	t.Run("docker", func(t *testing.T) {
+		runtimeDir := setupOperationsFixture(t, false)
+		plan, _, err := loadInstallation(runtimeDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runner := &recordingProcessRunner{}
+		dependencies := SetupTokenResetRuntimeDependencies(RuntimeExecutors{Docker: DockerExecutor{
+			Runner: runner, RuntimeUser: func() string { return "1000:1000" }, Environment: func() []string { return nil },
+		}})
+		if err := dependencies.RestartDeployment(t.Context(), plan); err != nil {
+			t.Fatal(err)
+		}
+		if len(runner.specs) != 1 || !strings.HasSuffix(strings.Join(runner.specs[0].Arguments, " "), "restart api gateway") {
+			t.Fatalf("Docker setup token restart specs = %#v", runner.specs)
+		}
+	})
+
+	t.Run("native linux", func(t *testing.T) {
+		plan, err := BuildInstallPlan(InstallInput{
+			Mode: config.DeploymentModeNative, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle,
+			Role: config.DeploymentRoleSingle, RuntimeDir: t.TempDir(), StorageDriver: "local", ApplicationVersion: "v1",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		runner := &recordingProcessRunner{}
+		dependencies := SetupTokenResetRuntimeDependencies(RuntimeExecutors{Native: NativeExecutor{
+			Runner: runner, Platform: func() NativePlatform { return NativePlatformLinux }, CheckPrivileges: func(NativePlatform) error { return nil },
+			ReadFile: func(string) ([]byte, error) { return []byte("INSTALLATION_ID=" + installationID + "\n"), nil },
+		}})
+		if err := dependencies.RestartDeployment(t.Context(), plan); err != nil {
+			t.Fatal(err)
+		}
+		if len(runner.specs) != 4 {
+			t.Fatalf("native setup token restart specs = %#v", runner.specs)
+		}
+		for _, spec := range runner.specs {
+			arguments := strings.Join(spec.Arguments, " ")
+			if (!strings.Contains(arguments, "-api.service") && !strings.Contains(arguments, "-gateway.service")) || strings.Contains(arguments, "-worker.service") {
+				t.Fatalf("native setup token restart touched a non-API service: %#v", spec)
+			}
+		}
+	})
+}
+
 func setupOperationsFixture(t *testing.T, completed bool) string {
 	t.Helper()
 	runtimeDir := t.TempDir()

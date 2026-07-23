@@ -139,7 +139,7 @@ func TestOpenAPISpecDocumentsBootstrapAndPendingSetupWithoutSecretExamples(t *te
 	expectedResponses := map[string][]string{
 		"GET /setup":                                {"200"},
 		"GET /api/system/v1/bootstrap-status":       {"200"},
-		"POST /api/setup/v1/session":                {"204", "400", "401", "409", "429", "500"},
+		"POST /api/setup/v1/session":                {"200", "400", "401", "409", "429", "500"},
 		"POST /api/setup/v1/probes/database":        {"200", "400", "401"},
 		"POST /api/setup/v1/probes/redis":           {"200", "400", "401"},
 		"POST /api/setup/v1/probes/storage":         {"200", "400", "401"},
@@ -158,6 +158,9 @@ func TestOpenAPISpecDocumentsBootstrapAndPendingSetupWithoutSecretExamples(t *te
 	}
 	if !strings.Contains(string(content), "SETUP_FIRST_ADMIN_CONFLICT") {
 		t.Fatal("setup apply 409 response must document SETUP_FIRST_ADMIN_CONFLICT")
+	}
+	if !strings.Contains(string(content), "SetupSessionResponse") {
+		t.Fatal("setup session success must document its recoverable operation response")
 	}
 
 	schemaContent, err := os.ReadFile("components/schemas/setup.yaml")

@@ -16,12 +16,16 @@ const MINIO_URL = envUrl('MINIO_URL', `http://127.0.0.1:${process.env.MINIO_API_
 const MAILPIT_URL = envUrl('MAILPIT_URL', `http://127.0.0.1:${process.env.MAILPIT_UI_PORT || '8025'}`)
 const REPORT_DIR = path.join(ROOT_DIR, 'tmp/e2e')
 const RUN_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
+const IMAGE_PROVIDER_DELAY_MS = Number.parseInt(process.env.E2E_IMAGE_PROVIDER_DELAY_MS || '0', 10)
+const IMAGE_PROVIDER_MARKER = process.env.E2E_IMAGE_PROVIDER_MARKER || ''
+const SKIP_MIDDLEWARE_HEALTH = process.env.E2E_SKIP_MIDDLEWARE_HEALTH === 'true'
 const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII='
 const FAKE_PROVIDER_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNkaGAAAAHAAZcAzSrgAAAAAElFTkSuQmCC'
 
 const state = {
   steps: [],
   warnings: [],
+  fakeImageRequests: [],
   fakeTextRequests: [],
   user: {},
   admin: {},
@@ -49,6 +53,7 @@ const state = {
 
 let fakeProviderServer = null
 let fakeProviderPort = 0
+let delayedImageProviderRequest = false
 
 function envUrl(name, fallback) {
   return (process.env[name] || fallback).replace(/\/+$/, '')
@@ -181,7 +186,25 @@ async function startFakeProvider() {
       return
     }
     if (req.method === 'POST' && req.url === '/chat/completions') {
-      req.resume()
+      const chunks = []
+      for await (const chunk of req) chunks.push(chunk)
+      const body = Buffer.concat(chunks).toString('utf8')
+      const prompt = [
+        'docker e2e prompt',
+        'docker e2e open api prompt',
+        'docker e2e compat prompt',
+      ].find(value => body.includes(value)) || ''
+      const requestNumber = state.fakeImageRequests.length + 1
+      state.fakeImageRequests.push({ requestNumber, prompt, bodyLength: Buffer.byteLength(body) })
+      if (IMAGE_PROVIDER_MARKER) {
+        await fs.mkdir(path.dirname(IMAGE_PROVIDER_MARKER), { recursive: true })
+        await fs.appendFile(IMAGE_PROVIDER_MARKER, `${JSON.stringify({ requestNumber, prompt, at: new Date().toISOString() })}\n`)
+      }
+      if (!delayedImageProviderRequest && Number.isFinite(IMAGE_PROVIDER_DELAY_MS) && IMAGE_PROVIDER_DELAY_MS > 0) {
+        delayedImageProviderRequest = true
+        await sleep(IMAGE_PROVIDER_DELAY_MS)
+      }
+      if (res.destroyed) return
       const payload = JSON.stringify({
         choices: [
           {
@@ -1116,7 +1139,7 @@ async function corsSweep(openapi) {
     ADMIN_WEB_URL.replace('127.0.0.1', 'localhost'),
   ].map(url => new URL(url).origin))]
   let checked = 0
-  for (const [template, ops] of Object.entries(openapi.paths)) {
+  for (const [template, ops] of normalModeOpenAPIPaths(openapi)) {
     for (const method of Object.keys(ops)) {
       if (method.toUpperCase() === 'GET') continue
       const pathValue = materializePath(template)
@@ -1148,7 +1171,7 @@ async function openapiRouteSweep(openapi) {
   const warnings = []
   let checked = 0
   const operations = []
-  for (const [template, ops] of Object.entries(openapi.paths)) {
+  for (const [template, ops] of normalModeOpenAPIPaths(openapi)) {
     for (const [method, operation] of Object.entries(ops)) {
       operations.push({ template, method: method.toUpperCase(), operation })
     }
@@ -1187,6 +1210,10 @@ async function openapiRouteSweep(openapi) {
   return { checked, semanticNotFoundWarnings: warnings.length }
 }
 
+function normalModeOpenAPIPaths(openapi) {
+  return Object.entries(openapi.paths).filter(([template]) => template !== '/setup' && !template.startsWith('/api/setup/'))
+}
+
 function rememberStorageConfigVersion(template, result) {
   if (!template.includes('/api/ops/admin/v1/storage-configs/{storage_config_id}')) return
   const version = Number(result.json?.data?.version)
@@ -1203,6 +1230,7 @@ function isExpectedSemanticNotFound(result, template) {
   if (result.status !== 404 || result.json?.error?.code !== 'NOT_FOUND') return false
   return template.includes('{image_id}') ||
     template.includes('/gallery/images') ||
+    template.includes('/cluster/tokens/{token_id}') ||
     template.includes('/payments/webhooks/') ||
     template === '/api/ops/admin/v1/config-tabs/{tab_key}'
 }
@@ -1247,6 +1275,7 @@ function materializePath(template) {
     .replace('{account_id}', textModelPath ? state.ids.textModelAccountId : state.ids.modelAccountId)
     .replace('{model_id}', textModelPath ? state.ids.textModelId : state.ids.accountModelId)
     .replace('{storage_config_id}', state.ids.storageConfigId)
+    .replace('{token_id}', '00000000-0000-0000-0000-000000000000')
 }
 
 function defaultQuery(template) {
@@ -1375,8 +1404,10 @@ async function main() {
       await waitFor(`${USER_WEB_URL}/`)
       await waitFor(`${ADMIN_WEB_URL}/`)
       await waitFor(`${NGINX_URL}/readyz`)
-      await waitFor(`${MINIO_URL}/minio/health/live`)
-      await waitFor(`${MAILPIT_URL}/api/v1/info`)
+      if (!SKIP_MIDDLEWARE_HEALTH) {
+        await waitFor(`${MINIO_URL}/minio/health/live`)
+        await waitFor(`${MAILPIT_URL}/api/v1/info`)
+      }
     })
     const openapi = await loadOpenAPI()
     await step('user and admin web routes return app shell', async () => {

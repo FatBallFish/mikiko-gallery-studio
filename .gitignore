@@ -10,6 +10,8 @@ tmp
 target/
 .vite
 *.log
+__pycache__/
+*.py[cod]
 .coding-context.json
 .workflow/
 .review/

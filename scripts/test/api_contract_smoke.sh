@@ -1278,6 +1278,7 @@ API_KEY_SIGNING_SECRET_ENCRYPTION_KEY=$API_KEY_ENCRYPTION_KEY
 CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY=$CASHIER_PROVIDER_CONFIG_KEY
 PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY=$SECURE_CONFIG_KEY
 PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY=$SECURE_CONFIG_KEY
+CLUSTER_ENROLLMENT_SEAL_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 CASHIER_ENABLED=true
 CASHIER_MOCK_ENABLED=true
 CASHIER_ORDER_TIMEOUT_SECONDS=1800
@@ -1349,9 +1350,14 @@ run_setup_initialization() {
 	curl --silent --fail --max-time 2 "$BASE_URL/healthz" >/dev/null
 	local session_status
 	session_status="$(curl --silent --output "$TMP_DIR/setup-session.json" --write-out "%{http_code}" \
-		--cookie-jar "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/session" \
-		-H "Content-Type: application/json" --data "{\"token\":\"$SETUP_TOKEN\"}")"
-	[[ "$session_status" == "204" ]]
+			--cookie-jar "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/session" \
+			-H "Content-Type: application/json" --data "{\"token\":\"$SETUP_TOKEN\"}")"
+	if [[ "$session_status" != "200" ]]; then
+		echo "Setup session status was $session_status, want 200. Response follows:" >&2
+		cat "$TMP_DIR/setup-session.json" >&2
+		exit 1
+	fi
+	assert_json_path_exists "$(cat "$TMP_DIR/setup-session.json")" "data" >/dev/null
 	local database_probe_body redis_probe_body storage_probe_body
 	database_probe_body="$(request --cookie "$COOKIE_JAR" -X POST "$BASE_URL/api/setup/v1/probes/database" \
 		-H "Content-Type: application/json" \

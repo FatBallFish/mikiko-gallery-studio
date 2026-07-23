@@ -19,6 +19,6 @@ for (const required of [
 for (const forbidden of ['adminApi.', 'refreshSession(', 'dashboard(', 'listConfig(', 'sessionStorage.removeItem']) {
   if (wrapper.includes(forbidden)) throw new Error(`admin bootstrap wrapper must not run auth/business behavior: ${forbidden}`)
 }
-for (const required of ['window.location.assign(status.setup_url)', "credentials: 'omit'"]) {
+for (const required of ['window.location.assign(setupURLWithReturnTarget(status.setup_url, window.location.href))', "credentials: 'omit'"]) {
   if (!guard.includes(required)) throw new Error(`shared bootstrap guard missing ${required}`)
 }

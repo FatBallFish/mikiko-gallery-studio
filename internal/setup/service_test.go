@@ -315,6 +315,20 @@ func TestSetupApplyPendingAttemptRejectsChangedPasswordAfterRestart(t *testing.T
 	}
 }
 
+func TestSetupRecoveryOperationIDLoadsPersistedAttemptAfterRestart(t *testing.T) {
+	fixture := newServiceFixture(t)
+	fixture.failCheckpoint = "after_migration"
+	request := fixture.request()
+	if _, err := fixture.service.Apply(t.Context(), request); !errors.Is(err, ErrSetupMigration) {
+		t.Fatalf("first Apply error=%v", err)
+	}
+
+	operationID, err := fixture.newService().RecoveryOperationID()
+	if err != nil || operationID != request.OperationID {
+		t.Fatalf("RecoveryOperationID=(%q, %v), want persisted operation %q", operationID, err, request.OperationID)
+	}
+}
+
 func TestSetupApplyAfterMigrationCrashDoesNotMigrateAgain(t *testing.T) {
 	fixture := newServiceFixture(t)
 	fixture.bootstrap.Values["CONFIG_REVISION"] = "7"

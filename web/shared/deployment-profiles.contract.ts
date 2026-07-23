@@ -60,6 +60,18 @@ for (const dependency of ['postgres', 'redis', 'minio-init']) {
 }
 const minioInitMounts = JSON.stringify(services['minio-init'].volumes ?? [])
 if (!minioInitMounts.includes('minio-init.sh')) throw new Error('MinIO initializer script must be mounted read-only')
+const postgresInitMounts = JSON.stringify(services.postgres.volumes ?? [])
+if (!postgresInitMounts.includes('postgres-init.sh') || !postgresInitMounts.includes('/opt/deploy/')) {
+  throw new Error('managed PostgreSQL must install the least-privilege application-role initializer')
+}
+const postgresEntrypoint = JSON.stringify(services.postgres.entrypoint ?? [])
+for (const marker of ['cp ', 'chown postgres:postgres', 'chmod 0700', '/docker-entrypoint-initdb.d/10-app-role.sh', 'docker-entrypoint.sh postgres']) {
+  if (!postgresEntrypoint.includes(marker)) throw new Error(`PostgreSQL initializer bootstrap is missing: ${marker}`)
+}
+const postgresInit = read('deployments/docker-compose/postgres-init.sh')
+for (const marker of ['CREATE ROLE', 'ALTER DATABASE', 'ALTER ROLE CURRENT_USER PASSWORD NULL', 'NOSUPERUSER', 'NOCREATEDB', 'NOCREATEROLE', 'NOREPLICATION']) {
+  if (!postgresInit.includes(marker)) throw new Error(`PostgreSQL initializer is missing least-privilege role setup: ${marker}`)
+}
 const minioInit = read('deployments/docker-compose/minio-init.sh')
 for (const marker of ['mc mb --ignore-existing', 'mc admin user info', 'mc admin policy create', 'arn:aws:s3:::$STORAGE_S3_BUCKET/*']) {
   if (!minioInit.includes(marker)) throw new Error(`MinIO initializer is missing idempotent bucket-scoped setup: ${marker}`)

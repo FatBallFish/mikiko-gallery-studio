@@ -46,7 +46,8 @@ for (const endpoint of [
 
 for (const required of [
   'deployctl setup token show', 'deployctl setup token reset', 'history.back()', 'history.length',
-  'document.referrer', 'aria-live="polite"', 'role="status"', '<progress', ':focus-visible',
+  'document.referrer', 'function returnURLFromHash()', 'decodeURIComponent', 'location.assign(returnURL)',
+  'aria-live="polite"', 'role="status"', '<progress', ':focus-visible',
   'aria-label="初始化进度 / Setup progress"',
   '@media (max-width: 720px)', '@media (prefers-reduced-motion: reduce)', 'overflow-x: hidden',
   'credentials: \'same-origin\'', 'crypto.randomUUID()',
@@ -67,7 +68,8 @@ for (const required of [
   'probeVersions[kind] += 1;',
   'if (version !== probeVersions[kind]) return;',
   "if (field && ['database', 'redis', 'storage'].includes(field.group)) invalidateProbe(field.group);",
-  'async function recoverApplyOperation() {',
+	  'async function recoverApplyOperation() {',
+	  'operationId = session?.operation_id || operationId;',
   'let preserveOperationID = false;',
   'preserveOperationID = true;',
   'if (!applying && !preserveOperationID) operationId = \'\';',

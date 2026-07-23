@@ -66,7 +66,7 @@ Installation generates secrets, deployment assets, `deployment.json`, `config/in
 Before setup is complete, the API exposes health checks and the API-hosted setup UI only. Open:
 
 ```text
-http://<api-host>:<api-port>/setup/
+http://<api-host>:<api-port>/setup
 ```
 
 The setup UI uses the admin-console visual system. It configures PostgreSQL, Redis, object storage, and the first administrator, probes connectivity, runs the explicit migration under a distributed lock, commits the installation, and restarts the API.
@@ -79,7 +79,7 @@ deployctl setup token show
 deployctl setup token reset
 ```
 
-Reset increments `SETUP_TOKEN_VERSION`, invalidates the old token and sessions, writes the file atomically, and restarts the deployment. Show and reset are permanently refused after setup completes.
+Reset increments `SETUP_TOKEN_VERSION`, invalidates the old token and sessions, writes the file atomically, and restarts only API and Gateway. Worker, Web services, and managed middleware remain running. Show and reset are permanently refused after setup completes.
 
 After restart, configure provider accounts, text and image models, routes, prices, plans, registration policy, recharge/payment providers, SMTP, and other business settings in the admin console.
 
@@ -131,6 +131,8 @@ deployctl restart
 
 `doctor` checks runtime fields, private file permissions, manifest/state identity, middleware connectivity, and database schema compatibility. Diagnostics redact DSNs, tokens, passwords, and encryption keys.
 
+For Docker nodes that include API, `doctor` checks the loopback-published `/readyz`; normal API readiness is reached only after the container-network database, Redis, storage, schema, and installation binding checks pass. Native deployments and nodes without API use direct middleware/schema probes.
+
 Upgrade a Docker single/control installation:
 
 ```bash
@@ -148,6 +150,8 @@ The control path atomically upgrades the runtime schema and deployment manifest,
 ```bash
 deployctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag --migrate=false
 ```
+
+Database migrations are forward-compatible and are not automatically reversed. If service rollout fails after a successful migration, the target runtime and manifest remain published; rerun the same `deployctl upgrade` command to resume the idempotent rollout. If rollout fails without a migration, `deployctl` restores the previous runtime and manifest and actively reapplies the previous deployment plan.
 
 Back up external databases and object storage with provider-native tooling before upgrades. For Docker full, back up the named PostgreSQL and MinIO volumes before destructive maintenance.
 
@@ -172,13 +176,28 @@ deployctl uninstall --delete-data \
   --confirm 'DELETE <installation-id> PERSISTENT DATA'
 ```
 
-For Docker, this additionally removes Compose named volumes. For native deployments, it removes the selected runtime directory after services stop. The command refuses filesystem roots, the current working directory, and directories containing the current working directory.
+For Docker, this additionally removes Compose named volumes. Before stopping services or deleting any persistent resource, the command verifies that the runtime tree contains only deployctl-managed configuration, deployment assets, native release files, application data, and logs. Unknown files or directories fail closed. The command also refuses filesystem roots, the current working directory, and directories containing the current working directory.
 
 ## Failure Recovery
 
 - A pending setup can reuse its current token or rotate it with `setup token reset`.
+- If a browser closes or the API restarts after setup has crossed a durable boundary, open `/setup` again and authenticate with the current Token. The authenticated session returns the persisted operation ID; re-enter the same editable configuration and secrets, rerun the probes, and apply to resume that operation.
 - A failed probe writes no final setup configuration.
 - A migration failure keeps setup pending.
 - A completed installation with missing or corrupt runtime files fails closed and never reopens anonymous setup.
 - Use `deployctl doctor`, service logs, `deployctl status`, and `deployctl restart` in that order after an interrupted operation.
 - Never hand-edit `SETUP_COMPLETED`, installation identity, cluster identity, schema version, or configuration revision to bypass recovery checks.
+
+## Acceptance Tests
+
+The deployment suites use unique Compose projects, temporary registries, and fresh volumes. They never connect to or remove the shared `pic-gallery-local` development database.
+
+```bash
+./scripts/workflow/verify.sh
+./scripts/workflow/api-smoke.sh
+./scripts/e2e/setup-docker-e2e.sh
+./scripts/e2e/cluster-docker-e2e.sh
+./scripts/e2e/run-docker-e2e.sh
+```
+
+`verify.sh` also cross-builds and inspects Linux and Windows native release archives. Windows service-definition behavior is covered by unit tests; starting an actual Windows service remains a manual platform acceptance step. Failed deployment E2E runs retain redacted evidence under ignored `tmp/e2e/` paths and remove only resources labeled with their own project IDs.

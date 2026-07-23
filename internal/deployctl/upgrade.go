@@ -8,9 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
+
+const upgradeRecoveryTimeout = 2 * time.Minute
 
 type UpgradeDependencies struct {
 	LoadInstallation func(string) (InstallPlan, config.RuntimeEnvDocument, error)
@@ -121,16 +124,18 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 		}
 		return UpgradeResult{}, fmt.Errorf("write upgraded runtime configuration: %w", err)
 	}
-	rollback := func(cause error, migrationWasApplied bool) error {
+	restorePrevious := func(cause error, restartPrevious bool) error {
 		restoreErr := dependencies.WriteRuntimeEnv(runtimeEnvPath, previous)
 		if manifestUpdated {
 			restoreErr = errors.Join(restoreErr, dependencies.WriteManifest(manifestPath, previousPlan))
 		}
-		if migrationWasApplied && restoreErr == nil && dependencies.Migrate != nil {
-			restoreErr = errors.Join(restoreErr, dependencies.Migrate(ctx, runtimeEnvPath))
+		if restartPrevious && restoreErr == nil {
+			recoveryContext, cancelRecovery := context.WithTimeout(context.WithoutCancel(ctx), upgradeRecoveryTimeout)
+			defer cancelRecovery()
+			restoreErr = dependencies.ApplyDeployment(recoveryContext, previousPlan)
 		}
 		if restoreErr != nil {
-			return errors.Join(cause, fmt.Errorf("restore previous runtime configuration: %w", restoreErr))
+			return errors.Join(cause, fmt.Errorf("restore previous deployment: %w", restoreErr))
 		}
 		return cause
 	}
@@ -138,12 +143,16 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 	migrated := false
 	if options.Migrate {
 		if err := dependencies.Migrate(ctx, runtimeEnvPath); err != nil {
-			return UpgradeResult{}, rollback(fmt.Errorf("migrate upgraded database: %w", redactRuntimeError(err, updatedValues)), false)
+			return UpgradeResult{}, restorePrevious(fmt.Errorf("migrate upgraded database: %w", redactRuntimeError(err, updatedValues)), false)
 		}
 		migrated = true
 	}
 	if err := dependencies.ApplyDeployment(ctx, plan); err != nil {
-		return UpgradeResult{}, rollback(fmt.Errorf("roll upgraded services: %w", redactRuntimeError(err, updatedValues)), migrated)
+		rollErr := fmt.Errorf("roll upgraded services: %w", redactRuntimeError(err, updatedValues))
+		if migrated {
+			return UpgradeResult{}, fmt.Errorf("%w; database migration succeeded and target runtime was retained; rerun upgrade with the same target to resume", rollErr)
+		}
+		return UpgradeResult{}, restorePrevious(rollErr, true)
 	}
 	return UpgradeResult{RuntimeEnvPath: runtimeEnvPath, PreviousVersion: previousVersion, CurrentVersion: targetVersion, Migrated: migrated}, nil
 }
@@ -199,6 +208,7 @@ func loadInstallation(runtimeDir string) (InstallPlan, config.RuntimeEnvDocument
 
 type UninstallDependencies struct {
 	LoadInstallation           func(string) (InstallPlan, string, error)
+	ValidateRuntimeDirectory   func(InstallPlan) error
 	StopDeployment             func(context.Context, InstallPlan) error
 	DestroyPersistentResources func(context.Context, InstallPlan) error
 	RemoveRuntimeDirectory     func(string) error
@@ -232,8 +242,13 @@ func Uninstall(ctx context.Context, options UninstallOptions, dependencies Unins
 	if options.DeleteData && options.Confirmation != DestructiveUninstallConfirmation(installationID) {
 		return fmt.Errorf("destructive confirmation does not match installation %s", installationID)
 	}
-	if options.DeleteData && (dependencies.DestroyPersistentResources == nil || dependencies.RemoveRuntimeDirectory == nil) {
+	if options.DeleteData && (dependencies.ValidateRuntimeDirectory == nil || dependencies.DestroyPersistentResources == nil || dependencies.RemoveRuntimeDirectory == nil) {
 		return fmt.Errorf("destructive uninstall dependencies are required")
+	}
+	if options.DeleteData {
+		if err := dependencies.ValidateRuntimeDirectory(plan); err != nil {
+			return fmt.Errorf("validate managed runtime directory: %w", err)
+		}
 	}
 	if err := dependencies.StopDeployment(ctx, plan); err != nil {
 		return fmt.Errorf("stop deployment: %w", err)

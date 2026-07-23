@@ -1,5 +1,5 @@
 import type { BootstrapStatus } from './api-types'
-import { fetchBootstrapStatus } from './bootstrap-status'
+import { fetchBootstrapStatus, setupURLWithReturnTarget } from './bootstrap-status'
 
 type GuardBootstrapOptions = {
   apiBaseUrl: string
@@ -15,7 +15,7 @@ export async function guardBootstrap(options: GuardBootstrapOptions): Promise<Bo
     signal: options.signal,
   })
   if (status.phase === 'setup_required' || status.phase === 'initializing' || status.phase === 'restart_pending') {
-    window.location.assign(status.setup_url)
+    window.location.assign(setupURLWithReturnTarget(status.setup_url, window.location.href))
   }
   return status
 }

@@ -186,6 +186,56 @@ func TestPostClusterJSONRejectsRedirectsAndTrailingOuterJSON(t *testing.T) {
 	})
 }
 
+func TestPostClusterJSONAcceptsTheStandardHTTPEnvelopeAndRejectsUnknownOuterFields(t *testing.T) {
+	t.Run("standard metadata", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"data":{"value":"ok"},"meta":{"request_id":"request-1"}}`)
+		}))
+		defer server.Close()
+		var response struct {
+			Value string `json:"value"`
+		}
+		if err := postClusterJSON(t.Context(), server.Client(), server.URL, map[string]string{"value": "x"}, &response); err != nil || response.Value != "ok" {
+			t.Fatalf("standard response envelope value=%q error=%v", response.Value, err)
+		}
+	})
+
+	t.Run("unknown outer field", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"data":{"value":"ok"},"unexpected":true}`)
+		}))
+		defer server.Close()
+		var response map[string]any
+		if err := postClusterJSON(t.Context(), server.Client(), server.URL, map[string]string{"value": "x"}, &response); err == nil {
+			t.Fatal("accepted an unknown outer response field")
+		}
+	})
+}
+
+func TestValidateJoinResponseUsesTheProtocolTimestampPrecision(t *testing.T) {
+	expiresAt := time.Date(2026, 7, 23, 10, 1, 0, 987654321, time.UTC)
+	challenge := domaincluster.EnrollmentChallenge{
+		Protocol: clusterservice.EnrollmentProtocolV1, InstallationID: "installation-1", NodeID: "node-1",
+		Role: domaincluster.JoinRoleAPI, ApplicationVersion: "v1", RuntimeSchemaVersion: 1, ConfigRevision: 2,
+		ExpiresAt: expiresAt,
+	}
+	joined := domaincluster.JoinResponse{
+		Protocol: challenge.Protocol, InstallationID: challenge.InstallationID, NodeID: challenge.NodeID,
+		Role: domaincluster.NodeRoleAPI, ApplicationVersion: challenge.ApplicationVersion,
+		RuntimeSchemaVersion: challenge.RuntimeSchemaVersion, ConfigRevision: challenge.ConfigRevision,
+		ExpiresAt: expiresAt.Truncate(time.Microsecond),
+	}
+	if err := validateJoinResponse(joined, challenge, expiresAt.Add(-time.Minute)); err != nil {
+		t.Fatalf("same protocol second was rejected after database timestamp normalization: %v", err)
+	}
+	joined.ExpiresAt = expiresAt.Add(time.Second)
+	if err := validateJoinResponse(joined, challenge, expiresAt.Add(-time.Minute)); err == nil {
+		t.Fatal("join response accepted an expiry from a different protocol second")
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

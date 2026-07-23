@@ -47,7 +47,7 @@ func TestRunNonInteractiveInstallUsesNoTerminalAndInjectedFilesystemOnly(t *test
 	if code != 0 || terminal.prompts != 0 {
 		t.Fatalf("Run(non-interactive) = %d, prompts %d, stdout %q", code, terminal.prompts, stdout.String())
 	}
-	if strings.Join(writes, ",") != "state,deployment.json,asset:compose.yml,asset:nginx-default.conf,asset:minio-init.sh,asset:prometheus.yml,runtime.env" || strings.Contains(stdout.String(), "Setup token:") || !strings.Contains(stdout.String(), "deployctl setup token show") {
+	if strings.Join(writes, ",") != "state,deployment.json,asset:compose.yml,asset:nginx-default.conf,asset:minio-init.sh,asset:postgres-init.sh,asset:prometheus.yml,runtime.env" || strings.Contains(stdout.String(), "Setup token:") || !strings.Contains(stdout.String(), "deployctl setup token show") {
 		t.Fatalf("install side effects/output = %v, %q", writes, stdout.String())
 	}
 }
@@ -367,7 +367,7 @@ func TestExecuteInstallSecuresExistingRuntimeDirectories(t *testing.T) {
 			t.Errorf("%s permissions = %#o, want 0700", directory, permissions)
 		}
 	}
-	for _, path := range []string{filepath.Join(runtimeDirectory, "compose.yml"), filepath.Join(runtimeDirectory, "assets", "minio-init.sh"), filepath.Join(runtimeDirectory, "assets", "nginx-default.conf"), filepath.Join(runtimeDirectory, "assets", "prometheus.yml")} {
+	for _, path := range []string{filepath.Join(runtimeDirectory, "compose.yml"), filepath.Join(runtimeDirectory, "assets", "minio-init.sh"), filepath.Join(runtimeDirectory, "assets", "postgres-init.sh"), filepath.Join(runtimeDirectory, "assets", "nginx-default.conf"), filepath.Join(runtimeDirectory, "assets", "prometheus.yml")} {
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)

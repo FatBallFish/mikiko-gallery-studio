@@ -37,6 +37,7 @@ func (setupApplicationStub) Apply(context.Context, setup.ApplyRequest) (setup.Op
 func (setupApplicationStub) Progress(context.Context, string) (setup.OperationView, error) {
 	return setup.OperationView{}, nil
 }
+func (setupApplicationStub) RecoveryOperationID() (string, error) { return "", nil }
 
 func TestSetupRouterExposesOnlyBootstrapAndSetupSurface(t *testing.T) {
 	setupAPI := newSetupAPIForRouterTest(t, handlers.BootstrapStatus{
@@ -50,7 +51,7 @@ func TestSetupRouterExposesOnlyBootstrapAndSetupSurface(t *testing.T) {
 	assertRouteStatus(t, handler, http.MethodGet, "/readyz", http.StatusServiceUnavailable)
 	assertRouteStatus(t, handler, http.MethodGet, "/api/system/v1/bootstrap-status", http.StatusOK)
 	assertRouteStatus(t, handler, http.MethodGet, "/setup", http.StatusOK)
-	assertRouteStatus(t, handler, http.MethodPost, "/api/setup/v1/session", http.StatusNoContent)
+	assertRouteStatus(t, handler, http.MethodPost, "/api/setup/v1/session", http.StatusOK)
 	for _, target := range []string{
 		"/api/setup/v1/probes/database",
 		"/api/setup/v1/probes/redis",

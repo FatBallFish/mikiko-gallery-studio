@@ -6,6 +6,7 @@
 !.env.example
 .tmp
 tmp/
+target/
 coverage/
 *.out
 *.log

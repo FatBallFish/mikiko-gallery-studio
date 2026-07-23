@@ -53,9 +53,12 @@ func (stub *setupProbeStub) ProbeStorage(_ context.Context, request setup.Storag
 }
 
 type setupApplicationStub struct {
-	request setup.ApplyRequest
-	view    setup.OperationView
-	err     error
+	request             setup.ApplyRequest
+	view                setup.OperationView
+	err                 error
+	recoveryOperationID string
+	recoveryErr         error
+	recoveryCalls       int
 }
 
 func (stub *setupApplicationStub) Apply(_ context.Context, request setup.ApplyRequest) (setup.OperationView, error) {
@@ -65,6 +68,11 @@ func (stub *setupApplicationStub) Apply(_ context.Context, request setup.ApplyRe
 
 func (stub *setupApplicationStub) Progress(_ context.Context, _ string) (setup.OperationView, error) {
 	return stub.view, stub.err
+}
+
+func (stub *setupApplicationStub) RecoveryOperationID() (string, error) {
+	stub.recoveryCalls++
+	return stub.recoveryOperationID, stub.recoveryErr
 }
 
 func TestBootstrapStatusUsesTrustedPublicAPIURLAndNeverRequestHost(t *testing.T) {
@@ -137,15 +145,22 @@ func TestBootstrapStatusIsSecretFree(t *testing.T) {
 
 func TestSetupSessionUsesRemoteAddressAndSecureCookieOnlyForTLS(t *testing.T) {
 	auth := &setupAuthStub{session: "signed-session"}
-	api := newSetupAPIForHandlerTest(t, auth, &setupProbeStub{}, &setupApplicationStub{})
+	application := &setupApplicationStub{recoveryOperationID: "019d0000-0000-7000-8000-000000000001"}
+	api := newSetupAPIForHandlerTest(t, auth, &setupProbeStub{}, application)
 	request := httptest.NewRequest(http.MethodPost, "/api/setup/v1/session", strings.NewReader(`{"token":"operator-token"}`))
 	request.RemoteAddr = "192.0.2.10:4567"
 	request.Header.Set("X-Forwarded-For", "203.0.113.20")
 	recorder := httptest.NewRecorder()
 	api.HandleSession(recorder, request)
 
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("session status = %d, want 204; body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("session status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	view := decodeSuccessData[struct {
+		OperationID string `json:"operation_id"`
+	}](t, recorder)
+	if view.OperationID != application.recoveryOperationID || application.recoveryCalls != 1 {
+		t.Fatalf("session recovery view = %#v, calls=%d", view, application.recoveryCalls)
 	}
 	if auth.exchangedIP != "192.0.2.10" || auth.exchangedToken != "operator-token" {
 		t.Fatalf("Exchange = (%q, %q), want direct remote IP and supplied token", auth.exchangedIP, auth.exchangedToken)

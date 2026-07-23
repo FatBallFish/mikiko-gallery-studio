@@ -61,6 +61,29 @@ type OperationView struct {
 	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
+func (service *Service) RecoveryOperationID() (string, error) {
+	if service == nil || service.dependencies.state == nil {
+		return "", ErrInstallStateInvalid
+	}
+	state, exists, err := service.dependencies.state.Load()
+	if err != nil || !exists || state.Validate() != nil {
+		return "", ErrInstallStateInvalid
+	}
+	switch state.Phase {
+	case InstallPhasePending:
+		if state.Attempt != nil {
+			return state.Attempt.OperationID, nil
+		}
+	case InstallPhaseCommitting:
+		if state.Commit != nil {
+			return state.Commit.OperationID, nil
+		}
+	case InstallPhaseCompleted:
+		return "", nil
+	}
+	return "", nil
+}
+
 type ServiceOptions struct {
 	RuntimeEnvPath string
 	StateStore     *StateStore
