@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "installation_id": "pic-gallery-local",
+  "deployment_role": "single",
+  "phase": "completed",
+  "ever_completed": true,
+  "updated_at": "2026-07-23T00:00:00Z",
+  "commit": {
+    "operation_id": "local-bootstrap",
+    "installation_id": "pic-gallery-local",
+    "runtime_schema_version": 1,
+    "config_revision": 1,
+    "request_digest": "892a6a5998a44759202399a2a7f1e07c4a65144d1c593c85475e6470f492c7a0"
+  }
+}

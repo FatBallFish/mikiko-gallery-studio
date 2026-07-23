@@ -62,6 +62,27 @@ func TestRunDatabaseMigrationLoadsOneRuntimeSnapshot(t *testing.T) {
 	}
 }
 
+func TestRunDatabaseMigrationSnapshotUsesProvidedConfiguration(t *testing.T) {
+	cfg := config.Config{
+		Runtime: config.RuntimeConfig{
+			DeploymentRole: config.DeploymentRoleSingle, InstallationID: "validated-installation",
+			ApplicationVersion: "validated-version", ConfigSchemaVersion: 7,
+		},
+		Database: config.DatabaseConfig{URL: "postgres://validated:secret@validated-db/app"},
+	}
+	called := 0
+	result, err := runDatabaseMigrationSnapshot(t.Context(), cfg, func(_ context.Context, databaseURL string, request db.MigrationRequest) (db.MigrationResult, error) {
+		called++
+		if databaseURL != cfg.Database.URL || request.InstallationID != cfg.Runtime.InstallationID || request.AppVersion != cfg.Runtime.ApplicationVersion || request.ConfigVersion != cfg.Runtime.ConfigSchemaVersion {
+			t.Fatalf("migration received a different configuration snapshot: url=%q request=%+v", databaseURL, request)
+		}
+		return db.MigrationResult{Changed: true}, nil
+	})
+	if err != nil || !result.Changed || called != 1 {
+		t.Fatalf("runDatabaseMigrationSnapshot = (%+v, %v), calls=%d", result, err, called)
+	}
+}
+
 func TestRunDatabaseMigrationEnforcesControlRoleBeforeMigrator(t *testing.T) {
 	tests := []struct {
 		name    string

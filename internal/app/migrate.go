@@ -36,6 +36,12 @@ func RunDatabaseMigration(ctx context.Context, runtimeEnvPath string) (db.Migrat
 	return runDatabaseMigration(ctx, runtimeEnvPath, config.LoadRuntime, db.Migrate)
 }
 
+// RunDatabaseMigrationSnapshot performs the explicit migration using an
+// already validated immutable runtime snapshot.
+func RunDatabaseMigrationSnapshot(ctx context.Context, cfg config.Config) (db.MigrationResult, error) {
+	return runDatabaseMigrationSnapshot(ctx, cfg, db.Migrate)
+}
+
 func runDatabaseMigration(ctx context.Context, runtimeEnvPath string, load runtimeLoader, migrate databaseMigrator) (db.MigrationResult, error) {
 	if load == nil || migrate == nil {
 		return db.MigrationResult{}, fmt.Errorf("database migration dependencies are required")
@@ -43,6 +49,13 @@ func runDatabaseMigration(ctx context.Context, runtimeEnvPath string, load runti
 	cfg, err := load(runtimeEnvPath)
 	if err != nil {
 		return db.MigrationResult{}, fmt.Errorf("load runtime configuration for database migration: %w", err)
+	}
+	return runDatabaseMigrationSnapshot(ctx, cfg, migrate)
+}
+
+func runDatabaseMigrationSnapshot(ctx context.Context, cfg config.Config, migrate databaseMigrator) (db.MigrationResult, error) {
+	if migrate == nil {
+		return db.MigrationResult{}, fmt.Errorf("database migration dependency is required")
 	}
 	if err := validateDatabaseMigrationRole(cfg.Runtime.DeploymentRole); err != nil {
 		return db.MigrationResult{}, err

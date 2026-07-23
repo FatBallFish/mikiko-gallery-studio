@@ -6,8 +6,7 @@ const browserSource = readFileSync(new URL('../../scripts/e2e/prompt-workflow-br
 const runnerSource = readFileSync(new URL('../../scripts/e2e/run-docker-e2e.sh', import.meta.url), 'utf8')
 
 for (const required of [
-  'DEV_NGINX_PORT="${DEV_NGINX_PORT:-8088}"',
-  'LOCAL_BASE_URL="http://127.0.0.1:${DEV_NGINX_PORT}"',
+  'LOCAL_BASE_URL="http://127.0.0.1:8088"',
   'BASE_URL="${BASE_URL:-$LOCAL_BASE_URL}"',
   'USER_WEB_URL="${USER_WEB_URL:-$LOCAL_BASE_URL}"',
   'ADMIN_WEB_URL="${ADMIN_WEB_URL:-$LOCAL_BASE_URL/admin}"',
@@ -49,6 +48,10 @@ for (const required of [
   'state.ids.textModelId = String(chatModel.id)',
   "template.includes('/text-model')",
   "await step('text model accounts and prompt optimization happy path', happyPathPromptOptimization)",
+  'E2E_ADMIN_EMAIL',
+  'E2E_ADMIN_PASSWORD',
+  'fs.rm(entryPath, { force: true })',
+  'fs.rm(bundlePath, { force: true })',
 ]) {
   if (!source.includes(required)) throw new Error(`Docker E2E prompt optimization coverage is missing: ${required}`)
 }
@@ -67,6 +70,8 @@ for (const required of [
   'set_viewport_size({"width": 390, "height": 844})',
   'assert_no_overlap',
   'screenshot',
+  'E2E_ADMIN_EMAIL',
+  'E2E_ADMIN_PASSWORD',
 ]) {
   if (!browserSource.includes(required)) throw new Error(`Browser prompt workflow coverage is missing: ${required}`)
 }

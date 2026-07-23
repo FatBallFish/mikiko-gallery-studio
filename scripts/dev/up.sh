@@ -4,10 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="$ROOT_DIR/deployments/docker-compose/.env.example"
 COMPOSE_FILE="$ROOT_DIR/deployments/docker-compose/docker-compose.local.yml"
+PREPARE_RUNTIME="$ROOT_DIR/scripts/dev/prepare-local-runtime.sh"
 MODE="${1:-fullstack}"
 
 case "$MODE" in
   fullstack)
+    "$PREPARE_RUNTIME"
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
     ;;
   middleware)

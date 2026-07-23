@@ -293,6 +293,46 @@ func (store *StateStore) FinalizeCommit(proof CommitProof, at time.Time) (Instal
 	})
 }
 
+// ReconcileCompletedCommit updates only the digest of an already completed
+// commit while preserving its operation, installation, schema, and revision.
+// It is used when an imported database is rebound to an existing administrator.
+func (store *StateStore) ReconcileCompletedCommit(proof CommitProof, at time.Time) (InstallState, error) {
+	if err := store.validate(); err != nil {
+		return InstallState{}, err
+	}
+	at, err := validateTransitionTime(at)
+	if err != nil {
+		return InstallState{}, err
+	}
+	if err := proof.Validate(); err != nil {
+		return InstallState{}, fmt.Errorf("validate reconciled commit proof: %w", err)
+	}
+	return store.withMutationLock(func() (InstallState, error) {
+		state, exists, err := store.loadUnlocked()
+		if err != nil {
+			return InstallState{}, err
+		}
+		if !exists || state.Phase != InstallPhaseCompleted || !state.EverCompleted || state.Commit == nil {
+			return InstallState{}, fmt.Errorf("%w: reconciliation requires completed install state", ErrInstallStateInvalid)
+		}
+		existing := *state.Commit
+		if existing.OperationID != proof.OperationID || existing.InstallationID != proof.InstallationID ||
+			existing.RuntimeSchemaVersion != proof.RuntimeSchemaVersion || existing.ConfigRevision != proof.ConfigRevision ||
+			state.InstallationID != proof.InstallationID {
+			return InstallState{}, fmt.Errorf("%w: reconciled commit identity does not match completed state", ErrInstallStateInvalid)
+		}
+		if constantTimeDigestEqual(existing.RequestDigest, proof.RequestDigest) {
+			return state, nil
+		}
+		state.Commit = &proof
+		state.UpdatedAt = at
+		if err := store.saveUnlocked(state); err != nil {
+			return InstallState{}, err
+		}
+		return state, nil
+	})
+}
+
 func (store *StateStore) loadUnlocked() (InstallState, bool, error) {
 	content, err := os.ReadFile(store.path)
 	if errors.Is(err, os.ErrNotExist) {

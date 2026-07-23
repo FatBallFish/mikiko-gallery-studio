@@ -731,6 +731,23 @@ func TestSetupRequestDigestBindsCanonicalRuntimeAndNormalizedAdminEmail(t *testi
 	}
 }
 
+func TestCanonicalRequestDigestMatchesSetupDigest(t *testing.T) {
+	values := pendingRuntimeValues()
+	values["SETUP_COMPLETED"] = "true"
+	values["SETUP_TOKEN"] = ""
+	want, err := setupRequestDigest(values, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := CanonicalRequestDigest(values, " ADMIN@example.com ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("CanonicalRequestDigest = %q, want %q", got, want)
+	}
+}
+
 func TestSetupApplyFailureCheckpointsNeverPublishCompletionEarly(t *testing.T) {
 	tests := []struct {
 		checkpoint       string

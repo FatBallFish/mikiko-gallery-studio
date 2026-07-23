@@ -12,6 +12,8 @@ BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8088").rstrip("/")
 USER_WEB_URL = os.environ.get("USER_WEB_URL", "http://127.0.0.1:8088").rstrip("/")
 ADMIN_WEB_URL = os.environ.get("ADMIN_WEB_URL", "http://127.0.0.1:8088/admin").rstrip("/")
 USER_TOKEN = os.environ["E2E_USER_TOKEN"]
+E2E_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
+E2E_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "admin123456")
 RUN_ID = os.environ["E2E_RUN_ID"]
 OUTPUT_DIR = Path(os.environ.get("E2E_BROWSER_OUTPUT_DIR", "tmp/e2e/prompt-workflow"))
 ORIGINAL_PROMPT = "A quiet glass pavilion beside a rain-soaked garden"
@@ -83,7 +85,7 @@ def install_sessions(context, page):
 
     admin_login = envelope(context.request.post(
         f"{BASE_URL}/api/ops/admin/v1/auth/login",
-        data={"email": "admin@example.com", "password": "admin123456"},
+        data={"email": E2E_ADMIN_EMAIL, "password": E2E_ADMIN_PASSWORD},
     ))
     admin_session = {
         "token": admin_login["access_token"],

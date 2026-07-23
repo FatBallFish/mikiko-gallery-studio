@@ -19,6 +19,8 @@ const RUN_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
 const IMAGE_PROVIDER_DELAY_MS = Number.parseInt(process.env.E2E_IMAGE_PROVIDER_DELAY_MS || '0', 10)
 const IMAGE_PROVIDER_MARKER = process.env.E2E_IMAGE_PROVIDER_MARKER || ''
 const SKIP_MIDDLEWARE_HEALTH = process.env.E2E_SKIP_MIDDLEWARE_HEALTH === 'true'
+const E2E_ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@example.com'
+const E2E_ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin123456'
 const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII='
 const FAKE_PROVIDER_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNkaGAAAAHAAZcAzSrgAAAAAElFTkSuQmCC'
 
@@ -533,6 +535,8 @@ async function frontendApiClientSmoke() {
 
     export async function runSmoke() {
       const userEmail = 'frontend-smoke-${RUN_ID}@example.com'
+      const adminEmail = process.env.E2E_ADMIN_EMAIL || 'admin@example.com'
+      const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'admin123456'
       await userApi.sendEmailCode(userEmail, 'login')
       const login = await userApi.loginWithEmailCode(userEmail, '123456')
       if (!login.access_token) throw new Error('user login was not unwrapped to access_token')
@@ -540,7 +544,7 @@ async function frontendApiClientSmoke() {
       const profile = await userApi.getProfile()
       if (profile.email !== userEmail) throw new Error('user authenticated profile request failed')
 
-      const adminSession = await adminApi.login('admin@example.com', 'admin123456')
+      const adminSession = await adminApi.login(adminEmail, adminPassword)
       if (!adminSession.token) throw new Error('admin login was not mapped to token')
       adminApi.configureAuth({ getToken: () => adminSession.token })
       const dashboard = await adminApi.dashboard()
@@ -558,8 +562,15 @@ async function frontendApiClientSmoke() {
       'import.meta.env': JSON.stringify({ VITE_API_BASE_URL: BASE_URL }),
     },
   })
-  const mod = await import(`${pathToFileURL(bundlePath).href}?run=${RUN_ID}`)
-  return mod.runSmoke()
+  try {
+    const mod = await import(`${pathToFileURL(bundlePath).href}?run=${RUN_ID}`)
+    return await mod.runSmoke()
+  } finally {
+    await Promise.all([
+      fs.rm(entryPath, { force: true }),
+      fs.rm(bundlePath, { force: true }),
+    ])
+  }
 }
 
 async function bootstrapUser() {
@@ -590,10 +601,10 @@ async function bootstrapUser() {
 
 async function bootstrapAdmin() {
   const login = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/auth/login`, 200, {
-    body: { email: 'admin@example.com', password: 'admin123456' },
+    body: { email: E2E_ADMIN_EMAIL, password: E2E_ADMIN_PASSWORD },
   })
   state.admin.token = data(login).access_token
-  return { email: 'admin@example.com' }
+  return { email: E2E_ADMIN_EMAIL }
 }
 
 async function enableSignupTrialCredits() {
@@ -968,6 +979,8 @@ async function browserPromptWorkflow() {
         ADMIN_WEB_URL,
         E2E_USER_TOKEN: state.user.token,
         E2E_ADMIN_TOKEN: state.admin.token,
+        E2E_ADMIN_EMAIL,
+        E2E_ADMIN_PASSWORD,
         E2E_RUN_ID: RUN_ID,
         E2E_BROWSER_OUTPUT_DIR: outputDir,
       },
@@ -1315,7 +1328,7 @@ function defaultBody(method, template) {
     '/api/open/image/v1/reference-assets': { filename: `open-sweep-${RUN_ID}.png`, mime_type: 'image/png' },
     '/api/open/image/v1/reference-assets/uploads': { filename: `open-sweep-${RUN_ID}.png`, mime_type: 'image/png', content_base64: TINY_PNG_BASE64 },
     '/api/open/image/v1/tasks': { task_type: 'text_to_image', prompt: 'sweep open prompt', route_model_code: 'basic', requested_quality: 'auto', requested_size: '1024x1024', requested_output_image_count: 1, response_mode: 'async' },
-    '/api/ops/admin/v1/auth/login': { email: 'admin@example.com', password: 'admin123456' },
+    '/api/ops/admin/v1/auth/login': { email: E2E_ADMIN_EMAIL, password: E2E_ADMIN_PASSWORD },
     '/api/ops/admin/v1/cashier/custom-amount-config': { enabled: true, min_amount_cny: '1.00000', max_amount_cny: '500.00000', cny_per_point: '1.00000' },
     '/api/ops/admin/v1/cashier/visible-methods': { items: [mockVisibleMethod()] },
     '/api/ops/admin/v1/config-tabs/{tab_key}': { settings: {} },

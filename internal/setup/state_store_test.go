@@ -577,6 +577,53 @@ func TestStateStoreBeginAndFinalizeCommitAreIdempotentAndFailClosed(t *testing.T
 	assertInstallStateEqual(t, beginAfterFinalize, completed)
 }
 
+func TestStateStoreReconcileCompletedCommitUpdatesOnlyMatchingIdentity(t *testing.T) {
+	store := NewStateStoreAt(filepath.Join(t.TempDir(), "install-state.json"))
+	if err := store.Initialize(pendingState()); err != nil {
+		t.Fatal(err)
+	}
+	initial := validCommitProof()
+	reserveCommitAttempt(t, store, initial, testStateTime.Add(time.Minute))
+	if _, err := store.BeginCommit(initial, testStateTime.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FinalizeCommit(initial, testStateTime.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	reconciled := initial
+	reconciled.RequestDigest = strings.Repeat("b", 64)
+	state, err := store.ReconcileCompletedCommit(reconciled, testStateTime.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("ReconcileCompletedCommit returned error: %v", err)
+	}
+	if state.Commit == nil || state.Commit.RequestDigest != reconciled.RequestDigest || !state.UpdatedAt.Equal(testStateTime.Add(4*time.Minute)) {
+		t.Fatalf("reconciled state = %+v", state)
+	}
+	idempotent, err := store.ReconcileCompletedCommit(reconciled, testStateTime.Add(5*time.Minute))
+	if err != nil {
+		t.Fatalf("idempotent ReconcileCompletedCommit returned error: %v", err)
+	}
+	if !idempotent.UpdatedAt.Equal(testStateTime.Add(4 * time.Minute)) {
+		t.Fatalf("idempotent reconciliation rewrote state timestamp: %s", idempotent.UpdatedAt)
+	}
+
+	wrongOperation := reconciled
+	wrongOperation.OperationID = "other-operation"
+	if _, err := store.ReconcileCompletedCommit(wrongOperation, testStateTime.Add(6*time.Minute)); err == nil {
+		t.Fatal("ReconcileCompletedCommit accepted a different operation identity")
+	}
+
+	missing := NewStateStoreAt(filepath.Join(t.TempDir(), "missing.json"))
+	if _, err := missing.ReconcileCompletedCommit(reconciled, testStateTime.Add(6*time.Minute)); err == nil {
+		t.Fatal("ReconcileCompletedCommit accepted missing state")
+	}
+	wrongInstallation := reconciled
+	wrongInstallation.InstallationID = "other-installation"
+	if _, err := store.ReconcileCompletedCommit(wrongInstallation, testStateTime.Add(6*time.Minute)); err == nil {
+		t.Fatal("ReconcileCompletedCommit accepted a different installation identity")
+	}
+}
+
 func TestStateStoreBeginCommitRequiresCallerInstallationProof(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "install-state.json")
 	store := NewStateStoreAt(path)

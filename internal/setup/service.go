@@ -1066,6 +1066,12 @@ func setupRequestDigest(values map[string]string, adminEmail string) (string, er
 	return setupSecureHMAC(values, "setup-request-v1", canonical)
 }
 
+// CanonicalRequestDigest returns the setup commit digest for a completed
+// runtime and normalized administrator identity.
+func CanonicalRequestDigest(values map[string]string, adminEmail string) (string, error) {
+	return setupRequestDigest(values, adminEmail)
+}
+
 func setupAdminCredentialVerifier(values map[string]string, password string) (string, error) {
 	if password == "" {
 		return "", ErrSetupValidation

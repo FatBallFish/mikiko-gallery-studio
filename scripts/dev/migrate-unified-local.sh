@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/deployments/docker-compose/docker-compose.local.yml"
 ENV_FILE="$ROOT_DIR/deployments/docker-compose/.env.example"
 STATE_HELPER="$ROOT_DIR/scripts/e2e/local-state.sh"
+PREPARE_RUNTIME="$ROOT_DIR/scripts/dev/prepare-local-runtime.sh"
 BACKUP_ROOT="$ROOT_DIR/tmp/docker-migration"
 BACKUP_DIR="$BACKUP_ROOT/$(date +%Y%m%d%H%M%S)-$$"
 
@@ -19,7 +20,6 @@ NEW_STORAGE_VOLUME=pic-gallery-local_shared-storage
 SOURCE_STARTED_BY_MIGRATION=false
 USING_TEMP_SOURCE=false
 OLD_WRITER_IDS=()
-DEV_NGINX_PORT="${DEV_NGINX_PORT:-8088}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 fail() {
@@ -44,7 +44,7 @@ wait_for_database() {
 
 wait_for_api() {
   for _ in {1..180}; do
-    if curl --silent --fail --max-time 2 "http://127.0.0.1:${DEV_NGINX_PORT}/readyz" >/dev/null 2>&1; then
+    if curl --silent --fail --max-time 2 "http://127.0.0.1:8088/readyz" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -187,8 +187,9 @@ docker volume create "$NEW_STORAGE_VOLUME" >/dev/null
 wait_for_database pic-gallery-local-postgres-1 || fail "new local database did not become ready"
 
 "$STATE_HELPER" restore "$BACKUP_DIR"
+"$PREPARE_RUNTIME"
 "${COMPOSE[@]}" up -d --build --remove-orphans
-wait_for_api || fail "new local API did not become ready at http://127.0.0.1:${DEV_NGINX_PORT}"
+wait_for_api || fail "new local API did not become ready at http://127.0.0.1:8088"
 
 echo "local migration: restored database-manifest.tsv, minio-manifest.sha256, and shared-storage-manifest.sha256"
 echo "local migration: backup retained at $BACKUP_DIR"

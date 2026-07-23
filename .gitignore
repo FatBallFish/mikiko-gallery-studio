@@ -18,3 +18,5 @@ __pycache__/
 .playwright-mcp/
 .worktrees/
 /config/runtime.env
+/config/install-state.json
+/config/install-state.json.lock

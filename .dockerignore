@@ -10,6 +10,11 @@ target/
 coverage/
 *.out
 *.log
+config/runtime.env
+config/.runtime.env.tmp-*
+config/install-state.json
+config/.install-state.json.tmp-*
+config/install-state.json.lock
 web/**/node_modules/
 web/**/dist/
 web/**/.next/

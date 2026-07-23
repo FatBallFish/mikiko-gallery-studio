@@ -7,6 +7,7 @@ ENV_FILE="$ROOT_DIR/deployments/docker-compose/.env.example"
 STATE_HELPER="$ROOT_DIR/scripts/e2e/local-state.sh"
 RUNNER_STATE="$ROOT_DIR/scripts/e2e/local-runner-state.sh"
 SCRIPT_PATH="$ROOT_DIR/scripts/e2e/run-docker-e2e.sh"
+PREPARE_RUNTIME="$ROOT_DIR/scripts/dev/prepare-local-runtime.sh"
 
 source "$RUNNER_STATE"
 
@@ -26,8 +27,6 @@ Options:
   --start   Start or update the E2E compose stack before testing.
   --recover Restore the retained snapshot from a failed or interrupted E2E run.
 
-Environment:
-  DEV_NGINX_PORT Shared local nginx port. Default: 8088
 EOF
 }
 
@@ -61,8 +60,7 @@ done
 
 cd "$ROOT_DIR"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
-DEV_NGINX_PORT="${DEV_NGINX_PORT:-8088}"
-LOCAL_BASE_URL="http://127.0.0.1:${DEV_NGINX_PORT}"
+LOCAL_BASE_URL="http://127.0.0.1:8088"
 BASE_URL="${BASE_URL:-$LOCAL_BASE_URL}"
 USER_WEB_URL="${USER_WEB_URL:-$LOCAL_BASE_URL}"
 ADMIN_WEB_URL="${ADMIN_WEB_URL:-$LOCAL_BASE_URL/admin}"
@@ -232,6 +230,7 @@ fi
 [[ ! -f "$RECOVERY_MARKER" ]] || fail "recovery required before another shared E2E run; run $SCRIPT_PATH --recover"
 
 if [[ "$START_STACK" == true ]]; then
+  "$PREPARE_RUNTIME"
   "${COMPOSE[@]}" config -q
   "${COMPOSE[@]}" up -d --build --remove-orphans
 fi

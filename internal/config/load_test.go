@@ -452,6 +452,29 @@ func TestLoadYAMLRemainsExplicit(t *testing.T) {
 	}
 }
 
+func TestLocalRuntimeExampleLoadsAsCompletedSharedDevelopmentRuntime(t *testing.T) {
+	path := filepath.Join("..", "..", "config", "runtime.local.env.example")
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime local development example returned error: %v", err)
+	}
+	if cfg.Runtime.InstallationID != "pic-gallery-local" || cfg.Runtime.DeploymentRole != DeploymentRoleSingle {
+		t.Fatalf("local development identity = %q/%q", cfg.Runtime.InstallationID, cfg.Runtime.DeploymentRole)
+	}
+	if cfg.Database.URL != "postgres://postgres@postgres:5432/pic_gallery?sslmode=disable" {
+		t.Fatalf("local development database URL = %q", cfg.Database.URL)
+	}
+	if !cfg.Auth.DevEmailCodes || cfg.Auth.FixedEmailCode != "123456" {
+		t.Fatalf("local development email code settings = enabled:%t code:%q", cfg.Auth.DevEmailCodes, cfg.Auth.FixedEmailCode)
+	}
+	if !cfg.Cashier.Enabled || !cfg.Cashier.MockEnabled {
+		t.Fatalf("local development cashier settings = enabled:%t mock:%t", cfg.Cashier.Enabled, cfg.Cashier.MockEnabled)
+	}
+	if cfg.Worker.MaxConcurrentTasks != 4 {
+		t.Fatalf("local development worker concurrency = %d", cfg.Worker.MaxConcurrentTasks)
+	}
+}
+
 func completeRuntimeValuesForTest() map[string]string {
 	return map[string]string{
 		"RUNTIME_SCHEMA_VERSION":                   "1",

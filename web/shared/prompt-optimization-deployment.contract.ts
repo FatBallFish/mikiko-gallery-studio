@@ -13,11 +13,10 @@ if (envExample.includes(`${key}=local-dev-prompt-optimization-quote-signing-key`
   throw new Error('runtime environment template must not contain a usable prompt optimization quote signing key')
 }
 
-for (const path of ['deployments/docker-compose/docker-compose.local.yml']) {
-  const source = read(path)
-  if ((source.match(new RegExp(key, 'g')) ?? []).length < 2) {
-    throw new Error(`${path} must configure the quote signing key for API and worker runtimes`)
-  }
+const localCompose = read('deployments/docker-compose/docker-compose.local.yml')
+const localRuntime = read('config/runtime.local.env.example')
+if ((localCompose.split('${PIC_GALLERY_LOCAL_CONFIG_DIR:-../../config}:/run/pic-gallery-config:ro').length - 1) < 2 || !localRuntime.includes(`${key}=local-dev-prompt-optimization-quote-signing-key`)) {
+  throw new Error('local API and worker must load the quote signing key from the shared local runtime env')
 }
 
 const prodCompose = read('deployments/docker-compose/docker-compose.prod.yml')
