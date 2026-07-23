@@ -27,6 +27,7 @@ for (const path of oldComposePaths) {
   if (existsSync(resolve(path))) throw new Error(`obsolete local Compose file must be removed: ${path}`)
 }
 for (const secretPath of [
+  '.worktrees/',
   'config/runtime.env',
   'config/.runtime.env.tmp-*',
   'config/install-state.json',

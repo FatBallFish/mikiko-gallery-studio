@@ -1,5 +1,6 @@
 .git
 .gitignore
+.worktrees/
 .DS_Store
 .env
 .env.*
