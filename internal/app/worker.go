@@ -98,7 +98,10 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	}
 	defer heartbeat.Stop()
 
-	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
+	storageConfigSvc := storageconfigservice.NewServiceWithOptions(
+		entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env,
+		storageconfigservice.ServiceOptions{BootstrapStorageManaged: startup.Bootstrap.ObjectStorageManaged},
+	)
 	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}

@@ -69,6 +69,49 @@ func TestStorageBootstrapDoesNotOverrideExistingDatabaseConfig(t *testing.T) {
 	}
 }
 
+func TestStorageBootstrapAllowsManagedInternalMinIOHTTPInProduction(t *testing.T) {
+	store := newMemoryStore()
+	svc := NewServiceWithOptions(store, "test-key", config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint:        "http://minio:9000",
+			Region:          "us-east-1",
+			Bucket:          "app-assets",
+			AccessKeyID:     "app-access-key",
+			SecretAccessKey: "app-secret-key",
+			ForcePathStyle:  true,
+		},
+	}, "production", ServiceOptions{BootstrapStorageManaged: true})
+
+	if err := svc.Bootstrap(context.Background(), 0); err != nil {
+		t.Fatalf("Bootstrap returned error for managed MinIO: %v", err)
+	}
+	resolved, err := svc.ResolveDefaultWritable(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveDefaultWritable returned error: %v", err)
+	}
+	if resolved.Endpoint != "http://minio:9000" {
+		t.Fatalf("managed MinIO endpoint = %q, want internal endpoint", resolved.Endpoint)
+	}
+}
+
+func TestStorageBootstrapRejectsUnmanagedS3HTTPInProduction(t *testing.T) {
+	svc := NewService(newMemoryStore(), "test-key", config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint:        "http://objects.example.test:9000",
+			Region:          "us-east-1",
+			Bucket:          "app-assets",
+			AccessKeyID:     "access-key",
+			SecretAccessKey: "secret-key",
+		},
+	}, "production")
+
+	if err := svc.Bootstrap(context.Background(), 0); err == nil {
+		t.Fatal("expected unmanaged production S3 HTTP endpoint to be rejected")
+	}
+}
+
 func TestStorageConfigRejectsMaskedSecretPlaceholder(t *testing.T) {
 	svc := NewService(newMemoryStore(), "test-key", config.StorageConfig{Driver: "local"}, "local")
 	_, err := svc.Create(context.Background(), domainstorageconfig.WriteRequest{

@@ -21,14 +21,26 @@ const (
 )
 
 type Service struct {
-	store       Store
-	codec       *secretcodec.Codec
-	bootstrap   config.StorageConfig
-	environment string
+	store                   Store
+	codec                   *secretcodec.Codec
+	bootstrap               config.StorageConfig
+	environment             string
+	bootstrapStorageManaged bool
 }
 
 func NewService(store Store, encryptionKey string, bootstrap config.StorageConfig, environment string) *Service {
-	return &Service{store: store, codec: secretcodec.New(encryptionKey), bootstrap: bootstrap, environment: strings.TrimSpace(environment)}
+	return NewServiceWithOptions(store, encryptionKey, bootstrap, environment, ServiceOptions{})
+}
+
+type ServiceOptions struct {
+	BootstrapStorageManaged bool
+}
+
+func NewServiceWithOptions(store Store, encryptionKey string, bootstrap config.StorageConfig, environment string, options ServiceOptions) *Service {
+	return &Service{
+		store: store, codec: secretcodec.New(encryptionKey), bootstrap: bootstrap,
+		environment: strings.TrimSpace(environment), bootstrapStorageManaged: options.BootstrapStorageManaged,
+	}
 }
 
 func (s *Service) Bootstrap(ctx context.Context, updatedBy int64) error {
@@ -285,7 +297,7 @@ func (s *Service) recordForWrite(ctx context.Context, current domainstorageconfi
 	if err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
-	if err := s.validate(record, secrets); err != nil {
+	if err := s.validate(record, secrets, false); err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
 	record.SecretEncrypted, err = s.codec.EncryptJSON(secrets)
@@ -327,7 +339,7 @@ func (s *Service) secretsForWrite(current domainstorageconfig.ConfigRecord, req 
 	return secrets, nil
 }
 
-func (s *Service) validate(record domainstorageconfig.ConfigRecord, secrets map[string]any) error {
+func (s *Service) validate(record domainstorageconfig.ConfigRecord, secrets map[string]any, allowManagedBootstrapHTTP bool) error {
 	if record.Driver != domainstorageconfig.DriverLocal && record.Driver != domainstorageconfig.DriverS3 {
 		return errs.BadRequest("storage driver must be local or s3")
 	}
@@ -347,7 +359,8 @@ func (s *Service) validate(record domainstorageconfig.ConfigRecord, secrets map[
 	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
 		return errs.BadRequest("s3 endpoint must include scheme and host")
 	}
-	if !strings.EqualFold(s.environment, "local") && endpoint.Scheme != "https" && !hostLooksLocal(endpoint.Hostname()) {
+	if !strings.EqualFold(s.environment, "local") && endpoint.Scheme != "https" && !hostLooksLocal(endpoint.Hostname()) &&
+		!(allowManagedBootstrapHTTP && isManagedMinIOEndpoint(endpoint)) {
 		return errs.BadRequest("s3 endpoint must use https outside local environment")
 	}
 	return nil
@@ -368,7 +381,7 @@ func (s *Service) bootstrapRecord(updatedBy int64) (domainstorageconfig.ConfigRe
 		record.Bucket, record.Prefix, record.ForcePathStyle = strings.TrimSpace(s.bootstrap.S3.Bucket), strings.Trim(strings.TrimSpace(s.bootstrap.S3.Prefix), "/"), s.bootstrap.S3.ForcePathStyle
 		secrets[secretAccessKeyID], secrets[secretSecretAccessKey] = strings.TrimSpace(s.bootstrap.S3.AccessKeyID), strings.TrimSpace(s.bootstrap.S3.SecretAccessKey)
 	}
-	if err := s.validate(record, secrets); err != nil {
+	if err := s.validate(record, secrets, s.bootstrapStorageManaged); err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
 	encrypted, err := s.codec.EncryptJSON(secrets)
@@ -458,6 +471,12 @@ func hostLooksLocal(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func isManagedMinIOEndpoint(endpoint *url.URL) bool {
+	return endpoint != nil && endpoint.Scheme == "http" && strings.EqualFold(endpoint.Hostname(), "minio") &&
+		endpoint.Port() == "9000" && endpoint.User == nil && (endpoint.Path == "" || endpoint.Path == "/") &&
+		endpoint.RawQuery == "" && endpoint.Fragment == ""
 }
 
 func truncate(value string, max int) string {

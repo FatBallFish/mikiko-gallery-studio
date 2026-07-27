@@ -286,7 +286,10 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	}
 
 	secureConfigSvc := secureconfigservice.NewService(entstore.NewSecureConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Auth.SMTP, cfg.App.Env)
-	storageConfigSvc := storageconfigservice.NewService(entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env)
+	storageConfigSvc := storageconfigservice.NewServiceWithOptions(
+		entstore.NewStorageConfigStore(client), cfg.Security.SecureConfigEncryptionKey, cfg.Storage, cfg.App.Env,
+		storageconfigservice.ServiceOptions{BootstrapStorageManaged: startup.Bootstrap.ObjectStorageManaged},
+	)
 	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
