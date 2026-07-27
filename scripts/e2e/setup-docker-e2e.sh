@@ -96,6 +96,15 @@ start_core_middleware() {
     "mc alias set e2e http://${CORE_MINIO}:9000 e2e-minio e2e-minio-password >/dev/null && mc mb --ignore-existing e2e/app-assets >/dev/null"
 }
 
+configure_local_e2e_runtime() {
+  local runtime=$1 project=$2 api_port=$3 env_file="$runtime/config/runtime.env"
+  deployment_e2e_set_env_value "$env_file" PIC_GALLERY_ENV local
+  deployment_e2e_set_env_value "$env_file" AUTH_FIXED_EMAIL_CODE 123456
+  deployment_e2e_set_env_value "$env_file" AUTH_DEV_EMAIL_CODES true
+  deployment_e2e_compose "$runtime" "$project" restart api worker gateway >/dev/null
+  deployment_e2e_wait_status "http://127.0.0.1:${api_port}/healthz" 200 180
+}
+
 run_profile() {
   local profile=$1 ordinal=$2
   local runtime="$E2E_ROOT/$profile" api_port gateway_port user_port admin_port docs_port
@@ -136,9 +145,11 @@ run_profile() {
   env_file="$runtime/config/runtime.env"
   project="$(deployment_e2e_project_name "$env_file")"
   PROJECTS[$runtime_index]="$project"
-  printf '\n# E2E-only runtime settings / 仅用于 E2E 的运行配置\nPIC_GALLERY_ENV=local\nAUTH_FIXED_EMAIL_CODE=123456\nAUTH_DEV_EMAIL_CODES=true\n' >>"$env_file"
-  deployment_e2e_compose "$runtime" "$project" restart api worker gateway >/dev/null
-  deployment_e2e_wait_status "http://127.0.0.1:${api_port}/healthz" 200 180
+  if [[ "$profile" == core ]]; then
+    configure_local_e2e_runtime "$runtime" "$project" "$api_port"
+  else
+    deployment_e2e_wait_status "http://127.0.0.1:${api_port}/healthz" 200 180
+  fi
 
   if [[ "$profile" == core ]]; then
     start_core_middleware "${RUN_ID}-${ordinal}"
@@ -296,6 +307,7 @@ PY
   "$DEPLOYCTL" doctor --runtime-dir "$runtime" >"$E2E_EVIDENCE_DIR/${profile}-doctor.txt"
 
   if [[ "$profile" == full && "${E2E_RUN_BUSINESS:-true}" == true ]]; then
+    configure_local_e2e_runtime "$runtime" "$project" "$api_port"
     BASE_URL="http://127.0.0.1:${gateway_port}" USER_WEB_URL="http://127.0.0.1:${gateway_port}" \
       ADMIN_WEB_URL="http://127.0.0.1:${gateway_port}/admin" NGINX_URL="http://127.0.0.1:${gateway_port}" \
       MINIO_URL="http://127.0.0.1:${gateway_port}" MAILPIT_URL="http://127.0.0.1:${gateway_port}" \

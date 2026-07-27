@@ -86,8 +86,17 @@ if (!setupRunner.includes('SETUP_CORS_ALLOWED_ORIGINS="http://127.0.0.1:${gatewa
 if (!setupRunner.includes('run_profile full') || !setupRunner.includes('run_profile core')) {
   throw new Error('setup deployment E2E must cover both full and core profiles')
 }
-for (const [name, source] of [['setup', setupRunner], ['cluster', clusterRunner]] as const) {
-  if (!source.includes('PIC_GALLERY_ENV=local') || source.includes('PIC_GALLERY_ENV=test')) {
+if (!setupRunner.includes('if [[ "$profile" == core ]]; then\n    configure_local_e2e_runtime "$runtime" "$project" "$api_port"')) {
+  throw new Error('Docker full setup must remain in production mode; only the core HTTP fixture may use local mode before setup')
+}
+if (!setupRunner.includes('if [[ "$profile" == full && "${E2E_RUN_BUSINESS:-true}" == true ]]; then\n    configure_local_e2e_runtime "$runtime" "$project" "$api_port"')) {
+  throw new Error('Docker full business E2E may enable local test auth only after production-mode setup has recovered')
+}
+for (const [name, source, localMarker] of [
+  ['setup', setupRunner, 'deployment_e2e_set_env_value "$env_file" PIC_GALLERY_ENV local'],
+  ['cluster', clusterRunner, 'PIC_GALLERY_ENV=local'],
+] as const) {
+  if (!source.includes(localMarker) || source.includes('PIC_GALLERY_ENV=test')) {
     throw new Error(`${name} deployment E2E must use the supported local environment for its HTTP object storage fixture`)
   }
 }
