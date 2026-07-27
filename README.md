@@ -376,83 +376,365 @@ Admin-managed sensitive settings are write-only by contract:
 
 ## Production Deployment
 
-`deployctl` is the supported deployment entrypoint. It generates a portable runtime directory and one bilingual `./config/runtime.env`; no application secrets or middleware URLs need to be prepared manually before a Docker full install.
+`deployctl` is the only supported production deployment entrypoint. It creates a portable runtime directory, generates application secrets, renders Docker or native service assets, and maintains one bilingual `config/runtime.env`. The project accepts HTTP and IP-plus-port access. DNS, TLS, reverse proxies, and external load balancers remain the operator's responsibility.
 
-| Mode | Profile | Application services | Middleware |
-| --- | --- | --- | --- |
-| Docker | `full` | API, Worker, user/admin/docs Web, Gateway | Managed PostgreSQL, Redis, MinIO |
-| Docker | `core` | API, Worker, user/admin/docs Web, Gateway | Existing PostgreSQL, Redis, object storage |
-| Native Linux/Windows | `core` | API, Worker, portable Gateway and Web assets | Existing PostgreSQL, Redis, object storage |
+### Choose a Deployment Mode
 
-Native `full` is intentionally unsupported. Docker and native `core` support cluster control/API/Worker/Web roles. Multi-API nodes are exposed by an operator-managed load balancer; the project handles node enrollment and health, not public ingress.
+| Mode | Profile and topology | Components | Middleware | Typical use |
+| --- | --- | --- | --- | --- |
+| Docker | `full` / `single` only | API, Worker, user/admin/docs Web, Gateway | Managed PostgreSQL, Redis, MinIO | New single-host installation with the fewest prerequisites |
+| Docker | `core` / `single` | API, Worker, user/admin/docs Web, Gateway | External PostgreSQL, Redis, object storage | Existing infrastructure or independently managed middleware |
+| Docker | `core` / `cluster` | Control node first; API/Worker/Web nodes join later | Shared external PostgreSQL, Redis, S3-compatible storage | Horizontal API and Worker scaling |
+| Docker | `custom` / `single` or `cluster` | Explicit component list | Selected middleware on single-node Docker only | Split Web/API/Worker or monitoring layouts |
+| Native Linux/Windows | `core` or `custom` / `single` or `cluster` | Prebuilt API, Worker, portable Gateway and Web assets | External middleware only | Hosts where containers are unavailable or undesired |
 
-### One-Command Install
+Important constraints:
 
-Docker full:
+- `full` supports only Docker `single` with role `single`; native `full` and clustered `full` are rejected.
+- Cluster control, API, and Worker nodes require shared S3-compatible storage. Node-local storage is not a valid cluster backend.
+- Cluster deployments never create node-local PostgreSQL, Redis, or MinIO. Prepare those services before running Setup.
+- Multiple API nodes require an existing load balancer or reverse proxy. Use `/healthz` for liveness and `/readyz` for traffic readiness.
+- Native targets download checksum-verified release bundles and do not need Go or Node.js installed.
 
-```bash
-./scripts/install.sh install --mode docker --profile full --topology single --yes
-```
+### Prerequisites
 
-Docker core or native core:
+Docker installation requires Docker Engine, Compose v2, registry access, free host ports, and a writable runtime directory. `full` needs no separately prepared middleware. `core` and clustered installations need reachable PostgreSQL, Redis, and object storage.
 
-```bash
-./scripts/install.sh install --mode docker --profile core --topology single --yes
-./scripts/install.sh install --mode native --profile core --topology single --yes
-```
+Native installation supports Linux and Windows release bundles on `amd64` or `arm64`. It requires service-manager privileges and external PostgreSQL/Redis. Use local storage only for a single node; use S3-compatible storage whenever API or Worker runs on multiple nodes.
 
-On Windows, invoke `./scripts/install.ps1` with the same arguments. Omit `--yes` for the interactive selector. The wrappers download and verify a release-compatible `deployctl`; `DEPLOYCTL_BIN` can point to a preinstalled binary.
+Back up any existing database and object storage before importing configuration or upgrading. Do not put unrelated files in the deployctl runtime directory because destructive uninstall deliberately rejects unmanaged paths.
 
-Before initialization, only health, bootstrap status, and the API-hosted `/setup` UI are available. User and admin Web apps redirect to the backend-provided Setup URL, including the exact original return route. Retrieve or rotate the one-time credential on the deployment host:
+### Installer Wrapper
 
-```bash
-deployctl setup status
-deployctl setup token show
-deployctl setup token reset
-```
+On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.ps1`. The wrapper uses `DEPLOYCTL_BIN` or a `deployctl` already on `PATH`, otherwise it downloads the matching release artifact and verifies SHA-256 before execution.
 
-Setup probes PostgreSQL, Redis, and storage, writes all required values to `./config/runtime.env`, migrates the database, creates the first administrator, and restarts into normal mode. Full-profile connection fields are managed/read-only; core-profile fields are editable. Afterward, configure providers, models, routes, prices, plans, registration, payments, and SMTP in the admin console.
+| Wrapper variable | Purpose |
+| --- | --- |
+| `DEPLOYCTL_BIN` | Use a specific local deployctl binary; useful for offline or source builds |
+| `DEPLOYCTL_VERSION` | Select the deployctl release to download; defaults to `latest` |
+| `DEPLOYCTL_RELEASE_BASE_URL` | Override the deployctl and native bundle release repository base URL |
+| `DEPLOYCTL_DOWNLOAD_URL` | Override the complete deployctl artifact URL |
+| `DEPLOYCTL_SHA256` | Pin the expected checksum instead of downloading the `.sha256` file |
 
-### Cluster Join
+`DEPLOYCTL_VERSION` selects the deployment tool itself. `--application-version`, `--image-tag`, and `--release-version` select the application being installed.
 
-On the initialized control node:
+### First Installation
 
-```bash
-deployctl cluster token create --role api --ttl 10m
-deployctl cluster token create --role worker --ttl 10m
-```
+Omit `--yes` to use the interactive selector. Non-interactive installation requires `--mode`, `--profile`, and `--topology`.
 
-On a new node:
-
-```bash
-deployctl cluster join --server http://10.0.0.10:8080 --token '<single-use-token>' --mode docker --runtime-dir .
-```
-
-Enrollment credentials are short-lived, role-scoped, single-use, and exchanged through an authenticated encrypted envelope. Cluster nodes must share PostgreSQL, Redis, S3-compatible storage, and compatible application/schema versions.
-
-### Operations
+Docker full, with versions and the runtime location pinned explicitly:
 
 ```bash
-deployctl status
-deployctl doctor
-deployctl restart
-deployctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag
-deployctl uninstall --yes
+./scripts/install.sh install \
+  --mode docker \
+  --profile full \
+  --topology single \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-registry docker.io/fatballfish \
+  --image-tag v1.2.3 \
+  --yes
 ```
 
-Ordinary uninstall preserves config and persistent data. Permanent deletion requires the exact installation-specific confirmation phrase printed by `deployctl`; back up the database and object storage first.
-
-Destructive uninstall refuses runtime trees containing unmanaged paths before it stops services or deletes volumes. Interrupted Setup sessions recover their persisted operation ID after Token authentication. Upgrade migrations are forward-only: after migration succeeds, rerun the same upgrade command to resume any failed service rollout.
-
-The application accepts plain HTTP and IP-plus-port access. DNS, TLS certificates, reverse proxies, and external load balancers are deployment responsibilities. See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md) for prerequisites, custom modules, native services, upgrades, recovery, and destructive-operation safeguards.
-
-Build and publish Docker images with:
+Docker core using existing middleware:
 
 ```bash
-./scripts/docker/images.sh build --tag test --registry docker.io/your-org
-./scripts/docker/images.sh push --tag test --registry docker.io/your-org
-./scripts/docker/images.sh release --version v1.2.3 --latest --registry docker.io/your-org
+./scripts/install.sh install \
+  --mode docker \
+  --profile core \
+  --topology single \
+  --storage-driver s3 \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
 ```
+
+Native core on Linux or Windows:
+
+```bash
+./scripts/install.sh install \
+  --mode native \
+  --profile core \
+  --topology single \
+  --storage-driver local \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --release-version v1.2.3 \
+  --yes
+```
+
+```powershell
+.\scripts\install.ps1 install `
+  --mode native `
+  --profile core `
+  --topology single `
+  --runtime-dir .\runtime `
+  --application-version v1.2.3 `
+  --release-version v1.2.3 `
+  --yes
+```
+
+Installation writes only under `--runtime-dir`, including:
+
+```text
+runtime/
+├── config/runtime.env
+├── config/install-state.json
+├── deployment.json
+├── compose.yml                 # Docker
+├── assets/                     # generated Docker/Gateway assets
+├── bin/, web/, api/            # native release contents
+├── data/
+└── logs/
+```
+
+The exact contents depend on mode and selected components. Preserve `config/runtime.env`, `config/install-state.json`, and `deployment.json` together; they carry the installation identity and recovery state.
+
+### Install Parameters
+
+| Parameter | Values/default | Notes |
+| --- | --- | --- |
+| `--mode` | `docker`, `native` | Required with `--yes` |
+| `--profile` | `full`, `core`, `custom` | Required with `--yes`; component overrides require `custom` |
+| `--topology` | `single`, `cluster` | Required with `--yes` |
+| `--role` | `single`, `control` | Defaults to `single` for single topology and `control` for cluster; joined roles use `cluster join` |
+| `--components` | Comma-separated list | Required for `custom`; valid values are `api`, `worker`, `user-web`, `admin-web`, `docs-web`, `gateway`, `postgres`, `redis`, `minio`, `monitoring` |
+| `--runtime-dir` | `.` | Portable directory containing configuration, state, assets, data, and logs |
+| `--storage-driver` | `local`, `s3` | Defaults to `s3` for full, cluster, or MinIO custom installs; otherwise `local` |
+| `--public-api-url` | Absolute HTTP(S) URL | Records the browser-visible API base URL; a joined Web plan requires it and receives it from Control during `cluster join` |
+| `--application-version` | `dev` | Installation compatibility version; pin a release version in production |
+| `--image-registry` | Compose default when empty | Docker image prefix; current Compose default is `docker.io/fatballfish` |
+| `--image-tag` | Application version | Docker image tag; prefer an immutable release or digest-derived tag |
+| `--release-version` | Application version | Native GitHub release containing the platform bundle and checksum |
+| `--api-port` | `8080` | Host API port |
+| `--gateway-port` | `80` | Used when Gateway is selected |
+| `--user-web-port` | `5173` | Used when user Web is selected |
+| `--admin-web-port` | `5174` | Used when admin Web is selected |
+| `--docs-web-port` | `5175` | Used when docs Web is selected |
+| `--monitoring-port` | `9090` | Used when monitoring is selected |
+| `--external-gateway` | `false` | Required confirmation when Web components are selected without the managed Gateway |
+| `--migrate` | `false` on install | Requests a control/single migration; normal first initialization migrates through Setup |
+| `--yes` | `false` | Non-interactive confirmation; never authorizes persistent data deletion |
+
+All ports must be in `1-65535`, duplicate flags are rejected, and explicit component lists are canonicalized. Additional custom-profile rules include:
+
+- Gateway requires local API plus all three Web apps, except a joined Web node where it requires the three Web apps.
+- Web components without Gateway require `--external-gateway` and an operator-managed host/proxy.
+- Monitoring requires Docker and a local API component.
+- Native mode cannot manage middleware or monitoring.
+- Cluster custom profiles cannot contain `postgres`, `redis`, or `minio`.
+- A single/control authority must include API. Joined API, Worker, and Web roles must be created with `cluster join`, not `install`.
+
+Example Docker custom installation with monitoring:
+
+```bash
+./scripts/install.sh install \
+  --mode docker \
+  --profile custom \
+  --topology single \
+  --components api,worker,user-web,admin-web,docs-web,gateway,monitoring \
+  --monitoring-port 9090 \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
+```
+
+### Browser Setup and First Administrator
+
+Before initialization, the API exposes health checks, bootstrap status, and the API-hosted Setup UI only. Open `http://<api-host>:<api-port>/setup`; user and admin Web apps also redirect there while preserving their original return URL.
+
+The one-time Setup token is deliberately not printed during non-interactive install. Read or rotate it on the deployment host:
+
+```bash
+deployctl setup status --runtime-dir ./runtime
+deployctl setup token show --runtime-dir ./runtime
+deployctl setup token reset --runtime-dir ./runtime
+```
+
+Use `token reset` when initialization is still pending and the token was exposed, used, or lost. Reset invalidates old tokens and Setup sessions and restarts API and Gateway. Token display and reset are permanently disabled after successful initialization.
+
+In Setup:
+
+1. Confirm the public API URL and allowed browser origins.
+2. Configure and test PostgreSQL, Redis, and object storage. Docker `full` connection fields are managed and read-only; `core` fields are editable.
+3. Enter the first administrator email and password.
+4. Review the configuration, click Apply, and wait for migration and service restart.
+5. After the countdown, the browser returns to the original user/admin route.
+
+Do not refresh merely because containers restart during Apply. If recovery times out, run `status`, `doctor`, and `restart`. If `setup status` is still pending, reopen `/setup`; an authenticated pending session resumes the persisted operation instead of starting a second migration. If Setup is already complete, `/setup` remains closed and readiness diagnostics identify the service that must recover.
+
+Verify completion:
+
+```bash
+curl -fsS http://127.0.0.1:8080/readyz
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/setup  # expect 404
+deployctl doctor --runtime-dir ./runtime
+```
+
+After Setup, sign in to the admin console and configure provider accounts, text/image models, routes, prices, plans, registration policy, payments/recharge, and SMTP. These business settings live in the database, not `runtime.env`.
+
+### Cluster Deployment
+
+Start one control node against external shared PostgreSQL, Redis, and S3 storage. The control node owns Setup, migrations, cluster tokens, and configuration revision:
+
+```bash
+./scripts/install.sh install \
+  --mode docker \
+  --profile core \
+  --topology cluster \
+  --role control \
+  --storage-driver s3 \
+  --runtime-dir ./control \
+  --public-api-url http://10.0.0.10:8080 \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
+```
+
+Complete Setup on the control node before joining any other node. Then create a role-scoped credential:
+
+```bash
+deployctl cluster token create --role api --ttl 10m --runtime-dir ./control
+deployctl cluster token create --role worker --ttl 10m --runtime-dir ./control
+deployctl cluster token create --role web --ttl 10m --runtime-dir ./control
+```
+
+TTL must be greater than zero and no more than 24 hours. Tokens are encrypted in transit, expire, are role-bound, and can be used only once.
+
+Join each target host with a token for its role:
+
+```bash
+deployctl cluster join \
+  --server http://10.0.0.10:8080 \
+  --token '<single-use-token>' \
+  --mode docker \
+  --runtime-dir ./node \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --api-port 8080
+```
+
+`cluster join` also accepts `--image-registry`, `--release-version`, and Gateway/user/admin/docs port overrides. The joining application version must match the control installation. The control API returns installation identity, secrets, shared middleware configuration, schema version, and configuration revision in an authenticated encrypted envelope; the plaintext join token is not stored.
+
+Put joined API nodes behind your load balancer. Worker nodes consume the shared task queue and database leases. A Web-role node can host the three Web apps and Gateway separately from API. Joined nodes refuse startup when installation identity, application/schema version, configuration revision, or node identity does not match.
+
+### Runtime Configuration
+
+API and Worker normally read `./config/runtime.env` relative to the runtime working directory. `APP_ENV_FILE` is the only supported path override for service managers that cannot set that working directory. `PIC_GALLERY_ENV_FILE` is not supported.
+
+The generated file contains detailed Chinese and English comments. Setup writes all required values before declaring the installation complete. Do not manually change `SETUP_COMPLETED`, installation or cluster IDs, runtime schema version, configuration revision, or generated security keys. Use Setup, `upgrade`, `cluster join`, or the admin console according to field ownership.
+
+### Status, Restart, and Diagnostics
+
+Run operational commands on the deployment host and point them at the same runtime directory:
+
+```bash
+deployctl status --runtime-dir ./runtime
+deployctl doctor --runtime-dir ./runtime
+deployctl restart --runtime-dir ./runtime
+```
+
+`doctor` verifies required fields, private file permissions, runtime/manifest/state identity, middleware connectivity, readiness, and schema compatibility while redacting DSNs and secrets. For Docker-specific logs, copy a container name from `deployctl status` and inspect it directly:
+
+```bash
+docker logs --tail=200 <api-container-name>
+docker logs --tail=200 <worker-container-name>
+```
+
+### Upgrade and Recovery
+
+Use immutable versions and back up PostgreSQL plus object storage before every production update.
+
+Docker single/control node:
+
+```bash
+deployctl upgrade \
+  --runtime-dir ./runtime \
+  --application-version v1.3.0 \
+  --image-registry docker.io/fatballfish \
+  --image-tag v1.3.0
+```
+
+Native single/control node:
+
+```bash
+deployctl upgrade \
+  --runtime-dir ./runtime \
+  --application-version v1.3.0 \
+  --release-version v1.3.0
+```
+
+Upgrade the control node first. It acquires the distributed migration lock, updates the runtime and manifest atomically, migrates once, then rolls services in dependency order. Upgrade joined API/Worker/Web nodes afterward without migration:
+
+```bash
+deployctl upgrade \
+  --runtime-dir ./node \
+  --application-version v1.3.0 \
+  --image-tag v1.3.0 \
+  --migrate=false
+```
+
+For a native joined node, replace `--image-tag` with `--release-version v1.3.0` and keep `--migrate=false`.
+
+Upgrade migrations are forward-only. If migration succeeds but service rollout fails, rerun the exact same upgrade command to resume the idempotent rollout. If rollout fails before migration, deployctl restores and reapplies the previous runtime plan. Do not try to downgrade the database by changing image tags; restore from a tested backup only when a release-specific recovery procedure requires it.
+
+### Stop, Uninstall, and Permanent Deletion
+
+Ordinary uninstall stops and unregisters services but preserves runtime configuration and persistent data:
+
+```bash
+deployctl uninstall --runtime-dir ./runtime --yes
+```
+
+Ordinary uninstall is intended for service removal while retaining files for backup or migration. To permanently delete the managed runtime and, for Docker, its named PostgreSQL/Redis/MinIO volumes, first obtain the installation ID and then type the exact case-sensitive phrase:
+
+```bash
+deployctl setup status --runtime-dir ./runtime
+deployctl uninstall \
+  --runtime-dir ./runtime \
+  --delete-data \
+  --confirm 'DELETE <installation-id> PERSISTENT DATA'
+```
+
+`--yes` can never authorize data deletion. Destructive uninstall validates that the runtime tree contains only deployctl-managed configuration, release assets, application data, and logs before stopping any service or deleting any volume. Back up the database and object storage first.
+
+### Import an Older Configuration
+
+Legacy root `.env`, `.env.prod`, or packaged `backend.env` files are not loaded automatically. Import one explicitly into a new runtime directory:
+
+```bash
+deployctl import-config \
+  --source .env.prod \
+  --mode docker \
+  --profile full \
+  --topology single \
+  --storage-driver s3 \
+  --runtime-dir ./runtime
+```
+
+Import never modifies the source and refuses to overwrite an existing target. Keep the old file until `doctor`, readiness, administrator login, and a business smoke test pass.
+
+### Build and Publish Docker Images
+
+Operators publishing their own images must publish all five application images under the same registry prefix and tag:
+
+```bash
+./scripts/docker/images.sh build --tag v1.3.0 --registry registry.example.com/pic-gallery
+./scripts/docker/images.sh push --tag v1.3.0 --registry registry.example.com/pic-gallery
+```
+
+Create a release and optional `latest` tag in one step:
+
+```bash
+./scripts/docker/images.sh release \
+  --version v1.3.0 \
+  --latest \
+  --registry registry.example.com/pic-gallery
+```
+
+See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md) for failure recovery, native service behavior, backup boundaries, and deployment acceptance tests.
 
 ## Development Guide
 
