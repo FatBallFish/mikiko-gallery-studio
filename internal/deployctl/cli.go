@@ -57,6 +57,10 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 	if dependencies.StdoutIsTerminal == nil {
 		dependencies.StdoutIsTerminal = writerIsTerminal
 	}
+	if topLevelHelpRequested(args) || len(args) == 0 && (dependencies.Terminal == nil || !dependencies.Terminal.Interactive()) {
+		fmt.Fprint(dependencies.Stdout, HelpText())
+		return 0
+	}
 	command, err := ParseCommand(args)
 	if err != nil {
 		fmt.Fprintf(dependencies.Stderr, "deployctl: %v\n", err)
@@ -260,6 +264,10 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		fmt.Fprintf(dependencies.Stdout, "Setup token stored securely. Run deployctl setup token show --runtime-dir %q on the deployment host to display it.\n", plan.RuntimeDir)
 	}
 	return 0
+}
+
+func topLevelHelpRequested(args []string) bool {
+	return len(args) == 1 && (args[0] == "-h" || args[0] == "--help")
 }
 
 func writerIsTerminal(writer io.Writer) bool {
