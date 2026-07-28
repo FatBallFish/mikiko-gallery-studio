@@ -22,6 +22,9 @@ make_checkout() {
   cp "$ROOT/scripts/install.sh" "$checkout/scripts/install.sh"
   : > "$checkout/go.mod"
   : > "$checkout/Makefile"
+  for dockerfile in Dockerfile.api Dockerfile.worker Dockerfile.user-web Dockerfile.admin-web Dockerfile.docs-web; do
+    : > "$checkout/$dockerfile"
+  done
 }
 
 make_fake_toolchain() {
@@ -75,6 +78,7 @@ RELEASE_BINARY="$TMP_ROOT/release-deployctl"
 cat > "$RELEASE_BINARY" <<'SCRIPT'
 #!/usr/bin/env sh
 printf '%s\n' "$*" > "$FAKE_EXEC_LOG"
+printf '%s\n' "${DEPLOYCTL_SOURCE_DIR:-}" > "$FAKE_SOURCE_LOG"
 SCRIPT
 chmod +x "$RELEASE_BINARY"
 if command -v sha256sum >/dev/null 2>&1; then
@@ -91,24 +95,28 @@ BASE_PATH="$FAKE_BIN:/usr/bin:/bin"
 
 success_install="$TMP_ROOT/success bin"
 success_log="$TMP_ROOT/success-exec.log"
+success_source_log="$TMP_ROOT/success-source.log"
 success_output=$(env \
   PATH="$BASE_PATH" HOME="$TMP_ROOT/home" DEPLOYCTL_INSTALL_DIR="$success_install" \
-  FAKE_CURL_MODE=success FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$success_log" \
+  FAKE_CURL_MODE=success FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$success_log" FAKE_SOURCE_LOG="$success_source_log" \
   sh "$CHECKOUT/scripts/install.sh" version --json 2>&1)
 [[ -x "$success_install/deployctl" ]] || fail "verified release was not installed persistently"
 [[ $(cat "$success_log") == "version --json" ]] || fail "installed deployctl did not receive original arguments"
+[[ $(cat "$success_source_log") == "$CHECKOUT" ]] || fail "installed deployctl did not receive the complete source checkout path"
 assert_contains "$success_output" "$success_install/deployctl"
 
 fallback_install="$TMP_ROOT/fallback bin"
 fallback_log="$TMP_ROOT/fallback-exec.log"
+fallback_source_log="$TMP_ROOT/fallback-source.log"
 make_log="$TMP_ROOT/make.log"
 fallback_output=$(env \
   PATH="$BASE_PATH" HOME="$TMP_ROOT/home" DEPLOYCTL_INSTALL_DIR="$fallback_install" \
   DEPLOYCTL_DOWNLOAD_URL="https://downloads.example.test/deployctl?token=wrapper-query-secret" \
-  FAKE_CURL_MODE=unavailable FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$fallback_log" FAKE_MAKE_LOG="$make_log" \
+  FAKE_CURL_MODE=unavailable FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$fallback_log" FAKE_SOURCE_LOG="$fallback_source_log" FAKE_MAKE_LOG="$make_log" \
   sh "$CHECKOUT/scripts/install.sh" version 2>&1)
 [[ -x "$fallback_install/deployctl" ]] || fail "release failure did not install a local build"
 [[ $(cat "$fallback_log") == "version" ]] || fail "local build did not receive original arguments"
+[[ $(cat "$fallback_source_log") == "$CHECKOUT" ]] || fail "local build did not receive the complete source checkout path"
 assert_contains "$fallback_output" "falling back to a local source build"
 [[ "$fallback_output" != *"wrapper-query-secret"* ]] || fail "release failure leaked a signed download URL query"
 assert_contains "$(cat "$make_log")" "deployctl"
@@ -164,5 +172,6 @@ set -e
 assert_contains "$missing_go_output" "Go"
 assert_contains "$missing_make_output" "Make"
 assert_contains "$missing_make_output" "DEPLOYCTL_BIN"
+assert_contains "$(cat "$ROOT/scripts/install.ps1")" 'DEPLOYCTL_SOURCE_DIR'
 
 echo "OK: deployctl install wrapper fallback contract verified"

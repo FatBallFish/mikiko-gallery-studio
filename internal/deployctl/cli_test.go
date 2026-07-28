@@ -12,15 +12,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
 type fakeTerminal struct {
-	interactive   bool
-	answers       []string
-	confirmed     bool
-	prompts       int
-	confirmations int
+	interactive    bool
+	answers        []string
+	confirmed      bool
+	confirmAnswers []bool
+	prompts        int
+	confirmations  int
 }
 
 func (terminal *fakeTerminal) Interactive() bool { return terminal.interactive }
@@ -35,6 +37,11 @@ func (terminal *fakeTerminal) Prompt(_ context.Context, _ string, fallback strin
 }
 func (terminal *fakeTerminal) Confirm(context.Context, string) (bool, error) {
 	terminal.confirmations++
+	if len(terminal.confirmAnswers) > 0 {
+		answer := terminal.confirmAnswers[0]
+		terminal.confirmAnswers = terminal.confirmAnswers[1:]
+		return answer, nil
+	}
 	return terminal.confirmed, nil
 }
 
@@ -87,6 +94,45 @@ func TestRunInteractiveInstallDoesNotWriteTheTokenToRedirectedStdout(t *testing.
 	})
 	if code != 0 || strings.Contains(stdout.String(), "Setup token:") || !strings.Contains(stdout.String(), "setup token show") {
 		t.Fatalf("redirected interactive install = %d, stdout %q", code, stdout.String())
+	}
+}
+
+func TestRunInteractiveInstallConfirmsBeforeOverwritingADifferentPendingPlan(t *testing.T) {
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	oldPlan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldResult, err := ExecuteInstall(context.Background(), oldPlan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x74}, 64))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRuntime := mustReadFile(t, oldResult.RuntimeEnvPath)
+
+	t.Run("cancel preserves existing runtime", func(t *testing.T) {
+		terminal := &fakeTerminal{interactive: true, confirmAnswers: []bool{true, false}}
+		stdout := new(bytes.Buffer)
+		code := Run(context.Background(), []string{"install", "--mode", "docker", "--profile", "core", "--topology", "single", "--runtime-dir", runtimeDirectory, "--application-version", "v2", "--image-tag", "v2"}, CLIDependencies{
+			Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer),
+		})
+		if code != 0 || terminal.confirmations != 2 || !strings.Contains(stdout.String(), "preserved") {
+			t.Fatalf("cancel overwrite code=%d confirmations=%d stdout=%q", code, terminal.confirmations, stdout.String())
+		}
+		if current := mustReadFile(t, oldResult.RuntimeEnvPath); !bytes.Equal(current, oldRuntime) {
+			t.Fatal("cancelled overwrite changed runtime.env")
+		}
+	})
+
+	terminal := &fakeTerminal{interactive: true, confirmAnswers: []bool{true, true}}
+	code := Run(context.Background(), []string{"install", "--mode", "docker", "--profile", "core", "--topology", "single", "--runtime-dir", runtimeDirectory, "--application-version", "v2", "--image-tag", "v2"}, CLIDependencies{
+		Terminal: terminal, Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer),
+	})
+	if code != 0 || terminal.confirmations != 2 {
+		t.Fatalf("confirmed overwrite code=%d confirmations=%d", code, terminal.confirmations)
+	}
+	document, err := config.ParseRuntimeEnv(mustReadFile(t, oldResult.RuntimeEnvPath))
+	if err != nil || document.Values["APPLICATION_VERSION"] != "v2" {
+		t.Fatalf("confirmed overwrite runtime = %#v, %v", document.Values, err)
 	}
 }
 

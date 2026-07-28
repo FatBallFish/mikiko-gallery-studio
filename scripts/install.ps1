@@ -1,5 +1,14 @@
 $ErrorActionPreference = "Stop"
 
+$root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+if (-not $env:DEPLOYCTL_SOURCE_DIR) {
+  $sourceRequirements = @("go.mod", "Makefile", "cmd/deployctl", "Dockerfile.api", "Dockerfile.worker", "Dockerfile.user-web", "Dockerfile.admin-web", "Dockerfile.docs-web")
+  $sourceComplete = @($sourceRequirements | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) }).Count -eq 0
+  if ($sourceComplete) {
+    $env:DEPLOYCTL_SOURCE_DIR = $root
+  }
+}
+
 $binary = $env:DEPLOYCTL_BIN
 if (-not $binary) {
   $command = Get-Command deployctl -ErrorAction SilentlyContinue
@@ -13,7 +22,6 @@ if (-not $binary) {
   $installDirectory = if ($env:DEPLOYCTL_INSTALL_DIR) { $env:DEPLOYCTL_INSTALL_DIR } else { Join-Path $localAppData "Programs\deployctl" }
   $goCommandName = if ($env:GO) { $env:GO } else { "go" }
   $makeCommandName = if ($env:MAKE) { $env:MAKE } else { "make" }
-  $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
   $architecture = switch ($env:PROCESSOR_ARCHITECTURE.ToUpperInvariant()) {
     "AMD64" { "amd64" }
     "ARM64" { "arm64" }

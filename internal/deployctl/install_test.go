@@ -389,6 +389,148 @@ func TestExecuteInstallResumesTheSamePendingDockerPlanAfterApplyFailure(t *testi
 	}
 }
 
+func TestExecuteInstallOverwritesOnlyARecognizedPendingInstallAndPreservesData(t *testing.T) {
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	oldPlan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldResult, err := ExecuteInstall(context.Background(), oldPlan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x71}, 64))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRuntime := mustReadFile(t, oldResult.RuntimeEnvPath)
+	dataMarker := filepath.Join(runtimeDirectory, "data", "keep-me")
+	if err := os.WriteFile(dataMarker, []byte("persistent"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	newPlan := oldPlan
+	newPlan.ApplicationVersion = "v2"
+	newPlan.ImageTag = "v2"
+	_, err = ExecuteInstall(context.Background(), newPlan, InstallDependencies{Entropy: errorReader("collision must not consume entropy")})
+	var collision *InstallTargetExistsError
+	if !errors.As(err, &collision) || !collision.Overwritable {
+		t.Fatalf("pending collision = %v, want overwritable typed error", err)
+	}
+	_, err = ExecuteInstall(context.Background(), newPlan, InstallDependencies{
+		Entropy:           errorReader("cannot generate replacement"),
+		OverwriteExisting: true,
+	})
+	if err == nil || !bytes.Equal(mustReadFile(t, oldResult.RuntimeEnvPath), oldRuntime) {
+		t.Fatalf("failed replacement did not preserve pending runtime: %v", err)
+	}
+
+	newResult, err := ExecuteInstall(context.Background(), newPlan, InstallDependencies{
+		Entropy:           bytes.NewReader(bytes.Repeat([]byte{0x72}, 64)),
+		OverwriteExisting: true,
+	})
+	if err != nil {
+		t.Fatalf("overwrite pending install: %v", err)
+	}
+	if newResult.SetupToken == oldResult.SetupToken {
+		t.Fatal("overwrite reused the previous setup token")
+	}
+	if content, err := os.ReadFile(dataMarker); err != nil || string(content) != "persistent" {
+		t.Fatalf("persistent data changed: %q, %v", content, err)
+	}
+	document, err := config.ParseRuntimeEnv(mustReadFile(t, newResult.RuntimeEnvPath))
+	if err != nil || document.Values["APPLICATION_VERSION"] != "v2" || document.Values["IMAGE_TAG"] != "v2" {
+		t.Fatalf("overwritten runtime = %#v, %v", document.Values, err)
+	}
+}
+
+func TestExecuteInstallOverwriteNeverUsesManifestRuntimeDirectoryAsADeletionRoot(t *testing.T) {
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	oldPlan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExecuteInstall(context.Background(), oldPlan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x75}, 64))}); err != nil {
+		t.Fatal(err)
+	}
+	outsideDirectory := filepath.Join(t.TempDir(), "outside")
+	files, err := buildDeploymentFiles(oldPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		destination := filepath.Join(outsideDirectory, file.RelativePath)
+		if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(destination, file.Content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifestPath := filepath.Join(runtimeDirectory, "deployment.json")
+	var manifest deploymentManifest
+	if err := json.Unmarshal(mustReadFile(t, manifestPath), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Plan.RuntimeDir = outsideDirectory
+	manifestContent, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, append(manifestContent, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newPlan := oldPlan
+	newPlan.ApplicationVersion = "v2"
+	newPlan.ImageTag = "v2"
+	if _, err := ExecuteInstall(context.Background(), newPlan, InstallDependencies{
+		Entropy: bytes.NewReader(bytes.Repeat([]byte{0x76}, 64)), OverwriteExisting: true,
+	}); err != nil {
+		t.Fatalf("safe overwrite: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outsideDirectory, "compose.yml")); err != nil {
+		t.Fatalf("overwrite removed a file outside the selected runtime: %v", err)
+	}
+}
+
+func TestExecuteInstallRefusesToOverwriteACompletedInstall(t *testing.T) {
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ExecuteInstall(context.Background(), plan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x73}, 64))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(runtimeDirectory, "config", "install-state.json")
+	var state setup.InstallState
+	if err := json.Unmarshal(mustReadFile(t, statePath), &state); err != nil {
+		t.Fatal(err)
+	}
+	state.Phase = setup.InstallPhaseCompleted
+	state.EverCompleted = true
+	stateContent, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, append(stateContent, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtimeContent := strings.Replace(string(mustReadFile(t, result.RuntimeEnvPath)), "SETUP_COMPLETED=false", "SETUP_COMPLETED=true", 1)
+	if err := os.WriteFile(result.RuntimeEnvPath, []byte(runtimeContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	newPlan := plan
+	newPlan.ApplicationVersion = "v2"
+	newPlan.ImageTag = "v2"
+	_, err = ExecuteInstall(context.Background(), newPlan, InstallDependencies{Entropy: errorReader("completed collision must not consume entropy"), OverwriteExisting: true})
+	var collision *InstallTargetExistsError
+	if !errors.As(err, &collision) || collision.Overwritable || !strings.Contains(err.Error(), "completed") {
+		t.Fatalf("completed collision = %v", err)
+	}
+	if _, statErr := os.Stat(result.RuntimeEnvPath); statErr != nil {
+		t.Fatalf("completed runtime was removed: %v", statErr)
+	}
+}
+
 func TestWindowsInstallPermissionsUseAProtectedHandleDACL(t *testing.T) {
 	_, sourceFile, _, ok := runtime.Caller(0)
 	if !ok {

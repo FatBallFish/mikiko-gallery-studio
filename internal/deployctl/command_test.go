@@ -157,12 +157,12 @@ func TestParseCommandSeparatesInteractiveAndNonInteractiveInstall(t *testing.T) 
 
 	automated, err := ParseCommand([]string{
 		"install", "--mode", "docker", "--profile", "full", "--topology", "single",
-		"--runtime-dir", ".", "--yes",
+		"--runtime-dir", ".", "--overwrite", "--yes",
 	})
 	if err != nil {
 		t.Fatalf("ParseCommand(non-interactive install): %v", err)
 	}
-	if automated.Install.Interactive || automated.Install.Mode != config.DeploymentModeDocker || automated.Install.Profile != config.DeploymentProfileFull || automated.Install.Role != config.DeploymentRoleSingle || automated.Install.ApplicationVersion == "" || automated.RuntimeDir != "." {
+	if automated.Install.Interactive || !automated.Install.OverwriteExisting || automated.Install.Mode != config.DeploymentModeDocker || automated.Install.Profile != config.DeploymentProfileFull || automated.Install.Role != config.DeploymentRoleSingle || automated.Install.ApplicationVersion == "" || automated.RuntimeDir != "." {
 		t.Fatalf("non-interactive install parsed incorrectly: %#v", automated)
 	}
 

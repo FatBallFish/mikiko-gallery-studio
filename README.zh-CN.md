@@ -286,7 +286,7 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 
 ### 前置条件
 
-Docker 部署需要 Docker Engine、Compose v2、镜像仓库访问权限、可用宿主机端口和可写运行目录。`full` 不需要单独准备中间件；`core` 和集群部署需要能够访问 PostgreSQL、Redis 与对象存储。
+Docker 部署需要 Docker Engine、Compose v2、可用宿主机端口和可写运行目录。正常情况下还需要镜像仓库访问权限；当请求的 Pic Gallery 应用镜像不存在时，可以使用完整的本地源码仓库构建该镜像，但 Docker 仍需能够获取缺失的基础镜像和中间件镜像。`full` 不需要单独准备中间件；`core` 和集群部署需要能够访问 PostgreSQL、Redis 与对象存储。
 
 原生模式支持 Linux 和 Windows 的 `amd64`、`arm64` 发布包，需要注册系统服务的权限以及外部 PostgreSQL/Redis。只有单节点部署可以使用本地存储；API 或 Worker 存在多节点时必须使用 S3 兼容存储。
 
@@ -298,7 +298,7 @@ Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps
 
 默认安装路径是 Linux/macOS 的 `$HOME/.local/bin/deployctl` 和 Windows 的 `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe`。安装器会输出实际路径和 PATH 配置提示。
 
-当 Release 产物或校验文件不可用时，只有当前目录是包含 `go.mod`、`Makefile`、`cmd/deployctl` 的完整源码仓库，且机器具备 Go 与 Make，包装脚本才会降级执行 `make deployctl`。它不会再次下载源码压缩包。校验和不一致（包括与 `DEPLOYCTL_SHA256` 不一致）属于安全硬失败：保留旧 deployctl，并禁止本地构建降级。
+当 Release 产物或校验文件不可用时，只有当前目录是包含 `go.mod`、`Makefile`、`cmd/deployctl` 的完整源码仓库，且机器具备 Go 与 Make，包装脚本才会降级执行 `make deployctl`。它不会再次下载源码压缩包。校验和不一致（包括与 `DEPLOYCTL_SHA256` 不一致）属于安全硬失败：保留旧 deployctl，并禁止本地构建降级。包装脚本还会把完整源码仓库作为允许的 Docker 本地镜像构建来源传给 deployctl。
 
 | 包装脚本变量 | 作用 |
 | --- | --- |
@@ -308,6 +308,7 @@ Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps
 | `DEPLOYCTL_RELEASE_BASE_URL` | 覆盖 deployctl 与原生发布包的仓库基础 URL |
 | `DEPLOYCTL_DOWNLOAD_URL` | 覆盖完整的 deployctl 文件下载 URL |
 | `DEPLOYCTL_SHA256` | 直接指定预期校验值，不再下载 `.sha256` 文件 |
+| `DEPLOYCTL_SOURCE_DIR` | 仅用于 Docker 镜像本地降级构建的完整源码目录；包装脚本会在可用时自动设置 |
 
 `DEPLOYCTL_VERSION` 选择的是部署工具版本；`--application-version`、`--image-tag` 和 `--release-version` 才决定实际安装的应用版本。
 
@@ -386,6 +387,10 @@ runtime/
 
 具体内容随模式和组件变化。`config/runtime.env`、`config/install-state.json` 与 `deployment.json` 共同承载安装身份和恢复状态，应始终一起保留。
 
+Docker 安装会先拉取选中的全部镜像。如果拉取失败且本地存在包含全部应用 Dockerfile 的完整源码仓库，deployctl 会使用请求的 registry 和 tag 仅构建当前选中的 Pic Gallery 应用镜像，然后继续启动。PostgreSQL、Redis、MinIO、Nginx、Prometheus 及 Dockerfile 基础镜像不会被项目本地替代；若不存在完整源码仓库，命令会同时输出原始拉取错误和本地降级所缺少的条件。
+
+Setup 尚未完成时，使用完全相同的计划重试会自动续装。若另一套计划指向同一个 pending 运行目录，交互安装会询问是否只覆盖 deployctl 生成的配置和部署资源；选择取消会保留现状。非交互自动化必须显式传入 `--overwrite`。覆盖会保留 `data/`、`logs/` 和 Docker 持久卷；Setup 已完成或现有文件无法识别为有效 pending 安装时始终拒绝覆盖。
+
 ### 安装参数
 
 | 参数 | 可选值/默认值 | 说明 |
@@ -410,6 +415,7 @@ runtime/
 | `--monitoring-port` | `9090` | 选择监控组件时生效 |
 | `--external-gateway` | `false` | 选择 Web 但不使用托管 Gateway 时，用于确认已有外部托管/代理 |
 | `--migrate` | 安装时默认 `false` | 请求 single/control 节点执行迁移；正常首次初始化由 Setup 迁移 |
+| `--overwrite` | `false` | 覆盖可识别的 Setup pending 安装配置并保留数据；非交互修改计划时必须显式指定 |
 | `--yes` | `false` | 非交互确认，永远不能授权删除持久化数据 |
 
 所有端口必须在 `1-65535` 之间，重复 flag 会被拒绝，显式组件列表会按固定顺序规范化。`custom` 还有以下规则：

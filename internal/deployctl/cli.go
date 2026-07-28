@@ -234,7 +234,22 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 			return 0
 		}
 	}
-	result, err := ExecuteInstall(ctx, plan, dependencies.Install)
+	installDependencies := dependencies.Install
+	installDependencies.OverwriteExisting = input.OverwriteExisting
+	result, err := ExecuteInstall(ctx, plan, installDependencies)
+	var collision *InstallTargetExistsError
+	if err != nil && input.Interactive && !input.OverwriteExisting && errors.As(err, &collision) && collision.Overwritable {
+		confirmed, confirmErr := dependencies.Terminal.Confirm(ctx, fmt.Sprintf("Incomplete installation configuration exists at %s. Overwrite generated configuration and retry? Data and logs are preserved.", collision.Path))
+		if confirmErr != nil {
+			return writeRunError(dependencies.Stderr, confirmErr)
+		}
+		if !confirmed {
+			fmt.Fprintln(dependencies.Stdout, "Installation cancelled; existing runtime configuration and data were preserved.")
+			return 0
+		}
+		installDependencies.OverwriteExisting = true
+		result, err = ExecuteInstall(ctx, plan, installDependencies)
+	}
 	if err != nil {
 		return writeRunError(dependencies.Stderr, err)
 	}

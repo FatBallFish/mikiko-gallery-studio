@@ -34,6 +34,8 @@ for file in README.md README.zh-CN.md; do
     'DEPLOYCTL_RELEASE_BASE_URL' \
     'DEPLOYCTL_DOWNLOAD_URL' \
     'DEPLOYCTL_SHA256' \
+    'DEPLOYCTL_SOURCE_DIR' \
+    '--overwrite' \
     '$HOME/.local/bin/deployctl' \
     '%LOCALAPPDATA%\Programs\deployctl\deployctl.exe' \
     'deployctl version' \

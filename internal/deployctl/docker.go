@@ -3,7 +3,9 @@ package deployctl
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,10 +29,12 @@ const (
 )
 
 type DockerExecutor struct {
-	Runner      ProcessRunner
-	ReadFile    func(string) ([]byte, error)
-	Environment func() []string
-	RuntimeUser func() string
+	Runner          ProcessRunner
+	ReadFile        func(string) ([]byte, error)
+	Environment     func() []string
+	RuntimeUser     func() string
+	SourceDirectory func() (string, error)
+	Stderr          io.Writer
 }
 
 func (executor DockerExecutor) Preflight(ctx context.Context, plan InstallPlan) error {
@@ -79,6 +83,12 @@ func (executor DockerExecutor) Run(ctx context.Context, action DockerAction, pla
 	if executor.RuntimeUser == nil {
 		executor.RuntimeUser = dockerRuntimeUser
 	}
+	if executor.SourceDirectory == nil {
+		executor.SourceDirectory = resolveDockerBuildSourceDirectory
+	}
+	if executor.Stderr == nil {
+		executor.Stderr = io.Discard
+	}
 	runtimeEnvPath := filepath.Join(plan.RuntimeDir, "config", "runtime.env")
 	content, err := executor.ReadFile(runtimeEnvPath)
 	if err != nil {
@@ -93,12 +103,109 @@ func (executor DockerExecutor) Run(ctx context.Context, action DockerAction, pla
 	if err != nil {
 		return err
 	}
-	for _, spec := range specs {
+	for index, spec := range specs {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := executor.Runner.Run(ctx, spec); err != nil {
-			return fmt.Errorf("docker compose %s: %w", dockerSpecOperation(spec), err)
+			processErr := fmt.Errorf("docker compose %s: %w", dockerSpecOperation(spec), err)
+			if index == 0 && dockerSpecOperation(spec) == "pull" && (action == DockerActionInstall || action == DockerActionUpdate) {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				fmt.Fprintln(executor.Stderr, "Docker image pull failed; building application images locally from the complete source checkout.")
+				if buildErr := executor.buildApplicationImages(ctx, plan, spec.Environment); buildErr != nil {
+					return errors.Join(processErr, fmt.Errorf("local Docker image fallback: %w", buildErr))
+				}
+				continue
+			}
+			return processErr
+		}
+	}
+	return nil
+}
+
+func (executor DockerExecutor) buildApplicationImages(ctx context.Context, plan InstallPlan, environment []string) error {
+	sourceDirectory, err := executor.SourceDirectory()
+	if err != nil {
+		return err
+	}
+	sourceDirectory, err = filepath.Abs(sourceDirectory)
+	if err != nil {
+		return fmt.Errorf("resolve source checkout: %w", err)
+	}
+	registry := strings.TrimSuffix(defaultString(strings.TrimSpace(plan.ImageRegistry), "docker.io/fatballfish"), "/")
+	definitions := map[Component]struct {
+		image      string
+		dockerfile string
+	}{
+		ComponentAPI:      {image: "pic-gallery-api", dockerfile: "Dockerfile.api"},
+		ComponentWorker:   {image: "pic-gallery-worker", dockerfile: "Dockerfile.worker"},
+		ComponentUserWeb:  {image: "pic-gallery-user-web", dockerfile: "Dockerfile.user-web"},
+		ComponentAdminWeb: {image: "pic-gallery-admin-web", dockerfile: "Dockerfile.admin-web"},
+		ComponentDocsWeb:  {image: "pic-gallery-docs-web", dockerfile: "Dockerfile.docs-web"},
+	}
+	built := 0
+	for _, component := range plan.Components {
+		definition, ok := definitions[component]
+		if !ok {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		spec := ProcessSpec{
+			Executable: "docker",
+			Arguments: []string{
+				"build", "--tag", registry + "/" + definition.image + ":" + plan.ImageTag,
+				"--file", filepath.Join(sourceDirectory, definition.dockerfile), sourceDirectory,
+			},
+			Directory:   sourceDirectory,
+			Environment: slices.Clone(environment),
+		}
+		if err := executor.Runner.Run(ctx, spec); err != nil {
+			return fmt.Errorf("build %s: %w", definition.image, err)
+		}
+		built++
+	}
+	if built == 0 {
+		return fmt.Errorf("deployment contains no locally buildable application images")
+	}
+	return nil
+}
+
+func resolveDockerBuildSourceDirectory() (string, error) {
+	if configured := strings.TrimSpace(os.Getenv("DEPLOYCTL_SOURCE_DIR")); configured != "" {
+		if err := validateDockerBuildSourceDirectory(configured); err != nil {
+			return "", fmt.Errorf("validate DEPLOYCTL_SOURCE_DIR: %w", err)
+		}
+		return configured, nil
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+	for candidate := filepath.Clean(workingDirectory); ; candidate = filepath.Dir(candidate) {
+		if validateDockerBuildSourceDirectory(candidate) == nil {
+			return candidate, nil
+		}
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			break
+		}
+	}
+	return "", fmt.Errorf("complete source checkout not found; rerun scripts/install.sh from the project checkout or publish the requested images")
+}
+
+func validateDockerBuildSourceDirectory(directory string) error {
+	required := []string{
+		"go.mod", "Makefile", "Dockerfile.api", "Dockerfile.worker",
+		"Dockerfile.user-web", "Dockerfile.admin-web", "Dockerfile.docs-web",
+	}
+	for _, relativePath := range required {
+		info, err := os.Stat(filepath.Join(directory, relativePath))
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("complete source checkout is missing %s", relativePath)
 		}
 	}
 	return nil

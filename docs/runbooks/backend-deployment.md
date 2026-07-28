@@ -25,7 +25,7 @@ Native `full` is intentionally unsupported. Docker and native core nodes can joi
 
 ## Prerequisites
 
-Docker deployment requires Docker Engine, Compose v2, image registry access, and a writable runtime directory.
+Docker deployment requires Docker Engine, Compose v2, and a writable runtime directory. Registry access is normally required. If a selected Pic Gallery application image cannot be pulled, deployctl may build the selected application images from a complete checkout supplied by `scripts/install.sh` or `scripts/install.ps1`. Base and middleware images still come from their registries.
 
 Native deployment requires a supported prebuilt release bundle, service-manager privileges, external PostgreSQL and Redis, and local shared storage for single-node deployments or S3-compatible storage for clusters. Target hosts do not need Go or Node.js.
 
@@ -60,6 +60,10 @@ For native core:
 Omit `--yes` for the interactive selector. Use `--runtime-dir <path>` when the current directory should not contain the runtime files.
 
 Installation generates secrets, deployment assets, `deployment.json`, `config/install-state.json`, and `config/runtime.env`, then starts the selected services. Non-interactive output does not print the setup token.
+
+If `docker compose pull` fails, deployctl validates the source checkout, locally builds the selected Pic Gallery images with the requested registry/tag, and continues startup. Without a complete checkout it returns the pull error together with actionable fallback guidance.
+
+The same Setup-pending plan resumes automatically after a failed startup. A different interactive plan prompts before replacing generated configuration. For automation, pass `--overwrite` explicitly. Overwrite preserves `data/`, `logs/`, and Docker volumes and is rejected for completed or unrecognized installations.
 
 ## Setup
 
@@ -180,6 +184,7 @@ For Docker, this additionally removes Compose named volumes. Before stopping ser
 
 ## Failure Recovery
 
+- If an initial image pull failed, rerun the exact install command to resume. From a complete source checkout, missing Pic Gallery application images are built locally. Use `--overwrite` only when intentionally replacing a different Setup-pending plan.
 - A pending setup can reuse its current token or rotate it with `setup token reset`.
 - If a browser closes or the API restarts after setup has crossed a durable boundary, open `/setup` again and authenticate with the current Token. The authenticated session returns the persisted operation ID; re-enter the same editable configuration and secrets, rerun the probes, and apply to resume that operation.
 - A failed probe writes no final setup configuration.
