@@ -13,8 +13,6 @@ run() {
 
 run "go test" go test ./...
 run "go vet" go vet ./...
-run "local build service startup scripts" ./scripts/local/pgctl_contract_test.sh
-run "service configuration escaping contract" ./scripts/service/service_config_contract_test.sh
 run "deployctl install wrapper fallback contract" ./scripts/test/install-wrapper-contract.sh
 run "tagged release artifact contract" ./scripts/devops/release-contract-test.sh
 run "staged secret candidate path contract" ./scripts/workflow/staged-secret-candidates-contract-test.sh

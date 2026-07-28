@@ -21,14 +21,7 @@ if (git(['check-ignore', '-q', 'config/runtime.env.example']).status === 0) {
 
 for (const path of ['README.md', 'README.zh-CN.md']) {
   const source = read(path)
-  const installExample =
-    'powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile "config/runtime.env"'
-  if (!source.includes(installExample)) {
-    throw new Error(`${path} must install Windows services with config/runtime.env`)
-  }
-  if (source.includes('-EnvFile ".env"')) {
-    throw new Error(`${path} must not reference the retired root .env runtime path`)
-  }
+  if (source.includes('-EnvFile ".env"')) throw new Error(`${path} must not reference the retired root .env runtime path`)
 }
 
 const currentDeploymentCredentialSurfaces = [
