@@ -20,6 +20,8 @@ func TestParseCommandSupportsTheApprovedCommandTree(t *testing.T) {
 		{args: []string{"status"}, kind: CommandStatus},
 		{args: []string{"doctor"}, kind: CommandDoctor},
 		{args: []string{"restart"}, kind: CommandRestart},
+		{args: []string{"version"}, kind: CommandVersion},
+		{args: []string{"version", "--json"}, kind: CommandVersion},
 		{args: []string{"upgrade"}, kind: CommandUpgrade},
 		{args: []string{"uninstall"}, kind: CommandUninstall},
 		{args: []string{"setup", "status"}, kind: CommandSetupStatus},
@@ -35,6 +37,27 @@ func TestParseCommandSupportsTheApprovedCommandTree(t *testing.T) {
 				t.Fatalf("ParseCommand(%v) = %#v, %v; want kind %q", testCase.args, command, err, testCase.kind)
 			}
 		})
+	}
+}
+
+func TestParseVersionCommandAcceptsOnlyTheJSONFlag(t *testing.T) {
+	text, err := ParseCommand([]string{"version"})
+	if err != nil || text.Version == nil || text.Version.JSON {
+		t.Fatalf("ParseCommand(version) = %#v, %v", text, err)
+	}
+
+	jsonCommand, err := ParseCommand([]string{"version", "--json"})
+	if err != nil || jsonCommand.Version == nil || !jsonCommand.Version.JSON {
+		t.Fatalf("ParseCommand(version --json) = %#v, %v", jsonCommand, err)
+	}
+
+	for _, args := range [][]string{
+		{"version", "unexpected"},
+		{"version", "--json", "--json"},
+	} {
+		if _, err := ParseCommand(args); err == nil {
+			t.Errorf("ParseCommand(%v) unexpectedly succeeded", args)
+		}
 	}
 }
 

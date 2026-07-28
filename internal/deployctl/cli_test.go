@@ -96,6 +96,26 @@ func TestRunReturnsUsageCodeWithoutLeakingSensitiveArguments(t *testing.T) {
 	}
 }
 
+func TestRunVersionWritesTextOrJSONWithoutDeploymentDependencies(t *testing.T) {
+	info := BuildInfo{Version: "v9.8.7", Commit: "abcdef0", BuildTime: "2026-07-28T01:02:03Z", Dirty: true}
+
+	textOutput := new(bytes.Buffer)
+	if code := Run(context.Background(), []string{"version"}, CLIDependencies{Stdout: textOutput, Stderr: new(bytes.Buffer), BuildInfo: info}); code != 0 {
+		t.Fatalf("Run(version) = %d", code)
+	}
+	if !strings.Contains(textOutput.String(), "deployctl v9.8.7") || !strings.Contains(textOutput.String(), "dirty: true") {
+		t.Fatalf("text version output = %q", textOutput.String())
+	}
+
+	jsonOutput := new(bytes.Buffer)
+	if code := Run(context.Background(), []string{"version", "--json"}, CLIDependencies{Stdout: jsonOutput, Stderr: new(bytes.Buffer), BuildInfo: info}); code != 0 {
+		t.Fatalf("Run(version --json) = %d", code)
+	}
+	if !strings.Contains(jsonOutput.String(), `"version":"v9.8.7"`) || !strings.Contains(jsonOutput.String(), `"dirty":true`) {
+		t.Fatalf("JSON version output = %q", jsonOutput.String())
+	}
+}
+
 func TestRunDispatchesClusterJoinWithoutRenderingTheCredential(t *testing.T) {
 	const credential = "pgjoin.v1.019d0000-0000-7000-8000-000000000999.secret"
 	stdout := new(bytes.Buffer)

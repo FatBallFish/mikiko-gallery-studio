@@ -22,6 +22,7 @@ const (
 	CommandStatus             CommandKind = "status"
 	CommandDoctor             CommandKind = "doctor"
 	CommandRestart            CommandKind = "restart"
+	CommandVersion            CommandKind = "version"
 	CommandUpgrade            CommandKind = "upgrade"
 	CommandUninstall          CommandKind = "uninstall"
 	CommandSetupStatus        CommandKind = "setup status"
@@ -43,6 +44,10 @@ type UpgradeOptions struct {
 	ImageTag           string
 	ReleaseVersion     string
 	Migrate            bool
+}
+
+type VersionOptions struct {
+	JSON bool
 }
 
 type UninstallOptions struct {
@@ -87,6 +92,7 @@ type Command struct {
 	Yes                bool
 	Install            *InstallInput
 	ImportConfig       *ImportConfigOptions
+	Version            *VersionOptions
 	Upgrade            *UpgradeOptions
 	Uninstall          *UninstallOptions
 	ClusterTokenCreate *ClusterTokenCreateOptions
@@ -146,6 +152,8 @@ func ParseCommand(args []string) (Command, error) {
 		return parseRuntimeCommand(CommandDoctor, args[1:])
 	case "restart":
 		return parseRuntimeCommand(CommandRestart, args[1:])
+	case "version":
+		return parseVersionCommand(args[1:])
 	case "upgrade":
 		return parseUpgradeCommand(args[1:])
 	case "uninstall":
@@ -157,6 +165,18 @@ func ParseCommand(args []string) (Command, error) {
 	default:
 		return Command{}, fmt.Errorf("unknown deployctl command %q", args[0])
 	}
+}
+
+func parseVersionCommand(args []string) (Command, error) {
+	set := newFlagSet("version")
+	jsonOutput := set.Bool("json", false, "write machine-readable JSON")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("version does not accept positional arguments")
+	}
+	return Command{Kind: CommandVersion, Version: &VersionOptions{JSON: *jsonOutput}}, nil
 }
 
 func parseImportConfigCommand(args []string) (Command, error) {

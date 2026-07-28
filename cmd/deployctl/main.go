@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/fatballfish/pic-gallery/internal/app"
 	"github.com/fatballfish/pic-gallery/internal/deployctl"
+)
+
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildTime = "unknown"
+	dirty     = "false"
 )
 
 func main() {
@@ -20,6 +28,7 @@ func main() {
 	executors := deployctl.RuntimeExecutors{Docker: dockerExecutor, Native: nativeExecutor}
 	os.Exit(deployctl.Run(ctx, os.Args[1:], deployctl.CLIDependencies{
 		Terminal: deployctl.NewStdioTerminal(os.Stdin, os.Stderr), Stdout: os.Stdout, Stderr: os.Stderr,
+		BuildInfo:    deployctl.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, Dirty: strings.EqualFold(dirty, "true")},
 		ImportConfig: deployctl.ImportConfigDependencies{ProbeCompletion: deployctl.ProbeLegacyCompletion},
 		Doctor:       deployctl.ProductionDoctorDependencies(),
 		Upgrade: deployctl.UpgradeDeploymentDependencies(executors, func(ctx context.Context, runtimeEnvPath string) error {

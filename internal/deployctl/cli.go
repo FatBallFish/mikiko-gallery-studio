@@ -24,6 +24,7 @@ type CLIDependencies struct {
 	Terminal             Terminal
 	Stdout               io.Writer
 	Stderr               io.Writer
+	BuildInfo            BuildInfo
 	StdoutIsTerminal     func(io.Writer) bool
 	Install              InstallDependencies
 	ImportConfig         ImportConfigDependencies
@@ -60,6 +61,18 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		return 2
 	}
 	switch command.Kind {
+	case CommandVersion:
+		info := NormalizeBuildInfo(dependencies.BuildInfo)
+		if command.Version.JSON {
+			encoded, encodeErr := info.JSON()
+			if encodeErr != nil {
+				return writeRunError(dependencies.Stderr, fmt.Errorf("encode build information: %w", encodeErr))
+			}
+			fmt.Fprintln(dependencies.Stdout, string(encoded))
+			return 0
+		}
+		fmt.Fprintln(dependencies.Stdout, info.Text())
+		return 0
 	case CommandImportConfig:
 		execute := dependencies.ExecuteImportConfig
 		if execute == nil {
