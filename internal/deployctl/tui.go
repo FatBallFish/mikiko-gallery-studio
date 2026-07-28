@@ -19,6 +19,8 @@ const (
 	TUIScreenUpgradeAndConfiguration TUIScreen = "upgrade-and-configuration-migration"
 	TUIScreenClusterManagement       TUIScreen = "cluster-management"
 	TUIScreenDeployctlTool           TUIScreen = "deployctl-tool"
+	TUIScreenForm                    TUIScreen = "form"
+	TUIScreenReview                  TUIScreen = "review"
 )
 
 type tuiRootItem struct {
@@ -51,6 +53,9 @@ type TUIModel struct {
 	cursor       int
 	quitting     bool
 	selectedArgs []string
+	parentScreen TUIScreen
+	form         *TUICommandForm
+	validation   string
 }
 
 func NewTUIModel(catalog []CommandCatalogEntry) TUIModel {
@@ -79,8 +84,25 @@ func (model TUIModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return model, tea.Quit
 	}
 	if key.Type == tea.KeyEsc && model.screen != TUIScreenRoot {
-		model.screen = TUIScreenRoot
+		switch model.screen {
+		case TUIScreenReview:
+			model.screen = TUIScreenForm
+		case TUIScreenForm:
+			model.screen = model.parentScreen
+		default:
+			model.screen = TUIScreenRoot
+		}
 		model.cursor = 0
+		return model, nil
+	}
+	if model.screen == TUIScreenForm {
+		return model.updateForm(key)
+	}
+	if model.screen == TUIScreenReview {
+		if key.Type == tea.KeyEnter {
+			model.quitting = true
+			return model, tea.Quit
+		}
 		return model, nil
 	}
 
@@ -132,12 +154,55 @@ func (model TUIModel) confirmSelection() (tea.Model, tea.Cmd) {
 	if len(entries) == 0 {
 		return model, nil
 	}
-	model.selectedArgs = strings.Fields(entries[model.cursor].Path)
-	model.quitting = true
-	return model, tea.Quit
+	form := NewTUICommandForm(entries[model.cursor])
+	model.parentScreen = model.screen
+	model.screen = TUIScreenForm
+	model.cursor = 0
+	model.form = &form
+	model.validation = ""
+	return model, nil
+}
+
+func (model TUIModel) updateForm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if model.form == nil {
+		return model, nil
+	}
+	switch key.Type {
+	case tea.KeyTab, tea.KeyDown:
+		model.form.MoveFocus(1)
+	case tea.KeyShiftTab, tea.KeyUp:
+		model.form.MoveFocus(-1)
+	case tea.KeyLeft:
+		model.form.CycleCurrent(-1)
+	case tea.KeyRight:
+		model.form.CycleCurrent(1)
+	case tea.KeySpace:
+		model.form.ToggleCurrent()
+	case tea.KeyBackspace, tea.KeyDelete:
+		model.form.Backspace()
+	case tea.KeyCtrlU:
+		model.form.ClearCurrent()
+	case tea.KeyRunes:
+		for _, value := range key.Runes {
+			model.form.AppendRune(value)
+		}
+	case tea.KeyEnter:
+		args, err := model.form.Arguments()
+		if err != nil {
+			model.validation = err.Error()
+			return model, nil
+		}
+		model.selectedArgs = args
+		model.validation = ""
+		model.screen = TUIScreenReview
+	}
+	return model, nil
 }
 
 func (model TUIModel) items() []string {
+	if model.screen == TUIScreenForm || model.screen == TUIScreenReview {
+		return nil
+	}
 	if model.screen == TUIScreenRoot {
 		items := make([]string, len(tuiRootItems))
 		for index, item := range tuiRootItems {
@@ -169,6 +234,21 @@ func (model TUIModel) View() string {
 	}
 	var view strings.Builder
 	view.WriteString("deployctl\n\n")
+	if model.screen == TUIScreenForm && model.form != nil {
+		fmt.Fprintf(&view, "%s\n\n", model.form.Entry.Summary)
+		view.WriteString(model.form.View())
+		if model.validation != "" {
+			fmt.Fprintf(&view, "\nValidation error: %s\n", model.validation)
+		}
+		view.WriteString("\nArrow keys navigate · Tab changes field · Space toggles · Enter reviews · Esc returns · Ctrl+C exits\n")
+		return view.String()
+	}
+	if model.screen == TUIScreenReview && model.form != nil {
+		view.WriteString("Review command\n\n")
+		view.WriteString(model.form.SafeCommand())
+		view.WriteString("\n\nEnter confirms · Esc edits · Ctrl+C exits\n")
+		return view.String()
+	}
 	for index, item := range model.items() {
 		marker := "  "
 		if index == model.cursor {
@@ -180,7 +260,7 @@ func (model TUIModel) View() string {
 		}
 		fmt.Fprintf(&view, "%s%d. %s\n", marker, number, item)
 	}
-	view.WriteString("\nArrow keys navigate · Enter confirms · Esc returns · Ctrl+C exits\n")
+	view.WriteString("\nArrow keys navigate · Enter confirms · Space toggles · Esc returns · Ctrl+C exits\n")
 	return view.String()
 }
 

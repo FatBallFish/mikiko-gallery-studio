@@ -57,6 +57,25 @@ func TestTUIViewNamesKeyboardControls(t *testing.T) {
 	}
 }
 
+func TestTUICommandFormRequiresReviewBeforeReturningArguments(t *testing.T) {
+	model := updateTUIWithKeys(t, NewTUIModel(CommandCatalog()), "2", "enter", "1", "enter")
+	if model.Screen() != TUIScreenForm || len(model.SelectedArgs()) != 0 {
+		t.Fatalf("command selection screen=%q args=%q", model.Screen(), model.SelectedArgs())
+	}
+	model = updateTUIWithKeys(t, model, "enter")
+	if model.Screen() != TUIScreenReview || len(model.SelectedArgs()) == 0 || model.Quitting() {
+		t.Fatalf("review screen=%q args=%q quitting=%t", model.Screen(), model.SelectedArgs(), model.Quitting())
+	}
+	model = updateTUIWithKeys(t, model, "esc")
+	if model.Screen() != TUIScreenForm {
+		t.Fatalf("review escape screen=%q", model.Screen())
+	}
+	model = updateTUIWithKeys(t, model, "enter", "enter")
+	if !model.Quitting() {
+		t.Fatal("review confirmation did not quit")
+	}
+}
+
 func updateTUIWithKeys(t *testing.T, model TUIModel, keys ...string) TUIModel {
 	t.Helper()
 	for _, key := range keys {
