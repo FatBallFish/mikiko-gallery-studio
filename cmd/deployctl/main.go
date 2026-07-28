@@ -28,6 +28,9 @@ func main() {
 	executors := deployctl.RuntimeExecutors{Docker: dockerExecutor, Native: nativeExecutor}
 	os.Exit(deployctl.Run(ctx, os.Args[1:], deployctl.CLIDependencies{
 		Terminal: deployctl.NewStdioTerminal(os.Stdin, os.Stderr), Stdout: os.Stdout, Stderr: os.Stderr,
+		ExecuteTUI: func(ctx context.Context) ([]string, error) {
+			return deployctl.ExecuteTUI(ctx, os.Stdin, os.Stdout)
+		},
 		BuildInfo:    deployctl.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, Dirty: strings.EqualFold(dirty, "true")},
 		ImportConfig: deployctl.ImportConfigDependencies{ProbeCompletion: deployctl.ProbeLegacyCompletion},
 		Doctor:       deployctl.ProductionDoctorDependencies(),
