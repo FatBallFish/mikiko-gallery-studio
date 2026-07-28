@@ -294,7 +294,7 @@ Back up any existing database and object storage before importing configuration 
 
 ### Installer Wrapper
 
-On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.ps1`. The wrapper uses `DEPLOYCTL_BIN` or a `deployctl` already on `PATH`. Otherwise it downloads the matching Release artifact, verifies SHA-256, installs deployctl persistently, and executes the requested command through that absolute path.
+On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.ps1`. An explicit `DEPLOYCTL_BIN` always wins. From a complete Git source checkout, the wrapper reuses a `deployctl` on `PATH` only when its build commit matches the clean checkout; a stale tool or a dirty checkout triggers a local build and atomically refreshes the persistent binary. Outside a Git source checkout, the wrapper keeps PATH-first behavior. If no tool is available, it downloads the matching Release artifact, verifies SHA-256, installs deployctl persistently, and executes the requested command through that absolute path.
 
 The default installed paths are `$HOME/.local/bin/deployctl` on Linux/macOS and `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe` on Windows. The installer prints the actual location and PATH guidance.
 
