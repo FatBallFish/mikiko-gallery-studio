@@ -8,41 +8,36 @@ import (
 
 func TestCommandCatalogCoversApprovedParserTree(t *testing.T) {
 	want := []CommandCatalogEntry{
-		{Path: "install", Kind: CommandInstall},
-		{Path: "import-config", Kind: CommandImportConfig},
-		{Path: "status", Kind: CommandStatus},
-		{Path: "doctor", Kind: CommandDoctor},
-		{Path: "restart", Kind: CommandRestart},
-		{Path: "version", Kind: CommandVersion},
-		{Path: "self-update", Kind: CommandSelfUpdate},
-		{Path: "upgrade", Kind: CommandUpgrade},
-		{Path: "uninstall", Kind: CommandUninstall},
-		{Path: "setup status", Kind: CommandSetupStatus},
-		{Path: "setup token show", Kind: CommandSetupTokenShow},
-		{Path: "setup token reset", Kind: CommandSetupTokenReset},
-		{Path: "cluster token create", Kind: CommandClusterTokenCreate},
-		{Path: "cluster join", Kind: CommandClusterJoin},
+		{Path: "install", Kind: CommandInstall, Group: "Install and deployment", Summary: "Install a new deployment", Usage: "install [options]"},
+		{Path: "import-config", Kind: CommandImportConfig, Group: "Upgrade and configuration migration", Summary: "Import a legacy runtime configuration", Usage: "import-config --source <path> [options]"},
+		{Path: "status", Kind: CommandStatus, Group: "Runtime operations", Summary: "Show deployment status", Usage: "status [--runtime-dir <dir>]"},
+		{Path: "doctor", Kind: CommandDoctor, Group: "Runtime operations", Summary: "Diagnose deployment health", Usage: "doctor [--runtime-dir <dir>]"},
+		{Path: "restart", Kind: CommandRestart, Group: "Runtime operations", Summary: "Restart deployment services", Usage: "restart [--runtime-dir <dir>]"},
+		{Path: "version", Kind: CommandVersion, Group: "Deployctl tool", Summary: "Show deployctl build information", Usage: "version [--json]"},
+		{Path: "self-update", Kind: CommandSelfUpdate, Group: "Deployctl tool", Summary: "Update the deployctl executable", Usage: "self-update [--version <version>] [--yes]"},
+		{Path: "upgrade", Kind: CommandUpgrade, Group: "Upgrade and configuration migration", Summary: "Upgrade the deployed application", Usage: "upgrade [options]"},
+		{Path: "uninstall", Kind: CommandUninstall, Group: "Runtime operations", Summary: "Stop services or remove a deployment", Usage: "uninstall [options]"},
+		{Path: "setup status", Kind: CommandSetupStatus, Group: "Setup initialization", Summary: "Show Setup initialization status", Usage: "setup status [--runtime-dir <dir>]"},
+		{Path: "setup token show", Kind: CommandSetupTokenShow, Group: "Setup initialization", Summary: "Show the current Setup token", Usage: "setup token show [--runtime-dir <dir>]"},
+		{Path: "setup token reset", Kind: CommandSetupTokenReset, Group: "Setup initialization", Summary: "Reset the Setup token", Usage: "setup token reset [--runtime-dir <dir>]"},
+		{Path: "cluster token create", Kind: CommandClusterTokenCreate, Group: "Cluster management", Summary: "Create a single-use cluster join token", Usage: "cluster token create --role <api|worker|web> [options]"},
+		{Path: "cluster join", Kind: CommandClusterJoin, Group: "Cluster management", Summary: "Join a node to a cluster", Usage: "cluster join --server <url> --token <token> [options]"},
 	}
 
 	gotCatalog := CommandCatalog()
-	got := make([]CommandCatalogEntry, len(gotCatalog))
-	for index, entry := range gotCatalog {
-		got[index] = CommandCatalogEntry{Path: entry.Path, Kind: entry.Kind}
-		if entry.Group == "" || entry.Summary == "" || entry.Usage == "" {
-			t.Errorf("catalog entry %q has incomplete presentation metadata: %#v", entry.Path, entry)
-		}
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("CommandCatalog() paths = %#v, want %#v", got, want)
+	if !reflect.DeepEqual(gotCatalog, want) {
+		t.Fatalf("CommandCatalog() = %#v, want %#v", gotCatalog, want)
 	}
 
 	help := HelpText()
 	if !strings.HasPrefix(help, "Usage:\n") {
 		t.Fatalf("HelpText() does not start with usage: %q", help)
 	}
-	for _, entry := range gotCatalog {
-		if !strings.Contains(help, "deployctl "+entry.Usage) {
-			t.Errorf("HelpText() does not contain usage for %q: %q", entry.Path, help)
+	for _, entry := range want {
+		for _, expected := range []string{entry.Group + ":", "deployctl " + entry.Usage, entry.Summary} {
+			if !strings.Contains(help, expected) {
+				t.Errorf("HelpText() does not contain %q for %q: %q", expected, entry.Path, help)
+			}
 		}
 	}
 }
