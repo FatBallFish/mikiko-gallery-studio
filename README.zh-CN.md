@@ -376,83 +376,367 @@ powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 status -Comp
 
 ## 生产部署
 
-`deployctl` 是唯一受支持的部署入口。它会生成可移动的运行目录和一份带中英文注释的 `./config/runtime.env`；Docker 完整模式首次启动前无需手工准备应用密钥或中间件连接信息。
+`deployctl` 是唯一受支持的生产部署入口。它会创建可移动的运行目录、生成应用密钥、渲染 Docker 或原生服务文件，并统一维护一份带中英文注释的 `config/runtime.env`。项目自身接受 HTTP 和 IP+端口访问；DNS、HTTPS 证书、反向代理和外部负载均衡由部署者负责。
 
-| 模式 | Profile | 应用服务 | 中间件 |
-| --- | --- | --- | --- |
-| Docker | `full` | API、Worker、用户/管理/文档 Web、Gateway | 托管 PostgreSQL、Redis、MinIO |
-| Docker | `core` | API、Worker、用户/管理/文档 Web、Gateway | 已有 PostgreSQL、Redis、对象存储 |
-| 原生 Linux/Windows | `core` | API、Worker、便携 Gateway 与 Web 资产 | 已有 PostgreSQL、Redis、对象存储 |
+### 选择部署方式
 
-原生模式明确不支持 `full`。Docker 和原生 `core` 都支持 control/API/Worker/Web 集群角色。多 API 节点由部署者已有的负载均衡统一暴露；项目只负责节点加入与健康状态，不负责公网入口。
+| 模式 | Profile 与拓扑 | 组件 | 中间件 | 适用场景 |
+| --- | --- | --- | --- | --- |
+| Docker | 仅 `full` / `single` | API、Worker、用户/管理/文档 Web、Gateway | 托管 PostgreSQL、Redis、MinIO | 新建单机实例，前置依赖最少 |
+| Docker | `core` / `single` | API、Worker、用户/管理/文档 Web、Gateway | 外部 PostgreSQL、Redis、对象存储 | 已有基础设施或希望独立维护中间件 |
+| Docker | `core` / `cluster` | 先部署 Control，再加入 API/Worker/Web 节点 | 共享的外部 PostgreSQL、Redis、S3 兼容存储 | 横向扩展 API 与 Worker |
+| Docker | `custom` / `single` 或 `cluster` | 显式选择组件 | 仅单机 Docker 可选择托管中间件 | 拆分 Web/API/Worker 或增加监控 |
+| 原生 Linux/Windows | `core` 或 `custom` / `single` 或 `cluster` | 预编译 API、Worker、便携 Gateway 与 Web 资源 | 仅外部中间件 | 不方便或不希望使用容器的主机 |
 
-### 一条命令安装
+重要约束：
 
-Docker 完整模式：
+- `full` 仅支持 Docker `single` 加 `single` 角色；原生 `full` 和集群 `full` 会被拒绝。
+- 集群 Control、API 和 Worker 节点必须使用共享的 S3 兼容存储，节点本地目录不能作为集群存储。
+- 集群部署不会创建节点本地 PostgreSQL、Redis 或 MinIO，进入 Setup 前需提前准备这些服务。
+- 多 API 节点需要已有负载均衡或反向代理；存活检查使用 `/healthz`，流量就绪检查使用 `/readyz`。
+- 原生目标机下载并校验发布包，不要求安装 Go 或 Node.js。
 
-```bash
-./scripts/install.sh install --mode docker --profile full --topology single --yes
-```
+### 前置条件
 
-Docker 核心模式或原生核心模式：
+Docker 部署需要 Docker Engine、Compose v2、镜像仓库访问权限、可用宿主机端口和可写运行目录。`full` 不需要单独准备中间件；`core` 和集群部署需要能够访问 PostgreSQL、Redis 与对象存储。
 
-```bash
-./scripts/install.sh install --mode docker --profile core --topology single --yes
-./scripts/install.sh install --mode native --profile core --topology single --yes
-```
+原生模式支持 Linux 和 Windows 的 `amd64`、`arm64` 发布包，需要注册系统服务的权限以及外部 PostgreSQL/Redis。只有单节点部署可以使用本地存储；API 或 Worker 存在多节点时必须使用 S3 兼容存储。
 
-Windows 使用 `./scripts/install.ps1` 并传入相同参数。去掉 `--yes` 可进入交互式选择。包装脚本会下载并校验版本匹配的 `deployctl`；也可用 `DEPLOYCTL_BIN` 指向已安装的二进制。
+导入旧配置或升级前应备份现有数据库和对象存储。不要在 deployctl 运行目录中放入无关文件，因为破坏性卸载会主动拒绝包含非受管路径的目录。
 
-初始化完成前，API 只开放健康检查、bootstrap 状态和自身托管的 `/setup` 页面。用户端与管理端会跳转到后端返回的 Setup URL，并保留精确的原访问路由。可在部署主机查询或轮换一次性凭证：
+### 安装包装脚本
 
-```bash
-deployctl setup status
-deployctl setup token show
-deployctl setup token reset
-```
+Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps1`。包装脚本优先使用 `DEPLOYCTL_BIN` 或 `PATH` 中已有的 `deployctl`；如果都不存在，则下载匹配平台的发布文件，并在运行前校验 SHA-256。
 
-Setup 会探测 PostgreSQL、Redis 和存储，将全部必填值写入 `./config/runtime.env`，执行数据库迁移、创建首个管理员并重启进入正常模式。`full` 的连接字段由部署工具托管且只读，`core` 的连接字段可编辑。完成后再到管理后台配置供应商、模型、路由、价格、套餐、注册、支付和 SMTP。
+| 包装脚本变量 | 作用 |
+| --- | --- |
+| `DEPLOYCTL_BIN` | 指定本地 deployctl 二进制，适合离线环境或源码构建 |
+| `DEPLOYCTL_VERSION` | 指定要下载的 deployctl 版本，默认 `latest` |
+| `DEPLOYCTL_RELEASE_BASE_URL` | 覆盖 deployctl 与原生发布包的仓库基础 URL |
+| `DEPLOYCTL_DOWNLOAD_URL` | 覆盖完整的 deployctl 文件下载 URL |
+| `DEPLOYCTL_SHA256` | 直接指定预期校验值，不再下载 `.sha256` 文件 |
 
-### 集群加入
+`DEPLOYCTL_VERSION` 选择的是部署工具版本；`--application-version`、`--image-tag` 和 `--release-version` 才决定实际安装的应用版本。
 
-在已初始化的控制节点签发凭证：
+### 首次安装
 
-```bash
-deployctl cluster token create --role api --ttl 10m
-deployctl cluster token create --role worker --ttl 10m
-```
+不传 `--yes` 会进入交互式选择。非交互安装必须同时传入 `--mode`、`--profile` 和 `--topology`。
 
-在新节点执行：
-
-```bash
-deployctl cluster join --server http://10.0.0.10:8080 --token '<single-use-token>' --mode docker --runtime-dir .
-```
-
-加入凭证短时有效、限定角色且只能使用一次，配置通过认证加密信封交换。集群节点必须共享 PostgreSQL、Redis、S3 兼容存储，并使用兼容的应用与 schema 版本。
-
-### 日常运维
+Docker 完整模式，显式固定应用版本和运行目录：
 
 ```bash
-deployctl status
-deployctl doctor
-deployctl restart
-deployctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag
-deployctl uninstall --yes
+./scripts/install.sh install \
+  --mode docker \
+  --profile full \
+  --topology single \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-registry docker.io/fatballfish \
+  --image-tag v1.2.3 \
+  --yes
 ```
 
-普通卸载会保留配置和持久化数据。永久删除必须输入 `deployctl` 输出的、绑定 installation ID 的精确确认短语；执行前先备份数据库与对象存储。
-
-破坏性卸载会在停止服务或删除卷之前检查运行目录，存在任何非受管路径时拒绝执行。Setup 中断后重新用 Token 认证会取回持久化的 operation ID。升级迁移只支持前滚：迁移成功后如果服务滚动失败，应使用完全相同的参数重新执行升级以继续。
-
-项目接受纯 HTTP 和 IP+端口访问。DNS、HTTPS 证书、反向代理和外部负载均衡由部署者负责。环境要求、自定义模块、原生服务、升级恢复与危险操作保护详见 [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md)。
-
-镜像构建与发布：
+使用已有中间件的 Docker 核心模式：
 
 ```bash
-./scripts/docker/images.sh build --tag test --registry docker.io/your-org
-./scripts/docker/images.sh push --tag test --registry docker.io/your-org
-./scripts/docker/images.sh release --version v1.2.3 --latest --registry docker.io/your-org
+./scripts/install.sh install \
+  --mode docker \
+  --profile core \
+  --topology single \
+  --storage-driver s3 \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
 ```
+
+Linux 原生核心模式：
+
+```bash
+./scripts/install.sh install \
+  --mode native \
+  --profile core \
+  --topology single \
+  --storage-driver local \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --release-version v1.2.3 \
+  --yes
+```
+
+Windows 原生核心模式：
+
+```powershell
+.\scripts\install.ps1 install `
+  --mode native `
+  --profile core `
+  --topology single `
+  --runtime-dir .\runtime `
+  --application-version v1.2.3 `
+  --release-version v1.2.3 `
+  --yes
+```
+
+安装只会在 `--runtime-dir` 下写入文件，典型结构如下：
+
+```text
+runtime/
+├── config/runtime.env
+├── config/install-state.json
+├── deployment.json
+├── compose.yml                 # Docker 模式
+├── assets/                     # 生成的 Docker/Gateway 文件
+├── bin/, web/, api/            # 原生发布包内容
+├── data/
+└── logs/
+```
+
+具体内容随模式和组件变化。`config/runtime.env`、`config/install-state.json` 与 `deployment.json` 共同承载安装身份和恢复状态，应始终一起保留。
+
+### 安装参数
+
+| 参数 | 可选值/默认值 | 说明 |
+| --- | --- | --- |
+| `--mode` | `docker`、`native` | 使用 `--yes` 时必填 |
+| `--profile` | `full`、`core`、`custom` | 使用 `--yes` 时必填；只有 `custom` 可覆盖组件列表 |
+| `--topology` | `single`、`cluster` | 使用 `--yes` 时必填 |
+| `--role` | `single`、`control` | 单机默认 `single`，集群默认 `control`；加入节点使用 `cluster join` |
+| `--components` | 逗号分隔列表 | `custom` 必填；支持 `api`、`worker`、`user-web`、`admin-web`、`docs-web`、`gateway`、`postgres`、`redis`、`minio`、`monitoring` |
+| `--runtime-dir` | `.` | 保存配置、状态、生成文件、数据和日志的可移动目录 |
+| `--storage-driver` | `local`、`s3` | full、cluster 或包含 MinIO 的 custom 默认 `s3`，其他情况默认 `local` |
+| `--public-api-url` | 绝对 HTTP(S) URL | 记录浏览器可访问的 API 基础地址；加入 Web 角色需要该值，并在 `cluster join` 时从 Control 获取 |
+| `--application-version` | `dev` | 安装兼容版本；生产环境应固定为实际发布版本 |
+| `--image-registry` | 留空使用 Compose 默认值 | Docker 镜像前缀；当前 Compose 默认 `docker.io/fatballfish` |
+| `--image-tag` | 默认等于应用版本 | Docker 镜像标签，建议使用不可变发布标签或基于 digest 的标签 |
+| `--release-version` | 默认等于应用版本 | 包含对应平台压缩包和校验文件的原生 GitHub Release |
+| `--api-port` | `8080` | API 宿主机端口 |
+| `--gateway-port` | `80` | 选择 Gateway 时生效 |
+| `--user-web-port` | `5173` | 选择用户 Web 时生效 |
+| `--admin-web-port` | `5174` | 选择管理 Web 时生效 |
+| `--docs-web-port` | `5175` | 选择文档 Web 时生效 |
+| `--monitoring-port` | `9090` | 选择监控组件时生效 |
+| `--external-gateway` | `false` | 选择 Web 但不使用托管 Gateway 时，用于确认已有外部托管/代理 |
+| `--migrate` | 安装时默认 `false` | 请求 single/control 节点执行迁移；正常首次初始化由 Setup 迁移 |
+| `--yes` | `false` | 非交互确认，永远不能授权删除持久化数据 |
+
+所有端口必须在 `1-65535` 之间，重复 flag 会被拒绝，显式组件列表会按固定顺序规范化。`custom` 还有以下规则：
+
+- Gateway 需要本地 API 和三个 Web；加入的 Web 节点只要求三个 Web。
+- 选择 Web 但不选择 Gateway 时，必须传 `--external-gateway` 并自行提供托管或代理。
+- Monitoring 只支持 Docker，且必须同时包含本地 API。
+- 原生模式不能管理中间件或 Monitoring。
+- 集群 custom 不能包含 `postgres`、`redis` 或 `minio`。
+- single/control 权威节点必须包含 API；API、Worker、Web 加入角色必须使用 `cluster join`，不能直接 `install`。
+
+带监控的 Docker 自定义部署示例：
+
+```bash
+./scripts/install.sh install \
+  --mode docker \
+  --profile custom \
+  --topology single \
+  --components api,worker,user-web,admin-web,docs-web,gateway,monitoring \
+  --monitoring-port 9090 \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
+```
+
+### 浏览器 Setup 与首个管理员
+
+初始化完成前，API 只暴露健康检查、bootstrap 状态和 API 自身托管的 Setup 页面。直接打开 `http://<api-host>:<api-port>/setup`；用户端和管理端也会跳转到这里，并保留原始返回地址。
+
+非交互安装不会输出一次性 Setup Token。需要在部署主机读取或轮换：
+
+```bash
+deployctl setup status --runtime-dir ./runtime
+deployctl setup token show --runtime-dir ./runtime
+deployctl setup token reset --runtime-dir ./runtime
+```
+
+初始化仍未完成且 Token 已暴露、已使用或遗失时，执行 `token reset`。该操作会使旧 Token 和 Setup 会话失效，并只重启 API 和 Gateway。初始化成功后，Token 显示和重置都会永久关闭。
+
+Setup 流程：
+
+1. 确认公开 API 地址和允许访问的浏览器 Origin。
+2. 配置并检测 PostgreSQL、Redis 和对象存储。Docker `full` 的连接字段由部署工具托管且只读，`core` 可编辑。
+3. 填写首个管理员邮箱和密码。
+4. 复核配置，点击“确认并初始化”，等待迁移和服务重启。
+5. 倒计时结束后，浏览器返回原用户端或管理端路由。
+
+应用配置期间容器重启是正常现象，不要仅因此刷新页面。如果恢复超时，依次执行 `status`、`doctor`、`restart`。若 `setup status` 仍为 pending，再重新打开 `/setup`；已认证会话会恢复持久化 operation，而不会再启动第二次迁移。若 Setup 已完成，`/setup` 会保持关闭，应根据 readiness 诊断恢复异常服务。
+
+完成后验证：
+
+```bash
+curl -fsS http://127.0.0.1:8080/readyz
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/setup  # 应为 404
+deployctl doctor --runtime-dir ./runtime
+```
+
+随后使用首个管理员登录后台，继续配置供应商账号、文本/图片模型、路由、价格、套餐、注册策略、支付/充值和 SMTP。这些业务配置保存在数据库，不放在 `runtime.env` 中。
+
+### 集群部署
+
+首先使用外部共享 PostgreSQL、Redis 和 S3 存储部署一个 Control 节点。Control 负责 Setup、迁移、集群 Token 和配置修订版本：
+
+```bash
+./scripts/install.sh install \
+  --mode docker \
+  --profile core \
+  --topology cluster \
+  --role control \
+  --storage-driver s3 \
+  --runtime-dir ./control \
+  --public-api-url http://10.0.0.10:8080 \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
+```
+
+必须先在 Control 完成 Setup，才能加入其他节点。然后按角色创建凭证：
+
+```bash
+deployctl cluster token create --role api --ttl 10m --runtime-dir ./control
+deployctl cluster token create --role worker --ttl 10m --runtime-dir ./control
+deployctl cluster token create --role web --ttl 10m --runtime-dir ./control
+```
+
+TTL 必须大于 0 且不超过 24 小时。Token 在传输时加密、会过期、限定角色，并且只能使用一次。
+
+在每台目标主机上使用对应角色的 Token 加入：
+
+```bash
+deployctl cluster join \
+  --server http://10.0.0.10:8080 \
+  --token '<single-use-token>' \
+  --mode docker \
+  --runtime-dir ./node \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --api-port 8080
+```
+
+`cluster join` 还支持 `--image-registry`、`--release-version` 以及 Gateway/用户/管理/文档端口覆盖。加入时的应用版本必须与 Control 一致。Control API 会通过认证加密信封返回 installation identity、应用密钥、共享中间件配置、schema 版本和配置修订版本，不保存明文 join Token。
+
+多个 API 节点由部署者接入负载均衡。Worker 通过共享任务队列和数据库租约消费任务。Web 角色可以把三个 Web 与 Gateway 从 API 节点拆出。installation identity、应用/schema 版本、配置修订或节点身份不一致时，加入节点会拒绝启动。
+
+### 运行时配置
+
+API 和 Worker 默认从运行工作目录读取 `./config/runtime.env`。只有服务管理器无法设置工作目录时，才使用 `APP_ENV_FILE` 覆盖路径；不支持 `PIC_GALLERY_ENV_FILE`。
+
+生成文件对每个字段都包含详细中英文注释。Setup 只有在全部必填项写入成功后才会认定初始化完成。不要手动修改 `SETUP_COMPLETED`、installation/cluster ID、runtime schema 版本、配置修订或生成的安全密钥；应按字段归属使用 Setup、`upgrade`、`cluster join` 或管理后台修改。
+
+### 状态、重启与诊断
+
+在部署主机执行运维命令，并始终指向同一个运行目录：
+
+```bash
+deployctl status --runtime-dir ./runtime
+deployctl doctor --runtime-dir ./runtime
+deployctl restart --runtime-dir ./runtime
+```
+
+`doctor` 会检查必填字段、私有文件权限、runtime/manifest/state 身份、中间件连通性、就绪状态和 schema 兼容性，同时对 DSN 与密钥脱敏。查看 Docker 日志时，从 `deployctl status` 复制容器名后直接检查：
+
+```bash
+docker logs --tail=200 <api-container-name>
+docker logs --tail=200 <worker-container-name>
+```
+
+### 升级与恢复
+
+生产更新应使用不可变版本，并在每次升级前备份 PostgreSQL 与对象存储。
+
+Docker single/control 节点：
+
+```bash
+deployctl upgrade \
+  --runtime-dir ./runtime \
+  --application-version v1.3.0 \
+  --image-registry docker.io/fatballfish \
+  --image-tag v1.3.0
+```
+
+原生 single/control 节点：
+
+```bash
+deployctl upgrade \
+  --runtime-dir ./runtime \
+  --application-version v1.3.0 \
+  --release-version v1.3.0
+```
+
+集群先升级 Control。Control 获取分布式迁移锁，原子更新 runtime 和 manifest，只迁移一次，然后按依赖顺序滚动服务。之后升级加入的 API/Worker/Web 节点，并关闭迁移：
+
+```bash
+deployctl upgrade \
+  --runtime-dir ./node \
+  --application-version v1.3.0 \
+  --image-tag v1.3.0 \
+  --migrate=false
+```
+
+原生加入节点应将 `--image-tag` 替换为 `--release-version v1.3.0`，并同样保留 `--migrate=false`。
+
+升级迁移只支持前滚。如果迁移成功但服务滚动失败，使用完全相同的命令重试，即可恢复幂等滚动。如果服务在迁移前失败，deployctl 会恢复并重新应用旧运行计划。不要通过改回旧镜像标签尝试降级数据库；只有发布版本提供明确恢复流程时，才从已验证备份恢复。
+
+### 停止、卸载与永久删除
+
+普通卸载只停止并注销服务，保留运行配置和持久化数据：
+
+```bash
+deployctl uninstall --runtime-dir ./runtime --yes
+```
+
+普通卸载适用于移除服务但保留文件，以便备份或迁移。若要永久删除受管运行目录，以及 Docker 的 PostgreSQL/Redis/MinIO 命名卷，先查询 installation ID，再输入区分大小写的精确短语：
+
+```bash
+deployctl setup status --runtime-dir ./runtime
+deployctl uninstall \
+  --runtime-dir ./runtime \
+  --delete-data \
+  --confirm 'DELETE <installation-id> PERSISTENT DATA'
+```
+
+`--yes` 永远不能授权数据删除。破坏性卸载会在停止任何服务或删除任何卷之前，确认运行目录中只有 deployctl 管理的配置、发布资源、应用数据和日志。执行前必须备份数据库与对象存储。
+
+### 导入旧配置
+
+旧版根目录 `.env`、`.env.prod` 或打包的 `backend.env` 不会被自动加载。需要显式导入到新的运行目录：
+
+```bash
+deployctl import-config \
+  --source .env.prod \
+  --mode docker \
+  --profile full \
+  --topology single \
+  --storage-driver s3 \
+  --runtime-dir ./runtime
+```
+
+导入不会修改源文件，并拒绝覆盖已有目标。保留旧文件，直到 `doctor`、readiness、管理员登录和业务 smoke 全部通过。
+
+### 构建与发布 Docker 镜像
+
+自行发布镜像时，需要用相同仓库前缀和标签发布五个应用镜像：
+
+```bash
+./scripts/docker/images.sh build --tag v1.3.0 --registry registry.example.com/pic-gallery
+./scripts/docker/images.sh push --tag v1.3.0 --registry registry.example.com/pic-gallery
+```
+
+一步创建发布版本和可选的 `latest` 标签：
+
+```bash
+./scripts/docker/images.sh release \
+  --version v1.3.0 \
+  --latest \
+  --registry registry.example.com/pic-gallery
+```
+
+故障恢复、原生服务行为、备份边界和部署验收测试详见 [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md)。
 
 ## 开发指南
 
