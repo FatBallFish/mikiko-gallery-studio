@@ -31,6 +31,7 @@ func main() {
 		BuildInfo:    deployctl.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, Dirty: strings.EqualFold(dirty, "true")},
 		ImportConfig: deployctl.ImportConfigDependencies{ProbeCompletion: deployctl.ProbeLegacyCompletion},
 		Doctor:       deployctl.ProductionDoctorDependencies(),
+		SelfUpdate:   deployctl.ProductionSelfUpdateDependencies(),
 		Upgrade: deployctl.UpgradeDeploymentDependencies(executors, func(ctx context.Context, runtimeEnvPath string) error {
 			_, err := app.RunDatabaseMigration(ctx, runtimeEnvPath)
 			return err
