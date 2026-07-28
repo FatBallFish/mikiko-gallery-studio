@@ -82,7 +82,32 @@ Pic Gallery 面向希望运营图片生成产品的团队，而不是只暴露�
 - 存储：默认本地文件系统，并预留 S3 兼容存储抽象。
 - 运维：Docker Compose、Nginx、Prometheus 配置、健康检查、Smoke 脚本和 Docker E2E 脚本。
 
-## 快速开始
+## 生产部署快速开始
+
+`deployctl` 是唯一受支持的生产安装与生命周期管理入口。新建单机实例推荐使用 Docker `full/single`，它包含 API、Worker、全部 Web、Gateway、PostgreSQL、Redis 和 MinIO。
+
+安装 Docker Engine 与 Compose v2，克隆仓库后执行：
+
+```bash
+git clone https://github.com/fatballfish/pic-gallery.git
+cd pic-gallery
+./scripts/install.sh install \
+  --mode docker \
+  --profile full \
+  --topology single \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
+```
+
+安装器会下载并校验匹配平台的 deployctl Release 产物。如果 Release 产物不可用，且当前目录是完整源码仓库，则自动降级执行 `make deployctl`；本地构建需要 Go 和 Make。校验和不一致属于安全硬失败，绝不会降级切换二进制来源。
+
+服务启动后打开 `http://<api-host>:8080/setup`，通过 `deployctl setup token show --runtime-dir ./runtime` 获取一次性 Token，完成中间件连通性与首个管理员初始化。其他部署模式、参数、集群、升级和恢复方式见[生产部署](#生产部署)。
+
+## 开发者本地调试
+
+以下命令仅用于本地开发与贡献，不是生产安装的替代方案。
 
 ### 环境要求
 
@@ -211,143 +236,6 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make user-web-dev
 VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 ```
 
-## 本机源码部署
-
-当本机已经具备 Go、Node.js、npm、PostgreSQL、Redis，或中间件由 Docker 启动、应用进程跑在宿主机上时，使用本机源码部署模式。
-
-1. 准备 env 文件：
-
-   ```bash
-   mkdir -p config
-   cp config/runtime.env.example config/runtime.env
-   $EDITOR config/runtime.env
-   ```
-
-2. 构建全部组件，或只构建需要的组件：
-
-   ```bash
-   ./scripts/local/pgctl.sh build
-   ./scripts/local/pgctl.sh build --components api,worker
-   ```
-
-3. 以前台或后台方式从源码运行：
-
-   ```bash
-   ./scripts/local/pgctl.sh up --components api,worker --background
-   ```
-
-4. 如果希望退出登录或重启机器后 API/Worker 仍自动运行，可以安装成本机服务：
-
-   ```bash
-   ./scripts/local/pgctl.sh install --components api,worker --user
-   ./scripts/local/pgctl.sh status --components api,worker --user
-   ```
-
-5. 管理已安装服务：
-
-   ```bash
-   ./scripts/local/pgctl.sh start --components api,worker --user
-   ./scripts/local/pgctl.sh stop --components api,worker --user
-   ./scripts/local/pgctl.sh restart --components api,worker --user
-   ./scripts/local/pgctl.sh logs --components api,worker --user
-   ./scripts/local/pgctl.sh uninstall --components api,worker --user
-   ```
-
-如果 API/Worker 跑在宿主机，但 PostgreSQL/Redis 等中间件由 Docker 管理，先启动中间件：
-
-```bash
-make compose-middleware-up
-./scripts/local/pgctl.sh up --components api,worker --background
-```
-
-API 默认监听 `http://127.0.0.1:8080`。部署后可用下面命令检查：
-
-```bash
-curl http://127.0.0.1:8080/readyz
-```
-
-### 操作系统服务
-
-本机服务管理脚本支持 Linux、macOS 和 Windows。Shell 脚本默认管理 API 和 Worker；建议显式传入 `--components api,worker`，避免把前端开发服务器作为服务安装。
-
-### Linux
-
-Linux 使用 `systemd`。
-
-安装用户级服务：
-
-```bash
-./scripts/service/manage.sh install --components api,worker --user
-```
-
-卸载用户级服务：
-
-```bash
-./scripts/service/manage.sh uninstall --components api,worker --user
-```
-
-安装系统级服务：
-
-```bash
-sudo ./scripts/service/manage.sh install --components api,worker
-```
-
-卸载系统级服务：
-
-```bash
-sudo ./scripts/service/manage.sh uninstall --components api,worker
-```
-
-### macOS
-
-macOS 使用 `launchd`。
-
-安装用户级服务：
-
-```bash
-./scripts/service/manage.sh install --components api,worker --user
-```
-
-卸载用户级服务：
-
-```bash
-./scripts/service/manage.sh uninstall --components api,worker --user
-```
-
-安装系统级守护进程：
-
-```bash
-sudo ./scripts/service/manage.sh install --components api,worker
-```
-
-卸载系统级守护进程：
-
-```bash
-sudo ./scripts/service/manage.sh uninstall --components api,worker
-```
-
-### Windows
-
-Windows 源码服务安装使用计划任务托管，避免普通 Go/Vite 前台进程必须额外依赖服务包装器。
-
-安装服务：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile "config/runtime.env"
-```
-
-卸载服务：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 uninstall -Components "api,worker"
-```
-
-查看状态：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 status -Components "api,worker"
-```
-
 ## 配置
 
 运行时配置改为用 env 文件完成部署启动，用数据库和管理后台承载业务配置。
@@ -406,11 +294,16 @@ Docker 部署需要 Docker Engine、Compose v2、镜像仓库访问权限、可�
 
 ### 安装包装脚本
 
-Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps1`。包装脚本优先使用 `DEPLOYCTL_BIN` 或 `PATH` 中已有的 `deployctl`；如果都不存在，则下载匹配平台的发布文件，并在运行前校验 SHA-256。
+Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps1`。包装脚本优先使用 `DEPLOYCTL_BIN` 或 `PATH` 中已有的 `deployctl`。如果都不存在，则下载匹配平台的 Release 产物、校验 SHA-256、持久化安装 deployctl，并通过绝对路径执行本次命令。
+
+默认安装路径是 Linux/macOS 的 `$HOME/.local/bin/deployctl` 和 Windows 的 `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe`。安装器会输出实际路径和 PATH 配置提示。
+
+当 Release 产物或校验文件不可用时，只有当前目录是包含 `go.mod`、`Makefile`、`cmd/deployctl` 的完整源码仓库，且机器具备 Go 与 Make，包装脚本才会降级执行 `make deployctl`。它不会再次下载源码压缩包。校验和不一致（包括与 `DEPLOYCTL_SHA256` 不一致）属于安全硬失败：保留旧 deployctl，并禁止本地构建降级。
 
 | 包装脚本变量 | 作用 |
 | --- | --- |
 | `DEPLOYCTL_BIN` | 指定本地 deployctl 二进制，适合离线环境或源码构建 |
+| `DEPLOYCTL_INSTALL_DIR` | deployctl 持久化安装目录；默认使用上面的用户级路径 |
 | `DEPLOYCTL_VERSION` | 指定要下载的 deployctl 版本，默认 `latest` |
 | `DEPLOYCTL_RELEASE_BASE_URL` | 覆盖 deployctl 与原生发布包的仓库基础 URL |
 | `DEPLOYCTL_DOWNLOAD_URL` | 覆盖完整的 deployctl 文件下载 URL |
@@ -645,9 +538,33 @@ docker logs --tail=200 <api-container-name>
 docker logs --tail=200 <worker-container-name>
 ```
 
-### 升级与恢复
+### 工具版本与手动更新
 
-生产更新应使用不可变版本，并在每次升级前备份 PostgreSQL 与对象存储。
+deployctl 的普通命令不会联网检查更新。可在本机查看已安装工具版本：
+
+```bash
+deployctl version
+deployctl version --json
+```
+
+只有管理员显式执行下面命令时，才更新 deployctl 二进制：
+
+```bash
+deployctl self-update
+deployctl self-update --version v1.3.0
+deployctl self-update --version v1.3.0 --yes
+```
+
+不传 `--yes` 时，self-update 必须经过交互确认。它会下载当前平台的产物和校验文件，在现有可执行文件旁暂存已验证的新文件，只替换部署工具本身；不会重启或升级已部署的 Pic Gallery 运行实例。若所选 Release 不存在，self-update 会停止；在完整源码仓库中可重新运行安装器，使用前文说明的本地 Make 降级。
+
+| 命令 | 更新对象 | 联网行为 |
+| --- | --- | --- |
+| `deployctl self-update` | deployctl 可执行文件 | 仅在管理员显式执行时访问所选 deployctl Release |
+| `deployctl upgrade` | 已部署的 API、Worker、Web/原生资源及可选数据库迁移 | 按参数解析指定的应用镜像或原生 Release |
+
+### 应用升级与恢复
+
+生产应用更新应使用不可变版本，并在每次升级前备份 PostgreSQL 与对象存储。
 
 Docker single/control 节点：
 
@@ -738,7 +655,7 @@ deployctl import-config \
 
 故障恢复、原生服务行为、备份边界和部署验收测试详见 [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md)。
 
-## 开发指南
+## 贡献工作流
 
 如果需要基于本项目做二次开发或参与贡献，仓库内置了一套可选的本地 AI 开发工作流。它会安装 Git hooks，并复用仓库内的工作流脚本，用于需求/方案上下文检查、统一验证、本地 review gate 和 pre-push 检查。
 
