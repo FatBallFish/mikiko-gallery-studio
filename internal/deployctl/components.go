@@ -36,6 +36,7 @@ var fullPreset = []Component{ComponentAPI, ComponentWorker, ComponentUserWeb, Co
 
 type InstallInput struct {
 	Interactive                bool
+	OverwriteExisting          bool
 	Mode                       config.DeploymentMode
 	Profile                    config.DeploymentProfile
 	Topology                   config.DeploymentTopology

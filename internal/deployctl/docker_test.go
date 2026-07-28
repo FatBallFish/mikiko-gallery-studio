@@ -1,9 +1,12 @@
 package deployctl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -224,6 +227,115 @@ func TestDockerExecutorRunsInOrderAndStopsOnFailure(t *testing.T) {
 	}
 }
 
+func TestDockerExecutorBuildsApplicationImagesLocallyWhenPullFails(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle, RuntimeDir: "runtime", StorageDriver: "local", ApplicationVersion: "v1.2.3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDirectory := filepath.Join(t.TempDir(), "source checkout")
+	runner := &recordingProcessRunner{failAt: 1}
+	stderr := new(bytes.Buffer)
+	executor := DockerExecutor{
+		Runner: runner, RuntimeUser: func() string { return "1000:1000" }, Environment: func() []string { return []string{"PATH=/usr/bin"} },
+		ReadFile: func(string) ([]byte, error) {
+			return []byte("INSTALLATION_ID=019d0000-0000-7000-8000-000000000123\n"), nil
+		},
+		SourceDirectory: func() (string, error) { return sourceDirectory, nil },
+		Stderr:          stderr,
+	}
+	if err := executor.Run(context.Background(), DockerActionInstall, plan); err != nil {
+		t.Fatalf("local image fallback: %v", err)
+	}
+	if len(runner.specs) != 7 {
+		t.Fatalf("process count = %d, want pull + 5 builds + up: %#v", len(runner.specs), runner.specs)
+	}
+	if dockerSpecOperation(runner.specs[0]) != "pull" || dockerSpecOperation(runner.specs[len(runner.specs)-1]) != "up" {
+		t.Fatalf("fallback order = %#v", runner.specs)
+	}
+	wantImages := []struct {
+		name       string
+		dockerfile string
+	}{
+		{"pic-gallery-api", "Dockerfile.api"},
+		{"pic-gallery-worker", "Dockerfile.worker"},
+		{"pic-gallery-user-web", "Dockerfile.user-web"},
+		{"pic-gallery-admin-web", "Dockerfile.admin-web"},
+		{"pic-gallery-docs-web", "Dockerfile.docs-web"},
+	}
+	for index, want := range wantImages {
+		spec := runner.specs[index+1]
+		arguments := strings.Join(spec.Arguments, " ")
+		wantArguments := fmt.Sprintf("build --tag docker.io/fatballfish/%s:v1.2.3 --file %s %s", want.name, filepath.Join(sourceDirectory, want.dockerfile), sourceDirectory)
+		if spec.Executable != "docker" || spec.Directory != sourceDirectory || arguments != wantArguments {
+			t.Errorf("build %d = %#v, want %q in %q", index, spec, wantArguments, sourceDirectory)
+		}
+	}
+	if !strings.Contains(stderr.String(), "pull failed") || !strings.Contains(stderr.String(), "building application images locally") {
+		t.Fatalf("fallback diagnostic = %q", stderr.String())
+	}
+}
+
+func TestDockerExecutorReportsPullAndUnavailableLocalSourceTogether(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle, RuntimeDir: "runtime", StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingProcessRunner{failAt: 1}
+	executor := DockerExecutor{
+		Runner: runner, RuntimeUser: func() string { return "1000:1000" }, Environment: func() []string { return []string{"PATH=/usr/bin"} },
+		ReadFile: func(string) ([]byte, error) {
+			return []byte("INSTALLATION_ID=019d0000-0000-7000-8000-000000000123\n"), nil
+		},
+		SourceDirectory: func() (string, error) { return "", errors.New("complete source checkout not found") },
+	}
+	err = executor.Run(context.Background(), DockerActionInstall, plan)
+	if err == nil || len(runner.specs) != 1 || !strings.Contains(err.Error(), "docker compose pull") || !strings.Contains(err.Error(), "complete source checkout not found") {
+		t.Fatalf("fallback error = %v, calls %#v", err, runner.specs)
+	}
+}
+
+func TestDockerExecutorDoesNotBuildAfterPullCancellation(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle, RuntimeDir: "runtime", StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &recordingProcessRunner{failAt: 1, cancelOnFailure: cancel}
+	stderr := new(bytes.Buffer)
+	executor := DockerExecutor{
+		Runner: runner, RuntimeUser: func() string { return "1000:1000" }, Environment: func() []string { return []string{"PATH=/usr/bin"} },
+		ReadFile: func(string) ([]byte, error) {
+			return []byte("INSTALLATION_ID=019d0000-0000-7000-8000-000000000123\n"), nil
+		},
+		SourceDirectory: func() (string, error) { return t.TempDir(), nil },
+		Stderr:          stderr,
+	}
+	err = executor.Run(ctx, DockerActionInstall, plan)
+	if !errors.Is(err, context.Canceled) || len(runner.specs) != 1 || stderr.Len() != 0 {
+		t.Fatalf("cancelled pull error=%v calls=%#v stderr=%q", err, runner.specs, stderr.String())
+	}
+}
+
+func TestResolveDockerBuildSourceDirectoryRequiresACompleteCheckout(t *testing.T) {
+	sourceDirectory := t.TempDir()
+	t.Setenv("DEPLOYCTL_SOURCE_DIR", sourceDirectory)
+	for _, relativePath := range []string{"go.mod", "Makefile", "Dockerfile.api", "Dockerfile.worker", "Dockerfile.user-web", "Dockerfile.admin-web", "Dockerfile.docs-web"} {
+		if err := os.WriteFile(filepath.Join(sourceDirectory, relativePath), []byte("fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolved, err := resolveDockerBuildSourceDirectory()
+	if err != nil || resolved != sourceDirectory {
+		t.Fatalf("resolved source = %q, %v", resolved, err)
+	}
+	if err := os.Remove(filepath.Join(sourceDirectory, "Dockerfile.docs-web")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveDockerBuildSourceDirectory(); err == nil || !strings.Contains(err.Error(), "Dockerfile.docs-web") {
+		t.Fatalf("incomplete source error = %v", err)
+	}
+}
+
 func TestDockerProcessSpecDiagnosticsRedactInheritedEnvironment(t *testing.T) {
 	spec := ProcessSpec{Executable: "docker", Arguments: []string{"compose", "ps"}, Environment: []string{"HOST_SECRET=do-not-print"}}
 	serialized, err := json.Marshal(spec)
@@ -270,13 +382,17 @@ func TestDockerExecutorPreflightChecksDaemonAndComposeWithoutRuntimeConfig(t *te
 }
 
 type recordingProcessRunner struct {
-	specs  []ProcessSpec
-	failAt int
+	specs           []ProcessSpec
+	failAt          int
+	cancelOnFailure context.CancelFunc
 }
 
 func (runner *recordingProcessRunner) Run(_ context.Context, spec ProcessSpec) error {
 	runner.specs = append(runner.specs, spec)
 	if runner.failAt == len(runner.specs) {
+		if runner.cancelOnFailure != nil {
+			runner.cancelOnFailure()
+		}
 		return errors.New("process failed")
 	}
 	return nil

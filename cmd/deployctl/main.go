@@ -23,7 +23,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	runner := deployctl.OSProcessRunner{Stdout: os.Stdout, Stderr: os.Stderr}
-	dockerExecutor := deployctl.DockerExecutor{Runner: runner}
+	dockerExecutor := deployctl.DockerExecutor{Runner: runner, Stderr: os.Stderr}
 	nativeExecutor := deployctl.NativeExecutor{Runner: runner}
 	executors := deployctl.RuntimeExecutors{Docker: dockerExecutor, Native: nativeExecutor}
 	os.Exit(deployctl.Run(ctx, os.Args[1:], deployctl.CLIDependencies{

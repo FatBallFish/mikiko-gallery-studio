@@ -308,6 +308,7 @@ func parseInstallCommand(args []string) (Command, error) {
 	monitoringPort := set.String("monitoring-port", "", "monitoring port")
 	externalGateway := set.Bool("external-gateway", false, "confirm external web hosting/proxy")
 	migrate := set.Bool("migrate", false, "request a control migration")
+	overwrite := set.Bool("overwrite", false, "replace a recognized incomplete installation while preserving data")
 	yes := set.Bool("yes", false, "non-interactive confirmation")
 	if err := set.Parse(args); err != nil {
 		return Command{}, err
@@ -330,7 +331,7 @@ func parseInstallCommand(args []string) (Command, error) {
 		return Command{}, fmt.Errorf("joined roles must use deployctl cluster join")
 	}
 	input := &InstallInput{
-		Interactive: !*yes, Mode: config.DeploymentMode(*mode), Profile: config.DeploymentProfile(*profile),
+		Interactive: !*yes, OverwriteExisting: *overwrite, Mode: config.DeploymentMode(*mode), Profile: config.DeploymentProfile(*profile),
 		Topology: config.DeploymentTopology(*topology), Role: resolvedRole, Components: parseComponents(*components),
 		RuntimeDir: *runtimeDir, StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL,
 		ExternalGatewayConfirmed: *externalGateway, MigrationRequested: *migrate,

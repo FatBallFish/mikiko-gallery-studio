@@ -286,7 +286,7 @@ Important constraints:
 
 ### Prerequisites
 
-Docker installation requires Docker Engine, Compose v2, registry access, free host ports, and a writable runtime directory. `full` needs no separately prepared middleware. `core` and clustered installations need reachable PostgreSQL, Redis, and object storage.
+Docker installation requires Docker Engine, Compose v2, free host ports, and a writable runtime directory. Normally it also requires registry access. When a requested Pic Gallery application image is unavailable, a complete local source checkout can build that image instead; Docker must still be able to obtain any missing base and middleware images. `full` needs no separately prepared middleware. `core` and clustered installations need reachable PostgreSQL, Redis, and object storage.
 
 Native installation supports Linux and Windows release bundles on `amd64` or `arm64`. It requires service-manager privileges and external PostgreSQL/Redis. Use local storage only for a single node; use S3-compatible storage whenever API or Worker runs on multiple nodes.
 
@@ -298,7 +298,7 @@ On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.p
 
 The default installed paths are `$HOME/.local/bin/deployctl` on Linux/macOS and `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe` on Windows. The installer prints the actual location and PATH guidance.
 
-If the Release artifact or checksum file is unavailable, the wrapper falls back to `make deployctl` only when it is running from a complete checkout containing `go.mod`, `Makefile`, and `cmd/deployctl`, with Go and Make available. It never downloads a second source archive. A checksum mismatch, including a mismatch against `DEPLOYCTL_SHA256`, is a hard failure: the previous deployctl remains intact and local fallback is forbidden.
+If the Release artifact or checksum file is unavailable, the wrapper falls back to `make deployctl` only when it is running from a complete checkout containing `go.mod`, `Makefile`, and `cmd/deployctl`, with Go and Make available. It never downloads a second source archive. A checksum mismatch, including a mismatch against `DEPLOYCTL_SHA256`, is a hard failure: the previous deployctl remains intact and local fallback is forbidden. A complete checkout is also passed to deployctl as the approved local Docker image build source.
 
 | Wrapper variable | Purpose |
 | --- | --- |
@@ -308,6 +308,7 @@ If the Release artifact or checksum file is unavailable, the wrapper falls back 
 | `DEPLOYCTL_RELEASE_BASE_URL` | Override the deployctl and native bundle release repository base URL |
 | `DEPLOYCTL_DOWNLOAD_URL` | Override the complete deployctl artifact URL |
 | `DEPLOYCTL_SHA256` | Pin the expected checksum instead of downloading the `.sha256` file |
+| `DEPLOYCTL_SOURCE_DIR` | Complete source checkout used only for local Docker image fallback; the wrapper sets it automatically when possible |
 
 `DEPLOYCTL_VERSION` selects the deployment tool itself. `--application-version`, `--image-tag`, and `--release-version` select the application being installed.
 
@@ -384,6 +385,10 @@ runtime/
 
 The exact contents depend on mode and selected components. Preserve `config/runtime.env`, `config/install-state.json`, and `deployment.json` together; they carry the installation identity and recovery state.
 
+Docker install first pulls all selected images. If that pull fails and a complete checkout containing all application Dockerfiles is available, deployctl builds only the selected Pic Gallery application images locally with the requested registry and tag, then continues startup. PostgreSQL, Redis, MinIO, Nginx, Prometheus, and Dockerfile base images are never replaced by project-local substitutes. If no complete checkout is available, the command reports both the pull failure and the local-fallback prerequisite.
+
+Rerunning the exact same plan while Setup is pending resumes deployment automatically. If a different plan targets the same pending runtime, interactive install asks whether to replace only deployctl-generated configuration and deployment assets; declining preserves the existing runtime. Non-interactive automation must opt in with `--overwrite`. This operation preserves `data/`, `logs/`, and Docker volumes, and it is permanently refused after Setup completes or when the existing files cannot be recognized as a valid pending installation.
+
 ### Install Parameters
 
 | Parameter | Values/default | Notes |
@@ -408,6 +413,7 @@ The exact contents depend on mode and selected components. Preserve `config/runt
 | `--monitoring-port` | `9090` | Used when monitoring is selected |
 | `--external-gateway` | `false` | Required confirmation when Web components are selected without the managed Gateway |
 | `--migrate` | `false` on install | Requests a control/single migration; normal first initialization migrates through Setup |
+| `--overwrite` | `false` | Replaces a recognized Setup-pending installation configuration while preserving data; required for non-interactive plan changes |
 | `--yes` | `false` | Non-interactive confirmation; never authorizes persistent data deletion |
 
 All ports must be in `1-65535`, duplicate flags are rejected, and explicit component lists are canonicalized. Additional custom-profile rules include:

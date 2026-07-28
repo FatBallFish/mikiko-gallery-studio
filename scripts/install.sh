@@ -1,6 +1,22 @@
 #!/usr/bin/env sh
 set -eu
 
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+root_dir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
+if [ -z "${DEPLOYCTL_SOURCE_DIR:-}" ]; then
+  source_ready=true
+  for relative_path in go.mod Makefile cmd/deployctl Dockerfile.api Dockerfile.worker Dockerfile.user-web Dockerfile.admin-web Dockerfile.docs-web; do
+    if [ ! -e "$root_dir/$relative_path" ]; then
+      source_ready=false
+      break
+    fi
+  done
+  if [ "$source_ready" = true ]; then
+    DEPLOYCTL_SOURCE_DIR="$root_dir"
+    export DEPLOYCTL_SOURCE_DIR
+  fi
+fi
+
 if [ -n "${DEPLOYCTL_BIN:-}" ]; then
   exec "$DEPLOYCTL_BIN" "$@"
 fi
@@ -9,8 +25,6 @@ if command -v deployctl >/dev/null 2>&1; then
   exec deployctl "$@"
 fi
 
-script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-root_dir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
 version="${DEPLOYCTL_VERSION:-latest}"
 release_base="${DEPLOYCTL_RELEASE_BASE_URL:-https://github.com/fatballfish/pic-gallery/releases}"
 install_dir="${DEPLOYCTL_INSTALL_DIR:-${HOME:?HOME is required}/.local/bin}"
