@@ -40,6 +40,7 @@ else
 fi
 artifact="deployctl-$os-$arch"
 url="${DEPLOYCTL_DOWNLOAD_URL:-$release_base/$release_path/$artifact}"
+display_url="${url%%\?*}"
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT HUP INT TERM
 downloaded_binary="$temporary_dir/$artifact"
@@ -59,7 +60,7 @@ calculate_sha256() {
 
 download_release() {
   if ! curl --fail --location --silent --show-error --output "$downloaded_binary" "$url"; then
-    echo "deployctl release download was unavailable: $url" >&2
+    echo "deployctl release download was unavailable: $display_url" >&2
     return 10
   fi
 
@@ -69,7 +70,7 @@ download_release() {
     explicit_checksum=true
   else
     if ! curl --fail --location --silent --show-error --output "$checksum_file" "$url.sha256"; then
-      echo "deployctl release checksum was unavailable: $url.sha256" >&2
+      echo "deployctl release checksum was unavailable: $display_url.sha256" >&2
       return 10
     fi
     expected_sha256="$(awk '{print $1; exit}' "$checksum_file")"

@@ -104,11 +104,13 @@ fallback_log="$TMP_ROOT/fallback-exec.log"
 make_log="$TMP_ROOT/make.log"
 fallback_output=$(env \
   PATH="$BASE_PATH" HOME="$TMP_ROOT/home" DEPLOYCTL_INSTALL_DIR="$fallback_install" \
+  DEPLOYCTL_DOWNLOAD_URL="https://downloads.example.test/deployctl?token=wrapper-query-secret" \
   FAKE_CURL_MODE=unavailable FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$fallback_log" FAKE_MAKE_LOG="$make_log" \
   sh "$CHECKOUT/scripts/install.sh" version 2>&1)
 [[ -x "$fallback_install/deployctl" ]] || fail "release failure did not install a local build"
 [[ $(cat "$fallback_log") == "version" ]] || fail "local build did not receive original arguments"
 assert_contains "$fallback_output" "falling back to a local source build"
+[[ "$fallback_output" != *"wrapper-query-secret"* ]] || fail "release failure leaked a signed download URL query"
 assert_contains "$(cat "$make_log")" "deployctl"
 assert_contains "$(cat "$make_log")" "DEPLOYCTL_OUTPUT="
 

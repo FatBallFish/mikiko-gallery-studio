@@ -289,7 +289,14 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL string, 
 }
 
 func releaseUnavailableError(err error) error {
-	return fmt.Errorf("%w: %v; rerun scripts/install.sh or scripts/install.ps1 from a complete source checkout to use the local build fallback", errDeployctlReleaseUnavailable, err)
+	guidance := "rerun scripts/install.sh or scripts/install.ps1 from a complete source checkout to use the local build fallback"
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("%w: %w; %s", errDeployctlReleaseUnavailable, context.Canceled, guidance)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %w; %s", errDeployctlReleaseUnavailable, context.DeadlineExceeded, guidance)
+	}
+	return fmt.Errorf("%w: download failed; %s", errDeployctlReleaseUnavailable, guidance)
 }
 
 func releaseVersionFromURL(value string) string {

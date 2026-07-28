@@ -22,6 +22,7 @@ if (-not $binary) {
   $releasePath = if ($version -eq "latest") { "latest/download" } else { "download/$version" }
   $artifact = "deployctl-windows-$architecture.exe"
   $url = if ($env:DEPLOYCTL_DOWNLOAD_URL) { $env:DEPLOYCTL_DOWNLOAD_URL } else { "$releaseBase/$releasePath/$artifact" }
+  $displayUrl = ([Uri]$url).GetLeftPart([UriPartial]::Path)
   $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("deployctl-" + [Guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
 
@@ -82,7 +83,7 @@ if (-not $binary) {
       }
     } catch {
       if ($_.Exception.Message -like "DEPLOYCTL_SHA256*") { throw }
-      $downloadFailure = $_.Exception.Message
+      $downloadFailure = "release download failed for $displayUrl"
     }
 
     if ($downloadFailure) {

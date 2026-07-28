@@ -3,6 +3,7 @@ package deployctl
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -127,6 +128,29 @@ func TestSelfUpdateReportsUnavailableReleaseWithoutFallback(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "release artifact is unavailable") || !strings.Contains(err.Error(), "install.sh") {
 		t.Fatalf("unavailable release error = %v", err)
+	}
+}
+
+func TestSelfUpdatePreservesCancellationWithoutLeakingDownloadQuery(t *testing.T) {
+	const secret = "signed-query-secret"
+	executable := filepath.Join(t.TempDir(), "deployctl")
+	if err := os.WriteFile(executable, []byte("known-good"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := SelfUpdate(ctx, SelfUpdateOptions{
+		Version: "v1", ReleaseBaseURL: "https://example.test/releases",
+		DownloadURL:    "https://example.test/deployctl?token=" + secret,
+		ExpectedSHA256: strings.Repeat("0", 64),
+	}, SelfUpdateDependencies{
+		ExecutablePath: func() (string, error) { return executable, nil }, GOOS: "linux", GOARCH: "amd64",
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled self-update error = %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("cancelled self-update leaked signed URL query: %v", err)
 	}
 }
 
