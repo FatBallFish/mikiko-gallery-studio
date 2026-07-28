@@ -21,12 +21,12 @@ func TestBootstrapWrappersLocateOrDownloadDeployctlAndForwardArguments(t *testin
 	}{
 		{
 			path:      "scripts/install.sh",
-			required:  []string{`exec "$DEPLOYCTL_BIN" "$@"`, `exec deployctl "$@"`, "DEPLOYCTL_VERSION", "curl", "sha256"},
+			required:  []string{`exec "$DEPLOYCTL_BIN" "$@"`, `exec deployctl "$@"`, "DEPLOYCTL_VERSION", "DEPLOYCTL_INSTALL_DIR", "make", "DEPLOYCTL_OUTPUT", "curl", "sha256", "checksum verification failed"},
 			forbidden: []string{"eval ", "docker compose", "systemctl"},
 		},
 		{
 			path:      "scripts/install.ps1",
-			required:  []string{"& $binary @args", "DEPLOYCTL_VERSION", "Invoke-WebRequest", "Get-FileHash"},
+			required:  []string{"& $binary @args", "DEPLOYCTL_VERSION", "DEPLOYCTL_INSTALL_DIR", "DEPLOYCTL_OUTPUT", "Invoke-WebRequest", "Get-FileHash", "checksum verification failed"},
 			forbidden: []string{"Invoke-Expression", "docker compose", "systemctl"},
 		},
 	}
