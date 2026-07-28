@@ -1,5 +1,5 @@
 // @ts-ignore contract scripts run in Node; browser tsconfigs do not include node types.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const root = new URL('../../', import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8')
@@ -25,23 +25,33 @@ if (!deployctlMain.includes('NativeExecutor') || !deployctlMain.includes('Native
   throw new Error('deployctl main does not execute native installs')
 }
 
-const windowsManager = read('scripts/service/manage.ps1')
-for (const retired of ['Register-ScheduledTask', 'New-ScheduledTaskAction', 'Start-ScheduledTask', 'schtasks']) {
-  if (windowsManager.includes(retired)) throw new Error(`Windows service wrapper still uses Scheduled Tasks: ${retired}`)
-}
-if (!windowsManager.includes('scripts/install.ps1') && !windowsManager.includes('DEPLOYCTL_BIN')) {
-  throw new Error('Windows service wrapper must delegate to deployctl')
-}
-for (const unsupported of ['"start"', '"stop"']) {
-  if (windowsManager.includes(unsupported)) throw new Error(`Windows wrapper exposes unsupported deployctl action: ${unsupported}`)
-}
-
-const unixManager = read('scripts/service/manage.sh')
-if (!unixManager.includes('gateway)') || !unixManager.includes('./cmd/gateway')) {
-  throw new Error('local Unix service manager does not preserve Gateway development support')
+for (const retiredPath of [
+  'scripts/local/pgctl.sh',
+  'scripts/local/pgctl_contract_test.sh',
+  'scripts/service/manage.sh',
+  'scripts/service/manage.ps1',
+  'scripts/service/install.sh',
+  'scripts/service/install.ps1',
+  'scripts/service/uninstall.sh',
+  'scripts/service/uninstall.ps1',
+  'scripts/service/service_config_contract_test.sh',
+]) {
+  if (existsSync(new URL(retiredPath, root))) throw new Error(`legacy production deployment entrypoint still exists: ${retiredPath}`)
 }
 
 const native = read('internal/deployctl/native.go')
+for (const required of [
+  'BuildNativeProcessSpecs',
+  'Executable: "systemctl"',
+  'Executable: "sc.exe"',
+  'NativeActionInstall',
+  'NativeActionRestart',
+  'NativeActionStatus',
+  'NativeActionUninstall',
+  'pic-gallery-service-host.exe',
+]) {
+  if (!native.includes(required)) throw new Error(`deployctl native service ownership is missing: ${required}`)
+}
 for (const retired of ['PIC_GALLERY_ENV_FILE', 'EnvironmentFile=', 'Register-ScheduledTask']) {
   if (native.includes(retired)) throw new Error(`native production service plan contains retired behavior: ${retired}`)
 }

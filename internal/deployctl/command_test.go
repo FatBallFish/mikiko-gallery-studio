@@ -20,6 +20,9 @@ func TestParseCommandSupportsTheApprovedCommandTree(t *testing.T) {
 		{args: []string{"status"}, kind: CommandStatus},
 		{args: []string{"doctor"}, kind: CommandDoctor},
 		{args: []string{"restart"}, kind: CommandRestart},
+		{args: []string{"version"}, kind: CommandVersion},
+		{args: []string{"version", "--json"}, kind: CommandVersion},
+		{args: []string{"self-update", "--version", "v1.2.3", "--yes"}, kind: CommandSelfUpdate},
 		{args: []string{"upgrade"}, kind: CommandUpgrade},
 		{args: []string{"uninstall"}, kind: CommandUninstall},
 		{args: []string{"setup", "status"}, kind: CommandSetupStatus},
@@ -35,6 +38,64 @@ func TestParseCommandSupportsTheApprovedCommandTree(t *testing.T) {
 				t.Fatalf("ParseCommand(%v) = %#v, %v; want kind %q", testCase.args, command, err, testCase.kind)
 			}
 		})
+	}
+}
+
+func TestParseSelfUpdateCommandKeepsToolAndApplicationUpgradeSeparate(t *testing.T) {
+	command, err := ParseCommand([]string{
+		"self-update", "--version", "v1.2.3", "--release-base-url", "https://downloads.example.test/releases",
+		"--download-url", "https://cdn.example.test/deployctl", "--sha256", strings.Repeat("a", 64), "--yes",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Kind != CommandSelfUpdate || command.SelfUpdate == nil || command.SelfUpdate.Version != "v1.2.3" ||
+		command.SelfUpdate.ReleaseBaseURL != "https://downloads.example.test/releases" || command.SelfUpdate.DownloadURL != "https://cdn.example.test/deployctl" ||
+		command.SelfUpdate.ExpectedSHA256 != strings.Repeat("a", 64) || !command.SelfUpdate.Yes {
+		t.Fatalf("self-update command = %#v", command)
+	}
+
+	defaultCommand, err := ParseCommand([]string{"self-update"})
+	if err != nil || defaultCommand.SelfUpdate.Version != "latest" || defaultCommand.SelfUpdate.ReleaseBaseURL != DefaultDeployctlReleaseBaseURL {
+		t.Fatalf("default self-update = %#v, %v", defaultCommand, err)
+	}
+
+	application, err := ParseCommand([]string{"upgrade", "--application-version", "v2"})
+	if err != nil || application.Kind != CommandUpgrade || application.Upgrade == nil || application.SelfUpdate != nil {
+		t.Fatalf("application upgrade changed meaning: %#v, %v", application, err)
+	}
+
+	for _, args := range [][]string{
+		{"self-update", "unexpected"},
+		{"self-update", "--version", "v1", "--version", "v2"},
+		{"self-update", "--release-base-url", "ftp://downloads.example.test"},
+		{"self-update", "--download-url", "https://user:secret@downloads.example.test/deployctl"},
+		{"self-update", "--sha256", "not-a-digest"},
+	} {
+		if _, err := ParseCommand(args); err == nil {
+			t.Errorf("ParseCommand(%v) unexpectedly succeeded", args)
+		}
+	}
+}
+
+func TestParseVersionCommandAcceptsOnlyTheJSONFlag(t *testing.T) {
+	text, err := ParseCommand([]string{"version"})
+	if err != nil || text.Version == nil || text.Version.JSON {
+		t.Fatalf("ParseCommand(version) = %#v, %v", text, err)
+	}
+
+	jsonCommand, err := ParseCommand([]string{"version", "--json"})
+	if err != nil || jsonCommand.Version == nil || !jsonCommand.Version.JSON {
+		t.Fatalf("ParseCommand(version --json) = %#v, %v", jsonCommand, err)
+	}
+
+	for _, args := range [][]string{
+		{"version", "unexpected"},
+		{"version", "--json", "--json"},
+	} {
+		if _, err := ParseCommand(args); err == nil {
+			t.Errorf("ParseCommand(%v) unexpectedly succeeded", args)
+		}
 	}
 }
 

@@ -82,7 +82,32 @@ It includes:
 - Storage: local filesystem by default, with an abstraction for S3-compatible storage.
 - Operations: Docker Compose, Nginx, Prometheus config, health checks, smoke scripts, and Docker E2E scripts.
 
-## Quick Start
+## Production Quick Start
+
+`deployctl` is the only supported production installation and lifecycle entrypoint. For a new single-host instance, use Docker `full/single`: it includes API, Worker, all Web applications, Gateway, PostgreSQL, Redis, and MinIO.
+
+Install Docker Engine with Compose v2, clone the repository, and run:
+
+```bash
+git clone https://github.com/fatballfish/pic-gallery.git
+cd pic-gallery
+./scripts/install.sh install \
+  --mode docker \
+  --profile full \
+  --topology single \
+  --runtime-dir ./runtime \
+  --application-version v1.2.3 \
+  --image-tag v1.2.3 \
+  --yes
+```
+
+The installer downloads and verifies the matching deployctl Release artifact. If that artifact is unavailable, a complete source checkout automatically falls back to `make deployctl`; this fallback requires Go and Make. A checksum mismatch is a hard failure and never falls back to another binary source.
+
+After services start, open `http://<api-host>:8080/setup`, obtain the one-time token with `deployctl setup token show --runtime-dir ./runtime`, and complete middleware connectivity plus first-administrator initialization. See [Production Deployment](#production-deployment) for other modes, parameters, clustering, upgrades, and recovery.
+
+## Developer Local Workflow
+
+The following commands are for local development and contribution only. They are not production installation alternatives.
 
 ### Prerequisites
 
@@ -211,143 +236,6 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make user-web-dev
 VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 ```
 
-## Local Source Deployment
-
-Use local source deployment when the machine has Go, Node.js, npm, PostgreSQL, and Redis available, or when middleware is started by Docker and the application processes run on the host.
-
-1. Prepare the env file:
-
-   ```bash
-   mkdir -p config
-   cp config/runtime.env.example config/runtime.env
-   $EDITOR config/runtime.env
-   ```
-
-2. Build everything, or only the components you need:
-
-   ```bash
-   ./scripts/local/pgctl.sh build
-   ./scripts/local/pgctl.sh build --components api,worker
-   ```
-
-3. Run from source in the foreground/background:
-
-   ```bash
-   ./scripts/local/pgctl.sh up --components api,worker --background
-   ```
-
-4. Install API and worker as host services when the host should keep them running after logout or restart:
-
-   ```bash
-   ./scripts/local/pgctl.sh install --components api,worker --user
-   ./scripts/local/pgctl.sh status --components api,worker --user
-   ```
-
-5. Manage installed services:
-
-   ```bash
-   ./scripts/local/pgctl.sh start --components api,worker --user
-   ./scripts/local/pgctl.sh stop --components api,worker --user
-   ./scripts/local/pgctl.sh restart --components api,worker --user
-   ./scripts/local/pgctl.sh logs --components api,worker --user
-   ./scripts/local/pgctl.sh uninstall --components api,worker --user
-   ```
-
-For local host-run API/worker with Docker-managed middleware, start the middleware first:
-
-```bash
-make compose-middleware-up
-./scripts/local/pgctl.sh up --components api,worker --background
-```
-
-The API listens on `http://127.0.0.1:8080` by default. Check deployment health with:
-
-```bash
-curl http://127.0.0.1:8080/readyz
-```
-
-### Operating System Services
-
-The local service manager supports Linux, macOS, and Windows. The shell scripts install API and worker by default; use `--components api,worker` explicitly when you want to avoid frontend dev servers as services.
-
-### Linux
-
-Linux uses `systemd`.
-
-Install user-level services:
-
-```bash
-./scripts/service/manage.sh install --components api,worker --user
-```
-
-Uninstall user-level services:
-
-```bash
-./scripts/service/manage.sh uninstall --components api,worker --user
-```
-
-Install system-level services:
-
-```bash
-sudo ./scripts/service/manage.sh install --components api,worker
-```
-
-Uninstall system-level services:
-
-```bash
-sudo ./scripts/service/manage.sh uninstall --components api,worker
-```
-
-### macOS
-
-macOS uses `launchd`.
-
-Install user-level services:
-
-```bash
-./scripts/service/manage.sh install --components api,worker --user
-```
-
-Uninstall user-level services:
-
-```bash
-./scripts/service/manage.sh uninstall --components api,worker --user
-```
-
-Install system-level daemons:
-
-```bash
-sudo ./scripts/service/manage.sh install --components api,worker
-```
-
-Uninstall system-level daemons:
-
-```bash
-sudo ./scripts/service/manage.sh uninstall --components api,worker
-```
-
-### Windows
-
-Windows source service installation uses Scheduled Tasks so the ordinary Go and Vite foreground processes can be managed without an additional service wrapper.
-
-Install services:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 install -Components "api,worker" -EnvFile "config/runtime.env"
-```
-
-Uninstall services:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 uninstall -Components "api,worker"
-```
-
-Check status:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/service/manage.ps1 status -Components "api,worker"
-```
-
 ## Configuration
 
 Runtime configuration now uses env files for deployment bootstrap and database-backed admin settings for business configuration.
@@ -406,11 +294,16 @@ Back up any existing database and object storage before importing configuration 
 
 ### Installer Wrapper
 
-On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.ps1`. The wrapper uses `DEPLOYCTL_BIN` or a `deployctl` already on `PATH`, otherwise it downloads the matching release artifact and verifies SHA-256 before execution.
+On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.ps1`. The wrapper uses `DEPLOYCTL_BIN` or a `deployctl` already on `PATH`. Otherwise it downloads the matching Release artifact, verifies SHA-256, installs deployctl persistently, and executes the requested command through that absolute path.
+
+The default installed paths are `$HOME/.local/bin/deployctl` on Linux/macOS and `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe` on Windows. The installer prints the actual location and PATH guidance.
+
+If the Release artifact or checksum file is unavailable, the wrapper falls back to `make deployctl` only when it is running from a complete checkout containing `go.mod`, `Makefile`, and `cmd/deployctl`, with Go and Make available. It never downloads a second source archive. A checksum mismatch, including a mismatch against `DEPLOYCTL_SHA256`, is a hard failure: the previous deployctl remains intact and local fallback is forbidden.
 
 | Wrapper variable | Purpose |
 | --- | --- |
 | `DEPLOYCTL_BIN` | Use a specific local deployctl binary; useful for offline or source builds |
+| `DEPLOYCTL_INSTALL_DIR` | Persistent deployctl directory; defaults to the user-local paths above |
 | `DEPLOYCTL_VERSION` | Select the deployctl release to download; defaults to `latest` |
 | `DEPLOYCTL_RELEASE_BASE_URL` | Override the deployctl and native bundle release repository base URL |
 | `DEPLOYCTL_DOWNLOAD_URL` | Override the complete deployctl artifact URL |
@@ -643,9 +536,33 @@ docker logs --tail=200 <api-container-name>
 docker logs --tail=200 <worker-container-name>
 ```
 
-### Upgrade and Recovery
+### Tool Version and Manual Update
 
-Use immutable versions and back up PostgreSQL plus object storage before every production update.
+Deployctl never checks for updates during normal commands. Inspect the installed tool locally:
+
+```bash
+deployctl version
+deployctl version --json
+```
+
+Update the deployctl binary only when an administrator explicitly requests it:
+
+```bash
+deployctl self-update
+deployctl self-update --version v1.3.0
+deployctl self-update --version v1.3.0 --yes
+```
+
+Without `--yes`, self-update requires an interactive confirmation. It downloads the current platform artifact and checksum, stages the verified file beside the current executable, and replaces only the deployment tool. It does not restart or upgrade an installed Pic Gallery runtime. If the selected Release does not exist, self-update stops; from a complete source checkout, rerun the installer so its documented local Make fallback can be used.
+
+| Command | Updated object | Network behavior |
+| --- | --- | --- |
+| `deployctl self-update` | The deployctl executable | Connects to the selected deployctl Release only when explicitly run |
+| `deployctl upgrade` | Deployed API, Worker, Web/native assets and optional database migration | Resolves the application image or native release requested by its flags |
+
+### Application Upgrade and Recovery
+
+Use immutable versions and back up PostgreSQL plus object storage before every production application update.
 
 Docker single/control node:
 
@@ -736,7 +653,7 @@ Create a release and optional `latest` tag in one step:
 
 See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md) for failure recovery, native service behavior, backup boundaries, and deployment acceptance tests.
 
-## Development Guide
+## Contribution Workflow
 
 For secondary development or contribution work, this repository includes an optional local AI development workflow. It installs Git hooks and shared workflow scripts for requirement/design context checks, verification, local review gates, and pre-push checks.
 

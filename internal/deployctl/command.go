@@ -22,6 +22,8 @@ const (
 	CommandStatus             CommandKind = "status"
 	CommandDoctor             CommandKind = "doctor"
 	CommandRestart            CommandKind = "restart"
+	CommandVersion            CommandKind = "version"
+	CommandSelfUpdate         CommandKind = "self-update"
 	CommandUpgrade            CommandKind = "upgrade"
 	CommandUninstall          CommandKind = "uninstall"
 	CommandSetupStatus        CommandKind = "setup status"
@@ -43,6 +45,10 @@ type UpgradeOptions struct {
 	ImageTag           string
 	ReleaseVersion     string
 	Migrate            bool
+}
+
+type VersionOptions struct {
+	JSON bool
 }
 
 type UninstallOptions struct {
@@ -87,6 +93,8 @@ type Command struct {
 	Yes                bool
 	Install            *InstallInput
 	ImportConfig       *ImportConfigOptions
+	Version            *VersionOptions
+	SelfUpdate         *SelfUpdateOptions
 	Upgrade            *UpgradeOptions
 	Uninstall          *UninstallOptions
 	ClusterTokenCreate *ClusterTokenCreateOptions
@@ -146,6 +154,10 @@ func ParseCommand(args []string) (Command, error) {
 		return parseRuntimeCommand(CommandDoctor, args[1:])
 	case "restart":
 		return parseRuntimeCommand(CommandRestart, args[1:])
+	case "version":
+		return parseVersionCommand(args[1:])
+	case "self-update":
+		return parseSelfUpdateCommand(args[1:])
 	case "upgrade":
 		return parseUpgradeCommand(args[1:])
 	case "uninstall":
@@ -157,6 +169,41 @@ func ParseCommand(args []string) (Command, error) {
 	default:
 		return Command{}, fmt.Errorf("unknown deployctl command %q", args[0])
 	}
+}
+
+func parseSelfUpdateCommand(args []string) (Command, error) {
+	set := newFlagSet("self-update")
+	version := set.String("version", "latest", "target deployctl version or latest")
+	releaseBaseURL := set.String("release-base-url", DefaultDeployctlReleaseBaseURL, "deployctl release repository URL")
+	downloadURL := set.String("download-url", "", "complete deployctl artifact URL")
+	expectedSHA256 := set.String("sha256", "", "expected deployctl artifact SHA-256")
+	yes := set.Bool("yes", false, "confirm the deployctl tool replacement")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("self-update does not accept positional arguments")
+	}
+	options := &SelfUpdateOptions{
+		Version: strings.TrimSpace(*version), ReleaseBaseURL: strings.TrimSpace(*releaseBaseURL),
+		DownloadURL: strings.TrimSpace(*downloadURL), ExpectedSHA256: strings.TrimSpace(*expectedSHA256), Yes: *yes,
+	}
+	if err := validateSelfUpdateOptions(*options); err != nil {
+		return Command{}, err
+	}
+	return Command{Kind: CommandSelfUpdate, SelfUpdate: options}, nil
+}
+
+func parseVersionCommand(args []string) (Command, error) {
+	set := newFlagSet("version")
+	jsonOutput := set.Bool("json", false, "write machine-readable JSON")
+	if err := set.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if set.NArg() != 0 {
+		return Command{}, fmt.Errorf("version does not accept positional arguments")
+	}
+	return Command{Kind: CommandVersion, Version: &VersionOptions{JSON: *jsonOutput}}, nil
 }
 
 func parseImportConfigCommand(args []string) (Command, error) {

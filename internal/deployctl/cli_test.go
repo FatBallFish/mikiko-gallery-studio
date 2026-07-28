@@ -16,10 +16,11 @@ import (
 )
 
 type fakeTerminal struct {
-	interactive bool
-	answers     []string
-	confirmed   bool
-	prompts     int
+	interactive   bool
+	answers       []string
+	confirmed     bool
+	prompts       int
+	confirmations int
 }
 
 func (terminal *fakeTerminal) Interactive() bool { return terminal.interactive }
@@ -33,6 +34,7 @@ func (terminal *fakeTerminal) Prompt(_ context.Context, _ string, fallback strin
 	return answer, nil
 }
 func (terminal *fakeTerminal) Confirm(context.Context, string) (bool, error) {
+	terminal.confirmations++
 	return terminal.confirmed, nil
 }
 
@@ -94,6 +96,61 @@ func TestRunReturnsUsageCodeWithoutLeakingSensitiveArguments(t *testing.T) {
 	if code != 2 || strings.Contains(stderr.String(), "do-not-leak") {
 		t.Fatalf("Run(invalid secret command) = %d, stderr %q", code, stderr.String())
 	}
+}
+
+func TestRunVersionWritesTextOrJSONWithoutDeploymentDependencies(t *testing.T) {
+	info := BuildInfo{Version: "v9.8.7", Commit: "abcdef0", BuildTime: "2026-07-28T01:02:03Z", Dirty: true}
+
+	textOutput := new(bytes.Buffer)
+	if code := Run(context.Background(), []string{"version"}, CLIDependencies{Stdout: textOutput, Stderr: new(bytes.Buffer), BuildInfo: info}); code != 0 {
+		t.Fatalf("Run(version) = %d", code)
+	}
+	if !strings.Contains(textOutput.String(), "deployctl v9.8.7") || !strings.Contains(textOutput.String(), "dirty: true") {
+		t.Fatalf("text version output = %q", textOutput.String())
+	}
+
+	jsonOutput := new(bytes.Buffer)
+	if code := Run(context.Background(), []string{"version", "--json"}, CLIDependencies{Stdout: jsonOutput, Stderr: new(bytes.Buffer), BuildInfo: info}); code != 0 {
+		t.Fatalf("Run(version --json) = %d", code)
+	}
+	if !strings.Contains(jsonOutput.String(), `"version":"v9.8.7"`) || !strings.Contains(jsonOutput.String(), `"dirty":true`) {
+		t.Fatalf("JSON version output = %q", jsonOutput.String())
+	}
+}
+
+func TestRunSelfUpdateRequiresExplicitConfirmationAndReportsResult(t *testing.T) {
+	t.Run("cancelled", func(t *testing.T) {
+		terminal := &fakeTerminal{interactive: true, confirmed: false}
+		called := false
+		stdout := new(bytes.Buffer)
+		code := Run(context.Background(), []string{"self-update", "--version", "v2"}, CLIDependencies{
+			Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer), BuildInfo: BuildInfo{Version: "v1"},
+			ExecuteSelfUpdate: func(context.Context, SelfUpdateOptions, SelfUpdateDependencies) (SelfUpdateResult, error) {
+				called = true
+				return SelfUpdateResult{}, nil
+			},
+		})
+		if code != 0 || called || terminal.confirmations != 1 || !strings.Contains(stdout.String(), "cancelled") {
+			t.Fatalf("cancelled self-update code=%d called=%t confirmations=%d output=%q", code, called, terminal.confirmations, stdout.String())
+		}
+	})
+
+	t.Run("non-interactive success", func(t *testing.T) {
+		terminal := &fakeTerminal{interactive: false}
+		stdout := new(bytes.Buffer)
+		code := Run(context.Background(), []string{"self-update", "--version", "v2", "--yes"}, CLIDependencies{
+			Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer), BuildInfo: BuildInfo{Version: "v1"},
+			ExecuteSelfUpdate: func(_ context.Context, options SelfUpdateOptions, _ SelfUpdateDependencies) (SelfUpdateResult, error) {
+				if options.CurrentVersion != "v1" {
+					t.Fatalf("current version = %q", options.CurrentVersion)
+				}
+				return SelfUpdateResult{PreviousVersion: "v1", CurrentVersion: "v2", Executable: "/tools/deployctl"}, nil
+			},
+		})
+		if code != 0 || terminal.confirmations != 0 || !strings.Contains(stdout.String(), "Updated deployctl from v1 to v2") {
+			t.Fatalf("successful self-update code=%d confirmations=%d output=%q", code, terminal.confirmations, stdout.String())
+		}
+	})
 }
 
 func TestRunDispatchesClusterJoinWithoutRenderingTheCredential(t *testing.T) {

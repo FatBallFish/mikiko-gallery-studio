@@ -24,11 +24,13 @@ type CLIDependencies struct {
 	Terminal             Terminal
 	Stdout               io.Writer
 	Stderr               io.Writer
+	BuildInfo            BuildInfo
 	StdoutIsTerminal     func(io.Writer) bool
 	Install              InstallDependencies
 	ImportConfig         ImportConfigDependencies
 	Doctor               DoctorDependencies
 	Upgrade              UpgradeDependencies
+	SelfUpdate           SelfUpdateDependencies
 	Uninstall            UninstallDependencies
 	SetupTokenReset      SetupTokenResetDependencies
 	ClusterJoin          ClusterJoinDependencies
@@ -36,6 +38,7 @@ type CLIDependencies struct {
 	ExecuteImportConfig  func(context.Context, ImportConfigOptions, ImportConfigDependencies) (ImportConfigResult, error)
 	ExecuteDoctor        func(context.Context, string, DoctorDependencies) DoctorReport
 	ExecuteUpgrade       func(context.Context, UpgradeOptions, UpgradeDependencies) (UpgradeResult, error)
+	ExecuteSelfUpdate    func(context.Context, SelfUpdateOptions, SelfUpdateDependencies) (SelfUpdateResult, error)
 	ExecuteUninstall     func(context.Context, UninstallOptions, UninstallDependencies) error
 	CreateClusterToken   func(context.Context, string, ClusterTokenCreateOptions) (ClusterTokenCreateResult, error)
 	ExecuteClusterJoin   func(context.Context, ClusterJoinOptions, ClusterJoinDependencies) (ClusterJoinResult, error)
@@ -60,6 +63,49 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		return 2
 	}
 	switch command.Kind {
+	case CommandVersion:
+		info := NormalizeBuildInfo(dependencies.BuildInfo)
+		if command.Version.JSON {
+			encoded, encodeErr := info.JSON()
+			if encodeErr != nil {
+				return writeRunError(dependencies.Stderr, fmt.Errorf("encode build information: %w", encodeErr))
+			}
+			fmt.Fprintln(dependencies.Stdout, string(encoded))
+			return 0
+		}
+		fmt.Fprintln(dependencies.Stdout, info.Text())
+		return 0
+	case CommandSelfUpdate:
+		options := *command.SelfUpdate
+		options.CurrentVersion = NormalizeBuildInfo(dependencies.BuildInfo).Version
+		if !options.Yes {
+			if dependencies.Terminal == nil || !dependencies.Terminal.Interactive() {
+				fmt.Fprintln(dependencies.Stderr, "deployctl: self-update requires an interactive terminal or --yes")
+				return 2
+			}
+			confirmed, confirmErr := dependencies.Terminal.Confirm(ctx, fmt.Sprintf("Update deployctl from %s to %s?", options.CurrentVersion, options.Version))
+			if confirmErr != nil {
+				return writeRunError(dependencies.Stderr, confirmErr)
+			}
+			if !confirmed {
+				fmt.Fprintln(dependencies.Stdout, "Self-update cancelled.")
+				return 0
+			}
+		}
+		execute := dependencies.ExecuteSelfUpdate
+		if execute == nil {
+			execute = SelfUpdate
+		}
+		result, executeErr := execute(ctx, options, dependencies.SelfUpdate)
+		if executeErr != nil {
+			return writeRunError(dependencies.Stderr, executeErr)
+		}
+		if result.Deferred {
+			fmt.Fprintf(dependencies.Stdout, "Verified deployctl %s. Windows replacement was scheduled after this process exits. Staged file: %s\n", result.CurrentVersion, result.StagedPath)
+			return 0
+		}
+		fmt.Fprintf(dependencies.Stdout, "Updated deployctl from %s to %s: %s\n", result.PreviousVersion, result.CurrentVersion, result.Executable)
+		return 0
 	case CommandImportConfig:
 		execute := dependencies.ExecuteImportConfig
 		if execute == nil {
