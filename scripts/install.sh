@@ -3,26 +3,20 @@ set -eu
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 root_dir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
-if [ -z "${DEPLOYCTL_SOURCE_DIR:-}" ]; then
-  source_ready=true
-  for relative_path in go.mod Makefile cmd/deployctl Dockerfile.api Dockerfile.worker Dockerfile.user-web Dockerfile.admin-web Dockerfile.docs-web; do
-    if [ ! -e "$root_dir/$relative_path" ]; then
-      source_ready=false
-      break
-    fi
-  done
-  if [ "$source_ready" = true ]; then
+source_ready=true
+for relative_path in go.mod Makefile cmd/deployctl Dockerfile.api Dockerfile.worker Dockerfile.user-web Dockerfile.admin-web Dockerfile.docs-web; do
+  if [ ! -e "$root_dir/$relative_path" ]; then
+    source_ready=false
+    break
+  fi
+done
+if [ -z "${DEPLOYCTL_SOURCE_DIR:-}" ] && [ "$source_ready" = true ]; then
     DEPLOYCTL_SOURCE_DIR="$root_dir"
     export DEPLOYCTL_SOURCE_DIR
-  fi
 fi
 
 if [ -n "${DEPLOYCTL_BIN:-}" ]; then
   exec "$DEPLOYCTL_BIN" "$@"
-fi
-
-if command -v deployctl >/dev/null 2>&1; then
-  exec deployctl "$@"
 fi
 
 version="${DEPLOYCTL_VERSION:-latest}"
@@ -55,10 +49,6 @@ fi
 artifact="deployctl-$os-$arch"
 url="${DEPLOYCTL_DOWNLOAD_URL:-$release_base/$release_path/$artifact}"
 display_url="${url%%\?*}"
-temporary_dir="$(mktemp -d)"
-trap 'rm -rf "$temporary_dir"' EXIT HUP INT TERM
-downloaded_binary="$temporary_dir/$artifact"
-checksum_file="$temporary_dir/$artifact.sha256"
 
 calculate_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -182,16 +172,65 @@ install_candidate() {
   printf '%s\n' "$install_dir/deployctl"
 }
 
-download_status=0
-download_release || download_status=$?
-case "$download_status" in
-  0) candidate="$downloaded_binary" ;;
-  10)
-    echo "Release artifact could not be verified; falling back to a local source build." >&2
-    candidate="$(build_from_source)" || exit 1
-    ;;
-  *) exit "$download_status" ;;
-esac
+force_local_build=false
+if path_binary="$(command -v deployctl 2>/dev/null)"; then
+  source_commit=""
+  source_dirty=false
+  source_git_prefix=""
+  if [ "$source_ready" = true ] && command -v git >/dev/null 2>&1; then
+    source_git_prefix="$(git -C "$root_dir" rev-parse --show-prefix 2>/dev/null || true)"
+    source_commit="$(git -C "$root_dir" rev-parse HEAD 2>/dev/null || true)"
+    if [ -z "$source_git_prefix" ] && [ -n "$source_commit" ]; then
+      if [ -n "$(git -C "$root_dir" status --porcelain --untracked-files=normal 2>/dev/null)" ]; then
+        source_dirty=true
+      fi
+
+      if [ "$source_dirty" = true ]; then
+        echo "Source checkout has uncommitted changes; selecting a local source build instead of the PATH deployctl." >&2
+        force_local_build=true
+      else
+        if path_metadata="$("$path_binary" version --json 2>/dev/null)"; then
+          path_commit="$(printf '%s\n' "$path_metadata" | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+        else
+          path_commit=""
+        fi
+        if [ "$path_commit" = "$source_commit" ]; then
+          exec "$path_binary" "$@"
+        fi
+        if [ -n "$path_commit" ]; then
+          echo "PATH deployctl is stale for this source checkout (tool commit $path_commit, checkout $source_commit); selecting a local source build." >&2
+        else
+          echo "PATH deployctl build metadata is unavailable; selecting a local source build for this checkout." >&2
+        fi
+        force_local_build=true
+      fi
+    fi
+  fi
+
+  if [ "$force_local_build" = false ]; then
+    exec "$path_binary" "$@"
+  fi
+fi
+
+temporary_dir="$(mktemp -d)"
+trap 'rm -rf "$temporary_dir"' EXIT HUP INT TERM
+downloaded_binary="$temporary_dir/$artifact"
+checksum_file="$temporary_dir/$artifact.sha256"
+
+if [ "$force_local_build" = true ]; then
+  candidate="$(build_from_source)" || exit 1
+else
+  download_status=0
+  download_release || download_status=$?
+  case "$download_status" in
+    0) candidate="$downloaded_binary" ;;
+    10)
+      echo "Release artifact could not be verified; falling back to a local source build." >&2
+      candidate="$(build_from_source)" || exit 1
+      ;;
+    *) exit "$download_status" ;;
+  esac
+fi
 
 installed_binary="$(install_candidate "$candidate")" || exit 1
 echo "Installed deployctl: $installed_binary"

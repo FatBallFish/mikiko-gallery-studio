@@ -58,9 +58,10 @@ Developer commands such as `make dev`, `make worker`, frontend development serve
 The shell and PowerShell installers use the same resolution order:
 
 1. Execute `DEPLOYCTL_BIN` when explicitly provided.
-2. Execute an existing deployctl found on `PATH`.
-3. Download the requested platform artifact and checksum from GitHub Releases.
-4. If a verifiable release pair is unavailable, build deployctl from the current source checkout.
+2. In a complete Git source checkout, execute a deployctl found on `PATH` only when its build commit matches the clean checkout. A stale tool, unavailable build metadata, or a dirty checkout selects a local source build and refreshes the persistent binary.
+3. Outside a Git source checkout, execute an existing deployctl found on `PATH`.
+4. Download the requested platform artifact and checksum from GitHub Releases.
+5. If a verifiable release pair is unavailable, build deployctl from the current source checkout.
 
 A downloaded or locally built deployctl is persisted instead of being executed only from a temporary directory:
 

@@ -21,12 +21,12 @@ func TestBootstrapWrappersLocateOrDownloadDeployctlAndForwardArguments(t *testin
 	}{
 		{
 			path:      "scripts/install.sh",
-			required:  []string{`exec "$DEPLOYCTL_BIN" "$@"`, `exec deployctl "$@"`, "DEPLOYCTL_VERSION", "DEPLOYCTL_INSTALL_DIR", "make", "DEPLOYCTL_OUTPUT", "curl", "sha256", "checksum verification failed"},
-			forbidden: []string{"eval ", "docker compose", "systemctl"},
+			required:  []string{`exec "$DEPLOYCTL_BIN" "$@"`, "command -v deployctl", "git -C", "version --json", "PATH deployctl is stale", "DEPLOYCTL_VERSION", "DEPLOYCTL_INSTALL_DIR", "make", "DEPLOYCTL_OUTPUT", "curl", "sha256", "checksum verification failed"},
+			forbidden: []string{`exec deployctl "$@"`, "eval ", "docker compose", "systemctl"},
 		},
 		{
 			path:      "scripts/install.ps1",
-			required:  []string{"& $binary @args", "DEPLOYCTL_VERSION", "DEPLOYCTL_INSTALL_DIR", "DEPLOYCTL_OUTPUT", "Invoke-WebRequest", "Get-FileHash", "GetLeftPart", "checksum verification failed"},
+			required:  []string{"& $binary @args", "git", "version --json", "ConvertFrom-Json", "PATH deployctl is stale", "DEPLOYCTL_VERSION", "DEPLOYCTL_INSTALL_DIR", "DEPLOYCTL_OUTPUT", "Invoke-WebRequest", "Get-FileHash", "GetLeftPart", "checksum verification failed"},
 			forbidden: []string{"Invoke-Expression", "docker compose", "systemctl"},
 		},
 	}

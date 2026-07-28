@@ -1,21 +1,57 @@
 $ErrorActionPreference = "Stop"
 
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-if (-not $env:DEPLOYCTL_SOURCE_DIR) {
-  $sourceRequirements = @("go.mod", "Makefile", "cmd/deployctl", "Dockerfile.api", "Dockerfile.worker", "Dockerfile.user-web", "Dockerfile.admin-web", "Dockerfile.docs-web")
-  $sourceComplete = @($sourceRequirements | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) }).Count -eq 0
-  if ($sourceComplete) {
-    $env:DEPLOYCTL_SOURCE_DIR = $root
-  }
+$sourceRequirements = @("go.mod", "Makefile", "cmd/deployctl", "Dockerfile.api", "Dockerfile.worker", "Dockerfile.user-web", "Dockerfile.admin-web", "Dockerfile.docs-web")
+$sourceComplete = @($sourceRequirements | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) }).Count -eq 0
+if (-not $env:DEPLOYCTL_SOURCE_DIR -and $sourceComplete) {
+  $env:DEPLOYCTL_SOURCE_DIR = $root
 }
 
 $binary = $env:DEPLOYCTL_BIN
+$forceLocalBuild = $false
 if (-not $binary) {
   $command = Get-Command deployctl -ErrorAction SilentlyContinue
-  if ($command) { $binary = $command.Source }
+  if ($command) {
+    $binary = $command.Source
+    $gitCommand = if ($sourceComplete) { Get-Command git -ErrorAction SilentlyContinue } else { $null }
+    if ($gitCommand) {
+      $sourcePrefixOutput = @(& $gitCommand.Source -C $root rev-parse --show-prefix 2>$null)
+      $prefixStatus = $LASTEXITCODE
+      $sourceCommitOutput = @(& $gitCommand.Source -C $root rev-parse HEAD 2>$null)
+      $commitStatus = $LASTEXITCODE
+      $sourcePrefix = ($sourcePrefixOutput -join "").Trim()
+      $sourceCommit = ($sourceCommitOutput -join "").Trim()
+      if ($prefixStatus -eq 0 -and $commitStatus -eq 0 -and -not $sourcePrefix -and $sourceCommit) {
+        $sourceChanges = @(& $gitCommand.Source -C $root status --porcelain --untracked-files=normal 2>$null)
+        if ($sourceChanges.Count -gt 0) {
+          Write-Warning "Source checkout has uncommitted changes; selecting a local source build instead of the PATH deployctl."
+          $forceLocalBuild = $true
+        } else {
+          $pathCommit = $null
+          try {
+            $pathMetadataOutput = @(& $binary version --json 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+              $pathMetadata = (($pathMetadataOutput -join "`n") | ConvertFrom-Json)
+              $pathCommit = [string]$pathMetadata.commit
+            }
+          } catch {
+            $pathCommit = $null
+          }
+          if ($pathCommit -ne $sourceCommit) {
+            if ($pathCommit) {
+              Write-Warning "PATH deployctl is stale for this source checkout (tool commit $pathCommit, checkout $sourceCommit); selecting a local source build."
+            } else {
+              Write-Warning "PATH deployctl build metadata is unavailable; selecting a local source build for this checkout."
+            }
+            $forceLocalBuild = $true
+          }
+        }
+      }
+    }
+  }
 }
 
-if (-not $binary) {
+if (-not $binary -or $forceLocalBuild) {
   $version = if ($env:DEPLOYCTL_VERSION) { $env:DEPLOYCTL_VERSION } else { "latest" }
   $releaseBase = if ($env:DEPLOYCTL_RELEASE_BASE_URL) { $env:DEPLOYCTL_RELEASE_BASE_URL.TrimEnd("/") } else { "https://github.com/fatballfish/pic-gallery/releases" }
   $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME "AppData\Local" }
@@ -72,37 +108,41 @@ if (-not $binary) {
   }
 
   try {
-    $downloadedBinary = Join-Path $temporaryDirectory $artifact
-    $downloadFailure = $null
-    try {
-      Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $downloadedBinary
-      if ($env:DEPLOYCTL_SHA256) {
-        $expectedSha256 = $env:DEPLOYCTL_SHA256.Trim()
-        if ($expectedSha256 -notmatch '^[0-9a-fA-F]{64}$') {
-          throw "DEPLOYCTL_SHA256 must contain exactly 64 hexadecimal characters"
-        }
-      } else {
-        $checksumFile = "$downloadedBinary.sha256"
-        Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256" -OutFile $checksumFile
-        $expectedSha256 = ((Get-Content -Raw $checksumFile).Trim() -split "\s+")[0]
-        if ($expectedSha256 -notmatch '^[0-9a-fA-F]{64}$') {
-          $downloadFailure = "deployctl release checksum file is incomplete"
-        }
-      }
-    } catch {
-      if ($_.Exception.Message -like "DEPLOYCTL_SHA256*") { throw }
-      $downloadFailure = "release download failed for $displayUrl"
-    }
-
-    if ($downloadFailure) {
-      Write-Warning "Release artifact could not be verified ($downloadFailure); falling back to a local source build."
+    if ($forceLocalBuild) {
       $candidate = Build-LocalDeployctl
     } else {
-      $actualSha256 = (Get-FileHash -Algorithm SHA256 -Path $downloadedBinary).Hash
-      if (-not $actualSha256.Equals($expectedSha256, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "deployctl checksum verification failed; refusing local build fallback"
+      $downloadedBinary = Join-Path $temporaryDirectory $artifact
+      $downloadFailure = $null
+      try {
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $downloadedBinary
+        if ($env:DEPLOYCTL_SHA256) {
+          $expectedSha256 = $env:DEPLOYCTL_SHA256.Trim()
+          if ($expectedSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "DEPLOYCTL_SHA256 must contain exactly 64 hexadecimal characters"
+          }
+        } else {
+          $checksumFile = "$downloadedBinary.sha256"
+          Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256" -OutFile $checksumFile
+          $expectedSha256 = ((Get-Content -Raw $checksumFile).Trim() -split "\s+")[0]
+          if ($expectedSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            $downloadFailure = "deployctl release checksum file is incomplete"
+          }
+        }
+      } catch {
+        if ($_.Exception.Message -like "DEPLOYCTL_SHA256*") { throw }
+        $downloadFailure = "release download failed for $displayUrl"
       }
-      $candidate = $downloadedBinary
+
+      if ($downloadFailure) {
+        Write-Warning "Release artifact could not be verified ($downloadFailure); falling back to a local source build."
+        $candidate = Build-LocalDeployctl
+      } else {
+        $actualSha256 = (Get-FileHash -Algorithm SHA256 -Path $downloadedBinary).Hash
+        if (-not $actualSha256.Equals($expectedSha256, [StringComparison]::OrdinalIgnoreCase)) {
+          throw "deployctl checksum verification failed; refusing local build fallback"
+        }
+        $candidate = $downloadedBinary
+      }
     }
 
     $binary = Install-DeployctlCandidate $candidate

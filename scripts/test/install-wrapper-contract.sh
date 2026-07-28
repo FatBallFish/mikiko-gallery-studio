@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Git hooks export repository internals that would otherwise leak into fixture repositories.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
@@ -27,6 +30,30 @@ make_checkout() {
   done
 }
 
+initialize_git_checkout() {
+  local checkout=$1
+  git -C "$checkout" init -q
+  git -C "$checkout" config user.name "Install Wrapper Contract"
+  git -C "$checkout" config user.email "install-wrapper@example.test"
+  git -C "$checkout" add .
+  git -C "$checkout" commit -qm "fixture"
+}
+
+make_path_deployctl() {
+  local directory=$1
+  mkdir -p "$directory"
+  cat > "$directory/deployctl" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "version" && "${2:-}" == "--json" ]]; then
+  printf '{"version":"dev","commit":"%s","build_time":"test","dirty":false}\n' "$FAKE_PATH_COMMIT"
+  exit 0
+fi
+printf '%s\n' "$*" > "$FAKE_PATH_EXEC_LOG"
+SCRIPT
+  chmod +x "$directory/deployctl"
+}
+
 make_fake_toolchain() {
   local directory=$1
   mkdir -p "$directory"
@@ -43,6 +70,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$output" && -n "$url" ]] || exit 64
+if [[ -n "${FAKE_CURL_LOG:-}" ]]; then
+  printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
+fi
 if [[ "${FAKE_CURL_MODE:-success}" != "success" ]]; then
   exit 22
 fi
@@ -92,6 +122,72 @@ make_fake_toolchain "$FAKE_BIN"
 CHECKOUT="$TMP_ROOT/source checkout"
 make_checkout "$CHECKOUT"
 BASE_PATH="$FAKE_BIN:/usr/bin:/bin"
+
+git_checkout="$TMP_ROOT/git-checkout"
+make_checkout "$git_checkout"
+initialize_git_checkout "$git_checkout"
+checkout_commit=$(git -C "$git_checkout" rev-parse HEAD)
+
+stale_bin="$TMP_ROOT/stale-path-bin"
+make_path_deployctl "$stale_bin"
+stale_install="$TMP_ROOT/stale-install"
+stale_make_log="$TMP_ROOT/stale-make.log"
+stale_exec_log="$TMP_ROOT/stale-built-exec.log"
+stale_source_log="$TMP_ROOT/stale-built-source.log"
+stale_path_exec_log="$TMP_ROOT/stale-path-exec.log"
+stale_curl_log="$TMP_ROOT/stale-curl.log"
+stale_output=$(env \
+  PATH="$stale_bin:$BASE_PATH" HOME="$TMP_ROOT/home" DEPLOYCTL_INSTALL_DIR="$stale_install" \
+  FAKE_PATH_COMMIT="stale-commit" FAKE_PATH_EXEC_LOG="$stale_path_exec_log" \
+  FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_EXEC_LOG="$stale_exec_log" FAKE_SOURCE_LOG="$stale_source_log" FAKE_MAKE_LOG="$stale_make_log" FAKE_CURL_LOG="$stale_curl_log" \
+  sh "$git_checkout/scripts/install.sh" version 2>&1)
+[[ ! -e "$stale_path_exec_log" ]] || fail "stale PATH deployctl received the final command"
+[[ ! -e "$stale_curl_log" ]] || fail "stale PATH deployctl fallback unexpectedly attempted a release download"
+[[ -x "$stale_install/deployctl" ]] || fail "stale PATH deployctl was not replaced persistently"
+[[ $(cat "$stale_exec_log") == "version" ]] || fail "rebuilt deployctl did not receive original arguments"
+[[ $(cat "$stale_source_log") == "$git_checkout" ]] || fail "rebuilt deployctl did not receive source checkout path"
+assert_contains "$(cat "$stale_make_log")" "deployctl"
+assert_contains "$stale_output" "stale"
+assert_contains "$stale_output" "local source build"
+
+matching_bin="$TMP_ROOT/matching-path-bin"
+make_path_deployctl "$matching_bin"
+matching_path_exec_log="$TMP_ROOT/matching-path-exec.log"
+matching_make_log="$TMP_ROOT/matching-make.log"
+env \
+  PATH="$matching_bin:$BASE_PATH" HOME="$TMP_ROOT/home" \
+  FAKE_PATH_COMMIT="$checkout_commit" FAKE_PATH_EXEC_LOG="$matching_path_exec_log" FAKE_MAKE_LOG="$matching_make_log" \
+  sh "$git_checkout/scripts/install.sh" status
+[[ $(cat "$matching_path_exec_log") == "status" ]] || fail "matching PATH deployctl was not reused"
+[[ ! -e "$matching_make_log" ]] || fail "matching PATH deployctl unexpectedly triggered a local build"
+
+printf 'dirty\n' >> "$git_checkout/go.mod"
+dirty_install="$TMP_ROOT/dirty-install"
+dirty_make_log="$TMP_ROOT/dirty-make.log"
+dirty_exec_log="$TMP_ROOT/dirty-built-exec.log"
+dirty_output=$(env \
+  PATH="$matching_bin:$BASE_PATH" HOME="$TMP_ROOT/home" DEPLOYCTL_INSTALL_DIR="$dirty_install" \
+  FAKE_PATH_COMMIT="$checkout_commit" FAKE_PATH_EXEC_LOG="$TMP_ROOT/dirty-path-exec.log" \
+  FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_EXEC_LOG="$dirty_exec_log" FAKE_SOURCE_LOG="$TMP_ROOT/dirty-source.log" FAKE_MAKE_LOG="$dirty_make_log" \
+  sh "$git_checkout/scripts/install.sh" doctor 2>&1)
+[[ $(cat "$dirty_exec_log") == "doctor" ]] || fail "dirty source rebuild did not receive original arguments"
+assert_contains "$dirty_output" "uncommitted changes"
+assert_contains "$(cat "$dirty_make_log")" "deployctl"
+
+explicit_bin="$TMP_ROOT/explicit-bin"
+cp "$RELEASE_BINARY" "$explicit_bin"
+explicit_log="$TMP_ROOT/explicit-exec.log"
+env \
+  PATH="$stale_bin:$BASE_PATH" DEPLOYCTL_BIN="$explicit_bin" \
+  FAKE_EXEC_LOG="$explicit_log" FAKE_SOURCE_LOG="$TMP_ROOT/explicit-source.log" \
+  sh "$git_checkout/scripts/install.sh" logs --follow
+[[ $(cat "$explicit_log") == "logs --follow" ]] || fail "DEPLOYCTL_BIN did not remain authoritative"
+
+non_git_path_log="$TMP_ROOT/non-git-path-exec.log"
+env \
+  PATH="$stale_bin:$BASE_PATH" FAKE_PATH_COMMIT="stale-commit" FAKE_PATH_EXEC_LOG="$non_git_path_log" \
+  sh "$CHECKOUT/scripts/install.sh" status
+[[ $(cat "$non_git_path_log") == "status" ]] || fail "non-Git checkout did not preserve PATH-first behavior"
 
 success_install="$TMP_ROOT/success bin"
 success_log="$TMP_ROOT/success-exec.log"
@@ -173,5 +269,7 @@ assert_contains "$missing_go_output" "Go"
 assert_contains "$missing_make_output" "Make"
 assert_contains "$missing_make_output" "DEPLOYCTL_BIN"
 assert_contains "$(cat "$ROOT/scripts/install.ps1")" 'DEPLOYCTL_SOURCE_DIR'
+assert_contains "$(cat "$ROOT/scripts/install.ps1")" 'ConvertFrom-Json'
+assert_contains "$(cat "$ROOT/scripts/install.ps1")" 'PATH deployctl is stale'
 
 echo "OK: deployctl install wrapper fallback contract verified"

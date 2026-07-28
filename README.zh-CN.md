@@ -294,7 +294,7 @@ Docker 部署需要 Docker Engine、Compose v2、可用宿主机端口和可写�
 
 ### 安装包装脚本
 
-Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps1`。包装脚本优先使用 `DEPLOYCTL_BIN` 或 `PATH` 中已有的 `deployctl`。如果都不存在，则下载匹配平台的 Release 产物、校验 SHA-256、持久化安装 deployctl，并通过绝对路径执行本次命令。
+Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps1`。显式指定的 `DEPLOYCTL_BIN` 始终优先。在完整的 Git 源码 checkout 中，包装脚本仅在 `PATH` 中 deployctl 的构建 commit 与干净 checkout 一致时复用该工具；工具过期或源码存在未提交改动时，会执行本地构建并原子更新持久化二进制。非 Git 源码安装包仍保持 PATH 优先。如果没有可用工具，则下载匹配平台的 Release 产物、校验 SHA-256、持久化安装 deployctl，并通过绝对路径执行本次命令。
 
 默认安装路径是 Linux/macOS 的 `$HOME/.local/bin/deployctl` 和 Windows 的 `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe`。安装器会输出实际路径和 PATH 配置提示。
 
