@@ -275,12 +275,7 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 	if err != nil {
 		return writeRunError(dependencies.Stderr, err)
 	}
-	fmt.Fprintf(dependencies.Stdout, "Runtime configuration: %s\n", result.RuntimeEnvPath)
-	if input.Interactive && dependencies.StdoutIsTerminal(dependencies.Stdout) {
-		fmt.Fprintf(dependencies.Stdout, "Setup token: %s\n", result.SetupToken)
-	} else {
-		fmt.Fprintf(dependencies.Stdout, "Setup token stored securely. Run deployctl setup token show --runtime-dir %q on the deployment host to display it.\n", plan.RuntimeDir)
-	}
+	fmt.Fprint(dependencies.Stdout, InstallSummary(plan, result, input.Interactive && dependencies.StdoutIsTerminal(dependencies.Stdout)))
 	return 0
 }
 
