@@ -1,166 +1,97 @@
-# Native Packaging and Legacy Compatibility
+# Release Packaging
 
-The production deployment paths are:
+This directory contains templates and launchers used to assemble native application releases. It is maintainer documentation, not an alternative production installation guide. Operators should follow the top-level `README.md` or `README.zh-CN.md` and use deployctl.
 
-- Docker full/core/custom through `deployctl install --mode docker`.
-- Linux or Windows native core/custom through `deployctl install --mode native`.
+## Tagged Releases
 
-Both modes use `./config/runtime.env` and the same API-hosted setup flow. Native mode downloads a SHA-256-verified release bundle, installs API/Worker/Gateway under the portable runtime directory, and registers systemd units or Windows SCM services. It does not install PostgreSQL, Redis, or object-storage middleware.
+Pushing a `v*` tag runs `.github/workflows/release.yml`. The workflow first tests deployctl and both bootstrap installers, then publishes:
 
-## Build Packages
-
-Build one or more packages from the repository root:
-
-```bash
-scripts/devops/package.sh user-web
-scripts/devops/package.sh admin-web
-scripts/devops/package.sh api-server
-scripts/devops/package.sh worker
-scripts/devops/package.sh gateway
-scripts/devops/package.sh native
-scripts/devops/package.sh all
+```text
+deployctl-linux-amd64
+deployctl-linux-arm64
+deployctl-darwin-amd64
+deployctl-darwin-arm64
+deployctl-windows-amd64.exe
+deployctl-windows-arm64.exe
+pic-gallery-native-linux-amd64.tar.gz
+pic-gallery-native-linux-arm64.tar.gz
+pic-gallery-native-windows-amd64.tar.gz
+pic-gallery-native-windows-arm64.tar.gz
 ```
 
-Output defaults to `target/devops`. Override target OS/arch and output path when needed:
+Every artifact has an adjacent `.sha256` file. The workflow creates a missing Release and uploads only missing asset names. It never overwrites an existing asset, so correcting a published binary requires a new version tag.
+
+`workflow_dispatch` is available for retrying a tag workflow, but the selected ref must still be a `v*` tag. Ordinary branch pushes never create a Release.
+
+## Package Deployctl Locally
+
+The deployctl packager uses the same Make target and linker metadata as the tagged workflow:
 
 ```bash
-DEVOPS_TARGET_ROOT=/tmp/pic-gallery-release \
+RELEASE_TARGET_ROOT=./target/release \
+RELEASE_GOOS=linux \
+RELEASE_GOARCH=amd64 \
+RELEASE_VERSION=v1.2.3 \
+RELEASE_COMMIT="$(git rev-parse HEAD)" \
+RELEASE_BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+./scripts/devops/package-deployctl.sh
+```
+
+Supported deployctl targets are Linux, macOS, and Windows on `amd64` or `arm64`. Windows output includes the `.exe` suffix. Inspect a local result with:
+
+```bash
+./target/release/deployctl-linux-amd64 version --json
+sha256sum -c ./target/release/deployctl-linux-amd64.sha256
+```
+
+Use `shasum -a 256 -c` on systems without `sha256sum`.
+
+## Package Native Applications Locally
+
+Native bundles contain API, Worker, Gateway, all three Web applications, and the OpenAPI document. Windows bundles also contain the SCM-aware service host.
+
+```bash
+DEVOPS_TARGET_ROOT=./target/release \
 DEVOPS_GOOS=linux \
 DEVOPS_GOARCH=amd64 \
 DEVOPS_CGO_ENABLED=0 \
-scripts/devops/package.sh all
+./scripts/devops/package.sh native
 ```
 
-The native output is:
+The output names must remain aligned with `internal/deployctl/native_release.go`:
 
 ```text
-target/devops/pic-gallery-native-<os>-<arch>.tar.gz
-target/devops/pic-gallery-native-<os>-<arch>.tar.gz.sha256
+pic-gallery-native-<os>-<arch>.tar.gz
+pic-gallery-native-<os>-<arch>.tar.gz.sha256
 ```
 
-The archive contains `bin/`, `web/`, and `api/`. Windows bundles also contain the SCM-aware `pic-gallery-service-host.exe`. Publish the archive and checksum beside the matching `deployctl` release artifact.
+The portable archive contains only these top-level paths:
 
-Operators normally deploy it through:
+```text
+bin/
+web/
+api/
+```
+
+Run the native package contract after changing package contents, frontend build paths, service binaries, or checksums:
 
 ```bash
-./scripts/install.sh install --mode native --profile core --topology single
+./scripts/workflow/native-package-contract.sh
 ```
 
-or on Windows:
+## Component Packages
 
-```powershell
-.\scripts\install.ps1 install --mode native --profile core --topology single
-```
+`scripts/devops/package.sh` also supports `user-web`, `admin-web`, `docs-web`, `api-server`, `worker`, `gateway`, and `all`. These targets are inputs for release engineering and diagnostics. They are not supported production installation entrypoints; deployctl owns installation, runtime configuration, service registration, health checks, upgrades, and uninstall.
 
-The project accepts HTTP and IP-plus-port access. Domain names, TLS certificates, and external load balancers remain the deployer's responsibility.
+The backend package launchers read `./config/runtime.env` by default and accept `APP_ENV_FILE` only as an explicit override. Frontend launchers render `dist/env.js` from their packaged environment templates.
 
-## Legacy Packages
+## Docker Images
 
-Compatibility behavior:
-
-- Backend packages include the bilingual `config/runtime.env.example`. Copy it to `config/runtime.env`; use `APP_ENV_FILE` only when the runtime file must live outside the package working directory.
-- Backend packages no longer copy `configs/config.<env>.yaml` into the artifact.
-- Frontends still read `dist/env.js`, generated by `start-user-web.sh` or `start-admin-web.sh` from `PIC_GALLERY_API_BASE_URL`.
-
-## First Server Deployment
-
-1. Build packages:
-
-   ```bash
-   scripts/devops/package.sh all
-   ```
-
-2. Upload the generated package directories from `target/devops/` to the server:
-
-   - `api-server/`
-   - `worker/`
-   - `user-web/`
-   - `admin-web/`
-   - optional `middleware-compose.yml`
-
-3. Prepare backend env on the server:
-
-   ```bash
-   cd api-server
-   cp config/runtime.env.example config/runtime.env
-   $EDITOR config/runtime.env
-   ```
-
-   Reuse the same runtime file for `worker`. Complete the deployment and setup fields described by the bilingual comments. The first administrator is created by setup and its plaintext password is never stored in this file. SMTP, provider accounts, model routing, billing/pricing, and payment channels are configured in the admin console after startup.
-
-4. Start backend packages:
-
-   ```bash
-   cd api-server
-   ./run-api-server.sh
-
-   cd ../worker
-   APP_ENV_FILE=../api-server/config/runtime.env ./run-worker.sh
-   ```
-
-   Use the operating-system service manager outside this package if the server needs supervised startup. The repository-local service manager can also be used when deploying from a checked-out source tree:
-
-   ```bash
-   ./scripts/service/manage.sh install --components api,worker --env-file /path/to/config/runtime.env --user
-   ```
-
-5. Prepare frontend env and start frontends:
-
-   ```bash
-   cd user-web
-   cp env/frontend.env.example env/frontend.env
-   $EDITOR env/frontend.env
-   ./start-user-web.sh
-
-   cd ../admin-web
-   cp env/frontend.env.example env/frontend.env
-   $EDITOR env/frontend.env
-   ./start-admin-web.sh
-   ```
-
-6. Put Nginx or the platform gateway in front of the started frontend/backend services, then verify:
-
-   ```bash
-   curl http://127.0.0.1:8080/readyz
-   curl http://127.0.0.1:8080/docs/openapi.json
-   ```
-
-## Version Updates
-
-1. Build new packages:
-
-   ```bash
-   scripts/devops/package.sh all
-   ```
-
-2. Stop the old API, worker, and frontend processes through the server supervisor.
-
-3. Replace package directories with the new `target/devops/*` output while preserving server-local files such as `config/runtime.env` and `env/frontend.env`.
-
-4. Start the processes again and verify:
-
-   ```bash
-   curl http://127.0.0.1:8080/readyz
-   curl http://127.0.0.1:8080/docs/openapi.json
-   ```
-
-Rollback is the same flow using the previous package artifact and the same server-local env files.
-
-## Source-Tree Alternative
-
-For deployments from a checked-out source tree:
+Docker image publication remains separate from the GitHub Release workflow because it requires registry-specific credentials:
 
 ```bash
-mkdir -p config
-cp config/runtime.env.example config/runtime.env
-./scripts/local/pgctl.sh build --components api,worker
-./scripts/service/manage.sh install --components api,worker --user
+./scripts/docker/images.sh build --tag v1.2.3 --registry docker.io/your-org
+./scripts/docker/images.sh push --tag v1.2.3 --registry docker.io/your-org
 ```
 
-## Docker Image Publishing
-
-```bash
-./scripts/docker/images.sh build --tag test --registry docker.io/your-org
-./scripts/docker/images.sh push --tag test --registry docker.io/your-org
-./scripts/docker/images.sh release --version v1.2.3 --latest --registry docker.io/your-org
-```
+Do not add registry credentials to the tagged artifact workflow. Production deployctl commands should reference an immutable image tag or digest that already exists in the selected registry.
