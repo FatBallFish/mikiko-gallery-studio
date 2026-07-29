@@ -11,6 +11,10 @@ from playwright.sync_api import expect, sync_playwright
 BASE_URL = os.environ["BASE_URL"].rstrip("/")
 USER_WEB_URL = os.environ.get("USER_WEB_URL", "").rstrip("/")
 ADMIN_WEB_URL = os.environ.get("ADMIN_WEB_URL", "").rstrip("/")
+DIRECT_USER_WEB_URL = os.environ.get("DIRECT_USER_WEB_URL", "").rstrip("/")
+DIRECT_ADMIN_WEB_URL = os.environ.get("DIRECT_ADMIN_WEB_URL", "").rstrip("/")
+DIRECT_DOCS_WEB_URL = os.environ.get("DIRECT_DOCS_WEB_URL", "").rstrip("/")
+GATEWAY_DOCS_WEB_URL = os.environ.get("GATEWAY_DOCS_WEB_URL", "").rstrip("/")
 SETUP_TOKEN = os.environ["SETUP_TOKEN"]
 PROFILE = os.environ.get("DEPLOYMENT_PROFILE", "full")
 REDIRECT_SETUP_URL = os.environ.get("REDIRECT_SETUP_URL", f"{BASE_URL}/setup")
@@ -108,6 +112,30 @@ def verify_redirect(browser, url, request_urls):
         page.close()
 
 
+def verify_docs(browser, url, request_urls):
+    if not url:
+        return
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page.on("request", lambda request: request_urls.append(request.url))
+    page.goto(url, wait_until="networkidle")
+    assert not page.url.startswith(REDIRECT_SETUP_URL), page.url
+    expect(page.locator("body")).not_to_be_empty()
+    page.close()
+
+
+def verify_ready_app(browser, url, request_urls):
+    if not url:
+        return
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page.on("request", lambda request: request_urls.append(request.url))
+    page.goto(url, wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    assert not page.url.startswith(REDIRECT_SETUP_URL), page.url
+    expect(page.locator("body")).to_be_visible()
+    assert page.locator("body").inner_text().strip(), url
+    page.close()
+
+
 def fill_runtime_fields(page):
     for key, environment_key in RUNTIME_ENV_FIELDS.items():
         configured = os.environ.get(environment_key)
@@ -171,6 +199,8 @@ def drive_setup_apply(browser, request_urls):
     expect(page.locator("body")).to_be_visible()
     page.screenshot(path=OUTPUT_DIR / "setup-returned-to-user.png", full_page=True)
     page.close()
+    verify_ready_app(browser, DIRECT_USER_WEB_URL, request_urls)
+    verify_ready_app(browser, DIRECT_ADMIN_WEB_URL, request_urls)
 
 
 def main():
@@ -197,6 +227,10 @@ def main():
 
             verify_redirect(browser, USER_WEB_URL, request_urls)
             verify_redirect(browser, ADMIN_WEB_URL, request_urls)
+            verify_redirect(browser, DIRECT_USER_WEB_URL, request_urls)
+            verify_redirect(browser, DIRECT_ADMIN_WEB_URL, request_urls)
+            verify_docs(browser, DIRECT_DOCS_WEB_URL, request_urls)
+            verify_docs(browser, GATEWAY_DOCS_WEB_URL, request_urls)
         browser.close()
 
     setup_origin = urlparse(BASE_URL).netloc

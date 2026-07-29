@@ -26,6 +26,44 @@ deployment_e2e_wait_status() {
   return 1
 }
 
+deployment_e2e_assert_frontend() {
+  local page_url=$1
+  python3 - "$page_url" <<'PY'
+import re
+import sys
+from urllib.error import HTTPError
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
+
+page_url = sys.argv[1]
+
+def get(url):
+    request = Request(url, headers={"Accept": "text/html,*/*"})
+    with urlopen(request, timeout=15) as response:
+        return response.status, response.headers.get_content_type(), response.read()
+
+status, content_type, body = get(page_url)
+assert status == 200 and content_type == "text/html", (page_url, status, content_type)
+html = body.decode("utf-8")
+match = re.search(r'(?:src|href)="([^"?]+assets/[^"?]+\.(?:js|css))', html)
+assert match, (page_url, "no built asset reference")
+asset_url = urljoin(page_url, match.group(1))
+status, asset_type, _ = get(asset_url)
+assert status == 200, (asset_url, status)
+if asset_url.endswith(".js"):
+    assert asset_type in {"application/javascript", "text/javascript"}, (asset_url, asset_type)
+else:
+    assert asset_type == "text/css", (asset_url, asset_type)
+
+missing_url = urljoin(page_url, "./assets/missing-e2e.js")
+try:
+    get(missing_url)
+    raise AssertionError((missing_url, "missing static asset returned success"))
+except HTTPError as error:
+    assert error.code == 404, (missing_url, error.code)
+PY
+}
+
 deployment_e2e_env_value() {
   local path=$1 key=$2
   awk -F= -v key="$key" '$1 == key { value=substr($0, index($0, "=")+1); gsub(/^"|"$/, "", value); print value; exit }' "$path"
