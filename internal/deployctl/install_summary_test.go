@@ -52,3 +52,17 @@ func TestInstallSummaryCustomPlanOmitsUnselectedServices(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallSummarySetupURLUsesPublicAPIOrigin(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "custom", Topology: "single", Role: "single", Components: []Component{ComponentAPI}, RuntimeDir: ".", StorageDriver: "local", PublicAPIURL: "https://api.example.test/base/v1", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := InstallSummary(plan, InstallResult{}, false)
+	if !strings.Contains(summary, "https://api.example.test/setup") || strings.Contains(summary, "base/v1/setup") {
+		t.Fatalf("summary has incorrect Setup URL:\n%s", summary)
+	}
+	if !strings.Contains(summary, "https://api.example.test/base/v1/") {
+		t.Fatalf("summary did not preserve API base URL:\n%s", summary)
+	}
+}

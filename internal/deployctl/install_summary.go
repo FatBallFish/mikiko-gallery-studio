@@ -2,6 +2,7 @@ package deployctl
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -18,11 +19,15 @@ func InstallSummary(plan InstallPlan, result InstallResult, revealSetupToken boo
 
 	public := make([]serviceEndpoint, 0, 8)
 	apiBase := strings.TrimRight(plan.PublicAPIURL, "/")
+	setupBase := apiBase
 	if apiBase == "" {
 		apiBase = "http://127.0.0.1:" + plan.APIPort
+		setupBase = apiBase
+	} else if parsed, err := url.Parse(apiBase); err == nil {
+		setupBase = parsed.Scheme + "://" + parsed.Host
 	}
 	if slices.Contains(plan.Components, ComponentAPI) {
-		public = append(public, serviceEndpoint{"Setup", apiBase + "/setup", "Host/public access"}, serviceEndpoint{"API", apiBase + "/", "Host/public access"})
+		public = append(public, serviceEndpoint{"Setup", setupBase + "/setup", "Host/public access"}, serviceEndpoint{"API", apiBase + "/", "Host/public access"})
 	}
 	if slices.Contains(plan.Components, ComponentGateway) {
 		public = append(public, serviceEndpoint{"Gateway", loopbackURL(plan.GatewayPort), "Host access"})
@@ -71,7 +76,7 @@ func InstallSummary(plan InstallPlan, result InstallResult, revealSetupToken boo
 	summary.WriteString("\nNext steps:\n")
 	step := 1
 	if slices.Contains(plan.Components, ComponentAPI) {
-		fmt.Fprintf(&summary, "  %d. Open %s and enter the Setup token.\n", step, apiBase+"/setup")
+		fmt.Fprintf(&summary, "  %d. Open %s and enter the Setup token.\n", step, setupBase+"/setup")
 		step++
 		fmt.Fprintf(&summary, "  %d. Complete middleware and administrator initialization, then wait for services to restart.\n", step)
 		step++

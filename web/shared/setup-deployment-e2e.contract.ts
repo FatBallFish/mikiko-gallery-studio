@@ -59,6 +59,7 @@ for (const required of [
 	'DIRECT_ADMIN_WEB_URL',
 	'DIRECT_DOCS_WEB_URL',
 	'GATEWAY_DOCS_WEB_URL',
+	'expected_setup_url',
 ]) {
   if (!browserRunner.includes(required)) throw new Error(`setup browser E2E is missing ${required}`)
 }

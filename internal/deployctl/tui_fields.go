@@ -80,6 +80,14 @@ func (form *TUICommandForm) AppendRune(value rune) {
 	}
 }
 
+func (form *TUICommandForm) TypeSpace() {
+	if form.Focus >= 0 && form.Focus < len(form.Fields) && form.Fields[form.Focus].Kind == tuiFieldText {
+		form.Fields[form.Focus].Value += " "
+		return
+	}
+	form.ToggleCurrent()
+}
+
 func (form *TUICommandForm) Backspace() {
 	if form.Focus < 0 || form.Focus >= len(form.Fields) || form.Fields[form.Focus].Kind != tuiFieldText {
 		return
@@ -158,7 +166,7 @@ func (form TUICommandForm) Arguments() ([]string, error) {
 			args = append(args, "--"+field.Name, value)
 		}
 	}
-	if form.Entry.Path == "install" && values["profile"] != "custom" {
+	if (form.Entry.Path == "install" || form.Entry.Path == "import-config") && values["profile"] != "custom" {
 		args = removeFlag(args, "--components")
 	}
 	if form.Entry.Path == "uninstall" && values["delete-data"] == "true" && strings.TrimSpace(values["confirm"]) == "" {
@@ -265,10 +273,11 @@ func tuiFieldsForCommand(path string) []TUIField {
 			text("image-registry", "Image registry", ""), text("image-tag", "Image tag", DefaultApplicationVersion), text("release-version", "Release version", ""),
 			text("api-port", "API port", "8080"), text("gateway-port", "Gateway port", ""), text("user-web-port", "User Web port", ""),
 			text("admin-web-port", "Admin Web port", ""), text("docs-web-port", "Docs Web port", ""), text("monitoring-port", "Monitoring port", ""),
-			boolean("external-gateway", "External gateway configured", false), boolean("migrate", "Run migration", false), boolean("overwrite", "Overwrite incomplete config", false), boolean("yes", "Confirm install", true),
+			boolean("external-gateway", "External gateway configured", false), boolean("migrate", "Run migration", false), boolean("overwrite", "Overwrite incomplete config", false), boolean("yes", "Skip terminal confirmation", false),
 		}
 	case "import-config":
-		return []TUIField{text("source", "Legacy environment file", ".env"), text("runtime-dir", "Runtime directory", "."), choice("mode", "Mode", "docker", "docker", "native"), choice("profile", "Profile", "core", "full", "core", "custom"), choice("topology", "Topology", "single", "single", "cluster"), choice("role", "Role", "single", "single", "control"), choice("storage-driver", "Object storage", "local", "local", "s3"), text("public-api-url", "Public API URL", ""), text("application-version", "Application version", DefaultApplicationVersion), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", DefaultApplicationVersion), text("release-version", "Release version", "")}
+		components := TUIField{Name: "components", Label: "Components", Kind: tuiFieldMulti, Choices: componentNames(), Selected: map[string]bool{}}
+		return []TUIField{text("source", "Legacy environment file", ".env"), text("runtime-dir", "Runtime directory", "."), choice("mode", "Mode", "docker", "docker", "native"), choice("profile", "Profile", "core", "full", "core", "custom"), choice("topology", "Topology", "single", "single", "cluster"), choice("role", "Role", "single", "single", "control"), components, choice("storage-driver", "Object storage", "local", "local", "s3"), text("public-api-url", "Public API URL", ""), text("application-version", "Application version", DefaultApplicationVersion), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", DefaultApplicationVersion), text("release-version", "Release version", "")}
 	case "status", "doctor", "restart", "setup status", "setup token show":
 		return runtimeDir()
 	case "setup token reset":

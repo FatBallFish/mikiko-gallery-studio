@@ -75,6 +75,48 @@ func TestTUIDestructiveUninstallCannotUseGenericConfirmation(t *testing.T) {
 	}
 }
 
+func TestTUITextFieldAcceptsSpacesForDestructiveConfirmation(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "uninstall"))
+	form.Focus = 2
+	form.ClearCurrent()
+	for _, value := range "DELETE installation-id PERSISTENT DATA" {
+		if value == ' ' {
+			form.TypeSpace()
+		} else {
+			form.AppendRune(value)
+		}
+	}
+	if form.Fields[2].Value != "DELETE installation-id PERSISTENT DATA" {
+		t.Fatalf("confirmation=%q", form.Fields[2].Value)
+	}
+}
+
+func TestTUIInstallRemainsInteractiveAndImportCustomSupportsComponents(t *testing.T) {
+	install := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	installArgs, err := install.Arguments()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(" "+strings.Join(installArgs, " ")+" ", " --yes ") {
+		t.Fatalf("TUI install unexpectedly became non-interactive: %q", installArgs)
+	}
+
+	importForm := NewTUICommandForm(catalogEntryForTest(t, "import-config"))
+	if err := importForm.SetValue("profile", "custom"); err != nil {
+		t.Fatal(err)
+	}
+	if !importForm.ToggleMultiValue("components", "api") || !importForm.ToggleMultiValue("components", "worker") {
+		t.Fatal("import component selection unavailable")
+	}
+	args, err := importForm.Arguments()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(args, " "), "--components api,worker") {
+		t.Fatalf("custom import components missing: %q", args)
+	}
+}
+
 func catalogEntryForTest(t *testing.T, path string) CommandCatalogEntry {
 	t.Helper()
 	for _, entry := range CommandCatalog() {

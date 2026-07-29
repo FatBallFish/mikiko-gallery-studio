@@ -177,7 +177,7 @@ func (model TUIModel) updateForm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyRight:
 		model.form.CycleCurrent(1)
 	case tea.KeySpace:
-		model.form.ToggleCurrent()
+		model.form.TypeSpace()
 	case tea.KeyBackspace, tea.KeyDelete:
 		model.form.Backspace()
 	case tea.KeyCtrlU:
