@@ -70,6 +70,7 @@ import (
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
+	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	"github.com/fatballfish/pic-gallery/internal/storage"
@@ -4842,7 +4843,14 @@ func (a *API) HandleAdminSecuritySMTPTest(w http.ResponseWriter, r *http.Request
 		scene = "smtp_test"
 	}
 	if err := authservice.NewSMTPEmailSender(cfg).SendVerificationCode(recipient, scene, "000000"); err != nil {
-		httpx.WriteError(w, r, errs.Internal("failed to send smtp test email"))
+		slog.ErrorContext(r.Context(), "smtp test email failed",
+			"request_id", httpx.RequestIDFromContext(r.Context()),
+			"smtp_host", cfg.Host,
+			"smtp_port", cfg.Port,
+			"smtp_stage", smtpdelivery.FailureStage(err),
+			"error", err,
+		)
+		httpx.WriteError(w, r, errs.BadRequest(smtpdelivery.SafeFailureMessage(err)))
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"status": "sent", "recipient": recipient})

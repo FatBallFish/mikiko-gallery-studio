@@ -73,6 +73,12 @@ for (const apiContract of ['adminApi.getSMTPConfig', 'adminApi.updateSMTPConfig'
   }
 }
 
+for (const tlsGuidance of ['465 端口会自动使用隐式 TLS', '587 端口通常需要启用 STARTTLS']) {
+  if (!securitySource.includes(tlsGuidance)) {
+    throw new Error(`security configuration must explain SMTP TLS modes: ${tlsGuidance}`)
+  }
+}
+
 for (const visualDrift of ['rounded-2xl', 'rounded-3xl', 'shadow-lg', 'tracking-[']) {
   if (securitySource.includes(visualDrift)) {
     throw new Error(`security configuration must remove visual drift: ${visualDrift}`)

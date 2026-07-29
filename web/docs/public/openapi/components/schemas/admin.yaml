@@ -142,6 +142,7 @@ components:
           type: string
         port:
           type: integer
+          description: SMTP port. Port 465 automatically uses implicit TLS; port 587 normally uses STARTTLS.
           minimum: 1
           maximum: 65535
         username:
@@ -150,6 +151,7 @@ components:
           type: string
         starttls:
           type: boolean
+          description: Upgrade a plaintext SMTP connection with STARTTLS. Ignored on port 465, which always uses implicit TLS.
         insecure_skip_verify:
           type: boolean
         secret_status:
@@ -174,6 +176,7 @@ components:
           type: string
         port:
           type: integer
+          description: SMTP port. Port 465 automatically uses implicit TLS; port 587 normally uses STARTTLS.
           minimum: 1
           maximum: 65535
         username:
@@ -182,6 +185,7 @@ components:
           type: string
         starttls:
           type: boolean
+          description: Upgrade a plaintext SMTP connection with STARTTLS. Ignored on port 465, which always uses implicit TLS.
         insecure_skip_verify:
           type: boolean
         secrets:

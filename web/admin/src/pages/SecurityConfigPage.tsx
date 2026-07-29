@@ -221,6 +221,7 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
                       <Field label="SMTP Port" error={fieldErrors.port}>
                         <input value={draft.port} onChange={(event) => updateConfigDraft({ ...draft, port: event.target.value })} inputMode="numeric" placeholder="587" />
                       </Field>
+                      <p className={securityClasses.note}>465 端口会自动使用隐式 TLS；587 端口通常需要启用 STARTTLS。</p>
                     </div>
                   </section>
 
@@ -240,7 +241,7 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
                       </Field>
                       <label className={securityClasses.toggle}>
                         <input type="checkbox" checked={draft.starttls} onChange={(event) => updateConfigDraft({ ...draft, starttls: event.target.checked })} />
-                        <span>启用 STARTTLS</span>
+                        <span>启用 STARTTLS（用于 587 等支持明文升级的端口）</span>
                       </label>
                       <label className={securityClasses.toggle}>
                         <input type="checkbox" checked={draft.insecure_skip_verify} onChange={(event) => updateConfigDraft({ ...draft, insecure_skip_verify: event.target.checked })} />

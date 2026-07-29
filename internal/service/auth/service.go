@@ -4,16 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"math/big"
-	"net"
 	"net/http"
-	"net/mail"
-	"net/smtp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +21,7 @@ import (
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -79,56 +75,9 @@ func NewSMTPEmailSender(cfg config.SMTPConfig) *SMTPEmailSender {
 }
 
 func (s *SMTPEmailSender) SendVerificationCode(email, scene, code string) error {
-	if !smtpConfigured(s.cfg) {
-		return emailDeliveryConfigError()
-	}
-	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
-	if err != nil {
-		return fmt.Errorf("connect smtp server: %w", err)
-	}
-	defer conn.Close()
-
-	client, err := smtp.NewClient(conn, s.cfg.Host)
-	if err != nil {
-		return fmt.Errorf("create smtp client: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.Hello("localhost"); err != nil {
-		return fmt.Errorf("smtp hello: %w", err)
-	}
-	if s.cfg.StartTLS {
-		tlsCfg := &tls.Config{ServerName: s.cfg.Host, InsecureSkipVerify: s.cfg.InsecureSkipVerify}
-		if err := client.StartTLS(tlsCfg); err != nil {
-			return fmt.Errorf("smtp starttls: %w", err)
-		}
-	}
-	if strings.TrimSpace(s.cfg.Username) != "" {
-		auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
-		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("smtp auth: %w", err)
-		}
-	}
-	if err := client.Mail(envelopeAddress(s.cfg.From)); err != nil {
-		return fmt.Errorf("smtp mail from: %w", err)
-	}
-	if err := client.Rcpt(email); err != nil {
-		return fmt.Errorf("smtp rcpt to: %w", err)
-	}
-	writer, err := client.Data()
-	if err != nil {
-		return fmt.Errorf("smtp data: %w", err)
-	}
-	message := verificationEmailMessage(s.cfg.From, email, scene, code)
-	if _, err := writer.Write([]byte(message)); err != nil {
-		_ = writer.Close()
-		return fmt.Errorf("write smtp data: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("close smtp data: %w", err)
-	}
-	return client.Quit()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return smtpdelivery.SendVerificationCode(ctx, s.cfg, email, scene, code)
 }
 
 type Service struct {
@@ -310,41 +259,11 @@ func randomEmailCode() (string, error) {
 }
 
 func smtpConfigured(cfg config.SMTPConfig) bool {
-	return strings.TrimSpace(cfg.Host) != "" && cfg.Port > 0 && strings.TrimSpace(cfg.From) != ""
+	return smtpdelivery.Configured(cfg)
 }
 
 func emailDeliveryConfigError() *errs.Error {
-	return errs.Internal("email verification SMTP delivery is not configured: set auth.smtp.host, auth.smtp.port, and auth.smtp.from")
-}
-
-func verificationEmailMessage(from, to, scene, code string) string {
-	subject := "Pic Gallery verification code"
-	body := fmt.Sprintf("Your Pic Gallery verification code is %s. It expires in 10 minutes.", code)
-	if scene != "" {
-		body = fmt.Sprintf("Your Pic Gallery verification code for %s is %s. It expires in 10 minutes.", scene, code)
-	}
-	headers := []string{
-		"From: " + sanitizeHeader(from),
-		"To: " + sanitizeHeader(to),
-		"Subject: " + subject,
-		"MIME-Version: 1.0",
-		"Content-Type: text/plain; charset=UTF-8",
-	}
-	return strings.Join(headers, "\r\n") + "\r\n\r\n" + body + "\r\n"
-}
-
-func sanitizeHeader(value string) string {
-	value = strings.ReplaceAll(value, "\r", "")
-	value = strings.ReplaceAll(value, "\n", "")
-	return value
-}
-
-func envelopeAddress(value string) string {
-	parsed, err := mail.ParseAddress(strings.TrimSpace(value))
-	if err != nil {
-		return strings.TrimSpace(value)
-	}
-	return parsed.Address
+	return errs.Internal(smtpdelivery.ConfigError().Error())
 }
 
 func (s *Service) LoginWithEmailCode(email, code string) (domainauth.User, domainauth.Session, error) {

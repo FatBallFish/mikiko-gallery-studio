@@ -96,4 +96,31 @@ func TestAdminSecuritySMTPConfigWriteOnlySecret(t *testing.T) {
 	if bytes.Contains(rootGetRec.Body.Bytes(), []byte("smtp-password-secret")) {
 		t.Fatalf("smtp get response must not contain plaintext password, body=%s", rootGetRec.Body.String())
 	}
+
+	disconnectedBody := `{"version":1,"enabled":true,"host":"127.0.0.1","port":1,"username":"mailer@example.com","from":"Pic Gallery <noreply@example.com>","starttls":false}`
+	disconnectedPut := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/security/smtp", bytes.NewBufferString(disconnectedBody))
+	disconnectedPut.Header.Set("Authorization", "Bearer "+rootToken)
+	disconnectedPut.Header.Set("Content-Type", "application/json")
+	disconnectedPutRec := httptest.NewRecorder()
+	handler.ServeHTTP(disconnectedPutRec, disconnectedPut)
+	if disconnectedPutRec.Code != http.StatusOK {
+		t.Fatalf("update disconnected smtp config: status=%d body=%s", disconnectedPutRec.Code, disconnectedPutRec.Body.String())
+	}
+
+	testReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/security/smtp/test", bytes.NewBufferString(`{"email":"recipient@example.com"}`))
+	testReq.Header.Set("Authorization", "Bearer "+rootToken)
+	testReq.Header.Set("Content-Type", "application/json")
+	testRec := httptest.NewRecorder()
+	handler.ServeHTTP(testRec, testReq)
+	if testRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected disconnected SMTP test to return 400, got %d body=%s", testRec.Code, testRec.Body.String())
+	}
+	if !bytes.Contains(testRec.Body.Bytes(), []byte("SMTP server connection failed")) {
+		t.Fatalf("expected actionable SMTP failure, body=%s", testRec.Body.String())
+	}
+	for _, sensitiveDetail := range [][]byte{[]byte("smtp-password-secret"), []byte("connection refused")} {
+		if bytes.Contains(testRec.Body.Bytes(), sensitiveDetail) {
+			t.Fatalf("SMTP test response exposed internal detail %q: %s", sensitiveDetail, testRec.Body.String())
+		}
+	}
 }
