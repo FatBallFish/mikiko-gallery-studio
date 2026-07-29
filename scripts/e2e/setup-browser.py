@@ -117,10 +117,15 @@ def verify_docs(browser, url, request_urls):
     if not url:
         return
     page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page_errors = []
     page.on("request", lambda request: request_urls.append(request.url))
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
     page.goto(url, wait_until="networkidle")
     assert not page.url.startswith(REDIRECT_SETUP_URL), page.url
-    expect(page.locator("body")).not_to_be_empty()
+    expect(page.locator(".docs-brand")).to_be_visible(timeout=30000)
+    expect(page.locator(".guide-heading h1")).to_be_visible(timeout=30000)
+    expect(page.locator(".reference-error")).to_have_count(0)
+    assert not page_errors, (url, page_errors)
     page.close()
 
 
@@ -128,12 +133,18 @@ def verify_ready_app(browser, url, request_urls):
     if not url:
         return
     page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page_errors = []
     page.on("request", lambda request: request_urls.append(request.url))
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
     page.goto(url, wait_until="domcontentloaded")
-    page.wait_for_timeout(1500)
     assert not page.url.startswith(REDIRECT_SETUP_URL), page.url
-    expect(page.locator("body")).to_be_visible()
-    assert page.locator("body").inner_text().strip(), url
+    if url == DIRECT_ADMIN_WEB_URL:
+        expect(page.get_by_role("heading", name="管理员登录")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("后台服务暂不可用", exact=True)).to_have_count(0)
+    else:
+        expect(page.get_by_text("开始创作", exact=True).first).to_be_visible(timeout=30000)
+        expect(page.get_by_text("服务暂不可用", exact=True)).to_have_count(0)
+    assert not page_errors, (url, page_errors)
     page.close()
 
 

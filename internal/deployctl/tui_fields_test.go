@@ -123,15 +123,24 @@ func TestTUISafeCommandMatchesActualArgumentsAndQuotesValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	review := form.SafeCommand()
-	if strings.Contains(review, "--components") || !strings.Contains(review, `--runtime-dir "runtime with space"`) {
+	if strings.Contains(review, "--components") || !strings.Contains(review, `--runtime-dir 'runtime with space'`) {
 		t.Fatalf("safe command does not match actual arguments: %q", review)
 	}
 
 	uninstall := NewTUICommandForm(catalogEntryForTest(t, "uninstall"))
 	_ = uninstall.SetValue("delete-data", "true")
 	_ = uninstall.SetValue("confirm", "DELETE installation-id PERSISTENT DATA")
-	if review := uninstall.SafeCommand(); strings.Contains(review, "--yes") || !strings.Contains(review, `--confirm "DELETE installation-id PERSISTENT DATA"`) {
+	if review := uninstall.SafeCommand(); strings.Contains(review, "--yes") || !strings.Contains(review, `--confirm 'DELETE installation-id PERSISTENT DATA'`) {
 		t.Fatalf("destructive review is not executable: %q", review)
+	}
+}
+
+func TestTUISafeCommandQuotesShellSubstitution(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "status"))
+	_ = form.SetValue("runtime-dir", "runtime $(touch /tmp/unsafe) `id` 'quoted'")
+	review := form.SafeCommand()
+	if !strings.Contains(review, `'runtime $(touch /tmp/unsafe) `+"`id`"+` '"'"'quoted'"'"''`) {
+		t.Fatalf("review is not shell-safe: %q", review)
 	}
 }
 

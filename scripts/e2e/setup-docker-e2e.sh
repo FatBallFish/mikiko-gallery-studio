@@ -169,12 +169,12 @@ run_profile() {
   gateway_status="$(curl -fsS "http://127.0.0.1:${gateway_port}/api/system/v1/bootstrap-status")"
   [[ "$(printf '%s' "$gateway_status" | deployment_e2e_json_data_field phase)" == setup_required ]] || \
     deployment_e2e_fail "$profile Gateway did not proxy setup bootstrap status"
-  deployment_e2e_assert_frontend "http://127.0.0.1:${user_port}/"
-  deployment_e2e_assert_frontend "http://127.0.0.1:${admin_port}/"
-  deployment_e2e_assert_frontend "http://127.0.0.1:${docs_port}/"
-  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/"
-  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/admin/"
-  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/developer-docs/"
+  deployment_e2e_assert_frontend "http://127.0.0.1:${user_port}/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${admin_port}/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${docs_port}/" docs
+  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/admin/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/developer-docs/" docs
   BASE_URL="http://127.0.0.1:${api_port}" USER_WEB_URL="http://127.0.0.1:${gateway_port}/#/home" \
     ADMIN_WEB_URL="http://127.0.0.1:${gateway_port}/admin/#/overview" SETUP_TOKEN="$old_token" DEPLOYMENT_PROFILE="$profile" \
     DIRECT_USER_WEB_URL="http://127.0.0.1:${user_port}/#/home" DIRECT_ADMIN_WEB_URL="http://127.0.0.1:${admin_port}/#/overview" \

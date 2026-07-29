@@ -60,10 +60,14 @@ for (const required of [
 	'DIRECT_DOCS_WEB_URL',
 	'GATEWAY_DOCS_WEB_URL',
 	'expected_setup_url',
+	'.docs-brand',
+	'管理员登录',
+	'开始创作',
+	'pageerror',
 ]) {
   if (!browserRunner.includes(required)) throw new Error(`setup browser E2E is missing ${required}`)
 }
-for (const required of ['deployment_e2e_assert_frontend', 'missing-e2e.js', 'application/javascript', 'text/css']) {
+for (const required of ['deployment_e2e_assert_frontend', 'missing-e2e.js', 'missing-e2e.css', 'missing-env.js', 'env.js.map', 'openapi/openapi.yaml', 'openapi/missing-e2e.yaml', 'application/javascript', 'text/css', 'application/yaml']) {
 	if (!`${setupRunner}\n${library}`.includes(required)) throw new Error(`setup deployment E2E is missing frontend HTTP contract ${required}`)
 }
 if (!setupRunner.includes('DEPLOYMENT_E2E_PROFILES')) {

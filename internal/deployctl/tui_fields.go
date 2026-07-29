@@ -2,7 +2,6 @@ package deployctl
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -215,19 +214,18 @@ func (form TUICommandForm) View() string {
 			value = "••••••••"
 		}
 		if field.Kind == tuiFieldMulti {
-			parts := make([]string, 0, len(field.Choices))
-			for _, choice := range field.Choices {
-				checked := " "
-				if field.Selected[choice] {
-					checked = "x"
+			selected := 0
+			for _, enabled := range field.Selected {
+				if enabled {
+					selected++
 				}
-				current := ""
-				if index == form.Focus && field.Choice < len(field.Choices) && field.Choices[field.Choice] == choice {
-					current = ">"
-				}
-				parts = append(parts, fmt.Sprintf("[%s] %s%s", checked, current, choice))
 			}
-			value = strings.Join(parts, " ")
+			choice := field.Choices[field.Choice]
+			checked := " "
+			if field.Selected[choice] {
+				checked = "x"
+			}
+			value = fmt.Sprintf("[%s] >%s (%d selected; Left/Right browses)", checked, choice, selected)
 		}
 		fmt.Fprintf(&view, "%s%s: %s\n", marker, field.Label, value)
 	}
@@ -259,7 +257,7 @@ func safeTUIArgument(value string) string {
 	}) == -1 {
 		return value
 	}
-	return strconv.Quote(value)
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 func (form *TUICommandForm) field(name string) *TUIField {
