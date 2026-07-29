@@ -62,7 +62,7 @@ for (const required of [
 	'expected_setup_url',
 	'.docs-brand',
 	'管理员登录',
-	'开始创作',
+	'进入创作台',
 	'pageerror',
 ]) {
   if (!browserRunner.includes(required)) throw new Error(`setup browser E2E is missing ${required}`)

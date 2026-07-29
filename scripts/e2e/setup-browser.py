@@ -142,7 +142,8 @@ def verify_ready_app(browser, url, request_urls):
         expect(page.get_by_role("heading", name="管理员登录")).to_be_visible(timeout=30000)
         expect(page.get_by_text("后台服务暂不可用", exact=True)).to_have_count(0)
     else:
-        expect(page.get_by_text("开始创作", exact=True).first).to_be_visible(timeout=30000)
+        expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible(timeout=30000)
+        expect(page.get_by_role("button", name="进入创作台")).to_be_visible(timeout=30000)
         expect(page.get_by_text("服务暂不可用", exact=True)).to_have_count(0)
     assert not page_errors, (url, page_errors)
     page.close()
