@@ -76,6 +76,20 @@ func TestTUICommandFormRequiresReviewBeforeReturningArguments(t *testing.T) {
 	}
 }
 
+func TestTUILongFormScrollsToKeepFocusedFieldVisible(t *testing.T) {
+	model := updateTUIWithKeys(t, NewTUIModel(CommandCatalog()), "1", "enter", "1", "enter")
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	model = updated.(TUIModel)
+	model = updateTUIWithKeys(t, model, "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
+	view := model.View()
+	if !strings.Contains(view, model.form.Fields[model.form.Focus].Label) {
+		t.Fatalf("focused field is outside viewport: focus=%d\n%s", model.form.Focus, view)
+	}
+	if strings.Contains(view, "Mode: docker") {
+		t.Fatalf("long form did not scroll away from first field:\n%s", view)
+	}
+}
+
 func updateTUIWithKeys(t *testing.T, model TUIModel, keys ...string) TUIModel {
 	t.Helper()
 	for _, key := range keys {

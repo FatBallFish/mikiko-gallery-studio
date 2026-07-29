@@ -2,7 +2,7 @@ package deployctl
 
 import (
 	"fmt"
-	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -172,41 +172,35 @@ func (form TUICommandForm) Arguments() ([]string, error) {
 	if form.Entry.Path == "uninstall" && values["delete-data"] == "true" && strings.TrimSpace(values["confirm"]) == "" {
 		return nil, fmt.Errorf("persistent data deletion requires the installation-specific confirmation phrase")
 	}
-	if _, err := ParseCommand(args); err != nil {
+	command, err := ParseCommand(args)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateTUICommand(command); err != nil {
 		return nil, err
 	}
 	return args, nil
 }
 
 func (form TUICommandForm) SafeCommand() string {
-	args := strings.Fields(form.Entry.Path)
-	for _, field := range form.Fields {
-		value := field.Value
-		if field.Kind == tuiFieldBool {
-			if value == "true" {
-				args = append(args, "--"+field.Name)
-			}
-			continue
-		}
-		if field.Kind == tuiFieldMulti {
-			selected := make([]string, 0)
-			for choice, enabled := range field.Selected {
-				if enabled {
-					selected = append(selected, choice)
-				}
-			}
-			sort.Strings(selected)
-			value = strings.Join(selected, ",")
-		}
-		if value == "" {
-			continue
-		}
-		if field.Sensitive {
-			value = "<redacted>"
-		}
-		args = append(args, "--"+field.Name, value)
+	args, err := form.Arguments()
+	if err != nil {
+		return "deployctl " + form.Entry.Path
 	}
-	return "deployctl " + strings.Join(args, " ")
+	sensitiveFlags := make(map[string]bool)
+	for _, field := range form.Fields {
+		if field.Sensitive {
+			sensitiveFlags["--"+field.Name] = true
+		}
+	}
+	formatted := make([]string, len(args))
+	for index, argument := range args {
+		if index > 0 && sensitiveFlags[args[index-1]] {
+			argument = "<redacted>"
+		}
+		formatted[index] = safeTUIArgument(argument)
+	}
+	return "deployctl " + strings.Join(formatted, " ")
 }
 
 func (form TUICommandForm) View() string {
@@ -227,13 +221,45 @@ func (form TUICommandForm) View() string {
 				if field.Selected[choice] {
 					checked = "x"
 				}
-				parts = append(parts, fmt.Sprintf("[%s] %s", checked, choice))
+				current := ""
+				if index == form.Focus && field.Choice < len(field.Choices) && field.Choices[field.Choice] == choice {
+					current = ">"
+				}
+				parts = append(parts, fmt.Sprintf("[%s] %s%s", checked, current, choice))
 			}
 			value = strings.Join(parts, " ")
 		}
 		fmt.Fprintf(&view, "%s%s: %s\n", marker, field.Label, value)
 	}
 	return view.String()
+}
+
+func validateTUICommand(command Command) error {
+	switch command.Kind {
+	case CommandInstall:
+		_, err := BuildInstallPlan(*command.Install)
+		return err
+	case CommandImportConfig:
+		options := command.ImportConfig
+		_, err := BuildInstallPlan(InstallInput{
+			Mode: options.Mode, Profile: options.Profile, Topology: options.Topology, Role: options.Role,
+			Components: options.Components, RuntimeDir: options.RuntimeDir, StorageDriver: options.StorageDriver,
+			PublicAPIURL: options.PublicAPIURL, ApplicationVersion: options.ApplicationVersion,
+			ImageRegistry: options.ImageRegistry, ImageTag: options.ImageTag, ReleaseVersion: options.ReleaseVersion,
+		})
+		return err
+	default:
+		return nil
+	}
+}
+
+func safeTUIArgument(value string) string {
+	if value != "" && strings.IndexFunc(value, func(character rune) bool {
+		return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:@,+-=%", character)
+	}) == -1 {
+		return value
+	}
+	return strconv.Quote(value)
 }
 
 func (form *TUICommandForm) field(name string) *TUIField {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -56,10 +57,11 @@ type TUIModel struct {
 	parentScreen TUIScreen
 	form         *TUICommandForm
 	validation   string
+	viewport     viewport.Model
 }
 
 func NewTUIModel(catalog []CommandCatalogEntry) TUIModel {
-	return TUIModel{catalog: append([]CommandCatalogEntry(nil), catalog...), screen: TUIScreenRoot}
+	return TUIModel{catalog: append([]CommandCatalogEntry(nil), catalog...), screen: TUIScreenRoot, viewport: viewport.New(80, 16)}
 }
 
 func (model TUIModel) Init() tea.Cmd { return nil }
@@ -75,6 +77,12 @@ func (model TUIModel) SelectedArgs() []string {
 }
 
 func (model TUIModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := message.(tea.WindowSizeMsg); ok {
+		model.viewport.Width = max(20, size.Width)
+		model.viewport.Height = max(3, size.Height-8)
+		model.syncFormViewport()
+		return model, nil
+	}
 	key, ok := message.(tea.KeyMsg)
 	if !ok {
 		return model, nil
@@ -160,6 +168,7 @@ func (model TUIModel) confirmSelection() (tea.Model, tea.Cmd) {
 	model.cursor = 0
 	model.form = &form
 	model.validation = ""
+	model.syncFormViewport()
 	return model, nil
 }
 
@@ -190,13 +199,28 @@ func (model TUIModel) updateForm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		args, err := model.form.Arguments()
 		if err != nil {
 			model.validation = err.Error()
+			model.syncFormViewport()
 			return model, nil
 		}
 		model.selectedArgs = args
 		model.validation = ""
 		model.screen = TUIScreenReview
 	}
+	model.syncFormViewport()
 	return model, nil
+}
+
+func (model *TUIModel) syncFormViewport() {
+	if model.form == nil {
+		return
+	}
+	model.viewport.SetContent(model.form.View())
+	if model.form.Focus < model.viewport.YOffset {
+		model.viewport.SetYOffset(model.form.Focus)
+	}
+	if model.form.Focus >= model.viewport.YOffset+model.viewport.Height {
+		model.viewport.SetYOffset(model.form.Focus - model.viewport.Height + 1)
+	}
 }
 
 func (model TUIModel) items() []string {
@@ -236,7 +260,7 @@ func (model TUIModel) View() string {
 	view.WriteString("deployctl\n\n")
 	if model.screen == TUIScreenForm && model.form != nil {
 		fmt.Fprintf(&view, "%s\n\n", model.form.Entry.Summary)
-		view.WriteString(model.form.View())
+		view.WriteString(model.viewport.View())
 		if model.validation != "" {
 			fmt.Fprintf(&view, "\nValidation error: %s\n", model.validation)
 		}

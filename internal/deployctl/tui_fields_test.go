@@ -117,6 +117,44 @@ func TestTUIInstallRemainsInteractiveAndImportCustomSupportsComponents(t *testin
 	}
 }
 
+func TestTUISafeCommandMatchesActualArgumentsAndQuotesValues(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	if err := form.SetValue("runtime-dir", "runtime with space"); err != nil {
+		t.Fatal(err)
+	}
+	review := form.SafeCommand()
+	if strings.Contains(review, "--components") || !strings.Contains(review, `--runtime-dir "runtime with space"`) {
+		t.Fatalf("safe command does not match actual arguments: %q", review)
+	}
+
+	uninstall := NewTUICommandForm(catalogEntryForTest(t, "uninstall"))
+	_ = uninstall.SetValue("delete-data", "true")
+	_ = uninstall.SetValue("confirm", "DELETE installation-id PERSISTENT DATA")
+	if review := uninstall.SafeCommand(); strings.Contains(review, "--yes") || !strings.Contains(review, `--confirm "DELETE installation-id PERSISTENT DATA"`) {
+		t.Fatalf("destructive review is not executable: %q", review)
+	}
+}
+
+func TestTUIInstallCombinationValidationStaysInForm(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	_ = form.SetValue("mode", "native")
+	_ = form.SetValue("profile", "full")
+	if _, err := form.Arguments(); err == nil || !strings.Contains(err.Error(), "full") {
+		t.Fatalf("native/full validation error=%v", err)
+	}
+}
+
+func TestTUIMultiSelectShowsCurrentChoice(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	form.Focus = 4
+	before := form.View()
+	form.CycleCurrent(1)
+	after := form.View()
+	if before == after || !strings.Contains(after, ">worker") {
+		t.Fatalf("multi-select current choice is not visible:\n%s", after)
+	}
+}
+
 func catalogEntryForTest(t *testing.T, path string) CommandCatalogEntry {
 	t.Helper()
 	for _, entry := range CommandCatalog() {
