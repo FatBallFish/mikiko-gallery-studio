@@ -65,6 +65,14 @@ If `docker compose pull` fails, deployctl validates the source checkout, locally
 
 The same Setup-pending plan resumes automatically after a failed startup. A different interactive plan prompts before replacing generated configuration. For automation, pass `--overwrite` explicitly. Overwrite preserves `data/`, `logs/`, and Docker volumes and is rejected for completed or unrecognized installations.
 
+## TUI, Help, and Endpoint Handoff
+
+Running `deployctl` without arguments opens the TUI only when both input and output are terminals. Number keys and Arrow keys select, Enter confirms, Space toggles multi-select fields, Esc returns, and Ctrl+C exits. For scripts, redirected output, or command discovery, use `deployctl -h` or `deployctl --help`; a no-argument non-terminal invocation prints the same help and exits without blocking.
+
+Successful installation prints a plan-derived endpoint summary, access scope, and numbered next steps. Interactive terminal output may include the one-time Setup token. Non-interactive or redirected output never exposes it and prints the exact host-local token recovery command instead.
+
+Direct ports for the default Docker full plan are user `:5173`, admin `:5174`, docs `:5175`, and API `:8080`. Gateway paths are `/`, `/admin/`, `/developer-docs/`, `/api/`, and `/setup`. Direct ports use the current browser hostname plus the configured API port; Gateway paths and external same-origin proxies use their own origin. An explicit `PUBLIC_API_URL` takes precedence. User and admin redirect to the API-hosted Setup page while initialization is pending. Documentation remains available throughout Setup.
+
 ## Setup
 
 Before setup is complete, the API exposes health checks and the API-hosted setup UI only. Open:

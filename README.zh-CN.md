@@ -442,6 +442,23 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
   --yes
 ```
 
+### Deployctl TUI 与服务访问摘要
+
+在交互终端中不带参数运行 `deployctl` 会进入 TUI。可用数字键或方向键选择，Enter 确认，Space 勾选多选项，Esc 返回上一级，Ctrl+C 或根菜单的“退出”结束程序。`deployctl -h` 与 `deployctl --help` 会输出完整命令帮助并正常退出。无参数调用只要输入或输出被重定向，也只会打印帮助，不会等待终端输入。
+
+安装成功后，deployctl 会输出按最终组件计划生成的服务访问摘要和编号后续步骤，只列出实际部署的服务，并将仅 Docker 网络可访问的 PostgreSQL、Redis、MinIO 明确标为内部地址。交互终端安装可以显示一次性 Setup Token；重定向输出永远不显示 Token，只提示在部署主机执行 `deployctl setup token show --runtime-dir ...`。
+
+Docker `full/single` 默认端口如下：
+
+| 服务 | 直连端口 | Gateway 路径 |
+| --- | --- | --- |
+| 用户端 | `http://127.0.0.1:5173/` | `http://127.0.0.1/` |
+| 管理端 | `http://127.0.0.1:5174/` | `http://127.0.0.1/admin/` |
+| 文档站 | `http://127.0.0.1:5175/` | `http://127.0.0.1/developer-docs/` |
+| API 与 Setup | `http://127.0.0.1:8080/` | `http://127.0.0.1/api/` 与 `http://127.0.0.1/setup` |
+
+远程访问时将回环地址替换为部署节点 IP，或使用运维人员配置的负载均衡/反向代理。用户端和管理端在直连端口与 Gateway 路径下都会解析到正确 API；初始化未完成时会跳转到 API 托管的 Setup 页面并保留返回地址。文档站在 Setup 期间始终可访问，不会跳转。
+
 ### 浏览器 Setup 与首个管理员
 
 初始化完成前，API 只暴露健康检查、bootstrap 状态和 API 自身托管的 Setup 页面。直接打开 `http://<api-host>:<api-port>/setup`；用户端和管理端也会跳转到这里，并保留原始返回地址。
