@@ -55,8 +55,23 @@ for (const required of [
 	'completion-panel',
 	'wait_for_url',
 	'E2E_EXPECT_INTERRUPTION',
+	'DIRECT_USER_WEB_URL',
+	'DIRECT_ADMIN_WEB_URL',
+	'DIRECT_DOCS_WEB_URL',
+	'GATEWAY_DOCS_WEB_URL',
+	'expected_setup_url',
+	'.docs-brand',
+	'管理员登录',
+	'进入创作台',
+	'pageerror',
 ]) {
   if (!browserRunner.includes(required)) throw new Error(`setup browser E2E is missing ${required}`)
+}
+for (const required of ['deployment_e2e_assert_frontend', 'missing-e2e.js', 'missing-e2e.css', 'missing-env.js', 'env.js.map', 'openapi/openapi.yaml', 'openapi/missing-e2e.yaml', 'application/javascript', 'text/css', 'application/yaml']) {
+	if (!`${setupRunner}\n${library}`.includes(required)) throw new Error(`setup deployment E2E is missing frontend HTTP contract ${required}`)
+}
+if (!setupRunner.includes('DEPLOYMENT_E2E_PROFILES')) {
+	throw new Error('setup deployment E2E must support selecting the full profile for full/single acceptance')
 }
 for (const required of ['pg_advisory_lock', "locktype = 'advisory'", 'recovery-operation-id.txt']) {
 	if (!setupRunner.includes(required)) throw new Error(`setup deployment E2E is missing interrupted-setup recovery control ${required}`)
@@ -79,8 +94,8 @@ if (!clusterRunner.includes('kill -0 "$watched_pid"') || !clusterRunner.includes
 if (!clusterRunner.includes('f"http://127.0.0.1:{gateway_port},http://localhost:{gateway_port}"')) {
   throw new Error('cluster setup must allow both loopback browser origins exercised by the business E2E')
 }
-if (!setupRunner.includes('SETUP_CORS_ALLOWED_ORIGINS="http://127.0.0.1:${gateway_port},http://localhost:${gateway_port}"')) {
-  throw new Error('setup deployment E2E must allow both loopback browser origins exercised by the business E2E')
+if (!setupRunner.includes('SETUP_CORS_ALLOWED_ORIGINS="http://127.0.0.1:${gateway_port},http://localhost:${gateway_port},http://127.0.0.1:${user_port},http://127.0.0.1:${admin_port}"')) {
+  throw new Error('setup deployment E2E must allow Gateway and direct frontend browser origins')
 }
 
 if (!setupRunner.includes('run_profile full') || !setupRunner.includes('run_profile core')) {

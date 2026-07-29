@@ -6,6 +6,18 @@ import { spawnSync } from 'node:child_process'
 const root = new URL('../../', import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8')
 
+for (const [path, markers] of Object.entries({
+  'deployments/nginx/40-render-frontend-env.sh': ['apiBaseUrl:', 'apiPort:', 'directFrontendPort:', 'PIC_GALLERY_DIRECT_FRONTEND_PORT'],
+  'deployments/docker-compose/docker-compose.prod.yml': ['PIC_GALLERY_API_PORT: ${API_PORT:-8080}', 'PIC_GALLERY_DIRECT_FRONTEND_PORT: ${USER_WEB_PORT:-5173}', 'PIC_GALLERY_DIRECT_FRONTEND_PORT: ${ADMIN_WEB_PORT:-5174}'],
+  'deployments/devops/start-user-web.sh': ['apiPort:', 'directFrontendPort:', 'USER_WEB_PORT'],
+  'deployments/devops/start-admin-web.sh': ['apiPort:', 'directFrontendPort:', 'ADMIN_WEB_PORT'],
+})) {
+  const source = read(path)
+  for (const marker of markers) {
+    if (!source.includes(marker)) throw new Error(`${path} is missing frontend runtime marker: ${marker}`)
+  }
+}
+
 const gitignore = read('.gitignore')
 if (!gitignore.split(/\r?\n/).includes('/config/runtime.env')) {
   throw new Error('.gitignore must explicitly ignore only the generated /config/runtime.env file')

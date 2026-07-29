@@ -169,8 +169,16 @@ run_profile() {
   gateway_status="$(curl -fsS "http://127.0.0.1:${gateway_port}/api/system/v1/bootstrap-status")"
   [[ "$(printf '%s' "$gateway_status" | deployment_e2e_json_data_field phase)" == setup_required ]] || \
     deployment_e2e_fail "$profile Gateway did not proxy setup bootstrap status"
+  deployment_e2e_assert_frontend "http://127.0.0.1:${user_port}/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${admin_port}/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${docs_port}/" docs
+  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/admin/" app
+  deployment_e2e_assert_frontend "http://127.0.0.1:${gateway_port}/developer-docs/" docs
   BASE_URL="http://127.0.0.1:${api_port}" USER_WEB_URL="http://127.0.0.1:${gateway_port}/#/home" \
     ADMIN_WEB_URL="http://127.0.0.1:${gateway_port}/admin/#/overview" SETUP_TOKEN="$old_token" DEPLOYMENT_PROFILE="$profile" \
+    DIRECT_USER_WEB_URL="http://127.0.0.1:${user_port}/#/home" DIRECT_ADMIN_WEB_URL="http://127.0.0.1:${admin_port}/#/overview" \
+    DIRECT_DOCS_WEB_URL="http://127.0.0.1:${docs_port}/" GATEWAY_DOCS_WEB_URL="http://127.0.0.1:${gateway_port}/developer-docs/" \
     REDIRECT_SETUP_URL="http://127.0.0.1:${gateway_port}/setup" \
     E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR/$profile" python3 "$ROOT_DIR/scripts/e2e/setup-browser.py"
 
@@ -242,7 +250,7 @@ run_profile() {
       SETUP_STORAGE_S3_REGION="$setup_storage_region" SETUP_STORAGE_S3_BUCKET="$setup_storage_bucket" \
       SETUP_STORAGE_S3_ACCESS_KEY_ID="$setup_storage_access_key" SETUP_STORAGE_S3_SECRET_ACCESS_KEY="$setup_storage_secret_key" \
       SETUP_STORAGE_S3_FORCE_PATH_STYLE="$setup_storage_force_path_style" SETUP_STORAGE_S3_PREFIX="$setup_storage_prefix" \
-      SETUP_CORS_ALLOWED_ORIGINS="http://127.0.0.1:${gateway_port},http://localhost:${gateway_port}" SETUP_ADMIN_EMAIL="admin@example.com" \
+      SETUP_CORS_ALLOWED_ORIGINS="http://127.0.0.1:${gateway_port},http://localhost:${gateway_port},http://127.0.0.1:${user_port},http://127.0.0.1:${admin_port}" SETUP_ADMIN_EMAIL="admin@example.com" \
       SETUP_ADMIN_PASSWORD="admin123456" E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR/$profile-interrupted" \
       python3 "$ROOT_DIR/scripts/e2e/setup-browser.py" >"$E2E_EVIDENCE_DIR/core-interrupted-browser.log" 2>&1 &
     interrupted_browser_pid=$!
@@ -287,13 +295,15 @@ PY
   printf 'before-browser-apply\n' >"$checkpoint"
   BASE_URL="http://127.0.0.1:${api_port}" USER_WEB_URL="http://127.0.0.1:${gateway_port}/#/home" \
     ADMIN_WEB_URL="http://127.0.0.1:${gateway_port}/admin/#/overview" SETUP_TOKEN="$new_token" DEPLOYMENT_PROFILE="$profile" \
+    DIRECT_USER_WEB_URL="http://127.0.0.1:${user_port}/#/home" DIRECT_ADMIN_WEB_URL="http://127.0.0.1:${admin_port}/#/overview" \
+    DIRECT_DOCS_WEB_URL="http://127.0.0.1:${docs_port}/" GATEWAY_DOCS_WEB_URL="http://127.0.0.1:${gateway_port}/developer-docs/" \
     REDIRECT_SETUP_URL="http://127.0.0.1:${gateway_port}/setup" E2E_APPLY_SETUP=true \
     SETUP_DATABASE_URL="$setup_database_url" SETUP_REDIS_URL="$setup_redis_url" SETUP_REDIS_KEY_PREFIX="$setup_redis_key_prefix" \
     SETUP_STORAGE_DRIVER="$setup_storage_driver" SETUP_STORAGE_S3_ENDPOINT="$setup_storage_endpoint" \
     SETUP_STORAGE_S3_REGION="$setup_storage_region" SETUP_STORAGE_S3_BUCKET="$setup_storage_bucket" \
     SETUP_STORAGE_S3_ACCESS_KEY_ID="$setup_storage_access_key" SETUP_STORAGE_S3_SECRET_ACCESS_KEY="$setup_storage_secret_key" \
     SETUP_STORAGE_S3_FORCE_PATH_STYLE="$setup_storage_force_path_style" SETUP_STORAGE_S3_PREFIX="$setup_storage_prefix" \
-    SETUP_CORS_ALLOWED_ORIGINS="http://127.0.0.1:${gateway_port},http://localhost:${gateway_port}" SETUP_ADMIN_EMAIL="admin@example.com" \
+    SETUP_CORS_ALLOWED_ORIGINS="http://127.0.0.1:${gateway_port},http://localhost:${gateway_port},http://127.0.0.1:${user_port},http://127.0.0.1:${admin_port}" SETUP_ADMIN_EMAIL="admin@example.com" \
     SETUP_ADMIN_PASSWORD="admin123456" E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR/$profile" \
     python3 "$ROOT_DIR/scripts/e2e/setup-browser.py"
   printf 'browser-apply-returned\n' >"$checkpoint"
@@ -319,7 +329,11 @@ PY
     "$profile" "$project" "$api_port" "$gateway_port" >"$E2E_EVIDENCE_DIR/${profile}-summary.txt"
 }
 
-run_profile full 1
-run_profile core 2
+case "${DEPLOYMENT_E2E_PROFILES:-full,core}" in
+  full) run_profile full 1 ;;
+  core) run_profile core 1 ;;
+  full,core|core,full) run_profile full 1; run_profile core 2 ;;
+  *) deployment_e2e_fail "DEPLOYMENT_E2E_PROFILES must be full, core, or full,core" ;;
+esac
 SUCCESS=true
 echo "setup Docker E2E passed; evidence: $E2E_EVIDENCE_DIR"

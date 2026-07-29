@@ -440,6 +440,23 @@ Example Docker custom installation with monitoring:
   --yes
 ```
 
+### Deployctl TUI and Service Access Summary
+
+Run `deployctl` with no arguments in an interactive terminal to open the TUI. Use number keys or Arrow keys to select, Enter to confirm, Space to toggle multi-select fields, Esc to return one level, and Ctrl+C or the root **Exit** item to quit. `deployctl -h` and `deployctl --help` print the complete command catalog and exit successfully. A no-argument invocation with redirected input or output also prints help instead of waiting for terminal input.
+
+After a successful install, deployctl prints a component-aware service access summary and numbered next steps. It lists only services selected by the final plan and labels Docker-only PostgreSQL, Redis, and MinIO addresses as internal. An interactive terminal install may print the one-time Setup token. Non-interactive or redirected output never prints that token and instead shows the local `deployctl setup token show --runtime-dir ...` recovery command.
+
+For the default Docker `full/single` ports:
+
+| Service | Direct port | Gateway path |
+| --- | --- | --- |
+| User Web | `http://127.0.0.1:5173/` | `http://127.0.0.1/` |
+| Admin Web | `http://127.0.0.1:5174/` | `http://127.0.0.1/admin/` |
+| Documentation | `http://127.0.0.1:5175/` | `http://127.0.0.1/developer-docs/` |
+| API and Setup | `http://127.0.0.1:8080/` | `http://127.0.0.1/api/` and `http://127.0.0.1/setup` |
+
+Replace loopback with the deployment node IP when connecting remotely, or use the operator-managed load balancer/reverse proxy. User and admin pages resolve the API correctly from either direct ports or Gateway paths. While initialization is pending they redirect to the API-hosted Setup page and preserve the return URL. Documentation remains available during Setup and never redirects.
+
 ### Browser Setup and First Administrator
 
 Before initialization, the API exposes health checks, bootstrap status, and the API-hosted Setup UI only. Open `http://<api-host>:<api-port>/setup`; user and admin Web apps also redirect there while preserving their original return URL.

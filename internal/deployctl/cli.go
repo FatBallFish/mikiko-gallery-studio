@@ -42,6 +42,7 @@ type CLIDependencies struct {
 	ExecuteUninstall     func(context.Context, UninstallOptions, UninstallDependencies) error
 	CreateClusterToken   func(context.Context, string, ClusterTokenCreateOptions) (ClusterTokenCreateResult, error)
 	ExecuteClusterJoin   func(context.Context, ClusterJoinOptions, ClusterJoinDependencies) (ClusterJoinResult, error)
+	ExecuteTUI           func(context.Context) ([]string, error)
 }
 
 func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
@@ -56,6 +57,27 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 	}
 	if dependencies.StdoutIsTerminal == nil {
 		dependencies.StdoutIsTerminal = writerIsTerminal
+	}
+	if topLevelHelpRequested(args) {
+		fmt.Fprint(dependencies.Stdout, HelpText())
+		return 0
+	}
+	if len(args) == 0 {
+		if dependencies.Terminal == nil || !dependencies.Terminal.Interactive() || !dependencies.StdoutIsTerminal(dependencies.Stdout) {
+			fmt.Fprint(dependencies.Stdout, HelpText())
+			return 0
+		}
+		if dependencies.ExecuteTUI == nil {
+			return writeRunError(dependencies.Stderr, fmt.Errorf("TUI dependency is required"))
+		}
+		selectedArgs, tuiErr := dependencies.ExecuteTUI(ctx)
+		if tuiErr != nil {
+			return writeRunError(dependencies.Stderr, tuiErr)
+		}
+		if len(selectedArgs) == 0 {
+			return 0
+		}
+		return Run(ctx, selectedArgs, dependencies)
 	}
 	command, err := ParseCommand(args)
 	if err != nil {
@@ -253,13 +275,12 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 	if err != nil {
 		return writeRunError(dependencies.Stderr, err)
 	}
-	fmt.Fprintf(dependencies.Stdout, "Runtime configuration: %s\n", result.RuntimeEnvPath)
-	if input.Interactive && dependencies.StdoutIsTerminal(dependencies.Stdout) {
-		fmt.Fprintf(dependencies.Stdout, "Setup token: %s\n", result.SetupToken)
-	} else {
-		fmt.Fprintf(dependencies.Stdout, "Setup token stored securely. Run deployctl setup token show --runtime-dir %q on the deployment host to display it.\n", plan.RuntimeDir)
-	}
+	fmt.Fprint(dependencies.Stdout, InstallSummary(plan, result, input.Interactive && dependencies.StdoutIsTerminal(dependencies.Stdout)))
 	return 0
+}
+
+func topLevelHelpRequested(args []string) bool {
+	return len(args) == 1 && (args[0] == "-h" || args[0] == "--help")
 }
 
 func writerIsTerminal(writer io.Writer) bool {

@@ -10,7 +10,7 @@ WORKDIR /src
 COPY api/openapi ./api/openapi
 COPY web/docs ./web/docs
 WORKDIR /src/web/docs
-ARG VITE_BASE_PATH=/developer-docs/
+ARG VITE_BASE_PATH=./
 ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN npm run build
 

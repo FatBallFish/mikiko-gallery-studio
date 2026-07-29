@@ -26,6 +26,66 @@ deployment_e2e_wait_status() {
   return 1
 }
 
+deployment_e2e_assert_frontend() {
+  local page_url=$1 kind=$2
+  python3 - "$page_url" "$kind" <<'PY'
+import re
+import sys
+from urllib.error import HTTPError
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
+
+page_url = sys.argv[1]
+kind = sys.argv[2]
+
+def get(url):
+    request = Request(url, headers={"Accept": "text/html,*/*"})
+    with urlopen(request, timeout=15) as response:
+        return response.status, response.headers.get_content_type(), response.read()
+
+status, content_type, body = get(page_url)
+assert status == 200 and content_type == "text/html", (page_url, status, content_type)
+html = body.decode("utf-8")
+assets = re.findall(r'(?:src|href)="([^"?]+assets/[^"?]+\.(?:js|css))', html)
+for extension, expected_types in {
+    ".js": {"application/javascript", "text/javascript"},
+    ".css": {"text/css"},
+}.items():
+    matches = [urljoin(page_url, asset) for asset in assets if asset.endswith(extension)]
+    assert matches, (page_url, f"no {extension} asset reference")
+    status, asset_type, _ = get(matches[0])
+    assert status == 200 and asset_type in expected_types, (matches[0], status, asset_type)
+
+checks = [
+    ("./assets/missing-e2e.js", None, 404),
+    ("./assets/missing-e2e.css", None, 404),
+]
+if kind == "app":
+    checks.extend([
+        ("./env.js", {"application/javascript", "text/javascript"}, 200),
+        ("./missing-env.js", None, 404),
+        ("./env.js.map", None, 404),
+    ])
+elif kind == "docs":
+    checks.extend([
+        ("./openapi/openapi.yaml", {"application/yaml", "text/yaml"}, 200),
+        ("./openapi/missing-e2e.yaml", None, 404),
+    ])
+else:
+    raise AssertionError((page_url, f"unknown frontend kind {kind}"))
+
+for relative, expected_types, expected_status in checks:
+    url = urljoin(page_url, relative)
+    try:
+        status, resource_type, _ = get(url)
+    except HTTPError as error:
+        status, resource_type = error.code, error.headers.get_content_type()
+    assert status == expected_status, (url, status, expected_status)
+    if expected_types is not None:
+        assert resource_type in expected_types, (url, resource_type)
+PY
+}
+
 deployment_e2e_env_value() {
   local path=$1 key=$2
   awk -F= -v key="$key" '$1 == key { value=substr($0, index($0, "=")+1); gsub(/^"|"$/, "", value); print value; exit }' "$path"

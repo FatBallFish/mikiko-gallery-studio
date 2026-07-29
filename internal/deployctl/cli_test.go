@@ -45,6 +45,101 @@ func (terminal *fakeTerminal) Confirm(context.Context, string) (bool, error) {
 	return terminal.confirmed, nil
 }
 
+func TestRunHelpAndNonTTYNoArgsExitSuccessfully(t *testing.T) {
+	invocations := [][]string{nil, {"-h"}, {"--help"}}
+	var expected string
+	for _, args := range invocations {
+		stdout := new(bytes.Buffer)
+		stderr := new(bytes.Buffer)
+		code := Run(context.Background(), args, CLIDependencies{
+			Terminal: &fakeTerminal{interactive: false},
+			Stdout:   stdout,
+			Stderr:   stderr,
+		})
+		if code != 0 || stderr.Len() != 0 {
+			t.Fatalf("Run(%v) = %d, stderr %q", args, code, stderr.String())
+		}
+		if expected == "" {
+			expected = stdout.String()
+		}
+		if stdout.String() != expected {
+			t.Fatalf("Run(%v) help differs from no-argument help:\n%s", args, stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "deployctl install") || !strings.Contains(stdout.String(), "deployctl cluster join") {
+			t.Fatalf("Run(%v) output is not catalog help: %q", args, stdout.String())
+		}
+	}
+}
+
+func TestRunHelpPreservesUsageErrorsForUnrelatedArguments(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		terminal Terminal
+	}{
+		{name: "unknown command", args: []string{"unknown"}, terminal: &fakeTerminal{interactive: false}},
+		{name: "extra help argument", args: []string{"--help", "unexpected"}, terminal: &fakeTerminal{interactive: false}},
+		{name: "nested help", args: []string{"status", "--help"}, terminal: &fakeTerminal{interactive: false}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			stdout := new(bytes.Buffer)
+			stderr := new(bytes.Buffer)
+			code := Run(context.Background(), testCase.args, CLIDependencies{
+				Terminal: testCase.terminal,
+				Stdout:   stdout,
+				Stderr:   stderr,
+			})
+			if code != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
+				t.Fatalf("Run(%v) = %d, stdout %q, stderr %q", testCase.args, code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunNoArgsUsesTUIOnlyWhenInputAndOutputAreTerminals(t *testing.T) {
+	t.Run("interactive input and output", func(t *testing.T) {
+		called := 0
+		stdout := new(bytes.Buffer)
+		code := Run(context.Background(), nil, CLIDependencies{
+			Terminal: &fakeTerminal{interactive: true}, Stdout: stdout, Stderr: new(bytes.Buffer),
+			StdoutIsTerminal: func(io.Writer) bool { return true },
+			ExecuteTUI: func(context.Context) ([]string, error) {
+				called++
+				return []string{"version"}, nil
+			},
+			BuildInfo: BuildInfo{Version: "v1"},
+		})
+		if code != 0 || called != 1 || !strings.Contains(stdout.String(), "deployctl v1") {
+			t.Fatalf("Run(no args)=%d called=%d stdout=%q", code, called, stdout.String())
+		}
+	})
+
+	t.Run("non-terminal output", func(t *testing.T) {
+		called := 0
+		stdout := new(bytes.Buffer)
+		code := Run(context.Background(), nil, CLIDependencies{
+			Terminal: &fakeTerminal{interactive: true}, Stdout: stdout, Stderr: new(bytes.Buffer),
+			StdoutIsTerminal: func(io.Writer) bool { return false },
+			ExecuteTUI:       func(context.Context) ([]string, error) { called++; return nil, nil },
+		})
+		if code != 0 || called != 0 || stdout.String() != HelpText() {
+			t.Fatalf("Run(no args)=%d called=%d stdout=%q", code, called, stdout.String())
+		}
+	})
+
+	t.Run("exit selection", func(t *testing.T) {
+		code := Run(context.Background(), nil, CLIDependencies{
+			Terminal: &fakeTerminal{interactive: true}, Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer),
+			StdoutIsTerminal: func(io.Writer) bool { return true },
+			ExecuteTUI:       func(context.Context) ([]string, error) { return nil, nil },
+		})
+		if code != 0 {
+			t.Fatalf("Run(TUI exit)=%d", code)
+		}
+	})
+}
+
 func TestRunNonInteractiveInstallUsesNoTerminalAndInjectedFilesystemOnly(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true}
 	stdout := new(bytes.Buffer)

@@ -11,6 +11,10 @@ from playwright.sync_api import expect, sync_playwright
 BASE_URL = os.environ["BASE_URL"].rstrip("/")
 USER_WEB_URL = os.environ.get("USER_WEB_URL", "").rstrip("/")
 ADMIN_WEB_URL = os.environ.get("ADMIN_WEB_URL", "").rstrip("/")
+DIRECT_USER_WEB_URL = os.environ.get("DIRECT_USER_WEB_URL", "").rstrip("/")
+DIRECT_ADMIN_WEB_URL = os.environ.get("DIRECT_ADMIN_WEB_URL", "").rstrip("/")
+DIRECT_DOCS_WEB_URL = os.environ.get("DIRECT_DOCS_WEB_URL", "").rstrip("/")
+GATEWAY_DOCS_WEB_URL = os.environ.get("GATEWAY_DOCS_WEB_URL", "").rstrip("/")
 SETUP_TOKEN = os.environ["SETUP_TOKEN"]
 PROFILE = os.environ.get("DEPLOYMENT_PROFILE", "full")
 REDIRECT_SETUP_URL = os.environ.get("REDIRECT_SETUP_URL", f"{BASE_URL}/setup")
@@ -71,8 +75,8 @@ def authenticate(page):
     expect(page.locator("#storage-fields .field-help").first).to_contain_text(" / ")
 
 
-def wait_for_setup_redirect(page, return_url):
-    prefix = f"{REDIRECT_SETUP_URL}#return_to="
+def wait_for_setup_redirect(page, return_url, setup_url=REDIRECT_SETUP_URL):
+    prefix = f"{setup_url}#return_to="
     page.wait_for_url(lambda current: str(current).startswith(prefix), timeout=15000)
     fragment = urlparse(page.url).fragment
     assert fragment.startswith("return_to="), page.url
@@ -88,14 +92,15 @@ def verify_redirect(browser, url, request_urls):
     page.on("request", lambda request: request_urls.append(request.url))
     page.on("requestfailed", lambda request: failures.append({"url": request.url, "failure": request.failure}))
     page.on("response", lambda response: responses.append({"url": response.url, "status": response.status, "content_type": response.headers.get("content-type", "")}))
+    expected_setup_url = f"{BASE_URL}/setup" if url in {DIRECT_USER_WEB_URL, DIRECT_ADMIN_WEB_URL} else REDIRECT_SETUP_URL
     try:
         page.goto(url, wait_until="domcontentloaded")
-        wait_for_setup_redirect(page, url)
+        wait_for_setup_redirect(page, url, expected_setup_url)
     except Exception:
         slug = "admin" if "/admin" in url else "user"
         (OUTPUT_DIR / f"{slug}-redirect-debug.json").write_text(json.dumps({
             "start_url": url,
-            "expected_url": REDIRECT_SETUP_URL,
+            "expected_url": expected_setup_url,
             "current_url": page.url,
             "title": page.title(),
             "text": page.locator("body").inner_text()[:2000],
@@ -106,6 +111,42 @@ def verify_redirect(browser, url, request_urls):
         raise
     finally:
         page.close()
+
+
+def verify_docs(browser, url, request_urls):
+    if not url:
+        return
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page_errors = []
+    page.on("request", lambda request: request_urls.append(request.url))
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.goto(url, wait_until="networkidle")
+    assert not page.url.startswith(REDIRECT_SETUP_URL), page.url
+    expect(page.locator(".docs-brand")).to_be_visible(timeout=30000)
+    expect(page.locator(".guide-heading h1")).to_be_visible(timeout=30000)
+    expect(page.locator(".reference-error")).to_have_count(0)
+    assert not page_errors, (url, page_errors)
+    page.close()
+
+
+def verify_ready_app(browser, url, request_urls):
+    if not url:
+        return
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page_errors = []
+    page.on("request", lambda request: request_urls.append(request.url))
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.goto(url, wait_until="domcontentloaded")
+    assert not page.url.startswith(REDIRECT_SETUP_URL), page.url
+    if url == DIRECT_ADMIN_WEB_URL:
+        expect(page.get_by_role("heading", name="管理员登录")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("后台服务暂不可用", exact=True)).to_have_count(0)
+    else:
+        expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible(timeout=30000)
+        expect(page.get_by_role("button", name="进入创作台")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("服务暂不可用", exact=True)).to_have_count(0)
+    assert not page_errors, (url, page_errors)
+    page.close()
 
 
 def fill_runtime_fields(page):
@@ -171,6 +212,8 @@ def drive_setup_apply(browser, request_urls):
     expect(page.locator("body")).to_be_visible()
     page.screenshot(path=OUTPUT_DIR / "setup-returned-to-user.png", full_page=True)
     page.close()
+    verify_ready_app(browser, DIRECT_USER_WEB_URL, request_urls)
+    verify_ready_app(browser, DIRECT_ADMIN_WEB_URL, request_urls)
 
 
 def main():
@@ -197,6 +240,10 @@ def main():
 
             verify_redirect(browser, USER_WEB_URL, request_urls)
             verify_redirect(browser, ADMIN_WEB_URL, request_urls)
+            verify_redirect(browser, DIRECT_USER_WEB_URL, request_urls)
+            verify_redirect(browser, DIRECT_ADMIN_WEB_URL, request_urls)
+            verify_docs(browser, DIRECT_DOCS_WEB_URL, request_urls)
+            verify_docs(browser, GATEWAY_DOCS_WEB_URL, request_urls)
         browser.close()
 
     setup_origin = urlparse(BASE_URL).netloc

@@ -22,6 +22,7 @@ run "shared local E2E runner safety contract" ./scripts/e2e/run-docker-e2e.contr
 
 run "frontend/shared contracts" ./scripts/workflow/verify-contracts.sh
 run "docs web deployment contract" ./scripts/workflow/docs-web-contract-test.sh
+run "frontend direct and prefixed path contract" ./scripts/workflow/frontend-path-contract.sh
 
 if [ -f web/user/package.json ]; then
   run "web/user typecheck" npm --prefix web/user run typecheck

@@ -1,4 +1,5 @@
 import type { ApiEnvelope, ApiPagination, PageResult } from './api-types'
+import { getRuntimeConfig, resolveRuntimeAPIBase } from './runtime-config'
 
 type QueryValue = string | number | boolean | null | undefined
 
@@ -25,16 +26,6 @@ export type ApiClientOptions = {
   getSessionVersion?: () => string | number | null | undefined
   onUnauthorized?: () => Promise<string | null | undefined> | string | null | undefined
   onError?: (error: ApiError) => void
-}
-
-type RuntimeConfig = {
-  apiBaseUrl?: string
-}
-
-declare global {
-  interface Window {
-    __PIC_GALLERY_CONFIG__?: RuntimeConfig
-  }
 }
 
 type ErrorLocale = 'zh' | 'en'
@@ -208,11 +199,10 @@ export type RequestOptions = {
 }
 
 export function getDefaultBaseUrl() {
-  const runtimeBaseUrl = globalThis.window?.__PIC_GALLERY_CONFIG__?.apiBaseUrl
-  if (runtimeBaseUrl) return runtimeBaseUrl.replace(/\/$/, '')
-
   const metaEnv = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {})
-  return (metaEnv.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+  const runtime = getRuntimeConfig()
+  const config = runtime.apiBaseUrl ? runtime : { ...runtime, apiBaseUrl: metaEnv.VITE_API_BASE_URL }
+  return resolveRuntimeAPIBase(config, globalThis.window?.location.href ?? 'http://localhost/')
 }
 
 export function fillPath(path: string, params: Record<string, string | number> = {}) {
