@@ -5,14 +5,14 @@ COMPOSE ?= docker compose
 USER_WEB_DIR := web/user
 ADMIN_WEB_DIR := web/admin
 DEV_COMPOSE_FILE := deployments/docker-compose/docker-compose.local.yml
-DEPLOYCTL_OUTPUT ?= ./bin/deployctl
-DEPLOYCTL_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo dev)
-DEPLOYCTL_COMMIT ?= $(shell git rev-parse --verify HEAD 2>/dev/null || echo unknown)
-DEPLOYCTL_BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
-DEPLOYCTL_DIRTY ?= $(shell test -z "$$(git status --porcelain --untracked-files=normal 2>/dev/null)" && echo false || echo true)
-DEPLOYCTL_LDFLAGS := -s -w -X main.version=$(DEPLOYCTL_VERSION) -X main.commit=$(DEPLOYCTL_COMMIT) -X main.buildTime=$(DEPLOYCTL_BUILD_TIME) -X main.dirty=$(DEPLOYCTL_DIRTY)
+MGSCTL_OUTPUT ?= ./bin/mgsctl
+MGSCTL_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo dev)
+MGSCTL_COMMIT ?= $(shell git rev-parse --verify HEAD 2>/dev/null || echo unknown)
+MGSCTL_BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+MGSCTL_DIRTY ?= $(shell test -z "$$(git status --porcelain --untracked-files=normal 2>/dev/null)" && echo false || echo true)
+MGSCTL_LDFLAGS := -s -w -X main.version=$(MGSCTL_VERSION) -X main.commit=$(MGSCTL_COMMIT) -X main.buildTime=$(MGSCTL_BUILD_TIME) -X main.dirty=$(MGSCTL_DIRTY)
 
-.PHONY: dev worker deployctl test lint openapi compose-up compose-fullstack-up compose-middleware-up compose-down compose-clean user-web-install admin-web-install user-web-dev admin-web-dev
+.PHONY: dev worker mgsctl test lint openapi compose-up compose-fullstack-up compose-middleware-up compose-down compose-clean user-web-install admin-web-install user-web-dev admin-web-dev
 
 dev:
 	$(GO) run ./cmd/api
@@ -20,9 +20,9 @@ dev:
 worker:
 	$(GO) run ./cmd/worker
 
-deployctl:
-	@mkdir -p "$(dir $(DEPLOYCTL_OUTPUT))"
-	$(GO) build -trimpath -ldflags "$(DEPLOYCTL_LDFLAGS)" -o "$(DEPLOYCTL_OUTPUT)" ./cmd/deployctl
+mgsctl:
+	@mkdir -p "$(dir $(MGSCTL_OUTPUT))"
+	$(GO) build -trimpath -ldflags "$(MGSCTL_LDFLAGS)" -o "$(MGSCTL_OUTPUT)" ./cmd/mgsctl
 
 test:
 	$(GO) test ./...

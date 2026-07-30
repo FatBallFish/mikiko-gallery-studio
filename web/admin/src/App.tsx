@@ -26,7 +26,7 @@ export default function App() {
 
   if (bootstrap.phase === 'ready') return <AdminApplication />
   if (bootstrap.phase === 'broken') {
-    return <BootstrapFailure message={`运行配置异常${bootstrap.diagnostic_code ? ` (${bootstrap.diagnostic_code})` : ''}，请在部署节点运行 deployctl doctor。`} onRetry={bootstrap.retry} />
+    return <BootstrapFailure message={`运行配置异常${bootstrap.diagnostic_code ? ` (${bootstrap.diagnostic_code})` : ''}，请在部署节点运行 mgsctl doctor。`} onRetry={bootstrap.retry} />
   }
   if (bootstrap.phase === 'error') {
     return <BootstrapFailure message="无法连接 API 以确认初始化状态，请检查服务地址、网络与 API 健康状态。" onRetry={bootstrap.retry} />

@@ -20,9 +20,9 @@ for (const directory of ['bin', 'web', 'api']) {
   if (!packageScript.includes(` ${directory}`)) throw new Error(`native archive does not include ${directory}`)
 }
 
-const deployctlMain = read('cmd/deployctl/main.go')
-if (!deployctlMain.includes('NativeExecutor') || !deployctlMain.includes('NativeActionInstall')) {
-  throw new Error('deployctl main does not execute native installs')
+const mgsctlMain = read('cmd/mgsctl/main.go')
+if (!mgsctlMain.includes('NativeExecutor') || !mgsctlMain.includes('NativeActionInstall')) {
+  throw new Error('mgsctl main does not execute native installs')
 }
 
 for (const retiredPath of [
@@ -39,7 +39,7 @@ for (const retiredPath of [
   if (existsSync(new URL(retiredPath, root))) throw new Error(`legacy production deployment entrypoint still exists: ${retiredPath}`)
 }
 
-const native = read('internal/deployctl/native.go')
+const native = read('internal/mgsctl/native.go')
 for (const required of [
   'BuildNativeProcessSpecs',
   'Executable: "systemctl"',
@@ -50,7 +50,7 @@ for (const required of [
   'NativeActionUninstall',
   'pic-gallery-service-host.exe',
 ]) {
-  if (!native.includes(required)) throw new Error(`deployctl native service ownership is missing: ${required}`)
+  if (!native.includes(required)) throw new Error(`mgsctl native service ownership is missing: ${required}`)
 }
 for (const retired of ['PIC_GALLERY_ENV_FILE', 'EnvironmentFile=', 'Register-ScheduledTask']) {
   if (native.includes(retired)) throw new Error(`native production service plan contains retired behavior: ${retired}`)

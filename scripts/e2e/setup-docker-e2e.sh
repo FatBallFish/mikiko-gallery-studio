@@ -13,7 +13,7 @@ REGISTRY_CONTAINER="${E2E_PROJECT_PREFIX}registry-${RUN_ID}"
 REGISTRY_PORT="$(deployment_e2e_port)"
 IMAGE_REGISTRY="127.0.0.1:${REGISTRY_PORT}"
 IMAGE_TAG="setup-${RUN_ID}"
-DEPLOYCTL="$E2E_ROOT/deployctl"
+MGSCTL="$E2E_ROOT/mgsctl"
 SUCCESS=false
 RUNTIMES=()
 PROJECTS=()
@@ -64,7 +64,7 @@ mkdir -p "$E2E_EVIDENCE_DIR"
 docker run --detach --name "$REGISTRY_CONTAINER" --publish "127.0.0.1:${REGISTRY_PORT}:5000" registry:2 >/dev/null
 deployment_e2e_wait_status "http://127.0.0.1:${REGISTRY_PORT}/v2/" 200 60
 deployment_e2e_build_images "$ROOT_DIR" "$IMAGE_REGISTRY" "$IMAGE_TAG"
-(cd "$ROOT_DIR" && go build -o "$DEPLOYCTL" ./cmd/deployctl)
+(cd "$ROOT_DIR" && go build -o "$MGSCTL" ./cmd/mgsctl)
 
 start_core_middleware() {
   local suffix=$1
@@ -122,7 +122,7 @@ run_profile() {
     user_port="$(deployment_e2e_port)"
     admin_port="$(deployment_e2e_port)"
     docs_port="$(deployment_e2e_port)"
-    if "$DEPLOYCTL" install --mode docker --profile "$profile" --topology single --yes \
+    if "$MGSCTL" install --mode docker --profile "$profile" --topology single --yes \
       --runtime-dir "$runtime" --application-version "$IMAGE_TAG" --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" \
       --api-port "$api_port" --gateway-port "$gateway_port" --user-web-port "$user_port" --admin-web-port "$admin_port" --docs-web-port "$docs_port"; then
       break
@@ -163,7 +163,7 @@ run_profile() {
   [[ "$(printf '%s' "$setup_status" | deployment_e2e_json_data_field phase)" == setup_required ]]
   [[ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${api_port}/api/agent/auth/v1/login/password")" == 404 ]]
 
-  old_token="$($DEPLOYCTL setup token show --runtime-dir "$runtime" | sed -n 's/^Setup token: //p')"
+  old_token="$($MGSCTL setup token show --runtime-dir "$runtime" | sed -n 's/^Setup token: //p')"
   [[ -n "$old_token" ]]
   deployment_e2e_wait_status "http://127.0.0.1:${gateway_port}/api/system/v1/bootstrap-status" 200 60
   gateway_status="$(curl -fsS "http://127.0.0.1:${gateway_port}/api/system/v1/bootstrap-status")"
@@ -183,7 +183,7 @@ run_profile() {
     E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR/$profile" python3 "$ROOT_DIR/scripts/e2e/setup-browser.py"
 
   printf 'before-token-reset\n' >"$checkpoint"
-  if ! reset_output="$($DEPLOYCTL setup token reset --runtime-dir "$runtime")"; then
+  if ! reset_output="$($MGSCTL setup token reset --runtime-dir "$runtime")"; then
     deployment_e2e_fail "$profile setup token reset command failed"
   fi
   printf 'token-reset-command-complete\n' >"$checkpoint"
@@ -314,7 +314,7 @@ PY
   login="$(curl -fsS -H 'Content-Type: application/json' --data '{"email":"admin@example.com","password":"admin123456"}' \
     "http://127.0.0.1:${api_port}/api/ops/admin/v1/auth/login")"
   [[ -n "$(printf '%s' "$login" | deployment_e2e_json_data_field access_token)" ]]
-  "$DEPLOYCTL" doctor --runtime-dir "$runtime" >"$E2E_EVIDENCE_DIR/${profile}-doctor.txt"
+  "$MGSCTL" doctor --runtime-dir "$runtime" >"$E2E_EVIDENCE_DIR/${profile}-doctor.txt"
 
   if [[ "$profile" == full && "${E2E_RUN_BUSINESS:-true}" == true ]]; then
     configure_local_e2e_runtime "$runtime" "$project" "$api_port"

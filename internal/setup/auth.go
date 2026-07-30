@@ -380,7 +380,7 @@ func (service *AuthService) AbortRotation(prepared PreparedRotation) error {
 
 // PrepareCompletion acquires a process-local completion lease. The caller must
 // durably commit the completed runtime env before CommitCompletion. Task 13 is
-// responsible for deployctl's cross-process lock and compare-and-swap boundary.
+// responsible for mgsctl's cross-process lock and compare-and-swap boundary.
 func (service *AuthService) PrepareCompletion() (PreparedCompletion, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()

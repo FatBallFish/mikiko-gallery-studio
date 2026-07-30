@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
-PACKAGER="$ROOT/scripts/devops/package-deployctl.sh"
+PACKAGER="$ROOT/scripts/devops/package-mgsctl.sh"
 MAINTAINER_DOC="$ROOT/deployments/devops/README.md"
 
 require_file() {
@@ -43,12 +43,12 @@ for required in \
   "contents: read" \
   "contents: write" \
   "needs: verify" \
-  "go test ./internal/deployctl" \
+  "go test ./internal/mgsctl" \
   "./scripts/test/install-wrapper-contract.sh" \
   "os: [linux, darwin, windows]" \
   "arch: [amd64, arm64]" \
   "os: [linux, windows]" \
-  "scripts/devops/package-deployctl.sh" \
+  "scripts/devops/package-mgsctl.sh" \
   "scripts/devops/package.sh native" \
   "actions/upload-artifact@v4" \
   "actions/download-artifact@v4" \
@@ -67,15 +67,15 @@ for required in \
   "RELEASE_GOOS" \
   "RELEASE_GOARCH" \
   "RELEASE_VERSION" \
-  "DEPLOYCTL_OUTPUT" \
-  "DEPLOYCTL_VERSION" \
-  "DEPLOYCTL_COMMIT" \
-  "DEPLOYCTL_BUILD_TIME" \
-  "DEPLOYCTL_DIRTY=false" \
-  "deployctl-\${target_os}-\${target_arch}" \
+  "MGSCTL_OUTPUT" \
+  "MGSCTL_VERSION" \
+  "MGSCTL_COMMIT" \
+  "MGSCTL_BUILD_TIME" \
+  "MGSCTL_DIRTY=false" \
+  "mgsctl-\${target_os}-\${target_arch}" \
   "sha256sum" \
   "shasum -a 256"; do
   require_text "$PACKAGER" "$required"
 done
 
-echo "OK: tagged deployctl and native release contract verified"
+echo "OK: tagged mgsctl and native release contract verified"

@@ -963,7 +963,7 @@ func mergeFinalRuntime(bootstrap config.BootstrapConfig, submitted map[string]st
 				return nil, 0, ErrSetupValidation
 			}
 			values[key] = value
-		case config.FieldOwnerDeployctl, config.FieldOwnerApplication:
+		case config.FieldOwnerMGSCTL, config.FieldOwnerApplication:
 			if current, exists := bootstrap.Values[key]; !exists || current != value {
 				return nil, 0, ErrSetupValidation
 			}

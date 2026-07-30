@@ -84,7 +84,7 @@ Pic Gallery 面向希望运营图片生成产品的团队，而不是只暴露�
 
 ## 生产部署快速开始
 
-`deployctl` 是唯一受支持的生产安装与生命周期管理入口。新建单机实例推荐使用 Docker `full/single`，它包含 API、Worker、全部 Web、Gateway、PostgreSQL、Redis 和 MinIO。
+`mgsctl` 是唯一受支持的生产安装与生命周期管理入口。新建单机实例推荐使用 Docker `full/single`，它包含 API、Worker、全部 Web、Gateway、PostgreSQL、Redis 和 MinIO。
 
 安装 Docker Engine 与 Compose v2，克隆仓库后执行：
 
@@ -101,9 +101,9 @@ cd pic-gallery
   --yes
 ```
 
-安装器会下载并校验匹配平台的 deployctl Release 产物。如果 Release 产物不可用，且当前目录是完整源码仓库，则自动降级执行 `make deployctl`；本地构建需要 Go 和 Make。校验和不一致属于安全硬失败，绝不会降级切换二进制来源。
+安装器会下载并校验匹配平台的 mgsctl Release 产物。如果 Release 产物不可用，且当前目录是完整源码仓库，则自动降级执行 `make mgsctl`；本地构建需要 Go 和 Make。校验和不一致属于安全硬失败，绝不会降级切换二进制来源。
 
-服务启动后打开 `http://<api-host>:8080/setup`，通过 `deployctl setup token show --runtime-dir ./runtime` 获取一次性 Token，完成中间件连通性与首个管理员初始化。其他部署模式、参数、集群、升级和恢复方式见[生产部署](#生产部署)。
+服务启动后打开 `http://<api-host>:8080/setup`，通过 `mgsctl setup token show --runtime-dir ./runtime` 获取一次性 Token，完成中间件连通性与首个管理员初始化。其他部署模式、参数、集群、升级和恢复方式见[生产部署](#生产部署)。
 
 ## 开发者本地调试
 
@@ -149,7 +149,7 @@ make compose-up
 初始化管理员流程：
 
 1. 请求 `GET /api/system/v1/bootstrap-status`，打开返回的 `setup_url`。
-2. 使用部署工具首次输出的 setup Token；初始化完成前也可通过 `deployctl setup token show` 找回。
+2. 使用部署工具首次输出的 setup Token；初始化完成前也可通过 `mgsctl setup token show` 找回。
 3. 在 setup 中由运维人员自行填写首个管理员邮箱和密码。该账号会以 `super_admin` 身份创建，系统不预置默认管理员凭据。
 
 如果要把服务暴露到本机开发环境之外，请先完成 `config/runtime.env` 中由 setup 管理的配置，并在 `deployments/docker-compose/.env.example` 中覆盖 Compose 专用值。
@@ -264,7 +264,7 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 
 ## 生产部署
 
-`deployctl` 是唯一受支持的生产部署入口。它会创建可移动的运行目录、生成应用密钥、渲染 Docker 或原生服务文件，并统一维护一份带中英文注释的 `config/runtime.env`。项目自身接受 HTTP 和 IP+端口访问；DNS、HTTPS 证书、反向代理和外部负载均衡由部署者负责。
+`mgsctl` 是唯一受支持的生产部署入口。它会创建可移动的运行目录、生成应用密钥、渲染 Docker 或原生服务文件，并统一维护一份带中英文注释的 `config/runtime.env`。项目自身接受 HTTP 和 IP+端口访问；DNS、HTTPS 证书、反向代理和外部负载均衡由部署者负责。
 
 ### 选择部署方式
 
@@ -290,27 +290,27 @@ Docker 部署需要 Docker Engine、Compose v2、可用宿主机端口和可写�
 
 原生模式支持 Linux 和 Windows 的 `amd64`、`arm64` 发布包，需要注册系统服务的权限以及外部 PostgreSQL/Redis。只有单节点部署可以使用本地存储；API 或 Worker 存在多节点时必须使用 S3 兼容存储。
 
-导入旧配置或升级前应备份现有数据库和对象存储。不要在 deployctl 运行目录中放入无关文件，因为破坏性卸载会主动拒绝包含非受管路径的目录。
+导入旧配置或升级前应备份现有数据库和对象存储。不要在 mgsctl 运行目录中放入无关文件，因为破坏性卸载会主动拒绝包含非受管路径的目录。
 
 ### 安装包装脚本
 
-Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps1`。显式指定的 `DEPLOYCTL_BIN` 始终优先。在完整的 Git 源码 checkout 中，包装脚本仅在 `PATH` 中 deployctl 的构建 commit 与干净 checkout 一致时复用该工具；工具过期或源码存在未提交改动时，会执行本地构建并原子更新持久化二进制。非 Git 源码安装包仍保持 PATH 优先。如果没有可用工具，则下载匹配平台的 Release 产物、校验 SHA-256、持久化安装 deployctl，并通过绝对路径执行本次命令。
+Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps1`。显式指定的 `MGSCTL_BIN` 始终优先。在完整的 Git 源码 checkout 中，包装脚本仅在 `PATH` 中 mgsctl 的构建 commit 与干净 checkout 一致时复用该工具；工具过期或源码存在未提交改动时，会执行本地构建并原子更新持久化二进制。非 Git 源码安装包仍保持 PATH 优先。如果没有可用工具，则下载匹配平台的 Release 产物、校验 SHA-256、持久化安装 mgsctl，并通过绝对路径执行本次命令。
 
-默认安装路径是 Linux/macOS 的 `$HOME/.local/bin/deployctl` 和 Windows 的 `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe`。安装器会输出实际路径和 PATH 配置提示。
+默认安装路径是 Linux/macOS 的 `$HOME/.local/bin/mgsctl` 和 Windows 的 `%LOCALAPPDATA%\Programs\mgsctl\mgsctl.exe`。安装器会输出实际路径和 PATH 配置提示。
 
-当 Release 产物或校验文件不可用时，只有当前目录是包含 `go.mod`、`Makefile`、`cmd/deployctl` 的完整源码仓库，且机器具备 Go 与 Make，包装脚本才会降级执行 `make deployctl`。它不会再次下载源码压缩包。校验和不一致（包括与 `DEPLOYCTL_SHA256` 不一致）属于安全硬失败：保留旧 deployctl，并禁止本地构建降级。包装脚本还会把完整源码仓库作为允许的 Docker 本地镜像构建来源传给 deployctl。
+当 Release 产物或校验文件不可用时，只有当前目录是包含 `go.mod`、`Makefile`、`cmd/mgsctl` 的完整源码仓库，且机器具备 Go 与 Make，包装脚本才会降级执行 `make mgsctl`。它不会再次下载源码压缩包。校验和不一致（包括与 `MGSCTL_SHA256` 不一致）属于安全硬失败：保留旧 mgsctl，并禁止本地构建降级。包装脚本还会把完整源码仓库作为允许的 Docker 本地镜像构建来源传给 mgsctl。
 
 | 包装脚本变量 | 作用 |
 | --- | --- |
-| `DEPLOYCTL_BIN` | 指定本地 deployctl 二进制，适合离线环境或源码构建 |
-| `DEPLOYCTL_INSTALL_DIR` | deployctl 持久化安装目录；默认使用上面的用户级路径 |
-| `DEPLOYCTL_VERSION` | 指定要下载的 deployctl 版本，默认 `latest` |
-| `DEPLOYCTL_RELEASE_BASE_URL` | 覆盖 deployctl 与原生发布包的仓库基础 URL |
-| `DEPLOYCTL_DOWNLOAD_URL` | 覆盖完整的 deployctl 文件下载 URL |
-| `DEPLOYCTL_SHA256` | 直接指定预期校验值，不再下载 `.sha256` 文件 |
-| `DEPLOYCTL_SOURCE_DIR` | 仅用于 Docker 镜像本地降级构建的完整源码目录；包装脚本会在可用时自动设置 |
+| `MGSCTL_BIN` | 指定本地 mgsctl 二进制，适合离线环境或源码构建 |
+| `MGSCTL_INSTALL_DIR` | mgsctl 持久化安装目录；默认使用上面的用户级路径 |
+| `MGSCTL_VERSION` | 指定要下载的 mgsctl 版本，默认 `latest` |
+| `MGSCTL_RELEASE_BASE_URL` | 覆盖 mgsctl 与原生发布包的仓库基础 URL |
+| `MGSCTL_DOWNLOAD_URL` | 覆盖完整的 mgsctl 文件下载 URL |
+| `MGSCTL_SHA256` | 直接指定预期校验值，不再下载 `.sha256` 文件 |
+| `MGSCTL_SOURCE_DIR` | 仅用于 Docker 镜像本地降级构建的完整源码目录；包装脚本会在可用时自动设置 |
 
-`DEPLOYCTL_VERSION` 选择的是部署工具版本；`--application-version`、`--image-tag` 和 `--release-version` 才决定实际安装的应用版本。
+`MGSCTL_VERSION` 选择的是部署工具版本；`--application-version`、`--image-tag` 和 `--release-version` 才决定实际安装的应用版本。
 
 ### 首次安装
 
@@ -387,9 +387,9 @@ runtime/
 
 具体内容随模式和组件变化。`config/runtime.env`、`config/install-state.json` 与 `deployment.json` 共同承载安装身份和恢复状态，应始终一起保留。
 
-Docker 安装会先拉取选中的全部镜像。如果拉取失败且本地存在包含全部应用 Dockerfile 的完整源码仓库，deployctl 会使用请求的 registry 和 tag 仅构建当前选中的 Pic Gallery 应用镜像，然后继续启动。PostgreSQL、Redis、MinIO、Nginx、Prometheus 及 Dockerfile 基础镜像不会被项目本地替代；若不存在完整源码仓库，命令会同时输出原始拉取错误和本地降级所缺少的条件。
+Docker 安装会先拉取选中的全部镜像。如果拉取失败且本地存在包含全部应用 Dockerfile 的完整源码仓库，mgsctl 会使用请求的 registry 和 tag 仅构建当前选中的 Pic Gallery 应用镜像，然后继续启动。PostgreSQL、Redis、MinIO、Nginx、Prometheus 及 Dockerfile 基础镜像不会被项目本地替代；若不存在完整源码仓库，命令会同时输出原始拉取错误和本地降级所缺少的条件。
 
-Setup 尚未完成时，使用完全相同的计划重试会自动续装。若另一套计划指向同一个 pending 运行目录，交互安装会询问是否只覆盖 deployctl 生成的配置和部署资源；选择取消会保留现状。非交互自动化必须显式传入 `--overwrite`。覆盖会保留 `data/`、`logs/` 和 Docker 持久卷；Setup 已完成或现有文件无法识别为有效 pending 安装时始终拒绝覆盖。
+Setup 尚未完成时，使用完全相同的计划重试会自动续装。若另一套计划指向同一个 pending 运行目录，交互安装会询问是否只覆盖 mgsctl 生成的配置和部署资源；选择取消会保留现状。非交互自动化必须显式传入 `--overwrite`。覆盖会保留 `data/`、`logs/` 和 Docker 持久卷；Setup 已完成或现有文件无法识别为有效 pending 安装时始终拒绝覆盖。
 
 ### 安装参数
 
@@ -442,11 +442,11 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
   --yes
 ```
 
-### Deployctl TUI 与服务访问摘要
+### MGSCTL TUI 与服务访问摘要
 
-在交互终端中不带参数运行 `deployctl` 会进入 TUI。可用数字键或方向键选择，Enter 确认，Space 勾选多选项，Esc 返回上一级，Ctrl+C 或根菜单的“退出”结束程序。`deployctl -h` 与 `deployctl --help` 会输出完整命令帮助并正常退出。无参数调用只要输入或输出被重定向，也只会打印帮助，不会等待终端输入。
+在交互终端中不带参数运行 `mgsctl` 会进入 TUI。可用数字键或方向键选择，Enter 确认，Space 勾选多选项，Esc 返回上一级，Ctrl+C 或根菜单的“退出”结束程序。`mgsctl -h` 与 `mgsctl --help` 会输出完整命令帮助并正常退出。无参数调用只要输入或输出被重定向，也只会打印帮助，不会等待终端输入。
 
-安装成功后，deployctl 会输出按最终组件计划生成的服务访问摘要和编号后续步骤，只列出实际部署的服务，并将仅 Docker 网络可访问的 PostgreSQL、Redis、MinIO 明确标为内部地址。交互终端安装可以显示一次性 Setup Token；重定向输出永远不显示 Token，只提示在部署主机执行 `deployctl setup token show --runtime-dir ...`。
+安装成功后，mgsctl 会输出按最终组件计划生成的服务访问摘要和编号后续步骤，只列出实际部署的服务，并将仅 Docker 网络可访问的 PostgreSQL、Redis、MinIO 明确标为内部地址。交互终端安装可以显示一次性 Setup Token；重定向输出永远不显示 Token，只提示在部署主机执行 `mgsctl setup token show --runtime-dir ...`。
 
 Docker `full/single` 默认端口如下：
 
@@ -466,9 +466,9 @@ Docker `full/single` 默认端口如下：
 非交互安装不会输出一次性 Setup Token。需要在部署主机读取或轮换：
 
 ```bash
-deployctl setup status --runtime-dir ./runtime
-deployctl setup token show --runtime-dir ./runtime
-deployctl setup token reset --runtime-dir ./runtime
+mgsctl setup status --runtime-dir ./runtime
+mgsctl setup token show --runtime-dir ./runtime
+mgsctl setup token reset --runtime-dir ./runtime
 ```
 
 初始化仍未完成且 Token 已暴露、已使用或遗失时，执行 `token reset`。该操作会使旧 Token 和 Setup 会话失效，并只重启 API 和 Gateway。初始化成功后，Token 显示和重置都会永久关闭。
@@ -488,7 +488,7 @@ Setup 流程：
 ```bash
 curl -fsS http://127.0.0.1:8080/readyz
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/setup  # 应为 404
-deployctl doctor --runtime-dir ./runtime
+mgsctl doctor --runtime-dir ./runtime
 ```
 
 随后使用首个管理员登录后台，继续配置供应商账号、文本/图片模型、路由、价格、套餐、注册策略、支付/充值和 SMTP。这些业务配置保存在数据库，不放在 `runtime.env` 中。
@@ -514,9 +514,9 @@ deployctl doctor --runtime-dir ./runtime
 必须先在 Control 完成 Setup，才能加入其他节点。然后按角色创建凭证：
 
 ```bash
-deployctl cluster token create --role api --ttl 10m --runtime-dir ./control
-deployctl cluster token create --role worker --ttl 10m --runtime-dir ./control
-deployctl cluster token create --role web --ttl 10m --runtime-dir ./control
+mgsctl cluster token create --role api --ttl 10m --runtime-dir ./control
+mgsctl cluster token create --role worker --ttl 10m --runtime-dir ./control
+mgsctl cluster token create --role web --ttl 10m --runtime-dir ./control
 ```
 
 TTL 必须大于 0 且不超过 24 小时。Token 在传输时加密、会过期、限定角色，并且只能使用一次。
@@ -524,7 +524,7 @@ TTL 必须大于 0 且不超过 24 小时。Token 在传输时加密、会过期
 在每台目标主机上使用对应角色的 Token 加入：
 
 ```bash
-deployctl cluster join \
+mgsctl cluster join \
   --server http://10.0.0.10:8080 \
   --token '<single-use-token>' \
   --mode docker \
@@ -549,12 +549,12 @@ API 和 Worker 默认从运行工作目录读取 `./config/runtime.env`。只有
 在部署主机执行运维命令，并始终指向同一个运行目录：
 
 ```bash
-deployctl status --runtime-dir ./runtime
-deployctl doctor --runtime-dir ./runtime
-deployctl restart --runtime-dir ./runtime
+mgsctl status --runtime-dir ./runtime
+mgsctl doctor --runtime-dir ./runtime
+mgsctl restart --runtime-dir ./runtime
 ```
 
-`doctor` 会检查必填字段、私有文件权限、runtime/manifest/state 身份、中间件连通性、就绪状态和 schema 兼容性，同时对 DSN 与密钥脱敏。查看 Docker 日志时，从 `deployctl status` 复制容器名后直接检查：
+`doctor` 会检查必填字段、私有文件权限、runtime/manifest/state 身份、中间件连通性、就绪状态和 schema 兼容性，同时对 DSN 与密钥脱敏。查看 Docker 日志时，从 `mgsctl status` 复制容器名后直接检查：
 
 ```bash
 docker logs --tail=200 <api-container-name>
@@ -563,27 +563,27 @@ docker logs --tail=200 <worker-container-name>
 
 ### 工具版本与手动更新
 
-deployctl 的普通命令不会联网检查更新。可在本机查看已安装工具版本：
+mgsctl 的普通命令不会联网检查更新。可在本机查看已安装工具版本：
 
 ```bash
-deployctl version
-deployctl version --json
+mgsctl version
+mgsctl version --json
 ```
 
-只有管理员显式执行下面命令时，才更新 deployctl 二进制：
+只有管理员显式执行下面命令时，才更新 mgsctl 二进制：
 
 ```bash
-deployctl self-update
-deployctl self-update --version v1.3.0
-deployctl self-update --version v1.3.0 --yes
+mgsctl self-update
+mgsctl self-update --version v1.3.0
+mgsctl self-update --version v1.3.0 --yes
 ```
 
 不传 `--yes` 时，self-update 必须经过交互确认。它会下载当前平台的产物和校验文件，在现有可执行文件旁暂存已验证的新文件，只替换部署工具本身；不会重启或升级已部署的 Pic Gallery 运行实例。若所选 Release 不存在，self-update 会停止；在完整源码仓库中可重新运行安装器，使用前文说明的本地 Make 降级。
 
 | 命令 | 更新对象 | 联网行为 |
 | --- | --- | --- |
-| `deployctl self-update` | deployctl 可执行文件 | 仅在管理员显式执行时访问所选 deployctl Release |
-| `deployctl upgrade` | 已部署的 API、Worker、Web/原生资源及可选数据库迁移 | 按参数解析指定的应用镜像或原生 Release |
+| `mgsctl self-update` | mgsctl 可执行文件 | 仅在管理员显式执行时访问所选 mgsctl Release |
+| `mgsctl upgrade` | 已部署的 API、Worker、Web/原生资源及可选数据库迁移 | 按参数解析指定的应用镜像或原生 Release |
 
 ### 应用升级与恢复
 
@@ -592,7 +592,7 @@ deployctl self-update --version v1.3.0 --yes
 Docker single/control 节点：
 
 ```bash
-deployctl upgrade \
+mgsctl upgrade \
   --runtime-dir ./runtime \
   --application-version v1.3.0 \
   --image-registry docker.io/fatballfish \
@@ -602,7 +602,7 @@ deployctl upgrade \
 原生 single/control 节点：
 
 ```bash
-deployctl upgrade \
+mgsctl upgrade \
   --runtime-dir ./runtime \
   --application-version v1.3.0 \
   --release-version v1.3.0
@@ -611,7 +611,7 @@ deployctl upgrade \
 集群先升级 Control。Control 获取分布式迁移锁，原子更新 runtime 和 manifest，只迁移一次，然后按依赖顺序滚动服务。之后升级加入的 API/Worker/Web 节点，并关闭迁移：
 
 ```bash
-deployctl upgrade \
+mgsctl upgrade \
   --runtime-dir ./node \
   --application-version v1.3.0 \
   --image-tag v1.3.0 \
@@ -620,34 +620,34 @@ deployctl upgrade \
 
 原生加入节点应将 `--image-tag` 替换为 `--release-version v1.3.0`，并同样保留 `--migrate=false`。
 
-升级迁移只支持前滚。如果迁移成功但服务滚动失败，使用完全相同的命令重试，即可恢复幂等滚动。如果服务在迁移前失败，deployctl 会恢复并重新应用旧运行计划。不要通过改回旧镜像标签尝试降级数据库；只有发布版本提供明确恢复流程时，才从已验证备份恢复。
+升级迁移只支持前滚。如果迁移成功但服务滚动失败，使用完全相同的命令重试，即可恢复幂等滚动。如果服务在迁移前失败，mgsctl 会恢复并重新应用旧运行计划。不要通过改回旧镜像标签尝试降级数据库；只有发布版本提供明确恢复流程时，才从已验证备份恢复。
 
 ### 停止、卸载与永久删除
 
 普通卸载只停止并注销服务，保留运行配置和持久化数据：
 
 ```bash
-deployctl uninstall --runtime-dir ./runtime --yes
+mgsctl uninstall --runtime-dir ./runtime --yes
 ```
 
 普通卸载适用于移除服务但保留文件，以便备份或迁移。若要永久删除受管运行目录，以及 Docker 的 PostgreSQL/Redis/MinIO 命名卷，先查询 installation ID，再输入区分大小写的精确短语：
 
 ```bash
-deployctl setup status --runtime-dir ./runtime
-deployctl uninstall \
+mgsctl setup status --runtime-dir ./runtime
+mgsctl uninstall \
   --runtime-dir ./runtime \
   --delete-data \
   --confirm 'DELETE <installation-id> PERSISTENT DATA'
 ```
 
-`--yes` 永远不能授权数据删除。破坏性卸载会在停止任何服务或删除任何卷之前，确认运行目录中只有 deployctl 管理的配置、发布资源、应用数据和日志。执行前必须备份数据库与对象存储。
+`--yes` 永远不能授权数据删除。破坏性卸载会在停止任何服务或删除任何卷之前，确认运行目录中只有 mgsctl 管理的配置、发布资源、应用数据和日志。执行前必须备份数据库与对象存储。
 
 ### 导入旧配置
 
 旧版根目录 `.env`、`.env.prod` 或打包的 `backend.env` 不会被自动加载。需要显式导入到新的运行目录：
 
 ```bash
-deployctl import-config \
+mgsctl import-config \
   --source .env.prod \
   --mode docker \
   --profile full \

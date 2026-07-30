@@ -39,8 +39,8 @@ const setupDocumentBody = `</style>
     <div class="token-help">
       <p>未持有 Token / Token unavailable</p>
       <div class="commands">
-        <code>deployctl setup token show</code>
-        <code>deployctl setup token reset</code>
+        <code>mgsctl setup token show</code>
+        <code>mgsctl setup token reset</code>
       </div>
     </div>
     <div class="status-line" id="auth-status" role="status" aria-live="polite"></div>
@@ -323,7 +323,7 @@ const setupPageScript = `'use strict';
     SETUP_REQUEST_CANCELLED: '初始化请求已取消，正在确认服务端状态。 / Setup request was cancelled; checking server state.',
     SETUP_REQUEST_TIMEOUT: '初始化请求超时，可使用相同配置重试。 / Setup request timed out; retry unchanged.',
     SETUP_NETWORK_ERROR: 'API 暂时不可访问，正在等待服务恢复。 / API is temporarily unavailable.',
-    SETUP_INTERNAL_ERROR: '初始化服务发生内部错误，请运行 deployctl doctor。 / Internal setup error; run deployctl doctor.',
+    SETUP_INTERNAL_ERROR: '初始化服务发生内部错误，请运行 mgsctl doctor。 / Internal setup error; run mgsctl doctor.',
   };
 
   function setStatus(element, message, kind) {
@@ -429,7 +429,7 @@ const setupPageScript = `'use strict';
       if (input.tagName === 'SELECT' || input.type === 'checkbox') input.disabled = true;
       else input.readOnly = true;
       input.setAttribute('aria-readonly', 'true');
-      if (field.secret) input.placeholder = '由 deployctl 管理 / Managed by deployctl';
+      if (field.secret) input.placeholder = '由 mgsctl 管理 / Managed by mgsctl';
     } else if (field.example && field.input !== 'checkbox') {
       input.placeholder = field.example;
     }
@@ -443,7 +443,7 @@ const setupPageScript = `'use strict';
     }
     const help = document.createElement('p');
     help.className = 'field-help' + (field.managed ? ' managed-note' : '');
-    help.textContent = field.description_zh + ' / ' + field.description_en + (field.managed ? ' 由部署工具管理。 / Managed by deployctl.' : '');
+    help.textContent = field.description_zh + ' / ' + field.description_en + (field.managed ? ' 由部署工具管理。 / Managed by mgsctl.' : '');
     wrapper.append(help);
     inputs.set(field.key, input);
     container.append(wrapper);
@@ -745,7 +745,7 @@ const setupPageScript = `'use strict';
   }
 
   function showRestartRecovery(reason) {
-    const commands = 'deployctl status · deployctl logs · deployctl doctor · deployctl restart';
+    const commands = 'mgsctl status · mgsctl logs · mgsctl doctor · mgsctl restart';
     countdown.textContent = reason + ' ' + commands;
     setStatus(globalStatus, reason + ' ' + commands, 'error');
   }

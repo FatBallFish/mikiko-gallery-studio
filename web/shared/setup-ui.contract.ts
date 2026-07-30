@@ -45,7 +45,7 @@ for (const endpoint of [
 }
 
 for (const required of [
-  'deployctl setup token show', 'deployctl setup token reset', 'history.back()', 'history.length',
+  'mgsctl setup token show', 'mgsctl setup token reset', 'history.back()', 'history.length',
   'document.referrer', 'function returnURLFromHash()', 'decodeURIComponent', 'location.assign(returnURL)',
   'aria-live="polite"', 'role="status"', '<progress', ':focus-visible',
   'aria-label="初始化进度 / Setup progress"',
@@ -63,7 +63,7 @@ for (const required of [
   "if (controller.signal.aborted) throw { code: 'SETUP_REQUEST_TIMEOUT' };",
   "if (typeof error?.code === 'string') throw error;",
   "requestJSON('/api/setup/v1/apply', { method: 'POST', body, timeout: 300000 })",
-  'deployctl status', 'deployctl logs', 'deployctl doctor', 'deployctl restart',
+  'mgsctl status', 'mgsctl logs', 'mgsctl doctor', 'mgsctl restart',
   'function invalidateProbe(kind) {',
   'probeVersions[kind] += 1;',
   'if (version !== probeVersions[kind]) return;',

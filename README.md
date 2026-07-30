@@ -84,7 +84,7 @@ It includes:
 
 ## Production Quick Start
 
-`deployctl` is the only supported production installation and lifecycle entrypoint. For a new single-host instance, use Docker `full/single`: it includes API, Worker, all Web applications, Gateway, PostgreSQL, Redis, and MinIO.
+`mgsctl` is the only supported production installation and lifecycle entrypoint. For a new single-host instance, use Docker `full/single`: it includes API, Worker, all Web applications, Gateway, PostgreSQL, Redis, and MinIO.
 
 Install Docker Engine with Compose v2, clone the repository, and run:
 
@@ -101,9 +101,9 @@ cd pic-gallery
   --yes
 ```
 
-The installer downloads and verifies the matching deployctl Release artifact. If that artifact is unavailable, a complete source checkout automatically falls back to `make deployctl`; this fallback requires Go and Make. A checksum mismatch is a hard failure and never falls back to another binary source.
+The installer downloads and verifies the matching mgsctl Release artifact. If that artifact is unavailable, a complete source checkout automatically falls back to `make mgsctl`; this fallback requires Go and Make. A checksum mismatch is a hard failure and never falls back to another binary source.
 
-After services start, open `http://<api-host>:8080/setup`, obtain the one-time token with `deployctl setup token show --runtime-dir ./runtime`, and complete middleware connectivity plus first-administrator initialization. See [Production Deployment](#production-deployment) for other modes, parameters, clustering, upgrades, and recovery.
+After services start, open `http://<api-host>:8080/setup`, obtain the one-time token with `mgsctl setup token show --runtime-dir ./runtime`, and complete middleware connectivity plus first-administrator initialization. See [Production Deployment](#production-deployment) for other modes, parameters, clustering, upgrades, and recovery.
 
 ## Developer Local Workflow
 
@@ -149,7 +149,7 @@ Default entrypoint:
 Initial administrator setup:
 
 1. Query `GET /api/system/v1/bootstrap-status` and open the returned `setup_url`.
-2. Use the setup token printed by the deployment tool, or recover it with `deployctl setup token show` before initialization completes.
+2. Use the setup token printed by the deployment tool, or recover it with `mgsctl setup token show` before initialization completes.
 3. Choose the initial administrator email and password in setup. That account is created as `super_admin`; no default administrator credentials are preset.
 
 Complete setup-managed runtime values in `config/runtime.env`, and override Compose-only values in `deployments/docker-compose/.env.example`, before exposing the service outside a local development machine.
@@ -264,7 +264,7 @@ Admin-managed sensitive settings are write-only by contract:
 
 ## Production Deployment
 
-`deployctl` is the only supported production deployment entrypoint. It creates a portable runtime directory, generates application secrets, renders Docker or native service assets, and maintains one bilingual `config/runtime.env`. The project accepts HTTP and IP-plus-port access. DNS, TLS, reverse proxies, and external load balancers remain the operator's responsibility.
+`mgsctl` is the only supported production deployment entrypoint. It creates a portable runtime directory, generates application secrets, renders Docker or native service assets, and maintains one bilingual `config/runtime.env`. The project accepts HTTP and IP-plus-port access. DNS, TLS, reverse proxies, and external load balancers remain the operator's responsibility.
 
 ### Choose a Deployment Mode
 
@@ -290,27 +290,27 @@ Docker installation requires Docker Engine, Compose v2, free host ports, and a w
 
 Native installation supports Linux and Windows release bundles on `amd64` or `arm64`. It requires service-manager privileges and external PostgreSQL/Redis. Use local storage only for a single node; use S3-compatible storage whenever API or Worker runs on multiple nodes.
 
-Back up any existing database and object storage before importing configuration or upgrading. Do not put unrelated files in the deployctl runtime directory because destructive uninstall deliberately rejects unmanaged paths.
+Back up any existing database and object storage before importing configuration or upgrading. Do not put unrelated files in the mgsctl runtime directory because destructive uninstall deliberately rejects unmanaged paths.
 
 ### Installer Wrapper
 
-On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.ps1`. An explicit `DEPLOYCTL_BIN` always wins. From a complete Git source checkout, the wrapper reuses a `deployctl` on `PATH` only when its build commit matches the clean checkout; a stale tool or a dirty checkout triggers a local build and atomically refreshes the persistent binary. Outside a Git source checkout, the wrapper keeps PATH-first behavior. If no tool is available, it downloads the matching Release artifact, verifies SHA-256, installs deployctl persistently, and executes the requested command through that absolute path.
+On Linux and macOS, use `scripts/install.sh`; on Windows, use `scripts/install.ps1`. An explicit `MGSCTL_BIN` always wins. From a complete Git source checkout, the wrapper reuses a `mgsctl` on `PATH` only when its build commit matches the clean checkout; a stale tool or a dirty checkout triggers a local build and atomically refreshes the persistent binary. Outside a Git source checkout, the wrapper keeps PATH-first behavior. If no tool is available, it downloads the matching Release artifact, verifies SHA-256, installs mgsctl persistently, and executes the requested command through that absolute path.
 
-The default installed paths are `$HOME/.local/bin/deployctl` on Linux/macOS and `%LOCALAPPDATA%\Programs\deployctl\deployctl.exe` on Windows. The installer prints the actual location and PATH guidance.
+The default installed paths are `$HOME/.local/bin/mgsctl` on Linux/macOS and `%LOCALAPPDATA%\Programs\mgsctl\mgsctl.exe` on Windows. The installer prints the actual location and PATH guidance.
 
-If the Release artifact or checksum file is unavailable, the wrapper falls back to `make deployctl` only when it is running from a complete checkout containing `go.mod`, `Makefile`, and `cmd/deployctl`, with Go and Make available. It never downloads a second source archive. A checksum mismatch, including a mismatch against `DEPLOYCTL_SHA256`, is a hard failure: the previous deployctl remains intact and local fallback is forbidden. A complete checkout is also passed to deployctl as the approved local Docker image build source.
+If the Release artifact or checksum file is unavailable, the wrapper falls back to `make mgsctl` only when it is running from a complete checkout containing `go.mod`, `Makefile`, and `cmd/mgsctl`, with Go and Make available. It never downloads a second source archive. A checksum mismatch, including a mismatch against `MGSCTL_SHA256`, is a hard failure: the previous mgsctl remains intact and local fallback is forbidden. A complete checkout is also passed to mgsctl as the approved local Docker image build source.
 
 | Wrapper variable | Purpose |
 | --- | --- |
-| `DEPLOYCTL_BIN` | Use a specific local deployctl binary; useful for offline or source builds |
-| `DEPLOYCTL_INSTALL_DIR` | Persistent deployctl directory; defaults to the user-local paths above |
-| `DEPLOYCTL_VERSION` | Select the deployctl release to download; defaults to `latest` |
-| `DEPLOYCTL_RELEASE_BASE_URL` | Override the deployctl and native bundle release repository base URL |
-| `DEPLOYCTL_DOWNLOAD_URL` | Override the complete deployctl artifact URL |
-| `DEPLOYCTL_SHA256` | Pin the expected checksum instead of downloading the `.sha256` file |
-| `DEPLOYCTL_SOURCE_DIR` | Complete source checkout used only for local Docker image fallback; the wrapper sets it automatically when possible |
+| `MGSCTL_BIN` | Use a specific local mgsctl binary; useful for offline or source builds |
+| `MGSCTL_INSTALL_DIR` | Persistent mgsctl directory; defaults to the user-local paths above |
+| `MGSCTL_VERSION` | Select the mgsctl release to download; defaults to `latest` |
+| `MGSCTL_RELEASE_BASE_URL` | Override the mgsctl and native bundle release repository base URL |
+| `MGSCTL_DOWNLOAD_URL` | Override the complete mgsctl artifact URL |
+| `MGSCTL_SHA256` | Pin the expected checksum instead of downloading the `.sha256` file |
+| `MGSCTL_SOURCE_DIR` | Complete source checkout used only for local Docker image fallback; the wrapper sets it automatically when possible |
 
-`DEPLOYCTL_VERSION` selects the deployment tool itself. `--application-version`, `--image-tag`, and `--release-version` select the application being installed.
+`MGSCTL_VERSION` selects the deployment tool itself. `--application-version`, `--image-tag`, and `--release-version` select the application being installed.
 
 ### First Installation
 
@@ -385,9 +385,9 @@ runtime/
 
 The exact contents depend on mode and selected components. Preserve `config/runtime.env`, `config/install-state.json`, and `deployment.json` together; they carry the installation identity and recovery state.
 
-Docker install first pulls all selected images. If that pull fails and a complete checkout containing all application Dockerfiles is available, deployctl builds only the selected Pic Gallery application images locally with the requested registry and tag, then continues startup. PostgreSQL, Redis, MinIO, Nginx, Prometheus, and Dockerfile base images are never replaced by project-local substitutes. If no complete checkout is available, the command reports both the pull failure and the local-fallback prerequisite.
+Docker install first pulls all selected images. If that pull fails and a complete checkout containing all application Dockerfiles is available, mgsctl builds only the selected Pic Gallery application images locally with the requested registry and tag, then continues startup. PostgreSQL, Redis, MinIO, Nginx, Prometheus, and Dockerfile base images are never replaced by project-local substitutes. If no complete checkout is available, the command reports both the pull failure and the local-fallback prerequisite.
 
-Rerunning the exact same plan while Setup is pending resumes deployment automatically. If a different plan targets the same pending runtime, interactive install asks whether to replace only deployctl-generated configuration and deployment assets; declining preserves the existing runtime. Non-interactive automation must opt in with `--overwrite`. This operation preserves `data/`, `logs/`, and Docker volumes, and it is permanently refused after Setup completes or when the existing files cannot be recognized as a valid pending installation.
+Rerunning the exact same plan while Setup is pending resumes deployment automatically. If a different plan targets the same pending runtime, interactive install asks whether to replace only mgsctl-generated configuration and deployment assets; declining preserves the existing runtime. Non-interactive automation must opt in with `--overwrite`. This operation preserves `data/`, `logs/`, and Docker volumes, and it is permanently refused after Setup completes or when the existing files cannot be recognized as a valid pending installation.
 
 ### Install Parameters
 
@@ -440,11 +440,11 @@ Example Docker custom installation with monitoring:
   --yes
 ```
 
-### Deployctl TUI and Service Access Summary
+### MGSCTL TUI and Service Access Summary
 
-Run `deployctl` with no arguments in an interactive terminal to open the TUI. Use number keys or Arrow keys to select, Enter to confirm, Space to toggle multi-select fields, Esc to return one level, and Ctrl+C or the root **Exit** item to quit. `deployctl -h` and `deployctl --help` print the complete command catalog and exit successfully. A no-argument invocation with redirected input or output also prints help instead of waiting for terminal input.
+Run `mgsctl` with no arguments in an interactive terminal to open the TUI. Use number keys or Arrow keys to select, Enter to confirm, Space to toggle multi-select fields, Esc to return one level, and Ctrl+C or the root **Exit** item to quit. `mgsctl -h` and `mgsctl --help` print the complete command catalog and exit successfully. A no-argument invocation with redirected input or output also prints help instead of waiting for terminal input.
 
-After a successful install, deployctl prints a component-aware service access summary and numbered next steps. It lists only services selected by the final plan and labels Docker-only PostgreSQL, Redis, and MinIO addresses as internal. An interactive terminal install may print the one-time Setup token. Non-interactive or redirected output never prints that token and instead shows the local `deployctl setup token show --runtime-dir ...` recovery command.
+After a successful install, mgsctl prints a component-aware service access summary and numbered next steps. It lists only services selected by the final plan and labels Docker-only PostgreSQL, Redis, and MinIO addresses as internal. An interactive terminal install may print the one-time Setup token. Non-interactive or redirected output never prints that token and instead shows the local `mgsctl setup token show --runtime-dir ...` recovery command.
 
 For the default Docker `full/single` ports:
 
@@ -464,9 +464,9 @@ Before initialization, the API exposes health checks, bootstrap status, and the 
 The one-time Setup token is deliberately not printed during non-interactive install. Read or rotate it on the deployment host:
 
 ```bash
-deployctl setup status --runtime-dir ./runtime
-deployctl setup token show --runtime-dir ./runtime
-deployctl setup token reset --runtime-dir ./runtime
+mgsctl setup status --runtime-dir ./runtime
+mgsctl setup token show --runtime-dir ./runtime
+mgsctl setup token reset --runtime-dir ./runtime
 ```
 
 Use `token reset` when initialization is still pending and the token was exposed, used, or lost. Reset invalidates old tokens and Setup sessions and restarts API and Gateway. Token display and reset are permanently disabled after successful initialization.
@@ -486,7 +486,7 @@ Verify completion:
 ```bash
 curl -fsS http://127.0.0.1:8080/readyz
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/setup  # expect 404
-deployctl doctor --runtime-dir ./runtime
+mgsctl doctor --runtime-dir ./runtime
 ```
 
 After Setup, sign in to the admin console and configure provider accounts, text/image models, routes, prices, plans, registration policy, payments/recharge, and SMTP. These business settings live in the database, not `runtime.env`.
@@ -512,9 +512,9 @@ Start one control node against external shared PostgreSQL, Redis, and S3 storage
 Complete Setup on the control node before joining any other node. Then create a role-scoped credential:
 
 ```bash
-deployctl cluster token create --role api --ttl 10m --runtime-dir ./control
-deployctl cluster token create --role worker --ttl 10m --runtime-dir ./control
-deployctl cluster token create --role web --ttl 10m --runtime-dir ./control
+mgsctl cluster token create --role api --ttl 10m --runtime-dir ./control
+mgsctl cluster token create --role worker --ttl 10m --runtime-dir ./control
+mgsctl cluster token create --role web --ttl 10m --runtime-dir ./control
 ```
 
 TTL must be greater than zero and no more than 24 hours. Tokens are encrypted in transit, expire, are role-bound, and can be used only once.
@@ -522,7 +522,7 @@ TTL must be greater than zero and no more than 24 hours. Tokens are encrypted in
 Join each target host with a token for its role:
 
 ```bash
-deployctl cluster join \
+mgsctl cluster join \
   --server http://10.0.0.10:8080 \
   --token '<single-use-token>' \
   --mode docker \
@@ -547,12 +547,12 @@ The generated file contains detailed Chinese and English comments. Setup writes 
 Run operational commands on the deployment host and point them at the same runtime directory:
 
 ```bash
-deployctl status --runtime-dir ./runtime
-deployctl doctor --runtime-dir ./runtime
-deployctl restart --runtime-dir ./runtime
+mgsctl status --runtime-dir ./runtime
+mgsctl doctor --runtime-dir ./runtime
+mgsctl restart --runtime-dir ./runtime
 ```
 
-`doctor` verifies required fields, private file permissions, runtime/manifest/state identity, middleware connectivity, readiness, and schema compatibility while redacting DSNs and secrets. For Docker-specific logs, copy a container name from `deployctl status` and inspect it directly:
+`doctor` verifies required fields, private file permissions, runtime/manifest/state identity, middleware connectivity, readiness, and schema compatibility while redacting DSNs and secrets. For Docker-specific logs, copy a container name from `mgsctl status` and inspect it directly:
 
 ```bash
 docker logs --tail=200 <api-container-name>
@@ -561,27 +561,27 @@ docker logs --tail=200 <worker-container-name>
 
 ### Tool Version and Manual Update
 
-Deployctl never checks for updates during normal commands. Inspect the installed tool locally:
+MGSCTL never checks for updates during normal commands. Inspect the installed tool locally:
 
 ```bash
-deployctl version
-deployctl version --json
+mgsctl version
+mgsctl version --json
 ```
 
-Update the deployctl binary only when an administrator explicitly requests it:
+Update the mgsctl binary only when an administrator explicitly requests it:
 
 ```bash
-deployctl self-update
-deployctl self-update --version v1.3.0
-deployctl self-update --version v1.3.0 --yes
+mgsctl self-update
+mgsctl self-update --version v1.3.0
+mgsctl self-update --version v1.3.0 --yes
 ```
 
 Without `--yes`, self-update requires an interactive confirmation. It downloads the current platform artifact and checksum, stages the verified file beside the current executable, and replaces only the deployment tool. It does not restart or upgrade an installed Pic Gallery runtime. If the selected Release does not exist, self-update stops; from a complete source checkout, rerun the installer so its documented local Make fallback can be used.
 
 | Command | Updated object | Network behavior |
 | --- | --- | --- |
-| `deployctl self-update` | The deployctl executable | Connects to the selected deployctl Release only when explicitly run |
-| `deployctl upgrade` | Deployed API, Worker, Web/native assets and optional database migration | Resolves the application image or native release requested by its flags |
+| `mgsctl self-update` | The mgsctl executable | Connects to the selected mgsctl Release only when explicitly run |
+| `mgsctl upgrade` | Deployed API, Worker, Web/native assets and optional database migration | Resolves the application image or native release requested by its flags |
 
 ### Application Upgrade and Recovery
 
@@ -590,7 +590,7 @@ Use immutable versions and back up PostgreSQL plus object storage before every p
 Docker single/control node:
 
 ```bash
-deployctl upgrade \
+mgsctl upgrade \
   --runtime-dir ./runtime \
   --application-version v1.3.0 \
   --image-registry docker.io/fatballfish \
@@ -600,7 +600,7 @@ deployctl upgrade \
 Native single/control node:
 
 ```bash
-deployctl upgrade \
+mgsctl upgrade \
   --runtime-dir ./runtime \
   --application-version v1.3.0 \
   --release-version v1.3.0
@@ -609,7 +609,7 @@ deployctl upgrade \
 Upgrade the control node first. It acquires the distributed migration lock, updates the runtime and manifest atomically, migrates once, then rolls services in dependency order. Upgrade joined API/Worker/Web nodes afterward without migration:
 
 ```bash
-deployctl upgrade \
+mgsctl upgrade \
   --runtime-dir ./node \
   --application-version v1.3.0 \
   --image-tag v1.3.0 \
@@ -618,34 +618,34 @@ deployctl upgrade \
 
 For a native joined node, replace `--image-tag` with `--release-version v1.3.0` and keep `--migrate=false`.
 
-Upgrade migrations are forward-only. If migration succeeds but service rollout fails, rerun the exact same upgrade command to resume the idempotent rollout. If rollout fails before migration, deployctl restores and reapplies the previous runtime plan. Do not try to downgrade the database by changing image tags; restore from a tested backup only when a release-specific recovery procedure requires it.
+Upgrade migrations are forward-only. If migration succeeds but service rollout fails, rerun the exact same upgrade command to resume the idempotent rollout. If rollout fails before migration, mgsctl restores and reapplies the previous runtime plan. Do not try to downgrade the database by changing image tags; restore from a tested backup only when a release-specific recovery procedure requires it.
 
 ### Stop, Uninstall, and Permanent Deletion
 
 Ordinary uninstall stops and unregisters services but preserves runtime configuration and persistent data:
 
 ```bash
-deployctl uninstall --runtime-dir ./runtime --yes
+mgsctl uninstall --runtime-dir ./runtime --yes
 ```
 
 Ordinary uninstall is intended for service removal while retaining files for backup or migration. To permanently delete the managed runtime and, for Docker, its named PostgreSQL/Redis/MinIO volumes, first obtain the installation ID and then type the exact case-sensitive phrase:
 
 ```bash
-deployctl setup status --runtime-dir ./runtime
-deployctl uninstall \
+mgsctl setup status --runtime-dir ./runtime
+mgsctl uninstall \
   --runtime-dir ./runtime \
   --delete-data \
   --confirm 'DELETE <installation-id> PERSISTENT DATA'
 ```
 
-`--yes` can never authorize data deletion. Destructive uninstall validates that the runtime tree contains only deployctl-managed configuration, release assets, application data, and logs before stopping any service or deleting any volume. Back up the database and object storage first.
+`--yes` can never authorize data deletion. Destructive uninstall validates that the runtime tree contains only mgsctl-managed configuration, release assets, application data, and logs before stopping any service or deleting any volume. Back up the database and object storage first.
 
 ### Import an Older Configuration
 
 Legacy root `.env`, `.env.prod`, or packaged `backend.env` files are not loaded automatically. Import one explicitly into a new runtime directory:
 
 ```bash
-deployctl import-config \
+mgsctl import-config \
   --source .env.prod \
   --mode docker \
   --profile full \

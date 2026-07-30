@@ -19,14 +19,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test deployctl
-        run: go test ./internal/deployctl -count=1
+      - name: Test mgsctl
+        run: go test ./internal/mgsctl -count=1
       - name: Test install fallback
         run: ./scripts/test/install-wrapper-contract.sh
       - name: Verify release contract
         run: ./scripts/devops/release-contract-test.sh
 
-  build-deployctl:
+  build-mgsctl:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify
     runs-on: ubuntu-latest
@@ -41,20 +41,20 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Package deployctl
+      - name: Package mgsctl
         env:
           RELEASE_GOOS: ${{ matrix.os }}
           RELEASE_GOARCH: ${{ matrix.arch }}
           RELEASE_VERSION: ${{ github.ref_name }}
           RELEASE_COMMIT: ${{ github.sha }}
-          RELEASE_TARGET_ROOT: target/release/deployctl-${{ matrix.os }}-${{ matrix.arch }}
-        run: scripts/devops/package-deployctl.sh
-      - name: Require deployctl checksum
-        run: test "$(find target/release/deployctl-${{ matrix.os }}-${{ matrix.arch }} -name '*.sha256' -type f | wc -l)" -eq 1
+          RELEASE_TARGET_ROOT: target/release/mgsctl-${{ matrix.os }}-${{ matrix.arch }}
+        run: scripts/devops/package-mgsctl.sh
+      - name: Require mgsctl checksum
+        run: test "$(find target/release/mgsctl-${{ matrix.os }}-${{ matrix.arch }} -name '*.sha256' -type f | wc -l)" -eq 1
       - uses: actions/upload-artifact@v4
         with:
-          name: deployctl-${{ matrix.os }}-${{ matrix.arch }}
-          path: target/release/deployctl-${{ matrix.os }}-${{ matrix.arch }}/*
+          name: mgsctl-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/release/mgsctl-${{ matrix.os }}-${{ matrix.arch }}/*
           if-no-files-found: error
 
   build-native:
@@ -100,7 +100,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-deployctl, build-native]
+    needs: [build-mgsctl, build-native]
     runs-on: ubuntu-latest
     permissions:
       contents: write

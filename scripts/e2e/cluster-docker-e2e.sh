@@ -19,7 +19,7 @@ REDIS_PORT="$(deployment_e2e_port)"
 MINIO_PORT="$(deployment_e2e_port)"
 IMAGE_REGISTRY="127.0.0.1:${REGISTRY_PORT}"
 IMAGE_TAG="cluster-${RUN_ID}"
-DEPLOYCTL="$E2E_ROOT/deployctl"
+MGSCTL="$E2E_ROOT/mgsctl"
 ENROLLMENT_CAPTURE="$E2E_ROOT/enrollment-capture.jsonl"
 RUNTIMES=()
 PROJECTS=()
@@ -99,9 +99,9 @@ assert_env_empty() {
 
 issue_token() {
   local role=$1 output token
-  output="$($DEPLOYCTL cluster token create --role "$role" --ttl 10m --runtime-dir "$TOKEN_RUNTIME")"
+  output="$($MGSCTL cluster token create --role "$role" --ttl 10m --runtime-dir "$TOKEN_RUNTIME")"
   token="$(printf '%s\n' "$output" | awk -F': ' '/^Cluster join token / {print $NF}')"
-  [[ -n "$token" ]] || deployment_e2e_fail "deployctl did not return a $role join token"
+  [[ -n "$token" ]] || deployment_e2e_fail "mgsctl did not return a $role join token"
   printf '%s' "$token"
 }
 
@@ -110,7 +110,7 @@ join_node() {
   mkdir -p "$runtime"
   register_pending_runtime "$runtime"
   runtime_index=$REGISTERED_INDEX
-  "$DEPLOYCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$token" \
+  "$MGSCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$token" \
     --runtime-dir "$runtime" --mode docker --application-version "$IMAGE_TAG" \
     --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" --api-port "$api_port"
   complete_runtime_registration "$runtime_index" "$runtime"
@@ -120,7 +120,7 @@ mkdir -p "$E2E_EVIDENCE_DIR"
 docker run --detach --name "$REGISTRY_CONTAINER" --publish "127.0.0.1:${REGISTRY_PORT}:5000" registry:2 >/dev/null
 deployment_e2e_wait_status "http://127.0.0.1:${REGISTRY_PORT}/v2/" 200 60
 deployment_e2e_build_images "$ROOT_DIR" "$IMAGE_REGISTRY" "$IMAGE_TAG"
-(cd "$ROOT_DIR" && go build -o "$DEPLOYCTL" ./cmd/deployctl)
+(cd "$ROOT_DIR" && go build -o "$MGSCTL" ./cmd/mgsctl)
 
 docker run --detach --name "$POSTGRES_CONTAINER" --publish "127.0.0.1:${POSTGRES_PORT}:5432" \
   -e POSTGRES_DB=app -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=e2e-postgres-bootstrap-password \
@@ -154,7 +154,7 @@ CONTROL_DOCS_PORT="$(deployment_e2e_port)"
 mkdir -p "$CONTROL_RUNTIME"
 register_pending_runtime "$CONTROL_RUNTIME"
 CONTROL_RUNTIME_INDEX=$REGISTERED_INDEX
-"$DEPLOYCTL" install --mode docker --profile core --topology cluster --role control --storage-driver s3 --yes \
+"$MGSCTL" install --mode docker --profile core --topology cluster --role control --storage-driver s3 --yes \
   --runtime-dir "$CONTROL_RUNTIME" --application-version "$IMAGE_TAG" --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" \
   --api-port "$CONTROL_API_PORT" --gateway-port "$CONTROL_GATEWAY_PORT" --user-web-port "$CONTROL_USER_PORT" \
   --admin-web-port "$CONTROL_ADMIN_PORT" --docs-web-port "$CONTROL_DOCS_PORT"
@@ -165,7 +165,7 @@ printf '\n# E2E-only runtime settings / 仅用于 E2E 的运行配置\nPIC_GALLE
 deployment_e2e_compose "$CONTROL_RUNTIME" "$CONTROL_PROJECT" restart api worker gateway >/dev/null
 deployment_e2e_wait_status "http://127.0.0.1:${CONTROL_API_PORT}/healthz" 200 180
 
-SETUP_TOKEN="$($DEPLOYCTL setup token show --runtime-dir "$CONTROL_RUNTIME" | sed -n 's/^Setup token: //p')"
+SETUP_TOKEN="$($MGSCTL setup token show --runtime-dir "$CONTROL_RUNTIME" | sed -n 's/^Setup token: //p')"
 COOKIE="$E2E_ROOT/control.cookie"
 curl -fsS -c "$COOKIE" -H 'Content-Type: application/json' --data "{\"token\":\"$SETUP_TOKEN\"}" \
   "http://127.0.0.1:${CONTROL_API_PORT}/api/setup/v1/session" -o /dev/null
@@ -237,7 +237,7 @@ JOIN_TOKENS+=("$EXPIRED_TOKEN")
 EXPIRED_TOKEN_ID="$(printf '%s' "$EXPIRED_TOKEN" | cut -d. -f3)"
 docker exec "$POSTGRES_CONTAINER" psql -U app -d app -v ON_ERROR_STOP=1 -q \
   -c "UPDATE cluster_tokens SET expires_at = now() - interval '1 second' WHERE token_id = '${EXPIRED_TOKEN_ID}'" >/dev/null
-if "$DEPLOYCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$EXPIRED_TOKEN" \
+if "$MGSCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$EXPIRED_TOKEN" \
   --runtime-dir "$E2E_ROOT/runtime-expired" --mode docker --application-version "$IMAGE_TAG" \
   --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" >"$E2E_EVIDENCE_DIR/expired-token.out" 2>&1; then
   deployment_e2e_fail "expired cluster token was accepted"
@@ -246,7 +246,7 @@ fi
 
 MISMATCH_TOKEN="$(issue_token api)"
 JOIN_TOKENS+=("$MISMATCH_TOKEN")
-if "$DEPLOYCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$MISMATCH_TOKEN" \
+if "$MGSCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$MISMATCH_TOKEN" \
   --runtime-dir "$E2E_ROOT/runtime-version-mismatch" --mode docker --application-version "incompatible-${RUN_ID}" \
   --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" >"$E2E_EVIDENCE_DIR/version-mismatch.out" 2>&1; then
   deployment_e2e_fail "application-version mismatch was accepted"
@@ -266,7 +266,7 @@ WORKER_ONE_TOKEN="$(issue_token worker)"
 JOIN_TOKENS+=("$WORKER_ONE_TOKEN")
 join_node "$WORKER_ONE_TOKEN" "$WORKER_ONE_RUNTIME"
 WORKER_ONE_PROJECT="${PROJECTS[${#PROJECTS[@]}-1]}"
-if "$DEPLOYCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$WORKER_ONE_TOKEN" \
+if "$MGSCTL" cluster join --server "http://127.0.0.1:${ENROLLMENT_PORT}" --token "$WORKER_ONE_TOKEN" \
   --runtime-dir "$E2E_ROOT/runtime-replay" --mode docker --application-version "$IMAGE_TAG" \
   --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" >"$E2E_EVIDENCE_DIR/replay.out" 2>&1; then
   deployment_e2e_fail "consumed cluster token was replayed successfully"

@@ -20,7 +20,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/postgres-init.sh
+        source: ${MGSCTL_RUNTIME_DIR:-.}/assets/postgres-init.sh
         target: /opt/deploy/postgres-init.sh
         read_only: true
     healthcheck:
@@ -76,14 +76,14 @@ services:
     entrypoint: ["/bin/sh", "/opt/deploy/minio-init.sh"]
     volumes:
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/minio-init.sh
+        source: ${MGSCTL_RUNTIME_DIR:-.}/assets/minio-init.sh
         target: /opt/deploy/minio-init.sh
         read_only: true
 
   api:
     profiles: ["full", "core", "api"]
     image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-api:${IMAGE_TAG:-latest}
-    user: ${DEPLOYCTL_RUNTIME_USER:-picgallery}
+    user: ${MGSCTL_RUNTIME_USER:-picgallery}
     working_dir: /app
     restart: unless-stopped
     ports:
@@ -92,10 +92,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/config
+        source: ${MGSCTL_RUNTIME_DIR:-.}/config
         target: /app/config
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/data
+        source: ${MGSCTL_RUNTIME_DIR:-.}/data
         target: /app/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${API_PORT:-8080}/healthz"]
@@ -106,18 +106,18 @@ services:
   worker:
     profiles: ["full", "core", "worker"]
     image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-worker:${IMAGE_TAG:-latest}
-    user: ${DEPLOYCTL_RUNTIME_USER:-picgallery}
+    user: ${MGSCTL_RUNTIME_USER:-picgallery}
     working_dir: /app
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/config
+        source: ${MGSCTL_RUNTIME_DIR:-.}/config
         target: /app/config
         read_only: true
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/data
+        source: ${MGSCTL_RUNTIME_DIR:-.}/data
         target: /app/data
 
   user-web:
@@ -183,7 +183,7 @@ services:
       - "${GATEWAY_PORT:-80}:80"
     volumes:
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/nginx-default.conf
+        source: ${MGSCTL_RUNTIME_DIR:-.}/assets/nginx-default.conf
         target: /etc/nginx/conf.d/default.conf
         read_only: true
     healthcheck:
@@ -200,7 +200,7 @@ services:
       - "${MONITORING_PORT:-9090}:9090"
     volumes:
       - type: bind
-        source: ${DEPLOYCTL_RUNTIME_DIR:-.}/assets/prometheus.yml
+        source: ${MGSCTL_RUNTIME_DIR:-.}/assets/prometheus.yml
         target: /etc/prometheus/prometheus.yml
         read_only: true
       - prometheus-data:/prometheus

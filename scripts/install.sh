@@ -4,24 +4,24 @@ set -eu
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 root_dir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
 source_ready=true
-for relative_path in go.mod Makefile cmd/deployctl Dockerfile.api Dockerfile.worker Dockerfile.user-web Dockerfile.admin-web Dockerfile.docs-web; do
+for relative_path in go.mod Makefile cmd/mgsctl Dockerfile.api Dockerfile.worker Dockerfile.user-web Dockerfile.admin-web Dockerfile.docs-web; do
   if [ ! -e "$root_dir/$relative_path" ]; then
     source_ready=false
     break
   fi
 done
-if [ -z "${DEPLOYCTL_SOURCE_DIR:-}" ] && [ "$source_ready" = true ]; then
-    DEPLOYCTL_SOURCE_DIR="$root_dir"
-    export DEPLOYCTL_SOURCE_DIR
+if [ -z "${MGSCTL_SOURCE_DIR:-}" ] && [ "$source_ready" = true ]; then
+    MGSCTL_SOURCE_DIR="$root_dir"
+    export MGSCTL_SOURCE_DIR
 fi
 
-if [ -n "${DEPLOYCTL_BIN:-}" ]; then
-  exec "$DEPLOYCTL_BIN" "$@"
+if [ -n "${MGSCTL_BIN:-}" ]; then
+  exec "$MGSCTL_BIN" "$@"
 fi
 
-version="${DEPLOYCTL_VERSION:-latest}"
-release_base="${DEPLOYCTL_RELEASE_BASE_URL:-https://github.com/fatballfish/pic-gallery/releases}"
-install_dir="${DEPLOYCTL_INSTALL_DIR:-${HOME:?HOME is required}/.local/bin}"
+version="${MGSCTL_VERSION:-latest}"
+release_base="${MGSCTL_RELEASE_BASE_URL:-https://github.com/fatballfish/pic-gallery/releases}"
+install_dir="${MGSCTL_INSTALL_DIR:-${HOME:?HOME is required}/.local/bin}"
 go_command="${GO:-go}"
 make_command="${MAKE:-make}"
 
@@ -33,12 +33,12 @@ esac
 case "$(uname -s)" in
   Linux) os=linux ;;
   Darwin) os=darwin ;;
-  *) echo "unsupported operating system; set DEPLOYCTL_BIN" >&2; exit 1 ;;
+  *) echo "unsupported operating system; set MGSCTL_BIN" >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
   x86_64|amd64) arch=amd64 ;;
   arm64|aarch64) arch=arm64 ;;
-  *) echo "unsupported architecture; set DEPLOYCTL_BIN" >&2; exit 1 ;;
+  *) echo "unsupported architecture; set MGSCTL_BIN" >&2; exit 1 ;;
 esac
 
 if [ "$version" = "latest" ]; then
@@ -46,8 +46,8 @@ if [ "$version" = "latest" ]; then
 else
   release_path="download/$version"
 fi
-artifact="deployctl-$os-$arch"
-url="${DEPLOYCTL_DOWNLOAD_URL:-$release_base/$release_path/$artifact}"
+artifact="mgsctl-$os-$arch"
+url="${MGSCTL_DOWNLOAD_URL:-$release_base/$release_path/$artifact}"
 display_url="${url%%\?*}"
 
 calculate_sha256() {
@@ -64,17 +64,17 @@ calculate_sha256() {
 
 download_release() {
   if ! curl --fail --location --silent --show-error --output "$downloaded_binary" "$url"; then
-    echo "deployctl release download was unavailable: $display_url" >&2
+    echo "mgsctl release download was unavailable: $display_url" >&2
     return 10
   fi
 
   explicit_checksum=false
-  if [ -n "${DEPLOYCTL_SHA256:-}" ]; then
-    expected_sha256="$DEPLOYCTL_SHA256"
+  if [ -n "${MGSCTL_SHA256:-}" ]; then
+    expected_sha256="$MGSCTL_SHA256"
     explicit_checksum=true
   else
     if ! curl --fail --location --silent --show-error --output "$checksum_file" "$url.sha256"; then
-      echo "deployctl release checksum was unavailable: $display_url.sha256" >&2
+      echo "mgsctl release checksum was unavailable: $display_url.sha256" >&2
       return 10
     fi
     expected_sha256="$(awk '{print $1; exit}' "$checksum_file")"
@@ -83,19 +83,19 @@ download_release() {
   case "$expected_sha256" in
     ''|*[!0-9a-fA-F]*)
       if [ "$explicit_checksum" = true ]; then
-        echo "DEPLOYCTL_SHA256 must contain exactly 64 hexadecimal characters" >&2
+        echo "MGSCTL_SHA256 must contain exactly 64 hexadecimal characters" >&2
         return 20
       fi
-      echo "deployctl release checksum file is incomplete" >&2
+      echo "mgsctl release checksum file is incomplete" >&2
       return 10
       ;;
   esac
   if [ "${#expected_sha256}" -ne 64 ]; then
     if [ "$explicit_checksum" = true ]; then
-      echo "DEPLOYCTL_SHA256 must contain exactly 64 hexadecimal characters" >&2
+      echo "MGSCTL_SHA256 must contain exactly 64 hexadecimal characters" >&2
       return 20
     fi
-    echo "deployctl release checksum file is incomplete" >&2
+    echo "mgsctl release checksum file is incomplete" >&2
     return 10
   fi
 
@@ -104,7 +104,7 @@ download_release() {
     return 10
   fi
   if [ "$(printf '%s' "$actual_sha256" | tr 'A-F' 'a-f')" != "$(printf '%s' "$expected_sha256" | tr 'A-F' 'a-f')" ]; then
-    echo "deployctl checksum verification failed; refusing local build fallback" >&2
+    echo "mgsctl checksum verification failed; refusing local build fallback" >&2
     return 20
   fi
   return 0
@@ -112,7 +112,7 @@ download_release() {
 
 build_from_source() {
   missing=""
-  for relative_path in go.mod Makefile cmd/deployctl; do
+  for relative_path in go.mod Makefile cmd/mgsctl; do
     if [ ! -e "$root_dir/$relative_path" ]; then
       if [ -n "$missing" ]; then
         missing="$missing, $relative_path"
@@ -122,26 +122,26 @@ build_from_source() {
     fi
   done
   if [ -n "$missing" ]; then
-    echo "local deployctl build requires a complete source checkout; missing: $missing" >&2
-    echo "provide a trusted prebuilt binary with DEPLOYCTL_BIN" >&2
+    echo "local mgsctl build requires a complete source checkout; missing: $missing" >&2
+    echo "provide a trusted prebuilt binary with MGSCTL_BIN" >&2
     return 1
   fi
   if ! command -v "$go_command" >/dev/null 2>&1; then
-    echo "local deployctl build requires Go ($go_command was not found); install Go or set DEPLOYCTL_BIN" >&2
+    echo "local mgsctl build requires Go ($go_command was not found); install Go or set MGSCTL_BIN" >&2
     return 1
   fi
   if ! command -v "$make_command" >/dev/null 2>&1; then
-    echo "local deployctl build requires Make ($make_command was not found); install Make or set DEPLOYCTL_BIN" >&2
+    echo "local mgsctl build requires Make ($make_command was not found); install Make or set MGSCTL_BIN" >&2
     return 1
   fi
 
-  local_binary="$temporary_dir/deployctl-local"
-  if ! "$make_command" -C "$root_dir" deployctl "DEPLOYCTL_OUTPUT=$local_binary" "GO=$go_command" >&2; then
-    echo "local deployctl build failed; install Go and Make or set DEPLOYCTL_BIN" >&2
+  local_binary="$temporary_dir/mgsctl-local"
+  if ! "$make_command" -C "$root_dir" mgsctl "MGSCTL_OUTPUT=$local_binary" "GO=$go_command" >&2; then
+    echo "local mgsctl build failed; install Go and Make or set MGSCTL_BIN" >&2
     return 1
   fi
   if [ ! -f "$local_binary" ]; then
-    echo "local deployctl build did not produce $local_binary" >&2
+    echo "local mgsctl build did not produce $local_binary" >&2
     return 1
   fi
   printf '%s\n' "$local_binary"
@@ -150,30 +150,30 @@ build_from_source() {
 install_candidate() {
   candidate=$1
   if ! mkdir -p "$install_dir"; then
-    echo "cannot create deployctl install directory: $install_dir" >&2
+    echo "cannot create mgsctl install directory: $install_dir" >&2
     return 1
   fi
-  staged="$install_dir/.deployctl.install.$$"
+  staged="$install_dir/.mgsctl.install.$$"
   rm -f "$staged"
   if ! cp "$candidate" "$staged"; then
-    echo "cannot stage deployctl in install directory: $install_dir" >&2
+    echo "cannot stage mgsctl in install directory: $install_dir" >&2
     return 1
   fi
   if ! chmod 0755 "$staged"; then
     rm -f "$staged"
-    echo "cannot mark staged deployctl executable" >&2
+    echo "cannot mark staged mgsctl executable" >&2
     return 1
   fi
-  if ! mv -f "$staged" "$install_dir/deployctl"; then
+  if ! mv -f "$staged" "$install_dir/mgsctl"; then
     rm -f "$staged"
-    echo "cannot replace deployctl in install directory: $install_dir" >&2
+    echo "cannot replace mgsctl in install directory: $install_dir" >&2
     return 1
   fi
-  printf '%s\n' "$install_dir/deployctl"
+  printf '%s\n' "$install_dir/mgsctl"
 }
 
 force_local_build=false
-if path_binary="$(command -v deployctl 2>/dev/null)"; then
+if path_binary="$(command -v mgsctl 2>/dev/null)"; then
   source_commit=""
   source_dirty=false
   source_git_prefix=""
@@ -186,7 +186,7 @@ if path_binary="$(command -v deployctl 2>/dev/null)"; then
       fi
 
       if [ "$source_dirty" = true ]; then
-        echo "Source checkout has uncommitted changes; selecting a local source build instead of the PATH deployctl." >&2
+        echo "Source checkout has uncommitted changes; selecting a local source build instead of the PATH mgsctl." >&2
         force_local_build=true
       else
         if path_metadata="$("$path_binary" version --json 2>/dev/null)"; then
@@ -198,9 +198,9 @@ if path_binary="$(command -v deployctl 2>/dev/null)"; then
           exec "$path_binary" "$@"
         fi
         if [ -n "$path_commit" ]; then
-          echo "PATH deployctl is stale for this source checkout (tool commit $path_commit, checkout $source_commit); selecting a local source build." >&2
+          echo "PATH mgsctl is stale for this source checkout (tool commit $path_commit, checkout $source_commit); selecting a local source build." >&2
         else
-          echo "PATH deployctl build metadata is unavailable; selecting a local source build for this checkout." >&2
+          echo "PATH mgsctl build metadata is unavailable; selecting a local source build for this checkout." >&2
         fi
         force_local_build=true
       fi
@@ -233,10 +233,10 @@ else
 fi
 
 installed_binary="$(install_candidate "$candidate")" || exit 1
-echo "Installed deployctl: $installed_binary"
+echo "Installed mgsctl: $installed_binary"
 case ":${PATH:-}:" in
   *":$install_dir:"*) ;;
-  *) echo "Add $install_dir to PATH to run deployctl directly in future shells." ;;
+  *) echo "Add $install_dir to PATH to run mgsctl directly in future shells." ;;
 esac
 
 exec "$installed_binary" "$@"

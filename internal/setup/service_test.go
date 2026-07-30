@@ -71,7 +71,7 @@ func TestSetupApplyRejectsInvalidOrTamperedDraftBeforeSideEffects(t *testing.T) 
 			request.OperationID = strings.ToUpper(request.OperationID)
 		}},
 		{name: "unknown field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["ADMIN_PASSWORD"] = "smuggled" }},
-		{name: "deployctl-owned field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["INSTALLATION_ID"] = uuid.NewString() }},
+		{name: "mgsctl-owned field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["INSTALLATION_ID"] = uuid.NewString() }},
 		{name: "application-owned field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["SETUP_COMPLETED"] = "true" }},
 		{name: "weak digest key", mutate: func(fixture *serviceFixture, _ *ApplyRequest) {
 			fixture.bootstrap.Values["PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"] = "short"
@@ -696,13 +696,13 @@ func TestSetupApplyPreservesTypedStoreConflicts(t *testing.T) {
 	}
 }
 
-func TestSetupApplyPreservesDeployctlRuntimeExtensions(t *testing.T) {
+func TestSetupApplyPreservesMGSCTLRuntimeExtensions(t *testing.T) {
 	fixture := newServiceFixture(t)
-	fixture.bootstrap.Values["DEPLOYCTL_EXTENSION"] = "retained"
+	fixture.bootstrap.Values["MGSCTL_EXTENSION"] = "retained"
 	if _, err := fixture.service.Apply(t.Context(), fixture.request()); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if fixture.writtenValues["DEPLOYCTL_EXTENSION"] != "retained" {
+	if fixture.writtenValues["MGSCTL_EXTENSION"] != "retained" {
 		t.Fatalf("extension was lost: %#v", fixture.writtenValues)
 	}
 }
