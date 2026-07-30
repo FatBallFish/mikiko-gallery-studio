@@ -22,7 +22,7 @@ cleanup() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" logs --no-color bootstrap-local api >&2 || true
   fi
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" down -v --remove-orphans >/dev/null 2>&1 || status=1
-  docker image rm "pic-gallery-api:$TEST_IMAGE_TAG" >/dev/null 2>&1 || true
+  docker image rm "mikiko-gallery-studio-api:$TEST_IMAGE_TAG" >/dev/null 2>&1 || true
   if [[ -d "$TEST_ROOT" ]]; then
     find "$TEST_ROOT" -depth -mindepth 1 -delete >/dev/null 2>&1 || status=1
     rmdir "$TEST_ROOT" >/dev/null 2>&1 || status=1
@@ -96,7 +96,7 @@ install -m 600 "$ROOT_DIR/config/runtime.local.env.example" "$CONFIG_DIR/runtime
 install -m 600 "$ROOT_DIR/config/install-state.local.json.example" "$CONFIG_DIR/install-state.json"
 "${COMPOSE[@]}" up -d postgres redis >/dev/null
 wait_for_database
-"${COMPOSE[@]}" run --rm --no-deps --entrypoint pic-gallery-db-migrate bootstrap-local >/dev/null
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint mikiko-gallery-studio-db-migrate bootstrap-local >/dev/null
 "${COMPOSE[@]}" exec -T postgres psql -X -q -U postgres -d pic_gallery -v ON_ERROR_STOP=1 -v "password_hash=$original_hash" <<'SQL'
 INSERT INTO admin_users (created_at, updated_at, email, password_hash, role, status)
 VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'alternate-root@example.com', :'password_hash', 'super_admin', 'active');

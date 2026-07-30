@@ -71,7 +71,7 @@ func TestSetupApplyRejectsInvalidOrTamperedDraftBeforeSideEffects(t *testing.T) 
 			request.OperationID = strings.ToUpper(request.OperationID)
 		}},
 		{name: "unknown field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["ADMIN_PASSWORD"] = "smuggled" }},
-		{name: "deployctl-owned field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["INSTALLATION_ID"] = uuid.NewString() }},
+		{name: "mgsctl-owned field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["INSTALLATION_ID"] = uuid.NewString() }},
 		{name: "application-owned field", mutate: func(_ *serviceFixture, request *ApplyRequest) { request.Runtime["SETUP_COMPLETED"] = "true" }},
 		{name: "weak digest key", mutate: func(fixture *serviceFixture, _ *ApplyRequest) {
 			fixture.bootstrap.Values["PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY"] = "short"
@@ -696,13 +696,13 @@ func TestSetupApplyPreservesTypedStoreConflicts(t *testing.T) {
 	}
 }
 
-func TestSetupApplyPreservesDeployctlRuntimeExtensions(t *testing.T) {
+func TestSetupApplyPreservesMGSCTLRuntimeExtensions(t *testing.T) {
 	fixture := newServiceFixture(t)
-	fixture.bootstrap.Values["DEPLOYCTL_EXTENSION"] = "retained"
+	fixture.bootstrap.Values["MGSCTL_EXTENSION"] = "retained"
 	if _, err := fixture.service.Apply(t.Context(), fixture.request()); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if fixture.writtenValues["DEPLOYCTL_EXTENSION"] != "retained" {
+	if fixture.writtenValues["MGSCTL_EXTENSION"] != "retained" {
 		t.Fatalf("extension was lost: %#v", fixture.writtenValues)
 	}
 }
@@ -728,6 +728,59 @@ func TestSetupRequestDigestBindsCanonicalRuntimeAndNormalizedAdminEmail(t *testi
 	otherRuntime, _ := setupRequestDigest(changed, "root@example.com")
 	if otherRuntime == first {
 		t.Fatal("request digest did not bind runtime snapshot")
+	}
+}
+
+func TestSetupRequestDigestAllowsReleaseUpdatesWithoutWeakeningSetupBinding(t *testing.T) {
+	values := pendingRuntimeValues()
+	values["SETUP_COMPLETED"] = "true"
+	values["SETUP_TOKEN"] = ""
+	values["IMAGE_REGISTRY"] = "docker.io/fatballfish"
+	values["IMAGE_TAG"] = "v1.0.0"
+	values["RELEASE_VERSION"] = "v1.0.0"
+	baseline, err := setupRequestDigest(values, "root@example.com")
+	if err != nil {
+		t.Fatalf("setupRequestDigest: %v", err)
+	}
+
+	for key, value := range map[string]string{
+		"APPLICATION_VERSION": "v2.0.0",
+		"IMAGE_REGISTRY":      "registry.example.test/gallery",
+		"IMAGE_TAG":           "v2.0.0",
+		"RELEASE_VERSION":     "v2.0.0",
+	} {
+		t.Run("release field "+key, func(t *testing.T) {
+			changed := serviceCloneValues(values)
+			changed[key] = value
+			got, err := setupRequestDigest(changed, "root@example.com")
+			if err != nil {
+				t.Fatalf("setupRequestDigest: %v", err)
+			}
+			if got != baseline {
+				t.Fatalf("release field %s changed setup digest", key)
+			}
+		})
+	}
+
+	for key, value := range map[string]string{
+		"DATABASE_URL":                             "postgres://app:other@127.0.0.1:5432/app?sslmode=disable",
+		"REDIS_KEY_PREFIX":                         "other-gallery",
+		"STORAGE_S3_BUCKET":                        "other-assets",
+		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": strings.Repeat("f", 64),
+		"INSTALLATION_ID":                          uuid.NewString(),
+		"CONFIG_REVISION":                          "2",
+	} {
+		t.Run("bound field "+key, func(t *testing.T) {
+			changed := serviceCloneValues(values)
+			changed[key] = value
+			got, err := setupRequestDigest(changed, "root@example.com")
+			if err != nil {
+				t.Fatalf("setupRequestDigest: %v", err)
+			}
+			if got == baseline {
+				t.Fatalf("setup field %s did not change setup digest", key)
+			}
+		})
 	}
 }
 

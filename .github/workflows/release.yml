@@ -9,24 +9,50 @@ on:
 permissions:
   contents: read
 
+env:
+  IMAGE_REGISTRY: docker.io/fatballfish
+
 jobs:
   verify:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep
+      - name: Validate SemVer tag
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test deployctl
-        run: go test ./internal/deployctl -count=1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/user/package-lock.json
+            web/admin/package-lock.json
+            web/docs/package-lock.json
+      - name: Install frontend dependencies
+        run: |
+          npm --prefix web/user ci
+          npm --prefix web/admin ci
+          npm --prefix web/docs ci
+      - name: Test mgsctl
+        run: go test ./internal/mgsctl -count=1
       - name: Test install fallback
         run: ./scripts/test/install-wrapper-contract.sh
       - name: Verify release contract
         run: ./scripts/devops/release-contract-test.sh
+      - name: Run full repository verification
+        run: ./scripts/workflow/verify.sh
 
-  build-deployctl:
+  build-mgsctl:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify
     runs-on: ubuntu-latest
@@ -41,20 +67,20 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Package deployctl
+      - name: Package mgsctl
         env:
           RELEASE_GOOS: ${{ matrix.os }}
           RELEASE_GOARCH: ${{ matrix.arch }}
           RELEASE_VERSION: ${{ github.ref_name }}
           RELEASE_COMMIT: ${{ github.sha }}
-          RELEASE_TARGET_ROOT: target/release/deployctl-${{ matrix.os }}-${{ matrix.arch }}
-        run: scripts/devops/package-deployctl.sh
-      - name: Require deployctl checksum
-        run: test "$(find target/release/deployctl-${{ matrix.os }}-${{ matrix.arch }} -name '*.sha256' -type f | wc -l)" -eq 1
+          RELEASE_TARGET_ROOT: target/release
+        run: scripts/devops/package-mgsctl.sh
+      - name: Require adjacent checksum
+        run: test -s target/release/mgsctl-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: deployctl-${{ matrix.os }}-${{ matrix.arch }}
-          path: target/release/deployctl-${{ matrix.os }}-${{ matrix.arch }}/*
+          name: release-mgsctl-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/release/mgsctl-${{ matrix.os }}-${{ matrix.arch }}*
           if-no-files-found: error
 
   build-native:
@@ -90,40 +116,259 @@ jobs:
           DEVOPS_GOOS: ${{ matrix.os }}
           DEVOPS_GOARCH: ${{ matrix.arch }}
           DEVOPS_CGO_ENABLED: '0'
-          DEVOPS_TARGET_ROOT: target/release/native-${{ matrix.os }}-${{ matrix.arch }}
+          DEVOPS_TARGET_ROOT: target/release
         run: scripts/devops/package.sh native
+      - name: Require adjacent checksum
+        run: test -s target/release/mikiko-gallery-studio-native-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: native-${{ matrix.os }}-${{ matrix.arch }}
-          path: target/release/native-${{ matrix.os }}-${{ matrix.arch }}/pic-gallery-native-${{ matrix.os }}-${{ matrix.arch }}.tar.gz*
+          name: release-native-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/release/mikiko-gallery-studio-native-${{ matrix.os }}-${{ matrix.arch }}.tar.gz*
+          if-no-files-found: error
+
+  build-backend-packages:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, worker]
+        os: [linux, windows]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Package backend component
+        env:
+          DEVOPS_GOOS: ${{ matrix.os }}
+          DEVOPS_GOARCH: ${{ matrix.arch }}
+          DEVOPS_CGO_ENABLED: '0'
+          DEVOPS_TARGET_ROOT: target/release
+        run: |
+          case "${{ matrix.component }}" in
+            api) scripts/devops/package.sh api-release ;;
+            worker) scripts/devops/package.sh worker-release ;;
+            *) exit 2 ;;
+          esac
+      - name: Require adjacent checksum
+        run: test -s target/release/mikiko-gallery-studio-${{ matrix.component }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.component }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/release/mikiko-gallery-studio-${{ matrix.component }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz*
+          if-no-files-found: error
+
+  build-frontend-packages:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: user
+            component: user-web
+          - app: admin
+            component: admin-web
+          - app: docs
+            component: docs-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/${{ matrix.app }}/package-lock.json
+      - name: Install frontend dependencies
+        run: npm --prefix web/${{ matrix.app }} ci
+      - name: Package frontend component
+        env:
+          DEVOPS_TARGET_ROOT: target/release
+        run: |
+          case "${{ matrix.component }}" in
+            user-web) scripts/devops/package.sh user-web-release ;;
+            admin-web) scripts/devops/package.sh admin-web-release ;;
+            docs-web) scripts/devops/package.sh docs-web-release ;;
+            *) exit 2 ;;
+          esac
+      - name: Require adjacent checksum
+        run: test -s target/release/mikiko-gallery-studio-${{ matrix.component }}.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.component }}
+          path: target/release/mikiko-gallery-studio-${{ matrix.component }}.tar.gz*
+          if-no-files-found: error
+
+  build-images:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: api
+            image: mikiko-gallery-studio-api
+            dockerfile: Dockerfile.api
+          - component: worker
+            image: mikiko-gallery-studio-worker
+            dockerfile: Dockerfile.worker
+          - component: user-web
+            image: mikiko-gallery-studio-user-web
+            dockerfile: Dockerfile.user-web
+          - component: admin-web
+            image: mikiko-gallery-studio-admin-web
+            dockerfile: Dockerfile.admin-web
+          - component: docs-web
+            image: mikiko-gallery-studio-docs-web
+            dockerfile: Dockerfile.docs-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and publish immutable image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_REGISTRY }}/${{ matrix.image }}:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Record image digest
+        env:
+          COMPONENT: ${{ matrix.component }}
+          REPOSITORY: ${{ env.IMAGE_REGISTRY }}/${{ matrix.image }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          mkdir -p target/image-metadata
+          jq -n \
+            --arg component "$COMPONENT" \
+            --arg repository "$REPOSITORY" \
+            --arg tag "$RELEASE_TAG" \
+            --arg digest "$DIGEST" \
+            --arg version "$RELEASE_TAG" \
+            --arg revision "$RELEASE_COMMIT" \
+            '{component:$component,repository:$repository,tag:$tag,digest:$digest,version:$version,revision:$revision}' \
+            > "target/image-metadata/$COMPONENT.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-metadata-${{ matrix.component }}
+          path: target/image-metadata/${{ matrix.component }}.json
+          if-no-files-found: error
+
+  build-release-manifest:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-mgsctl, build-native, build-backend-packages, build-frontend-packages, build-images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: target/release
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-metadata-*
+          path: target/image-metadata
+          merge-multiple: true
+      - name: Render and verify Release Manifest
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_ASSET_DIR: target/release
+          RELEASE_IMAGE_METADATA: target/images.json
+          RELEASE_MANIFEST_OUTPUT: target/release/release-manifest.json
+        run: |
+          jq -s '.' target/image-metadata/*.json > target/images.json
+          scripts/devops/render-release-manifest.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: target/release/release-manifest.json*
           if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-deployctl, build-native]
+    needs: [build-release-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: target/release
           merge-multiple: true
-      - name: Create release and upload only missing assets
+      - name: Create release, upload missing assets, and verify contents
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes
           fi
           existing_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+          comparison_dir="$(mktemp -d)"
+          verification_dir="$(mktemp -d)"
+          trap 'rm -rf "$comparison_dir" "$verification_dir"' EXIT
           while IFS= read -r asset; do
             name="$(basename "$asset")"
             if printf '%s\n' "$existing_assets" | grep -Fxq "$name"; then
-              echo "Skipping existing release asset: $name"
+              gh release download "$RELEASE_TAG" --pattern "$name" --dir "$comparison_dir"
+              cmp "$asset" "$comparison_dir/$name" || {
+                echo "existing Release asset differs: $name" >&2
+                exit 1
+              }
               continue
             fi
             gh release upload "$RELEASE_TAG" "$asset"
           done < <(find target/release -type f -print | sort)
+          while IFS= read -r asset; do
+            name="$(basename "$asset")"
+            gh release download "$RELEASE_TAG" --pattern "$name" --dir "$verification_dir"
+            cmp "$asset" "$verification_dir/$name"
+          done < <(find target/release -type f -print | sort)
+
+  promote-latest:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release, build-images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-metadata-*
+          path: target/image-metadata
+          merge-multiple: true
+      - name: Promote published digests to latest
+        shell: bash
+        run: |
+          for metadata in target/image-metadata/*.json; do
+            repository="$(jq -r '.repository' "$metadata")"
+            digest="$(jq -r '.digest' "$metadata")"
+            docker buildx imagetools create --tag "$repository:latest" "$repository@$digest"
+            docker buildx imagetools inspect "$repository:latest"
+          done

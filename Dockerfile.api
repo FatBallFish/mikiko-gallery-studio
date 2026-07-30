@@ -9,9 +9,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/pic-gallery-api ./cmd/api
-RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/pic-gallery-db-migrate ./cmd/db-migrate
-RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/pic-gallery-local-bootstrap ./cmd/local-bootstrap
+RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-api ./cmd/api
+RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-db-migrate ./cmd/db-migrate
+RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-local-bootstrap ./cmd/local-bootstrap
 
 FROM alpine:3.22
 WORKDIR /app
@@ -19,14 +19,14 @@ RUN apk add --no-cache ca-certificates su-exec tzdata && \
     addgroup -S picgallery && adduser -S -G picgallery picgallery && \
     mkdir -p /var/lib/pic-gallery/storage && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
-COPY --from=build /out/pic-gallery-api /usr/local/bin/pic-gallery-api
-COPY --from=build /out/pic-gallery-db-migrate /usr/local/bin/pic-gallery-db-migrate
-COPY --from=build /out/pic-gallery-local-bootstrap /usr/local/bin/pic-gallery-local-bootstrap
-COPY --chmod=755 scripts/docker/local-runtime-entrypoint.sh /usr/local/bin/pic-gallery-local-entrypoint
+COPY --from=build /out/mikiko-gallery-studio-api /usr/local/bin/mikiko-gallery-studio-api
+COPY --from=build /out/mikiko-gallery-studio-db-migrate /usr/local/bin/mikiko-gallery-studio-db-migrate
+COPY --from=build /out/mikiko-gallery-studio-local-bootstrap /usr/local/bin/mikiko-gallery-studio-local-bootstrap
+COPY --chmod=755 scripts/docker/local-runtime-entrypoint.sh /usr/local/bin/mikiko-gallery-studio-local-entrypoint
 COPY api/openapi ./api/openapi
 USER picgallery
 EXPOSE 8080
 VOLUME ["/var/lib/pic-gallery/storage"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/readyz >/dev/null || exit 1
-ENTRYPOINT ["pic-gallery-api"]
+ENTRYPOINT ["mikiko-gallery-studio-api"]

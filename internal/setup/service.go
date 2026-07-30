@@ -963,7 +963,7 @@ func mergeFinalRuntime(bootstrap config.BootstrapConfig, submitted map[string]st
 				return nil, 0, ErrSetupValidation
 			}
 			values[key] = value
-		case config.FieldOwnerDeployctl, config.FieldOwnerApplication:
+		case config.FieldOwnerMGSCTL, config.FieldOwnerApplication:
 			if current, exists := bootstrap.Values[key]; !exists || current != value {
 				return nil, 0, ErrSetupValidation
 			}
@@ -1052,6 +1052,9 @@ func validateDeploymentManagement(bootstrap config.BootstrapConfig, deployment c
 func setupRequestDigest(values map[string]string, adminEmail string) (string, error) {
 	entries := make([]config.EnvEntry, 0, len(values))
 	for name, value := range values {
+		if setupReleaseField(name) {
+			continue
+		}
 		entries = append(entries, config.EnvEntry{Key: name, Value: value})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
@@ -1064,6 +1067,15 @@ func setupRequestDigest(values map[string]string, adminEmail string) (string, er
 	}
 	defer clear(canonical)
 	return setupSecureHMAC(values, "setup-request-v1", canonical)
+}
+
+func setupReleaseField(name string) bool {
+	switch name {
+	case "APPLICATION_VERSION", "IMAGE_REGISTRY", "IMAGE_TAG", "RELEASE_VERSION":
+		return true
+	default:
+		return false
+	}
 }
 
 // CanonicalRequestDigest returns the setup commit digest for a completed

@@ -107,7 +107,7 @@ func TestPageServesCompleteOperationalSetupConsole(t *testing.T) {
 	body := recorder.Body.String()
 	for _, required := range []string{
 		"<!doctype html>", "lang=\"zh-CN\"", "部署初始化", "Setup console",
-		"deployctl setup token show", "deployctl setup token reset",
+		"mgsctl setup token show", "mgsctl setup token reset",
 		"data-step=\"database\"", "data-step=\"redis\"", "data-step=\"storage\"",
 		"id=\"admin-email\"", "id=\"admin-password\"", "id=\"apply-setup\"",
 		"role=\"status\"", "aria-live=\"polite\"", "<progress", "prefers-reduced-motion",

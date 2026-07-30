@@ -45,8 +45,8 @@ for (const [name, source] of [['setup', setupRunner], ['cluster', clusterRunner]
 for (const required of [
   'desktop-setup.png',
   'mobile-setup.png',
-  'deployctl setup token show',
-  'deployctl setup token reset',
+  'mgsctl setup token show',
+  'mgsctl setup token reset',
   'setup-model',
   'request_urls',
   'E2E_APPLY_SETUP',
@@ -83,7 +83,7 @@ if (!verifyRunner.includes('native-package-contract.sh')) {
   throw new Error('repository verification must cross-build and inspect Linux/Windows native release bundles')
 }
 if (!clusterRunner.includes('register_pending_runtime')) {
-  throw new Error('cluster deployment E2E must register real node runtimes before deployctl can partially create resources')
+  throw new Error('cluster deployment E2E must register real node runtimes before mgsctl can partially create resources')
 }
 if (!clusterRunner.includes('local path=$1 minimum=$2 watched_pid=$3 timeout=${4:-240}\n  local deadline=$((SECONDS + timeout)) lines')) {
   throw new Error('cluster deployment E2E must initialize timeout before expanding it under set -u')
@@ -122,9 +122,9 @@ for (const [name, source] of [['setup', setupRunner], ['cluster', clusterRunner]
 }
 
 const runtimeRegistration = setupRunner.indexOf('RUNTIMES+=("$runtime")')
-const installInvocation = setupRunner.indexOf('"$DEPLOYCTL" install')
+const installInvocation = setupRunner.indexOf('"$MGSCTL" install')
 if (runtimeRegistration < 0 || installInvocation < 0 || runtimeRegistration > installInvocation) {
-  throw new Error('setup deployment E2E must register the runtime before deployctl can partially create resources')
+  throw new Error('setup deployment E2E must register the runtime before mgsctl can partially create resources')
 }
 for (const required of ['E2E_INSTALL_ATTEMPTS', 'deployment_e2e_remove_project "$project"']) {
   if (!setupRunner.includes(required)) throw new Error(`setup deployment E2E is missing bounded install recovery ${required}`)

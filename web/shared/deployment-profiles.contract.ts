@@ -29,7 +29,7 @@ for (const service of ['api', 'worker']) {
   if (services[service].working_dir !== '/app') throw new Error(`${service} must resolve ./config/runtime.env from /app`)
   if (services[service].environment) throw new Error(`${service} must load runtime values only from mounted config/runtime.env`)
   const configMount = (services[service].volumes ?? []).find((volume: any) => volume?.target === '/app/config')
-  if (!configMount || configMount.type !== 'bind' || !String(configMount.source).includes('DEPLOYCTL_RUNTIME_DIR')) {
+  if (!configMount || configMount.type !== 'bind' || !String(configMount.source).includes('MGSCTL_RUNTIME_DIR')) {
     throw new Error(`${service} must bind the portable runtime config directory`)
   }
   if (service === 'api' && configMount.read_only) throw new Error('API config mount must be writable for setup commit')
@@ -55,7 +55,7 @@ if (services.minio.command?.[0] !== 'server' || !services['minio-init'].depends_
 }
 for (const dependency of ['postgres', 'redis', 'minio-init']) {
   if (services.api.depends_on?.[dependency]) {
-    throw new Error(`API managed dependency ${dependency} must be staged by deployctl before application startup`)
+    throw new Error(`API managed dependency ${dependency} must be staged by mgsctl before application startup`)
   }
 }
 const minioInitMounts = JSON.stringify(services['minio-init'].volumes ?? [])
@@ -89,5 +89,5 @@ for (const retired of ['DATABASE_URL=', 'AUTH_ACCESS_TOKEN_SECRET=', 'POSTGRES_P
 
 const prepare = read('deployments/docker-compose/prepare.sh')
 if (!prepare.includes('scripts/install.sh') || prepare.includes('replace_env ') || prepare.includes('generate_secret')) {
-  throw new Error('legacy Docker prepare wrapper must delegate policy and secret generation to deployctl')
+  throw new Error('legacy Docker prepare wrapper must delegate policy and secret generation to mgsctl')
 }

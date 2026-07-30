@@ -11,9 +11,12 @@ E2E_ROOT="$(mktemp -d "$ROOT_DIR/tmp/e2e/${E2E_PROJECT_PREFIX}${RUN_ID}.XXXXXX")
 E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$E2E_ROOT/evidence}"
 REGISTRY_CONTAINER="${E2E_PROJECT_PREFIX}registry-${RUN_ID}"
 REGISTRY_PORT="$(deployment_e2e_port)"
+RELEASE_PORT="$(deployment_e2e_port)"
 IMAGE_REGISTRY="127.0.0.1:${REGISTRY_PORT}"
-IMAGE_TAG="setup-${RUN_ID}"
-DEPLOYCTL="$E2E_ROOT/deployctl"
+IMAGE_TAG="v0.0.0-setup.${RUN_ID//-/.}"
+MGSCTL="$E2E_ROOT/mgsctl"
+RELEASE_ROOT="$E2E_ROOT/release-server"
+RELEASE_SERVER_PID=""
 SUCCESS=false
 RUNTIMES=()
 PROJECTS=()
@@ -28,6 +31,10 @@ cleanup() {
     kill "$pid" >/dev/null 2>&1 || true
     wait "$pid" >/dev/null 2>&1 || true
   done
+  if [[ -n "$RELEASE_SERVER_PID" ]]; then
+    kill "$RELEASE_SERVER_PID" >/dev/null 2>&1 || true
+    wait "$RELEASE_SERVER_PID" >/dev/null 2>&1 || true
+  fi
   for index in "${!RUNTIMES[@]}"; do
     runtime="${RUNTIMES[$index]}"
     project="${PROJECTS[$index]:-}"
@@ -64,7 +71,12 @@ mkdir -p "$E2E_EVIDENCE_DIR"
 docker run --detach --name "$REGISTRY_CONTAINER" --publish "127.0.0.1:${REGISTRY_PORT}:5000" registry:2 >/dev/null
 deployment_e2e_wait_status "http://127.0.0.1:${REGISTRY_PORT}/v2/" 200 60
 deployment_e2e_build_images "$ROOT_DIR" "$IMAGE_REGISTRY" "$IMAGE_TAG"
-(cd "$ROOT_DIR" && go build -o "$DEPLOYCTL" ./cmd/deployctl)
+(cd "$ROOT_DIR" && go build -o "$MGSCTL" ./cmd/mgsctl)
+deployment_e2e_render_release "$ROOT_DIR" "$RELEASE_ROOT" "$MGSCTL" "$IMAGE_REGISTRY" "$IMAGE_TAG"
+python3 -m http.server "$RELEASE_PORT" --bind 127.0.0.1 --directory "$RELEASE_ROOT" >"$E2E_ROOT/release-server.log" 2>&1 &
+RELEASE_SERVER_PID=$!
+deployment_e2e_wait_status "http://127.0.0.1:${RELEASE_PORT}/releases/download/${IMAGE_TAG}/release-manifest.json" 200 30
+export MGSCTL_RELEASE_BASE_URL="http://127.0.0.1:${RELEASE_PORT}/releases"
 
 start_core_middleware() {
   local suffix=$1
@@ -122,8 +134,8 @@ run_profile() {
     user_port="$(deployment_e2e_port)"
     admin_port="$(deployment_e2e_port)"
     docs_port="$(deployment_e2e_port)"
-    if "$DEPLOYCTL" install --mode docker --profile "$profile" --topology single --yes \
-      --runtime-dir "$runtime" --application-version "$IMAGE_TAG" --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" \
+    if "$MGSCTL" install --mode docker --profile "$profile" --topology single --yes \
+      --runtime-dir "$runtime" --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" \
       --api-port "$api_port" --gateway-port "$gateway_port" --user-web-port "$user_port" --admin-web-port "$admin_port" --docs-web-port "$docs_port"; then
       break
     fi
@@ -163,7 +175,7 @@ run_profile() {
   [[ "$(printf '%s' "$setup_status" | deployment_e2e_json_data_field phase)" == setup_required ]]
   [[ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${api_port}/api/agent/auth/v1/login/password")" == 404 ]]
 
-  old_token="$($DEPLOYCTL setup token show --runtime-dir "$runtime" | sed -n 's/^Setup token: //p')"
+  old_token="$($MGSCTL setup token show --runtime-dir "$runtime" | sed -n 's/^Setup token: //p')"
   [[ -n "$old_token" ]]
   deployment_e2e_wait_status "http://127.0.0.1:${gateway_port}/api/system/v1/bootstrap-status" 200 60
   gateway_status="$(curl -fsS "http://127.0.0.1:${gateway_port}/api/system/v1/bootstrap-status")"
@@ -183,7 +195,7 @@ run_profile() {
     E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR/$profile" python3 "$ROOT_DIR/scripts/e2e/setup-browser.py"
 
   printf 'before-token-reset\n' >"$checkpoint"
-  if ! reset_output="$($DEPLOYCTL setup token reset --runtime-dir "$runtime")"; then
+  if ! reset_output="$($MGSCTL setup token reset --runtime-dir "$runtime")"; then
     deployment_e2e_fail "$profile setup token reset command failed"
   fi
   printf 'token-reset-command-complete\n' >"$checkpoint"
@@ -314,7 +326,7 @@ PY
   login="$(curl -fsS -H 'Content-Type: application/json' --data '{"email":"admin@example.com","password":"admin123456"}' \
     "http://127.0.0.1:${api_port}/api/ops/admin/v1/auth/login")"
   [[ -n "$(printf '%s' "$login" | deployment_e2e_json_data_field access_token)" ]]
-  "$DEPLOYCTL" doctor --runtime-dir "$runtime" >"$E2E_EVIDENCE_DIR/${profile}-doctor.txt"
+  "$MGSCTL" doctor --runtime-dir "$runtime" >"$E2E_EVIDENCE_DIR/${profile}-doctor.txt"
 
   if [[ "$profile" == full && "${E2E_RUN_BUSINESS:-true}" == true ]]; then
     configure_local_e2e_runtime "$runtime" "$project" "$api_port"

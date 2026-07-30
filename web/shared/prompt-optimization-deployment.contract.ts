@@ -31,10 +31,10 @@ if (prodEnv.includes(`${key}=`)) {
 
 const prepare = read('deployments/docker-compose/prepare.sh')
 if (prepare.includes(key) || !prepare.includes('scripts/install.sh')) {
-  throw new Error('deployment prepare script must delegate quote signing key generation to deployctl')
+  throw new Error('deployment prepare script must delegate quote signing key generation to mgsctl')
 }
 
-const deployctlRuntime = read('internal/deployctl/runtime.go')
-if (!deployctlRuntime.includes(`"${key}":`) || !deployctlRuntime.includes('derivedSecret(root, "prompt-quote-signing")')) {
-  throw new Error('deployctl must generate a purpose-separated prompt optimization quote signing key')
+const mgsctlRuntime = read('internal/mgsctl/runtime.go')
+if (!mgsctlRuntime.includes(`"${key}":`) || !mgsctlRuntime.includes('derivedSecret(root, "prompt-quote-signing")')) {
+  throw new Error('mgsctl must generate a purpose-separated prompt optimization quote signing key')
 }

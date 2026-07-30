@@ -55,8 +55,8 @@ def assert_layout(page):
 def verify_setup_page(page, screenshot):
     page.goto(f"{BASE_URL}/setup", wait_until="domcontentloaded")
     expect(page.locator("#setup-console")).to_be_visible()
-    expect(page.get_by_text("deployctl setup token show", exact=True)).to_be_visible()
-    expect(page.get_by_text("deployctl setup token reset", exact=True)).to_be_visible()
+    expect(page.get_by_text("mgsctl setup token show", exact=True)).to_be_visible()
+    expect(page.get_by_text("mgsctl setup token reset", exact=True)).to_be_visible()
     assert_layout(page)
     page.screenshot(path=OUTPUT_DIR / screenshot, full_page=True)
 

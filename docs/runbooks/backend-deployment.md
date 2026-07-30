@@ -2,7 +2,7 @@
 
 ## Deployment Boundary
 
-`deployctl` is the supported deployment entrypoint. It writes all generated files under the selected runtime directory and uses one canonical configuration file:
+`mgsctl` is the supported deployment entrypoint. It writes all generated files under the selected runtime directory and uses one canonical configuration file:
 
 ```text
 ./config/runtime.env
@@ -25,11 +25,11 @@ Native `full` is intentionally unsupported. Docker and native core nodes can joi
 
 ## Prerequisites
 
-Docker deployment requires Docker Engine, Compose v2, and a writable runtime directory. Registry access is normally required. If a selected Pic Gallery application image cannot be pulled, deployctl may build the selected application images from a complete checkout supplied by `scripts/install.sh` or `scripts/install.ps1`. Base and middleware images still come from their registries.
+Docker deployment requires Docker Engine, Compose v2, and a writable runtime directory. Registry access is normally required. Official images use repositories such as `docker.io/fatballfish/mikiko-gallery-studio-api`. If a selected application image cannot be pulled, mgsctl may build selected images from a complete checkout supplied by `scripts/install.sh` or `scripts/install.ps1`. Base and middleware images still come from their registries.
 
 Native deployment requires a supported prebuilt release bundle, service-manager privileges, external PostgreSQL and Redis, and local shared storage for single-node deployments or S3-compatible storage for clusters. Target hosts do not need Go or Node.js.
 
-Multi-API deployments require an external load balancer. `deployctl` installs nodes and reports health; it does not configure public ingress.
+Multi-API deployments require an external load balancer. `mgsctl` installs nodes and reports health; it does not configure public ingress.
 
 ## First Installation
 
@@ -38,6 +38,8 @@ Run from the directory that should own the deployment files:
 ```bash
 ./scripts/install.sh install --mode docker --profile full --topology single --yes
 ```
+
+These explicit flags show the default plan. `install --yes` defaults to Docker, `full`, `single`, and selector `latest`. mgsctl verifies `release-manifest.json`, resolves `latest` to a concrete SemVer version plus immutable image digests, and persists only the concrete application identity.
 
 Windows:
 
@@ -61,13 +63,15 @@ Omit `--yes` for the interactive selector. Use `--runtime-dir <path>` when the c
 
 Installation generates secrets, deployment assets, `deployment.json`, `config/install-state.json`, and `config/runtime.env`, then starts the selected services. Non-interactive output does not print the setup token.
 
-If `docker compose pull` fails, deployctl validates the source checkout, locally builds the selected Pic Gallery images with the requested registry/tag, and continues startup. Without a complete checkout it returns the pull error together with actionable fallback guidance.
+If `docker compose pull` fails, mgsctl validates the source checkout, locally builds the selected Pic Gallery images with the requested registry/tag, and continues startup. Without a complete checkout it returns the pull error together with actionable fallback guidance.
 
 The same Setup-pending plan resumes automatically after a failed startup. A different interactive plan prompts before replacing generated configuration. For automation, pass `--overwrite` explicitly. Overwrite preserves `data/`, `logs/`, and Docker volumes and is rejected for completed or unrecognized installations.
 
 ## TUI, Help, and Endpoint Handoff
 
-Running `deployctl` without arguments opens the TUI only when both input and output are terminals. Number keys and Arrow keys select, Enter confirms, Space toggles multi-select fields, Esc returns, and Ctrl+C exits. For scripts, redirected output, or command discovery, use `deployctl -h` or `deployctl --help`; a no-argument non-terminal invocation prints the same help and exits without blocking.
+Running `mgsctl` without arguments opens the TUI only when both input and output are terminals. Number keys and Arrow keys select, Enter confirms, Space toggles multi-select fields, Esc returns, and Ctrl+C exits. For scripts, redirected output, or command discovery, use `mgsctl -h` or `mgsctl --help`; a no-argument non-terminal invocation prints the same help and exits without blocking.
+
+The TUI defaults to Chinese (`zh-CN`). The Language field switches to English (`en-US`) immediately and stores the preference in `mgsctl/config.json`. Full and core component sets are read-only presets; custom remains editable.
 
 Successful installation prints a plan-derived endpoint summary, access scope, and numbered next steps. Interactive terminal output may include the one-time Setup token. Non-interactive or redirected output never exposes it and prints the exact host-local token recovery command instead.
 
@@ -86,9 +90,9 @@ The setup UI uses the admin-console visual system. It configures PostgreSQL, Red
 Retrieve or rotate the one-time setup credential locally:
 
 ```bash
-deployctl setup status
-deployctl setup token show
-deployctl setup token reset
+mgsctl setup status
+mgsctl setup token show
+mgsctl setup token reset
 ```
 
 Reset increments `SETUP_TOKEN_VERSION`, invalidates the old token and sessions, writes the file atomically, and restarts only API and Gateway. Worker, Web services, and managed middleware remain running. Show and reset are permanently refused after setup completes.
@@ -100,15 +104,15 @@ After restart, configure provider accounts, text and image models, routes, price
 Create credentials only on an initialized control node:
 
 ```bash
-deployctl cluster token create --role api --ttl 10m
-deployctl cluster token create --role worker --ttl 10m
-deployctl cluster token create --role web --ttl 10m
+mgsctl cluster token create --role api --ttl 10m
+mgsctl cluster token create --role worker --ttl 10m
+mgsctl cluster token create --role web --ttl 10m
 ```
 
 Join on the target host:
 
 ```bash
-deployctl cluster join \
+mgsctl cluster join \
   --server http://10.0.0.10:8080 \
   --token '<single-use-token>' \
   --mode docker \
@@ -124,9 +128,9 @@ API replicas can serve read-only node health. Token creation and revocation rema
 The application does not automatically read root `.env`, `.env.prod`, or packaged `backend.env` files. Import one explicitly:
 
 ```bash
-deployctl import-config --source .env --mode docker --profile core --topology single
-deployctl import-config --source .env.prod --mode docker --profile full --topology single --storage-driver s3
-deployctl import-config --source /path/to/backend.env --mode native --profile core --topology single
+mgsctl import-config --source .env --mode docker --profile core --topology single
+mgsctl import-config --source .env.prod --mode docker --profile full --topology single --storage-driver s3
+mgsctl import-config --source /path/to/backend.env --mode native --profile core --topology single
 ```
 
 Import maps supported fields, generates missing secrets, rebuilds managed connection URLs, renders bilingual comments, and never modifies the source. Existing target files are not overwritten. Partial writes are rolled back. A legacy installation is marked completed only when middleware, installation identity/setup binding, schema, and administrator checks all succeed; otherwise it remains in setup mode.
@@ -135,10 +139,14 @@ Keep the source until `doctor`, readiness, administrator login, and a business s
 
 ## Operations
 
+Runtime discovery is shared by status, doctor, restart, upgrade, uninstall, Setup, and cluster control commands. Resolution order is explicit `--runtime-dir`, the current directory, `./runtime` under the current directory, then the saved runtime from `mgsctl/config.json`. Ambiguous or invalid candidates fail closed.
+
+`mgsctl self-update` replaces only the control-tool executable. `mgsctl upgrade` resolves and deploys an application Release, performs the target database migration when authorized, and rolls the selected services. Updating the tool does not implicitly change a running application.
+
 ```bash
-deployctl status
-deployctl doctor
-deployctl restart
+mgsctl status
+mgsctl doctor
+mgsctl restart
 ```
 
 `doctor` checks runtime fields, private file permissions, manifest/state identity, middleware connectivity, and database schema compatibility. Diagnostics redact DSNs, tokens, passwords, and encryption keys.
@@ -148,22 +156,22 @@ For Docker nodes that include API, `doctor` checks the loopback-published `/read
 Upgrade a Docker single/control installation:
 
 ```bash
-deployctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag
+mgsctl upgrade --image-tag v1.2.3
 ```
 
 Upgrade a native single/control installation:
 
 ```bash
-deployctl upgrade --application-version v1.2.3 --release-version v1.2.3
+mgsctl upgrade --release-version v1.2.3
 ```
 
-The control path atomically upgrades the runtime schema and deployment manifest, acquires the database migration lock, migrates once, then rolls services in dependency order. Joined nodes must not migrate:
+If no selector is supplied, upgrade resolves `latest`. The checksummed `release-manifest.json` determines the concrete logical application version; it is not entered manually. Docker first pulls target digests, then runs `mikiko-gallery-studio-db-migrate` from the target API image inside the current Compose network before rolling services. Native mode stages and runs the target Release migration binary. Joined nodes must not migrate:
 
 ```bash
-deployctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag --migrate=false
+mgsctl upgrade --image-tag v1.2.3 --migrate=false
 ```
 
-Database migrations are forward-compatible and are not automatically reversed. If service rollout fails after a successful migration, the target runtime and manifest remain published; rerun the same `deployctl upgrade` command to resume the idempotent rollout. If rollout fails without a migration, `deployctl` restores the previous runtime and manifest and actively reapplies the previous deployment plan.
+Database migrations are forward-compatible and are not automatically reversed. If service rollout fails after a successful migration, the target runtime and manifest remain published; rerun the same `mgsctl upgrade` command to resume the idempotent rollout. If rollout fails without a migration, `mgsctl` restores the previous runtime and manifest and actively reapplies the previous deployment plan.
 
 Back up external databases and object storage with provider-native tooling before upgrades. For Docker full, back up the named PostgreSQL and MinIO volumes before destructive maintenance.
 
@@ -172,23 +180,23 @@ Back up external databases and object storage with provider-native tooling befor
 Ordinary uninstall stops and unregisters services but preserves configuration and all persistent data:
 
 ```bash
-deployctl uninstall --yes
+mgsctl uninstall --yes
 ```
 
 Permanent deletion is intentionally not authorized by `--yes`. First read the installation ID:
 
 ```bash
-deployctl setup status
+mgsctl setup status
 ```
 
 Then provide the exact, case-sensitive phrase:
 
 ```bash
-deployctl uninstall --delete-data \
+mgsctl uninstall --delete-data \
   --confirm 'DELETE <installation-id> PERSISTENT DATA'
 ```
 
-For Docker, this additionally removes Compose named volumes. Before stopping services or deleting any persistent resource, the command verifies that the runtime tree contains only deployctl-managed configuration, deployment assets, native release files, application data, and logs. Unknown files or directories fail closed. The command also refuses filesystem roots, the current working directory, and directories containing the current working directory.
+For Docker, this additionally removes Compose named volumes. Before stopping services or deleting any persistent resource, the command verifies that the runtime tree contains only mgsctl-managed configuration, deployment assets, native release files, application data, and logs. Unknown files or directories fail closed. The command also refuses filesystem roots, the current working directory, and directories containing the current working directory.
 
 ## Failure Recovery
 
@@ -198,7 +206,7 @@ For Docker, this additionally removes Compose named volumes. Before stopping ser
 - A failed probe writes no final setup configuration.
 - A migration failure keeps setup pending.
 - A completed installation with missing or corrupt runtime files fails closed and never reopens anonymous setup.
-- Use `deployctl doctor`, service logs, `deployctl status`, and `deployctl restart` in that order after an interrupted operation.
+- Use `mgsctl doctor`, service logs, `mgsctl status`, and `mgsctl restart` in that order after an interrupted operation.
 - Never hand-edit `SETUP_COMPLETED`, installation identity, cluster identity, schema version, or configuration revision to bypass recovery checks.
 
 ## Acceptance Tests

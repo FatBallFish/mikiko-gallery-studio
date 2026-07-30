@@ -131,13 +131,69 @@ deployment_e2e_build_images() {
   if [[ -n "${E2E_SOURCE_IMAGE_REGISTRY:-}" && -n "${E2E_SOURCE_IMAGE_TAG:-}" ]]; then
     for component in api worker user-web admin-web docs-web; do
       docker image tag \
-        "${E2E_SOURCE_IMAGE_REGISTRY}/pic-gallery-${component}:${E2E_SOURCE_IMAGE_TAG}" \
-        "${registry}/pic-gallery-${component}:${tag}"
+        "${E2E_SOURCE_IMAGE_REGISTRY}/mikiko-gallery-studio-${component}:${E2E_SOURCE_IMAGE_TAG}" \
+        "${registry}/mikiko-gallery-studio-${component}:${tag}"
     done
   elif [[ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]]; then
     PIC_GALLERY_IMAGE_REGISTRY="$registry" "$root/scripts/docker/images.sh" build --registry "$registry" --tag "$tag"
   fi
   PIC_GALLERY_IMAGE_REGISTRY="$registry" "$root/scripts/docker/images.sh" push --registry "$registry" --tag "$tag"
+}
+
+deployment_e2e_registry_digest() {
+  local registry=$1 image=$2 tag=$3 headers digest
+  headers="$(curl --silent --show-error --fail-with-body --dump-header - --output /dev/null \
+    --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+    "http://${registry}/v2/${image}/manifests/${tag}")"
+  digest="$(printf '%s\n' "$headers" | awk 'tolower($1) == "docker-content-digest:" {gsub("\\r", "", $2); print $2; exit}')"
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || deployment_e2e_fail "registry returned an invalid digest for ${image}:${tag}"
+  printf '%s\n' "$digest"
+}
+
+deployment_e2e_render_release() {
+  local root=$1 release_root=$2 mgsctl=$3 registry=$4 version=$5
+  local asset_dir metadata_file rows_file component digest revision
+  asset_dir="$release_root/releases/download/$version"
+  metadata_file="$release_root/images-$version.json"
+  rows_file="$release_root/images-$version.tsv"
+  revision="$(git -C "$root" rev-parse HEAD)"
+  mkdir -p "$asset_dir"
+  cp "$mgsctl" "$asset_dir/mgsctl-linux-amd64"
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$asset_dir" && sha256sum mgsctl-linux-amd64 > mgsctl-linux-amd64.sha256)
+  else
+    (cd "$asset_dir" && shasum -a 256 mgsctl-linux-amd64 > mgsctl-linux-amd64.sha256)
+  fi
+  : >"$rows_file"
+  for component in api worker user-web admin-web docs-web; do
+    digest="$(deployment_e2e_registry_digest "$registry" "mikiko-gallery-studio-$component" "$version")"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$component" "$registry/mikiko-gallery-studio-$component" "$version" "$digest" "$version" "$revision" \
+      >>"$rows_file"
+  done
+  python3 - "$rows_file" "$metadata_file" <<'PY'
+import json
+import sys
+
+rows = []
+with open(sys.argv[1], encoding="utf-8") as source:
+    for line in source:
+        component, repository, tag, digest, version, revision = line.rstrip("\n").split("\t")
+        rows.append({
+            "component": component,
+            "repository": repository,
+            "tag": tag,
+            "digest": digest,
+            "version": version,
+            "revision": revision,
+        })
+with open(sys.argv[2], "w", encoding="utf-8") as destination:
+    json.dump(rows, destination, separators=(",", ":"))
+PY
+  rm -f "$rows_file"
+  RELEASE_VERSION="$version" RELEASE_COMMIT="$revision" RELEASE_ASSET_DIR="$asset_dir" \
+    RELEASE_IMAGE_METADATA="$metadata_file" RELEASE_MANIFEST_OUTPUT="$asset_dir/release-manifest.json" \
+    "$root/scripts/devops/render-release-manifest.sh" >/dev/null
 }
 
 deployment_e2e_compose() {

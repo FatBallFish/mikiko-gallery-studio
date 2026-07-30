@@ -75,10 +75,10 @@ for (const [label, source] of [['dev up', devUp], ['dev down', devDown], ['E2E r
   if (!source.includes('docker-compose.local.yml')) throw new Error(`${label} must target the unified local Compose file`)
 }
 for (const required of [
-  'entrypoint: ["pic-gallery-local-bootstrap"]',
+  'entrypoint: ["mikiko-gallery-studio-local-bootstrap"]',
   '${PIC_GALLERY_LOCAL_CONFIG_DIR:-../../config}:/app/config',
   '${PIC_GALLERY_LOCAL_CONFIG_DIR:-../../config}:/run/pic-gallery-config:ro',
-  'entrypoint: ["/usr/local/bin/pic-gallery-local-entrypoint"]',
+  'entrypoint: ["/usr/local/bin/mikiko-gallery-studio-local-entrypoint"]',
   'condition: service_completed_successfully',
 ]) {
   if (!localCompose.includes(required)) throw new Error(`unified local Compose runtime bootstrap is missing ${required}`)
@@ -86,7 +86,7 @@ for (const required of [
 if ((localCompose.match(/\$\{PIC_GALLERY_LOCAL_CONFIG_DIR:-\.\.\/\.\.\/config\}:\/run\/pic-gallery-config:ro/g) || []).length < 2) {
   throw new Error('API and Worker must read the same local config directory')
 }
-for (const required of ['/out/pic-gallery-local-bootstrap ./cmd/local-bootstrap', '/usr/local/bin/pic-gallery-local-bootstrap', 'su-exec', 'local-runtime-entrypoint.sh']) {
+for (const required of ['/out/mikiko-gallery-studio-local-bootstrap ./cmd/local-bootstrap', '/usr/local/bin/mikiko-gallery-studio-local-bootstrap', 'su-exec', 'local-runtime-entrypoint.sh']) {
   if (!apiDockerfile.includes(required)) throw new Error(`the local API image is missing ${required}`)
 }
 for (const required of ['su-exec', 'local-runtime-entrypoint.sh']) {
@@ -98,7 +98,7 @@ for (const required of ['runtime.env', 'install-state.json', 'install -m 600', '
 for (const required of ['runtime.local.env.example', 'install-state.local.json.example', 'PIC_GALLERY_LOCAL_CONFIG_DIR', 'runtime.env', 'install-state.json', 'install -m 600']) {
   if (!prepareRuntime.includes(required)) throw new Error(`local runtime preparation is missing ${required}`)
 }
-for (const required of ['PIC_GALLERY_LOCAL_CONFIG_DIR', 'TEST_IMAGE_TAG', 'local-bootstrap-lifecycle-', 'admin@example.com', 'alternate-root@example.com', 'pic-gallery-db-migrate', 'INSERT INTO admin_users', '--force-recreate bootstrap-local api', 'service_completed_successfully', 'stat -f', 'down -v']) {
+for (const required of ['PIC_GALLERY_LOCAL_CONFIG_DIR', 'TEST_IMAGE_TAG', 'local-bootstrap-lifecycle-', 'admin@example.com', 'alternate-root@example.com', 'mikiko-gallery-studio-db-migrate', 'INSERT INTO admin_users', '--force-recreate bootstrap-local api', 'service_completed_successfully', 'stat -f', 'down -v']) {
   if (!bootstrapLifecycle.includes(required)) throw new Error(`local bootstrap lifecycle test is missing ${required}`)
 }
 if (bootstrapLifecycle.includes('pic-gallery-local_postgres-data') || bootstrapLifecycle.includes('pic-gallery-local_shared-storage')) {

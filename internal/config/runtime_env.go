@@ -81,8 +81,8 @@ func RenderRuntimeEnv(schema RuntimeSchema, values map[string]string, extensions
 
 	known := runtimeSchemaKeySet(schema)
 	var output bytes.Buffer
-	output.WriteString("# Generated runtime configuration. Update values through deployctl or the setup interface.\n")
-	output.WriteString("# 自动生成的运行时配置。请通过 deployctl 或初始化界面更新配置值。\n")
+	output.WriteString("# Generated runtime configuration. Update values through mgsctl or the setup interface.\n")
+	output.WriteString("# 自动生成的运行时配置。请通过 mgsctl 或初始化界面更新配置值。\n")
 
 	lastGroup := ""
 	for _, runtimeField := range schema.Fields {
