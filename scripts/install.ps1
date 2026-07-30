@@ -53,7 +53,7 @@ if (-not $binary) {
 
 if (-not $binary -or $forceLocalBuild) {
   $version = if ($env:MGSCTL_VERSION) { $env:MGSCTL_VERSION } else { "latest" }
-  $releaseBase = if ($env:MGSCTL_RELEASE_BASE_URL) { $env:MGSCTL_RELEASE_BASE_URL.TrimEnd("/") } else { "https://github.com/fatballfish/pic-gallery/releases" }
+  $releaseBase = if ($env:MGSCTL_RELEASE_BASE_URL) { $env:MGSCTL_RELEASE_BASE_URL.TrimEnd("/") } else { "https://github.com/fatballfish/mikiko-gallery-studio/releases" }
   $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME "AppData\Local" }
   $installDirectory = if ($env:MGSCTL_INSTALL_DIR) { $env:MGSCTL_INSTALL_DIR } else { Join-Path $localAppData "Programs\mgsctl" }
   $goCommandName = if ($env:GO) { $env:GO } else { "go" }

@@ -10,6 +10,7 @@ IMAGE_SCRIPT="$ROOT/scripts/docker/images.sh"
 NATIVE_PACKAGER="$ROOT/scripts/devops/package.sh"
 NATIVE_CONTRACT="$ROOT/scripts/workflow/native-package-contract.sh"
 PROD_COMPOSE="$ROOT/deployments/docker-compose/docker-compose.prod.yml"
+APP_PACKAGER="$ROOT/scripts/devops/package.sh"
 
 require_file() {
   [[ -f "$1" ]] || {
@@ -94,6 +95,7 @@ for required in \
   "contents: read" \
   "contents: write" \
   "needs: verify" \
+  "./scripts/workflow/verify.sh" \
   "go test ./internal/mgsctl" \
   "./scripts/test/install-wrapper-contract.sh" \
   "os: [linux, darwin, windows]" \
@@ -103,6 +105,16 @@ for required in \
   "scripts/devops/package.sh native" \
   "actions/upload-artifact@v4" \
   "actions/download-artifact@v4" \
+  "docker/setup-buildx-action@v3" \
+  "docker/login-action@v3" \
+  "docker/build-push-action@v6" \
+  "DOCKERHUB_USERNAME" \
+  "DOCKERHUB_TOKEN" \
+  "platforms: linux/amd64,linux/arm64" \
+  "scripts/devops/render-release-manifest.sh" \
+  "release-manifest.json" \
+  "imagetools create" \
+  "needs: [release" \
   "gh release view" \
   "gh release create" \
   "gh release upload" \
@@ -110,6 +122,22 @@ for required in \
   ".sha256"; do
   require_text "$WORKFLOW" "$required"
 done
+
+for image in api worker user-web admin-web docs-web; do
+  require_text "$WORKFLOW" "mikiko-gallery-studio-$image"
+done
+for package_target in api-release worker-release user-web-release admin-web-release docs-web-release; do
+  require_text "$WORKFLOW" "scripts/devops/package.sh $package_target"
+done
+for asset_name in \
+  'mikiko-gallery-studio-api-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz' \
+  'mikiko-gallery-studio-worker-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz' \
+  'mikiko-gallery-studio-user-web.tar.gz' \
+  'mikiko-gallery-studio-admin-web.tar.gz' \
+  'mikiko-gallery-studio-docs-web.tar.gz'; do
+  require_text "$APP_PACKAGER" "$asset_name"
+done
+require_text "$APP_PACKAGER" 'checksum_file'
 
 for required in \
   "RELEASE_VERSION" \
@@ -158,6 +186,7 @@ assert sorted(manifest["images"]) == ["admin-web", "api", "docs-web", "user-web"
 assert manifest["assets"]["mgsctl-linux-amd64"]["name"] == "mgsctl-linux-amd64"
 PY
 forbid_text "$WORKFLOW" "--clobber"
+forbid_text "$WORKFLOW" "docker tag"
 forbid_text "$MAINTAINER_DOC" "scripts/local/pgctl.sh"
 forbid_text "$MAINTAINER_DOC" "scripts/service/manage"
 
@@ -176,4 +205,4 @@ for required in \
   require_text "$PACKAGER" "$required"
 done
 
-echo "OK: tagged mgsctl and native release contract verified"
+echo "OK: complete tagged application release contract verified"

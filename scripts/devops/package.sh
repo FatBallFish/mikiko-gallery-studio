@@ -10,6 +10,7 @@ CGO_TARGET=${DEVOPS_CGO_ENABLED:-0}
 usage() {
   cat <<'USAGE'
 Usage: scripts/devops/package.sh <user-web|admin-web|docs-web|api-server|worker|gateway|native|all>
+       scripts/devops/package.sh <user-web-release|admin-web-release|docs-web-release|api-release|worker-release>
 
 Environment overrides:
   DEVOPS_TARGET_ROOT   Output root, default target/devops
@@ -26,6 +27,29 @@ copy_file() {
   local dst=$2
   mkdir -p "$(dirname "$dst")"
   cp "$src" "$dst"
+}
+
+checksum_file() {
+  local path=$1
+  local directory name
+  directory=$(dirname "$path")
+  name=$(basename "$path")
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$directory" && sha256sum "$name" > "$name.sha256")
+  elif command -v shasum >/dev/null 2>&1; then
+    (cd "$directory" && shasum -a 256 "$name" > "$name.sha256")
+  else
+    echo "sha256 tool is required to package a release" >&2
+    exit 1
+  fi
+}
+
+archive_directory() {
+  local directory=$1
+  local archive=$2
+  rm -f "$archive" "$archive.sha256"
+  COPYFILE_DISABLE=1 tar --format=ustar -C "$directory" -czf "$archive" .
+  checksum_file "$archive"
 }
 
 package_frontend() {
@@ -109,6 +133,31 @@ package_backend() {
   fi
 }
 
+package_frontend_release() {
+  local app=$1
+  local archive
+  package_frontend "$app"
+  case "$app" in
+    user) archive="$TARGET_ROOT/mikiko-gallery-studio-user-web.tar.gz" ;;
+    admin) archive="$TARGET_ROOT/mikiko-gallery-studio-admin-web.tar.gz" ;;
+    docs) archive="$TARGET_ROOT/mikiko-gallery-studio-docs-web.tar.gz" ;;
+    *) echo "unknown frontend release target: $app" >&2; exit 2 ;;
+  esac
+  archive_directory "$TARGET_ROOT/$app-web" "$archive"
+}
+
+package_backend_release() {
+  local target=$1
+  local archive
+  package_backend "$target"
+  case "$target" in
+    api-server) archive="$TARGET_ROOT/mikiko-gallery-studio-api-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz" ;;
+    worker) archive="$TARGET_ROOT/mikiko-gallery-studio-worker-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz" ;;
+    *) echo "unknown backend release target: $target" >&2; exit 2 ;;
+  esac
+  archive_directory "$TARGET_ROOT/$target" "$archive"
+}
+
 package_native() {
   local bundle="$TARGET_ROOT/native-$GOOS_TARGET-$GOARCH_TARGET"
   local extension=""
@@ -141,14 +190,7 @@ package_native() {
   cp -R "$ROOT_DIR/api/openapi/components" "$bundle/api/openapi/components"
 
   COPYFILE_DISABLE=1 tar --format=ustar -C "$bundle" -czf "$archive" bin web api
-  if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$TARGET_ROOT" && sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256")
-  elif command -v shasum >/dev/null 2>&1; then
-    (cd "$TARGET_ROOT" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")
-  else
-    echo "sha256 tool is required to package a native release" >&2
-    exit 1
-  fi
+  checksum_file "$archive"
 }
 
 package_all() {
@@ -174,11 +216,26 @@ main() {
     user-web)
       package_frontend user
       ;;
+    user-web-release)
+      package_frontend_release user
+      ;;
     admin-web)
       package_frontend admin
       ;;
+    admin-web-release)
+      package_frontend_release admin
+      ;;
     docs-web)
       package_frontend docs
+      ;;
+    docs-web-release)
+      package_frontend_release docs
+      ;;
+    api-release)
+      package_backend_release api-server
+      ;;
+    worker-release)
+      package_backend_release worker
       ;;
     api-server|worker|gateway)
       package_backend "$target"

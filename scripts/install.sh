@@ -20,7 +20,7 @@ if [ -n "${MGSCTL_BIN:-}" ]; then
 fi
 
 version="${MGSCTL_VERSION:-latest}"
-release_base="${MGSCTL_RELEASE_BASE_URL:-https://github.com/fatballfish/pic-gallery/releases}"
+release_base="${MGSCTL_RELEASE_BASE_URL:-https://github.com/fatballfish/mikiko-gallery-studio/releases}"
 install_dir="${MGSCTL_INSTALL_DIR:-${HOME:?HOME is required}/.local/bin}"
 go_command="${GO:-go}"
 make_command="${MAKE:-make}"
