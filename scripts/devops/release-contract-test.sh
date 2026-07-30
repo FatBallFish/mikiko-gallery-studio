@@ -11,6 +11,7 @@ NATIVE_PACKAGER="$ROOT/scripts/devops/package.sh"
 NATIVE_CONTRACT="$ROOT/scripts/workflow/native-package-contract.sh"
 PROD_COMPOSE="$ROOT/deployments/docker-compose/docker-compose.prod.yml"
 APP_PACKAGER="$ROOT/scripts/devops/package.sh"
+ADMIN_DOCKERFILE="$ROOT/Dockerfile.admin-web"
 
 require_file() {
   [[ -f "$1" ]] || {
@@ -45,6 +46,9 @@ require_file "$IMAGE_SCRIPT"
 require_file "$NATIVE_PACKAGER"
 require_file "$NATIVE_CONTRACT"
 require_file "$PROD_COMPOSE"
+require_file "$ADMIN_DOCKERFILE"
+
+require_text "$ADMIN_DOCKERFILE" 'FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS build'
 
 for image in api worker user-web admin-web docs-web; do
   require_text "$IMAGE_SCRIPT" "mikiko-gallery-studio-$image"
