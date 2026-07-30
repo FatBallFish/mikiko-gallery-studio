@@ -731,6 +731,59 @@ func TestSetupRequestDigestBindsCanonicalRuntimeAndNormalizedAdminEmail(t *testi
 	}
 }
 
+func TestSetupRequestDigestAllowsReleaseUpdatesWithoutWeakeningSetupBinding(t *testing.T) {
+	values := pendingRuntimeValues()
+	values["SETUP_COMPLETED"] = "true"
+	values["SETUP_TOKEN"] = ""
+	values["IMAGE_REGISTRY"] = "docker.io/fatballfish"
+	values["IMAGE_TAG"] = "v1.0.0"
+	values["RELEASE_VERSION"] = "v1.0.0"
+	baseline, err := setupRequestDigest(values, "root@example.com")
+	if err != nil {
+		t.Fatalf("setupRequestDigest: %v", err)
+	}
+
+	for key, value := range map[string]string{
+		"APPLICATION_VERSION": "v2.0.0",
+		"IMAGE_REGISTRY":      "registry.example.test/gallery",
+		"IMAGE_TAG":           "v2.0.0",
+		"RELEASE_VERSION":     "v2.0.0",
+	} {
+		t.Run("release field "+key, func(t *testing.T) {
+			changed := serviceCloneValues(values)
+			changed[key] = value
+			got, err := setupRequestDigest(changed, "root@example.com")
+			if err != nil {
+				t.Fatalf("setupRequestDigest: %v", err)
+			}
+			if got != baseline {
+				t.Fatalf("release field %s changed setup digest", key)
+			}
+		})
+	}
+
+	for key, value := range map[string]string{
+		"DATABASE_URL":                             "postgres://app:other@127.0.0.1:5432/app?sslmode=disable",
+		"REDIS_KEY_PREFIX":                         "other-gallery",
+		"STORAGE_S3_BUCKET":                        "other-assets",
+		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": strings.Repeat("f", 64),
+		"INSTALLATION_ID":                          uuid.NewString(),
+		"CONFIG_REVISION":                          "2",
+	} {
+		t.Run("bound field "+key, func(t *testing.T) {
+			changed := serviceCloneValues(values)
+			changed[key] = value
+			got, err := setupRequestDigest(changed, "root@example.com")
+			if err != nil {
+				t.Fatalf("setupRequestDigest: %v", err)
+			}
+			if got == baseline {
+				t.Fatalf("setup field %s did not change setup digest", key)
+			}
+		})
+	}
+}
+
 func TestCanonicalRequestDigestMatchesSetupDigest(t *testing.T) {
 	values := pendingRuntimeValues()
 	values["SETUP_COMPLETED"] = "true"
