@@ -1,6 +1,7 @@
 package mgsctl
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -30,12 +31,48 @@ func TestTUIRootNavigationAndExitKeys(t *testing.T) {
 		t.Fatalf("escape screen=%q", model.Screen())
 	}
 	model = updateTUIWithKeys(t, model, "0")
-	if model.Quitting() || model.Cursor() != 6 {
+	if model.Quitting() || model.Cursor() != 7 {
 		t.Fatalf("exit selection quitting=%t cursor=%d", model.Quitting(), model.Cursor())
 	}
 	model = updateTUIWithKeys(t, model, "enter")
 	if !model.Quitting() {
 		t.Fatal("confirmed root Exit did not quit")
+	}
+}
+
+func TestTUIDefaultsToChineseAndSwitchesPersistedEnglishImmediately(t *testing.T) {
+	saved := ""
+	model := NewTUIModelWithDependencies(CommandCatalog(), TUIDependencies{
+		Language: LanguageChinese,
+		SaveLanguage: func(language string) error {
+			saved = language
+			return nil
+		},
+	})
+	if view := model.View(); !strings.Contains(view, "安装与部署") || strings.Contains(view, "Install and deployment") {
+		t.Fatalf("default Chinese view = %q", view)
+	}
+	model.cursor = 6
+	model = updateTUIWithKeys(t, model, "enter")
+	if saved != LanguageEnglish || model.Language() != LanguageEnglish || !strings.Contains(model.View(), "Install and deployment") {
+		t.Fatalf("switched model language=%q saved=%q view=%q", model.Language(), saved, model.View())
+	}
+
+	restarted := NewTUIModelWithDependencies(CommandCatalog(), TUIDependencies{Language: saved})
+	if restarted.Language() != LanguageEnglish || !strings.Contains(restarted.View(), "Runtime operations") {
+		t.Fatalf("persisted English restart = %q", restarted.View())
+	}
+}
+
+func TestTUILanguageWriteFailureKeepsSelectedLanguageAndShowsWarning(t *testing.T) {
+	model := NewTUIModelWithDependencies(CommandCatalog(), TUIDependencies{
+		Language:     LanguageChinese,
+		SaveLanguage: func(string) error { return errors.New("disk unavailable") },
+	})
+	model.cursor = 6
+	model = updateTUIWithKeys(t, model, "enter")
+	if model.Language() != LanguageEnglish || !strings.Contains(model.View(), "disk unavailable") {
+		t.Fatalf("language write failure language=%q view=%q", model.Language(), model.View())
 	}
 }
 
@@ -50,7 +87,7 @@ func TestTUIControlCQuitsFromEveryScreen(t *testing.T) {
 
 func TestTUIViewNamesKeyboardControls(t *testing.T) {
 	view := NewTUIModel(CommandCatalog()).View()
-	for _, expected := range []string{"mgsctl", "Arrow keys", "Enter", "Esc", "Ctrl+C"} {
+	for _, expected := range []string{"mgsctl", "方向键", "Enter", "Esc", "Ctrl+C"} {
 		if !strings.Contains(view, expected) {
 			t.Errorf("View() missing %q: %q", expected, view)
 		}

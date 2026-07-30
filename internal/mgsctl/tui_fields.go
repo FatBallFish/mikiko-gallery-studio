@@ -2,6 +2,7 @@ package mgsctl
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -20,6 +21,7 @@ type TUIField struct {
 	Kind      tuiFieldKind
 	Value     string
 	Sensitive bool
+	ReadOnly  bool
 	Choices   []string
 	Selected  map[string]bool
 	Choice    int
@@ -29,10 +31,45 @@ type TUICommandForm struct {
 	Entry  CommandCatalogEntry
 	Fields []TUIField
 	Focus  int
+	Locale string
+
+	installValues         map[string]string
+	installSelected       map[string]bool
+	installCustomSelected map[string]bool
 }
 
 func NewTUICommandForm(entry CommandCatalogEntry) TUICommandForm {
-	return TUICommandForm{Entry: entry, Fields: tuiFieldsForCommand(entry.Path)}
+	return NewTUICommandFormLocalized(entry, LanguageChinese)
+}
+
+func NewTUICommandFormLocalized(entry CommandCatalogEntry, language string) TUICommandForm {
+	form := TUICommandForm{Entry: entry, Locale: normalizedTUILanguage(language)}
+	if entry.Path != "install" {
+		form.Fields = tuiFieldsForCommand(entry.Path, form.Locale)
+		return form
+	}
+	form.installValues = map[string]string{
+		"mode": "docker", "profile": "full", "topology": "single", "role": "single",
+		"runtime-dir": ".", "storage-driver": "s3", "image-tag": "latest",
+		"api-port": "8080", "gateway-port": "80", "user-web-port": "5173",
+		"admin-web-port": "5174", "docs-web-port": "5175", "monitoring-port": "9090",
+		"external-gateway": "false", "migrate": "false", "overwrite": "false", "yes": "false",
+	}
+	form.installSelected = selectedComponents(fullPreset)
+	form.rebuildInstallFields("")
+	return form
+}
+
+func (form *TUICommandForm) SetLocale(language string) {
+	form.Locale = normalizedTUILanguage(language)
+	if form.Entry.Path == "install" {
+		focus := form.focusedFieldName()
+		form.rebuildInstallFields(focus)
+		return
+	}
+	for index := range form.Fields {
+		form.Fields[index].Label = tuiMessage(form.Locale, "field."+form.Fields[index].Name)
+	}
 }
 
 func (form *TUICommandForm) MoveFocus(delta int) {
@@ -50,9 +87,11 @@ func (form *TUICommandForm) CycleCurrent(delta int) {
 		return
 	}
 	field.Choice = (field.Choice + delta + len(field.Choices)) % len(field.Choices)
-	if field.Kind == tuiFieldChoice {
-		field.Value = field.Choices[field.Choice]
+	if field.Kind != tuiFieldChoice {
+		return
 	}
+	name, value := field.Name, field.Choices[field.Choice]
+	_ = form.SetValue(name, value)
 }
 
 func (form *TUICommandForm) ToggleCurrent() {
@@ -62,13 +101,12 @@ func (form *TUICommandForm) ToggleCurrent() {
 	field := &form.Fields[form.Focus]
 	switch field.Kind {
 	case tuiFieldBool:
-		field.Value = fmt.Sprintf("%t", field.Value != "true")
+		_ = form.SetValue(field.Name, fmt.Sprintf("%t", field.Value != "true"))
 	case tuiFieldChoice:
 		form.CycleCurrent(1)
 	case tuiFieldMulti:
-		if len(field.Choices) > 0 {
-			value := field.Choices[field.Choice]
-			field.Selected[value] = !field.Selected[value]
+		if len(field.Choices) > 0 && !field.ReadOnly {
+			form.ToggleMultiValue(field.Name, field.Choices[field.Choice])
 		}
 	}
 }
@@ -76,12 +114,14 @@ func (form *TUICommandForm) ToggleCurrent() {
 func (form *TUICommandForm) AppendRune(value rune) {
 	if form.Focus >= 0 && form.Focus < len(form.Fields) && form.Fields[form.Focus].Kind == tuiFieldText {
 		form.Fields[form.Focus].Value += string(value)
+		form.recordFieldValue(form.Fields[form.Focus])
 	}
 }
 
 func (form *TUICommandForm) TypeSpace() {
 	if form.Focus >= 0 && form.Focus < len(form.Fields) && form.Fields[form.Focus].Kind == tuiFieldText {
 		form.Fields[form.Focus].Value += " "
+		form.recordFieldValue(form.Fields[form.Focus])
 		return
 	}
 	form.ToggleCurrent()
@@ -94,12 +134,14 @@ func (form *TUICommandForm) Backspace() {
 	runes := []rune(form.Fields[form.Focus].Value)
 	if len(runes) > 0 {
 		form.Fields[form.Focus].Value = string(runes[:len(runes)-1])
+		form.recordFieldValue(form.Fields[form.Focus])
 	}
 }
 
 func (form *TUICommandForm) ClearCurrent() {
 	if form.Focus >= 0 && form.Focus < len(form.Fields) && form.Fields[form.Focus].Kind == tuiFieldText {
 		form.Fields[form.Focus].Value = ""
+		form.recordFieldValue(form.Fields[form.Focus])
 	}
 }
 
@@ -116,22 +158,60 @@ func (form *TUICommandForm) SetValue(name, value string) error {
 	}
 	field.Value = value
 	if field.Kind == tuiFieldChoice {
-		for index, choice := range field.Choices {
-			if choice == value {
-				field.Choice = index
-				break
+		field.Choice = slices.Index(field.Choices, value)
+	}
+	if form.Entry.Path != "install" {
+		return nil
+	}
+	focus := name
+	previousProfile := form.installValues["profile"]
+	form.installValues[name] = value
+	if name == "profile" {
+		if previousProfile == "custom" {
+			form.installCustomSelected = cloneSelectedComponents(form.installSelected)
+		}
+		switch value {
+		case "full":
+			form.installSelected = selectedComponents(fullPreset)
+			form.installValues["storage-driver"] = "s3"
+		case "core":
+			form.installSelected = selectedComponents(applicationPreset)
+			if form.installValues["topology"] == "cluster" {
+				form.installValues["storage-driver"] = "s3"
+			} else {
+				form.installValues["storage-driver"] = "local"
 			}
+		case "custom":
+			if len(form.installCustomSelected) == 0 {
+				form.installCustomSelected = cloneSelectedComponents(form.installSelected)
+			}
+			form.installSelected = cloneSelectedComponents(form.installCustomSelected)
 		}
 	}
+	if name == "topology" && value == "cluster" {
+		form.installValues["role"] = "control"
+		if form.installValues["storage-driver"] == "local" {
+			form.installValues["storage-driver"] = "s3"
+		}
+	}
+	if name == "topology" && value == "single" && form.installValues["role"] == "control" {
+		form.installValues["role"] = "single"
+	}
+	form.rebuildInstallFields(focus)
 	return nil
 }
 
 func (form *TUICommandForm) ToggleMultiValue(name, value string) bool {
 	field := form.field(name)
-	if field == nil || field.Kind != tuiFieldMulti || !containsString(field.Choices, value) {
+	if field == nil || field.Kind != tuiFieldMulti || field.ReadOnly || !containsString(field.Choices, value) {
 		return false
 	}
 	field.Selected[value] = !field.Selected[value]
+	if form.Entry.Path == "install" {
+		form.installSelected = cloneSelectedComponents(field.Selected)
+		form.installCustomSelected = cloneSelectedComponents(field.Selected)
+		form.rebuildInstallFields(name)
+	}
 	return true
 }
 
@@ -225,11 +305,91 @@ func (form TUICommandForm) View() string {
 			if field.Selected[choice] {
 				checked = "x"
 			}
-			value = fmt.Sprintf("[%s] >%s (%d selected; Left/Right browses)", checked, choice, selected)
+			status := fmt.Sprintf(tuiMessage(form.Locale, "multi.status"), selected)
+			if field.ReadOnly {
+				status += "; " + tuiMessage(form.Locale, "multi.readonly")
+			}
+			value = fmt.Sprintf("[%s] >%s (%s)", checked, choice, status)
 		}
 		fmt.Fprintf(&view, "%s%s: %s\n", marker, field.Label, value)
 	}
 	return view.String()
+}
+
+func (form *TUICommandForm) rebuildInstallFields(focusName string) {
+	text := form.textField
+	choice := form.choiceField
+	boolean := form.boolField
+	components := TUIField{
+		Name: "components", Label: tuiMessage(form.Locale, "field.components"), Kind: tuiFieldMulti,
+		Choices: componentNames(), Selected: cloneSelectedComponents(form.installSelected), ReadOnly: form.installValues["profile"] != "custom",
+	}
+	fields := []TUIField{
+		choice("mode", form.installValues["mode"], "docker", "native"),
+		choice("profile", form.installValues["profile"], "full", "core", "custom"),
+		choice("topology", form.installValues["topology"], "single", "cluster"),
+		choice("role", form.installValues["role"], "single", "control"), components,
+		text("runtime-dir", form.installValues["runtime-dir"]),
+		choice("storage-driver", form.installValues["storage-driver"], "local", "s3"),
+	}
+	if form.installValues["mode"] == "docker" {
+		fields = append(fields, text("image-tag", form.installValues["image-tag"]))
+	}
+	ports := []struct {
+		component Component
+		name      string
+	}{
+		{ComponentAPI, "api-port"}, {ComponentGateway, "gateway-port"}, {ComponentUserWeb, "user-web-port"},
+		{ComponentAdminWeb, "admin-web-port"}, {ComponentDocsWeb, "docs-web-port"}, {ComponentMonitoring, "monitoring-port"},
+	}
+	for _, port := range ports {
+		if form.installSelected[string(port.component)] {
+			fields = append(fields, text(port.name, form.installValues[port.name]))
+		}
+	}
+	fields = append(fields,
+		boolean("external-gateway", form.installValues["external-gateway"] == "true"),
+		boolean("migrate", form.installValues["migrate"] == "true"),
+		boolean("overwrite", form.installValues["overwrite"] == "true"),
+		boolean("yes", form.installValues["yes"] == "true"),
+	)
+	form.Fields = fields
+	form.Focus = 0
+	if focusName != "" {
+		for index := range form.Fields {
+			if form.Fields[index].Name == focusName {
+				form.Focus = index
+				break
+			}
+		}
+	}
+}
+
+func (form TUICommandForm) textField(name, value string) TUIField {
+	return TUIField{Name: name, Label: tuiMessage(form.Locale, "field."+name), Kind: tuiFieldText, Value: value}
+}
+
+func (form TUICommandForm) choiceField(name, value string, choices ...string) TUIField {
+	field := TUIField{Name: name, Label: tuiMessage(form.Locale, "field."+name), Kind: tuiFieldChoice, Value: value, Choices: choices}
+	field.Choice = max(0, slices.Index(choices, value))
+	return field
+}
+
+func (form TUICommandForm) boolField(name string, value bool) TUIField {
+	return TUIField{Name: name, Label: tuiMessage(form.Locale, "field."+name), Kind: tuiFieldBool, Value: fmt.Sprintf("%t", value)}
+}
+
+func (form *TUICommandForm) recordFieldValue(field TUIField) {
+	if form.Entry.Path == "install" {
+		form.installValues[field.Name] = field.Value
+	}
+}
+
+func (form TUICommandForm) focusedFieldName() string {
+	if form.Focus >= 0 && form.Focus < len(form.Fields) {
+		return form.Fields[form.Focus].Name
+	}
+	return ""
 }
 
 func validateTUICommand(command Command) error {
@@ -269,54 +429,32 @@ func (form *TUICommandForm) field(name string) *TUIField {
 	return nil
 }
 
-func tuiFieldsForCommand(path string) []TUIField {
-	text := func(name, label, value string) TUIField {
-		return TUIField{Name: name, Label: label, Kind: tuiFieldText, Value: value}
-	}
-	choice := func(name, label, value string, choices ...string) TUIField {
-		field := TUIField{Name: name, Label: label, Kind: tuiFieldChoice, Value: value, Choices: choices}
-		for index, candidate := range choices {
-			if candidate == value {
-				field.Choice = index
-			}
-		}
-		return field
-	}
-	boolean := func(name, label string, value bool) TUIField {
-		return TUIField{Name: name, Label: label, Kind: tuiFieldBool, Value: fmt.Sprintf("%t", value)}
-	}
-	runtimeDir := func() []TUIField { return []TUIField{text("runtime-dir", "Runtime directory", "")} }
+func tuiFieldsForCommand(path, language string) []TUIField {
+	form := TUICommandForm{Locale: normalizedTUILanguage(language)}
+	text := form.textField
+	choice := form.choiceField
+	boolean := form.boolField
+	runtimeDir := func() []TUIField { return []TUIField{text("runtime-dir", "")} }
 	switch path {
-	case "install":
-		components := TUIField{Name: "components", Label: "Components", Kind: tuiFieldMulti, Choices: componentNames(), Selected: selectedComponents(fullPreset)}
-		return []TUIField{
-			choice("mode", "Mode", "docker", "docker", "native"), choice("profile", "Profile", "full", "full", "core", "custom"),
-			choice("topology", "Topology", "single", "single", "cluster"), choice("role", "Role", "single", "single", "control"), components,
-			text("runtime-dir", "Runtime directory", "."), choice("storage-driver", "Object storage", "s3", "local", "s3"),
-			text("image-tag", "Image tag", "latest"),
-			text("api-port", "API port", "8080"), text("gateway-port", "Gateway port", "80"), text("user-web-port", "User Web port", "5173"),
-			text("admin-web-port", "Admin Web port", "5174"), text("docs-web-port", "Docs Web port", "5175"), text("monitoring-port", "Monitoring port", "9090"),
-			boolean("external-gateway", "External gateway configured", false), boolean("migrate", "Run migration", false), boolean("overwrite", "Overwrite incomplete config", false), boolean("yes", "Skip terminal confirmation", false),
-		}
 	case "import-config":
-		components := TUIField{Name: "components", Label: "Components", Kind: tuiFieldMulti, Choices: componentNames(), Selected: map[string]bool{}}
-		return []TUIField{text("source", "Legacy environment file", ".env"), text("runtime-dir", "Runtime directory", "."), choice("mode", "Mode", "docker", "docker", "native"), choice("profile", "Profile", "core", "full", "core", "custom"), choice("topology", "Topology", "single", "single", "cluster"), choice("role", "Role", "single", "single", "control"), components, choice("storage-driver", "Object storage", "local", "local", "s3"), text("public-api-url", "Public API URL", ""), text("application-version", "Application version", DefaultApplicationVersion), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", DefaultApplicationVersion), text("release-version", "Release version", "")}
+		components := TUIField{Name: "components", Label: tuiMessage(form.Locale, "field.components"), Kind: tuiFieldMulti, Choices: componentNames(), Selected: map[string]bool{}}
+		return []TUIField{text("source", ".env"), text("runtime-dir", "."), choice("mode", "docker", "docker", "native"), choice("profile", "core", "full", "core", "custom"), choice("topology", "single", "single", "cluster"), choice("role", "single", "single", "control"), components, choice("storage-driver", "local", "local", "s3"), text("public-api-url", ""), text("application-version", DefaultApplicationVersion), text("image-registry", ""), text("image-tag", DefaultApplicationVersion), text("release-version", "")}
 	case "status", "doctor", "restart", "setup status", "setup token show":
 		return runtimeDir()
 	case "setup token reset":
-		return append(runtimeDir(), boolean("yes", "Confirm token reset", true))
+		return append(runtimeDir(), boolean("yes", true))
 	case "version":
-		return []TUIField{boolean("json", "JSON output", false)}
+		return []TUIField{boolean("json", false)}
 	case "self-update":
-		return []TUIField{text("version", "Target version", "latest"), text("release-base-url", "Release base URL", DefaultMGSCTLReleaseBaseURL), text("download-url", "Artifact URL", ""), text("sha256", "Expected SHA-256", ""), boolean("yes", "Confirm update", true)}
+		return []TUIField{text("version", "latest"), text("release-base-url", DefaultMGSCTLReleaseBaseURL), text("download-url", ""), text("sha256", ""), boolean("yes", true)}
 	case "upgrade":
-		return []TUIField{text("runtime-dir", "Runtime directory", ""), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", "latest"), text("release-version", "Release version", "latest"), boolean("migrate", "Run migration", true)}
+		return []TUIField{text("runtime-dir", ""), text("image-registry", ""), text("image-tag", "latest"), text("release-version", "latest"), boolean("migrate", true)}
 	case "uninstall":
-		return []TUIField{text("runtime-dir", "Runtime directory", ""), boolean("delete-data", "Delete persistent data", false), text("confirm", "Installation-specific phrase", ""), boolean("yes", "Confirm non-destructive stop", true)}
+		return []TUIField{text("runtime-dir", ""), boolean("delete-data", false), text("confirm", ""), boolean("yes", true)}
 	case "cluster token create":
-		return []TUIField{choice("role", "Node role", "worker", "api", "worker", "web"), text("ttl", "Token lifetime", "10m"), text("runtime-dir", "Runtime directory", "")}
+		return []TUIField{choice("role", "worker", "api", "worker", "web"), text("ttl", "10m"), text("runtime-dir", "")}
 	case "cluster join":
-		return []TUIField{text("server", "Control API URL", "http://127.0.0.1:8080"), {Name: "token", Label: "Single-use token", Kind: tuiFieldText, Value: "pgjoin.v1.placeholder", Sensitive: true}, text("runtime-dir", "Runtime directory", "."), choice("mode", "Mode", "docker", "docker", "native"), text("application-version", "Application version", DefaultApplicationVersion), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", DefaultApplicationVersion), text("release-version", "Release version", ""), text("api-port", "API port", "8080"), text("gateway-port", "Gateway port", "80"), text("user-web-port", "User Web port", "5173"), text("admin-web-port", "Admin Web port", "5174"), text("docs-web-port", "Docs Web port", "5175")}
+		return []TUIField{text("server", "http://127.0.0.1:8080"), {Name: "token", Label: tuiMessage(form.Locale, "field.token"), Kind: tuiFieldText, Value: "pgjoin.v1.placeholder", Sensitive: true}, text("runtime-dir", "."), choice("mode", "docker", "docker", "native"), text("application-version", DefaultApplicationVersion), text("image-registry", ""), text("image-tag", DefaultApplicationVersion), text("release-version", ""), text("api-port", "8080"), text("gateway-port", "80"), text("user-web-port", "5173"), text("admin-web-port", "5174"), text("docs-web-port", "5175")}
 	default:
 		return nil
 	}
@@ -338,13 +476,18 @@ func selectedComponents(components []Component) map[string]bool {
 	return selected
 }
 
-func containsString(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
+func cloneSelectedComponents(selected map[string]bool) map[string]bool {
+	cloned := make(map[string]bool, len(selected))
+	for component, enabled := range selected {
+		if enabled {
+			cloned[component] = true
 		}
 	}
-	return false
+	return cloned
+}
+
+func containsString(values []string, value string) bool {
+	return slices.Contains(values, value)
 }
 
 func removeFlag(args []string, flag string) []string {

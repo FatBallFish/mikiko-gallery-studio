@@ -30,7 +30,12 @@ func main() {
 	os.Exit(mgsctl.Run(ctx, os.Args[1:], mgsctl.CLIDependencies{
 		Terminal: mgsctl.NewStdioTerminal(os.Stdin, os.Stderr), Stdout: os.Stdout, Stderr: os.Stderr,
 		ExecuteTUI: func(ctx context.Context) ([]string, error) {
-			return mgsctl.ExecuteTUI(ctx, os.Stdin, os.Stdout)
+			return mgsctl.ExecuteTUIWithDependencies(ctx, os.Stdin, os.Stdout, mgsctl.TUIDependencies{
+				Language: mgsctl.LoadPreferredLanguage(userConfig),
+				SaveLanguage: func(language string) error {
+					return mgsctl.SaveUserLanguage(userConfig, language)
+				},
+			})
 		},
 		BuildInfo: mgsctl.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, Dirty: strings.EqualFold(dirty, "true")},
 		ResolveRuntime: func(options mgsctl.RuntimeResolutionOptions) (string, error) {

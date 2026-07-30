@@ -1,6 +1,7 @@
 package mgsctl
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -36,6 +37,73 @@ func TestTUIInstallOmitsOperatorManagedVersionAndRegistryFields(t *testing.T) {
 	}
 	if field := form.field("image-tag"); field == nil || field.Value != "latest" {
 		t.Fatalf("install image tag default = %#v", field)
+	}
+}
+
+func TestTUIInstallProfileSynchronizesComponentsStorageAndEditability(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	components := form.field("components")
+	if components == nil || !components.ReadOnly || !reflect.DeepEqual(components.Selected, selectedComponents(fullPreset)) {
+		t.Fatalf("full components = %#v", components)
+	}
+	if storage := form.field("storage-driver"); storage == nil || storage.Value != "s3" {
+		t.Fatalf("full storage = %#v", storage)
+	}
+	if form.ToggleMultiValue("components", "monitoring") {
+		t.Fatal("full profile components were editable")
+	}
+
+	if err := form.SetValue("profile", "core"); err != nil {
+		t.Fatal(err)
+	}
+	components = form.field("components")
+	if components == nil || !components.ReadOnly || !reflect.DeepEqual(components.Selected, selectedComponents(applicationPreset)) {
+		t.Fatalf("core components = %#v", components)
+	}
+	if storage := form.field("storage-driver"); storage == nil || storage.Value != "local" {
+		t.Fatalf("core storage = %#v", storage)
+	}
+
+	if err := form.SetValue("profile", "custom"); err != nil {
+		t.Fatal(err)
+	}
+	if components = form.field("components"); components == nil || components.ReadOnly {
+		t.Fatalf("custom components = %#v", components)
+	}
+	if !form.ToggleMultiValue("components", "monitoring") || form.field("monitoring-port") == nil {
+		t.Fatal("custom monitoring selection did not reveal its port")
+	}
+}
+
+func TestTUIInstallShowsOnlyComponentAndModeRelevantPortsAndSelectors(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	for name, want := range map[string]string{
+		"api-port": "8080", "gateway-port": "80", "user-web-port": "5173", "admin-web-port": "5174", "docs-web-port": "5175",
+	} {
+		field := form.field(name)
+		if field == nil || field.Value != want {
+			t.Errorf("%s = %#v, want %q", name, field, want)
+		}
+	}
+	if form.field("monitoring-port") != nil {
+		t.Fatal("full profile unexpectedly showed monitoring port")
+	}
+	if form.field("image-tag") == nil {
+		t.Fatal("Docker install did not show image selector")
+	}
+	if err := form.SetValue("mode", "native"); err != nil {
+		t.Fatal(err)
+	}
+	if form.field("image-tag") != nil {
+		t.Fatal("Native install showed Docker image selector")
+	}
+}
+
+func TestTUIFieldLabelsFollowLocale(t *testing.T) {
+	chinese := NewTUICommandFormLocalized(catalogEntryForTest(t, "install"), LanguageChinese)
+	english := NewTUICommandFormLocalized(catalogEntryForTest(t, "install"), LanguageEnglish)
+	if chinese.field("profile").Label != "部署方案" || english.field("profile").Label != "Profile" {
+		t.Fatalf("localized profile labels zh=%q en=%q", chinese.field("profile").Label, english.field("profile").Label)
 	}
 }
 
