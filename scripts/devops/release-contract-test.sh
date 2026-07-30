@@ -93,6 +93,8 @@ for required in \
   "contents: read" \
   "contents: write" \
   "needs: verify" \
+  "Install verification tools" \
+  "sudo apt-get install --yes ripgrep" \
   "./scripts/workflow/verify.sh" \
   "go test ./internal/mgsctl" \
   "./scripts/test/install-wrapper-contract.sh" \
