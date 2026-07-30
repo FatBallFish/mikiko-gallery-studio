@@ -17,9 +17,12 @@ REGISTRY_PORT="$(deployment_e2e_port)"
 POSTGRES_PORT="$(deployment_e2e_port)"
 REDIS_PORT="$(deployment_e2e_port)"
 MINIO_PORT="$(deployment_e2e_port)"
+RELEASE_PORT="$(deployment_e2e_port)"
 IMAGE_REGISTRY="127.0.0.1:${REGISTRY_PORT}"
-IMAGE_TAG="cluster-${RUN_ID}"
+IMAGE_TAG="v0.0.0-cluster.${RUN_ID//-/.}"
 MGSCTL="$E2E_ROOT/mgsctl"
+RELEASE_ROOT="$E2E_ROOT/release-server"
+RELEASE_SERVER_PID=""
 ENROLLMENT_CAPTURE="$E2E_ROOT/enrollment-capture.jsonl"
 RUNTIMES=()
 PROJECTS=()
@@ -33,6 +36,10 @@ cleanup() {
     kill "$pid" >/dev/null 2>&1 || true
     wait "$pid" >/dev/null 2>&1 || true
   done
+  if [[ -n "$RELEASE_SERVER_PID" ]]; then
+    kill "$RELEASE_SERVER_PID" >/dev/null 2>&1 || true
+    wait "$RELEASE_SERVER_PID" >/dev/null 2>&1 || true
+  fi
   for index in "${!RUNTIMES[@]}"; do
     runtime="${RUNTIMES[$index]}"
     project="${PROJECTS[$index]:-}"
@@ -121,6 +128,11 @@ docker run --detach --name "$REGISTRY_CONTAINER" --publish "127.0.0.1:${REGISTRY
 deployment_e2e_wait_status "http://127.0.0.1:${REGISTRY_PORT}/v2/" 200 60
 deployment_e2e_build_images "$ROOT_DIR" "$IMAGE_REGISTRY" "$IMAGE_TAG"
 (cd "$ROOT_DIR" && go build -o "$MGSCTL" ./cmd/mgsctl)
+deployment_e2e_render_release "$ROOT_DIR" "$RELEASE_ROOT" "$MGSCTL" "$IMAGE_REGISTRY" "$IMAGE_TAG"
+python3 -m http.server "$RELEASE_PORT" --bind 127.0.0.1 --directory "$RELEASE_ROOT" >"$E2E_ROOT/release-server.log" 2>&1 &
+RELEASE_SERVER_PID=$!
+deployment_e2e_wait_status "http://127.0.0.1:${RELEASE_PORT}/releases/download/${IMAGE_TAG}/release-manifest.json" 200 30
+export MGSCTL_RELEASE_BASE_URL="http://127.0.0.1:${RELEASE_PORT}/releases"
 
 docker run --detach --name "$POSTGRES_CONTAINER" --publish "127.0.0.1:${POSTGRES_PORT}:5432" \
   -e POSTGRES_DB=app -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=e2e-postgres-bootstrap-password \
@@ -155,7 +167,7 @@ mkdir -p "$CONTROL_RUNTIME"
 register_pending_runtime "$CONTROL_RUNTIME"
 CONTROL_RUNTIME_INDEX=$REGISTERED_INDEX
 "$MGSCTL" install --mode docker --profile core --topology cluster --role control --storage-driver s3 --yes \
-  --runtime-dir "$CONTROL_RUNTIME" --application-version "$IMAGE_TAG" --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" \
+  --runtime-dir "$CONTROL_RUNTIME" --image-registry "$IMAGE_REGISTRY" --image-tag "$IMAGE_TAG" \
   --api-port "$CONTROL_API_PORT" --gateway-port "$CONTROL_GATEWAY_PORT" --user-web-port "$CONTROL_USER_PORT" \
   --admin-web-port "$CONTROL_ADMIN_PORT" --docs-web-port "$CONTROL_DOCS_PORT"
 CONTROL_ENV="$CONTROL_RUNTIME/config/runtime.env"

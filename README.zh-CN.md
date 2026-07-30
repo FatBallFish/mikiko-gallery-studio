@@ -89,19 +89,20 @@ Pic Gallery 面向希望运营图片生成产品的团队，而不是只暴露�
 安装 Docker Engine 与 Compose v2，克隆仓库后执行：
 
 ```bash
-git clone https://github.com/fatballfish/pic-gallery.git
-cd pic-gallery
+git clone https://github.com/FatBallFish/mikiko-gallery-studio.git
+cd mikiko-gallery-studio
 ./scripts/install.sh install \
   --mode docker \
   --profile full \
   --topology single \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
-  --image-tag v1.2.3 \
+  --image-tag latest \
   --yes
 ```
 
-安装器会下载并校验匹配平台的 mgsctl Release 产物。如果 Release 产物不可用，且当前目录是完整源码仓库，则自动降级执行 `make mgsctl`；本地构建需要 Go 和 Make。校验和不一致属于安全硬失败，绝不会降级切换二进制来源。
+默认值就是 Docker、`full`、`single` 和镜像选择器 `latest`，所以上面的 mode/profile/topology 参数可以省略。mgsctl 会校验 `release-manifest.json`，把 `latest` 解析成具体 SemVer 应用版本和不可变镜像 digest，再持久化该具体版本；应用版本不再由用户填写。
+
+安装器会下载并校验匹配平台的 mgsctl Release 产物。如果 Release 产物不可用，且当前目录是完整源码仓库，则自动降级执行 `make mgsctl`；本地构建需要 Go 和 Make。校验和不一致属于安全硬失败，绝不会降级切换二进制来源。默认 API 镜像仓库为 `docker.io/fatballfish/mikiko-gallery-studio-api`。
 
 服务启动后打开 `http://<api-host>:8080/setup`，通过 `mgsctl setup token show --runtime-dir ./runtime` 获取一次性 Token，完成中间件连通性与首个管理员初始化。其他部署模式、参数、集群、升级和恢复方式见[生产部署](#生产部署)。
 
@@ -119,8 +120,8 @@ cd pic-gallery
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/fatballfish/pic-gallery.git
-cd pic-gallery
+git clone https://github.com/FatBallFish/mikiko-gallery-studio.git
+cd mikiko-gallery-studio
 ```
 
 ### 2. 准备可移植运行时配置
@@ -310,13 +311,13 @@ Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps
 | `MGSCTL_SHA256` | 直接指定预期校验值，不再下载 `.sha256` 文件 |
 | `MGSCTL_SOURCE_DIR` | 仅用于 Docker 镜像本地降级构建的完整源码目录；包装脚本会在可用时自动设置 |
 
-`MGSCTL_VERSION` 选择的是部署工具版本；`--application-version`、`--image-tag` 和 `--release-version` 才决定实际安装的应用版本。
+`MGSCTL_VERSION` 选择部署工具版本。应用产物选择器默认是 `latest`：Docker 使用 `--image-tag`，原生模式使用 `--release-version`，二者都通过带校验和的 `release-manifest.json` 解析。解析后的具体版本、镜像 digest 与产物校验值共同构成集群兼容、健康检查和迁移使用的应用身份。
 
 ### 首次安装
 
-不传 `--yes` 会进入交互式选择。非交互安装必须同时传入 `--mode`、`--profile` 和 `--topology`。
+不传 `--yes` 会进入交互式选择。交互和非交互安装都默认使用 `docker`、`full`、`single`、`latest`，只有覆盖默认值时才需要额外参数。
 
-Docker 完整模式，显式固定应用版本和运行目录：
+Docker 完整模式，使用默认 `latest` 选择器并显式指定运行目录：
 
 ```bash
 ./scripts/install.sh install \
@@ -324,9 +325,8 @@ Docker 完整模式，显式固定应用版本和运行目录：
   --profile full \
   --topology single \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --image-registry docker.io/fatballfish \
-  --image-tag v1.2.3 \
+  --image-tag latest \
   --yes
 ```
 
@@ -339,7 +339,6 @@ Docker 完整模式，显式固定应用版本和运行目录：
   --topology single \
   --storage-driver s3 \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --yes
 ```
@@ -353,7 +352,6 @@ Linux 原生核心模式：
   --topology single \
   --storage-driver local \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --release-version v1.2.3 \
   --yes
 ```
@@ -366,7 +364,6 @@ Windows 原生核心模式：
   --profile core `
   --topology single `
   --runtime-dir .\runtime `
-  --application-version v1.2.3 `
   --release-version v1.2.3 `
   --yes
 ```
@@ -395,18 +392,17 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
 
 | 参数 | 可选值/默认值 | 说明 |
 | --- | --- | --- |
-| `--mode` | `docker`、`native` | 使用 `--yes` 时必填 |
-| `--profile` | `full`、`core`、`custom` | 使用 `--yes` 时必填；只有 `custom` 可覆盖组件列表 |
-| `--topology` | `single`、`cluster` | 使用 `--yes` 时必填 |
+| `--mode` | 默认 `docker`，可选 `native` | 产物与运行模式 |
+| `--profile` | 默认 `full`，可选 `core`、`custom` | 只有 `custom` 可覆盖组件列表 |
+| `--topology` | 默认 `single`，可选 `cluster` | 部署拓扑 |
 | `--role` | `single`、`control` | 单机默认 `single`，集群默认 `control`；加入节点使用 `cluster join` |
 | `--components` | 逗号分隔列表 | `custom` 必填；支持 `api`、`worker`、`user-web`、`admin-web`、`docs-web`、`gateway`、`postgres`、`redis`、`minio`、`monitoring` |
 | `--runtime-dir` | `.` | 保存配置、状态、生成文件、数据和日志的可移动目录 |
 | `--storage-driver` | `local`、`s3` | full、cluster 或包含 MinIO 的 custom 默认 `s3`，其他情况默认 `local` |
 | `--public-api-url` | 绝对 HTTP(S) URL | 记录浏览器可访问的 API 基础地址；加入 Web 角色需要该值，并在 `cluster join` 时从 Control 获取 |
-| `--application-version` | `dev` | 安装兼容版本；生产环境应固定为实际发布版本 |
 | `--image-registry` | 留空使用 Compose 默认值 | Docker 镜像前缀；当前 Compose 默认 `docker.io/fatballfish` |
-| `--image-tag` | 默认等于应用版本 | Docker 镜像标签，建议使用不可变发布标签或基于 digest 的标签 |
-| `--release-version` | 默认等于应用版本 | 包含对应平台压缩包和校验文件的原生 GitHub Release |
+| `--image-tag` | `latest` | Docker Release 选择器；安装前解析成具体版本和 digest |
+| `--release-version` | `latest` | 原生 Release 选择器；下载发布包前完成解析 |
 | `--api-port` | `8080` | API 宿主机端口 |
 | `--gateway-port` | `80` | 选择 Gateway 时生效 |
 | `--user-web-port` | `5173` | 选择用户 Web 时生效 |
@@ -437,7 +433,6 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
   --components api,worker,user-web,admin-web,docs-web,gateway,monitoring \
   --monitoring-port 9090 \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --yes
 ```
@@ -445,6 +440,8 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
 ### MGSCTL TUI 与服务访问摘要
 
 在交互终端中不带参数运行 `mgsctl` 会进入 TUI。可用数字键或方向键选择，Enter 确认，Space 勾选多选项，Esc 返回上一级，Ctrl+C 或根菜单的“退出”结束程序。`mgsctl -h` 与 `mgsctl --help` 会输出完整命令帮助并正常退出。无参数调用只要输入或输出被重定向，也只会打印帮助，不会等待终端输入。
+
+TUI 默认使用中文（`zh-CN`）。在 Language 项切换到英文（`en-US`）后，选择会写入用户配置 `mgsctl/config.json`，下次继续使用。Full/Core 的组件为只读预设，只有 Custom Profile 可以编辑组件选择。
 
 安装成功后，mgsctl 会输出按最终组件计划生成的服务访问摘要和编号后续步骤，只列出实际部署的服务，并将仅 Docker 网络可访问的 PostgreSQL、Redis、MinIO 明确标为内部地址。交互终端安装可以显示一次性 Setup Token；重定向输出永远不显示 Token，只提示在部署主机执行 `mgsctl setup token show --runtime-dir ...`。
 
@@ -506,7 +503,6 @@ mgsctl doctor --runtime-dir ./runtime
   --storage-driver s3 \
   --runtime-dir ./control \
   --public-api-url http://10.0.0.10:8080 \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --yes
 ```
@@ -529,7 +525,6 @@ mgsctl cluster join \
   --token '<single-use-token>' \
   --mode docker \
   --runtime-dir ./node \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --api-port 8080
 ```
@@ -546,7 +541,7 @@ API 和 Worker 默认从运行工作目录读取 `./config/runtime.env`。只有
 
 ### 状态、重启与诊断
 
-在部署主机执行运维命令，并始终指向同一个运行目录：
+运行时命令按以下顺序定位安装：显式 `--runtime-dir`、当前目录、当前目录下的 `./runtime`、`mgsctl/config.json` 保存的最近运行目录。因此可以从 Runtime directory 外执行常规运维，同时显式参数始终优先。
 
 ```bash
 mgsctl status --runtime-dir ./runtime
@@ -587,14 +582,13 @@ mgsctl self-update --version v1.3.0 --yes
 
 ### 应用升级与恢复
 
-生产应用更新应使用不可变版本，并在每次升级前备份 PostgreSQL 与对象存储。
+每次生产应用更新前都应备份 PostgreSQL 与对象存储。不传选择器时默认解析 `latest`；mgsctl 校验 `release-manifest.json` 后推导具体目标版本、拉取不可变 digest，并在 Compose 网络中从目标 API 镜像运行 `mikiko-gallery-studio-db-migrate`。
 
 Docker single/control 节点：
 
 ```bash
 mgsctl upgrade \
   --runtime-dir ./runtime \
-  --application-version v1.3.0 \
   --image-registry docker.io/fatballfish \
   --image-tag v1.3.0
 ```
@@ -604,7 +598,6 @@ mgsctl upgrade \
 ```bash
 mgsctl upgrade \
   --runtime-dir ./runtime \
-  --application-version v1.3.0 \
   --release-version v1.3.0
 ```
 
@@ -613,7 +606,6 @@ mgsctl upgrade \
 ```bash
 mgsctl upgrade \
   --runtime-dir ./node \
-  --application-version v1.3.0 \
   --image-tag v1.3.0 \
   --migrate=false
 ```
@@ -663,8 +655,8 @@ mgsctl import-config \
 自行发布镜像时，需要用相同仓库前缀和标签发布五个应用镜像：
 
 ```bash
-./scripts/docker/images.sh build --tag v1.3.0 --registry registry.example.com/pic-gallery
-./scripts/docker/images.sh push --tag v1.3.0 --registry registry.example.com/pic-gallery
+./scripts/docker/images.sh build --tag v1.3.0 --registry docker.io/fatballfish
+./scripts/docker/images.sh push --tag v1.3.0 --registry docker.io/fatballfish
 ```
 
 一步创建发布版本和可选的 `latest` 标签：
@@ -673,7 +665,7 @@ mgsctl import-config \
 ./scripts/docker/images.sh release \
   --version v1.3.0 \
   --latest \
-  --registry registry.example.com/pic-gallery
+  --registry docker.io/fatballfish
 ```
 
 故障恢复、原生服务行为、备份边界和部署验收测试详见 [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md)。

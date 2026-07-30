@@ -25,7 +25,7 @@ Native `full` is intentionally unsupported. Docker and native core nodes can joi
 
 ## Prerequisites
 
-Docker deployment requires Docker Engine, Compose v2, and a writable runtime directory. Registry access is normally required. If a selected Pic Gallery application image cannot be pulled, mgsctl may build the selected application images from a complete checkout supplied by `scripts/install.sh` or `scripts/install.ps1`. Base and middleware images still come from their registries.
+Docker deployment requires Docker Engine, Compose v2, and a writable runtime directory. Registry access is normally required. Official images use repositories such as `docker.io/fatballfish/mikiko-gallery-studio-api`. If a selected application image cannot be pulled, mgsctl may build selected images from a complete checkout supplied by `scripts/install.sh` or `scripts/install.ps1`. Base and middleware images still come from their registries.
 
 Native deployment requires a supported prebuilt release bundle, service-manager privileges, external PostgreSQL and Redis, and local shared storage for single-node deployments or S3-compatible storage for clusters. Target hosts do not need Go or Node.js.
 
@@ -38,6 +38,8 @@ Run from the directory that should own the deployment files:
 ```bash
 ./scripts/install.sh install --mode docker --profile full --topology single --yes
 ```
+
+These explicit flags show the default plan. `install --yes` defaults to Docker, `full`, `single`, and selector `latest`. mgsctl verifies `release-manifest.json`, resolves `latest` to a concrete SemVer version plus immutable image digests, and persists only the concrete application identity.
 
 Windows:
 
@@ -68,6 +70,8 @@ The same Setup-pending plan resumes automatically after a failed startup. A diff
 ## TUI, Help, and Endpoint Handoff
 
 Running `mgsctl` without arguments opens the TUI only when both input and output are terminals. Number keys and Arrow keys select, Enter confirms, Space toggles multi-select fields, Esc returns, and Ctrl+C exits. For scripts, redirected output, or command discovery, use `mgsctl -h` or `mgsctl --help`; a no-argument non-terminal invocation prints the same help and exits without blocking.
+
+The TUI defaults to Chinese (`zh-CN`). The Language field switches to English (`en-US`) immediately and stores the preference in `mgsctl/config.json`. Full and core component sets are read-only presets; custom remains editable.
 
 Successful installation prints a plan-derived endpoint summary, access scope, and numbered next steps. Interactive terminal output may include the one-time Setup token. Non-interactive or redirected output never exposes it and prints the exact host-local token recovery command instead.
 
@@ -135,6 +139,10 @@ Keep the source until `doctor`, readiness, administrator login, and a business s
 
 ## Operations
 
+Runtime discovery is shared by status, doctor, restart, upgrade, uninstall, Setup, and cluster control commands. Resolution order is explicit `--runtime-dir`, the current directory, `./runtime` under the current directory, then the saved runtime from `mgsctl/config.json`. Ambiguous or invalid candidates fail closed.
+
+`mgsctl self-update` replaces only the control-tool executable. `mgsctl upgrade` resolves and deploys an application Release, performs the target database migration when authorized, and rolls the selected services. Updating the tool does not implicitly change a running application.
+
 ```bash
 mgsctl status
 mgsctl doctor
@@ -148,19 +156,19 @@ For Docker nodes that include API, `doctor` checks the loopback-published `/read
 Upgrade a Docker single/control installation:
 
 ```bash
-mgsctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag
+mgsctl upgrade --image-tag v1.2.3
 ```
 
 Upgrade a native single/control installation:
 
 ```bash
-mgsctl upgrade --application-version v1.2.3 --release-version v1.2.3
+mgsctl upgrade --release-version v1.2.3
 ```
 
-The control path atomically upgrades the runtime schema and deployment manifest, acquires the database migration lock, migrates once, then rolls services in dependency order. Joined nodes must not migrate:
+If no selector is supplied, upgrade resolves `latest`. The checksummed `release-manifest.json` determines the concrete logical application version; it is not entered manually. Docker first pulls target digests, then runs `mikiko-gallery-studio-db-migrate` from the target API image inside the current Compose network before rolling services. Native mode stages and runs the target Release migration binary. Joined nodes must not migrate:
 
 ```bash
-mgsctl upgrade --application-version v1.2.3 --image-tag sha-immutable-tag --migrate=false
+mgsctl upgrade --image-tag v1.2.3 --migrate=false
 ```
 
 Database migrations are forward-compatible and are not automatically reversed. If service rollout fails after a successful migration, the target runtime and manifest remain published; rerun the same `mgsctl upgrade` command to resume the idempotent rollout. If rollout fails without a migration, `mgsctl` restores the previous runtime and manifest and actively reapplies the previous deployment plan.

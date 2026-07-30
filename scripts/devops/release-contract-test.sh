@@ -78,13 +78,11 @@ for current_surface in \
   "$ROOT/scripts/docker/images.sh" \
   "$ROOT/scripts/devops/package.sh" \
   "$ROOT/scripts/workflow/native-package-contract.sh"; do
-  forbid_text "$current_surface" "pic-gallery-api"
-  forbid_text "$current_surface" "pic-gallery-worker"
-  forbid_text "$current_surface" "pic-gallery-gateway"
-  forbid_text "$current_surface" "pic-gallery-service-host"
+  for retired_component in api worker gateway service-host native; do
+    forbid_text "$current_surface" "pic-gallery-${retired_component}"
+  done
   forbid_text "$current_surface" "pic-gallery-local-bootstrap"
   forbid_text "$current_surface" "pic-gallery-local-entrypoint"
-  forbid_text "$current_surface" "pic-gallery-native"
 done
 
 for required in \

@@ -4,7 +4,7 @@ This directory contains templates and launchers used to assemble native applicat
 
 ## Tagged Releases
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. The workflow first tests mgsctl and both bootstrap installers, then publishes:
+Pushing a SemVer `v*` tag runs `.github/workflows/release.yml`. The workflow runs full repository verification, builds all release assets, publishes five multi-architecture Docker images, renders `release-manifest.json`, verifies the GitHub Release, and only then promotes the published image digests to `latest`.
 
 ```text
 mgsctl-linux-amd64
@@ -17,9 +17,23 @@ mikiko-gallery-studio-native-linux-amd64.tar.gz
 mikiko-gallery-studio-native-linux-arm64.tar.gz
 mikiko-gallery-studio-native-windows-amd64.tar.gz
 mikiko-gallery-studio-native-windows-arm64.tar.gz
+mikiko-gallery-studio-api-linux-amd64.tar.gz
+mikiko-gallery-studio-api-linux-arm64.tar.gz
+mikiko-gallery-studio-api-windows-amd64.tar.gz
+mikiko-gallery-studio-api-windows-arm64.tar.gz
+mikiko-gallery-studio-worker-linux-amd64.tar.gz
+mikiko-gallery-studio-worker-linux-arm64.tar.gz
+mikiko-gallery-studio-worker-windows-amd64.tar.gz
+mikiko-gallery-studio-worker-windows-arm64.tar.gz
+mikiko-gallery-studio-user-web.tar.gz
+mikiko-gallery-studio-admin-web.tar.gz
+mikiko-gallery-studio-docs-web.tar.gz
+release-manifest.json
 ```
 
-Every artifact has an adjacent `.sha256` file. The workflow creates a missing Release and uploads only missing asset names. It never overwrites an existing asset, so correcting a published binary requires a new version tag.
+Every artifact has an adjacent `.sha256` file. The workflow creates a missing Release and uploads only missing asset names; an existing asset must be byte-identical or publication fails. The Manifest binds the concrete application version to asset checksums and immutable image digests.
+
+Configure the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` for Docker Hub publication under `docker.io/fatballfish`. The five repositories are `mikiko-gallery-studio-api`, `mikiko-gallery-studio-worker`, `mikiko-gallery-studio-user-web`, `mikiko-gallery-studio-admin-web`, and `mikiko-gallery-studio-docs-web`. The API image also contains the `mikiko-gallery-studio-db-migrate` executable; no separate migration image is published.
 
 `workflow_dispatch` is available for retrying a tag workflow, but the selected ref must still be a `v*` tag. Ordinary branch pushes never create a Release.
 
@@ -81,17 +95,15 @@ Run the native package contract after changing package contents, frontend build 
 
 ## Component Packages
 
-`scripts/devops/package.sh` also supports `user-web`, `admin-web`, `docs-web`, `api-server`, `worker`, `gateway`, and `all`. These targets are inputs for release engineering and diagnostics. They are not supported production installation entrypoints; mgsctl owns installation, runtime configuration, service registration, health checks, upgrades, and uninstall.
+`scripts/devops/package.sh` supports directory targets plus `api-release`, `worker-release`, `user-web-release`, `admin-web-release`, and `docs-web-release`. Release targets create the named archives above and adjacent checksums. They are release-engineering inputs, not production installation entrypoints; mgsctl owns installation, runtime configuration, service registration, health checks, upgrades, and uninstall.
 
 The backend package launchers read `./config/runtime.env` by default and accept `APP_ENV_FILE` only as an explicit override. Frontend launchers render `dist/env.js` from their packaged environment templates.
 
 ## Docker Images
 
-Docker image publication remains separate from the GitHub Release workflow because it requires registry-specific credentials:
+The tag workflow authenticates with the Docker Hub secrets, publishes the SemVer tag for `linux/amd64` and `linux/arm64`, records the resulting digest in `release-manifest.json`, and promotes that digest to `latest` only after Release verification. Local maintainers can exercise the same image names with:
 
 ```bash
-./scripts/docker/images.sh build --tag v1.2.3 --registry docker.io/your-org
-./scripts/docker/images.sh push --tag v1.2.3 --registry docker.io/your-org
+./scripts/docker/images.sh build --tag v1.2.3 --registry docker.io/fatballfish
+./scripts/docker/images.sh push --tag v1.2.3 --registry docker.io/fatballfish
 ```
-
-Do not add registry credentials to the tagged artifact workflow. Production mgsctl commands should reference an immutable image tag or digest that already exists in the selected registry.

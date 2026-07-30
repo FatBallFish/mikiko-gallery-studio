@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -74,7 +75,10 @@ func ResolveReleaseManifest(ctx context.Context, options ReleaseManifestOptions,
 	}
 	baseURL := strings.TrimSpace(options.ReleaseBaseURL)
 	if baseURL == "" {
-		baseURL = DefaultMGSCTLReleaseBaseURL
+		baseURL = strings.TrimSpace(os.Getenv("MGSCTL_RELEASE_BASE_URL"))
+		if baseURL == "" {
+			baseURL = DefaultMGSCTLReleaseBaseURL
+		}
 	}
 	if err := validateMGSCTLDownloadURL(baseURL, true); err != nil {
 		return ResolvedRelease{}, fmt.Errorf("release manifest base URL: %w", err)

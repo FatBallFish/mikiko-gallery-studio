@@ -89,19 +89,20 @@ It includes:
 Install Docker Engine with Compose v2, clone the repository, and run:
 
 ```bash
-git clone https://github.com/fatballfish/pic-gallery.git
-cd pic-gallery
+git clone https://github.com/FatBallFish/mikiko-gallery-studio.git
+cd mikiko-gallery-studio
 ./scripts/install.sh install \
   --mode docker \
   --profile full \
   --topology single \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
-  --image-tag v1.2.3 \
+  --image-tag latest \
   --yes
 ```
 
-The installer downloads and verifies the matching mgsctl Release artifact. If that artifact is unavailable, a complete source checkout automatically falls back to `make mgsctl`; this fallback requires Go and Make. A checksum mismatch is a hard failure and never falls back to another binary source.
+The defaults are Docker, `full`, `single`, and image selector `latest`, so the explicit mode/profile/topology flags above are optional. mgsctl verifies `release-manifest.json`, resolves `latest` to a concrete SemVer application version and immutable image digests, then persists that concrete version. The application version is never entered manually.
+
+The installer downloads and verifies the matching mgsctl Release artifact. If that artifact is unavailable, a complete source checkout automatically falls back to `make mgsctl`; this fallback requires Go and Make. A checksum mismatch is a hard failure and never falls back to another binary source. The default API image repository is `docker.io/fatballfish/mikiko-gallery-studio-api`.
 
 After services start, open `http://<api-host>:8080/setup`, obtain the one-time token with `mgsctl setup token show --runtime-dir ./runtime`, and complete middleware connectivity plus first-administrator initialization. See [Production Deployment](#production-deployment) for other modes, parameters, clustering, upgrades, and recovery.
 
@@ -119,8 +120,8 @@ The following commands are for local development and contribution only. They are
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/fatballfish/pic-gallery.git
-cd pic-gallery
+git clone https://github.com/FatBallFish/mikiko-gallery-studio.git
+cd mikiko-gallery-studio
 ```
 
 ### 2. Prepare the portable runtime file
@@ -310,13 +311,13 @@ If the Release artifact or checksum file is unavailable, the wrapper falls back 
 | `MGSCTL_SHA256` | Pin the expected checksum instead of downloading the `.sha256` file |
 | `MGSCTL_SOURCE_DIR` | Complete source checkout used only for local Docker image fallback; the wrapper sets it automatically when possible |
 
-`MGSCTL_VERSION` selects the deployment tool itself. `--application-version`, `--image-tag`, and `--release-version` select the application being installed.
+`MGSCTL_VERSION` selects the deployment tool. The application selector defaults to `latest`: Docker uses `--image-tag`, Native uses `--release-version`, and both are resolved through the checksummed `release-manifest.json`. The resolved concrete version, image digests, and asset checksums become one application identity for cluster compatibility, health checks, and migrations.
 
 ### First Installation
 
-Omit `--yes` to use the interactive selector. Non-interactive installation requires `--mode`, `--profile`, and `--topology`.
+Omit `--yes` to use the interactive selector. Both interactive and non-interactive installation default to `docker`, `full`, `single`, and `latest`; pass flags only to override those choices.
 
-Docker full, with versions and the runtime location pinned explicitly:
+Docker full with the default `latest` selector and an explicit runtime location:
 
 ```bash
 ./scripts/install.sh install \
@@ -324,9 +325,8 @@ Docker full, with versions and the runtime location pinned explicitly:
   --profile full \
   --topology single \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --image-registry docker.io/fatballfish \
-  --image-tag v1.2.3 \
+  --image-tag latest \
   --yes
 ```
 
@@ -339,7 +339,6 @@ Docker core using existing middleware:
   --topology single \
   --storage-driver s3 \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --yes
 ```
@@ -353,7 +352,6 @@ Native core on Linux or Windows:
   --topology single \
   --storage-driver local \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --release-version v1.2.3 \
   --yes
 ```
@@ -364,7 +362,6 @@ Native core on Linux or Windows:
   --profile core `
   --topology single `
   --runtime-dir .\runtime `
-  --application-version v1.2.3 `
   --release-version v1.2.3 `
   --yes
 ```
@@ -393,18 +390,17 @@ Rerunning the exact same plan while Setup is pending resumes deployment automati
 
 | Parameter | Values/default | Notes |
 | --- | --- | --- |
-| `--mode` | `docker`, `native` | Required with `--yes` |
-| `--profile` | `full`, `core`, `custom` | Required with `--yes`; component overrides require `custom` |
-| `--topology` | `single`, `cluster` | Required with `--yes` |
+| `--mode` | `docker` (default), `native` | Artifact/runtime mode |
+| `--profile` | `full` (default), `core`, `custom` | Component overrides require `custom` |
+| `--topology` | `single` (default), `cluster` | Deployment topology |
 | `--role` | `single`, `control` | Defaults to `single` for single topology and `control` for cluster; joined roles use `cluster join` |
 | `--components` | Comma-separated list | Required for `custom`; valid values are `api`, `worker`, `user-web`, `admin-web`, `docs-web`, `gateway`, `postgres`, `redis`, `minio`, `monitoring` |
 | `--runtime-dir` | `.` | Portable directory containing configuration, state, assets, data, and logs |
 | `--storage-driver` | `local`, `s3` | Defaults to `s3` for full, cluster, or MinIO custom installs; otherwise `local` |
 | `--public-api-url` | Absolute HTTP(S) URL | Records the browser-visible API base URL; a joined Web plan requires it and receives it from Control during `cluster join` |
-| `--application-version` | `dev` | Installation compatibility version; pin a release version in production |
 | `--image-registry` | Compose default when empty | Docker image prefix; current Compose default is `docker.io/fatballfish` |
-| `--image-tag` | Application version | Docker image tag; prefer an immutable release or digest-derived tag |
-| `--release-version` | Application version | Native GitHub release containing the platform bundle and checksum |
+| `--image-tag` | `latest` | Docker release selector; resolved to a concrete version and digests before installation |
+| `--release-version` | `latest` | Native Release selector; resolved before the bundle is downloaded |
 | `--api-port` | `8080` | Host API port |
 | `--gateway-port` | `80` | Used when Gateway is selected |
 | `--user-web-port` | `5173` | Used when user Web is selected |
@@ -435,7 +431,6 @@ Example Docker custom installation with monitoring:
   --components api,worker,user-web,admin-web,docs-web,gateway,monitoring \
   --monitoring-port 9090 \
   --runtime-dir ./runtime \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --yes
 ```
@@ -443,6 +438,8 @@ Example Docker custom installation with monitoring:
 ### MGSCTL TUI and Service Access Summary
 
 Run `mgsctl` with no arguments in an interactive terminal to open the TUI. Use number keys or Arrow keys to select, Enter to confirm, Space to toggle multi-select fields, Esc to return one level, and Ctrl+C or the root **Exit** item to quit. `mgsctl -h` and `mgsctl --help` print the complete command catalog and exit successfully. A no-argument invocation with redirected input or output also prints help instead of waiting for terminal input.
+
+The TUI starts in Chinese (`zh-CN`). Choose Language to switch to English (`en-US`); the selection is stored in the user configuration at `mgsctl/config.json` and reused next time. Full and core component selections are read-only presets; custom profile selections remain editable.
 
 After a successful install, mgsctl prints a component-aware service access summary and numbered next steps. It lists only services selected by the final plan and labels Docker-only PostgreSQL, Redis, and MinIO addresses as internal. An interactive terminal install may print the one-time Setup token. Non-interactive or redirected output never prints that token and instead shows the local `mgsctl setup token show --runtime-dir ...` recovery command.
 
@@ -504,7 +501,6 @@ Start one control node against external shared PostgreSQL, Redis, and S3 storage
   --storage-driver s3 \
   --runtime-dir ./control \
   --public-api-url http://10.0.0.10:8080 \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --yes
 ```
@@ -527,7 +523,6 @@ mgsctl cluster join \
   --token '<single-use-token>' \
   --mode docker \
   --runtime-dir ./node \
-  --application-version v1.2.3 \
   --image-tag v1.2.3 \
   --api-port 8080
 ```
@@ -544,7 +539,7 @@ The generated file contains detailed Chinese and English comments. Setup writes 
 
 ### Status, Restart, and Diagnostics
 
-Run operational commands on the deployment host and point them at the same runtime directory:
+Runtime-aware commands resolve the installation in this order: an explicit `--runtime-dir`, the current directory, `./runtime` below the current directory, then the saved runtime in `mgsctl/config.json`. This allows normal operations from outside the Runtime directory while keeping explicit flags authoritative.
 
 ```bash
 mgsctl status --runtime-dir ./runtime
@@ -585,14 +580,13 @@ Without `--yes`, self-update requires an interactive confirmation. It downloads 
 
 ### Application Upgrade and Recovery
 
-Use immutable versions and back up PostgreSQL plus object storage before every production application update.
+Back up PostgreSQL plus object storage before every production application update. Omitting the selector uses `latest`; mgsctl verifies `release-manifest.json`, derives the target concrete version, pulls immutable digests, and runs `mikiko-gallery-studio-db-migrate` from the target API image in the Compose network.
 
 Docker single/control node:
 
 ```bash
 mgsctl upgrade \
   --runtime-dir ./runtime \
-  --application-version v1.3.0 \
   --image-registry docker.io/fatballfish \
   --image-tag v1.3.0
 ```
@@ -602,7 +596,6 @@ Native single/control node:
 ```bash
 mgsctl upgrade \
   --runtime-dir ./runtime \
-  --application-version v1.3.0 \
   --release-version v1.3.0
 ```
 
@@ -611,7 +604,6 @@ Upgrade the control node first. It acquires the distributed migration lock, upda
 ```bash
 mgsctl upgrade \
   --runtime-dir ./node \
-  --application-version v1.3.0 \
   --image-tag v1.3.0 \
   --migrate=false
 ```
@@ -661,8 +653,8 @@ Import never modifies the source and refuses to overwrite an existing target. Ke
 Operators publishing their own images must publish all five application images under the same registry prefix and tag:
 
 ```bash
-./scripts/docker/images.sh build --tag v1.3.0 --registry registry.example.com/pic-gallery
-./scripts/docker/images.sh push --tag v1.3.0 --registry registry.example.com/pic-gallery
+./scripts/docker/images.sh build --tag v1.3.0 --registry docker.io/fatballfish
+./scripts/docker/images.sh push --tag v1.3.0 --registry docker.io/fatballfish
 ```
 
 Create a release and optional `latest` tag in one step:
@@ -671,7 +663,7 @@ Create a release and optional `latest` tag in one step:
 ./scripts/docker/images.sh release \
   --version v1.3.0 \
   --latest \
-  --registry registry.example.com/pic-gallery
+  --registry docker.io/fatballfish
 ```
 
 See [`docs/runbooks/backend-deployment.md`](./docs/runbooks/backend-deployment.md) for failure recovery, native service behavior, backup boundaries, and deployment acceptance tests.

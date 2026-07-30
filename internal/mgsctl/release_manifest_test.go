@@ -44,6 +44,23 @@ func TestResolveLatestReleasePinsConcreteVersionAndDigests(t *testing.T) {
 	}
 }
 
+func TestResolveReleaseUsesConfiguredEnvironmentBaseURL(t *testing.T) {
+	manifest := validReleaseManifestForTest()
+	server := releaseManifestServer(t, manifest, "")
+	defer server.Close()
+	t.Setenv("MGSCTL_RELEASE_BASE_URL", server.URL+"/releases")
+
+	resolved, err := ResolveReleaseManifest(context.Background(), ReleaseManifestOptions{
+		Version: "latest", Components: []Component{ComponentAPI},
+	}, ReleaseManifestDependencies{HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("ResolveReleaseManifest: %v", err)
+	}
+	if resolved.ApplicationVersion != manifest.ApplicationVersion {
+		t.Fatalf("resolved version = %q, want %q", resolved.ApplicationVersion, manifest.ApplicationVersion)
+	}
+}
+
 func TestResolveReleaseRejectsChecksumVersionAndComponentDrift(t *testing.T) {
 	tests := []struct {
 		name      string
