@@ -13,6 +13,16 @@ import (
 	"testing"
 )
 
+func TestReleaseDefaultsUseCurrentRepository(t *testing.T) {
+	const want = "https://github.com/fatballfish/mikiko-gallery-studio/releases"
+	if DefaultMGSCTLReleaseBaseURL != want {
+		t.Fatalf("DefaultMGSCTLReleaseBaseURL = %q, want %q", DefaultMGSCTLReleaseBaseURL, want)
+	}
+	if defaultNativeReleaseBaseURL != want {
+		t.Fatalf("defaultNativeReleaseBaseURL = %q, want %q", defaultNativeReleaseBaseURL, want)
+	}
+}
+
 func TestMGSCTLArtifactURLMatchesPublishedPlatformNames(t *testing.T) {
 	tests := []struct {
 		goos, goarch, version, name, path string

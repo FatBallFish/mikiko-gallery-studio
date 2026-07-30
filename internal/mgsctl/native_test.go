@@ -50,7 +50,7 @@ func TestNativeServicePlanUsesPortableRuntimeAndDependencyOrder(t *testing.T) {
 			t.Fatalf("service %d uses a retired or redundant env selector: %#v", index, service)
 		}
 	}
-	if services[0].Executable != filepath.Join(plan.RuntimeDir, "bin", "pic-gallery-api") || len(services[0].Dependencies) != 0 {
+	if services[0].Executable != filepath.Join(plan.RuntimeDir, "bin", "mikiko-gallery-studio-api") || len(services[0].Dependencies) != 0 {
 		t.Fatalf("API service = %#v", services[0])
 	}
 	if !reflect.DeepEqual(services[1].Dependencies, []string{services[0].Name}) || !reflect.DeepEqual(services[2].Dependencies, []string{services[0].Name}) {
@@ -60,22 +60,22 @@ func TestNativeServicePlanUsesPortableRuntimeAndDependencyOrder(t *testing.T) {
 
 func TestNativeReleaseInstallerVerifiesAndExtractsPortableBundle(t *testing.T) {
 	archive := nativeReleaseArchiveForTest(t, map[string]nativeArchiveEntry{
-		"bin/":                         {mode: 0o755, typeflag: tar.TypeDir},
-		"bin/pic-gallery-api":          {content: "api", mode: 0o755},
-		"bin/pic-gallery-worker":       {content: "worker", mode: 0o755},
-		"bin/pic-gallery-gateway":      {content: "gateway", mode: 0o755},
-		"web/user/index.html":          {content: "user", mode: 0o644},
-		"web/admin/index.html":         {content: "admin", mode: 0o644},
-		"web/docs/index.html":          {content: "docs", mode: 0o644},
-		"api/openapi/openapi.yaml":     {content: "openapi", mode: 0o644},
-		"api/openapi/components/x.yml": {content: "component", mode: 0o644},
+		"bin/":                              {mode: 0o755, typeflag: tar.TypeDir},
+		"bin/mikiko-gallery-studio-api":     {content: "api", mode: 0o755},
+		"bin/mikiko-gallery-studio-worker":  {content: "worker", mode: 0o755},
+		"bin/mikiko-gallery-studio-gateway": {content: "gateway", mode: 0o755},
+		"web/user/index.html":               {content: "user", mode: 0o644},
+		"web/admin/index.html":              {content: "admin", mode: 0o644},
+		"web/docs/index.html":               {content: "docs", mode: 0o644},
+		"api/openapi/openapi.yaml":          {content: "openapi", mode: 0o644},
+		"api/openapi/components/x.yml":      {content: "component", mode: 0o644},
 	})
 	digest := sha256.Sum256(archive)
 	requests := make([]string, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requests = append(requests, request.URL.Path)
 		if strings.HasSuffix(request.URL.Path, ".sha256") {
-			_, _ = fmt.Fprintf(writer, "%x  pic-gallery-native-linux-amd64.tar.gz\n", digest)
+			_, _ = fmt.Fprintf(writer, "%x  mikiko-gallery-studio-native-linux-amd64.tar.gz\n", digest)
 			return
 		}
 		_, _ = writer.Write(archive)
@@ -87,8 +87,8 @@ func TestNativeReleaseInstallerVerifiesAndExtractsPortableBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	for path, want := range map[string]string{
-		filepath.Join("bin", "pic-gallery-api"): "api", filepath.Join("bin", "pic-gallery-worker"): "worker",
-		filepath.Join("bin", "pic-gallery-gateway"): "gateway", filepath.Join("web", "user", "index.html"): "user",
+		filepath.Join("bin", "mikiko-gallery-studio-api"): "api", filepath.Join("bin", "mikiko-gallery-studio-worker"): "worker",
+		filepath.Join("bin", "mikiko-gallery-studio-gateway"): "gateway", filepath.Join("web", "user", "index.html"): "user",
 		filepath.Join("api", "openapi", "openapi.yaml"): "openapi",
 	} {
 		content, err := os.ReadFile(filepath.Join(plan.RuntimeDir, path))
@@ -96,17 +96,17 @@ func TestNativeReleaseInstallerVerifiesAndExtractsPortableBundle(t *testing.T) {
 			t.Fatalf("release file %s = %q, %v", path, content, err)
 		}
 	}
-	info, err := os.Stat(filepath.Join(plan.RuntimeDir, "bin", "pic-gallery-api"))
+	info, err := os.Stat(filepath.Join(plan.RuntimeDir, "bin", "mikiko-gallery-studio-api"))
 	if err != nil || info.Mode().Perm() != 0o755 {
 		t.Fatalf("API executable mode = %v, %v", info.Mode(), err)
 	}
-	if len(requests) != 2 || requests[0] != "/download/v1/pic-gallery-native-linux-amd64.tar.gz.sha256" || requests[1] != "/download/v1/pic-gallery-native-linux-amd64.tar.gz" {
+	if len(requests) != 2 || requests[0] != "/download/v1/mikiko-gallery-studio-native-linux-amd64.tar.gz.sha256" || requests[1] != "/download/v1/mikiko-gallery-studio-native-linux-amd64.tar.gz" {
 		t.Fatalf("release requests = %#v", requests)
 	}
 	if err := installer.Install(context.Background(), plan, NativePlatformLinux); err != nil {
 		t.Fatalf("idempotent release install: %v", err)
 	}
-	apiPath := filepath.Join(plan.RuntimeDir, "bin", "pic-gallery-api")
+	apiPath := filepath.Join(plan.RuntimeDir, "bin", "mikiko-gallery-studio-api")
 	if err := os.Chmod(apiPath, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestNativeReleaseInstallerRejectsChecksumAndTraversalWithoutPublishing(t *t
 		entries  map[string]nativeArchiveEntry
 		checksum string
 	}{
-		{name: "checksum", entries: map[string]nativeArchiveEntry{"bin/pic-gallery-api": {content: "api", mode: 0o755}}, checksum: strings.Repeat("0", 64)},
+		{name: "checksum", entries: map[string]nativeArchiveEntry{"bin/mikiko-gallery-studio-api": {content: "api", mode: 0o755}}, checksum: strings.Repeat("0", 64)},
 		{name: "traversal", entries: map[string]nativeArchiveEntry{"../outside.txt": {content: "outside", mode: 0o644}}},
 	}
 	for _, testCase := range tests {
@@ -183,13 +183,13 @@ func TestNativeReleaseInstallerRejectsChecksumAndTraversalWithoutPublishing(t *t
 
 func TestNativeReleaseInstallerRecoversOnlyAnUnmodifiedJournaledPartialPublish(t *testing.T) {
 	archive := nativeReleaseArchiveForTest(t, map[string]nativeArchiveEntry{
-		"bin/pic-gallery-api":      {content: "api", mode: 0o755},
-		"bin/pic-gallery-worker":   {content: "worker", mode: 0o755},
-		"bin/pic-gallery-gateway":  {content: "gateway", mode: 0o755},
-		"web/user/index.html":      {content: "user", mode: 0o644},
-		"web/admin/index.html":     {content: "admin", mode: 0o644},
-		"web/docs/index.html":      {content: "docs", mode: 0o644},
-		"api/openapi/openapi.yaml": {content: "openapi", mode: 0o644},
+		"bin/mikiko-gallery-studio-api":     {content: "api", mode: 0o755},
+		"bin/mikiko-gallery-studio-worker":  {content: "worker", mode: 0o755},
+		"bin/mikiko-gallery-studio-gateway": {content: "gateway", mode: 0o755},
+		"web/user/index.html":               {content: "user", mode: 0o644},
+		"web/admin/index.html":              {content: "admin", mode: 0o644},
+		"web/docs/index.html":               {content: "docs", mode: 0o644},
+		"api/openapi/openapi.yaml":          {content: "openapi", mode: 0o644},
 	})
 	digest := sha256.Sum256(archive)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -228,7 +228,7 @@ func TestNativeReleaseInstallerRecoversOnlyAnUnmodifiedJournaledPartialPublish(t
 			if _, err := os.Stat(pendingPath); err != nil {
 				t.Fatalf("interrupted install did not retain its recovery journal: %v", err)
 			}
-			apiPath := filepath.Join(plan.RuntimeDir, "bin", "pic-gallery-api")
+			apiPath := filepath.Join(plan.RuntimeDir, "bin", "mikiko-gallery-studio-api")
 			if testCase.modify {
 				if err := os.WriteFile(apiPath, []byte("operator change"), 0o755); err != nil {
 					t.Fatal(err)
@@ -259,13 +259,13 @@ func TestNativeReleaseInstallerRecoversOnlyAnUnmodifiedJournaledPartialPublish(t
 func TestNativeReleaseInstallerUpdatesAndRecoversAnInterruptedDirectorySwap(t *testing.T) {
 	archive := func(version string) []byte {
 		return nativeReleaseArchiveForTest(t, map[string]nativeArchiveEntry{
-			"bin/pic-gallery-api":      {content: "api-" + version, mode: 0o755},
-			"bin/pic-gallery-worker":   {content: "worker-" + version, mode: 0o755},
-			"bin/pic-gallery-gateway":  {content: "gateway-" + version, mode: 0o755},
-			"web/user/index.html":      {content: "user-unchanged", mode: 0o644},
-			"web/admin/index.html":     {content: "admin-" + version, mode: 0o644},
-			"web/docs/index.html":      {content: "docs-" + version, mode: 0o644},
-			"api/openapi/openapi.yaml": {content: "openapi-unchanged", mode: 0o644},
+			"bin/mikiko-gallery-studio-api":     {content: "api-" + version, mode: 0o755},
+			"bin/mikiko-gallery-studio-worker":  {content: "worker-" + version, mode: 0o755},
+			"bin/mikiko-gallery-studio-gateway": {content: "gateway-" + version, mode: 0o755},
+			"web/user/index.html":               {content: "user-unchanged", mode: 0o644},
+			"web/admin/index.html":              {content: "admin-" + version, mode: 0o644},
+			"web/docs/index.html":               {content: "docs-" + version, mode: 0o644},
+			"api/openapi/openapi.yaml":          {content: "openapi-unchanged", mode: 0o644},
 		})
 	}
 	archives := map[string][]byte{"v1": archive("v1"), "v2": archive("v2")}
@@ -309,9 +309,9 @@ func TestNativeReleaseInstallerUpdatesAndRecoversAnInterruptedDirectorySwap(t *t
 		t.Fatalf("recover interrupted update: %v", err)
 	}
 	for relativePath, want := range map[string]string{
-		filepath.Join("bin", "pic-gallery-api"):         "api-v2",
-		filepath.Join("web", "user", "index.html"):      "user-unchanged",
-		filepath.Join("api", "openapi", "openapi.yaml"): "openapi-unchanged",
+		filepath.Join("bin", "mikiko-gallery-studio-api"): "api-v2",
+		filepath.Join("web", "user", "index.html"):        "user-unchanged",
+		filepath.Join("api", "openapi", "openapi.yaml"):   "openapi-unchanged",
 	} {
 		content, err := os.ReadFile(filepath.Join(plan.RuntimeDir, relativePath))
 		if err != nil || string(content) != want {
@@ -329,13 +329,13 @@ func TestNativeReleaseInstallerUpdatesAndRecoversAnInterruptedDirectorySwap(t *t
 
 func TestNativeReleaseInstallerCleansOnlyOwnedStaleStageDirectories(t *testing.T) {
 	archive := nativeReleaseArchiveForTest(t, map[string]nativeArchiveEntry{
-		"bin/pic-gallery-api":      {content: "api", mode: 0o755},
-		"bin/pic-gallery-worker":   {content: "worker", mode: 0o755},
-		"bin/pic-gallery-gateway":  {content: "gateway", mode: 0o755},
-		"web/user/index.html":      {content: "user", mode: 0o644},
-		"web/admin/index.html":     {content: "admin", mode: 0o644},
-		"web/docs/index.html":      {content: "docs", mode: 0o644},
-		"api/openapi/openapi.yaml": {content: "openapi", mode: 0o644},
+		"bin/mikiko-gallery-studio-api":     {content: "api", mode: 0o755},
+		"bin/mikiko-gallery-studio-worker":  {content: "worker", mode: 0o755},
+		"bin/mikiko-gallery-studio-gateway": {content: "gateway", mode: 0o755},
+		"web/user/index.html":               {content: "user", mode: 0o644},
+		"web/admin/index.html":              {content: "admin", mode: 0o644},
+		"web/docs/index.html":               {content: "docs", mode: 0o644},
+		"api/openapi/openapi.yaml":          {content: "openapi", mode: 0o644},
 	})
 	digest := sha256.Sum256(archive)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -459,7 +459,7 @@ func TestNativeWebServicePlanUsesExternalAPIWithoutLocalDependency(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(services) != 1 || services[0].Component != ComponentGateway || len(services[0].Dependencies) != 0 || !strings.HasSuffix(services[0].Executable, "pic-gallery-gateway.exe") {
+	if len(services) != 1 || services[0].Component != ComponentGateway || len(services[0].Dependencies) != 0 || !strings.HasSuffix(services[0].Executable, "mikiko-gallery-studio-gateway.exe") {
 		t.Fatalf("web services = %#v", services)
 	}
 }
@@ -765,7 +765,7 @@ func TestNativeWindowsProcessSpecsUseSCMServiceHostAndDependencies(t *testing.T)
 	}
 	all := strings.Join(joined, "\n")
 	for _, service := range services {
-		if !strings.Contains(all, "create "+service.Name) || !strings.Contains(all, "config "+service.Name) || !strings.Contains(all, "pic-gallery-service-host.exe") || !strings.Contains(all, "--working-directory") || !strings.Contains(all, "--executable") {
+		if !strings.Contains(all, "create "+service.Name) || !strings.Contains(all, "config "+service.Name) || !strings.Contains(all, "mikiko-gallery-studio-service-host.exe") || !strings.Contains(all, "--working-directory") || !strings.Contains(all, "--executable") {
 			t.Fatalf("Windows SCM specs missing service-host registration for %s:\n%s", service.Name, all)
 		}
 		if !strings.Contains(all, "failure "+service.Name) || !strings.Contains(all, "failureflag "+service.Name) || !strings.Contains(all, "start "+service.Name) {

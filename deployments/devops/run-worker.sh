@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-SERVICE_NAME=${PIC_GALLERY_WORKER_SERVICE_NAME:-pic-gallery-worker}
+SERVICE_NAME=${PIC_GALLERY_WORKER_SERVICE_NAME:-mikiko-gallery-studio-worker}
 APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-BIN_PATH="$APP_DIR/bin/pic-gallery-worker"
+BIN_PATH="$APP_DIR/bin/mikiko-gallery-studio-worker"
 ENV_FILE=${APP_ENV_FILE:-"$APP_DIR/config/runtime.env"}
 UNIT_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 

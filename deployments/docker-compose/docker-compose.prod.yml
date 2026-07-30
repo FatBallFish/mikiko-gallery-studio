@@ -82,7 +82,7 @@ services:
 
   api:
     profiles: ["full", "core", "api"]
-    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-api:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-api:${IMAGE_TAG:-latest}
     user: ${MGSCTL_RUNTIME_USER:-picgallery}
     working_dir: /app
     restart: unless-stopped
@@ -105,7 +105,7 @@ services:
 
   worker:
     profiles: ["full", "core", "worker"]
-    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-worker:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-worker:${IMAGE_TAG:-latest}
     user: ${MGSCTL_RUNTIME_USER:-picgallery}
     working_dir: /app
     restart: unless-stopped
@@ -122,7 +122,7 @@ services:
 
   user-web:
     profiles: ["full", "core", "user-web"]
-    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-user-web:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-user-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${USER_WEB_PORT:-5173}:80"
@@ -139,7 +139,7 @@ services:
 
   admin-web:
     profiles: ["full", "core", "admin-web"]
-    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-admin-web:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-admin-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${ADMIN_WEB_PORT:-5174}:80"
@@ -155,7 +155,7 @@ services:
 
   docs-web:
     profiles: ["full", "core", "docs-web"]
-    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/pic-gallery-docs-web:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/fatballfish}/mikiko-gallery-studio-docs-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${DOCS_WEB_PORT:-5175}:80"

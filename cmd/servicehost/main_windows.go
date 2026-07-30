@@ -22,7 +22,7 @@ func main() {
 	}
 	isService, err := svc.IsWindowsService()
 	if err != nil || !isService {
-		_, _ = fmt.Fprintln(os.Stderr, "pic-gallery-service-host must be started by the Windows Service Control Manager")
+		_, _ = fmt.Fprintln(os.Stderr, "mikiko-gallery-studio-service-host must be started by the Windows Service Control Manager")
 		os.Exit(1)
 	}
 	if err := svc.Run(options.ServiceName, &serviceHandler{options: options}); err != nil {

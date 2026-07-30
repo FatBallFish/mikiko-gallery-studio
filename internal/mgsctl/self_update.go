@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	DefaultMGSCTLReleaseBaseURL = "https://github.com/fatballfish/pic-gallery/releases"
+	DefaultMGSCTLReleaseBaseURL = "https://github.com/fatballfish/mikiko-gallery-studio/releases"
 	maxMGSCTLBinarySize         = 128 << 20
 	maxMGSCTLChecksumSize       = 4 << 10
 )

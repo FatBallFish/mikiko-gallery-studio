@@ -203,11 +203,11 @@ func (executor DockerExecutor) buildApplicationImages(ctx context.Context, plan 
 		image      string
 		dockerfile string
 	}{
-		ComponentAPI:      {image: "pic-gallery-api", dockerfile: "Dockerfile.api"},
-		ComponentWorker:   {image: "pic-gallery-worker", dockerfile: "Dockerfile.worker"},
-		ComponentUserWeb:  {image: "pic-gallery-user-web", dockerfile: "Dockerfile.user-web"},
-		ComponentAdminWeb: {image: "pic-gallery-admin-web", dockerfile: "Dockerfile.admin-web"},
-		ComponentDocsWeb:  {image: "pic-gallery-docs-web", dockerfile: "Dockerfile.docs-web"},
+		ComponentAPI:      {image: "mikiko-gallery-studio-api", dockerfile: "Dockerfile.api"},
+		ComponentWorker:   {image: "mikiko-gallery-studio-worker", dockerfile: "Dockerfile.worker"},
+		ComponentUserWeb:  {image: "mikiko-gallery-studio-user-web", dockerfile: "Dockerfile.user-web"},
+		ComponentAdminWeb: {image: "mikiko-gallery-studio-admin-web", dockerfile: "Dockerfile.admin-web"},
+		ComponentDocsWeb:  {image: "mikiko-gallery-studio-docs-web", dockerfile: "Dockerfile.docs-web"},
 	}
 	built := 0
 	for _, component := range plan.Components {

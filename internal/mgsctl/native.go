@@ -230,10 +230,7 @@ func BuildNativeServicePlan(plan InstallPlan, installationID string, platform Na
 		if !slices.Contains(plan.Components, component) {
 			continue
 		}
-		binaryName := "pic-gallery-" + string(component)
-		if component == ComponentAPI {
-			binaryName = "pic-gallery-api"
-		}
+		binaryName := "mikiko-gallery-studio-" + string(component)
 		service := NativeService{
 			Name: baseName + "-" + string(component), Component: component,
 			Executable: filepath.Join(runtimeDirectory, "bin", binaryName+extension), WorkingDirectory: runtimeDirectory,
@@ -392,7 +389,7 @@ func buildWindowsServiceProcessSpecs(action NativeAction, services []NativeServi
 	newSpec := func(arguments ...string) ProcessSpec {
 		return ProcessSpec{Executable: "sc.exe", Arguments: arguments, Directory: runtimeDirectory}
 	}
-	serviceHost := filepath.Join(runtimeDirectory, "bin", "pic-gallery-service-host.exe")
+	serviceHost := filepath.Join(runtimeDirectory, "bin", "mikiko-gallery-studio-service-host.exe")
 	switch action {
 	case NativeActionInstall:
 		specs := make([]ProcessSpec, 0, len(services)*5)

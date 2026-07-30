@@ -116,7 +116,7 @@ func (installer NativeReleaseInstaller) StageMigration(ctx context.Context, plan
 }
 
 func (installer NativeReleaseInstaller) downloadVerifiedArchive(ctx context.Context, releaseVersion string, platform NativePlatform, baseURL string) ([]byte, error) {
-	artifactName := "pic-gallery-native-" + string(platform) + "-" + installer.Architecture + ".tar.gz"
+	artifactName := "mikiko-gallery-studio-native-" + string(platform) + "-" + installer.Architecture + ".tar.gz"
 	releasePath := "download/" + url.PathEscape(releaseVersion)
 	if releaseVersion == "latest" {
 		releasePath = "latest/download"
@@ -812,13 +812,13 @@ func validateNativeReleaseFiles(directory string, plan InstallPlan, platform Nat
 	}
 	required := make([]string, 0, 8)
 	if slices.Contains(plan.Components, ComponentAPI) {
-		required = append(required, filepath.Join("bin", "pic-gallery-api"+extension), filepath.Join("api", "openapi", "openapi.yaml"))
+		required = append(required, filepath.Join("bin", "mikiko-gallery-studio-api"+extension), filepath.Join("api", "openapi", "openapi.yaml"))
 	}
 	if slices.Contains(plan.Components, ComponentWorker) {
-		required = append(required, filepath.Join("bin", "pic-gallery-worker"+extension))
+		required = append(required, filepath.Join("bin", "mikiko-gallery-studio-worker"+extension))
 	}
 	if slices.Contains(plan.Components, ComponentGateway) {
-		required = append(required, filepath.Join("bin", "pic-gallery-gateway"+extension))
+		required = append(required, filepath.Join("bin", "mikiko-gallery-studio-gateway"+extension))
 	}
 	for component, frontend := range map[Component]string{
 		ComponentUserWeb: "user", ComponentAdminWeb: "admin", ComponentDocsWeb: "docs",
@@ -828,7 +828,7 @@ func validateNativeReleaseFiles(directory string, plan InstallPlan, platform Nat
 		}
 	}
 	if platform == NativePlatformWindows && (slices.Contains(plan.Components, ComponentAPI) || slices.Contains(plan.Components, ComponentWorker) || slices.Contains(plan.Components, ComponentGateway)) {
-		required = append(required, filepath.Join("bin", "pic-gallery-service-host.exe"))
+		required = append(required, filepath.Join("bin", "mikiko-gallery-studio-service-host.exe"))
 	}
 	required = append(required, filepath.Join("bin", "mikiko-gallery-studio-db-migrate"+extension))
 	for _, relativePath := range required {

@@ -9,7 +9,7 @@ for (const required of [
   'package_native',
   './cmd/gateway',
   './cmd/servicehost',
-  'pic-gallery-native-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz',
+  'mikiko-gallery-studio-native-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz',
   'sha256sum',
   'shasum -a 256',
   'package_native',
@@ -48,7 +48,7 @@ for (const required of [
   'NativeActionRestart',
   'NativeActionStatus',
   'NativeActionUninstall',
-  'pic-gallery-service-host.exe',
+  'mikiko-gallery-studio-service-host.exe',
 ]) {
   if (!native.includes(required)) throw new Error(`mgsctl native service ownership is missing: ${required}`)
 }

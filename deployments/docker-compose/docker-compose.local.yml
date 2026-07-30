@@ -59,11 +59,11 @@ services:
       retries: 5
 
   bootstrap-local:
-    image: pic-gallery-api:${IMAGE_TAG:-dev}
+    image: mikiko-gallery-studio-api:${IMAGE_TAG:-dev}
     pull_policy: never
     restart: "no"
     user: "0:0"
-    entrypoint: ["pic-gallery-local-bootstrap"]
+    entrypoint: ["mikiko-gallery-studio-local-bootstrap"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,11 +74,11 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.api
-    image: pic-gallery-api:${IMAGE_TAG:-dev}
+    image: mikiko-gallery-studio-api:${IMAGE_TAG:-dev}
     restart: unless-stopped
     user: "0:0"
-    entrypoint: ["/usr/local/bin/pic-gallery-local-entrypoint"]
-    command: ["pic-gallery-api"]
+    entrypoint: ["/usr/local/bin/mikiko-gallery-studio-local-entrypoint"]
+    command: ["mikiko-gallery-studio-api"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,11 +99,11 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.worker
-    image: pic-gallery-worker:${IMAGE_TAG:-dev}
+    image: mikiko-gallery-studio-worker:${IMAGE_TAG:-dev}
     restart: unless-stopped
     user: "0:0"
-    entrypoint: ["/usr/local/bin/pic-gallery-local-entrypoint"]
-    command: ["pic-gallery-worker"]
+    entrypoint: ["/usr/local/bin/mikiko-gallery-studio-local-entrypoint"]
+    command: ["mikiko-gallery-studio-worker"]
     depends_on:
       api:
         condition: service_healthy
@@ -124,7 +124,7 @@ services:
       args:
         VITE_API_BASE_URL: ""
         VITE_BASE_PATH: /
-    image: pic-gallery-user-web:${IMAGE_TAG:-dev}
+    image: mikiko-gallery-studio-user-web:${IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
       PIC_GALLERY_API_BASE_URL: ${PUBLIC_API_URL:-}
@@ -146,7 +146,7 @@ services:
       dockerfile: Dockerfile.docs-web
       args:
         VITE_BASE_PATH: ./
-    image: pic-gallery-docs-web:${IMAGE_TAG:-dev}
+    image: mikiko-gallery-studio-docs-web:${IMAGE_TAG:-dev}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
@@ -161,7 +161,7 @@ services:
       args:
         VITE_API_BASE_URL: ""
         VITE_BASE_PATH: ./
-    image: pic-gallery-admin-web:${IMAGE_TAG:-dev}
+    image: mikiko-gallery-studio-admin-web:${IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
       PIC_GALLERY_API_BASE_URL: ${PUBLIC_API_URL:-}

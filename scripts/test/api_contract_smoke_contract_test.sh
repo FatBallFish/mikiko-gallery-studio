@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SMOKE="$ROOT_DIR/scripts/test/api_contract_smoke.sh"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pic-gallery-api-smoke-contract.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mikiko-gallery-studio-api-smoke-contract.XXXXXX")"
 STUB_BIN="$TMP_DIR/stubs"
 INVOCATIONS="$TMP_DIR/invocations.log"
 LISTENER_PID=""

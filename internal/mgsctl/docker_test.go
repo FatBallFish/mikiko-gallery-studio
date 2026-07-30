@@ -286,11 +286,11 @@ func TestDockerExecutorBuildsApplicationImagesLocallyWhenPullFails(t *testing.T)
 		name       string
 		dockerfile string
 	}{
-		{"pic-gallery-api", "Dockerfile.api"},
-		{"pic-gallery-worker", "Dockerfile.worker"},
-		{"pic-gallery-user-web", "Dockerfile.user-web"},
-		{"pic-gallery-admin-web", "Dockerfile.admin-web"},
-		{"pic-gallery-docs-web", "Dockerfile.docs-web"},
+		{"mikiko-gallery-studio-api", "Dockerfile.api"},
+		{"mikiko-gallery-studio-worker", "Dockerfile.worker"},
+		{"mikiko-gallery-studio-user-web", "Dockerfile.user-web"},
+		{"mikiko-gallery-studio-admin-web", "Dockerfile.admin-web"},
+		{"mikiko-gallery-studio-docs-web", "Dockerfile.docs-web"},
 	}
 	for index, want := range wantImages {
 		spec := runner.specs[index+1]

@@ -22,7 +22,7 @@ cleanup() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" logs --no-color bootstrap-local api >&2 || true
   fi
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" down -v --remove-orphans >/dev/null 2>&1 || status=1
-  docker image rm "pic-gallery-api:$TEST_IMAGE_TAG" >/dev/null 2>&1 || true
+  docker image rm "mikiko-gallery-studio-api:$TEST_IMAGE_TAG" >/dev/null 2>&1 || true
   if [[ -d "$TEST_ROOT" ]]; then
     find "$TEST_ROOT" -depth -mindepth 1 -delete >/dev/null 2>&1 || status=1
     rmdir "$TEST_ROOT" >/dev/null 2>&1 || status=1

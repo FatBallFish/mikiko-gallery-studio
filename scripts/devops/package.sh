@@ -64,17 +64,17 @@ package_backend() {
   case "$target" in
     api-server)
       cmd_pkg="./cmd/api"
-      bin_name="pic-gallery-api"
+      bin_name="mikiko-gallery-studio-api"
       run_script="run-api-server.sh"
       ;;
     worker)
       cmd_pkg="./cmd/worker"
-      bin_name="pic-gallery-worker"
+      bin_name="mikiko-gallery-studio-worker"
       run_script="run-worker.sh"
       ;;
     gateway)
       cmd_pkg="./cmd/gateway"
-      bin_name="pic-gallery-gateway"
+      bin_name="mikiko-gallery-studio-gateway"
       run_script=""
       ;;
     *)
@@ -113,7 +113,7 @@ package_native() {
   local bundle="$TARGET_ROOT/native-$GOOS_TARGET-$GOARCH_TARGET"
   local extension=""
   [[ "$GOOS_TARGET" == "windows" ]] && extension=".exe"
-  local archive="$TARGET_ROOT/pic-gallery-native-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz"
+  local archive="$TARGET_ROOT/mikiko-gallery-studio-native-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz"
 
   echo "==> Building native bundle ($GOOS_TARGET/$GOARCH_TARGET, CGO_ENABLED=$CGO_TARGET)"
   rm -rf "$bundle"
@@ -129,12 +129,12 @@ package_native() {
 
   (
     cd "$ROOT_DIR"
-    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-api$extension" ./cmd/api
-    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-worker$extension" ./cmd/worker
-    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-gateway$extension" ./cmd/gateway
+    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/mikiko-gallery-studio-api$extension" ./cmd/api
+    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/mikiko-gallery-studio-worker$extension" ./cmd/worker
+    GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/mikiko-gallery-studio-gateway$extension" ./cmd/gateway
 	GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/mikiko-gallery-studio-db-migrate$extension" ./cmd/db-migrate
     if [[ "$GOOS_TARGET" == "windows" ]]; then
-      GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-service-host.exe" ./cmd/servicehost
+      GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/mikiko-gallery-studio-service-host.exe" ./cmd/servicehost
     fi
   )
   cp "$ROOT_DIR/api/openapi/openapi.yaml" "$bundle/api/openapi/openapi.yaml"

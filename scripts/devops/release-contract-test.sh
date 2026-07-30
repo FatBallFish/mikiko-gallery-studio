@@ -6,6 +6,10 @@ WORKFLOW="$ROOT/.github/workflows/release.yml"
 PACKAGER="$ROOT/scripts/devops/package-mgsctl.sh"
 MANIFEST_RENDERER="$ROOT/scripts/devops/render-release-manifest.sh"
 MAINTAINER_DOC="$ROOT/deployments/devops/README.md"
+IMAGE_SCRIPT="$ROOT/scripts/docker/images.sh"
+NATIVE_PACKAGER="$ROOT/scripts/devops/package.sh"
+NATIVE_CONTRACT="$ROOT/scripts/workflow/native-package-contract.sh"
+PROD_COMPOSE="$ROOT/deployments/docker-compose/docker-compose.prod.yml"
 
 require_file() {
   [[ -f "$1" ]] || {
@@ -36,6 +40,51 @@ require_file "$WORKFLOW"
 require_file "$PACKAGER"
 require_file "$MANIFEST_RENDERER"
 require_file "$MAINTAINER_DOC"
+require_file "$IMAGE_SCRIPT"
+require_file "$NATIVE_PACKAGER"
+require_file "$NATIVE_CONTRACT"
+require_file "$PROD_COMPOSE"
+
+for image in api worker user-web admin-web docs-web; do
+  require_text "$IMAGE_SCRIPT" "mikiko-gallery-studio-$image"
+  require_text "$PROD_COMPOSE" "mikiko-gallery-studio-$image"
+done
+require_text "$IMAGE_SCRIPT" 'REGISTRY=${IMAGE_REGISTRY:-docker.io/fatballfish}'
+for required in \
+  'org.opencontainers.image.version' \
+  'org.opencontainers.image.revision' \
+  'org.opencontainers.image.source' \
+  '--metadata-file' \
+  'linux/amd64,linux/arm64' \
+  'dirty-' ; do
+  require_text "$IMAGE_SCRIPT" "$required"
+done
+forbid_text "$IMAGE_SCRIPT" 'docker tag'
+for binary in api worker gateway db-migrate; do
+  require_text "$NATIVE_PACKAGER" "mikiko-gallery-studio-$binary"
+  require_text "$NATIVE_CONTRACT" "mikiko-gallery-studio-$binary"
+done
+require_text "$NATIVE_PACKAGER" 'mikiko-gallery-studio-native-${GOOS_TARGET}-${GOARCH_TARGET}.tar.gz'
+require_text "$NATIVE_CONTRACT" 'mikiko-gallery-studio-native-${target_os}-amd64.tar.gz'
+
+for current_surface in \
+  "$ROOT/Dockerfile.api" \
+  "$ROOT/Dockerfile.worker" \
+  "$ROOT/deployments/docker-compose/docker-compose.local.yml" \
+  "$ROOT/deployments/docker-compose/docker-compose.prod.yml" \
+  "$ROOT/deployments/devops/run-api-server.sh" \
+  "$ROOT/deployments/devops/run-worker.sh" \
+  "$ROOT/scripts/docker/images.sh" \
+  "$ROOT/scripts/devops/package.sh" \
+  "$ROOT/scripts/workflow/native-package-contract.sh"; do
+  forbid_text "$current_surface" "pic-gallery-api"
+  forbid_text "$current_surface" "pic-gallery-worker"
+  forbid_text "$current_surface" "pic-gallery-gateway"
+  forbid_text "$current_surface" "pic-gallery-service-host"
+  forbid_text "$current_surface" "pic-gallery-local-bootstrap"
+  forbid_text "$current_surface" "pic-gallery-local-entrypoint"
+  forbid_text "$current_surface" "pic-gallery-native"
+done
 
 for required in \
   "tags:" \

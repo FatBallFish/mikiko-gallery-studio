@@ -13,10 +13,10 @@ mgsctl-darwin-amd64
 mgsctl-darwin-arm64
 mgsctl-windows-amd64.exe
 mgsctl-windows-arm64.exe
-pic-gallery-native-linux-amd64.tar.gz
-pic-gallery-native-linux-arm64.tar.gz
-pic-gallery-native-windows-amd64.tar.gz
-pic-gallery-native-windows-arm64.tar.gz
+mikiko-gallery-studio-native-linux-amd64.tar.gz
+mikiko-gallery-studio-native-linux-arm64.tar.gz
+mikiko-gallery-studio-native-windows-amd64.tar.gz
+mikiko-gallery-studio-native-windows-arm64.tar.gz
 ```
 
 Every artifact has an adjacent `.sha256` file. The workflow creates a missing Release and uploads only missing asset names. It never overwrites an existing asset, so correcting a published binary requires a new version tag.
@@ -61,8 +61,8 @@ DEVOPS_CGO_ENABLED=0 \
 The output names must remain aligned with `internal/mgsctl/native_release.go`:
 
 ```text
-pic-gallery-native-<os>-<arch>.tar.gz
-pic-gallery-native-<os>-<arch>.tar.gz.sha256
+mikiko-gallery-studio-native-<os>-<arch>.tar.gz
+mikiko-gallery-studio-native-<os>-<arch>.tar.gz.sha256
 ```
 
 The portable archive contains only these top-level paths:

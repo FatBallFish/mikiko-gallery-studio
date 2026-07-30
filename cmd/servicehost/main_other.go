@@ -8,6 +8,6 @@ import (
 )
 
 func main() {
-	_, _ = fmt.Fprintln(os.Stderr, "pic-gallery-service-host is only supported on Windows")
+	_, _ = fmt.Fprintln(os.Stderr, "mikiko-gallery-studio-service-host is only supported on Windows")
 	os.Exit(1)
 }

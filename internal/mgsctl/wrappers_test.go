@@ -21,12 +21,12 @@ func TestBootstrapWrappersLocateOrDownloadMGSCTLAndForwardArguments(t *testing.T
 	}{
 		{
 			path:      "scripts/install.sh",
-			required:  []string{`exec "$MGSCTL_BIN" "$@"`, "command -v mgsctl", "git -C", "version --json", "PATH mgsctl is stale", "MGSCTL_VERSION", "MGSCTL_INSTALL_DIR", "make", "MGSCTL_OUTPUT", "curl", "sha256", "checksum verification failed"},
+			required:  []string{`exec "$MGSCTL_BIN" "$@"`, "command -v mgsctl", "git -C", "version --json", "PATH mgsctl is stale", "MGSCTL_VERSION", "MGSCTL_INSTALL_DIR", "github.com/fatballfish/mikiko-gallery-studio/releases", "make", "MGSCTL_OUTPUT", "curl", "sha256", "checksum verification failed"},
 			forbidden: []string{`exec mgsctl "$@"`, "eval ", "docker compose", "systemctl"},
 		},
 		{
 			path:      "scripts/install.ps1",
-			required:  []string{"& $binary @args", "git", "version --json", "ConvertFrom-Json", "PATH mgsctl is stale", "MGSCTL_VERSION", "MGSCTL_INSTALL_DIR", "MGSCTL_OUTPUT", "Invoke-WebRequest", "Get-FileHash", "GetLeftPart", "checksum verification failed"},
+			required:  []string{"& $binary @args", "git", "version --json", "ConvertFrom-Json", "PATH mgsctl is stale", "MGSCTL_VERSION", "MGSCTL_INSTALL_DIR", "github.com/fatballfish/mikiko-gallery-studio/releases", "MGSCTL_OUTPUT", "Invoke-WebRequest", "Get-FileHash", "GetLeftPart", "checksum verification failed"},
 			forbidden: []string{"Invoke-Expression", "docker compose", "systemctl"},
 		},
 	}
