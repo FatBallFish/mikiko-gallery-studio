@@ -45,6 +45,9 @@ type CLIDependencies struct {
 	ExecuteTUI           func(context.Context) ([]string, error)
 	ResolveRelease       func(context.Context, ReleaseManifestOptions) (ResolvedRelease, error)
 	ReleaseManifest      ReleaseManifestDependencies
+	ResolveRuntime       func(RuntimeResolutionOptions) (string, error)
+	RememberRuntime      func(string) error
+	UserConfig           UserConfigDependencies
 }
 
 func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
@@ -85,6 +88,19 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 	if err != nil {
 		fmt.Fprintf(dependencies.Stderr, "mgsctl: %v\n", err)
 		return 2
+	}
+	if commandRequiresInstalledRuntime(command.Kind) {
+		resolveRuntime := dependencies.ResolveRuntime
+		if resolveRuntime == nil {
+			resolveRuntime = func(options RuntimeResolutionOptions) (string, error) {
+				return ResolveRuntimeDirectory(options, RuntimeResolverDependencies{UserConfig: dependencies.UserConfig})
+			}
+		}
+		resolvedRuntime, resolveErr := resolveRuntime(RuntimeResolutionOptions{RuntimeDir: command.RuntimeDir, Explicit: command.RuntimeDirExplicit})
+		if resolveErr != nil {
+			return writeRunError(dependencies.Stderr, fmt.Errorf("resolve runtime directory: %w", resolveErr))
+		}
+		setCommandRuntimeDirectory(&command, resolvedRuntime)
 	}
 	switch command.Kind {
 	case CommandVersion:
@@ -287,8 +303,33 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 	if err != nil {
 		return writeRunError(dependencies.Stderr, err)
 	}
+	if dependencies.RememberRuntime != nil {
+		if rememberErr := dependencies.RememberRuntime(plan.RuntimeDir); rememberErr != nil {
+			fmt.Fprintf(dependencies.Stderr, "mgsctl: warning: remember runtime directory: %v\n", rememberErr)
+		}
+	}
 	fmt.Fprint(dependencies.Stdout, InstallSummary(plan, result, input.Interactive && dependencies.StdoutIsTerminal(dependencies.Stdout)))
 	return 0
+}
+
+func commandRequiresInstalledRuntime(kind CommandKind) bool {
+	switch kind {
+	case CommandStatus, CommandDoctor, CommandRestart, CommandUpgrade, CommandUninstall,
+		CommandSetupStatus, CommandSetupTokenShow, CommandSetupTokenReset, CommandClusterTokenCreate:
+		return true
+	default:
+		return false
+	}
+}
+
+func setCommandRuntimeDirectory(command *Command, runtimeDir string) {
+	command.RuntimeDir = runtimeDir
+	if command.Upgrade != nil {
+		command.Upgrade.RuntimeDir = runtimeDir
+	}
+	if command.Uninstall != nil {
+		command.Uninstall.RuntimeDir = runtimeDir
+	}
 }
 
 func topLevelHelpRequested(args []string) bool {

@@ -347,7 +347,7 @@ func TestRunDispatchesOperationalCommands(t *testing.T) {
 	t.Run("runtime action", func(t *testing.T) {
 		var gotKind CommandKind
 		code := Run(context.Background(), []string{"status", "--runtime-dir", "runtime"}, CLIDependencies{
-			Stdout: io.Discard, Stderr: new(bytes.Buffer),
+			Stdout: io.Discard, Stderr: new(bytes.Buffer), ResolveRuntime: resolveCommandRuntimeForTest,
 			ExecuteRuntimeAction: func(_ context.Context, kind CommandKind, runtimeDir string) error {
 				gotKind = kind
 				if runtimeDir != "runtime" {
@@ -364,7 +364,7 @@ func TestRunDispatchesOperationalCommands(t *testing.T) {
 	t.Run("doctor failure", func(t *testing.T) {
 		stdout := new(bytes.Buffer)
 		code := Run(context.Background(), []string{"doctor"}, CLIDependencies{
-			Stdout: stdout, Stderr: new(bytes.Buffer),
+			Stdout: stdout, Stderr: new(bytes.Buffer), ResolveRuntime: resolveCommandRuntimeForTest,
 			ExecuteDoctor: func(context.Context, string, DoctorDependencies) DoctorReport {
 				return DoctorReport{Checks: []DoctorCheck{{Code: "SCHEMA_DRIFT", Message: "schema mismatch"}}}
 			},
@@ -377,14 +377,14 @@ func TestRunDispatchesOperationalCommands(t *testing.T) {
 	t.Run("upgrade and uninstall", func(t *testing.T) {
 		upgradeCalled, uninstallCalled := false, false
 		upgradeCode := Run(context.Background(), []string{"upgrade", "--image-tag", "v2"}, CLIDependencies{
-			Stdout: io.Discard, Stderr: new(bytes.Buffer),
+			Stdout: io.Discard, Stderr: new(bytes.Buffer), ResolveRuntime: resolveCommandRuntimeForTest,
 			ExecuteUpgrade: func(_ context.Context, options UpgradeOptions, _ UpgradeDependencies) (UpgradeResult, error) {
 				upgradeCalled = options.ApplicationVersion == "" && options.ImageTag == "v2" && options.Migrate
 				return UpgradeResult{PreviousVersion: "v1", CurrentVersion: "v2", Migrated: true}, nil
 			},
 		})
 		uninstallCode := Run(context.Background(), []string{"uninstall", "--yes"}, CLIDependencies{
-			Stdout: io.Discard, Stderr: new(bytes.Buffer),
+			Stdout: io.Discard, Stderr: new(bytes.Buffer), ResolveRuntime: resolveCommandRuntimeForTest,
 			ExecuteUninstall: func(_ context.Context, options UninstallOptions, _ UninstallDependencies) error {
 				uninstallCalled = !options.DeleteData
 				return nil
@@ -394,6 +394,56 @@ func TestRunDispatchesOperationalCommands(t *testing.T) {
 			t.Fatalf("operational dispatch upgrade=(%d,%t) uninstall=(%d,%t)", upgradeCode, upgradeCalled, uninstallCode, uninstallCalled)
 		}
 	})
+}
+
+func resolveCommandRuntimeForTest(options RuntimeResolutionOptions) (string, error) {
+	return filepath.Clean(defaultString(options.RuntimeDir, ".")), nil
+}
+
+func TestRunResolvesRuntimeBeforeOperationalDispatch(t *testing.T) {
+	resolvedRuntime := filepath.Join(t.TempDir(), "resolved-runtime")
+	called := false
+	code := Run(context.Background(), []string{"upgrade"}, CLIDependencies{
+		Stdout: io.Discard, Stderr: new(bytes.Buffer),
+		ResolveRuntime: func(options RuntimeResolutionOptions) (string, error) {
+			if options.Explicit {
+				t.Fatal("default runtime unexpectedly became explicit")
+			}
+			return resolvedRuntime, nil
+		},
+		ExecuteUpgrade: func(_ context.Context, options UpgradeOptions, _ UpgradeDependencies) (UpgradeResult, error) {
+			called = options.RuntimeDir == resolvedRuntime
+			return UpgradeResult{PreviousVersion: "v1", CurrentVersion: "v2"}, nil
+		},
+	})
+	if code != 0 || !called {
+		t.Fatalf("runtime-aware dispatch code=%d called=%t", code, called)
+	}
+}
+
+func TestRunRemembersRuntimeOnlyAfterSuccessfulInstall(t *testing.T) {
+	resolver := resolvedReleaseForInstallSelector
+	remembered := ""
+	writes := make([]string, 0)
+	successCode := Run(context.Background(), []string{"install", "--yes", "--runtime-dir", "successful"}, CLIDependencies{
+		Stdout: io.Discard, Stderr: new(bytes.Buffer), ResolveRelease: resolver,
+		Install:         testInstallDependencies(&writes),
+		RememberRuntime: func(runtimeDir string) error { remembered = runtimeDir; return nil },
+	})
+	if successCode != 0 || remembered != "successful" {
+		t.Fatalf("successful install code=%d remembered=%q", successCode, remembered)
+	}
+
+	remembered = "previous"
+	failingDependencies := testInstallDependencies(&writes)
+	failingDependencies.ApplyDeployment = func(context.Context, InstallPlan) error { return errors.New("deployment failed") }
+	failureCode := Run(context.Background(), []string{"install", "--yes", "--runtime-dir", "failed"}, CLIDependencies{
+		Stdout: io.Discard, Stderr: new(bytes.Buffer), ResolveRelease: resolver, Install: failingDependencies,
+		RememberRuntime: func(runtimeDir string) error { remembered = runtimeDir; return nil },
+	})
+	if failureCode == 0 || remembered != "previous" {
+		t.Fatalf("failed install code=%d remembered=%q", failureCode, remembered)
+	}
 }
 
 func testInstallDependencies(writes *[]string) InstallDependencies {

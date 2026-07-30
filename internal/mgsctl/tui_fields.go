@@ -285,7 +285,7 @@ func tuiFieldsForCommand(path string) []TUIField {
 	boolean := func(name, label string, value bool) TUIField {
 		return TUIField{Name: name, Label: label, Kind: tuiFieldBool, Value: fmt.Sprintf("%t", value)}
 	}
-	runtimeDir := func() []TUIField { return []TUIField{text("runtime-dir", "Runtime directory", ".")} }
+	runtimeDir := func() []TUIField { return []TUIField{text("runtime-dir", "Runtime directory", "")} }
 	switch path {
 	case "install":
 		components := TUIField{Name: "components", Label: "Components", Kind: tuiFieldMulti, Choices: componentNames(), Selected: selectedComponents(fullPreset)}
@@ -310,11 +310,11 @@ func tuiFieldsForCommand(path string) []TUIField {
 	case "self-update":
 		return []TUIField{text("version", "Target version", "latest"), text("release-base-url", "Release base URL", DefaultMGSCTLReleaseBaseURL), text("download-url", "Artifact URL", ""), text("sha256", "Expected SHA-256", ""), boolean("yes", "Confirm update", true)}
 	case "upgrade":
-		return []TUIField{text("runtime-dir", "Runtime directory", "."), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", "latest"), text("release-version", "Release version", "latest"), boolean("migrate", "Run migration", true)}
+		return []TUIField{text("runtime-dir", "Runtime directory", ""), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", "latest"), text("release-version", "Release version", "latest"), boolean("migrate", "Run migration", true)}
 	case "uninstall":
-		return []TUIField{text("runtime-dir", "Runtime directory", "."), boolean("delete-data", "Delete persistent data", false), text("confirm", "Installation-specific phrase", ""), boolean("yes", "Confirm non-destructive stop", true)}
+		return []TUIField{text("runtime-dir", "Runtime directory", ""), boolean("delete-data", "Delete persistent data", false), text("confirm", "Installation-specific phrase", ""), boolean("yes", "Confirm non-destructive stop", true)}
 	case "cluster token create":
-		return []TUIField{choice("role", "Node role", "worker", "api", "worker", "web"), text("ttl", "Token lifetime", "10m"), text("runtime-dir", "Runtime directory", ".")}
+		return []TUIField{choice("role", "Node role", "worker", "api", "worker", "web"), text("ttl", "Token lifetime", "10m"), text("runtime-dir", "Runtime directory", "")}
 	case "cluster join":
 		return []TUIField{text("server", "Control API URL", "http://127.0.0.1:8080"), {Name: "token", Label: "Single-use token", Kind: tuiFieldText, Value: "pgjoin.v1.placeholder", Sensitive: true}, text("runtime-dir", "Runtime directory", "."), choice("mode", "Mode", "docker", "docker", "native"), text("application-version", "Application version", DefaultApplicationVersion), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", DefaultApplicationVersion), text("release-version", "Release version", ""), text("api-port", "API port", "8080"), text("gateway-port", "Gateway port", "80"), text("user-web-port", "User Web port", "5173"), text("admin-web-port", "Admin Web port", "5174"), text("docs-web-port", "Docs Web port", "5175")}
 	default:

@@ -26,15 +26,21 @@ func main() {
 	dockerExecutor := mgsctl.DockerExecutor{Runner: runner, Stderr: os.Stderr}
 	nativeExecutor := mgsctl.NativeExecutor{Runner: runner}
 	executors := mgsctl.RuntimeExecutors{Docker: dockerExecutor, Native: nativeExecutor}
+	userConfig := mgsctl.UserConfigDependencies{UserConfigDir: os.UserConfigDir}
 	os.Exit(mgsctl.Run(ctx, os.Args[1:], mgsctl.CLIDependencies{
 		Terminal: mgsctl.NewStdioTerminal(os.Stdin, os.Stderr), Stdout: os.Stdout, Stderr: os.Stderr,
 		ExecuteTUI: func(ctx context.Context) ([]string, error) {
 			return mgsctl.ExecuteTUI(ctx, os.Stdin, os.Stdout)
 		},
-		BuildInfo:    mgsctl.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, Dirty: strings.EqualFold(dirty, "true")},
-		ImportConfig: mgsctl.ImportConfigDependencies{ProbeCompletion: mgsctl.ProbeLegacyCompletion},
-		Doctor:       mgsctl.ProductionDoctorDependencies(),
-		SelfUpdate:   mgsctl.ProductionSelfUpdateDependencies(),
+		BuildInfo: mgsctl.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, Dirty: strings.EqualFold(dirty, "true")},
+		ResolveRuntime: func(options mgsctl.RuntimeResolutionOptions) (string, error) {
+			return mgsctl.ResolveRuntimeDirectory(options, mgsctl.RuntimeResolverDependencies{UserConfig: userConfig})
+		},
+		RememberRuntime: func(runtimeDir string) error { return mgsctl.SaveRecentRuntime(userConfig, runtimeDir) },
+		UserConfig:      userConfig,
+		ImportConfig:    mgsctl.ImportConfigDependencies{ProbeCompletion: mgsctl.ProbeLegacyCompletion},
+		Doctor:          mgsctl.ProductionDoctorDependencies(),
+		SelfUpdate:      mgsctl.ProductionSelfUpdateDependencies(),
 		Upgrade: mgsctl.UpgradeDeploymentDependencies(executors, func(ctx context.Context, runtimeEnvPath string) error {
 			_, err := app.RunDatabaseMigration(ctx, runtimeEnvPath)
 			return err

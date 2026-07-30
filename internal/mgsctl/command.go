@@ -90,6 +90,7 @@ func (options ClusterJoinOptions) MarshalJSON() ([]byte, error) {
 type Command struct {
 	Kind               CommandKind
 	RuntimeDir         string
+	RuntimeDirExplicit bool
 	Yes                bool
 	Install            *InstallInput
 	ImportConfig       *ImportConfigOptions
@@ -257,7 +258,7 @@ func parseUpgradeCommand(args []string) (Command, error) {
 		RuntimeDir:    filepath.Clean(*runtimeDir),
 		ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion, Migrate: *migrate,
 	}
-	return Command{Kind: CommandUpgrade, RuntimeDir: *runtimeDir, Upgrade: options}, nil
+	return Command{Kind: CommandUpgrade, RuntimeDir: *runtimeDir, RuntimeDirExplicit: flagWasProvided(args, "runtime-dir"), Upgrade: options}, nil
 }
 
 func parseUninstallCommand(args []string) (Command, error) {
@@ -282,7 +283,7 @@ func parseUninstallCommand(args []string) (Command, error) {
 		return Command{}, fmt.Errorf("--yes cannot authorize persistent data deletion; use the exact --confirm phrase")
 	}
 	options := &UninstallOptions{RuntimeDir: filepath.Clean(*runtimeDir), DeleteData: *deleteData, Confirmation: *confirmation}
-	return Command{Kind: CommandUninstall, RuntimeDir: *runtimeDir, Yes: *yes, Uninstall: options}, nil
+	return Command{Kind: CommandUninstall, RuntimeDir: *runtimeDir, RuntimeDirExplicit: flagWasProvided(args, "runtime-dir"), Yes: *yes, Uninstall: options}, nil
 }
 
 func parseInstallCommand(args []string) (Command, error) {
@@ -387,7 +388,7 @@ func parseClusterCommand(args []string) (Command, error) {
 		if *ttl <= 0 || *ttl > 24*time.Hour {
 			return Command{}, fmt.Errorf("cluster token TTL must be between zero and 24h")
 		}
-		return Command{Kind: CommandClusterTokenCreate, RuntimeDir: *runtimeDir, ClusterTokenCreate: &ClusterTokenCreateOptions{Role: parsedRole, TTL: *ttl}}, nil
+		return Command{Kind: CommandClusterTokenCreate, RuntimeDir: *runtimeDir, RuntimeDirExplicit: flagWasProvided(args[2:], "runtime-dir"), ClusterTokenCreate: &ClusterTokenCreateOptions{Role: parsedRole, TTL: *ttl}}, nil
 	}
 	if args[0] == "join" {
 		set := newFlagSet("cluster join")
@@ -440,7 +441,7 @@ func parseRuntimeCommand(kind CommandKind, args []string) (Command, error) {
 	if set.NArg() != 0 {
 		return Command{}, fmt.Errorf("%s does not accept positional arguments", kind)
 	}
-	return Command{Kind: kind, RuntimeDir: *runtimeDir, Yes: *yes}, nil
+	return Command{Kind: kind, RuntimeDir: *runtimeDir, RuntimeDirExplicit: flagWasProvided(args, "runtime-dir"), Yes: *yes}, nil
 }
 
 func newFlagSet(name string) *flag.FlagSet {

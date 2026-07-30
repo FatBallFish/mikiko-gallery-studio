@@ -185,6 +185,20 @@ func TestParseCommandSeparatesInteractiveAndNonInteractiveInstall(t *testing.T) 
 	}
 }
 
+func TestParseCommandPreservesWhetherRuntimeDirectoryWasExplicit(t *testing.T) {
+	implicit, err := ParseCommand([]string{"upgrade"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicit, err := ParseCommand([]string{"upgrade", "--runtime-dir", "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if implicit.RuntimeDirExplicit || !explicit.RuntimeDirExplicit {
+		t.Fatalf("runtime explicit flags implicit=%t explicit=%t", implicit.RuntimeDirExplicit, explicit.RuntimeDirExplicit)
+	}
+}
+
 func TestParseCommandValidatesNestedArgumentsAndRedactsTokens(t *testing.T) {
 	command, err := ParseCommand([]string{"cluster", "join", "--server", "https://api.example.test", "--token", "super-secret-token"})
 	if err != nil {
