@@ -181,7 +181,16 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		if execute == nil {
 			execute = Upgrade
 		}
-		result, executeErr := execute(ctx, *command.Upgrade, dependencies.Upgrade)
+		upgradeDependencies := dependencies.Upgrade
+		if upgradeDependencies.ResolveRelease == nil {
+			upgradeDependencies.ResolveRelease = dependencies.ResolveRelease
+			if upgradeDependencies.ResolveRelease == nil {
+				upgradeDependencies.ResolveRelease = func(ctx context.Context, options ReleaseManifestOptions) (ResolvedRelease, error) {
+					return ResolveReleaseManifest(ctx, options, dependencies.ReleaseManifest)
+				}
+			}
+		}
+		result, executeErr := execute(ctx, *command.Upgrade, upgradeDependencies)
 		if executeErr != nil {
 			return writeRunError(dependencies.Stderr, executeErr)
 		}

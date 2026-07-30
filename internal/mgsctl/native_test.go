@@ -124,6 +124,23 @@ func TestNativeReleaseInstallerVerifiesAndExtractsPortableBundle(t *testing.T) {
 	}
 }
 
+func TestNativeExecutorRunsPreparedTargetMigrationBinary(t *testing.T) {
+	plan := nativeCorePlanForTest(t)
+	executable := filepath.Join(t.TempDir(), "mikiko-gallery-studio-db-migrate")
+	var received ProcessSpec
+	executor := NativeExecutor{Runner: processRunnerFunc(func(_ context.Context, spec ProcessSpec) error {
+		received = spec
+		return nil
+	})}
+	target := UpgradeTarget{Plan: plan, NativeMigrationExecutable: executable}
+	if err := executor.MigrateUpgrade(context.Background(), target, filepath.Join(plan.RuntimeDir, "config", "runtime.env")); err != nil {
+		t.Fatal(err)
+	}
+	if received.Executable != executable || !reflect.DeepEqual(received.Arguments, []string{"--env-file", filepath.Join(plan.RuntimeDir, "config", "runtime.env")}) || received.Directory != plan.RuntimeDir {
+		t.Fatalf("native migration process = %#v", received)
+	}
+}
+
 func TestNativeReleaseInstallerRejectsChecksumAndTraversalWithoutPublishing(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -490,6 +507,13 @@ func TestNativeAssetOnlyWebPlanInstallsReleaseWithoutCreatingServices(t *testing
 		if err := os.WriteFile(path, []byte(frontend), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	migrationPath := filepath.Join(plan.RuntimeDir, "bin", "mikiko-gallery-studio-db-migrate")
+	if err := os.MkdirAll(filepath.Dir(migrationPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(migrationPath, []byte("migrate"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	if err := validateNativeReleaseFiles(plan.RuntimeDir, plan, NativePlatformLinux); err != nil {
 		t.Fatalf("validate asset-only release: %v", err)
@@ -927,6 +951,9 @@ type nativeArchiveEntry struct {
 
 func nativeReleaseArchiveForTest(t *testing.T, entries map[string]nativeArchiveEntry) []byte {
 	t.Helper()
+	if _, exists := entries["bin/mikiko-gallery-studio-db-migrate"]; !exists {
+		entries["bin/mikiko-gallery-studio-db-migrate"] = nativeArchiveEntry{content: "migrate", mode: 0o755}
+	}
 	var buffer bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buffer)
 	tarWriter := tar.NewWriter(gzipWriter)

@@ -132,6 +132,7 @@ package_native() {
     GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-api$extension" ./cmd/api
     GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-worker$extension" ./cmd/worker
     GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-gateway$extension" ./cmd/gateway
+	GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/mikiko-gallery-studio-db-migrate$extension" ./cmd/db-migrate
     if [[ "$GOOS_TARGET" == "windows" ]]; then
       GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" CGO_ENABLED="$CGO_TARGET" go build -trimpath -ldflags="-s -w" -o "$bundle/bin/pic-gallery-service-host.exe" ./cmd/servicehost
     fi

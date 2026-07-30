@@ -37,6 +37,70 @@ type DockerExecutor struct {
 	Stderr          io.Writer
 }
 
+func (executor DockerExecutor) PrepareUpgrade(ctx context.Context, target *UpgradeTarget) error {
+	if target == nil {
+		return fmt.Errorf("Docker upgrade target is required")
+	}
+	if executor.Runner == nil {
+		return fmt.Errorf("Docker process runner is required")
+	}
+	seen := make(map[string]struct{})
+	for _, component := range componentOrder {
+		image, exists := target.Release.Images[component]
+		if !exists {
+			continue
+		}
+		ref := upgradeImageReference(target.Plan, component, image)
+		if _, exists := seen[ref]; exists {
+			continue
+		}
+		seen[ref] = struct{}{}
+		if err := executor.Runner.Run(ctx, ProcessSpec{Executable: "docker", Arguments: []string{"pull", ref}, Directory: target.Plan.RuntimeDir}); err != nil {
+			return fmt.Errorf("pull target %s image: %w", component, err)
+		}
+	}
+	migrationRef := upgradeImageReference(target.Plan, ComponentAPI, target.Release.MigrationImage)
+	if _, exists := seen[migrationRef]; !exists {
+		if err := executor.Runner.Run(ctx, ProcessSpec{Executable: "docker", Arguments: []string{"pull", migrationRef}, Directory: target.Plan.RuntimeDir}); err != nil {
+			return fmt.Errorf("pull target migration image: %w", err)
+		}
+	}
+	return nil
+}
+
+func (executor DockerExecutor) MigrateUpgrade(ctx context.Context, target UpgradeTarget, runtimeEnvPath string) error {
+	if executor.Runner == nil {
+		return fmt.Errorf("Docker process runner is required")
+	}
+	if executor.ReadFile == nil {
+		executor.ReadFile = os.ReadFile
+	}
+	if executor.Environment == nil {
+		executor.Environment = os.Environ
+	}
+	if executor.RuntimeUser == nil {
+		executor.RuntimeUser = dockerRuntimeUser
+	}
+	content, err := executor.ReadFile(runtimeEnvPath)
+	if err != nil {
+		return fmt.Errorf("read Docker runtime environment: %w", err)
+	}
+	document, err := config.ParseRuntimeEnv(content)
+	if err != nil {
+		return fmt.Errorf("parse Docker runtime environment: %w", err)
+	}
+	spec, err := BuildDockerMigrationProcessSpec(
+		target, document.Values["INSTALLATION_ID"], document.Values["CLUSTER_NODE_ID"], executor.RuntimeUser(), executor.Environment(),
+	)
+	if err != nil {
+		return err
+	}
+	if err := executor.Runner.Run(ctx, spec); err != nil {
+		return fmt.Errorf("run target Docker database migration: %w", err)
+	}
+	return nil
+}
+
 func (executor DockerExecutor) Preflight(ctx context.Context, plan InstallPlan) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -234,14 +298,9 @@ func BuildDockerProcessSpecsForNode(action DockerAction, plan InstallPlan, insta
 	if err != nil {
 		return nil, err
 	}
-	projectName := "app-" + strings.ReplaceAll(parsedInstallationID.String(), "-", "")
-	if strings.TrimSpace(nodeID) != "" {
-		parsedNodeID, err := uuid.Parse(nodeID)
-		if err != nil {
-			return nil, fmt.Errorf("validate Docker cluster node identity: %w", err)
-		}
-		nodeDigest := sha256.Sum256([]byte(parsedNodeID.String()))
-		projectName += fmt.Sprintf("-%x", nodeDigest[:6])
+	projectName, err := dockerProjectName(parsedInstallationID.String(), nodeID)
+	if err != nil {
+		return nil, err
 	}
 	baseArguments := []string{
 		"compose",
@@ -290,6 +349,63 @@ func BuildDockerProcessSpecsForNode(action DockerAction, plan InstallPlan, insta
 	default:
 		return nil, fmt.Errorf("unsupported Docker action %q", action)
 	}
+}
+
+func BuildDockerMigrationProcessSpec(target UpgradeTarget, installationID, nodeID, runtimeUser string, baseEnvironment []string) (ProcessSpec, error) {
+	if target.Plan.Mode != config.DeploymentModeDocker {
+		return ProcessSpec{}, fmt.Errorf("Docker migration cannot use deployment mode %q", target.Plan.Mode)
+	}
+	parsedInstallationID, err := uuid.Parse(installationID)
+	if err != nil {
+		return ProcessSpec{}, fmt.Errorf("validate Docker installation identity: %w", err)
+	}
+	projectName, err := dockerProjectName(parsedInstallationID.String(), nodeID)
+	if err != nil {
+		return ProcessSpec{}, err
+	}
+	if !validSHA256Digest(target.Release.MigrationImage.Digest) || strings.TrimSpace(target.Release.MigrationImage.Repository) == "" {
+		return ProcessSpec{}, fmt.Errorf("target API migration image must use an immutable digest")
+	}
+	absoluteRuntime, err := filepath.Abs(target.Plan.RuntimeDir)
+	if err != nil {
+		return ProcessSpec{}, fmt.Errorf("resolve Docker runtime directory: %w", err)
+	}
+	imageRef := upgradeImageReference(target.Plan, ComponentAPI, target.Release.MigrationImage)
+	arguments := []string{
+		"run", "--rm", "--network", projectName + "_default", "--user", runtimeUser,
+		"--volume", filepath.Join(absoluteRuntime, "config") + ":/app/config:ro",
+		"--entrypoint", "mikiko-gallery-studio-db-migrate", imageRef,
+		"--env-file", "/app/config/runtime.env",
+	}
+	return ProcessSpec{
+		Executable: "docker", Arguments: arguments, Directory: absoluteRuntime,
+		Environment: sanitizeDockerEnvironment(baseEnvironment, absoluteRuntime, runtimeUser),
+	}, nil
+}
+
+func dockerProjectName(installationID, nodeID string) (string, error) {
+	parsedInstallationID, err := uuid.Parse(installationID)
+	if err != nil {
+		return "", fmt.Errorf("validate Docker installation identity: %w", err)
+	}
+	projectName := "app-" + strings.ReplaceAll(parsedInstallationID.String(), "-", "")
+	if strings.TrimSpace(nodeID) == "" {
+		return projectName, nil
+	}
+	parsedNodeID, err := uuid.Parse(nodeID)
+	if err != nil {
+		return "", fmt.Errorf("validate Docker cluster node identity: %w", err)
+	}
+	nodeDigest := sha256.Sum256([]byte(parsedNodeID.String()))
+	return projectName + fmt.Sprintf("-%x", nodeDigest[:6]), nil
+}
+
+func upgradeImageReference(plan InstallPlan, component Component, image ReleaseImage) string {
+	repository := strings.TrimSpace(image.Repository)
+	if registry := strings.TrimRight(strings.TrimSpace(plan.ImageRegistry), "/"); registry != "" {
+		repository = registry + "/mikiko-gallery-studio-" + string(component)
+	}
+	return repository + "@" + image.Digest
 }
 
 func dockerManagedServices(plan InstallPlan) []string {

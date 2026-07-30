@@ -8,7 +8,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/fatballfish/pic-gallery/internal/app"
 	"github.com/fatballfish/pic-gallery/internal/mgsctl"
 )
 
@@ -46,10 +45,7 @@ func main() {
 		ImportConfig:    mgsctl.ImportConfigDependencies{ProbeCompletion: mgsctl.ProbeLegacyCompletion},
 		Doctor:          mgsctl.ProductionDoctorDependencies(),
 		SelfUpdate:      mgsctl.ProductionSelfUpdateDependencies(),
-		Upgrade: mgsctl.UpgradeDeploymentDependencies(executors, func(ctx context.Context, runtimeEnvPath string) error {
-			_, err := app.RunDatabaseMigration(ctx, runtimeEnvPath)
-			return err
-		}),
+		Upgrade:         mgsctl.UpgradeDeploymentDependencies(executors),
 		Uninstall:       mgsctl.UninstallRuntimeDependencies(executors),
 		SetupTokenReset: mgsctl.SetupTokenResetRuntimeDependencies(executors),
 		ExecuteRuntimeAction: func(ctx context.Context, kind mgsctl.CommandKind, runtimeDir string) error {

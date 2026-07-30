@@ -19,8 +19,18 @@ type UpgradeDependencies struct {
 	LoadInstallation func(string) (InstallPlan, config.RuntimeEnvDocument, error)
 	WriteRuntimeEnv  func(string, []byte) error
 	WriteManifest    func(string, InstallPlan) error
+	ResolveRelease   InstallReleaseResolver
+	PrepareTarget    func(context.Context, *UpgradeTarget) error
+	MigrateTarget    func(context.Context, UpgradeTarget, string) error
 	Migrate          func(context.Context, string) error
 	ApplyDeployment  func(context.Context, InstallPlan) error
+}
+
+type UpgradeTarget struct {
+	Plan                      InstallPlan
+	Release                   ResolvedRelease
+	NativeMigrationExecutable string
+	Cleanup                   func() error
 }
 
 type UpgradeResult struct {
@@ -56,7 +66,7 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 	if options.Migrate && plan.Role != config.DeploymentRoleSingle && plan.Role != config.DeploymentRoleControl {
 		return UpgradeResult{}, fmt.Errorf("deployment role %q cannot execute migrations", plan.Role)
 	}
-	if dependencies.Migrate == nil && options.Migrate {
+	if dependencies.MigrateTarget == nil && dependencies.Migrate == nil && options.Migrate {
 		return UpgradeResult{}, fmt.Errorf("upgrade migration dependency is required")
 	}
 	if !strings.EqualFold(document.Values["SETUP_COMPLETED"], "true") {
@@ -67,38 +77,32 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 	previousPlan := plan
 	updatedValues := cloneRuntimeValues(document.Values)
 	previousVersion := updatedValues["APPLICATION_VERSION"]
-	targetVersion := strings.TrimSpace(options.ApplicationVersion)
-	if targetVersion == "" {
-		targetVersion = previousVersion
-	}
-	if err := config.ValidateApplicationVersion(targetVersion); err != nil {
-		return UpgradeResult{}, fmt.Errorf("validate target application version: %w", err)
-	}
-	updatedValues["APPLICATION_VERSION"] = targetVersion
-	plan.ApplicationVersion = targetVersion
 	plan.RuntimeDir = runtimeDir
+	target, err := resolveUpgradeTarget(ctx, plan, options, dependencies.ResolveRelease, previousVersion)
+	if err != nil {
+		return UpgradeResult{}, fmt.Errorf("resolve target release: %w", err)
+	}
+	plan = target.Plan
+	targetVersion := plan.ApplicationVersion
+	updatedValues["APPLICATION_VERSION"] = targetVersion
 	if plan.Mode == config.DeploymentModeDocker {
-		if strings.TrimSpace(options.ImageRegistry) != "" {
-			updatedValues["IMAGE_REGISTRY"] = options.ImageRegistry
-			plan.ImageRegistry = options.ImageRegistry
-		}
-		imageTag := strings.TrimSpace(options.ImageTag)
-		if imageTag == "" && targetVersion != previousVersion {
-			imageTag = targetVersion
-		}
-		if imageTag != "" {
-			updatedValues["IMAGE_TAG"] = imageTag
-			plan.ImageTag = imageTag
-		}
+		updatedValues["IMAGE_REGISTRY"] = plan.ImageRegistry
+		updatedValues["IMAGE_TAG"] = plan.ImageTag
 	} else {
-		releaseVersion := strings.TrimSpace(options.ReleaseVersion)
-		if releaseVersion == "" && targetVersion != previousVersion {
-			releaseVersion = targetVersion
+		updatedValues["RELEASE_VERSION"] = plan.ReleaseVersion
+	}
+	if dependencies.PrepareTarget != nil {
+		if err := dependencies.PrepareTarget(ctx, &target); err != nil {
+			if target.Cleanup != nil {
+				err = errors.Join(err, target.Cleanup())
+			}
+			return UpgradeResult{}, fmt.Errorf("prepare target release: %w", err)
 		}
-		if releaseVersion != "" {
-			updatedValues["RELEASE_VERSION"] = releaseVersion
-			plan.ReleaseVersion = releaseVersion
-		}
+		defer func() {
+			if target.Cleanup != nil {
+				_ = target.Cleanup()
+			}
+		}()
 	}
 
 	updated, err := config.RenderRuntimeEnv(config.DefaultRuntimeSchema(), updatedValues, document.Extensions)
@@ -142,8 +146,14 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 
 	migrated := false
 	if options.Migrate {
-		if err := dependencies.Migrate(ctx, runtimeEnvPath); err != nil {
-			return UpgradeResult{}, restorePrevious(fmt.Errorf("migrate upgraded database: %w", redactRuntimeError(err, updatedValues)), false)
+		var migrateErr error
+		if dependencies.MigrateTarget != nil {
+			migrateErr = dependencies.MigrateTarget(ctx, target, runtimeEnvPath)
+		} else {
+			migrateErr = dependencies.Migrate(ctx, runtimeEnvPath)
+		}
+		if migrateErr != nil {
+			return UpgradeResult{}, restorePrevious(fmt.Errorf("migrate upgraded database: %w", redactRuntimeError(migrateErr, updatedValues)), false)
 		}
 		migrated = true
 	}
@@ -155,6 +165,100 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 		return UpgradeResult{}, restorePrevious(rollErr, true)
 	}
 	return UpgradeResult{RuntimeEnvPath: runtimeEnvPath, PreviousVersion: previousVersion, CurrentVersion: targetVersion, Migrated: migrated}, nil
+}
+
+func resolveUpgradeTarget(ctx context.Context, plan InstallPlan, options UpgradeOptions, resolve InstallReleaseResolver, previousVersion string) (UpgradeTarget, error) {
+	if resolve == nil {
+		targetVersion := strings.TrimSpace(options.ApplicationVersion)
+		if targetVersion == "" {
+			targetVersion = previousVersion
+		}
+		if err := config.ValidateApplicationVersion(targetVersion); err != nil {
+			return UpgradeTarget{}, fmt.Errorf("validate target application version: %w", err)
+		}
+		plan.ApplicationVersion = targetVersion
+		if plan.Mode == config.DeploymentModeDocker {
+			if strings.TrimSpace(options.ImageRegistry) != "" {
+				plan.ImageRegistry = strings.TrimRight(strings.TrimSpace(options.ImageRegistry), "/")
+			}
+			imageTag := strings.TrimSpace(options.ImageTag)
+			if imageTag == "" && targetVersion != previousVersion {
+				imageTag = targetVersion
+			}
+			if imageTag != "" {
+				plan.ImageTag = imageTag
+			}
+		} else {
+			releaseVersion := strings.TrimSpace(options.ReleaseVersion)
+			if releaseVersion == "" && targetVersion != previousVersion {
+				releaseVersion = targetVersion
+			}
+			if releaseVersion != "" {
+				plan.ReleaseVersion = releaseVersion
+			}
+		}
+		return UpgradeTarget{Plan: plan}, nil
+	}
+
+	selector := strings.TrimSpace(options.ImageTag)
+	if plan.Mode == config.DeploymentModeNative {
+		selector = strings.TrimSpace(options.ReleaseVersion)
+	}
+	selector = defaultString(selector, "latest")
+	resolved, err := resolve(ctx, ReleaseManifestOptions{Version: selector, Components: plan.Components})
+	if err != nil {
+		return UpgradeTarget{}, err
+	}
+	if err := config.ValidateApplicationVersion(resolved.ApplicationVersion); err != nil {
+		return UpgradeTarget{}, fmt.Errorf("validate resolved application version: %w", err)
+	}
+	plan.ApplicationVersion = resolved.ApplicationVersion
+	if plan.Mode == config.DeploymentModeNative {
+		plan.ReleaseVersion = resolved.ApplicationVersion
+		plan.ImageRegistry = ""
+		plan.ImageTag = ""
+		plan.ImageDigests = nil
+		return UpgradeTarget{Plan: plan, Release: resolved}, nil
+	}
+	if plan.Mode != config.DeploymentModeDocker {
+		return UpgradeTarget{}, fmt.Errorf("unsupported deployment mode %q", plan.Mode)
+	}
+	plan.ImageTag = resolved.ApplicationVersion
+	plan.ReleaseVersion = ""
+	plan.ImageDigests = make(map[Component]string)
+	registry := strings.TrimRight(strings.TrimSpace(options.ImageRegistry), "/")
+	deriveRegistry := registry == ""
+	for _, component := range plan.Components {
+		if !releaseImageComponent(component) {
+			continue
+		}
+		image, exists := resolved.Images[component]
+		if !exists {
+			return UpgradeTarget{}, fmt.Errorf("resolved release is missing selected %s image", component)
+		}
+		if !validSHA256Digest(image.Digest) {
+			return UpgradeTarget{}, fmt.Errorf("resolved %s image digest is invalid", component)
+		}
+		plan.ImageDigests[component] = image.Digest
+		if !deriveRegistry {
+			continue
+		}
+		suffix := "/mikiko-gallery-studio-" + string(component)
+		if !strings.HasSuffix(image.Repository, suffix) {
+			return UpgradeTarget{}, fmt.Errorf("release image repository %q does not match component %s", image.Repository, component)
+		}
+		candidate := strings.TrimSuffix(image.Repository, suffix)
+		if registry == "" {
+			registry = candidate
+		} else if registry != candidate {
+			return UpgradeTarget{}, fmt.Errorf("release images do not share one registry")
+		}
+	}
+	if !validSHA256Digest(resolved.MigrationImage.Digest) || strings.TrimSpace(resolved.MigrationImage.Repository) == "" {
+		return UpgradeTarget{}, fmt.Errorf("resolved release API migration image is invalid")
+	}
+	plan.ImageRegistry = registry
+	return UpgradeTarget{Plan: plan, Release: resolved}, nil
 }
 
 func writeDeploymentManifestPlan(path string, plan InstallPlan) error {

@@ -30,6 +30,7 @@ for target_os in linux windows; do
     "bin/pic-gallery-api${extension}" \
     "bin/pic-gallery-worker${extension}" \
     "bin/pic-gallery-gateway${extension}" \
+	"bin/mikiko-gallery-studio-db-migrate${extension}" \
     "web/user/index.html" \
     "web/admin/index.html" \
     "web/docs/index.html" \

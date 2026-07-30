@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -52,6 +53,82 @@ func TestUpgradeMigratesOnceOnControlPreservesExtensionsAndRollsServicesAfterMig
 	}
 	if !strings.Contains(string(written), "# [中文]") || !strings.Contains(string(written), "# [English]") {
 		t.Fatal("schema upgrade did not refresh bilingual comments")
+	}
+}
+
+func TestUpgradeResolvesAndPreparesTargetBeforeWritingMigratingAndRolling(t *testing.T) {
+	events := make([]string, 0, 8)
+	workerImage := ReleaseImage{
+		Repository: "docker.io/fatballfish/mikiko-gallery-studio-worker", Tag: "v2.0.0",
+		Digest: "sha256:" + strings.Repeat("2", 64), Version: "v2.0.0", Revision: strings.Repeat("a", 40),
+	}
+	migrationImage := ReleaseImage{
+		Repository: "docker.io/fatballfish/mikiko-gallery-studio-api", Tag: "v2.0.0",
+		Digest: "sha256:" + strings.Repeat("1", 64), Version: "v2.0.0", Revision: strings.Repeat("a", 40),
+	}
+	plan := upgradeTestPlan(config.DeploymentRoleControl)
+	plan.Profile = config.DeploymentProfileCustom
+	plan.Components = []Component{ComponentWorker}
+	result, err := Upgrade(context.Background(), UpgradeOptions{RuntimeDir: "runtime", ImageTag: "latest", Migrate: true}, UpgradeDependencies{
+		LoadInstallation: func(string) (InstallPlan, config.RuntimeEnvDocument, error) {
+			return plan, upgradeTestDocument(config.DeploymentRoleControl), nil
+		},
+		ResolveRelease: func(_ context.Context, options ReleaseManifestOptions) (ResolvedRelease, error) {
+			events = append(events, "resolve")
+			if options.Version != "latest" || !reflect.DeepEqual(options.Components, []Component{ComponentWorker}) {
+				t.Fatalf("release options = %#v", options)
+			}
+			return ResolvedRelease{
+				ApplicationVersion: "v2.0.0", Commit: strings.Repeat("a", 40),
+				Images: map[Component]ReleaseImage{ComponentWorker: workerImage}, MigrationImage: migrationImage,
+			}, nil
+		},
+		PrepareTarget: func(_ context.Context, target *UpgradeTarget) error {
+			events = append(events, "prepare")
+			if target.Plan.ApplicationVersion != "v2.0.0" || target.Plan.ImageTag != "v2.0.0" || target.Plan.ImageDigests[ComponentWorker] != workerImage.Digest {
+				t.Fatalf("prepared target plan = %#v", target.Plan)
+			}
+			return nil
+		},
+		WriteManifest:   func(string, InstallPlan) error { events = append(events, "manifest"); return nil },
+		WriteRuntimeEnv: func(string, []byte) error { events = append(events, "runtime"); return nil },
+		MigrateTarget: func(_ context.Context, target UpgradeTarget, _ string) error {
+			events = append(events, "migrate")
+			if target.Release.MigrationImage != migrationImage {
+				t.Fatalf("migration image = %#v", target.Release.MigrationImage)
+			}
+			return nil
+		},
+		ApplyDeployment: func(context.Context, InstallPlan) error { events = append(events, "roll"); return nil },
+	})
+	if err != nil {
+		t.Fatalf("Upgrade: %v", err)
+	}
+	if got := strings.Join(events, ","); got != "resolve,prepare,manifest,runtime,migrate,roll" {
+		t.Fatalf("upgrade order = %q", got)
+	}
+	if result.CurrentVersion != "v2.0.0" || !result.Migrated {
+		t.Fatalf("upgrade result = %#v", result)
+	}
+}
+
+func TestUpgradePrepareFailureDoesNotWriteTargetState(t *testing.T) {
+	writes := 0
+	_, err := Upgrade(context.Background(), UpgradeOptions{RuntimeDir: "runtime", ImageTag: "latest", Migrate: true}, UpgradeDependencies{
+		LoadInstallation: func(string) (InstallPlan, config.RuntimeEnvDocument, error) {
+			return upgradeTestPlan(config.DeploymentRoleControl), upgradeTestDocument(config.DeploymentRoleControl), nil
+		},
+		ResolveRelease: func(context.Context, ReleaseManifestOptions) (ResolvedRelease, error) {
+			return resolvedReleaseForInstallTest(), nil
+		},
+		PrepareTarget:   func(context.Context, *UpgradeTarget) error { return errors.New("pull failed") },
+		WriteRuntimeEnv: func(string, []byte) error { writes++; return nil },
+		WriteManifest:   func(string, InstallPlan) error { writes++; return nil },
+		MigrateTarget:   func(context.Context, UpgradeTarget, string) error { return nil },
+		ApplyDeployment: func(context.Context, InstallPlan) error { return nil },
+	})
+	if err == nil || !strings.Contains(err.Error(), "prepare target release") || writes != 0 {
+		t.Fatalf("prepare failure = %v, writes=%d", err, writes)
 	}
 }
 

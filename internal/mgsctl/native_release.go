@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultNativeReleaseBaseURL = "https://github.com/fatballfish/pic-gallery/releases"
+	defaultNativeReleaseBaseURL = "https://github.com/fatballfish/mikiko-gallery-studio/releases"
 	maxNativeReleaseBytes       = int64(1 << 30)
 	maxNativeExtractedBytes     = int64(2 << 30)
 	nativeReleaseJournalSchema  = 1
@@ -57,6 +57,90 @@ func InstallNativeRelease(ctx context.Context, plan InstallPlan, platform Native
 	}).Install(ctx, plan, platform)
 }
 
+func StageNativeReleaseMigration(ctx context.Context, plan InstallPlan, platform NativePlatform) (string, func() error, error) {
+	baseURL := strings.TrimSpace(os.Getenv("MGSCTL_RELEASE_BASE_URL"))
+	if baseURL == "" {
+		baseURL = defaultNativeReleaseBaseURL
+	}
+	return (NativeReleaseInstaller{
+		Client: &http.Client{Timeout: 5 * time.Minute}, BaseURL: baseURL, Architecture: runtime.GOARCH,
+	}).StageMigration(ctx, plan, platform)
+}
+
+func (installer NativeReleaseInstaller) StageMigration(ctx context.Context, plan InstallPlan, platform NativePlatform) (string, func() error, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ValidateInstallPlan(plan); err != nil {
+		return "", nil, fmt.Errorf("validate native release plan: %w", err)
+	}
+	if plan.Mode != config.DeploymentModeNative {
+		return "", nil, fmt.Errorf("native release cannot stage deployment mode %q", plan.Mode)
+	}
+	if platform != NativePlatformLinux && platform != NativePlatformWindows {
+		return "", nil, fmt.Errorf("unsupported native release platform %q", platform)
+	}
+	if installer.Client == nil {
+		installer.Client = &http.Client{Timeout: 5 * time.Minute}
+	}
+	if installer.Architecture != "amd64" && installer.Architecture != "arm64" {
+		return "", nil, fmt.Errorf("unsupported native release architecture %q", installer.Architecture)
+	}
+	baseURL, err := validateNativeReleaseBaseURL(installer.BaseURL)
+	if err != nil {
+		return "", nil, err
+	}
+	archive, err := installer.downloadVerifiedArchive(ctx, plan.ReleaseVersion, platform, baseURL)
+	if err != nil {
+		return "", nil, err
+	}
+	stageDirectory, err := os.MkdirTemp("", "mgsctl-native-upgrade-")
+	if err != nil {
+		return "", nil, fmt.Errorf("create native upgrade stage: %w", err)
+	}
+	cleanup := func() error { return os.RemoveAll(stageDirectory) }
+	if err := extractNativeRelease(archive, stageDirectory); err != nil {
+		_ = cleanup()
+		return "", nil, err
+	}
+	if err := validateNativeReleaseFiles(stageDirectory, plan, platform); err != nil {
+		_ = cleanup()
+		return "", nil, err
+	}
+	extension := ""
+	if platform == NativePlatformWindows {
+		extension = ".exe"
+	}
+	executable := filepath.Join(stageDirectory, "bin", "mikiko-gallery-studio-db-migrate"+extension)
+	return executable, cleanup, nil
+}
+
+func (installer NativeReleaseInstaller) downloadVerifiedArchive(ctx context.Context, releaseVersion string, platform NativePlatform, baseURL string) ([]byte, error) {
+	artifactName := "pic-gallery-native-" + string(platform) + "-" + installer.Architecture + ".tar.gz"
+	releasePath := "download/" + url.PathEscape(releaseVersion)
+	if releaseVersion == "latest" {
+		releasePath = "latest/download"
+	}
+	artifactURL := baseURL + "/" + releasePath + "/" + artifactName
+	checksumContent, err := downloadNativeRelease(ctx, installer.Client, artifactURL+".sha256", 4096)
+	if err != nil {
+		return nil, fmt.Errorf("download native release checksum: %w", err)
+	}
+	expectedDigest, err := parseNativeReleaseChecksum(checksumContent)
+	if err != nil {
+		return nil, err
+	}
+	archive, err := downloadNativeRelease(ctx, installer.Client, artifactURL, maxNativeReleaseBytes)
+	if err != nil {
+		return nil, fmt.Errorf("download native release: %w", err)
+	}
+	actualDigest := sha256.Sum256(archive)
+	if !slices.Equal(actualDigest[:], expectedDigest) {
+		return nil, fmt.Errorf("native release checksum mismatch")
+	}
+	return archive, nil
+}
+
 func (installer NativeReleaseInstaller) Install(ctx context.Context, plan InstallPlan, platform NativePlatform) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -83,28 +167,11 @@ func (installer NativeReleaseInstaller) Install(ctx context.Context, plan Instal
 	if err != nil {
 		return err
 	}
-	artifactName := "pic-gallery-native-" + string(platform) + "-" + installer.Architecture + ".tar.gz"
-	releasePath := "download/" + url.PathEscape(plan.ReleaseVersion)
-	if plan.ReleaseVersion == "latest" {
-		releasePath = "latest/download"
-	}
-	artifactURL := baseURL + "/" + releasePath + "/" + artifactName
-	checksumContent, err := downloadNativeRelease(ctx, installer.Client, artifactURL+".sha256", 4096)
-	if err != nil {
-		return fmt.Errorf("download native release checksum: %w", err)
-	}
-	expectedDigest, err := parseNativeReleaseChecksum(checksumContent)
+	archive, err := installer.downloadVerifiedArchive(ctx, plan.ReleaseVersion, platform, baseURL)
 	if err != nil {
 		return err
 	}
-	archive, err := downloadNativeRelease(ctx, installer.Client, artifactURL, maxNativeReleaseBytes)
-	if err != nil {
-		return fmt.Errorf("download native release: %w", err)
-	}
 	actualDigest := sha256.Sum256(archive)
-	if !slices.Equal(actualDigest[:], expectedDigest) {
-		return fmt.Errorf("native release checksum mismatch")
-	}
 	if err := os.MkdirAll(plan.RuntimeDir, 0o700); err != nil {
 		return fmt.Errorf("create native runtime directory: %w", err)
 	}
@@ -763,6 +830,7 @@ func validateNativeReleaseFiles(directory string, plan InstallPlan, platform Nat
 	if platform == NativePlatformWindows && (slices.Contains(plan.Components, ComponentAPI) || slices.Contains(plan.Components, ComponentWorker) || slices.Contains(plan.Components, ComponentGateway)) {
 		required = append(required, filepath.Join("bin", "pic-gallery-service-host.exe"))
 	}
+	required = append(required, filepath.Join("bin", "mikiko-gallery-studio-db-migrate"+extension))
 	for _, relativePath := range required {
 		info, err := os.Stat(filepath.Join(directory, relativePath))
 		if err != nil || !info.Mode().IsRegular() {

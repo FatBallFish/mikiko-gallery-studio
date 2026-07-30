@@ -50,7 +50,51 @@ type NativeExecutor struct {
 	Platform         func() NativePlatform
 	CheckPrivileges  func(NativePlatform) error
 	InstallRelease   func(context.Context, InstallPlan, NativePlatform) error
+	StageMigration   func(context.Context, InstallPlan, NativePlatform) (string, func() error, error)
 	WriteServiceFile func(string, []byte) error
+}
+
+func (executor NativeExecutor) PrepareUpgrade(ctx context.Context, target *UpgradeTarget) error {
+	if target == nil {
+		return fmt.Errorf("native upgrade target is required")
+	}
+	if executor.Platform == nil {
+		executor.Platform = currentNativePlatform
+	}
+	if executor.CheckPrivileges == nil {
+		executor.CheckPrivileges = checkNativePrivileges
+	}
+	if executor.StageMigration == nil {
+		executor.StageMigration = StageNativeReleaseMigration
+	}
+	platform := executor.Platform()
+	if err := executor.CheckPrivileges(platform); err != nil {
+		return fmt.Errorf("check native service privileges: %w", err)
+	}
+	executable, cleanup, err := executor.StageMigration(ctx, target.Plan, platform)
+	if err != nil {
+		return err
+	}
+	target.NativeMigrationExecutable = executable
+	target.Cleanup = cleanup
+	return nil
+}
+
+func (executor NativeExecutor) MigrateUpgrade(ctx context.Context, target UpgradeTarget, runtimeEnvPath string) error {
+	if executor.Runner == nil {
+		return fmt.Errorf("native process runner is required")
+	}
+	executable := strings.TrimSpace(target.NativeMigrationExecutable)
+	if executable == "" {
+		return fmt.Errorf("prepared native migration executable is required")
+	}
+	spec := ProcessSpec{
+		Executable: executable, Arguments: []string{"--env-file", runtimeEnvPath}, Directory: target.Plan.RuntimeDir,
+	}
+	if err := executor.Runner.Run(ctx, spec); err != nil {
+		return fmt.Errorf("run target native database migration: %w", err)
+	}
+	return nil
 }
 
 func (executor NativeExecutor) Preflight(ctx context.Context, plan InstallPlan) error {

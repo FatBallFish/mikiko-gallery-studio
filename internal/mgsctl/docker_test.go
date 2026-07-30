@@ -157,6 +157,36 @@ func TestBuildDockerProcessSpecsUsesNodeSpecificProjectNamesForCoLocatedClusterN
 	}
 }
 
+func TestBuildDockerMigrationProcessSpecUsesTargetDigestAndComposeNetwork(t *testing.T) {
+	plan := InstallPlan{
+		Mode: "docker", Profile: "custom", Topology: "single", Role: "single", RuntimeDir: "runtime",
+		StorageDriver: "local", ApplicationVersion: "v2.0.0", Components: []Component{ComponentWorker},
+	}
+	target := UpgradeTarget{Plan: plan, Release: ResolvedRelease{MigrationImage: ReleaseImage{
+		Repository: "docker.io/fatballfish/mikiko-gallery-studio-api", Digest: "sha256:" + strings.Repeat("a", 64),
+	}}}
+	spec, err := BuildDockerMigrationProcessSpec(target, "019d0000-0000-7000-8000-000000000123", "", "1000:1000", []string{"PATH=/usr/bin", "DATABASE_URL=host-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(spec.Arguments, " ")
+	absoluteRuntime, _ := filepath.Abs(plan.RuntimeDir)
+	for _, required := range []string{
+		"run --rm", "--network app-019d0000000070008000000000000123_default", "--user 1000:1000",
+		"--volume " + filepath.Join(absoluteRuntime, "config") + ":/app/config:ro",
+		"--entrypoint mikiko-gallery-studio-db-migrate",
+		"docker.io/fatballfish/mikiko-gallery-studio-api@sha256:" + strings.Repeat("a", 64),
+		"--env-file /app/config/runtime.env",
+	} {
+		if !strings.Contains(joined, required) {
+			t.Errorf("migration arguments %q missing %q", joined, required)
+		}
+	}
+	if strings.Contains(joined, "DATABASE_URL") || slices.Contains(spec.Environment, "DATABASE_URL=host-secret") {
+		t.Fatalf("migration leaked host database configuration: %#v", spec)
+	}
+}
+
 func TestBuildDockerProcessSpecsPreparesManagedServicesBeforeApplications(t *testing.T) {
 	tests := []struct {
 		name         string

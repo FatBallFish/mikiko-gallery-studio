@@ -31,10 +31,29 @@ func ExecuteRuntimeAction(ctx context.Context, kind CommandKind, runtimeDir stri
 	}
 }
 
-func UpgradeDeploymentDependencies(executors RuntimeExecutors, migrate func(context.Context, string) error) UpgradeDependencies {
+func UpgradeDeploymentDependencies(executors RuntimeExecutors) UpgradeDependencies {
 	return UpgradeDependencies{
-		Migrate:       migrate,
 		WriteManifest: writeDeploymentManifestPlan,
+		PrepareTarget: func(ctx context.Context, target *UpgradeTarget) error {
+			switch target.Plan.Mode {
+			case config.DeploymentModeDocker:
+				return executors.Docker.PrepareUpgrade(ctx, target)
+			case config.DeploymentModeNative:
+				return executors.Native.PrepareUpgrade(ctx, target)
+			default:
+				return fmt.Errorf("unsupported deployment mode %q", target.Plan.Mode)
+			}
+		},
+		MigrateTarget: func(ctx context.Context, target UpgradeTarget, runtimeEnvPath string) error {
+			switch target.Plan.Mode {
+			case config.DeploymentModeDocker:
+				return executors.Docker.MigrateUpgrade(ctx, target, runtimeEnvPath)
+			case config.DeploymentModeNative:
+				return executors.Native.MigrateUpgrade(ctx, target, runtimeEnvPath)
+			default:
+				return fmt.Errorf("unsupported deployment mode %q", target.Plan.Mode)
+			}
+		},
 		ApplyDeployment: func(ctx context.Context, plan InstallPlan) error {
 			return executeDeploymentAction(ctx, plan, DockerActionUpdate, NativeActionUpdate, executors)
 		},
