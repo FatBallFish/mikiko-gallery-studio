@@ -60,8 +60,8 @@ func TestParseSelfUpdateCommandKeepsToolAndApplicationUpgradeSeparate(t *testing
 		t.Fatalf("default self-update = %#v, %v", defaultCommand, err)
 	}
 
-	application, err := ParseCommand([]string{"upgrade", "--application-version", "v2"})
-	if err != nil || application.Kind != CommandUpgrade || application.Upgrade == nil || application.SelfUpdate != nil {
+	application, err := ParseCommand([]string{"upgrade", "--image-tag", "v2.0.0"})
+	if err != nil || application.Kind != CommandUpgrade || application.Upgrade == nil || application.Upgrade.ImageTag != "v2.0.0" || application.Upgrade.ApplicationVersion != "" || application.SelfUpdate != nil {
 		t.Fatalf("application upgrade changed meaning: %#v, %v", application, err)
 	}
 
@@ -113,13 +113,13 @@ func TestParseCommandCapturesOperationalOptionsAndRequiresExactDestructiveIntent
 	}
 
 	upgrade, err := ParseCommand([]string{
-		"upgrade", "--runtime-dir", "runtime", "--application-version", "v2.2.0",
+		"upgrade", "--runtime-dir", "runtime",
 		"--image-tag", "sha-123", "--release-version", "v2.2.0", "--migrate=false",
 	})
 	if err != nil {
 		t.Fatalf("ParseCommand(upgrade): %v", err)
 	}
-	if upgrade.Upgrade == nil || upgrade.Upgrade.ApplicationVersion != "v2.2.0" || upgrade.Upgrade.ImageTag != "sha-123" || upgrade.Upgrade.Migrate {
+	if upgrade.Upgrade == nil || upgrade.Upgrade.ApplicationVersion != "" || upgrade.Upgrade.ImageTag != "sha-123" || upgrade.Upgrade.ReleaseVersion != "v2.2.0" || upgrade.Upgrade.Migrate {
 		t.Fatalf("upgrade command parsed incorrectly: %#v", upgrade)
 	}
 
@@ -154,15 +154,15 @@ func TestParseCommandSeparatesInteractiveAndNonInteractiveInstall(t *testing.T) 
 	if err != nil || !interactive.Install.Interactive {
 		t.Fatalf("interactive install = %#v, %v", interactive, err)
 	}
+	if interactive.Install.Mode != config.DeploymentModeDocker || interactive.Install.Profile != config.DeploymentProfileFull || interactive.Install.Topology != config.DeploymentTopologySingle || interactive.Install.Role != config.DeploymentRoleSingle || interactive.Install.ImageTag != "latest" || interactive.Install.ApplicationVersion != "" {
+		t.Fatalf("interactive install defaults = %#v", interactive.Install)
+	}
 
-	automated, err := ParseCommand([]string{
-		"install", "--mode", "docker", "--profile", "full", "--topology", "single",
-		"--runtime-dir", ".", "--overwrite", "--yes",
-	})
+	automated, err := ParseCommand([]string{"install", "--runtime-dir", ".", "--overwrite", "--yes"})
 	if err != nil {
 		t.Fatalf("ParseCommand(non-interactive install): %v", err)
 	}
-	if automated.Install.Interactive || !automated.Install.OverwriteExisting || automated.Install.Mode != config.DeploymentModeDocker || automated.Install.Profile != config.DeploymentProfileFull || automated.Install.Role != config.DeploymentRoleSingle || automated.Install.ApplicationVersion == "" || automated.RuntimeDir != "." {
+	if automated.Install.Interactive || !automated.Install.OverwriteExisting || automated.Install.Mode != config.DeploymentModeDocker || automated.Install.Profile != config.DeploymentProfileFull || automated.Install.Role != config.DeploymentRoleSingle || automated.Install.ApplicationVersion != "" || automated.Install.ImageTag != "latest" || automated.RuntimeDir != "." {
 		t.Fatalf("non-interactive install parsed incorrectly: %#v", automated)
 	}
 
@@ -177,8 +177,11 @@ func TestParseCommandSeparatesInteractiveAndNonInteractiveInstall(t *testing.T) 
 		t.Fatalf("install ports parsed incorrectly: %#v", withPorts.Install)
 	}
 
-	if _, err := ParseCommand([]string{"install", "--yes"}); err == nil {
-		t.Fatal("non-interactive install accepted missing deployment choices")
+	if _, err := ParseCommand([]string{"install", "--application-version", "v1.2.3"}); err == nil {
+		t.Fatal("install accepted an operator-supplied application version")
+	}
+	if _, err := ParseCommand([]string{"upgrade", "--application-version", "v1.2.3"}); err == nil {
+		t.Fatal("upgrade accepted an operator-supplied application version")
 	}
 }
 

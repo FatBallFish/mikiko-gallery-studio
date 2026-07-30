@@ -35,39 +35,44 @@ var applicationPreset = []Component{ComponentAPI, ComponentWorker, ComponentUser
 var fullPreset = []Component{ComponentAPI, ComponentWorker, ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb, ComponentGateway, ComponentPostgres, ComponentRedis, ComponentMinIO}
 
 type InstallInput struct {
-	Interactive                bool
-	OverwriteExisting          bool
-	Mode                       config.DeploymentMode
-	Profile                    config.DeploymentProfile
-	Topology                   config.DeploymentTopology
-	Role                       config.DeploymentRole
-	Components                 []Component
-	RuntimeDir                 string
-	StorageDriver              string
-	PublicAPIURL               string
-	ExternalGatewayConfirmed   bool
-	InstallationInitialized    bool
-	MigrationRequested         bool
-	ApplicationVersion         string
-	ImageRegistry              string
-	ImageTag                   string
-	ReleaseVersion             string
-	APIPort                    string
-	GatewayPort                string
-	UserWebPort                string
-	AdminWebPort               string
-	DocsWebPort                string
-	MonitoringPort             string
-	RuntimeDirExplicit         bool
-	ApplicationVersionExplicit bool
-	ImageTagExplicit           bool
-	ReleaseVersionExplicit     bool
-	APIPortExplicit            bool
-	GatewayPortExplicit        bool
-	UserWebPortExplicit        bool
-	AdminWebPortExplicit       bool
-	DocsWebPortExplicit        bool
-	MonitoringPortExplicit     bool
+	Interactive              bool
+	OverwriteExisting        bool
+	Mode                     config.DeploymentMode
+	Profile                  config.DeploymentProfile
+	Topology                 config.DeploymentTopology
+	Role                     config.DeploymentRole
+	Components               []Component
+	RuntimeDir               string
+	StorageDriver            string
+	PublicAPIURL             string
+	ExternalGatewayConfirmed bool
+	InstallationInitialized  bool
+	MigrationRequested       bool
+	ApplicationVersion       string
+	ImageRegistry            string
+	ImageTag                 string
+	ImageDigests             map[Component]string
+	ReleaseVersion           string
+	APIPort                  string
+	GatewayPort              string
+	UserWebPort              string
+	AdminWebPort             string
+	DocsWebPort              string
+	MonitoringPort           string
+	ModeExplicit             bool
+	ProfileExplicit          bool
+	TopologyExplicit         bool
+	RoleExplicit             bool
+	StorageDriverExplicit    bool
+	RuntimeDirExplicit       bool
+	ImageTagExplicit         bool
+	ReleaseVersionExplicit   bool
+	APIPortExplicit          bool
+	GatewayPortExplicit      bool
+	UserWebPortExplicit      bool
+	AdminWebPortExplicit     bool
+	DocsWebPortExplicit      bool
+	MonitoringPortExplicit   bool
 }
 
 type InstallPlan struct {
@@ -84,6 +89,7 @@ type InstallPlan struct {
 	ApplicationVersion       string                    `json:"application_version"`
 	ImageRegistry            string                    `json:"image_registry,omitempty"`
 	ImageTag                 string                    `json:"image_tag,omitempty"`
+	ImageDigests             map[Component]string      `json:"image_digests,omitempty"`
 	ReleaseVersion           string                    `json:"release_version,omitempty"`
 	APIPort                  string                    `json:"api_port,omitempty"`
 	GatewayPort              string                    `json:"gateway_port,omitempty"`
@@ -172,7 +178,7 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 		Components: components, RuntimeDir: input.RuntimeDir, StorageDriver: input.StorageDriver,
 		PublicAPIURL: strings.TrimSpace(input.PublicAPIURL), ExternalGatewayConfirmed: input.ExternalGatewayConfirmed,
 		MigrationRequested: input.MigrationRequested, ApplicationVersion: input.ApplicationVersion,
-		ImageRegistry: input.ImageRegistry, ImageTag: defaultString(input.ImageTag, input.ApplicationVersion),
+		ImageRegistry: input.ImageRegistry, ImageTag: defaultString(input.ImageTag, input.ApplicationVersion), ImageDigests: cloneImageDigests(input.ImageDigests),
 		ReleaseVersion: defaultString(input.ReleaseVersion, input.ApplicationVersion),
 		APIPort:        input.APIPort, GatewayPort: input.GatewayPort,
 		UserWebPort: input.UserWebPort, AdminWebPort: input.AdminWebPort, DocsWebPort: input.DocsWebPort,
@@ -239,7 +245,26 @@ func ValidateInstallPlan(plan InstallPlan) error {
 	if slices.Contains(plan.Components, ComponentAPI) && strings.TrimSpace(plan.APIPort) == "" {
 		return fmt.Errorf("API component requires an API port")
 	}
+	for component, digest := range plan.ImageDigests {
+		if !releaseImageComponent(component) || !slices.Contains(plan.Components, component) {
+			return fmt.Errorf("image digest component %q is not deployed by this plan", component)
+		}
+		if !validSHA256Digest(digest) {
+			return fmt.Errorf("image digest for %s must be an immutable sha256 digest", component)
+		}
+	}
 	return nil
+}
+
+func cloneImageDigests(values map[Component]string) map[Component]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[Component]string, len(values))
+	for component, digest := range values {
+		cloned[component] = digest
+	}
+	return cloned
 }
 
 func componentsForInput(input InstallInput) ([]Component, error) {

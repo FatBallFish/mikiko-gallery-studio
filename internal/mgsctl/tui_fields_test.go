@@ -24,6 +24,21 @@ func TestTUICommandBuildersRoundTripThroughParser(t *testing.T) {
 	}
 }
 
+func TestTUIInstallOmitsOperatorManagedVersionAndRegistryFields(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	for _, name := range []string{"application-version", "public-api-url", "image-registry", "release-version"} {
+		if form.field(name) != nil {
+			t.Fatalf("install form unexpectedly exposes %q", name)
+		}
+	}
+	if field := form.field("profile"); field == nil || field.Value != "full" {
+		t.Fatalf("install profile default = %#v", field)
+	}
+	if field := form.field("image-tag"); field == nil || field.Value != "latest" {
+		t.Fatalf("install image tag default = %#v", field)
+	}
+}
+
 func TestTUISensitiveFieldsAreMaskedAndReviewIsRedacted(t *testing.T) {
 	entry := catalogEntryForTest(t, "cluster join")
 	form := NewTUICommandForm(entry)

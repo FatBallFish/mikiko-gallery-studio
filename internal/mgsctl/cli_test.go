@@ -146,7 +146,7 @@ func TestRunNonInteractiveInstallUsesNoTerminalAndInjectedFilesystemOnly(t *test
 	writes := make([]string, 0, 3)
 	code := Run(context.Background(), []string{"install", "--mode", "docker", "--profile", "full", "--topology", "single", "--yes"}, CLIDependencies{
 		Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer),
-		Install: testInstallDependencies(&writes),
+		Install: testInstallDependencies(&writes), ResolveRelease: resolvedReleaseForInstallSelector,
 	})
 	if code != 0 || terminal.prompts != 0 {
 		t.Fatalf("Run(non-interactive) = %d, prompts %d, stdout %q", code, terminal.prompts, stdout.String())
@@ -160,9 +160,9 @@ func TestRunInteractiveInstallPromptsForMissingChoicesAndHonorsCancellation(t *t
 	terminal := &fakeTerminal{interactive: true, answers: []string{"docker", "core", "single", "local"}, confirmed: false}
 	writes := make([]string, 0)
 	code := Run(context.Background(), []string{"install"}, CLIDependencies{
-		Terminal: terminal, Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer), Install: testInstallDependencies(&writes),
+		Terminal: terminal, Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer), Install: testInstallDependencies(&writes), ResolveRelease: resolvedReleaseForInstallSelector,
 	})
-	if code != 0 || terminal.prompts != 12 || len(writes) != 0 {
+	if code != 0 || terminal.prompts != 11 || len(writes) != 0 {
 		t.Fatalf("Run(cancelled interactive) = %d, prompts %d, writes %v", code, terminal.prompts, writes)
 	}
 }
@@ -172,7 +172,7 @@ func TestRunInteractiveInstallShowsTheOneTimeSetupToken(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	writes := make([]string, 0)
 	code := Run(context.Background(), []string{"install"}, CLIDependencies{
-		Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer), Install: testInstallDependencies(&writes),
+		Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer), Install: testInstallDependencies(&writes), ResolveRelease: resolvedReleaseForInstallSelector,
 		StdoutIsTerminal: func(io.Writer) bool { return true },
 	})
 	if code != 0 || !strings.Contains(stdout.String(), "Setup token:") {
@@ -185,7 +185,7 @@ func TestRunInteractiveInstallDoesNotWriteTheTokenToRedirectedStdout(t *testing.
 	stdout := new(bytes.Buffer)
 	writes := make([]string, 0)
 	code := Run(context.Background(), []string{"install"}, CLIDependencies{
-		Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer), Install: testInstallDependencies(&writes),
+		Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer), Install: testInstallDependencies(&writes), ResolveRelease: resolvedReleaseForInstallSelector,
 	})
 	if code != 0 || strings.Contains(stdout.String(), "Setup token:") || !strings.Contains(stdout.String(), "setup token show") {
 		t.Fatalf("redirected interactive install = %d, stdout %q", code, stdout.String())
@@ -207,8 +207,8 @@ func TestRunInteractiveInstallConfirmsBeforeOverwritingADifferentPendingPlan(t *
 	t.Run("cancel preserves existing runtime", func(t *testing.T) {
 		terminal := &fakeTerminal{interactive: true, confirmAnswers: []bool{true, false}}
 		stdout := new(bytes.Buffer)
-		code := Run(context.Background(), []string{"install", "--mode", "docker", "--profile", "core", "--topology", "single", "--runtime-dir", runtimeDirectory, "--application-version", "v2", "--image-tag", "v2"}, CLIDependencies{
-			Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer),
+		code := Run(context.Background(), []string{"install", "--mode", "docker", "--profile", "core", "--topology", "single", "--runtime-dir", runtimeDirectory, "--image-tag", "v2"}, CLIDependencies{
+			Terminal: terminal, Stdout: stdout, Stderr: new(bytes.Buffer), ResolveRelease: resolvedReleaseForInstallSelector,
 		})
 		if code != 0 || terminal.confirmations != 2 || !strings.Contains(stdout.String(), "preserved") {
 			t.Fatalf("cancel overwrite code=%d confirmations=%d stdout=%q", code, terminal.confirmations, stdout.String())
@@ -219,8 +219,8 @@ func TestRunInteractiveInstallConfirmsBeforeOverwritingADifferentPendingPlan(t *
 	})
 
 	terminal := &fakeTerminal{interactive: true, confirmAnswers: []bool{true, true}}
-	code := Run(context.Background(), []string{"install", "--mode", "docker", "--profile", "core", "--topology", "single", "--runtime-dir", runtimeDirectory, "--application-version", "v2", "--image-tag", "v2"}, CLIDependencies{
-		Terminal: terminal, Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer),
+	code := Run(context.Background(), []string{"install", "--mode", "docker", "--profile", "core", "--topology", "single", "--runtime-dir", runtimeDirectory, "--image-tag", "v2"}, CLIDependencies{
+		Terminal: terminal, Stdout: new(bytes.Buffer), Stderr: new(bytes.Buffer), ResolveRelease: resolvedReleaseForInstallSelector,
 	})
 	if code != 0 || terminal.confirmations != 2 {
 		t.Fatalf("confirmed overwrite code=%d confirmations=%d", code, terminal.confirmations)
@@ -376,10 +376,10 @@ func TestRunDispatchesOperationalCommands(t *testing.T) {
 
 	t.Run("upgrade and uninstall", func(t *testing.T) {
 		upgradeCalled, uninstallCalled := false, false
-		upgradeCode := Run(context.Background(), []string{"upgrade", "--application-version", "v2"}, CLIDependencies{
+		upgradeCode := Run(context.Background(), []string{"upgrade", "--image-tag", "v2"}, CLIDependencies{
 			Stdout: io.Discard, Stderr: new(bytes.Buffer),
 			ExecuteUpgrade: func(_ context.Context, options UpgradeOptions, _ UpgradeDependencies) (UpgradeResult, error) {
-				upgradeCalled = options.ApplicationVersion == "v2" && options.Migrate
+				upgradeCalled = options.ApplicationVersion == "" && options.ImageTag == "v2" && options.Migrate
 				return UpgradeResult{PreviousVersion: "v1", CurrentVersion: "v2", Migrated: true}, nil
 			},
 		})

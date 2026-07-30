@@ -288,15 +288,14 @@ func tuiFieldsForCommand(path string) []TUIField {
 	runtimeDir := func() []TUIField { return []TUIField{text("runtime-dir", "Runtime directory", ".")} }
 	switch path {
 	case "install":
-		components := TUIField{Name: "components", Label: "Components", Kind: tuiFieldMulti, Choices: componentNames(), Selected: map[string]bool{"api": true, "worker": true}}
+		components := TUIField{Name: "components", Label: "Components", Kind: tuiFieldMulti, Choices: componentNames(), Selected: selectedComponents(fullPreset)}
 		return []TUIField{
-			choice("mode", "Mode", "docker", "docker", "native"), choice("profile", "Profile", "core", "full", "core", "custom"),
+			choice("mode", "Mode", "docker", "docker", "native"), choice("profile", "Profile", "full", "full", "core", "custom"),
 			choice("topology", "Topology", "single", "single", "cluster"), choice("role", "Role", "single", "single", "control"), components,
-			text("runtime-dir", "Runtime directory", "."), choice("storage-driver", "Object storage", "local", "local", "s3"),
-			text("public-api-url", "Public API URL", ""), text("application-version", "Application version", DefaultApplicationVersion),
-			text("image-registry", "Image registry", ""), text("image-tag", "Image tag", DefaultApplicationVersion), text("release-version", "Release version", ""),
-			text("api-port", "API port", "8080"), text("gateway-port", "Gateway port", ""), text("user-web-port", "User Web port", ""),
-			text("admin-web-port", "Admin Web port", ""), text("docs-web-port", "Docs Web port", ""), text("monitoring-port", "Monitoring port", ""),
+			text("runtime-dir", "Runtime directory", "."), choice("storage-driver", "Object storage", "s3", "local", "s3"),
+			text("image-tag", "Image tag", "latest"),
+			text("api-port", "API port", "8080"), text("gateway-port", "Gateway port", "80"), text("user-web-port", "User Web port", "5173"),
+			text("admin-web-port", "Admin Web port", "5174"), text("docs-web-port", "Docs Web port", "5175"), text("monitoring-port", "Monitoring port", "9090"),
 			boolean("external-gateway", "External gateway configured", false), boolean("migrate", "Run migration", false), boolean("overwrite", "Overwrite incomplete config", false), boolean("yes", "Skip terminal confirmation", false),
 		}
 	case "import-config":
@@ -311,7 +310,7 @@ func tuiFieldsForCommand(path string) []TUIField {
 	case "self-update":
 		return []TUIField{text("version", "Target version", "latest"), text("release-base-url", "Release base URL", DefaultMGSCTLReleaseBaseURL), text("download-url", "Artifact URL", ""), text("sha256", "Expected SHA-256", ""), boolean("yes", "Confirm update", true)}
 	case "upgrade":
-		return []TUIField{text("runtime-dir", "Runtime directory", "."), text("application-version", "Application version", ""), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", ""), text("release-version", "Release version", ""), boolean("migrate", "Run migration", true)}
+		return []TUIField{text("runtime-dir", "Runtime directory", "."), text("image-registry", "Image registry", ""), text("image-tag", "Image tag", "latest"), text("release-version", "Release version", "latest"), boolean("migrate", "Run migration", true)}
 	case "uninstall":
 		return []TUIField{text("runtime-dir", "Runtime directory", "."), boolean("delete-data", "Delete persistent data", false), text("confirm", "Installation-specific phrase", ""), boolean("yes", "Confirm non-destructive stop", true)}
 	case "cluster token create":
@@ -329,6 +328,14 @@ func componentNames() []string {
 		names[index] = string(component)
 	}
 	return names
+}
+
+func selectedComponents(components []Component) map[string]bool {
+	selected := make(map[string]bool, len(components))
+	for _, component := range components {
+		selected[string(component)] = true
+	}
+	return selected
 }
 
 func containsString(values []string, value string) bool {

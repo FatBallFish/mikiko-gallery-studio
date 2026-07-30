@@ -43,6 +43,8 @@ type CLIDependencies struct {
 	CreateClusterToken   func(context.Context, string, ClusterTokenCreateOptions) (ClusterTokenCreateResult, error)
 	ExecuteClusterJoin   func(context.Context, ClusterJoinOptions, ClusterJoinDependencies) (ClusterJoinResult, error)
 	ExecuteTUI           func(context.Context) ([]string, error)
+	ResolveRelease       func(context.Context, ReleaseManifestOptions) (ResolvedRelease, error)
+	ReleaseManifest      ReleaseManifestDependencies
 }
 
 func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
@@ -241,6 +243,16 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 			return writeRunError(dependencies.Stderr, err)
 		}
 	}
+	resolveRelease := dependencies.ResolveRelease
+	if resolveRelease == nil {
+		resolveRelease = func(ctx context.Context, options ReleaseManifestOptions) (ResolvedRelease, error) {
+			return ResolveReleaseManifest(ctx, options, dependencies.ReleaseManifest)
+		}
+	}
+	input, err = ResolveInstallInput(ctx, input, resolveRelease)
+	if err != nil {
+		return writeRunError(dependencies.Stderr, fmt.Errorf("resolve install release: %w", err))
+	}
 	plan, err := BuildInstallPlan(input)
 	if err != nil {
 		fmt.Fprintf(dependencies.Stderr, "mgsctl: invalid install plan: %v\n", err)
@@ -294,35 +306,35 @@ func writerIsTerminal(writer io.Writer) bool {
 
 func resolveInteractiveInstall(ctx context.Context, input InstallInput, terminal Terminal) (InstallInput, error) {
 	var err error
-	if input.Mode == "" {
-		value, promptErr := terminal.Prompt(ctx, "Deployment mode", "docker")
+	if !input.ModeExplicit {
+		value, promptErr := terminal.Prompt(ctx, "Deployment mode", defaultString(string(input.Mode), "docker"))
 		if promptErr != nil {
 			return InstallInput{}, promptErr
 		}
 		input.Mode = config.DeploymentMode(value)
 	}
-	if input.Profile == "" {
-		value, promptErr := terminal.Prompt(ctx, "Deployment profile", "core")
+	if !input.ProfileExplicit {
+		value, promptErr := terminal.Prompt(ctx, "Deployment profile", defaultString(string(input.Profile), "full"))
 		if promptErr != nil {
 			return InstallInput{}, promptErr
 		}
 		input.Profile = config.DeploymentProfile(value)
 	}
-	if input.Topology == "" {
-		value, promptErr := terminal.Prompt(ctx, "Deployment topology", "single")
+	if !input.TopologyExplicit {
+		value, promptErr := terminal.Prompt(ctx, "Deployment topology", defaultString(string(input.Topology), "single"))
 		if promptErr != nil {
 			return InstallInput{}, promptErr
 		}
 		input.Topology = config.DeploymentTopology(value)
 	}
-	if input.Role == "" {
+	if !input.RoleExplicit {
 		if input.Topology == config.DeploymentTopologyCluster {
 			input.Role = config.DeploymentRoleControl
 		} else {
 			input.Role = config.DeploymentRoleSingle
 		}
 	}
-	if input.StorageDriver == "" && input.Role != config.DeploymentRoleWeb {
+	if !input.StorageDriverExplicit && input.Role != config.DeploymentRoleWeb {
 		fallback := "local"
 		if input.Topology == config.DeploymentTopologyCluster || input.Profile == config.DeploymentProfileFull {
 			fallback = "s3"
@@ -341,12 +353,6 @@ func resolveInteractiveInstall(ctx context.Context, input InstallInput, terminal
 	}
 	if !input.RuntimeDirExplicit {
 		input.RuntimeDir, err = terminal.Prompt(ctx, "Runtime directory", defaultString(input.RuntimeDir, "."))
-		if err != nil {
-			return InstallInput{}, err
-		}
-	}
-	if !input.ApplicationVersionExplicit {
-		input.ApplicationVersion, err = terminal.Prompt(ctx, "Application version", defaultString(input.ApplicationVersion, DefaultApplicationVersion))
 		if err != nil {
 			return InstallInput{}, err
 		}
@@ -384,13 +390,13 @@ func resolveInteractiveInstall(ctx context.Context, input InstallInput, terminal
 		}
 	}
 	if input.Mode == config.DeploymentModeDocker && !input.ImageTagExplicit {
-		input.ImageTag, err = terminal.Prompt(ctx, "Docker image tag", defaultString(input.ImageTag, input.ApplicationVersion))
+		input.ImageTag, err = terminal.Prompt(ctx, "Docker image tag", defaultString(input.ImageTag, "latest"))
 		if err != nil {
 			return InstallInput{}, err
 		}
 	}
 	if input.Mode == config.DeploymentModeNative && !input.ReleaseVersionExplicit {
-		input.ReleaseVersion, err = terminal.Prompt(ctx, "Native release version", defaultString(input.ReleaseVersion, input.ApplicationVersion))
+		input.ReleaseVersion, err = terminal.Prompt(ctx, "Native release version", defaultString(input.ReleaseVersion, "latest"))
 		if err != nil {
 			return InstallInput{}, err
 		}

@@ -243,10 +243,9 @@ func parseImportConfigCommand(args []string) (Command, error) {
 func parseUpgradeCommand(args []string) (Command, error) {
 	set := newFlagSet("upgrade")
 	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
-	applicationVersion := set.String("application-version", "", "target application version")
 	imageRegistry := set.String("image-registry", "", "target Docker image registry")
-	imageTag := set.String("image-tag", "", "target Docker image tag")
-	releaseVersion := set.String("release-version", "", "target native release version")
+	imageTag := set.String("image-tag", "latest", "target Docker image tag or latest")
+	releaseVersion := set.String("release-version", "latest", "target native release version or latest")
 	migrate := set.Bool("migrate", true, "run the control-node database migration")
 	if err := set.Parse(args); err != nil {
 		return Command{}, err
@@ -255,7 +254,7 @@ func parseUpgradeCommand(args []string) (Command, error) {
 		return Command{}, fmt.Errorf("upgrade does not accept positional arguments")
 	}
 	options := &UpgradeOptions{
-		RuntimeDir: filepath.Clean(*runtimeDir), ApplicationVersion: *applicationVersion,
+		RuntimeDir:    filepath.Clean(*runtimeDir),
 		ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion, Migrate: *migrate,
 	}
 	return Command{Kind: CommandUpgrade, RuntimeDir: *runtimeDir, Upgrade: options}, nil
@@ -288,18 +287,17 @@ func parseUninstallCommand(args []string) (Command, error) {
 
 func parseInstallCommand(args []string) (Command, error) {
 	set := newFlagSet("install")
-	mode := set.String("mode", "", "docker or native")
-	profile := set.String("profile", "", "full, core, or custom")
-	topology := set.String("topology", "", "single or cluster")
+	mode := set.String("mode", string(config.DeploymentModeDocker), "docker or native")
+	profile := set.String("profile", string(config.DeploymentProfileFull), "full, core, or custom")
+	topology := set.String("topology", string(config.DeploymentTopologySingle), "single or cluster")
 	role := set.String("role", "", "single or control")
 	components := set.String("components", "", "comma-separated components")
 	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
 	storageDriver := set.String("storage-driver", "", "local or s3")
 	publicAPIURL := set.String("public-api-url", "", "public API URL")
-	applicationVersion := set.String("application-version", DefaultApplicationVersion, "application version")
 	imageRegistry := set.String("image-registry", "", "Docker image registry")
-	imageTag := set.String("image-tag", "", "Docker image tag")
-	releaseVersion := set.String("release-version", "", "native release version")
+	imageTag := set.String("image-tag", "latest", "Docker image tag or latest")
+	releaseVersion := set.String("release-version", "latest", "native release version or latest")
 	apiPort := set.String("api-port", "", "API port")
 	gatewayPort := set.String("gateway-port", "", "Gateway port")
 	userWebPort := set.String("user-web-port", "", "user web port")
@@ -315,9 +313,6 @@ func parseInstallCommand(args []string) (Command, error) {
 	}
 	if set.NArg() != 0 {
 		return Command{}, fmt.Errorf("install does not accept positional arguments")
-	}
-	if *yes && (*mode == "" || *profile == "" || *topology == "") {
-		return Command{}, fmt.Errorf("non-interactive install requires --mode, --profile, and --topology")
 	}
 	resolvedRole := config.DeploymentRole(*role)
 	if resolvedRole == "" {
@@ -335,10 +330,15 @@ func parseInstallCommand(args []string) (Command, error) {
 		Topology: config.DeploymentTopology(*topology), Role: resolvedRole, Components: parseComponents(*components),
 		RuntimeDir: *runtimeDir, StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL,
 		ExternalGatewayConfirmed: *externalGateway, MigrationRequested: *migrate,
-		ApplicationVersion: *applicationVersion, ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion,
+		ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion,
 		APIPort: *apiPort, GatewayPort: *gatewayPort, UserWebPort: *userWebPort, AdminWebPort: *adminWebPort, DocsWebPort: *docsWebPort, MonitoringPort: *monitoringPort,
-		RuntimeDirExplicit: flagWasProvided(args, "runtime-dir"), ApplicationVersionExplicit: flagWasProvided(args, "application-version"),
-		ImageTagExplicit: flagWasProvided(args, "image-tag"), ReleaseVersionExplicit: flagWasProvided(args, "release-version"),
+		ModeExplicit:          flagWasProvided(args, "mode"),
+		ProfileExplicit:       flagWasProvided(args, "profile"),
+		TopologyExplicit:      flagWasProvided(args, "topology"),
+		RoleExplicit:          flagWasProvided(args, "role"),
+		StorageDriverExplicit: flagWasProvided(args, "storage-driver"),
+		RuntimeDirExplicit:    flagWasProvided(args, "runtime-dir"),
+		ImageTagExplicit:      flagWasProvided(args, "image-tag"), ReleaseVersionExplicit: flagWasProvided(args, "release-version"),
 		APIPortExplicit: flagWasProvided(args, "api-port"), GatewayPortExplicit: flagWasProvided(args, "gateway-port"),
 		UserWebPortExplicit: flagWasProvided(args, "user-web-port"), AdminWebPortExplicit: flagWasProvided(args, "admin-web-port"),
 		DocsWebPortExplicit:    flagWasProvided(args, "docs-web-port"),
