@@ -2395,6 +2395,19 @@ func TestAdminCashierProviderInstanceCreateAndUpdate(t *testing.T) {
 	handler := NewWithAPI(api)
 	adminToken := loginAdminForCashierProviderTest(t, handler)
 
+	invalidJeePayBody := `{"provider_type":"jeepay_alipay","name":"invalid JeePay","enabled":true,"supported_methods":["alipay"],"config":{"gateway_url":"https://pay.example.com","mch_no":"submitted-merchant","way_code":"ALI_PC"},"secrets":{"key":"submitted-secret"}}`
+	invalidJeePayReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/provider-instances", bytes.NewBufferString(invalidJeePayBody))
+	invalidJeePayReq.Header.Set("Authorization", "Bearer "+adminToken)
+	invalidJeePayReq.Header.Set("Content-Type", "application/json")
+	invalidJeePayRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidJeePayRec, invalidJeePayReq)
+	if invalidJeePayRec.Code != http.StatusBadRequest || !bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte(`"code":"PAYMENT_PROVIDER_CONFIG_INVALID"`)) || !bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte("app_id")) {
+		t.Fatalf("expected typed JeePay provider validation error, got %d body=%s", invalidJeePayRec.Code, invalidJeePayRec.Body.String())
+	}
+	if bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte("submitted-merchant")) || bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte("submitted-secret")) {
+		t.Fatalf("provider validation error leaked submitted values: %s", invalidJeePayRec.Body.String())
+	}
+
 	createBody := `{"provider_type":"alipay_direct","name":"支付宝沙箱主账号","enabled":true,"supported_methods":["alipay"],"sort_order":20,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000","daily_amount_limit_cny":"5000.00000"},"config":{"app_id":"app-123","app_private_key":"super-secret-private-key","alipay_public_key":"public-key","gateway_url":"https://openapi-sandbox.dl.alipaydev.com/gateway.do"}}`
 	createReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/provider-instances", bytes.NewBufferString(createBody))
 	createReq.Header.Set("Authorization", "Bearer "+adminToken)

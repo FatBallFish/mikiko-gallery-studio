@@ -3,6 +3,7 @@ package cashier
 import (
 	"crypto/sha256"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 func NormalizeProviderInstance(req domaincashier.ProviderInstance, instanceID int64, now time.Time) (domaincashier.ProviderInstance, error) {
@@ -152,7 +154,28 @@ func ProviderInstanceForWrite(req domaincashier.ProviderInstanceWriteRequest, ex
 	if err := RejectMaskedSecrets(req.Secrets); err != nil {
 		return domaincashier.ProviderInstance{}, err
 	}
+	if err := ValidateProviderConfiguration(next.ProviderType, next.Config); err != nil {
+		return domaincashier.ProviderInstance{}, err
+	}
 	return next, nil
+}
+
+func ValidateProviderConfiguration(providerType string, config map[string]any) error {
+	requirements := map[string][]string{
+		"jeepay_alipay": {"gateway_url", "mch_no", "app_id", "key", "way_code"},
+		"jeepay_wxpay":  {"gateway_url", "mch_no", "app_id", "key", "way_code"},
+	}
+	required := requirements[strings.ToLower(strings.TrimSpace(providerType))]
+	missing := make([]string, 0)
+	for _, field := range required {
+		if strings.TrimSpace(fmt.Sprint(config[field])) == "" || config[field] == nil {
+			missing = append(missing, field)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return errs.New(http.StatusBadRequest, errs.CodePaymentProviderConfigInvalid, "payment provider configuration is missing required fields: "+strings.Join(missing, ", "))
 }
 
 func MergeProviderConfigForWrite(config, secrets map[string]any, clearSecrets []string, existingConfig map[string]any) map[string]any {

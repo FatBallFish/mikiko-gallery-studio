@@ -2,13 +2,71 @@ package cashier
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+func TestConfigFacadeValidatesAndPreservesJeePayProviderConfiguration(t *testing.T) {
+	ctx := context.Background()
+	facade := NewConfigFacade(NewAdminConfigStore(adminconfigservice.NewServiceWithStore(config.Config{}, adminconfigservice.NewMemoryStore()), false))
+	request := domaincashier.ProviderInstanceWriteRequest{
+		ProviderInstance: domaincashier.ProviderInstance{
+			ProviderType: "jeepay_alipay", Name: "JeePay", Enabled: true,
+			SupportedMethods: []string{"alipay"},
+			Config:           map[string]any{"gateway_url": "https://pay.example.com", "mch_no": "M100", "app_id": "A100", "way_code": "ALI_PC"},
+		},
+		Secrets: map[string]any{"key": "signing-secret"},
+	}
+	created, err := facade.CreateProviderInstance(ctx, request, 99)
+	if err != nil {
+		t.Fatalf("CreateProviderInstance: %v", err)
+	}
+	if created.Config["mch_no"] != "M100" || created.Config["app_id"] != "A100" || created.Config["key"] != "signing-secret" {
+		t.Fatalf("JeePay configuration was not merged: %#v", created.Config)
+	}
+	request.ProviderInstance.Name = "JeePay updated"
+	request.Secrets = map[string]any{"key": ""}
+	updated, err := facade.UpdateProviderInstance(ctx, created.ID, request, 99)
+	if err != nil {
+		t.Fatalf("UpdateProviderInstance: %v", err)
+	}
+	if updated.Config["key"] != "signing-secret" {
+		t.Fatalf("empty edited key replaced the stored secret: %#v", updated.Config)
+	}
+	payload := ProviderInstancePayload(updated)
+	publicConfig := payload["config"].(map[string]any)
+	if publicConfig["mch_no"] != "M100" || publicConfig["app_id"] != "A100" || publicConfig["key"] != nil {
+		t.Fatalf("JeePay response redaction is incorrect: %#v", publicConfig)
+	}
+
+	for _, missing := range []string{"gateway_url", "mch_no", "app_id", "way_code", "key"} {
+		t.Run("missing_"+missing, func(t *testing.T) {
+			invalid := request
+			invalid.Config = map[string]any{"gateway_url": "https://pay.example.com", "mch_no": "M100", "app_id": "A100", "way_code": "ALI_PC"}
+			invalid.Secrets = map[string]any{"key": "signing-secret"}
+			if missing == "key" {
+				invalid.Secrets = nil
+			} else {
+				delete(invalid.Config, missing)
+			}
+			_, err := facade.CreateProviderInstance(ctx, invalid, 99)
+			var appErr *errs.Error
+			if !errors.As(err, &appErr) || appErr.Code != errs.CodePaymentProviderConfigInvalid || appErr.StatusCode != 400 || !strings.Contains(appErr.Message, missing) {
+				t.Fatalf("missing %s error = %#v", missing, err)
+			}
+			if strings.Contains(appErr.Message, "signing-secret") {
+				t.Fatal("provider validation error leaked a submitted value")
+			}
+		})
+	}
+}
 
 func TestConfigFacadeReadsAndWritesCashierRuntimeConfig(t *testing.T) {
 	ctx := context.Background()

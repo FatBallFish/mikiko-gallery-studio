@@ -3,6 +3,7 @@ package cashier
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -242,7 +243,7 @@ func (f *ConfigFacade) CreateProviderInstance(ctx context.Context, req domaincas
 	now := time.Now().UTC()
 	instance, err := ProviderInstanceForWrite(req, nil)
 	if err != nil {
-		return domaincashier.ProviderInstance{}, errs.BadRequest(err.Error())
+		return domaincashier.ProviderInstance{}, providerWriteError(err)
 	}
 	normalized, err := NormalizeProviderInstance(instance, next, now)
 	if err != nil {
@@ -275,7 +276,7 @@ func (f *ConfigFacade) UpdateProviderInstance(ctx context.Context, instanceID in
 	}
 	instance, err := ProviderInstanceForWrite(req, current[index].Config)
 	if err != nil {
-		return domaincashier.ProviderInstance{}, errs.BadRequest(err.Error())
+		return domaincashier.ProviderInstance{}, providerWriteError(err)
 	}
 	normalized, err := NormalizeProviderInstance(instance, instanceID, time.Now().UTC())
 	if err != nil {
@@ -291,6 +292,14 @@ func (f *ConfigFacade) UpdateProviderInstance(ctx context.Context, instanceID in
 		return domaincashier.ProviderInstance{}, err
 	}
 	return normalized, nil
+}
+
+func providerWriteError(err error) error {
+	var appErr *errs.Error
+	if errors.As(err, &appErr) {
+		return appErr
+	}
+	return errs.BadRequest(err.Error())
 }
 
 func (f *ConfigFacade) DeleteProviderInstance(ctx context.Context, instanceID int64, adminID int64) (domaincashier.ProviderInstance, error) {
