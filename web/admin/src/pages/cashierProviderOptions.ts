@@ -59,7 +59,7 @@ export type CashierJeePayConfigField = {
   multiline?: boolean
 }
 
-export type CashierProviderConfigField = {
+type LegacyCashierProviderConfigField = {
   key: string
   label: string
   hint: string
@@ -67,6 +67,18 @@ export type CashierProviderConfigField = {
   secret?: boolean
   required?: boolean
   multiline?: boolean
+  options?: Array<{ value: string; label: string }>
+}
+
+export type CashierProviderConfigField = {
+  key: string
+  label: string
+  hint: string
+  placeholder?: string
+  storage: 'config' | 'secret'
+  required: boolean
+  sensitive?: boolean
+  kind?: 'text' | 'password' | 'textarea' | 'select' | 'callback-base'
   options?: Array<{ value: string; label: string }>
 }
 
@@ -188,7 +200,7 @@ const paymentModeOptions = [
   { value: 'jsapi', label: 'JSAPI' },
 ]
 
-const providerConfigFields: Record<string, CashierProviderConfigField[]> = {
+const providerConfigFields: Record<string, LegacyCashierProviderConfigField[]> = {
   mock: [
     { key: 'mock_success', label: '默认支付结果', hint: '测试环境模拟支付是否默认成功；留空时后端按默认成功处理。', placeholder: 'true' },
     { key: 'mock_trade_no_prefix', label: '交易号前缀', hint: 'Mock 支付生成渠道交易号时使用的前缀。', placeholder: 'MOCK' },
@@ -262,7 +274,30 @@ const providerConfigFields: Record<string, CashierProviderConfigField[]> = {
 }
 
 export function cashierProviderConfigFields(providerType: PaymentProviderType | string): CashierProviderConfigField[] {
-  return providerConfigFields[providerType] ?? []
+  return (providerConfigFields[providerType] ?? []).map((field) => {
+    const storage = providerConfigFieldStorage(field)
+    const callback = field.key === 'notify_url' || field.key === 'return_url'
+    return {
+      key: field.key,
+      label: callback ? (field.key === 'notify_url' ? '异步回调基础域名' : '同步返回基础域名') : field.label,
+      hint: callback ? (field.key === 'notify_url' ? '填写公开访问的基础域名，保存时自动拼接支付异步通知路由。' : '填写公开访问的基础域名，保存时自动拼接用户收银台返回路由。') : field.hint,
+      placeholder: callback ? 'https://gallery.example.com' : field.placeholder,
+      storage,
+      required: Boolean(field.required),
+      sensitive: storage === 'secret',
+      kind: callback ? 'callback-base' : field.options ? 'select' : field.multiline ? 'textarea' : storage === 'secret' ? 'password' : 'text',
+      options: field.options,
+    }
+  })
+}
+
+function providerConfigFieldStorage(field: LegacyCashierProviderConfigField): 'config' | 'secret' {
+  const publicIdentifiers = new Set([
+    'app_id', 'mch_id', 'mch_no', 'pid', 'merchant_certificate_serial',
+    'alipay_public_key', 'wechat_pay_public_key', 'wechat_pay_public_key_id',
+  ])
+  if (publicIdentifiers.has(field.key)) return 'config'
+  return field.secret ? 'secret' : 'config'
 }
 
 export function cashierJeePayConfigFields(providerType: PaymentProviderType | string): CashierJeePayConfigField[] {
