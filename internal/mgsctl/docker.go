@@ -330,7 +330,7 @@ func BuildDockerProcessSpecsForNode(action DockerAction, plan InstallPlan, insta
 			specs = append(specs, newSpec("run", "--rm", "--no-deps", "minio-init"))
 		}
 		applicationServices := dockerApplicationServices(plan)
-		specs = append(specs, newSpec(append([]string{"up", "--detach", "--wait", "--remove-orphans"}, applicationServices...)...))
+		specs = append(specs, newSpec(append([]string{"up", "--detach", "--wait", "--force-recreate", "--remove-orphans"}, applicationServices...)...))
 		return specs, nil
 	case DockerActionRestart:
 		return []ProcessSpec{newSpec("restart")}, nil
