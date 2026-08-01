@@ -8789,6 +8789,7 @@ func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMe
 		WxPayDirect:  cashierservice.NewWxPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
 		EasyPay:      cashierservice.NewEasyPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
 		JeePay:       cashierservice.NewJeePayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
+		Stripe:       cashierservice.NewStripePaymentDisplayBuilder(),
 	})
 
 	result, err := registry.BuildPaymentDisplay(ctx, req)

@@ -34,6 +34,7 @@ import (
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	stripe "github.com/stripe/stripe-go/v85"
 )
 
 func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
@@ -562,6 +563,64 @@ func TestCashierJeePayDisplayIsSignedAndPersisted(t *testing.T) {
 	}
 	if detailResp.Data.PaymentURL != order.PaymentURL || detailResp.Data.PaymentDisplay["payment_url"] != order.PaymentURL {
 		t.Fatalf("expected persisted jeepay payment display, create=%#v detail=%#v", order, detailResp.Data)
+	}
+}
+
+func TestCashierStripeOrderCreatesPaymentIntentAndPersistsNarrowDisplay(t *testing.T) {
+	var upstreamAuthorization string
+	var upstreamIdempotencyKey string
+	var upstreamValues url.Values
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/payment_intents" {
+			t.Fatalf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+		}
+		upstreamAuthorization = r.Header.Get("Authorization")
+		upstreamIdempotencyKey = r.Header.Get("Idempotency-Key")
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse Stripe form: %v", err)
+		}
+		upstreamValues = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"pi_route_123","object":"payment_intent","amount":1025,"currency":"cny","client_secret":"pi_route_123_secret_client","status":"requires_payment_method","metadata":{"order_no":"route-order"}}`))
+	}))
+	defer upstream.Close()
+
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	handler, userToken := setupStripeCashierTest(t, "cashier-stripe-order-user@example.com")
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"10.25","visible_method":"stripe"}`))
+	createReq.Header.Set("Authorization", "Bearer "+userToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected Stripe order create 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createResp struct {
+		Data domainbilling.PaymentOrder `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
+		t.Fatalf("decode Stripe order: %v", err)
+	}
+	order := createResp.Data
+	if order.ProviderType != "stripe" || order.ClientToken != "pi_route_123" {
+		t.Fatalf("expected persisted Stripe provider and PaymentIntent ID, got %#v", order)
+	}
+	if len(order.PaymentDisplay) != 3 || order.PaymentDisplay["type"] != "stripe_payment_element" || order.PaymentDisplay["client_secret"] != "pi_route_123_secret_client" || order.PaymentDisplay["publishable_key"] != "pk_test_route" {
+		t.Fatalf("unexpected Stripe payment display %#v", order.PaymentDisplay)
+	}
+	if upstreamAuthorization != "Bearer sk_test_route" || upstreamIdempotencyKey != order.OrderNo {
+		t.Fatalf("unexpected Stripe authorization or idempotency headers auth=%q idempotency=%q order=%q", upstreamAuthorization, upstreamIdempotencyKey, order.OrderNo)
+	}
+	if upstreamValues.Get("amount") != "1025" || upstreamValues.Get("currency") != "cny" || upstreamValues.Get("metadata[order_no]") != order.OrderNo {
+		t.Fatalf("unexpected Stripe PaymentIntent params %#v", upstreamValues)
+	}
+	for _, secret := range []string{"sk_test_route", "whsec_route"} {
+		if bytes.Contains(createRec.Body.Bytes(), []byte(secret)) {
+			t.Fatalf("Stripe order response leaked secret %q", secret)
+		}
 	}
 }
 
@@ -2081,6 +2140,44 @@ func setupEasyPayCashierTest(t *testing.T, userEmail string) (http.Handler, stri
 	providerBody := `{"provider_type":"easypay_alipay","name":"易支付支付宝","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":"https://pay.example.com","pid":"10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/payments/easypay/notify","return_url":"https://merchant.example.com/checkout/return","payment_mode":"popup"}}`
 	createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
 	return handler, userSession.AccessToken, adminToken
+}
+
+func setupStripeCashierTest(t *testing.T, userEmail string) (http.Handler, string) {
+	t.Helper()
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	userSession := loginExistingAuthUser(t, authSvc, userEmail)
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email:        "cashier-provider-admin@example.com",
+		PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role:         domainadminauth.RoleAdmin,
+		Status:       "active",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	handler := NewWithAPI(handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingservice.NewService(cfg.Billing), nil, adminAuth, nil))
+	adminToken := loginAdminForCashierSchedulingTest(t, handler)
+
+	visibleReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/cashier/visible-methods", bytes.NewBufferString(`{"items":[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]}`))
+	visibleReq.Header.Set("Authorization", "Bearer "+adminToken)
+	visibleReq.Header.Set("Content-Type", "application/json")
+	visibleRec := httptest.NewRecorder()
+	handler.ServeHTTP(visibleRec, visibleReq)
+	if visibleRec.Code != http.StatusOK {
+		t.Fatalf("expected Stripe visible method update 200, got %d body=%s", visibleRec.Code, visibleRec.Body.String())
+	}
+
+	providerBody := `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"publishable_key":"pk_test_route"},"secrets":{"secret_key":"sk_test_route","webhook_secret":"whsec_route"}}`
+	createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
+	return handler, userSession.AccessToken
 }
 
 func setupJeePayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string) {

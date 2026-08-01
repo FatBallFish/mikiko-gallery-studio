@@ -682,6 +682,8 @@ func visibleMethodProviderAllowed(method, provider string) bool {
 		return provider == "alipay_direct" || provider == "easypay_alipay" || provider == "mock" || provider == "jeepay_alipay"
 	case "wxpay":
 		return provider == "wxpay_direct" || provider == "easypay_wxpay" || provider == "mock" || provider == "jeepay_wxpay"
+	case "stripe":
+		return provider == "stripe"
 	default:
 		return false
 	}
