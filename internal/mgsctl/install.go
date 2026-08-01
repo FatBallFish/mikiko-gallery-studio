@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -19,20 +20,25 @@ import (
 )
 
 type InstallDependencies struct {
-	Entropy             io.Reader
-	Now                 func() time.Time
-	ReadFile            func(string) ([]byte, error)
-	PathExists          func(string) (bool, error)
-	MakeDirectory       func(string, os.FileMode) error
-	AcquireInstallLock  func(context.Context, string) (func() error, error)
-	RecoverIncomplete   func(string, string, string, []string) error
-	WriteRuntimeEnv     func(string, []byte) error
-	InitializeState     func(string, setup.InstallState) error
-	WriteManifest       func(string, []byte) error
-	WriteDeploymentFile func(string, []byte) error
-	RemovePath          func(string) error
-	ApplyDeployment     func(context.Context, InstallPlan) error
-	OverwriteExisting   bool
+	Entropy               io.Reader
+	Now                   func() time.Time
+	ReadFile              func(string) ([]byte, error)
+	PathExists            func(string) (bool, error)
+	InspectInstallPath    func(string) error
+	MakeDirectory         func(string, os.FileMode) error
+	AcquireInstallLock    func(context.Context, string) (func() error, error)
+	RecoverIncomplete     func(string, string, string, []string) error
+	WriteRuntimeEnv       func(string, []byte) error
+	InitializeState       func(string, setup.InstallState) error
+	WriteManifest         func(string, []byte) error
+	WriteDeploymentFile   func(string, []byte) error
+	ReplaceRuntimeEnv     func(string, []byte) error
+	ReplaceState          func(string, setup.InstallState) error
+	ReplaceManifest       func(string, []byte) error
+	ReplaceDeploymentFile func(string, []byte) error
+	RemovePath            func(string) error
+	ApplyDeployment       func(context.Context, InstallPlan) error
+	OverwriteExisting     bool
 }
 
 type InstallTargetExistsError struct {
@@ -124,7 +130,8 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 	if err := dependencies.RecoverIncomplete(runtimeEnvPath, statePath, manifestPath, deploymentPaths); err != nil {
 		return InstallResult{}, fmt.Errorf("recover incomplete install: %w", err)
 	}
-	var overwritePaths []string
+	var pendingSnapshot pendingInstallSnapshot
+	replaceExisting := false
 	firstExisting := ""
 	for _, path := range installTargets {
 		exists, err := dependencies.PathExists(path)
@@ -136,31 +143,30 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 		}
 	}
 	if firstExisting != "" {
-		existing, existingPlan, existingState := loadExistingInstall(runtimeEnvPath, statePath, manifestPath, dependencies.ReadFile)
-		if existingState == existingInstallPending && reflect.DeepEqual(existingPlan, plan) && dependencies.ApplyDeployment != nil {
+		snapshot, existingState := loadExistingInstall(runtimeEnvPath, statePath, manifestPath, dependencies.ReadFile, dependencies.InspectInstallPath)
+		if existingState == existingInstallPending && installPlansEqual(snapshot.Plan, plan) && !snapshot.GeneratedStale && dependencies.ApplyDeployment != nil {
 			if err := dependencies.ApplyDeployment(ctx, plan); err != nil {
 				return InstallResult{}, fmt.Errorf("resume deployment: %w", err)
 			}
-			return existing, nil
+			return snapshot.Result, nil
 		}
-		if dependencies.OverwriteExisting {
+		if existingState == existingInstallPending && installPlansEqual(snapshot.Plan, plan) && snapshot.GeneratedStale {
+			pendingSnapshot = snapshot
+			replaceExisting = true
+		} else if existingState == existingInstallPending && installPlansEqual(snapshot.Plan, plan) {
+			return snapshot.Result, nil
+		}
+		if !replaceExisting && dependencies.OverwriteExisting {
 			switch existingState {
 			case existingInstallPending:
-				existingFiles, err := buildDeploymentFiles(existingPlan)
-				if err != nil {
-					return InstallResult{}, fmt.Errorf("resolve existing deployment files: %w", err)
-				}
-				overwritePaths = []string{runtimeEnvPath, statePath, manifestPath}
-				runtimeRoot := filepath.Dir(manifestPath)
-				for _, file := range existingFiles {
-					overwritePaths = append(overwritePaths, filepath.Join(runtimeRoot, file.RelativePath))
-				}
+				pendingSnapshot = snapshot
+				replaceExisting = true
 			case existingInstallCompleted:
 				return InstallResult{}, &InstallTargetExistsError{Path: firstExisting, State: "completed"}
 			default:
 				return InstallResult{}, &InstallTargetExistsError{Path: firstExisting, State: "unrecognized"}
 			}
-		} else {
+		} else if !replaceExisting {
 			state := "unrecognized"
 			overwritable := false
 			if existingState == existingInstallPending {
@@ -172,14 +178,14 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 			return InstallResult{}, &InstallTargetExistsError{Path: firstExisting, State: state, Overwritable: overwritable}
 		}
 	}
-	artifacts, err := BuildRuntimeArtifacts(plan, dependencies.Entropy, dependencies.Now())
+	var artifacts RuntimeArtifacts
+	if replaceExisting {
+		artifacts, err = BuildPendingRuntimeArtifacts(plan, pendingSnapshot, dependencies.Entropy, dependencies.Now())
+	} else {
+		artifacts, err = BuildRuntimeArtifacts(plan, dependencies.Entropy, dependencies.Now())
+	}
 	if err != nil {
 		return InstallResult{}, err
-	}
-	if len(overwritePaths) > 0 {
-		if err := rollbackInstallArtifacts(dependencies, overwritePaths...); err != nil {
-			return InstallResult{}, fmt.Errorf("remove incomplete installation configuration: %w", err)
-		}
 	}
 	if err := ctx.Err(); err != nil {
 		return InstallResult{}, err
@@ -188,6 +194,17 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 		if err := dependencies.MakeDirectory(directory, 0o700); err != nil {
 			return InstallResult{}, fmt.Errorf("create runtime directory: %w", err)
 		}
+	}
+	if replaceExisting {
+		if err := replacePendingInstallArtifacts(dependencies, statePath, manifestPath, runtimeEnvPath, deploymentPaths, artifacts); err != nil {
+			return InstallResult{}, err
+		}
+		if dependencies.ApplyDeployment != nil {
+			if err := dependencies.ApplyDeployment(ctx, plan); err != nil {
+				return InstallResult{}, fmt.Errorf("apply deployment: %w", err)
+			}
+		}
+		return InstallResult{RuntimeEnvPath: runtimeEnvPath, ManifestPath: manifestPath, SetupToken: artifacts.SetupToken}, nil
 	}
 	if err := dependencies.InitializeState(statePath, artifacts.InstallState); err != nil {
 		return InstallResult{}, installArtifactError("initialize install state", err, nil)
@@ -212,6 +229,85 @@ func ExecuteInstall(ctx context.Context, plan InstallPlan, dependencies InstallD
 		}
 	}
 	return InstallResult{RuntimeEnvPath: runtimeEnvPath, ManifestPath: manifestPath, SetupToken: artifacts.SetupToken}, nil
+}
+
+type pendingArtifactReplacement struct {
+	path    string
+	content []byte
+	write   func([]byte) error
+}
+
+type pendingArtifactBackup struct {
+	content []byte
+	exists  bool
+}
+
+func replacePendingInstallArtifacts(dependencies InstallDependencies, statePath, manifestPath, runtimeEnvPath string, deploymentPaths []string, artifacts RuntimeArtifacts) error {
+	stateContent, err := json.MarshalIndent(artifacts.InstallState, "", "  ")
+	if err != nil {
+		return fmt.Errorf("render install state: %w", err)
+	}
+	stateContent = append(stateContent, '\n')
+	replacements := []pendingArtifactReplacement{
+		{
+			path: statePath, content: stateContent,
+			write: func(content []byte) error {
+				var state setup.InstallState
+				if err := json.Unmarshal(content, &state); err != nil {
+					return fmt.Errorf("decode install state replacement: %w", err)
+				}
+				return dependencies.ReplaceState(statePath, state)
+			},
+		},
+		{path: manifestPath, content: artifacts.Manifest, write: func(content []byte) error { return dependencies.ReplaceManifest(manifestPath, content) }},
+	}
+	for index, file := range artifacts.DeploymentFiles {
+		path := deploymentPaths[index]
+		replacements = append(replacements, pendingArtifactReplacement{
+			path: path, content: file.Content,
+			write: func(content []byte) error { return dependencies.ReplaceDeploymentFile(path, content) },
+		})
+	}
+	replacements = append(replacements, pendingArtifactReplacement{
+		path: runtimeEnvPath, content: artifacts.RuntimeEnv,
+		write: func(content []byte) error { return dependencies.ReplaceRuntimeEnv(runtimeEnvPath, content) },
+	})
+
+	backups := make(map[string]pendingArtifactBackup, len(replacements))
+	for _, replacement := range replacements {
+		content, readErr := dependencies.ReadFile(replacement.path)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return fmt.Errorf("back up pending install artifact %s: %w", replacement.path, readErr)
+		}
+		backups[replacement.path] = pendingArtifactBackup{content: content, exists: readErr == nil}
+	}
+	published := make([]pendingArtifactReplacement, 0, len(replacements))
+	for _, replacement := range replacements {
+		if err := replacement.write(replacement.content); err != nil {
+			rollbackErr := restorePendingInstallArtifacts(dependencies, published, backups)
+			return installArtifactError("replace pending install artifact", err, rollbackErr)
+		}
+		published = append(published, replacement)
+	}
+	return nil
+}
+
+func restorePendingInstallArtifacts(dependencies InstallDependencies, published []pendingArtifactReplacement, backups map[string]pendingArtifactBackup) error {
+	var rollbackErr error
+	for index := len(published) - 1; index >= 0; index-- {
+		replacement := published[index]
+		backup := backups[replacement.path]
+		if !backup.exists {
+			if err := dependencies.RemovePath(replacement.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove newly published %s: %w", replacement.path, err))
+			}
+			continue
+		}
+		if err := replacement.write(backup.content); err != nil {
+			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("restore %s: %w", replacement.path, err))
+		}
+	}
+	return rollbackErr
 }
 
 func installArtifactError(operation string, operationErr, rollbackErr error) error {
@@ -254,6 +350,9 @@ func defaultInstallDependencies(dependencies InstallDependencies) InstallDepende
 			return false, err
 		}
 	}
+	if dependencies.InspectInstallPath == nil {
+		dependencies.InspectInstallPath = inspectInstallPath
+	}
 	if dependencies.MakeDirectory == nil {
 		dependencies.MakeDirectory = func(path string, mode os.FileMode) error {
 			if err := os.MkdirAll(path, mode); err != nil {
@@ -286,6 +385,24 @@ func defaultInstallDependencies(dependencies InstallDependencies) InstallDepende
 	if dependencies.WriteDeploymentFile == nil {
 		dependencies.WriteDeploymentFile = writeDeploymentFileAtomicNoReplace
 	}
+	if dependencies.ReplaceRuntimeEnv == nil {
+		dependencies.ReplaceRuntimeEnv = writePrivateFileAtomicReplace
+	}
+	if dependencies.ReplaceState == nil {
+		dependencies.ReplaceState = func(path string, state setup.InstallState) error {
+			content, err := json.MarshalIndent(state, "", "  ")
+			if err != nil {
+				return fmt.Errorf("render install state: %w", err)
+			}
+			return writePrivateFileAtomicReplace(path, append(content, '\n'))
+		}
+	}
+	if dependencies.ReplaceManifest == nil {
+		dependencies.ReplaceManifest = writePrivateFileAtomicReplace
+	}
+	if dependencies.ReplaceDeploymentFile == nil {
+		dependencies.ReplaceDeploymentFile = writeDeploymentFileAtomicReplace
+	}
 	if dependencies.RemovePath == nil {
 		dependencies.RemovePath = os.Remove
 	}
@@ -300,62 +417,93 @@ const (
 	existingInstallCompleted
 )
 
-func loadExistingInstall(runtimeEnvPath, statePath, manifestPath string, readFile func(string) ([]byte, error)) (InstallResult, InstallPlan, existingInstallState) {
+type pendingInstallSnapshot struct {
+	Result         InstallResult
+	Plan           InstallPlan
+	State          setup.InstallState
+	Manifest       deploymentManifest
+	Runtime        config.RuntimeEnvDocument
+	GeneratedStale bool
+}
+
+func loadExistingInstall(runtimeEnvPath, statePath, manifestPath string, readFile func(string) ([]byte, error), inspectPath func(string) error) (pendingInstallSnapshot, existingInstallState) {
+	for _, path := range []string{runtimeEnvPath, statePath, manifestPath} {
+		if inspectPath(path) != nil {
+			return pendingInstallSnapshot{}, existingInstallUnrecognized
+		}
+	}
 	manifestContent, err := readFile(manifestPath)
 	if err != nil {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
 	}
 	var manifest deploymentManifest
-	if err := json.Unmarshal(manifestContent, &manifest); err != nil || manifest.SchemaVersion != 1 || ValidateInstallPlan(manifest.Plan) != nil {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
+	if err := json.Unmarshal(manifestContent, &manifest); err != nil || manifest.SchemaVersion != 1 || strings.TrimSpace(manifest.InstallationID) == "" {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	manifest.Plan.RuntimeDir = filepath.Dir(manifestPath)
+	if ValidateInstallPlan(manifest.Plan) != nil {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	stateContent, err := readFile(statePath)
+	if err != nil {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	var state setup.InstallState
+	if err := json.Unmarshal(stateContent, &state); err != nil {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	if state.EverCompleted || state.Phase == setup.InstallPhaseCompleted {
+		return pendingInstallSnapshot{Plan: manifest.Plan, State: state, Manifest: manifest}, existingInstallCompleted
+	}
+	if state.Validate() != nil || state.Phase != setup.InstallPhasePending || state.InstallationID != manifest.InstallationID {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	runtimeContent, err := readFile(runtimeEnvPath)
+	if err != nil {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	document, err := config.ParseRuntimeEnv(runtimeContent)
+	if err != nil || document.Values["INSTALLATION_ID"] != manifest.InstallationID || document.Values["SETUP_TOKEN"] == "" {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	setupCompleted, err := strconv.ParseBool(document.Values["SETUP_COMPLETED"])
+	if err != nil {
+		return pendingInstallSnapshot{}, existingInstallUnrecognized
+	}
+	if setupCompleted {
+		return pendingInstallSnapshot{Plan: manifest.Plan, State: state, Manifest: manifest, Runtime: document}, existingInstallCompleted
+	}
+	snapshot := pendingInstallSnapshot{
+		Result: InstallResult{RuntimeEnvPath: runtimeEnvPath, ManifestPath: manifestPath, SetupToken: document.Values["SETUP_TOKEN"]},
+		Plan:   manifest.Plan, State: state, Manifest: manifest, Runtime: document,
 	}
 	expectedFiles, err := buildDeploymentFiles(manifest.Plan)
 	if err != nil || len(manifest.Files) != len(expectedFiles) {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
+		snapshot.GeneratedStale = true
+		return snapshot, existingInstallPending
 	}
 	for _, file := range expectedFiles {
 		relativePath := filepath.ToSlash(file.RelativePath)
 		wantHash, exists := manifest.Files[relativePath]
-		if !exists {
-			return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
+		path := filepath.Join(filepath.Dir(manifestPath), file.RelativePath)
+		if inspectPath(path) != nil {
+			return pendingInstallSnapshot{}, existingInstallUnrecognized
 		}
-		content, err := readFile(filepath.Join(filepath.Dir(manifestPath), file.RelativePath))
-		if err != nil {
-			return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
+		content, readErr := readFile(path)
+		if !exists || readErr != nil {
+			snapshot.GeneratedStale = true
+			continue
 		}
 		digest := sha256.Sum256(content)
 		if fmt.Sprintf("%x", digest) != wantHash {
-			return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
+			snapshot.GeneratedStale = true
 		}
 	}
-	stateContent, err := readFile(statePath)
-	if err != nil {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
-	}
-	var state setup.InstallState
-	if err := json.Unmarshal(stateContent, &state); err != nil {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
-	}
-	if state.EverCompleted || state.Phase == setup.InstallPhaseCompleted {
-		return InstallResult{}, manifest.Plan, existingInstallCompleted
-	}
-	if state.Validate() != nil || state.Phase != setup.InstallPhasePending || state.InstallationID != manifest.InstallationID {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
-	}
-	runtimeContent, err := readFile(runtimeEnvPath)
-	if err != nil {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
-	}
-	document, err := config.ParseRuntimeEnv(runtimeContent)
-	if err != nil || document.Values["INSTALLATION_ID"] != manifest.InstallationID || document.Values["SETUP_TOKEN"] == "" {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
-	}
-	setupCompleted, err := strconv.ParseBool(document.Values["SETUP_COMPLETED"])
-	if err != nil {
-		return InstallResult{}, InstallPlan{}, existingInstallUnrecognized
-	}
-	if setupCompleted {
-		return InstallResult{}, manifest.Plan, existingInstallCompleted
-	}
-	return InstallResult{RuntimeEnvPath: runtimeEnvPath, ManifestPath: manifestPath, SetupToken: document.Values["SETUP_TOKEN"]}, manifest.Plan, existingInstallPending
+	return snapshot, existingInstallPending
+}
+
+func installPlansEqual(left, right InstallPlan) bool {
+	left.RuntimeDir = filepath.Clean(left.RuntimeDir)
+	right.RuntimeDir = filepath.Clean(right.RuntimeDir)
+	return reflect.DeepEqual(left, right)
 }
