@@ -349,13 +349,15 @@ export type CashierOptions = {
   order_timeout_seconds: number
 }
 export type CashierPurchaseType = 'plan' | 'custom_amount' | string
-export type PaymentProviderType = 'alipay_direct' | 'wxpay_direct' | 'easypay_alipay' | 'easypay_wxpay' | 'mock' | 'jeepay_alipay' | 'jeepay_wxpay' | string
+export type PaymentProviderType = 'alipay_direct' | 'wxpay_direct' | 'easypay_alipay' | 'easypay_wxpay' | 'mock' | 'jeepay_alipay' | 'jeepay_wxpay' | 'stripe' | string
 export type PaymentSchedulerStrategy = 'round_robin' | 'random' | string
 export type PaymentDisplay = {
   type: 'qr_code' | 'redirect' | 'form_html' | 'form' | 'jsapi' | 'mock' | 'none' | string
   qr_code?: string
   payment_url?: string
   client_token?: string
+  client_secret?: string
+  publishable_key?: string
   form_html?: string
   expires_at?: string | null
 }

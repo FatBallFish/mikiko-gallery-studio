@@ -52,6 +52,7 @@ type QueryProviderBuilders struct {
 	WxPayDirect  QueryOrderStatusBuilder
 	EasyPay      QueryOrderStatusBuilder
 	JeePay       QueryOrderStatusBuilder
+	Stripe       QueryOrderStatusBuilder
 }
 
 type QueryAdapterRegistry struct {
@@ -71,6 +72,7 @@ func NewQueryAdapterRegistryWithBuilders(builders QueryProviderBuilders) *QueryA
 	registry.Register("easypay_wxpay", builders.EasyPay)
 	registry.Register("jeepay_alipay", builders.JeePay)
 	registry.Register("jeepay_wxpay", builders.JeePay)
+	registry.Register("stripe", builders.Stripe)
 	return registry
 }
 

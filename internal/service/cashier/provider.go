@@ -60,7 +60,7 @@ func NormalizeProviderInstance(req domaincashier.ProviderInstance, instanceID in
 
 func ProviderTypeAllowed(providerType string) bool {
 	switch providerType {
-	case "mock", "alipay_direct", "wxpay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay":
+	case "mock", "alipay_direct", "wxpay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "stripe":
 		return true
 	default:
 		return false
@@ -76,6 +76,8 @@ func ProviderSupportsMethod(providerType, method string) bool {
 		return method == "alipay"
 	case "wxpay_direct", "easypay_wxpay", "jeepay_wxpay":
 		return method == "wxpay"
+	case "stripe":
+		return method == "stripe"
 	default:
 		return false
 	}
@@ -87,6 +89,8 @@ func DefaultMethodsForProviderType(providerType string) []string {
 		return []string{"wxpay"}
 	case "mock":
 		return []string{"mock"}
+	case "stripe":
+		return []string{"stripe"}
 	default:
 		return []string{"alipay"}
 	}
@@ -164,6 +168,7 @@ func ValidateProviderConfiguration(providerType string, config map[string]any) e
 	requirements := map[string][]string{
 		"jeepay_alipay": {"gateway_url", "mch_no", "app_id", "key", "way_code"},
 		"jeepay_wxpay":  {"gateway_url", "mch_no", "app_id", "key", "way_code"},
+		"stripe":        {"publishable_key", "secret_key", "webhook_secret"},
 	}
 	required := requirements[strings.ToLower(strings.TrimSpace(providerType))]
 	missing := make([]string, 0)

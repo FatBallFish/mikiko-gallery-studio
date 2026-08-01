@@ -7,10 +7,11 @@ export const cashierProviderLabels = {
   easypay_wxpay: '易支付 · 微信',
   jeepay_alipay: 'JeePay · 支付宝',
   jeepay_wxpay: 'JeePay · 微信',
+  stripe: 'Stripe',
   mock: 'Mock 测试',
 } as const satisfies Record<PaymentProviderType, string>
 
-export const cashierProviderTypes: PaymentProviderType[] = ['mock', 'alipay_direct', 'wxpay_direct', 'easypay_alipay', 'easypay_wxpay', 'jeepay_alipay', 'jeepay_wxpay']
+export const cashierProviderTypes: PaymentProviderType[] = ['mock', 'alipay_direct', 'wxpay_direct', 'easypay_alipay', 'easypay_wxpay', 'jeepay_alipay', 'jeepay_wxpay', 'stripe']
 
 export const cashierProviderInstanceFieldHints = {
   sortOrder: '同一支付方式下排序越小越优先；排序相同再按调度策略选择实例。',
@@ -27,6 +28,7 @@ export function cashierProviderLabel(providerType: PaymentProviderType | string)
 
 export function cashierProviderTypesForMethod(method: string): PaymentProviderType[] {
   if (method === 'mock') return ['mock']
+  if (method === 'stripe') return ['stripe']
   if (method === 'wxpay') return ['wxpay_direct', 'easypay_wxpay', 'jeepay_wxpay', 'mock']
   return ['alipay_direct', 'easypay_alipay', 'jeepay_alipay', 'mock']
 }
@@ -35,6 +37,7 @@ const supportedMethodLabels: Record<string, string> = {
   alipay: '支付宝',
   wxpay: '微信支付',
   mock: 'Mock 测试',
+  stripe: 'Stripe',
 }
 
 export type CashierSupportedMethodOption = {
@@ -144,6 +147,13 @@ const providerConfigGuides: Record<string, CashierProviderConfigGuide> = {
     detail: '填写 JeePay 网关、商户号、应用 ID、密钥和 way_code；可用模板补齐常见 wayCode 与 channel_extra。',
     requiredFields: ['gateway_url', 'mch_no', 'app_id', 'key', 'way_code'],
     optionalFields: ['payment_mode', 'notify_url', 'return_url', 'client_ip', 'channel_extra'],
+    secretHint: defaultSecretHint,
+  },
+  stripe: {
+    title: 'Stripe 配置',
+    detail: '使用 PaymentIntent 与 Payment Element 完成银行卡支付；当前收银台按 CNY 结算。',
+    requiredFields: ['publishable_key', 'secret_key', 'webhook_secret'],
+    optionalFields: ['notify_url', 'return_url'],
     secretHint: defaultSecretHint,
   },
 }
@@ -271,6 +281,13 @@ const providerConfigFields: Record<string, LegacyCashierProviderConfigField[]> =
     { key: 'app_id', label: '应用 ID', hint: 'JeePay 应用 ID。', secret: true, required: true },
     { key: 'key', label: '商户密钥', hint: 'JeePay 签名密钥，保存后不回显。', secret: true, required: true },
   ],
+  stripe: [
+    { key: 'notify_url', label: '异步回调地址', hint: 'Stripe Webhook 地址。' },
+    { key: 'return_url', label: '同步返回地址', hint: '支付完成后的用户返回地址。' },
+    { key: 'publishable_key', label: 'Publishable key', hint: 'Stripe 可公开的 pk_ 开头密钥。', placeholder: 'pk_test_...', required: true },
+    { key: 'secret_key', label: 'Secret key', hint: 'Stripe sk_ 开头密钥，保存后不回显。', placeholder: 'sk_test_...', secret: true, required: true },
+    { key: 'webhook_secret', label: 'Webhook signing secret', hint: 'Stripe whsec_ 开头签名密钥，保存后不回显。', placeholder: 'whsec_...', secret: true, required: true },
+  ],
 }
 
 export function cashierProviderConfigFields(providerType: PaymentProviderType | string): CashierProviderConfigField[] {
@@ -352,6 +369,7 @@ export function updateCashierJeePayStructuredConfig(rawConfig: string, patch: Pa
 }
 
 function methodsForProviderType(providerType: PaymentProviderType | string) {
+  if (providerType === 'stripe') return ['stripe']
   if (providerType === 'wxpay_direct' || providerType === 'easypay_wxpay' || providerType === 'jeepay_wxpay') return ['wxpay']
   if (providerType === 'mock') return ['mock']
   return ['alipay']

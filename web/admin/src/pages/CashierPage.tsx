@@ -164,7 +164,7 @@ const schedulerOptions: Array<{ value: PaymentSchedulerStrategy; label: string }
   { value: 'random', label: '随机调度' },
 ]
 
-const commonVisibleMethodOptions = ['mock', 'alipay', 'wxpay']
+const commonVisibleMethodOptions = ['mock', 'alipay', 'wxpay', 'stripe']
 
 export function CashierPage({
   onFeedback,

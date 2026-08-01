@@ -1,4 +1,5 @@
 import { cashierJeePayConfigFields, cashierJeePayStructuredConfig, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderLabels, cashierProviderSupportedMethodOptions, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod, updateCashierJeePayStructuredConfig } from './cashierProviderOptions'
+import { cashierProviderConfigFields, cashierProviderTypes } from './cashierProviderOptions'
 
 type ContainsPlaceholder<T extends string> = T extends `${string}占位${string}` | `${string}placeholder${string}` | `${string}Placeholder${string}` ? true : false
 type AssertNoPlaceholder<T extends false> = T
@@ -33,6 +34,15 @@ if (wxpayMethodOptions.length !== 1 || wxpayMethodOptions[0]?.value !== 'wxpay' 
 const mockMethodOptions = cashierProviderSupportedMethodOptions('mock', 'mock')
 if (mockMethodOptions.length !== 1 || mockMethodOptions[0]?.value !== 'mock' || mockMethodOptions[0]?.label !== 'Mock 测试' || mockMethodOptions[0]?.checked !== true) {
   throw new Error(`mock provider should expose an operator-facing supported method option, got ${JSON.stringify(mockMethodOptions)}`)
+}
+
+if (!cashierProviderTypes.includes('stripe') || cashierProviderSupportedMethodOptions('stripe', 'stripe')[0]?.value !== 'stripe') {
+  throw new Error('Stripe must be registered as a provider with the stripe visible method')
+}
+const stripeFields = cashierProviderConfigFields('stripe')
+for (const [key, storage] of [['publishable_key', 'config'], ['secret_key', 'secret'], ['webhook_secret', 'secret']] as const) {
+  const field = stripeFields.find((item) => item.key === key)
+  if (!field || field.storage !== storage || !field.required) throw new Error(`invalid Stripe field ${key}: ${JSON.stringify(field)}`)
 }
 
 for (const option of [...alipayMethodOptions, ...wxpayMethodOptions, ...mockMethodOptions]) {

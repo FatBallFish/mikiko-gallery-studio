@@ -157,6 +157,7 @@ function browserOrigin(): string {
 
 function defaultMethod(providerType: PaymentProviderType): string {
   if (providerType === 'mock') return 'mock'
+  if (providerType === 'stripe') return 'stripe'
   if (providerType.includes('wxpay')) return 'wxpay'
   return 'alipay'
 }

@@ -35,6 +35,7 @@ type RefundProviderBuilders struct {
 	WxPayDirect  RefundPaymentBuilder
 	EasyPay      RefundPaymentBuilder
 	JeePay       RefundPaymentBuilder
+	Stripe       RefundPaymentBuilder
 }
 
 type RefundAdapterRegistry struct {
@@ -54,6 +55,7 @@ func NewRefundAdapterRegistryWithBuilders(builders RefundProviderBuilders) *Refu
 	registry.Register("easypay_wxpay", builders.EasyPay)
 	registry.Register("jeepay_alipay", builders.JeePay)
 	registry.Register("jeepay_wxpay", builders.JeePay)
+	registry.Register("stripe", builders.Stripe)
 	return registry
 }
 
