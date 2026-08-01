@@ -225,17 +225,66 @@ env \
   sh "$CHECKOUT/scripts/install.sh" status
 [[ $(cat "$non_git_path_log") == "status" ]] || fail "non-Git checkout did not preserve PATH-first behavior"
 
+success_home="$TMP_ROOT/success-home"
+mkdir -p "$success_home"
 success_install="$TMP_ROOT/success bin"
 success_log="$TMP_ROOT/success-exec.log"
 success_source_log="$TMP_ROOT/success-source.log"
 success_output=$(env \
-  PATH="$BASE_PATH" HOME="$TMP_ROOT/home" MGSCTL_INSTALL_DIR="$success_install" \
+  PATH="$BASE_PATH" HOME="$success_home" SHELL=/bin/zsh MGSCTL_INSTALL_DIR="$success_install" \
   FAKE_CURL_MODE=success FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$success_log" FAKE_SOURCE_LOG="$success_source_log" \
   sh "$CHECKOUT/scripts/install.sh" version --json 2>&1)
 [[ -x "$success_install/mgsctl" ]] || fail "verified release was not installed persistently"
 [[ $(cat "$success_log") == "version --json" ]] || fail "installed mgsctl did not receive original arguments"
 [[ $(cat "$success_source_log") == "$CHECKOUT" ]] || fail "installed mgsctl did not receive the complete source checkout path"
 assert_contains "$success_output" "$success_install/mgsctl"
+path_marker='# >>> mikiko-gallery-studio mgsctl >>>'
+path_export="export PATH=\"$success_install:\$PATH\""
+for profile in "$success_home/.profile" "$success_home/.zshrc"; do
+  assert_contains "$(cat "$profile")" "$path_marker"
+  assert_contains "$(cat "$profile")" "$path_export"
+done
+
+env \
+  PATH="$BASE_PATH" HOME="$success_home" SHELL=/bin/zsh MGSCTL_INSTALL_DIR="$success_install" \
+  FAKE_CURL_MODE=success FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$success_log" FAKE_SOURCE_LOG="$success_source_log" \
+  sh "$CHECKOUT/scripts/install.sh" status >/dev/null 2>&1
+for profile in "$success_home/.profile" "$success_home/.zshrc"; do
+  [[ $(grep -F -c "$path_marker" "$profile") -eq 1 ]] || fail "PATH marker was duplicated in $profile"
+done
+[[ $(cat "$success_log") == "status" ]] || fail "repeated install did not execute the installed binary by absolute path"
+
+bash_home="$TMP_ROOT/bash-home"
+mkdir -p "$bash_home"
+env \
+  PATH="$BASE_PATH" HOME="$bash_home" SHELL=/bin/bash MGSCTL_INSTALL_DIR="$TMP_ROOT/bash-bin" \
+  FAKE_CURL_MODE=success FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$TMP_ROOT/bash-exec.log" FAKE_SOURCE_LOG="$TMP_ROOT/bash-source.log" \
+  sh "$CHECKOUT/scripts/install.sh" version >/dev/null 2>&1
+assert_contains "$(cat "$bash_home/.bashrc")" "$path_marker"
+
+in_path_home="$TMP_ROOT/in-path-home"
+in_path_install="$TMP_ROOT/in-path-bin"
+mkdir -p "$in_path_home" "$in_path_install"
+env \
+  PATH="$in_path_install:$BASE_PATH" HOME="$in_path_home" SHELL=/bin/zsh MGSCTL_INSTALL_DIR="$in_path_install" \
+  FAKE_CURL_MODE=success FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$TMP_ROOT/in-path-exec.log" FAKE_SOURCE_LOG="$TMP_ROOT/in-path-source.log" \
+  sh "$CHECKOUT/scripts/install.sh" version >/dev/null 2>&1
+[[ ! -e "$in_path_home/.profile" && ! -e "$in_path_home/.zshrc" ]] || fail "profiles changed when install directory was already in PATH"
+
+symlink_home="$TMP_ROOT/symlink-home"
+mkdir -p "$symlink_home"
+symlink_target="$TMP_ROOT/profile-target"
+printf 'preserve me\n' > "$symlink_target"
+ln -s "$symlink_target" "$symlink_home/.profile"
+set +e
+env \
+  PATH="$BASE_PATH" HOME="$symlink_home" SHELL=/bin/zsh MGSCTL_INSTALL_DIR="$TMP_ROOT/symlink-bin" \
+  FAKE_CURL_MODE=success FAKE_RELEASE_BINARY="$RELEASE_BINARY" FAKE_RELEASE_SHA="$RELEASE_SHA" FAKE_EXEC_LOG="$TMP_ROOT/symlink-exec.log" FAKE_SOURCE_LOG="$TMP_ROOT/symlink-source.log" \
+  sh "$CHECKOUT/scripts/install.sh" version >/dev/null 2>&1
+symlink_status=$?
+set -e
+[[ $symlink_status -ne 0 ]] || fail "symlinked shell profile was accepted"
+[[ $(cat "$symlink_target") == "preserve me" ]] || fail "symlinked shell profile target changed"
 
 fallback_install="$TMP_ROOT/fallback bin"
 fallback_log="$TMP_ROOT/fallback-exec.log"
