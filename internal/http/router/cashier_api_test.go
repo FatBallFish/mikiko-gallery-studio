@@ -35,6 +35,7 @@ import (
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	stripe "github.com/stripe/stripe-go/v85"
+	"github.com/stripe/stripe-go/v85/webhook"
 )
 
 func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
@@ -621,6 +622,88 @@ func TestCashierStripeOrderCreatesPaymentIntentAndPersistsNarrowDisplay(t *testi
 		if bytes.Contains(createRec.Body.Bytes(), []byte(secret)) {
 			t.Fatalf("Stripe order response leaked secret %q", secret)
 		}
+	}
+}
+
+func TestCashierStripeWebhookVerifiesExactBodyAndCreditsOnce(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"pi_webhook_route","object":"payment_intent","amount":1025,"currency":"cny","client_secret":"pi_webhook_route_secret_client","status":"requires_payment_method"}`))
+	}))
+	defer upstream.Close()
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	handler, userToken := setupStripeCashierTest(t, "cashier-stripe-webhook-user@example.com")
+	order := createStripeCustomAmountOrderForWebhookTest(t, handler, userToken, "10.25")
+	payload := func(eventID, eventType string, amountFen int64) []byte {
+		return []byte(fmt.Sprintf(`{"id":%q,"object":"event","api_version":%q,"type":%q,"data":{"object":{"id":"pi_webhook_route","object":"payment_intent","amount":%d,"currency":"cny","metadata":{"order_no":%q},"status":"succeeded"}}}`, eventID, stripe.APIVersion, eventType, amountFen, order.OrderNo))
+	}
+	send := func(body []byte, signature string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/stripe", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Stripe-Signature", signature)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	sign := func(body []byte) string {
+		return webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: body, Secret: "whsec_route"}).Header
+	}
+
+	tamperedOriginal := payload("evt_tampered", "payment_intent.succeeded", 1025)
+	tampered := append([]byte(nil), tamperedOriginal...)
+	tampered[len(tampered)-2] = 'x'
+	if rec := send(tampered, sign(tamperedOriginal)); rec.Code != http.StatusBadRequest || !bytes.Contains(rec.Body.Bytes(), []byte("PAYMENT_SIGNATURE_INVALID")) {
+		t.Fatalf("expected tampered Stripe body to fail signature verification, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	unrelated := payload("evt_unrelated", "customer.created", 1025)
+	if rec := send(unrelated, sign(unrelated)); rec.Code != http.StatusOK {
+		t.Fatalf("expected unrelated Stripe event 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	failed := payload("evt_failed", "payment_intent.payment_failed", 1025)
+	if rec := send(failed, sign(failed)); rec.Code != http.StatusOK {
+		t.Fatalf("expected failed Stripe event acknowledgement, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" || pending.LedgerID != 0 {
+		t.Fatalf("non-success Stripe events mutated order %#v", pending)
+	}
+
+	mismatch := payload("evt_mismatch", "payment_intent.succeeded", 1000)
+	if rec := send(mismatch, sign(mismatch)); rec.Code != http.StatusConflict || !bytes.Contains(rec.Body.Bytes(), []byte("PAYMENT_AMOUNT_MISMATCH")) {
+		t.Fatalf("expected Stripe amount mismatch 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	success := payload("evt_success", "payment_intent.succeeded", 1025)
+	if rec := send(success, sign(success)); rec.Code != http.StatusOK {
+		t.Fatalf("expected Stripe success webhook 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if completed.Status != "completed" || completed.TradeNo != "pi_webhook_route" || completed.LedgerID == 0 {
+		t.Fatalf("expected completed Stripe order, got %#v", completed)
+	}
+	if rec := send(success, sign(success)); rec.Code != http.StatusOK {
+		t.Fatalf("expected duplicate Stripe webhook 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	duplicate := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if duplicate.LedgerID != completed.LedgerID || duplicate.TradeNo != completed.TradeNo {
+		t.Fatalf("duplicate Stripe event was not idempotent: first=%#v second=%#v", completed, duplicate)
+	}
+
+	balanceReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/balance", nil)
+	balanceReq.Header.Set("Authorization", "Bearer "+userToken)
+	balanceRec := httptest.NewRecorder()
+	handler.ServeHTTP(balanceRec, balanceReq)
+	var balanceResp struct {
+		Data domainbilling.BalanceSummary `json:"data"`
+	}
+	if balanceRec.Code != http.StatusOK || json.NewDecoder(balanceRec.Body).Decode(&balanceResp) != nil {
+		t.Fatalf("load Stripe balance: status=%d body=%s", balanceRec.Code, balanceRec.Body.String())
+	}
+	if balanceResp.Data.RechargePoints != order.Points || balanceResp.Data.AvailablePoints != order.Points {
+		t.Fatalf("expected Stripe webhook to credit once, got %#v", balanceResp.Data)
 	}
 }
 
@@ -2178,6 +2261,25 @@ func setupStripeCashierTest(t *testing.T, userEmail string) (http.Handler, strin
 	providerBody := `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"publishable_key":"pk_test_route"},"secrets":{"secret_key":"sk_test_route","webhook_secret":"whsec_route"}}`
 	createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
 	return handler, userSession.AccessToken
+}
+
+func createStripeCustomAmountOrderForWebhookTest(t *testing.T, handler http.Handler, userToken, amountCNY string) domainbilling.PaymentOrder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"`+amountCNY+`","visible_method":"stripe"}`))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected Stripe order create 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data domainbilling.PaymentOrder `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode Stripe order: %v", err)
+	}
+	return resp.Data
 }
 
 func setupJeePayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string) {

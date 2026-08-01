@@ -3,11 +3,14 @@ package cashier
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 	stripe "github.com/stripe/stripe-go/v85"
+	"github.com/stripe/stripe-go/v85/webhook"
 )
 
 type recordingStripePaymentIntents struct {
@@ -94,5 +97,24 @@ func TestStripePaymentIntentBuilderCreatesExactIdempotentIntent(t *testing.T) {
 func TestStripeAmountFenFromCNYRejectsFractionalFen(t *testing.T) {
 	if _, err := StripeAmountFenFromCNY("10.251"); err == nil {
 		t.Fatal("expected fractional fen amount to be rejected")
+	}
+}
+
+func TestStripeWebhookParsesSignedPaymentIntentFromExactBody(t *testing.T) {
+	payload := []byte(fmt.Sprintf(`{"id":"evt_stripe_success","object":"event","api_version":%q,"type":"payment_intent.succeeded","data":{"object":{"id":"pi_webhook_123","object":"payment_intent","amount":1025,"currency":"cny","metadata":{"order_no":"PGO-STRIPE-WEBHOOK-001"},"status":"succeeded"}}}`, stripe.APIVersion))
+	signed := webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: payload, Secret: "whsec_test"})
+
+	event, err := ParseStripeWebhookEvent(payload, signed.Header, "whsec_test")
+	if err != nil {
+		t.Fatalf("parse signed Stripe webhook: %v", err)
+	}
+	if event.EventID != "evt_stripe_success" || event.Type != "payment_intent.succeeded" || event.PaymentIntentID != "pi_webhook_123" || event.OrderNo != "PGO-STRIPE-WEBHOOK-001" || event.AmountCNY != "10.25" || event.Currency != "cny" {
+		t.Fatalf("unexpected Stripe webhook event %#v", event)
+	}
+
+	tampered := append([]byte(nil), payload...)
+	tampered[len(tampered)-2] = 'x'
+	if _, err := ParseStripeWebhookEvent(tampered, signed.Header, "whsec_test"); !errors.Is(err, ErrStripeWebhookSignatureInvalid) {
+		t.Fatalf("expected tampered exact body to fail signature verification, got %v", err)
 	}
 }

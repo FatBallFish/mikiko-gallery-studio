@@ -2,6 +2,8 @@ package cashier
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -9,7 +11,19 @@ import (
 	"github.com/shopspring/decimal"
 	stripe "github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/paymentintent"
+	"github.com/stripe/stripe-go/v85/webhook"
 )
+
+var ErrStripeWebhookSignatureInvalid = errors.New("Stripe webhook signature is invalid")
+
+type StripeWebhookEvent struct {
+	EventID         string
+	Type            string
+	PaymentIntentID string
+	OrderNo         string
+	AmountCNY       string
+	Currency        string
+}
 
 // StripePaymentIntents is the subset of Stripe's client used by cashier flows.
 type StripePaymentIntents interface {
@@ -79,4 +93,24 @@ func StripeAmountFenFromCNY(amountCNY string) (int64, error) {
 		return 0, fmt.Errorf("Stripe payment amount is out of range")
 	}
 	return amountFen.Int64(), nil
+}
+
+func ParseStripeWebhookEvent(payload []byte, signature, webhookSecret string) (StripeWebhookEvent, error) {
+	event, err := webhook.ConstructEvent(payload, strings.TrimSpace(signature), strings.TrimSpace(webhookSecret))
+	if err != nil {
+		return StripeWebhookEvent{}, ErrStripeWebhookSignatureInvalid
+	}
+	parsed := StripeWebhookEvent{EventID: strings.TrimSpace(event.ID), Type: string(event.Type)}
+	if !strings.HasPrefix(parsed.Type, "payment_intent.") {
+		return parsed, nil
+	}
+	var intent stripe.PaymentIntent
+	if err := json.Unmarshal(event.Data.Raw, &intent); err != nil {
+		return StripeWebhookEvent{}, fmt.Errorf("decode Stripe PaymentIntent event: %w", err)
+	}
+	parsed.PaymentIntentID = strings.TrimSpace(intent.ID)
+	parsed.OrderNo = strings.TrimSpace(intent.Metadata["order_no"])
+	parsed.AmountCNY = decimal.NewFromInt(intent.Amount).Shift(-2).StringFixed(2)
+	parsed.Currency = strings.ToLower(strings.TrimSpace(string(intent.Currency)))
+	return parsed, nil
 }

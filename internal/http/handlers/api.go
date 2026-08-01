@@ -1672,6 +1672,15 @@ func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		writePaymentWebhookSuccess(w, providerCode)
 		return
 	}
+	if strings.EqualFold(providerCode, "stripe") {
+		_, appErr := a.handleStripeWebhook(r)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		writePaymentWebhookSuccess(w, providerCode)
+		return
+	}
 	var req struct {
 		OrderNo string `json:"order_no"`
 		TradeNo string `json:"trade_no"`
@@ -1792,6 +1801,66 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
 	}
 	return result, nil
+}
+
+const maxStripeWebhookBodyBytes = 1 << 20
+
+func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
+	body, readErr := io.ReadAll(io.LimitReader(r.Body, maxStripeWebhookBodyBytes+1))
+	if readErr != nil || len(body) > maxStripeWebhookBodyBytes {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid payment webhook body")
+	}
+	signature := strings.TrimSpace(r.Header.Get("Stripe-Signature"))
+	if signature == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
+	}
+
+	configured := false
+	var event cashierservice.StripeWebhookEvent
+	verified := false
+	for _, instance := range a.cashierProviderInstances(r.Context()) {
+		if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "stripe") || !instance.Enabled || instance.ConfigStatus != "configured" {
+			continue
+		}
+		webhookSecret := strings.TrimSpace(mapStringValue(instance.Config, "webhook_secret"))
+		if webhookSecret == "" {
+			continue
+		}
+		configured = true
+		parsed, err := cashierservice.ParseStripeWebhookEvent(body, signature, webhookSecret)
+		if err == nil {
+			event = parsed
+			verified = true
+			break
+		}
+	}
+	if !configured {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+	}
+	if !verified {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
+	}
+
+	switch event.Type {
+	case "payment_intent.payment_failed":
+		return domainbilling.PaymentOrder{}, nil
+	case "payment_intent.succeeded":
+		if event.Currency != "cny" || event.OrderNo == "" || event.PaymentIntentID == "" {
+			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
+		}
+		result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
+			Provider:  "stripe",
+			OrderNo:   event.OrderNo,
+			TradeNo:   event.PaymentIntentID,
+			AmountCNY: event.AmountCNY,
+		})
+		if err != nil {
+			return domainbilling.PaymentOrder{}, normalizeAppError(err)
+		}
+		return result, nil
+	default:
+		return domainbilling.PaymentOrder{}, nil
+	}
 }
 
 func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
