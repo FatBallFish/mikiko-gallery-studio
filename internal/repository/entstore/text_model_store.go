@@ -3,10 +3,14 @@ package entstore
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	domaintextmodel "github.com/fatballfish/pic-gallery/internal/domain/textmodel"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/textmodelaccount"
@@ -15,7 +19,8 @@ import (
 )
 
 type TextModelStore struct {
-	client *repoent.Client
+	client    *repoent.Client
+	defaultMu sync.Mutex
 }
 
 func NewTextModelStore(client *repoent.Client) *TextModelStore {
@@ -187,6 +192,8 @@ func (s *TextModelStore) DeleteModel(ctx context.Context, modelID int64) error {
 }
 
 func (s *TextModelStore) SetDefaultModel(ctx context.Context, modelID int64) (domaintextmodel.Model, error) {
+	s.defaultMu.Lock()
+	defer s.defaultMu.Unlock()
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
 		return domaintextmodel.Model{}, err
@@ -196,6 +203,9 @@ func (s *TextModelStore) SetDefaultModel(ctx context.Context, modelID int64) (do
 			return domaintextmodel.Model{}, fmt.Errorf("%w (rollback: %v)", cause, rollbackErr)
 		}
 		return domaintextmodel.Model{}, cause
+	}
+	if _, err := lockTextModelAccounts(ctx, tx); err != nil {
+		return rollback(err)
 	}
 	target, err := tx.TextModel.Query().Where(
 		textmodel.IDEQ(int(modelID)),
@@ -231,6 +241,100 @@ func (s *TextModelStore) SetDefaultModel(ctx context.Context, modelID int64) (do
 		return domaintextmodel.Model{}, err
 	}
 	return result, nil
+}
+
+func (s *TextModelStore) ReconcileDefaultModel(ctx context.Context, preferredModelID *int64) (domaintextmodel.DefaultSelection, error) {
+	s.defaultMu.Lock()
+	defer s.defaultMu.Unlock()
+
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domaintextmodel.DefaultSelection{}, err
+	}
+	rollback := func(cause error) (domaintextmodel.DefaultSelection, error) {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return domaintextmodel.DefaultSelection{}, fmt.Errorf("%w (rollback: %v)", cause, rollbackErr)
+		}
+		return domaintextmodel.DefaultSelection{}, cause
+	}
+	accounts, err := lockTextModelAccounts(ctx, tx)
+	if err != nil {
+		return rollback(err)
+	}
+	eligibleAccounts := make(map[int64]*repoent.TextModelAccount, len(accounts))
+	for _, account := range accounts {
+		if account.Enabled {
+			eligibleAccounts[int64(account.ID)] = account
+		}
+	}
+	models, err := tx.TextModel.Query().Where(textmodel.DeletedAtIsNil()).Order(repoent.Asc(textmodel.FieldID)).All(ctx)
+	if err != nil {
+		return rollback(err)
+	}
+	candidates := make([]*repoent.TextModel, 0, len(models))
+	for _, model := range models {
+		if model.Enabled && eligibleAccounts[model.AccountID] != nil {
+			candidates = append(candidates, model)
+		}
+	}
+
+	var selected *repoent.TextModel
+	for _, candidate := range candidates {
+		if candidate.IsDefault {
+			selected = candidate
+			break
+		}
+	}
+	if selected == nil && preferredModelID != nil {
+		for _, candidate := range candidates {
+			if int64(candidate.ID) == *preferredModelID {
+				selected = candidate
+				break
+			}
+		}
+	}
+	if selected == nil && len(candidates) == 1 {
+		selected = candidates[0]
+	}
+
+	clearQuery := tx.TextModel.Update().Where(textmodel.DeletedAtIsNil(), textmodel.IsDefaultEQ(true))
+	if selected != nil {
+		clearQuery = clearQuery.Where(textmodel.IDNEQ(selected.ID))
+	}
+	if _, err := clearQuery.SetIsDefault(false).AddVersion(1).Save(ctx); err != nil {
+		return rollback(err)
+	}
+	if selected == nil {
+		selectionErr := repoerr.ErrDefaultModelRequired
+		if len(candidates) == 0 {
+			selectionErr = repoerr.ErrNotFound
+		}
+		if err := tx.Commit(); err != nil {
+			return domaintextmodel.DefaultSelection{}, err
+		}
+		return domaintextmodel.DefaultSelection{}, selectionErr
+	}
+	if !selected.IsDefault {
+		selected, err = tx.TextModel.UpdateOneID(selected.ID).SetIsDefault(true).AddVersion(1).Save(ctx)
+		if err != nil {
+			return rollback(err)
+		}
+	}
+	account := eligibleAccounts[selected.AccountID]
+	result := domaintextmodel.DefaultSelection{Account: mapTextModelAccount(account), Model: mapTextModel(selected)}
+	if err := tx.Commit(); err != nil {
+		return domaintextmodel.DefaultSelection{}, err
+	}
+	return result, nil
+}
+
+func lockTextModelAccounts(ctx context.Context, tx *repoent.Tx) ([]*repoent.TextModelAccount, error) {
+	lockRows := predicate.TextModelAccount(func(selector *entsql.Selector) {
+		if selector.Dialect() != dialect.SQLite {
+			selector.ForUpdate()
+		}
+	})
+	return tx.TextModelAccount.Query().Where(textmodelaccount.DeletedAtIsNil(), lockRows).Order(repoent.Asc(textmodelaccount.FieldID)).All(ctx)
 }
 
 func (s *TextModelStore) GetDefaultModel(ctx context.Context) (domaintextmodel.AccountRecord, domaintextmodel.Model, error) {

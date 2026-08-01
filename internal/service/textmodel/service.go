@@ -94,6 +94,9 @@ func (s *Service) UpdateAccount(ctx context.Context, accountID int64, req domain
 	if err != nil {
 		return domaintextmodel.Account{}, mapStoreError(err)
 	}
+	if _, err := s.store.ReconcileDefaultModel(ctx, nil); err != nil && !errors.Is(err, repoerr.ErrNotFound) {
+		return domaintextmodel.Account{}, mapStoreError(err)
+	}
 	return accountView(saved), nil
 }
 
@@ -106,13 +109,26 @@ func (s *Service) CreateModel(ctx context.Context, req domaintextmodel.ModelWrit
 	if err != nil {
 		return domaintextmodel.Model{}, err
 	}
-	if _, err := s.store.GetAccount(ctx, model.AccountID); err != nil {
+	account, err := s.store.GetAccount(ctx, model.AccountID)
+	if err != nil {
 		return domaintextmodel.Model{}, mapStoreError(err)
 	}
 	model.Version = 1
 	created, err := s.store.CreateModel(ctx, model)
 	if err != nil {
 		return domaintextmodel.Model{}, mapStoreError(err)
+	}
+	if created.Enabled && account.Enabled {
+		selection, err := s.store.ReconcileDefaultModel(ctx, &created.ID)
+		if err != nil {
+			if errors.Is(err, repoerr.ErrNotFound) {
+				return created, nil
+			}
+			return domaintextmodel.Model{}, mapStoreError(err)
+		}
+		if selection.Model.ID == created.ID {
+			return selection.Model, nil
+		}
 	}
 	return created, nil
 }
@@ -139,11 +155,24 @@ func (s *Service) UpdateModel(ctx context.Context, modelID int64, req domaintext
 	if err != nil {
 		return domaintextmodel.Model{}, mapStoreError(err)
 	}
-	return updated, nil
+	if _, err := s.store.ReconcileDefaultModel(ctx, nil); err != nil && !errors.Is(err, repoerr.ErrNotFound) {
+		return domaintextmodel.Model{}, mapStoreError(err)
+	}
+	refreshed, err := s.store.GetModel(ctx, updated.ID)
+	if err != nil {
+		return domaintextmodel.Model{}, mapStoreError(err)
+	}
+	return refreshed, nil
 }
 
 func (s *Service) DeleteModel(ctx context.Context, modelID int64) error {
-	return mapStoreError(s.store.DeleteModel(ctx, modelID))
+	if err := s.store.DeleteModel(ctx, modelID); err != nil {
+		return mapStoreError(err)
+	}
+	if _, err := s.store.ReconcileDefaultModel(ctx, nil); err != nil && !errors.Is(err, repoerr.ErrNotFound) {
+		return mapStoreError(err)
+	}
+	return nil
 }
 
 func (s *Service) SetDefaultModel(ctx context.Context, modelID int64) (domaintextmodel.Model, error) {
@@ -155,15 +184,15 @@ func (s *Service) SetDefaultModel(ctx context.Context, modelID int64) (domaintex
 }
 
 func (s *Service) ResolveDefaultModel(ctx context.Context) (domaintextmodel.AccountRecord, domaintextmodel.Model, string, error) {
-	account, model, err := s.store.GetDefaultModel(ctx)
+	selection, err := s.store.ReconcileDefaultModel(ctx, nil)
 	if err != nil {
 		return domaintextmodel.AccountRecord{}, domaintextmodel.Model{}, "", mapStoreError(err)
 	}
-	apiKey, err := s.decryptAPIKey(account)
+	apiKey, err := s.decryptAPIKey(selection.Account)
 	if err != nil {
 		return domaintextmodel.AccountRecord{}, domaintextmodel.Model{}, "", err
 	}
-	return account, model, apiKey, nil
+	return selection.Account, selection.Model, apiKey, nil
 }
 
 func (s *Service) TestModelConnection(ctx context.Context, modelID int64) (ConnectionTestResult, error) {
@@ -322,6 +351,8 @@ func mapStoreError(err error) error {
 		return errs.New(404, errs.CodeNotFound, "text model configuration not found")
 	case errors.Is(err, repoerr.ErrConflict):
 		return errs.New(409, errs.CodeConflict, "text model configuration conflict")
+	case errors.Is(err, repoerr.ErrDefaultModelRequired):
+		return errs.New(409, errs.CodeTextModelDefaultRequired, "select a default text model before prompt optimization")
 	default:
 		return err
 	}

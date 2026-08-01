@@ -52,4 +52,5 @@ const (
 	CodePaymentAmountMismatch          = "PAYMENT_AMOUNT_MISMATCH"
 	CodeLoginRequiredGalleryDetail     = "LOGIN_REQUIRED_FOR_GALLERY_DETAIL"
 	CodeSignupTrialConfigInvalid       = "SIGNUP_TRIAL_CONFIG_INVALID"
+	CodeTextModelDefaultRequired       = "TEXT_MODEL_DEFAULT_REQUIRED"
 )
