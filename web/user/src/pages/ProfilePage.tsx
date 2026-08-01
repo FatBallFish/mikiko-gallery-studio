@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Balance, LedgerEntry, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
@@ -7,6 +7,7 @@ import { button as btn, card, form } from '../ui/redesign-classes'
 import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage } from '../useApiResource'
 import { balanceBucketLabel, bucketExpiryText, normalizeBalanceBuckets, profileLedgerRows } from './profileBalanceModel'
+import { RedeemCodeForm } from './RedeemCodeForm'
 
 const profileClasses = {
   content: 'w-full flex-1 p-6 md:p-10',
@@ -18,7 +19,6 @@ const profileClasses = {
   balanceDisplay: 'mb-8',
   balanceNum: 'num mb-2 text-[64px] leading-none text-[var(--accent)]',
   balanceLabel: 'text-sm text-[var(--muted)]',
-  redeemForm: 'grid gap-3',
   planBlock: 'mt-8 border-t border-[var(--border)] pt-6',
   planRow: 'mb-3 flex justify-between gap-3 text-sm',
   planLabel: 'text-[var(--muted)]',
@@ -58,7 +58,6 @@ export function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [balance, setBalance] = useState<Balance | null>(null)
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
-  const [redeem, setRedeem] = useState('WELCOME-2026')
   const [showRedeemInput, setShowRedeemInput] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -78,20 +77,6 @@ export function ProfilePage() {
   }
 
   useEffect(() => { void load() }, [])
-
-  async function redeemCode(event: FormEvent) {
-    event.preventDefault()
-    setBusy(true)
-    try {
-      await userApi.redeemCode(redeem)
-      await Promise.all([load(), app.refreshAccount()])
-      app.notify('success', '兑换成功，余额已更新')
-    } catch (err) {
-      app.notify('error', errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function saveProfile(patch: Partial<UserProfile>) {
     setBusy(true)
@@ -127,10 +112,7 @@ export function ProfilePage() {
               <button className={cn(btn.base, btn.primary)} type="button" onClick={() => app.navigate('checkout')}>充值积分</button>
               <button className={btn.base} type="button" onClick={() => setShowRedeemInput((v) => !v)}>{showRedeemInput ? '取消' : '使用兑换码'}</button>
               {showRedeemInput ? (
-                <form onSubmit={redeemCode} className={profileClasses.redeemForm}>
-                  <input className={form.input} value={redeem} onChange={(event) => setRedeem(event.target.value)} placeholder="输入兑换码" />
-                  <button className={cn(btn.base, btn.primary)} type="submit" disabled={busy}>{busy ? '处理中...' : '确认兑换'}</button>
-                </form>
+                <RedeemCodeForm onRedeemed={() => Promise.all([load(), app.refreshAccount()]).then(() => undefined)} />
               ) : null}
             </div>
             <div className={profileClasses.planBlock}>

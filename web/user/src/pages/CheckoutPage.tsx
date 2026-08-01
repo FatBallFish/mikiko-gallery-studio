@@ -12,6 +12,7 @@ import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutDateTime, checkoutMoney, checkoutOrderActionState, checkoutOrderRuntimeState, checkoutPaymentMethodLabel, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
+import { RedeemCodeForm } from './RedeemCodeForm'
 
 const StripePaymentPanel = lazy(async () => ({ default: (await import('./StripePaymentPanel')).StripePaymentPanel }))
 
@@ -452,6 +453,14 @@ export function CheckoutPage() {
             ))}
           </div>
         ) : null}
+      </section>
+
+      <section className="mt-10 grid max-w-xl gap-4 border-t border-[var(--border)] pt-8" aria-label="兑换积分">
+        <div>
+          <h2 className="m-0 text-lg font-black text-[var(--fg)]">兑换积分</h2>
+          <p className="m-0 mt-1 text-sm text-[var(--muted)]">输入有效兑换码后，积分会直接进入账户余额。</p>
+        </div>
+        <RedeemCodeForm onRedeemed={() => Promise.all([app.refreshAccount(), loadRecentOrders()]).then(() => undefined)} />
       </section>
 
       {paymentModalOpen && order ? (
