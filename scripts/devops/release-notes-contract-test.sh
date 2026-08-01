@@ -5,6 +5,12 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 RENDERER="$ROOT/scripts/devops/render-release-notes.sh"
 TEMPLATE="$ROOT/.github/release-notes-template.md"
 
+# Git hooks export repository-local variables that would redirect fixture commands
+# back into the source repository instead of the temporary repositories below.
+while IFS= read -r git_env_var; do
+  [[ -n "$git_env_var" ]] && unset "$git_env_var"
+done < <(git rev-parse --local-env-vars 2>/dev/null || true)
+
 fail() {
   echo "release notes contract failed: $*" >&2
   exit 1
