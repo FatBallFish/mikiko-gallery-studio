@@ -9,7 +9,9 @@ import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { FilterBar, ListPage, Pager } from '../ui/dataTable'
 import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashierJeePayWayCodeTemplates'
 import { cashierAdminDateTime, cashierManualCompletionProviderOptions, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel, cashierProviderConfigStatusLabel, cashierProviderSupportedMethodsLabel, cashierWebhookEventTypeLabel, cashierWebhookProviderLabel } from './cashierPaymentDisplay'
-import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
+import { CashierPlanEditorDialog } from './CashierPlanEditorDialog'
+import { cashierPlanDraftFromRow, cashierPlanEmptyDraft, cashierPlanPayloadFromDraft, type CashierPlanDraft } from './cashierPlanDraft'
+import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSectionCopy } from './cashierPlanPurchase'
 import { cashierProviderConfigFields, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod } from './cashierProviderOptions'
 import type { CashierProviderConfigField } from './cashierProviderOptions'
 import { cashierOrderRiskRows, cashierWebhookRiskRow } from './cashierRiskRows'
@@ -24,7 +26,6 @@ import {
   cashierEnabledBadge,
   cashierOrderStatusBadge,
   cashierPlanStatusBadge,
-  cashierPlanStatusOptions,
   cashierPlanTypeLabel,
   cashierVisibleFlagLabel,
   cashierWebhookStatusBadge,
@@ -40,22 +41,6 @@ type CashierData = {
   orders: PageResult<PaymentOrder>
   events: PageResult<PaymentWebhookEvent>
   trial: CashierTrialConfigSummary
-}
-
-type PlanDraft = {
-  row?: CashierPlan
-  plan_code: string
-  plan_name: string
-  plan_type: string
-  purchase_enabled: boolean
-  status: string
-  price_cny: string
-  points: string
-  bonus_points: string
-  duration_days: string
-  currency: string
-  sort_order: string
-  description: string
 }
 
 type InstanceDraft = {
@@ -217,7 +202,7 @@ export function CashierPage({
   const [customDraft, setCustomDraft] = useState<CashierCustomAmountConfig | null>(null)
   const [trialDraft, setTrialDraft] = useState<CashierTrialConfigDraft | null>(null)
   const [methodsDraft, setMethodsDraft] = useState<PaymentVisibleMethod[]>([])
-  const [planDialog, setPlanDialog] = useState<PlanDraft | null>(null)
+  const [planDialog, setPlanDialog] = useState<CashierPlanDraft | null>(null)
   const [instanceDialog, setInstanceDialog] = useState<InstanceDraft | null>(null)
   const [orderDetail, setOrderDetail] = useState<PaymentOrder | null>(null)
   const [completeDialog, setCompleteDialog] = useState<CompleteOrderDraft | null>(null)
@@ -394,7 +379,7 @@ export function CashierPage({
     setSavingPlan(true)
     setError(null)
     try {
-      const payload = cashierPlanSavePayload(planDialog)
+      const payload = cashierPlanPayloadFromDraft(planDialog)
       if (planDialog.row) await adminApi.updateCashierPlan(planDialog.row.id, payload)
       else await adminApi.createCashierPlan(payload)
       setPlanDialog(null)
@@ -760,7 +745,7 @@ export function CashierPage({
               {isPackagesPage ? (
                 <button type="button" className={cn(adminButton.base, adminButton.ghost)} aria-expanded={customAmountOpen} onClick={() => setCustomAmountOpen((value) => !value)}>自定义金额</button>
               ) : null}
-              <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => setPlanDialog(newPlanDraft())}>新增套餐</button>
+              <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => setPlanDialog(cashierPlanEmptyDraft())}>新增套餐</button>
             </>}
           >
             {!isPackagesPage ? (
@@ -790,7 +775,7 @@ export function CashierPage({
                       <div className="font-mono text-base font-semibold text-[var(--accent)]">¥ {Number(plan.price_cny).toFixed(2)}</div>
                     </div>
                     <div className="flex gap-3">
-                      <button type="button" className={cn(adminButton.base, adminButton.ghost, 'flex-1')} onClick={() => setPlanDialog(editPlanDraft(plan))}>编辑</button>
+                      <button type="button" className={cn(adminButton.base, adminButton.ghost, 'flex-1')} onClick={() => setPlanDialog(cashierPlanDraftFromRow(plan))}>编辑</button>
                       <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.danger)} disabled={savingPlan} onClick={() => void deletePlan(plan)} aria-label={`删除 ${plan.plan_name}`}>删除</button>
                     </div>
                   </div>
@@ -1041,35 +1026,7 @@ export function CashierPage({
             </div>
           </CashierSection> : null}
       {planDialog ? (
-        <Modal
-          title={planDialog.row ? '编辑充值套餐' : '新增充值套餐'}
-          detail={cashierPlanSectionCopy.dialogDetail}
-          onClose={() => setPlanDialog(null)}
-          footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={savingPlan} onClick={() => setPlanDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={savingPlan || !planDialog.plan_code || !planDialog.plan_name || !planDialog.price_cny || !planDialog.points} onClick={() => void savePlan()}>{savingPlan ? '保存中...' : '保存'}</button></>}
-        >
-          {error ? <InlineFeedback tone="danger" message={error} /> : null}
-          <div className={adminPage.formGrid}>
-            <Field label="套餐代码"><input value={planDialog.plan_code} disabled={Boolean(planDialog.row)} onChange={(event) => setPlanDialog({ ...planDialog, plan_code: event.target.value })} placeholder="points-100" /></Field>
-            <Field label="套餐名称"><input value={planDialog.plan_name} onChange={(event) => setPlanDialog({ ...planDialog, plan_name: event.target.value })} placeholder="100 积分包" /></Field>
-            <Field label="套餐类型"><select value={planDialog.plan_type} onChange={(event) => setPlanDialog({ ...planDialog, plan_type: event.target.value, purchase_enabled: event.target.value === 'subscription' ? false : planDialog.purchase_enabled })}><option value="points_package">积分包</option><option value="subscription">{cashierPlanSectionCopy.subscriptionOptionLabel}</option></select></Field>
-            <Field label="状态">
-              <select value={planDialog.status} onChange={(event) => setPlanDialog({ ...planDialog, status: event.target.value })}>
-                {cashierPlanStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </Field>
-            <Field label="售价 CNY"><input value={planDialog.price_cny} onChange={(event) => setPlanDialog({ ...planDialog, price_cny: event.target.value })} inputMode="decimal" placeholder="19.90000" /></Field>
-            <Field label="基础积分"><input value={planDialog.points} onChange={(event) => setPlanDialog({ ...planDialog, points: event.target.value })} inputMode="decimal" placeholder="100.00000" /></Field>
-            <Field label="赠送积分"><input value={planDialog.bonus_points} onChange={(event) => setPlanDialog({ ...planDialog, bonus_points: event.target.value })} inputMode="decimal" placeholder="0.00000" /></Field>
-            <Field label="有效天数"><input value={planDialog.duration_days} onChange={(event) => setPlanDialog({ ...planDialog, duration_days: event.target.value })} type="number" min="1" /></Field>
-            <Field label="币种"><input value={planDialog.currency} onChange={(event) => setPlanDialog({ ...planDialog, currency: event.target.value })} /></Field>
-            <Field label="排序"><input value={planDialog.sort_order} onChange={(event) => setPlanDialog({ ...planDialog, sort_order: event.target.value })} type="number" /></Field>
-            <label className={cashierClasses.toggle}>
-              <input type="checkbox" checked={planDialog.plan_type !== 'subscription' && planDialog.purchase_enabled} disabled={planDialog.plan_type === 'subscription'} onChange={(event) => setPlanDialog({ ...planDialog, purchase_enabled: event.target.checked })} />
-              <span>允许用户购买</span>
-            </label>
-            <Field label="描述"><input value={planDialog.description} onChange={(event) => setPlanDialog({ ...planDialog, description: event.target.value })} placeholder="适合轻量体验" /></Field>
-          </div>
-        </Modal>
+        <CashierPlanEditorDialog draft={planDialog} saving={savingPlan} error={error} onChange={setPlanDialog} onClose={() => setPlanDialog(null)} onSave={() => void savePlan()} />
       ) : null}
       {instanceDialog ? (
         <Drawer
@@ -1863,41 +1820,6 @@ function mergeConfigObjects(base: Record<string, unknown>, patch: Record<string,
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function newPlanDraft(): PlanDraft {
-  return {
-    plan_code: '',
-    plan_name: '',
-    plan_type: 'points_package',
-    purchase_enabled: true,
-    status: 'active',
-    price_cny: '19.90000',
-    points: '100.00000',
-    bonus_points: '0.00000',
-    duration_days: '30',
-    currency: 'CNY',
-    sort_order: '10',
-    description: '',
-  }
-}
-
-function editPlanDraft(row: CashierPlan): PlanDraft {
-  return {
-    row,
-    plan_code: row.plan_code,
-    plan_name: row.plan_name,
-    plan_type: row.plan_type ?? 'points_package',
-    purchase_enabled: Boolean(row.purchase_enabled),
-    status: row.status,
-    price_cny: row.price_cny,
-    points: row.points,
-    bonus_points: row.bonus_points,
-    duration_days: String(row.duration_days),
-    currency: row.currency,
-    sort_order: String(row.sort_order ?? 0),
-    description: row.description ?? '',
-  }
 }
 
 function newInstanceDraft(): InstanceDraft {
