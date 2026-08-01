@@ -310,11 +310,20 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
           path: target/release
           merge-multiple: true
+      - name: Render release notes
+        env:
+          RELEASE_NOTES_TAG: ${{ github.ref_name }}
+          RELEASE_NOTES_REPOSITORY: ${{ github.repository }}
+          RELEASE_NOTES_OUTPUT: target/release-notes.md
+        run: ./scripts/devops/render-release-notes.sh
       - name: Create release, upload missing assets, and verify contents
         env:
           GH_TOKEN: ${{ github.token }}
@@ -323,7 +332,9 @@ jobs:
         shell: bash
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --generate-notes
+            gh release create "$RELEASE_TAG" --verify-tag --notes-file target/release-notes.md
+          else
+            gh release edit "$RELEASE_TAG" --notes-file target/release-notes.md
           fi
           existing_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
           comparison_dir="$(mktemp -d)"
