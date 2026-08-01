@@ -8,7 +8,7 @@ import { publicEngagementStats } from './publicEngagementModel'
 import type { AppContextValue, RouteId, Toast } from './types'
 import { userShell, userButton, userForm, userState, userPill, userCard, userText } from './ui/classes'
 import { focusableElements, focusTrapTargetIndex } from './ui/focusTrap'
-import { rdShell } from './ui/redesign-classes'
+import { overlayLayers, rdShell } from './ui/redesign-classes'
 import { Home, Sparkles, LayoutGrid, User, KeyRound, CreditCard, Settings, FileText, Sun, Moon, LogOut, ChevronDown, Eye, Heart, Star, Download, Copy, Edit, Globe, FolderPlus, Trash2, X } from './ui/icons'
 import { OverlayPortal } from './ui/overlayPortal'
 import { imageMediaTransition, initialImageMediaState } from './ui/imageMediaModel'
@@ -54,7 +54,7 @@ function gcd(a: number, b: number): number {
 }
 
 const lightboxClasses = {
-  backdrop: 'fixed inset-0 z-[100] flex cursor-zoom-out items-start justify-center bg-[var(--lightbox-backdrop)] p-4 pt-10 backdrop-blur-xl animate-in fade-in duration-300 motion-reduce:animate-none sm:p-10',
+  backdrop: `fixed inset-0 ${overlayLayers.lightbox} flex cursor-zoom-out items-start justify-center bg-[var(--lightbox-backdrop)] p-4 pt-10 backdrop-blur-xl animate-in fade-in duration-300 motion-reduce:animate-none sm:p-10`,
   close: 'absolute right-4 top-4 z-10 grid size-8 cursor-pointer place-items-center rounded-full border border-[var(--lightbox-close-border)] bg-[var(--lightbox-close-bg)] text-sm leading-none text-[var(--lightbox-close-text)] shadow-lg transition hover:scale-105',
   stage: 'relative flex max-h-[92vh] w-full max-w-6xl cursor-default flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--bg)] shadow-2xl md:flex-row',
   imageWrap: 'flex flex-1 items-start justify-center overflow-auto bg-[var(--lightbox-stage-bg)] p-6 pt-8',
@@ -71,12 +71,12 @@ const lightboxClasses = {
   actions: 'flex flex-col gap-3',
   primaryAction: 'w-full rounded-xl bg-[var(--accent)] py-3 text-sm font-bold text-white transition-transform hover:scale-[1.02]',
   secondaryAction: 'w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] py-3 text-sm font-bold text-[var(--fg)] transition-colors hover:border-[var(--accent)]',
-  zoomBackdrop: 'fixed inset-0 z-[110] bg-[var(--lightbox-backdrop)]/95 backdrop-blur-xl animate-in fade-in duration-200 motion-reduce:animate-none',
-  zoomClose: 'absolute right-4 top-4 z-[111] grid size-10 place-items-center rounded-full border border-[var(--lightbox-close-border)] bg-[var(--lightbox-close-bg)] text-base text-[var(--lightbox-close-text)] shadow-lg transition hover:scale-105',
+  zoomBackdrop: `fixed inset-0 ${overlayLayers.zoom} bg-[var(--lightbox-backdrop)]/95 backdrop-blur-xl animate-in fade-in duration-200 motion-reduce:animate-none`,
+  zoomClose: `absolute right-4 top-4 ${overlayLayers.zoomControls} grid size-10 place-items-center rounded-full border border-[var(--lightbox-close-border)] bg-[var(--lightbox-close-bg)] text-base text-[var(--lightbox-close-text)] shadow-lg transition hover:scale-105`,
   zoomViewport: 'absolute inset-0 overflow-hidden cursor-grab active:cursor-grabbing',
   zoomStage: 'absolute left-1/2 top-1/2 will-change-transform',
   zoomImage: 'block max-w-none select-none shadow-2xl',
-  zoomToolbar: 'absolute left-1/2 top-4 z-[111] flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)]/92 px-3 py-2 text-sm text-[var(--fg)] shadow-xl backdrop-blur',
+  zoomToolbar: `absolute left-1/2 top-4 ${overlayLayers.zoomControls} flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)]/92 px-3 py-2 text-sm text-[var(--fg)] shadow-xl backdrop-blur`,
   zoomToolButton: 'grid size-8 place-items-center rounded-full border border-[var(--border)] bg-[var(--bg)] text-[var(--fg)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]',
   zoomToolValue: 'min-w-12 text-center font-vault-mono text-xs',
   mediaLoading: 'absolute inset-0 grid place-items-center text-sm text-[var(--muted)]',
@@ -224,7 +224,8 @@ function ImageZoomViewer({ image, onClose }: { image: ImageLightboxPayload; onCl
   }
 
   return (
-    <div
+    <OverlayPortal>
+      <div
       ref={dialogRef}
       tabIndex={-1}
       className={lightboxClasses.zoomBackdrop}
@@ -260,7 +261,8 @@ function ImageZoomViewer({ image, onClose }: { image: ImageLightboxPayload; onCl
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </OverlayPortal>
   )
 }
 
