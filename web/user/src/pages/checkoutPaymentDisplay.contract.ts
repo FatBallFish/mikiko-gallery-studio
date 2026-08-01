@@ -75,6 +75,28 @@ if (mockModel.kind !== 'mock' || !mockModel.label.includes('Mock') || !mockModel
   throw new Error(`mock payment display should guide in-page mock pay without exposing mock:// href, got ${JSON.stringify(mockModel)}`)
 }
 
+const stripeModel = checkoutPaymentDisplayModel({
+  ...baseOrder,
+  visible_method: 'stripe',
+  payment_display: {
+    type: 'stripe_payment_element',
+    client_secret: 'pi_contract_secret_client',
+    publishable_key: 'pk_test_contract',
+  },
+})
+if (stripeModel.kind !== 'stripe' || stripeModel.clientSecret !== 'pi_contract_secret_client' || stripeModel.publishableKey !== 'pk_test_contract') {
+  throw new Error(`Stripe payment display should expose Payment Element config, got ${JSON.stringify(stripeModel)}`)
+}
+
+const malformedStripeModel = checkoutPaymentDisplayModel({
+  ...baseOrder,
+  visible_method: 'stripe',
+  payment_display: { type: 'stripe_payment_element', publishable_key: 'pk_test_contract' },
+})
+if (malformedStripeModel.kind !== 'unsupported' || !malformedStripeModel.detail.includes('配置不完整')) {
+  throw new Error(`incomplete Stripe display should expose unsupported configuration state, got ${JSON.stringify(malformedStripeModel)}`)
+}
+
 const emptyModel = checkoutPaymentDisplayModel(baseOrder)
 
 if (emptyModel.kind !== 'none') {

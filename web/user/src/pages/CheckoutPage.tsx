@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { toDataURL } from 'qrcode'
 import type { CashierOptions, CashierOrder, CashierPlan, PaymentVisibleMethod } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
@@ -12,6 +12,8 @@ import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutDateTime, checkoutMoney, checkoutOrderActionState, checkoutOrderRuntimeState, checkoutPaymentMethodLabel, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
+
+const StripePaymentPanel = lazy(async () => ({ default: (await import('./StripePaymentPanel')).StripePaymentPanel }))
 
 const checkoutClasses = {
   page: 'w-full flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-8',
@@ -522,7 +524,7 @@ function PaymentOrderModal({
           </section>
 
           <section className={checkoutClasses.paymentModalCard}>
-            <PaymentDisplayPanel order={order} busy={busy} onMockPay={onMockPay} />
+            <PaymentDisplayPanel order={order} busy={busy} onMockPay={onMockPay} onConfirmed={onRefresh} />
           </section>
         </div>
 
@@ -545,7 +547,17 @@ function PaymentMetaItem({ label, value }: { label: string; value: string }) {
   )
 }
 
-function PaymentDisplayPanel({ order, busy, onMockPay }: { order: CashierOrder; busy: boolean; onMockPay: () => void }) {
+function PaymentDisplayPanel({
+  order,
+  busy,
+  onMockPay,
+  onConfirmed,
+}: {
+  order: CashierOrder
+  busy: boolean
+  onMockPay: () => void
+  onConfirmed: () => void
+}) {
   const display = checkoutPaymentDisplayModel(order)
   const paymentHref = display.href ?? ''
   const openForm = () => {
@@ -578,6 +590,16 @@ function PaymentDisplayPanel({ order, busy, onMockPay }: { order: CashierOrder; 
       ) : null}
       {display.kind === 'form' ? <Button tone="ghost" onClick={openForm}>打开支付表单</Button> : null}
       {display.kind === 'mock' ? <Button tone="ghost" busy={busy} onClick={onMockPay}>模拟支付成功</Button> : null}
+      {display.kind === 'stripe' && display.publishableKey && display.clientSecret ? (
+        <Suspense fallback={<LoadingState label="加载 Stripe 安全支付..." />}>
+          <StripePaymentPanel
+            publishableKey={display.publishableKey}
+            clientSecret={display.clientSecret}
+            disabled={busy}
+            onConfirmed={onConfirmed}
+          />
+        </Suspense>
+      ) : null}
     </section>
   )
 }
