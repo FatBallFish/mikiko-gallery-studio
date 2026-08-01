@@ -12,11 +12,12 @@ import { isSystemSettingsHash, systemSettingsTabFromHash, type SystemSettingsTab
 export { isSystemSettingsHash, systemSettingsTabFromHash } from './systemSettingsTabs'
 
 const tabItems = [
-  { id: 'general', label: '通用配置', description: '文档、公开内容和低风险运行参数' },
-  { id: 'security', label: '安全配置', description: 'SMTP 与敏感安全项' },
-  { id: 'storage', label: '存储配置', description: 'Local / S3 / R2 多实例存储' },
-  { id: 'text-models', label: '文本模型', description: '提示词优化账号、模型与价格' },
-] satisfies Array<{ id: SystemSettingsTab; label: string; description: string }>
+  { id: 'general', label: '通用配置', description: '文档、公开内容和低风险运行参数', dangerous: false },
+  { id: 'point-conversion', label: '积分换算', description: '每积分对应的人民币金额', dangerous: false },
+  { id: 'security', label: '安全配置', description: 'SMTP 与敏感安全项', dangerous: true },
+  { id: 'storage', label: '存储配置', description: 'Local / S3 / R2 多实例存储', dangerous: true },
+  { id: 'text-models', label: '文本模型', description: '提示词优化账号、模型与价格', dangerous: true },
+] satisfies Array<{ id: SystemSettingsTab; label: string; description: string; dangerous: boolean }>
 
 export function SystemSettingsPage({
   session,
@@ -26,15 +27,15 @@ export function SystemSettingsPage({
   onFeedback: (title: string, detail?: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(() => systemSettingsTabFromHash(window.location.hash))
-  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false, 'text-models': false })
-  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, security: false, storage: false, 'text-models': false })
+  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, security: false, storage: false, 'text-models': false })
+  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, security: false, storage: false, 'text-models': false })
   const activeTabRef = useRef(activeTab)
   const dirtyTabsRef = useRef(dirtyTabs)
   const busyTabsRef = useRef(busyTabs)
   const canManageDangerous = canAdmin(session, 'manage:dangerous_config')
   const items = tabItems.map((item) => ({
     ...item,
-    disabled: (item.id !== 'general' && !canManageDangerous) || (busyTabs[activeTab] && item.id !== activeTab),
+    disabled: (item.dangerous && !canManageDangerous) || (busyTabs[activeTab] && item.id !== activeTab),
   }))
 
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
@@ -79,9 +80,11 @@ export function SystemSettingsPage({
     setBusyTabs((current) => current[tab] === busy ? current : { ...current, [tab]: busy })
   }, [])
   const onGeneralDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('general', dirty), [updateDirtyTab])
+  const onPointConversionDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('point-conversion', dirty), [updateDirtyTab])
   const onSecurityDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('security', dirty), [updateDirtyTab])
   const onStorageDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('storage', dirty), [updateDirtyTab])
   const onGeneralBusyChange = useCallback((busy: boolean) => updateBusyTab('general', busy), [updateBusyTab])
+  const onPointConversionBusyChange = useCallback((busy: boolean) => updateBusyTab('point-conversion', busy), [updateBusyTab])
   const onSecurityBusyChange = useCallback((busy: boolean) => updateBusyTab('security', busy), [updateBusyTab])
   const onStorageBusyChange = useCallback((busy: boolean) => updateBusyTab('storage', busy), [updateBusyTab])
   const onTextModelsDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('text-models', dirty), [updateDirtyTab])
@@ -101,10 +104,21 @@ export function SystemSettingsPage({
         onChange={switchTab}
       />
       {activeTab === 'general' ? <ConfigPage session={session} onFeedback={onFeedback} onDirtyChange={onGeneralDirtyChange} onBusyChange={onGeneralBusyChange} compact /> : null}
+      {activeTab === 'point-conversion' ? (
+        <ConfigPage
+          session={session}
+          onFeedback={onFeedback}
+          onDirtyChange={onPointConversionDirtyChange}
+          onBusyChange={onPointConversionBusyChange}
+          categories={['billing_pricing']}
+          keys={['cny_per_point']}
+          compact
+        />
+      ) : null}
       {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
       {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
       {activeTab === 'text-models' && canManageDangerous ? <TextModelsPage onFeedback={onFeedback} onDirtyChange={onTextModelsDirtyChange} onBusyChange={onTextModelsBusyChange} /> : null}
-      {activeTab !== 'general' && !canManageDangerous ? (
+      {tabItems.find((item) => item.id === activeTab)?.dangerous && !canManageDangerous ? (
         <EmptyBlock title="暂无敏感配置权限" detail="安全、存储和文本模型配置需要 manage:dangerous_config 权限，请联系超级管理员处理。" />
       ) : null}
     </section>

@@ -81,6 +81,12 @@ export function configTabSummary(rows: ConfigItem[]) {
   }
 }
 
+export function configRowAllowed(row: ConfigItem, categories: readonly string[], keys?: readonly string[]) {
+  const category = row.config_category || row.tab
+  const key = row.config_key || row.key
+  return categories.includes(category) && (!keys || keys.includes(key))
+}
+
 export function extractConfigValue(row: ConfigItem): ConfigValue {
   const source = row.config_value ?? safeParse(row.value)
   if (isRecord(source) && 'value' in source) return source.value as ConfigValue
