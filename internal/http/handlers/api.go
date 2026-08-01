@@ -4379,10 +4379,11 @@ func cashierOrderProviderType(order domainbilling.PaymentOrder, instance cashier
 
 func cashierOrderSnapshot(order domainbilling.PaymentOrder) cashierservice.OrderSnapshot {
 	return cashierservice.OrderSnapshot{
-		OrderNo:   order.OrderNo,
-		AmountCNY: order.AmountCNY,
-		TradeNo:   order.TradeNo,
-		Status:    order.Status,
+		OrderNo:     order.OrderNo,
+		AmountCNY:   order.AmountCNY,
+		TradeNo:     order.TradeNo,
+		ClientToken: order.ClientToken,
+		Status:      order.Status,
 	}
 }
 

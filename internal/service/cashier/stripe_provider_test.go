@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
+	apperrs "github.com/fatballfish/pic-gallery/pkg/errs"
 	stripe "github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/webhook"
 )
@@ -16,6 +17,8 @@ import (
 type recordingStripePaymentIntents struct {
 	newParams *stripe.PaymentIntentParams
 	intent    *stripe.PaymentIntent
+	getID     string
+	getIntent *stripe.PaymentIntent
 }
 
 func (c *recordingStripePaymentIntents) New(params *stripe.PaymentIntentParams) (*stripe.PaymentIntent, error) {
@@ -23,8 +26,23 @@ func (c *recordingStripePaymentIntents) New(params *stripe.PaymentIntentParams) 
 	return c.intent, nil
 }
 
-func (c *recordingStripePaymentIntents) Get(string, *stripe.PaymentIntentParams) (*stripe.PaymentIntent, error) {
-	return nil, nil
+func (c *recordingStripePaymentIntents) Get(id string, _ *stripe.PaymentIntentParams) (*stripe.PaymentIntent, error) {
+	c.getID = id
+	return c.getIntent, nil
+}
+
+type recordingStripeRefunds struct {
+	newParams *stripe.RefundParams
+	refund    *stripe.Refund
+}
+
+func (c *recordingStripeRefunds) New(params *stripe.RefundParams) (*stripe.Refund, error) {
+	c.newParams = params
+	return c.refund, nil
+}
+
+func (c *recordingStripeRefunds) Get(string, *stripe.RefundParams) (*stripe.Refund, error) {
+	return c.refund, nil
 }
 
 func TestStripePaymentIntentBuilderCreatesExactIdempotentIntent(t *testing.T) {
@@ -116,5 +134,106 @@ func TestStripeWebhookParsesSignedPaymentIntentFromExactBody(t *testing.T) {
 	tampered[len(tampered)-2] = 'x'
 	if _, err := ParseStripeWebhookEvent(tampered, signed.Header, "whsec_test"); !errors.Is(err, ErrStripeWebhookSignatureInvalid) {
 		t.Fatalf("expected tampered exact body to fail signature verification, got %v", err)
+	}
+}
+
+func TestStripeOrderQueryMapsPaymentIntentStatuses(t *testing.T) {
+	tests := []struct {
+		status stripe.PaymentIntentStatus
+		want   string
+		paid   bool
+	}{
+		{status: stripe.PaymentIntentStatusSucceeded, want: "paid", paid: true},
+		{status: stripe.PaymentIntentStatusProcessing, want: "pending"},
+		{status: stripe.PaymentIntentStatusRequiresAction, want: "pending"},
+		{status: stripe.PaymentIntentStatusCanceled, want: "failed"},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.status), func(t *testing.T) {
+			client := &recordingStripePaymentIntents{getIntent: &stripe.PaymentIntent{
+				ID:       "pi_query_123",
+				Amount:   1025,
+				Currency: stripe.CurrencyCNY,
+				Status:   tt.status,
+			}}
+			builder := newStripeOrderStatusQueryBuilder(func(string) StripePaymentIntents { return client })
+			result, err := builder(context.Background(), QueryOrderStatusRequest{
+				Order: OrderSnapshot{OrderNo: "PGO-QUERY-STRIPE", AmountCNY: "10.25", ClientToken: "pi_query_123"},
+				Instance: domaincashier.ProviderInstance{ID: 8, ProviderType: "stripe", Config: map[string]any{
+					"secret_key": "sk_test_query",
+				}},
+			})
+			if err != nil {
+				t.Fatalf("query Stripe PaymentIntent: %v", err)
+			}
+			if client.getID != "pi_query_123" || result.QueryStatus != tt.want || result.Paid != tt.paid || result.TradeNo != "pi_query_123" || result.AmountCNY != "10.25" {
+				t.Fatalf("unexpected Stripe query result %#v client=%#v", result, client)
+			}
+		})
+	}
+}
+
+func TestStripeRefundUsesExactAmountAndLocalIdempotencyKey(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		amountCNY  string
+		wantAmount int64
+	}{
+		{name: "partial", amountCNY: "5.25", wantAmount: 525},
+		{name: "full", amountCNY: "", wantAmount: 1025},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &recordingStripeRefunds{refund: &stripe.Refund{ID: "re_stripe_123", Amount: tt.wantAmount, Currency: stripe.CurrencyCNY, Status: stripe.RefundStatusSucceeded}}
+			builder := newStripeRefundPaymentBuilder(func(string) StripeRefunds { return client })
+			result, err := builder(context.Background(), RefundPaymentRequest{
+				Order:           OrderSnapshot{OrderNo: "PGO-STRIPE-REFUND", AmountCNY: "10.25", TradeNo: "pi_refund_123", Status: "completed"},
+				Instance:        domaincashier.ProviderInstance{ID: 9, ProviderType: "stripe", Config: map[string]any{"secret_key": "sk_test_refund"}},
+				RefundTradeNo:   "LOCAL-REFUND-001",
+				RefundAmountCNY: tt.amountCNY,
+				Reason:          "requested by user",
+			})
+			if err != nil {
+				t.Fatalf("create Stripe refund: %v", err)
+			}
+			if client.newParams == nil || client.newParams.Amount == nil || *client.newParams.Amount != tt.wantAmount || client.newParams.PaymentIntent == nil || *client.newParams.PaymentIntent != "pi_refund_123" {
+				t.Fatalf("unexpected Stripe refund params %#v", client.newParams)
+			}
+			if client.newParams.IdempotencyKey == nil || *client.newParams.IdempotencyKey != "LOCAL-REFUND-001" || client.newParams.Metadata["refund_trade_no"] != "LOCAL-REFUND-001" {
+				t.Fatalf("expected local refund idempotency metadata, got %#v", client.newParams)
+			}
+			if result.RefundStatus != "succeeded" || result.ChannelRefundNo != "re_stripe_123" || result.RefundTradeNo != "LOCAL-REFUND-001" {
+				t.Fatalf("unexpected Stripe refund result %#v", result)
+			}
+		})
+	}
+}
+
+func TestStripeQueryAndRefundRejectCurrencyOrAmountMismatch(t *testing.T) {
+	queryClient := &recordingStripePaymentIntents{getIntent: &stripe.PaymentIntent{
+		ID: "pi_wrong_currency", Amount: 1025, Currency: stripe.CurrencyUSD, Status: stripe.PaymentIntentStatusSucceeded,
+	}}
+	_, queryErr := newStripeOrderStatusQueryBuilder(func(string) StripePaymentIntents { return queryClient })(context.Background(), QueryOrderStatusRequest{
+		Order:    OrderSnapshot{ClientToken: "pi_wrong_currency", AmountCNY: "10.25"},
+		Instance: domaincashier.ProviderInstance{ProviderType: "stripe", Config: map[string]any{"secret_key": "sk_test"}},
+	})
+	assertPaymentAmountMismatchError(t, queryErr)
+
+	refundClient := &recordingStripeRefunds{refund: &stripe.Refund{
+		ID: "re_wrong_amount", Amount: 500, Currency: stripe.CurrencyCNY, Status: stripe.RefundStatusSucceeded,
+	}}
+	_, refundErr := newStripeRefundPaymentBuilder(func(string) StripeRefunds { return refundClient })(context.Background(), RefundPaymentRequest{
+		Order:           OrderSnapshot{OrderNo: "PGO-MISMATCH", AmountCNY: "10.25", TradeNo: "pi_wrong_amount", Status: "completed"},
+		Instance:        domaincashier.ProviderInstance{ProviderType: "stripe", Config: map[string]any{"secret_key": "sk_test"}},
+		RefundTradeNo:   "REFUND-MISMATCH",
+		RefundAmountCNY: "5.25",
+	})
+	assertPaymentAmountMismatchError(t, refundErr)
+}
+
+func assertPaymentAmountMismatchError(t *testing.T, err error) {
+	t.Helper()
+	var appErr *apperrs.Error
+	if !errors.As(err, &appErr) || appErr.Code != apperrs.CodePaymentAmountMismatch {
+		t.Fatalf("expected PAYMENT_AMOUNT_MISMATCH, got %T %v", err, err)
 	}
 }

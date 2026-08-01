@@ -22,6 +22,7 @@ func StandardQueryProviderBuilders() QueryProviderBuilders {
 		WxPayDirect:  WxPayOrderStatusQueryBuilder,
 		EasyPay:      EasyPayOrderStatusQueryBuilder,
 		JeePay:       JeePayOrderStatusQueryBuilder,
+		Stripe:       NewStripeOrderStatusQueryBuilder(),
 	}
 }
 

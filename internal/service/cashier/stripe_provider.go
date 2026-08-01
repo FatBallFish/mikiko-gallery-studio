@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
+	"time"
 
+	apperrs "github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/shopspring/decimal"
 	stripe "github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/paymentintent"
+	striperefund "github.com/stripe/stripe-go/v85/refund"
 	"github.com/stripe/stripe-go/v85/webhook"
 )
 
@@ -32,6 +36,13 @@ type StripePaymentIntents interface {
 }
 
 type stripePaymentIntentsFactory func(secretKey string) StripePaymentIntents
+
+type StripeRefunds interface {
+	New(*stripe.RefundParams) (*stripe.Refund, error)
+	Get(string, *stripe.RefundParams) (*stripe.Refund, error)
+}
+
+type stripeRefundsFactory func(secretKey string) StripeRefunds
 
 func NewStripePaymentDisplayBuilder() PaymentDisplayBuilder {
 	return newStripePaymentDisplayBuilder(func(secretKey string) StripePaymentIntents {
@@ -113,4 +124,130 @@ func ParseStripeWebhookEvent(payload []byte, signature, webhookSecret string) (S
 	parsed.AmountCNY = decimal.NewFromInt(intent.Amount).Shift(-2).StringFixed(2)
 	parsed.Currency = strings.ToLower(strings.TrimSpace(string(intent.Currency)))
 	return parsed, nil
+}
+
+func NewStripeOrderStatusQueryBuilder() QueryOrderStatusBuilder {
+	return newStripeOrderStatusQueryBuilder(func(secretKey string) StripePaymentIntents {
+		return &paymentintent.Client{B: stripe.GetBackend(stripe.APIBackend), Key: secretKey}
+	})
+}
+
+func newStripeOrderStatusQueryBuilder(clientFactory stripePaymentIntentsFactory) QueryOrderStatusBuilder {
+	return func(ctx context.Context, req QueryOrderStatusRequest) (QueryOrderStatusResult, error) {
+		secretKey := configString(req.Instance.Config, "secret_key")
+		intentID := strings.TrimSpace(req.Order.TradeNo)
+		if intentID == "" {
+			intentID = strings.TrimSpace(req.Order.ClientToken)
+		}
+		if secretKey == "" || intentID == "" {
+			return QueryOrderStatusResult{}, paymentProviderUnavailable()
+		}
+		params := &stripe.PaymentIntentParams{}
+		params.Context = ctx
+		intent, err := clientFactory(secretKey).Get(intentID, params)
+		if err != nil || intent == nil {
+			return QueryOrderStatusResult{}, paymentProviderUnavailable()
+		}
+		if intent.Currency != stripe.CurrencyCNY {
+			return QueryOrderStatusResult{}, stripePaymentAmountMismatch()
+		}
+		queryStatus := stripePaymentIntentQueryStatus(intent)
+		amountCNY := decimal.NewFromInt(intent.Amount).Shift(-2).StringFixed(2)
+		raw := map[string]any{
+			"source":            "stripe_payment_intent",
+			"payment_intent_id": strings.TrimSpace(intent.ID),
+			"status":            string(intent.Status),
+			"currency":          strings.ToLower(string(intent.Currency)),
+			"amount_fen":        intent.Amount,
+		}
+		return BuildQueryOrderStatusResult(req.Instance, queryStatus, intent.ID, amountCNY, raw), nil
+	}
+}
+
+func stripePaymentIntentQueryStatus(intent *stripe.PaymentIntent) QueryStatus {
+	if intent == nil {
+		return NormalizeQueryStatus("failed")
+	}
+	switch intent.Status {
+	case stripe.PaymentIntentStatusSucceeded:
+		return NormalizeQueryStatus("succeeded")
+	case stripe.PaymentIntentStatusCanceled:
+		return NormalizeQueryStatus("failed")
+	case stripe.PaymentIntentStatusRequiresPaymentMethod:
+		if intent.LastPaymentError != nil {
+			return NormalizeQueryStatus("failed")
+		}
+		return NormalizeQueryStatus("pending")
+	default:
+		return NormalizeQueryStatus("pending")
+	}
+}
+
+func NewStripeRefundPaymentBuilder() RefundPaymentBuilder {
+	return newStripeRefundPaymentBuilder(func(secretKey string) StripeRefunds {
+		return &striperefund.Client{B: stripe.GetBackend(stripe.APIBackend), Key: secretKey}
+	})
+}
+
+func newStripeRefundPaymentBuilder(clientFactory stripeRefundsFactory) RefundPaymentBuilder {
+	return func(ctx context.Context, req RefundPaymentRequest) (RefundPaymentResult, error) {
+		secretKey := configString(req.Instance.Config, "secret_key")
+		intentID := strings.TrimSpace(req.Order.TradeNo)
+		refundTradeNo := strings.TrimSpace(req.RefundTradeNo)
+		if secretKey == "" || intentID == "" || refundTradeNo == "" {
+			return RefundPaymentResult{}, paymentRefundProviderUnavailable()
+		}
+		amountCNY := strings.TrimSpace(req.RefundAmountCNY)
+		if amountCNY == "" {
+			amountCNY = strings.TrimSpace(req.Order.AmountCNY)
+		}
+		amountFen, err := StripeAmountFenFromCNY(amountCNY)
+		if err != nil {
+			return RefundPaymentResult{}, err
+		}
+		params := &stripe.RefundParams{
+			Amount:        stripe.Int64(amountFen),
+			PaymentIntent: stripe.String(intentID),
+			Metadata: map[string]string{
+				"order_no":        strings.TrimSpace(req.Order.OrderNo),
+				"refund_trade_no": refundTradeNo,
+			},
+		}
+		params.Context = ctx
+		params.SetIdempotencyKey(refundTradeNo)
+		if strings.TrimSpace(req.Reason) != "" {
+			params.Reason = stripe.String(string(stripe.RefundReasonRequestedByCustomer))
+		}
+		refundResult, err := clientFactory(secretKey).New(params)
+		if err != nil || refundResult == nil || strings.TrimSpace(refundResult.ID) == "" {
+			return RefundPaymentResult{}, paymentRefundProviderUnavailable()
+		}
+		if refundResult.Amount != amountFen || refundResult.Currency != stripe.CurrencyCNY {
+			return RefundPaymentResult{}, stripePaymentAmountMismatch()
+		}
+		status := strings.ToLower(strings.TrimSpace(string(refundResult.Status)))
+		if status == "" {
+			status = "pending"
+		}
+		return RefundPaymentResult{
+			ProviderType:       "stripe",
+			ProviderInstanceID: req.Instance.ID,
+			RefundStatus:       status,
+			RefundTradeNo:      refundTradeNo,
+			ChannelRefundNo:    strings.TrimSpace(refundResult.ID),
+			Raw: map[string]any{
+				"source":            "stripe_refund",
+				"refund_id":         strings.TrimSpace(refundResult.ID),
+				"status":            status,
+				"amount_fen":        refundResult.Amount,
+				"currency":          strings.ToLower(string(refundResult.Currency)),
+				"payment_intent_id": intentID,
+			},
+			RefundedAt: time.Now().UTC(),
+		}, nil
+	}
+}
+
+func stripePaymentAmountMismatch() error {
+	return apperrs.New(http.StatusConflict, apperrs.CodePaymentAmountMismatch, "payment amount does not match order")
 }
