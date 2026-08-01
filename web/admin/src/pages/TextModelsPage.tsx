@@ -3,7 +3,7 @@ import { KeyRound, Plus, PlugZap, Save, Star, Trash2 } from 'lucide-react'
 import { adminApi } from '../../../shared/admin-api'
 import type { TextModel, TextModelAccount } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
-import { EmptyBlock, InlineFeedback, LoadingBlock } from '../components'
+import { EmptyBlock, InlineFeedback, LoadingBlock, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import {
   accountDraftFromView,
@@ -11,6 +11,7 @@ import {
   modelDraftFromView,
   textModelAccountRequest,
   textModelModelRequest,
+  textModelReadiness,
   validateTextModelAccountDraft,
   validateTextModelDraft,
   type TextModelAccountDraft,
@@ -28,6 +29,7 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
   const [selectedID, setSelectedID] = useState<string>('new')
   const [accountDraft, setAccountDraft] = useState<TextModelAccountDraft>(emptyTextModelAccountDraft)
   const [models, setModels] = useState<TextModel[]>([])
+  const [allModels, setAllModels] = useState<TextModel[]>([])
   const [modelDrafts, setModelDrafts] = useState<TextModelDraft[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -35,6 +37,7 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
   const [error, setError] = useState('')
   const [probe, setProbe] = useState('')
   const selected = useMemo(() => accounts.find((item) => String(item.id) === selectedID), [accounts, selectedID])
+  const readiness = useMemo(() => textModelReadiness(accounts, allModels), [accounts, allModels])
 
   const markDirty = () => { setDirty(true); onDirtyChange?.(true) }
   const updateAccountDraft = (patch: Partial<TextModelAccountDraft>) => {
@@ -50,13 +53,16 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
     setLoading(true)
     try {
       const next = await adminApi.listTextModelAccounts()
+      const modelEntries = await Promise.all(next.map(async (account) => [String(account.id), await adminApi.listTextModels(account.id)] as const))
+      const modelsByAccount = new Map(modelEntries)
+      setAllModels(modelEntries.flatMap(([, accountModels]) => accountModels))
       setAccounts(next)
       const nextID = preferredID ?? (next[0] ? String(next[0].id) : 'new')
       setSelectedID(nextID)
       const account = next.find((item) => String(item.id) === nextID)
       setAccountDraft(account ? accountDraftFromView(account) : emptyTextModelAccountDraft())
       if (account) {
-        const accountModels = await adminApi.listTextModels(account.id)
+        const accountModels = modelsByAccount.get(String(account.id)) ?? []
         setModels(accountModels)
         setModelDrafts(accountModels.map(modelDraftFromView))
       } else {
@@ -139,7 +145,7 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
     try {
       if (action === 'test') {
         const result = await adminApi.testTextModel(model.id)
-        setProbe(`${result.model_code} 连接成功 · ${result.latency_ms}ms`)
+        setProbe(`${result.model_code} 连接测试通过 · ${result.latency_ms}ms；不会更改默认优化模型`)
       } else if (action === 'default') {
         await adminApi.setDefaultTextModel(model.id)
         onFeedback('默认优化模型已更新', model.display_name)
@@ -170,6 +176,12 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
   }
 
   if (loading && !accounts.length && selectedID !== 'new') return <LoadingBlock label="正在加载文本模型配置..." />
+  const readinessTitle = readiness.status === 'ready' ? '提示词优化已就绪' : '提示词优化尚未就绪'
+  const readinessDetail = readiness.status === 'ready'
+    ? `默认模型：${readiness.defaultModel?.display_name ?? readiness.defaultModel?.model_code} · ${readiness.defaultAccount?.name ?? '未知账号'}`
+    : readiness.status === 'selection_required'
+      ? `当前有 ${readiness.eligibleCount} 个可用模型，请选择一个默认优化模型。`
+      : '请先启用一个已配置密钥的账号和模型。'
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
@@ -190,6 +202,10 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
       </aside>
 
       <section className="min-w-0">
+        <section className={cn('mb-3 flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5', readiness.status === 'ready' ? 'border-[color-mix(in_oklch,var(--green)_24%,transparent)] bg-[color-mix(in_oklch,var(--green)_8%,transparent)]' : 'border-[color-mix(in_oklch,var(--amber)_24%,transparent)] bg-[color-mix(in_oklch,var(--amber)_8%,transparent)]')} role="status">
+          <span className={cn('mt-1 size-2 shrink-0 rounded-full', readiness.status === 'ready' ? 'bg-[var(--green)]' : 'bg-[var(--amber)]')} />
+          <span className="min-w-0"><strong className="block text-sm text-[var(--fg)]">{readinessTitle}</strong><span className="mt-0.5 block text-xs leading-5 text-[var(--muted)]">{readinessDetail}</span></span>
+        </section>
         {error ? <InlineFeedback tone="danger" message={error} /> : null}
         {probe ? <InlineFeedback tone="success" message={probe} /> : null}
         <div className="grid gap-4 md:grid-cols-2">
@@ -209,7 +225,33 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
           <div className="mt-7 border-t border-[var(--border)] pt-5">
             <div className="mb-3 flex items-center justify-between gap-3"><div><h3 className="m-0 text-base">支持模型</h3><p className="m-0 mt-1 text-xs text-[var(--muted)]">价格单位为每百万 Token，未公开别名保持 0。</p></div><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={busy} onClick={() => { setModelDrafts((items) => [...items, emptyModelDraft()]); markDirty() }}><Plus size={15} />新增模型</button></div>
             <div className="overflow-x-auto border-y border-[var(--border)]">
-              <table className="w-full min-w-[850px] border-collapse text-sm"><thead><tr className="text-left text-xs text-[var(--muted)]"><th className="p-2">模型</th><th className="p-2">输入价</th><th className="p-2">输出价</th><th className="p-2">币种</th><th className="p-2">启用</th><th className="p-2 text-right">操作</th></tr></thead><tbody>{modelDrafts.map((draft, index) => { const persisted = models.find((item) => String(item.id) === String(draft.id)); return <tr key={String(draft.id ?? `new-${index}`)} className="border-t border-[var(--border)] align-top"><td className="p-2"><input value={draft.modelCode} placeholder="model-id" onChange={(event) => updateModelDraft(index, { modelCode: event.target.value })} /><input className="mt-1" value={draft.displayName} placeholder="展示名称" onChange={(event) => updateModelDraft(index, { displayName: event.target.value })} />{draft.isDefault ? <span className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--accent)]"><Star size={12} fill="currentColor" />默认优化模型</span> : null}</td><td className="p-2"><input inputMode="decimal" value={draft.inputPrice} onChange={(event) => updateModelDraft(index, { inputPrice: event.target.value })} /></td><td className="p-2"><input inputMode="decimal" value={draft.outputPrice} onChange={(event) => updateModelDraft(index, { outputPrice: event.target.value })} /></td><td className="p-2"><input className="w-20" value={draft.currency} onChange={(event) => updateModelDraft(index, { currency: event.target.value })} /></td><td className="p-2"><input type="checkbox" checked={draft.enabled} onChange={(event) => updateModelDraft(index, { enabled: event.target.checked })} /></td><td className="p-2"><div className="flex justify-end gap-1"><IconButton title="保存模型" disabled={busy} onClick={() => void saveModel(index)}><Save size={15} /></IconButton>{persisted ? <><IconButton title="测试连接" disabled={busy || !persisted.enabled || !selected.enabled} onClick={() => void modelAction('test', persisted)}><PlugZap size={15} /></IconButton><IconButton title="设为默认优化模型" disabled={busy || !persisted.enabled || persisted.is_default} onClick={() => void modelAction('default', persisted)}><Star size={15} /></IconButton><IconButton title="删除模型" disabled={busy} onClick={() => void modelAction('delete', persisted)}><Trash2 size={15} /></IconButton></> : null}</div></td></tr> })}</tbody></table>
+              <table className="w-full min-w-[850px] border-collapse text-sm">
+                <thead><tr className="text-left text-xs text-[var(--muted)]"><th className="p-2">模型</th><th className="p-2">输入价</th><th className="p-2">输出价</th><th className="p-2">币种</th><th className="p-2">启用</th><th className="p-2 text-right">操作</th></tr></thead>
+                <tbody>{modelDrafts.map((draft, index) => {
+                  const persisted = models.find((item) => String(item.id) === String(draft.id))
+                  const testDisabledReason = busy ? '操作处理中' : !selected.enabled ? '请先启用当前账号' : persisted && !persisted.enabled ? '请先启用该模型' : undefined
+                  const defaultDisabledReason = busy ? '操作处理中' : !selected.enabled ? '请先启用当前账号' : persisted?.is_default ? '当前已是默认优化模型' : persisted && !persisted.enabled ? '请先启用该模型' : undefined
+                  return (
+                    <tr key={String(draft.id ?? `new-${index}`)} className="border-t border-[var(--border)] align-top">
+                      <td className="p-2"><input value={draft.modelCode} placeholder="model-id" onChange={(event) => updateModelDraft(index, { modelCode: event.target.value })} /><input className="mt-1" value={draft.displayName} placeholder="展示名称" onChange={(event) => updateModelDraft(index, { displayName: event.target.value })} />{draft.isDefault ? <span className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--accent)]"><Star size={12} fill="currentColor" />默认优化模型</span> : null}</td>
+                      <td className="p-2"><input inputMode="decimal" value={draft.inputPrice} onChange={(event) => updateModelDraft(index, { inputPrice: event.target.value })} /></td>
+                      <td className="p-2"><input inputMode="decimal" value={draft.outputPrice} onChange={(event) => updateModelDraft(index, { outputPrice: event.target.value })} /></td>
+                      <td className="p-2"><input className="w-20" value={draft.currency} onChange={(event) => updateModelDraft(index, { currency: event.target.value })} /></td>
+                      <td className="p-2"><input type="checkbox" checked={draft.enabled} onChange={(event) => updateModelDraft(index, { enabled: event.target.checked })} /></td>
+                      <td className="p-2">
+                        <div className="flex justify-end gap-1">
+                          <TooltipIconButton label="保存模型" disabled={busy} disabledReason="操作处理中" onClick={() => void saveModel(index)}><Save /></TooltipIconButton>
+                          {persisted ? <>
+                            <TooltipIconButton label="测试连接" disabled={Boolean(testDisabledReason)} disabledReason={testDisabledReason} onClick={() => void modelAction('test', persisted)}><PlugZap /></TooltipIconButton>
+                            <TooltipIconButton label="设为默认优化模型" disabled={Boolean(defaultDisabledReason)} disabledReason={defaultDisabledReason} onClick={() => void modelAction('default', persisted)}><Star /></TooltipIconButton>
+                            <TooltipIconButton label="删除模型" disabled={busy} disabledReason="操作处理中" onClick={() => void modelAction('delete', persisted)}><Trash2 /></TooltipIconButton>
+                          </> : null}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}</tbody>
+              </table>
             </div>
           </div>
         ) : <div className="mt-6 flex items-center gap-2 text-sm text-[var(--muted)]"><KeyRound size={16} />请先保存账号，再配置模型。</div>}
@@ -220,10 +262,6 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="grid gap-1.5 text-sm text-[var(--muted)]"><span className="font-semibold text-[var(--fg)]">{label}</span>{children}</label>
-}
-
-function IconButton({ title, disabled, onClick, children }: { title: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" className={cn(adminButton.base, adminButton.ghost, 'size-9 px-0')} title={title} aria-label={title} disabled={disabled} onClick={onClick}>{children}</button>
 }
 
 function errorText(error: unknown) {

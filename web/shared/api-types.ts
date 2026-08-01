@@ -1005,6 +1005,12 @@ export type TextModel = {
   created_at: string
   updated_at: string
 }
+export type TextModelDefaultReadiness = {
+  status: 'ready' | 'selection_required' | 'unavailable'
+  eligibleCount: number
+  defaultModel?: TextModel
+  defaultAccount?: TextModelAccount
+}
 export type TextModelWriteRequest = {
   version?: number
   model_code: string

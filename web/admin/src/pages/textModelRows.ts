@@ -1,4 +1,4 @@
-import type { TextModel, TextModelAccount, TextModelAccountWriteRequest, TextModelAPIStyle, TextModelWriteRequest } from '../../../shared/api-types'
+import type { TextModel, TextModelAccount, TextModelAccountWriteRequest, TextModelAPIStyle, TextModelDefaultReadiness, TextModelWriteRequest } from '../../../shared/api-types'
 
 export type TextModelAccountDraft = {
   id?: string | number
@@ -43,6 +43,25 @@ export function modelDraftFromView(model: TextModel): TextModelDraft {
     id: model.id, version: model.version, modelCode: model.model_code, displayName: model.display_name,
     inputPrice: model.input_price_per_million_tokens, outputPrice: model.output_price_per_million_tokens,
     currency: model.currency, enabled: model.enabled, isDefault: model.is_default,
+  }
+}
+
+export function textModelReadiness(accounts: TextModelAccount[], models: TextModel[]): TextModelDefaultReadiness {
+  const enabledAccounts = new Map(accounts.filter((account) => account.enabled).map((account) => [String(account.id), account]))
+  const eligibleModels = models.filter((model) => model.enabled && enabledAccounts.has(String(model.account_id)))
+  const defaults = eligibleModels.filter((model) => model.is_default)
+  if (defaults.length === 1) {
+    const defaultModel = defaults[0]
+    return {
+      status: 'ready',
+      eligibleCount: eligibleModels.length,
+      defaultModel,
+      defaultAccount: enabledAccounts.get(String(defaultModel.account_id)),
+    }
+  }
+  return {
+    status: eligibleModels.length ? 'selection_required' : 'unavailable',
+    eligibleCount: eligibleModels.length,
   }
 }
 
