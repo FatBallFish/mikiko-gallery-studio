@@ -12,6 +12,9 @@ NATIVE_CONTRACT="$ROOT/scripts/workflow/native-package-contract.sh"
 PROD_COMPOSE="$ROOT/deployments/docker-compose/docker-compose.prod.yml"
 APP_PACKAGER="$ROOT/scripts/devops/package.sh"
 ADMIN_DOCKERFILE="$ROOT/Dockerfile.admin-web"
+RELEASE_NOTES_TEMPLATE="$ROOT/.github/release-notes-template.md"
+RELEASE_NOTES_RENDERER="$ROOT/scripts/devops/render-release-notes.sh"
+RELEASE_NOTES_CONTRACT="$ROOT/scripts/devops/release-notes-contract-test.sh"
 
 require_file() {
   [[ -f "$1" ]] || {
@@ -47,8 +50,22 @@ require_file "$NATIVE_PACKAGER"
 require_file "$NATIVE_CONTRACT"
 require_file "$PROD_COMPOSE"
 require_file "$ADMIN_DOCKERFILE"
+require_file "$RELEASE_NOTES_TEMPLATE"
+require_file "$RELEASE_NOTES_RENDERER"
+require_file "$RELEASE_NOTES_CONTRACT"
 
 require_text "$ADMIN_DOCKERFILE" 'FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS build'
+"$RELEASE_NOTES_CONTRACT"
+
+for heading in \
+  "## 项目简介" \
+  "## Feature 更新" \
+  "## Bugfix" \
+  "## 优化项" \
+  "## 快速部署教程" \
+  "## 快速升级教程"; do
+  require_text "$RELEASE_NOTES_TEMPLATE" "$heading"
+done
 
 for image in api worker user-web admin-web docs-web; do
   require_text "$IMAGE_SCRIPT" "mikiko-gallery-studio-$image"
@@ -122,6 +139,13 @@ for required in \
   "gh release view" \
   "gh release create" \
   "gh release upload" \
+  "fetch-depth: 0" \
+  "Render release notes" \
+  "./scripts/devops/render-release-notes.sh" \
+  "RELEASE_NOTES_TAG:" \
+  "RELEASE_NOTES_REPOSITORY:" \
+  "--notes-file" \
+  "gh release edit" \
   "GH_REPO:" \
   ".sha256"; do
   require_text "$WORKFLOW" "$required"
@@ -191,6 +215,7 @@ assert manifest["assets"]["mgsctl-linux-amd64"]["name"] == "mgsctl-linux-amd64"
 PY
 forbid_text "$WORKFLOW" "--clobber"
 forbid_text "$WORKFLOW" "docker tag"
+forbid_text "$WORKFLOW" "--generate-notes"
 forbid_text "$MAINTAINER_DOC" "scripts/local/pgctl.sh"
 forbid_text "$MAINTAINER_DOC" "scripts/service/manage"
 
