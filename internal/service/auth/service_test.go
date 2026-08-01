@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
+	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -111,6 +114,79 @@ func TestLoginAndRefreshRotation(t *testing.T) {
 	if !ok || appErr.Code != errs.CodeAuthRefreshReplayBlocked {
 		t.Fatalf("expected replay blocked error, got %#v", err)
 	}
+}
+
+func TestDefaultNicknameFromEmail(t *testing.T) {
+	tests := map[string]string{
+		"alice@example.com":                 "alice",
+		" Alice.Name+tag@Example.com ":      "alice.name+tag",
+		"@example.com":                      "user",
+		"malformed":                         "user",
+		strings.Repeat("长", 70) + "@x.test": strings.Repeat("长", 64),
+	}
+	for email, want := range tests {
+		if got := defaultNicknameFromEmail(email); got != want {
+			t.Errorf("defaultNicknameFromEmail(%q)=%q want %q", email, got, want)
+		}
+	}
+}
+
+func TestRegisterDerivesNicknameFromEmailInMemoryAndStoreModes(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		store Store
+	}{
+		{name: "memory"},
+		{name: "store", store: newRecordingAuthStore()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewServiceWithStore(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"}, tt.store)
+			for _, item := range []struct {
+				email string
+				want  string
+			}{{email: "alice@example.com", want: "alice"}, {email: "bob.name+tag@example.com", want: "bob.name+tag"}} {
+				if err := svc.SendEmailCode(item.email, "login"); err != nil {
+					t.Fatalf("SendEmailCode(%s): %v", item.email, err)
+				}
+				user, _, err := svc.LoginWithEmailCode(item.email, "123456")
+				if err != nil {
+					t.Fatalf("LoginWithEmailCode(%s): %v", item.email, err)
+				}
+				if user.Nickname != item.want || strings.HasPrefix(user.Nickname, "user-") {
+					t.Fatalf("expected email-derived nickname %q, got %#v", item.want, user)
+				}
+			}
+		})
+	}
+}
+
+type recordingAuthStore struct {
+	Store
+	nextID int64
+	users  map[string]domainauth.User
+}
+
+func newRecordingAuthStore() *recordingAuthStore {
+	return &recordingAuthStore{nextID: 1, users: map[string]domainauth.User{}}
+}
+
+func (s *recordingAuthStore) GetUserByEmail(_ context.Context, email string) (domainauth.User, error) {
+	user, ok := s.users[email]
+	if !ok {
+		return domainauth.User{}, repoerr.ErrNotFound
+	}
+	return user, nil
+}
+
+func (s *recordingAuthStore) CreateUser(_ context.Context, user domainauth.User) (domainauth.User, error) {
+	user.ID = s.nextID
+	s.nextID++
+	s.users[user.Email] = user
+	return user, nil
+}
+
+func (s *recordingAuthStore) SaveRefreshSession(context.Context, entstore.RefreshSessionRecord) error {
+	return nil
 }
 
 func TestSendEmailCodeFailsClosedWithoutDeliveryOrExplicitFixedCode(t *testing.T) {
