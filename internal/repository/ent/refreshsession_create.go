@@ -55,6 +55,20 @@ func (_c *RefreshSessionCreate) SetUserID(v int64) *RefreshSessionCreate {
 	return _c
 }
 
+// SetTokenVersion sets the "token_version" field.
+func (_c *RefreshSessionCreate) SetTokenVersion(v int) *RefreshSessionCreate {
+	_c.mutation.SetTokenVersion(v)
+	return _c
+}
+
+// SetNillableTokenVersion sets the "token_version" field if the given value is not nil.
+func (_c *RefreshSessionCreate) SetNillableTokenVersion(v *int) *RefreshSessionCreate {
+	if v != nil {
+		_c.SetTokenVersion(*v)
+	}
+	return _c
+}
+
 // SetSessionFamilyID sets the "session_family_id" field.
 func (_c *RefreshSessionCreate) SetSessionFamilyID(v uuid.UUID) *RefreshSessionCreate {
 	_c.mutation.SetSessionFamilyID(v)
@@ -216,6 +230,10 @@ func (_c *RefreshSessionCreate) defaults() {
 		v := refreshsession.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.TokenVersion(); !ok {
+		v := refreshsession.DefaultTokenVersion
+		_c.mutation.SetTokenVersion(v)
+	}
 	if _, ok := _c.mutation.SessionFamilyID(); !ok {
 		v := refreshsession.DefaultSessionFamilyID()
 		_c.mutation.SetSessionFamilyID(v)
@@ -252,6 +270,9 @@ func (_c *RefreshSessionCreate) check() error {
 	}
 	if _, ok := _c.mutation.UserID(); !ok {
 		return &ValidationError{Name: "user_id", err: errors.New(`ent: missing required field "RefreshSession.user_id"`)}
+	}
+	if _, ok := _c.mutation.TokenVersion(); !ok {
+		return &ValidationError{Name: "token_version", err: errors.New(`ent: missing required field "RefreshSession.token_version"`)}
 	}
 	if _, ok := _c.mutation.SessionFamilyID(); !ok {
 		return &ValidationError{Name: "session_family_id", err: errors.New(`ent: missing required field "RefreshSession.session_family_id"`)}
@@ -337,6 +358,10 @@ func (_c *RefreshSessionCreate) createSpec() (*RefreshSession, *sqlgraph.CreateS
 	if value, ok := _c.mutation.UserID(); ok {
 		_spec.SetField(refreshsession.FieldUserID, field.TypeInt64, value)
 		_node.UserID = value
+	}
+	if value, ok := _c.mutation.TokenVersion(); ok {
+		_spec.SetField(refreshsession.FieldTokenVersion, field.TypeInt, value)
+		_node.TokenVersion = value
 	}
 	if value, ok := _c.mutation.SessionFamilyID(); ok {
 		_spec.SetField(refreshsession.FieldSessionFamilyID, field.TypeUUID, value)

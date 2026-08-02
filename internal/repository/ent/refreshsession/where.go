@@ -70,6 +70,11 @@ func UserID(v int64) predicate.RefreshSession {
 	return predicate.RefreshSession(sql.FieldEQ(FieldUserID, v))
 }
 
+// TokenVersion applies equality check predicate on the "token_version" field. It's identical to TokenVersionEQ.
+func TokenVersion(v int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldEQ(FieldTokenVersion, v))
+}
+
 // SessionFamilyID applies equality check predicate on the "session_family_id" field. It's identical to SessionFamilyIDEQ.
 func SessionFamilyID(v uuid.UUID) predicate.RefreshSession {
 	return predicate.RefreshSession(sql.FieldEQ(FieldSessionFamilyID, v))
@@ -228,6 +233,46 @@ func UserIDLT(v int64) predicate.RefreshSession {
 // UserIDLTE applies the LTE predicate on the "user_id" field.
 func UserIDLTE(v int64) predicate.RefreshSession {
 	return predicate.RefreshSession(sql.FieldLTE(FieldUserID, v))
+}
+
+// TokenVersionEQ applies the EQ predicate on the "token_version" field.
+func TokenVersionEQ(v int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldEQ(FieldTokenVersion, v))
+}
+
+// TokenVersionNEQ applies the NEQ predicate on the "token_version" field.
+func TokenVersionNEQ(v int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldNEQ(FieldTokenVersion, v))
+}
+
+// TokenVersionIn applies the In predicate on the "token_version" field.
+func TokenVersionIn(vs ...int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldIn(FieldTokenVersion, vs...))
+}
+
+// TokenVersionNotIn applies the NotIn predicate on the "token_version" field.
+func TokenVersionNotIn(vs ...int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldNotIn(FieldTokenVersion, vs...))
+}
+
+// TokenVersionGT applies the GT predicate on the "token_version" field.
+func TokenVersionGT(v int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldGT(FieldTokenVersion, v))
+}
+
+// TokenVersionGTE applies the GTE predicate on the "token_version" field.
+func TokenVersionGTE(v int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldGTE(FieldTokenVersion, v))
+}
+
+// TokenVersionLT applies the LT predicate on the "token_version" field.
+func TokenVersionLT(v int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldLT(FieldTokenVersion, v))
+}
+
+// TokenVersionLTE applies the LTE predicate on the "token_version" field.
+func TokenVersionLTE(v int) predicate.RefreshSession {
+	return predicate.RefreshSession(sql.FieldLTE(FieldTokenVersion, v))
 }
 
 // SessionFamilyIDEQ applies the EQ predicate on the "session_family_id" field.

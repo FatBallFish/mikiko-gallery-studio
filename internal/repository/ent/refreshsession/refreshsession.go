@@ -20,6 +20,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldTokenVersion holds the string denoting the token_version field in the database.
+	FieldTokenVersion = "token_version"
 	// FieldSessionFamilyID holds the string denoting the session_family_id field in the database.
 	FieldSessionFamilyID = "session_family_id"
 	// FieldRefreshTokenHash holds the string denoting the refresh_token_hash field in the database.
@@ -46,6 +48,7 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldUserID,
+	FieldTokenVersion,
 	FieldSessionFamilyID,
 	FieldRefreshTokenHash,
 	FieldStatus,
@@ -73,6 +76,8 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DefaultTokenVersion holds the default value on creation for the "token_version" field.
+	DefaultTokenVersion int
 	// DefaultSessionFamilyID holds the default value on creation for the "session_family_id" field.
 	DefaultSessionFamilyID func() uuid.UUID
 	// RefreshTokenHashValidator is a validator for the "refresh_token_hash" field. It is called by the builders before save.
@@ -116,6 +121,11 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByUserID orders the results by the user_id field.
 func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+}
+
+// ByTokenVersion orders the results by the token_version field.
+func ByTokenVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTokenVersion, opts...).ToFunc()
 }
 
 // BySessionFamilyID orders the results by the session_family_id field.

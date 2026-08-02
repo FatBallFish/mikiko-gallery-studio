@@ -6,9 +6,37 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 )
+
+func TestJeePayUnifiedOrderHasIndependentRequestTimeout(t *testing.T) {
+	previousClient := jeepayHTTPClient
+	jeepayHTTPClient = &http.Client{Timeout: 25 * time.Millisecond}
+	t.Cleanup(func() { jeepayHTTPClient = previousClient })
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"payUrl":"https://jeepay.example.com/late"}}`))
+	}))
+	defer upstream.Close()
+
+	request := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret",
+		}},
+		OrderNo: "PGO-JEEPAY-TIMEOUT", AmountCNY: "9.90000", Subject: "Timeout test",
+	}
+	startedAt := time.Now()
+	if _, _, _, _, _, err := BuildJeePayAPIPayment(context.Background(), CallbackURLConfig{}, request); err == nil {
+		t.Fatal("expected a stalled JeePay unified-order request to time out")
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("JeePay timeout took too long: %s", elapsed)
+	}
+}
 
 func TestJeePayPaymentDisplayBuilderDefaultsToAPIPost(t *testing.T) {
 	var called bool

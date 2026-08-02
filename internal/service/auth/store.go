@@ -13,7 +13,7 @@ type Store interface {
 	CreateUser(ctx context.Context, user domainauth.User) (domainauth.User, error)
 	GetUserByID(ctx context.Context, id int64) (domainauth.User, error)
 	UpdateUser(ctx context.Context, user domainauth.User) (domainauth.User, error)
-	UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string, passwordUpdatedAt time.Time) (domainauth.User, error)
+	UpdatePasswordAndRevokeSessions(ctx context.Context, userID int64, passwordHash string, passwordUpdatedAt time.Time) (domainauth.User, error)
 	MarkUserClosed(ctx context.Context, userID int64, closedAt time.Time) (domainauth.User, error)
 	IncrementTokenVersion(ctx context.Context, userID int64) error
 	RevokeRefreshSessionsByUser(ctx context.Context, userID int64) error

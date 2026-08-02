@@ -99,7 +99,7 @@ Email-code login verifies and consumes the code as today, creates the user/trial
 
 This token is only parsed by the password-setup endpoint. Normal access-token parsing rejects it because normal claims do not carry the expected access purpose. The setup endpoint reloads the user and checks ID, email, token version, status, expiry, issuer, and purpose before setting the password.
 
-Setting the password increments `token_version`, revokes all refresh sessions, and returns a newly issued normal session. This makes the setup grant one-time without cluster-local memory.
+Setting the password increments `token_version` and revokes all refresh sessions in one database transaction, then returns a newly issued normal session. Refresh-session records persist the token version present at issuance; refresh rejects passwordless users and stale token versions before rotation. This makes the setup grant one-time, prevents pre-upgrade passwordless cookies from bypassing setup, and keeps invalidation correct across clustered nodes without cluster-local memory.
 
 ### 4.2 Profile password change
 

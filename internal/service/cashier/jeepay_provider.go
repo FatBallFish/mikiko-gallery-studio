@@ -19,6 +19,8 @@ import (
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
+var jeepayHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 func NewJeePayPaymentDisplayBuilder(callbacks CallbackURLConfig) PaymentDisplayBuilder {
 	return func(ctx context.Context, req PaymentDisplayRequest, display map[string]any) (PaymentDisplayResult, error) {
 		return BuildJeePayPaymentDisplay(ctx, callbacks, req, display)
@@ -65,7 +67,7 @@ func BuildJeePayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, req
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
+	resp, doErr := jeepayHTTPClient.Do(httpReq)
 	if doErr != nil {
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}

@@ -63,6 +63,7 @@ function gcd(a: number, b: number): number {
 
 function normalizeQualityBucket(value: string): SizeTier | null {
   switch (value.trim().toLowerCase()) {
+    case 'auto':
     case '1k':
     case 'low':
       return '1k'

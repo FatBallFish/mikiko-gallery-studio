@@ -276,6 +276,44 @@ func TestLoginAndRefreshRotation(t *testing.T) {
 	}
 }
 
+func TestRefreshRejectsLegacyPasswordlessSession(t *testing.T) {
+	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"})
+	if err := svc.SendEmailCode("legacy-passwordless@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, session := completePasswordlessCodeLogin(t, svc, "legacy-passwordless@example.com", "123456")
+
+	svc.mu.Lock()
+	svc.usersByID[user.ID].PasswordHash = ""
+	svc.mu.Unlock()
+
+	if _, _, err := svc.Refresh(session.RefreshToken); err == nil {
+		t.Fatal("expected a legacy passwordless refresh session to be rejected")
+	}
+	if current := svc.sessionsByHash[hashToken(session.RefreshToken)]; current == nil || current.Status != "revoked" {
+		t.Fatalf("passwordless refresh session must be revoked, got %#v", current)
+	}
+}
+
+func TestRefreshRejectsSessionFromOlderTokenVersion(t *testing.T) {
+	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"})
+	if err := svc.SendEmailCode("stale-session@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, session := completePasswordlessCodeLogin(t, svc, "stale-session@example.com", "123456")
+
+	svc.mu.Lock()
+	svc.usersByID[user.ID].TokenVersion++
+	svc.mu.Unlock()
+
+	if _, _, err := svc.Refresh(session.RefreshToken); err == nil {
+		t.Fatal("expected a refresh session from an older token version to be rejected")
+	}
+	if current := svc.sessionsByHash[hashToken(session.RefreshToken)]; current == nil || current.Status != "revoked" {
+		t.Fatalf("stale-version refresh session must be revoked, got %#v", current)
+	}
+}
+
 func TestDefaultNicknameFromEmail(t *testing.T) {
 	tests := map[string]string{
 		"alice@example.com":                 "alice",

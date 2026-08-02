@@ -24,6 +24,8 @@ type RefreshSession struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// TokenVersion holds the value of the "token_version" field.
+	TokenVersion int `json:"token_version,omitempty"`
 	// SessionFamilyID holds the value of the "session_family_id" field.
 	SessionFamilyID uuid.UUID `json:"session_family_id,omitempty"`
 	// RefreshTokenHash holds the value of the "refresh_token_hash" field.
@@ -50,7 +52,7 @@ func (*RefreshSession) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case refreshsession.FieldReplacedBySessionID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case refreshsession.FieldUserID:
+		case refreshsession.FieldUserID, refreshsession.FieldTokenVersion:
 			values[i] = new(sql.NullInt64)
 		case refreshsession.FieldRefreshTokenHash, refreshsession.FieldStatus, refreshsession.FieldUserAgent, refreshsession.FieldIPAddr:
 			values[i] = new(sql.NullString)
@@ -96,6 +98,12 @@ func (_m *RefreshSession) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case refreshsession.FieldTokenVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field token_version", values[i])
+			} else if value.Valid {
+				_m.TokenVersion = int(value.Int64)
 			}
 		case refreshsession.FieldSessionFamilyID:
 			if value, ok := values[i].(*uuid.UUID); !ok {
@@ -191,6 +199,9 @@ func (_m *RefreshSession) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	builder.WriteString(", ")
+	builder.WriteString("token_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TokenVersion))
 	builder.WriteString(", ")
 	builder.WriteString("session_family_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SessionFamilyID))

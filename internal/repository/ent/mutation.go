@@ -36522,6 +36522,8 @@ type RefreshSessionMutation struct {
 	updated_at             *time.Time
 	user_id                *int64
 	adduser_id             *int64
+	token_version          *int
+	addtoken_version       *int
 	session_family_id      *uuid.UUID
 	refresh_token_hash     *string
 	status                 *string
@@ -36766,6 +36768,62 @@ func (m *RefreshSessionMutation) AddedUserID() (r int64, exists bool) {
 func (m *RefreshSessionMutation) ResetUserID() {
 	m.user_id = nil
 	m.adduser_id = nil
+}
+
+// SetTokenVersion sets the "token_version" field.
+func (m *RefreshSessionMutation) SetTokenVersion(i int) {
+	m.token_version = &i
+	m.addtoken_version = nil
+}
+
+// TokenVersion returns the value of the "token_version" field in the mutation.
+func (m *RefreshSessionMutation) TokenVersion() (r int, exists bool) {
+	v := m.token_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTokenVersion returns the old "token_version" field's value of the RefreshSession entity.
+// If the RefreshSession object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RefreshSessionMutation) OldTokenVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTokenVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTokenVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTokenVersion: %w", err)
+	}
+	return oldValue.TokenVersion, nil
+}
+
+// AddTokenVersion adds i to the "token_version" field.
+func (m *RefreshSessionMutation) AddTokenVersion(i int) {
+	if m.addtoken_version != nil {
+		*m.addtoken_version += i
+	} else {
+		m.addtoken_version = &i
+	}
+}
+
+// AddedTokenVersion returns the value that was added to the "token_version" field in this mutation.
+func (m *RefreshSessionMutation) AddedTokenVersion() (r int, exists bool) {
+	v := m.addtoken_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTokenVersion resets all changes to the "token_version" field.
+func (m *RefreshSessionMutation) ResetTokenVersion() {
+	m.token_version = nil
+	m.addtoken_version = nil
 }
 
 // SetSessionFamilyID sets the "session_family_id" field.
@@ -37116,7 +37174,7 @@ func (m *RefreshSessionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RefreshSessionMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.created_at != nil {
 		fields = append(fields, refreshsession.FieldCreatedAt)
 	}
@@ -37125,6 +37183,9 @@ func (m *RefreshSessionMutation) Fields() []string {
 	}
 	if m.user_id != nil {
 		fields = append(fields, refreshsession.FieldUserID)
+	}
+	if m.token_version != nil {
+		fields = append(fields, refreshsession.FieldTokenVersion)
 	}
 	if m.session_family_id != nil {
 		fields = append(fields, refreshsession.FieldSessionFamilyID)
@@ -37164,6 +37225,8 @@ func (m *RefreshSessionMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedAt()
 	case refreshsession.FieldUserID:
 		return m.UserID()
+	case refreshsession.FieldTokenVersion:
+		return m.TokenVersion()
 	case refreshsession.FieldSessionFamilyID:
 		return m.SessionFamilyID()
 	case refreshsession.FieldRefreshTokenHash:
@@ -37195,6 +37258,8 @@ func (m *RefreshSessionMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldUpdatedAt(ctx)
 	case refreshsession.FieldUserID:
 		return m.OldUserID(ctx)
+	case refreshsession.FieldTokenVersion:
+		return m.OldTokenVersion(ctx)
 	case refreshsession.FieldSessionFamilyID:
 		return m.OldSessionFamilyID(ctx)
 	case refreshsession.FieldRefreshTokenHash:
@@ -37240,6 +37305,13 @@ func (m *RefreshSessionMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUserID(v)
+		return nil
+	case refreshsession.FieldTokenVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTokenVersion(v)
 		return nil
 	case refreshsession.FieldSessionFamilyID:
 		v, ok := value.(uuid.UUID)
@@ -37308,6 +37380,9 @@ func (m *RefreshSessionMutation) AddedFields() []string {
 	if m.adduser_id != nil {
 		fields = append(fields, refreshsession.FieldUserID)
 	}
+	if m.addtoken_version != nil {
+		fields = append(fields, refreshsession.FieldTokenVersion)
+	}
 	return fields
 }
 
@@ -37318,6 +37393,8 @@ func (m *RefreshSessionMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case refreshsession.FieldUserID:
 		return m.AddedUserID()
+	case refreshsession.FieldTokenVersion:
+		return m.AddedTokenVersion()
 	}
 	return nil, false
 }
@@ -37333,6 +37410,13 @@ func (m *RefreshSessionMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddUserID(v)
+		return nil
+	case refreshsession.FieldTokenVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTokenVersion(v)
 		return nil
 	}
 	return fmt.Errorf("unknown RefreshSession numeric field %s", name)
@@ -37384,6 +37468,9 @@ func (m *RefreshSessionMutation) ResetField(name string) error {
 		return nil
 	case refreshsession.FieldUserID:
 		m.ResetUserID()
+		return nil
+	case refreshsession.FieldTokenVersion:
+		m.ResetTokenVersion()
 		return nil
 	case refreshsession.FieldSessionFamilyID:
 		m.ResetSessionFamilyID()

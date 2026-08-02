@@ -38,6 +38,7 @@ type refreshSession struct {
 	ID                  string
 	FamilyID            string
 	UserID              int64
+	TokenVersion        int
 	RefreshTokenHash    string
 	Status              string
 	ExpiresAt           time.Time
@@ -532,6 +533,7 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 			ID:                  record.ID,
 			FamilyID:            record.FamilyID,
 			UserID:              record.UserID,
+			TokenVersion:        record.TokenVersion,
 			RefreshTokenHash:    record.RefreshTokenHash,
 			Status:              record.Status,
 			ExpiresAt:           time.Unix(record.ExpiresAt, 0),
@@ -575,6 +577,16 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 	}
 	if user.Status == "closed" {
 		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
+	}
+	if user.PasswordHash == "" || current.TokenVersion != user.TokenVersion {
+		current.Status = "revoked"
+		s.persistRefreshTokenStateLocked(*current)
+		if s.store != nil {
+			if err := s.store.MarkRefreshSessionRevoked(context.Background(), current.ID); err != nil {
+				return domainauth.User{}, domainauth.Session{}, err
+			}
+		}
+		return domainauth.User{}, domainauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "refresh token expired")
 	}
 	current.Status = "rotated"
 	newSession := s.issueSessionWithFamilyLocked(&user, current.FamilyID)
@@ -688,7 +700,7 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 		RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", user.ID), ExpiresAt: jwt.NewNumericDate(accessExp), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: s.cfg.Issuer},
 	}
 	accessToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.AccessTokenSecret))
-	session := &refreshSession{ID: sessionID, FamilyID: familyID, UserID: user.ID, RefreshTokenHash: refreshHash, Status: "active", ExpiresAt: refreshExp}
+	session := &refreshSession{ID: sessionID, FamilyID: familyID, UserID: user.ID, TokenVersion: user.TokenVersion, RefreshTokenHash: refreshHash, Status: "active", ExpiresAt: refreshExp}
 	s.sessionsByHash[refreshHash] = session
 	s.familySessions[familyID] = append(s.familySessions[familyID], session)
 	s.persistRefreshTokenStateLocked(*session)
@@ -697,6 +709,7 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 			ID:               session.ID,
 			FamilyID:         session.FamilyID,
 			UserID:           session.UserID,
+			TokenVersion:     session.TokenVersion,
 			RefreshTokenHash: session.RefreshTokenHash,
 			Status:           session.Status,
 			ExpiresAt:        session.ExpiresAt.Unix(),
@@ -889,11 +902,8 @@ func (s *Service) updatePasswordLocked(user *domainauth.User, newPassword string
 	now := time.Now().UTC()
 	passwordHash := hashPassword(newPassword)
 	if s.store != nil {
-		updated, err := s.store.UpdatePasswordHash(context.Background(), user.ID, passwordHash, now)
+		updated, err := s.store.UpdatePasswordAndRevokeSessions(context.Background(), user.ID, passwordHash, now)
 		if err != nil {
-			return domainauth.User{}, err
-		}
-		if err := s.store.RevokeRefreshSessionsByUser(context.Background(), user.ID); err != nil {
 			return domainauth.User{}, err
 		}
 		s.revokeUserSessionsLocked(user.ID)
