@@ -57,5 +57,5 @@ export function closePaymentWindow(paymentWindow: PaymentWindow | null): void {
 }
 
 function defaultOpenPaymentWindow(): PaymentWindow | null {
-  return window.open('', '_blank', 'noopener,noreferrer') as unknown as PaymentWindow | null
+  return window.open('', '_blank') as unknown as PaymentWindow | null
 }

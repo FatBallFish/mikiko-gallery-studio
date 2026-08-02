@@ -1681,7 +1681,22 @@ func TestAdminCashierOrderRefundCallsJeePayProvider(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamPath = r.URL.Path
 		if r.Method != http.MethodPost {
-			t.Fatalf("expected jeepay refund POST, got %s", r.Method)
+			t.Fatalf("expected jeepay POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/pay/unifiedOrder" {
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode jeepay unified order JSON: %v", err)
+			}
+			if body["mchOrderNo"] == "" || body["sign"] == "" {
+				t.Fatalf("unexpected jeepay unified order body: %#v", body)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+			return
+		}
+		if r.URL.Path != "/api/refund/refundOrder" {
+			t.Fatalf("unexpected jeepay refund path %s", r.URL.Path)
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -1692,7 +1707,6 @@ func TestAdminCashierOrderRefundCallsJeePayProvider(t *testing.T) {
 			t.Fatalf("parse jeepay refund form: %v body=%s", err, string(body))
 		}
 		upstreamValues = values
-		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"refundOrderId":"JEEPAY-REFUND-001","mchRefundNo":"REFUND-JEEPAY-001","refundAmount":1250,"state":2,"channelOrderNo":"CHANNEL-REFUND-001"}}`))
 	}))
 	defer upstream.Close()
@@ -2360,10 +2374,22 @@ func TestAdminCashierOrderSyncQueriesJeePayProvider(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamPath = r.URL.Path
 		if r.Method != http.MethodPost {
-			t.Fatalf("expected jeepay query POST, got %s", r.Method)
+			t.Fatalf("expected jeepay POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/pay/unifiedOrder" {
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode jeepay unified order JSON: %v", err)
+			}
+			if body["mchOrderNo"] == "" || body["sign"] == "" {
+				t.Fatalf("unexpected jeepay unified order body: %#v", body)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+			return
 		}
 		if r.URL.Path != "/api/pay/query" {
-			t.Fatalf("expected jeepay query path /api/pay/query, got %s", r.URL.Path)
+			t.Fatalf("unexpected jeepay query path %s", r.URL.Path)
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -2374,7 +2400,6 @@ func TestAdminCashierOrderSyncQueriesJeePayProvider(t *testing.T) {
 			t.Fatalf("parse jeepay query form: %v", err)
 		}
 		upstreamValues = values
-		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{"state":2,"amount":1250,"payOrderId":"JEEPAY-QUERY-001"}}`))
 	}))
 	defer upstream.Close()

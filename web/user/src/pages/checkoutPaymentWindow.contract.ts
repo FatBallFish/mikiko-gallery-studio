@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import type { CheckoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import {
   closePaymentWindow,
@@ -5,6 +6,11 @@ import {
   reservePaymentWindow,
   type PaymentWindow,
 } from './checkoutPaymentWindow'
+
+const source = fs.readFileSync(new URL('./checkoutPaymentWindow.ts', import.meta.url), 'utf8')
+if (!source.includes("window.open('', '_blank')") || source.includes("window.open('', '_blank', 'noopener,noreferrer')")) {
+  throw new Error('payment reservation must retain its window handle before detaching opener access')
+}
 
 type FakePaymentWindow = PaymentWindow & {
   closedCount: number

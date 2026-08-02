@@ -6,7 +6,7 @@ import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageDetailModal, Lo
 import { useApiResource } from '../useApiResource'
 import { ArrowRight, Image as ImageIcon, RefreshCw, Sparkles } from '../ui/icons'
 import { galleryImageAspect } from './galleryExperience'
-import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
+import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homePublicDetailImage, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
 
 const homeClasses = {
   content: 'mx-auto w-full max-w-[1440px] flex-1 px-6 pb-28 pt-8 md:px-10 md:pb-16 md:pt-12',
@@ -54,7 +54,7 @@ export function HomePage() {
   function openImage(image: ImageResult) {
     const source = image.url || image.download_url
     if (!source) return
-    setSelectedImage(image)
+    setSelectedImage(homePublicDetailImage(image))
   }
 
   return (

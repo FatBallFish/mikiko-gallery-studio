@@ -85,6 +85,10 @@ export function homeGalleryCardView(image: ImageResult) {
   }
 }
 
+export function homePublicDetailImage(image: ImageResult): ImageResult {
+  return { ...image, prompt: image.prompt_excerpt }
+}
+
 export function homeModelReadinessView(capability: Capability | null, loading: boolean) {
   if (loading) {
     return {

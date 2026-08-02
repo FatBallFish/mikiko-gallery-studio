@@ -12,10 +12,8 @@ if (source.includes('app.session?.token')) {
 if (source.includes('image.prompt || image.prompt_excerpt')) {
   throw new Error('home public cards and lightbox must never prefer a full prompt over prompt_excerpt')
 }
-for (const excerptOnly of ['alt: image.prompt_excerpt || image.id', 'prompt: image.prompt_excerpt']) {
-  if (!source.includes(excerptOnly)) {
-    throw new Error(`home public lightbox must use only prompt_excerpt: ${excerptOnly}`)
-  }
+if (!source.includes('homePublicDetailImage(image)')) {
+  throw new Error('home public detail must sanitize public list images before opening the detail modal')
 }
 
 const publicURL = userApi.imageAssetUrl('/v1/open/gallery/images/public-1/download', null)

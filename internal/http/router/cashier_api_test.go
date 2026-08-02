@@ -528,24 +528,10 @@ func TestCashierWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 func TestCashierJeePayDisplayIsSignedAndPersisted(t *testing.T) {
 	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-display-user@example.com")
 	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
-	if order.Provider != "jeepay_alipay" || order.ProviderType != "jeepay_alipay" || order.ProviderInstanceID == 0 || order.PaymentURL == "" {
+	if order.Provider != "jeepay_alipay" || order.ProviderType != "jeepay_alipay" || order.ProviderInstanceID == 0 || order.PaymentURL != "https://jeepay.example.com/pay/session" {
 		t.Fatalf("expected jeepay order provider metadata and payment url, got %#v", order)
 	}
-	payURL, err := url.Parse(order.PaymentURL)
-	if err != nil {
-		t.Fatalf("parse jeepay payment url: %v", err)
-	}
-	query := payURL.Query()
-	if !strings.HasSuffix(payURL.Path, "/api/pay/unifiedOrder") {
-		t.Fatalf("expected jeepay unifiedOrder URL, got %s", order.PaymentURL)
-	}
-	if query.Get("mchNo") != "MCH10001" || query.Get("appId") != "APP10001" || query.Get("wayCode") != "ALI_PC" || query.Get("mchOrderNo") != order.OrderNo || query.Get("amount") != "1250" {
-		t.Fatalf("unexpected jeepay payment params: %s", order.PaymentURL)
-	}
-	if query.Get("notifyUrl") == "" || query.Get("returnUrl") == "" || query.Get("sign") == "" || query.Get("signType") != "MD5" {
-		t.Fatalf("expected jeepay callbacks and MD5 signature, got %s", order.PaymentURL)
-	}
-	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["sign_type"] != "MD5" || order.PaymentDisplay["way_code"] != "ALI_PC" {
+	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["prepay_mode"] != "api" || order.PaymentDisplay["sign_type"] != "MD5" || order.PaymentDisplay["way_code"] != "ALI_PC" {
 		t.Fatalf("expected signed jeepay display to mirror payment url, got %#v", order.PaymentDisplay)
 	}
 
@@ -709,7 +695,7 @@ func TestCashierStripeWebhookVerifiesExactBodyAndCreditsOnce(t *testing.T) {
 
 func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 	var upstreamPath string
-	var upstreamValues url.Values
+	var upstreamValues map[string]string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamPath = r.URL.Path
 		if r.Method != http.MethodPost {
@@ -718,10 +704,9 @@ func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 		if r.URL.Path != "/api/pay/unifiedOrder" {
 			t.Fatalf("unexpected jeepay api path %s", r.URL.Path)
 		}
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("parse jeepay unified order form: %v", err)
+		if err := json.NewDecoder(r.Body).Decode(&upstreamValues); err != nil {
+			t.Fatalf("decode jeepay unified order JSON: %v", err)
 		}
-		upstreamValues = r.PostForm
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-API-PAY-001","payUrl":"https://jeepay.example.com/pay/session","codeUrl":"https://jeepay.example.com/qr/session","payData":"weixin://wxpay/bizpayurl?pr=jeepay-session"}}`))
 	}))
@@ -782,7 +767,7 @@ func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 	if upstreamPath != "/api/pay/unifiedOrder" {
 		t.Fatalf("expected jeepay unified order path, got %q", upstreamPath)
 	}
-	if upstreamValues.Get("mchNo") != "MCH10001" || upstreamValues.Get("appId") != "APP10001" || upstreamValues.Get("mchOrderNo") != createResp.Data.OrderNo || upstreamValues.Get("wayCode") != "ALI_PC" || upstreamValues.Get("amount") != "1250" || upstreamValues.Get("clientIp") != "127.0.0.1" || upstreamValues.Get("sign") == "" || upstreamValues.Get("signType") != "MD5" {
+	if upstreamValues["mchNo"] != "MCH10001" || upstreamValues["appId"] != "APP10001" || upstreamValues["mchOrderNo"] != createResp.Data.OrderNo || upstreamValues["wayCode"] != "ALI_PC" || upstreamValues["amount"] != "1250" || upstreamValues["clientIp"] != "127.0.0.1" || upstreamValues["sign"] == "" || upstreamValues["signType"] != "MD5" {
 		t.Fatalf("unexpected jeepay unified order params: %#v", upstreamValues)
 	}
 	if createResp.Data.PaymentURL != "https://jeepay.example.com/pay/session" || createResp.Data.QRCode != "https://jeepay.example.com/qr/session" {
@@ -794,12 +779,11 @@ func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 }
 
 func TestCashierJeePayAPIModeSerializesStructuredChannelExtra(t *testing.T) {
-	var upstreamValues url.Values
+	var upstreamValues map[string]string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("parse jeepay unified order form: %v", err)
+		if err := json.NewDecoder(r.Body).Decode(&upstreamValues); err != nil {
+			t.Fatalf("decode jeepay unified order JSON: %v", err)
 		}
-		upstreamValues = r.PostForm
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"data":{"codeUrl":"https://jeepay.example.com/qr/jsapi","payOrderId":"JEEPAY-JSAPI-001"}}`))
 	}))
@@ -848,17 +832,21 @@ func TestCashierJeePayAPIModeSerializesStructuredChannelExtra(t *testing.T) {
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("expected jeepay jsapi order create 201, got %d body=%s", createRec.Code, createRec.Body.String())
 	}
-	if upstreamValues.Get("wayCode") != "WX_JSAPI" || upstreamValues.Get("channelExtra") == "" || upstreamValues.Get("sign") == "" {
+	if upstreamValues["wayCode"] != "WX_JSAPI" || upstreamValues["channelExtra"] == "" || upstreamValues["sign"] == "" {
 		t.Fatalf("expected jeepay jsapi params to include wayCode, channelExtra and sign, got %#v", upstreamValues)
 	}
 	var channelExtra map[string]string
-	if err := json.Unmarshal([]byte(upstreamValues.Get("channelExtra")), &channelExtra); err != nil {
-		t.Fatalf("expected channelExtra to be JSON object, got %q: %v", upstreamValues.Get("channelExtra"), err)
+	if err := json.Unmarshal([]byte(upstreamValues["channelExtra"]), &channelExtra); err != nil {
+		t.Fatalf("expected channelExtra to be JSON object, got %q: %v", upstreamValues["channelExtra"], err)
 	}
 	if channelExtra["openid"] != "wx-openid-001" || channelExtra["subAppId"] != "wx-sub-app" {
 		t.Fatalf("unexpected channelExtra JSON: %#v", channelExtra)
 	}
-	if got, want := upstreamValues.Get("sign"), jeepaySignForTest(upstreamValues, "merchant-secret"); got != want {
+	signedValues := make(url.Values, len(upstreamValues))
+	for key, value := range upstreamValues {
+		signedValues.Set(key, value)
+	}
+	if got, want := upstreamValues["sign"], jeepaySignForTest(signedValues, "merchant-secret"); got != want {
 		t.Fatalf("expected channelExtra to participate in signature, got %s want %s", got, want)
 	}
 }
@@ -2347,6 +2335,22 @@ func createStripeCustomAmountOrderForWebhookTest(t *testing.T, handler http.Hand
 
 func setupJeePayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string) {
 	t.Helper()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pay/unifiedOrder" || r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("unexpected jeepay unified order request %s %s content-type=%q", r.Method, r.URL.Path, r.Header.Get("Content-Type"))
+		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode jeepay unified order JSON: %v", err)
+		}
+		if body["mchNo"] != "MCH10001" || body["appId"] != "APP10001" || body["wayCode"] != "ALI_PC" || body["sign"] == "" {
+			t.Fatalf("unexpected jeepay unified order body: %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+	}))
+	t.Cleanup(upstream.Close)
+
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{
 		AccessTokenTTL:    10 * time.Minute,
@@ -2378,7 +2382,7 @@ func setupJeePayCashierTest(t *testing.T, userEmail string) (http.Handler, strin
 		t.Fatalf("expected visible methods update 200, got %d body=%s", visibleRec.Code, visibleRec.Body.String())
 	}
 
-	providerBody := `{"provider_type":"jeepay_alipay","name":"JeePay 支付宝","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":"https://jeepay.example.com","mch_no":"MCH10001","app_id":"APP10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/payments/jeepay/notify","return_url":"https://merchant.example.com/checkout/return","way_code":"ALI_PC"}}`
+	providerBody := fmt.Sprintf(`{"provider_type":"jeepay_alipay","name":"JeePay 支付宝","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":%q,"mch_no":"MCH10001","app_id":"APP10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/payments/jeepay/notify","return_url":"https://merchant.example.com/checkout/return","way_code":"ALI_PC"}}`, upstream.URL)
 	createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
 	return handler, userSession.AccessToken, adminToken
 }
