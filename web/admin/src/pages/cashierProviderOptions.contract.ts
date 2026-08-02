@@ -154,9 +154,19 @@ if (/占位|placeholder|后续|暂未|即将|版本/i.test(guideVisibleCopy)) {
 }
 
 const jeepayFields = cashierJeePayConfigFields('jeepay_wxpay')
-for (const expected of ['网关地址', '商户号', '应用 ID', '支付模式', 'wayCode', '客户端 IP', '渠道参数']) {
+for (const expected of ['网关地址', '商户号', '应用 ID', 'wayCode', '客户端 IP', '渠道参数']) {
   if (!jeepayFields.some((field) => field.label === expected)) {
     throw new Error(`JeePay structured fields should include ${expected}, got ${JSON.stringify(jeepayFields)}`)
+  }
+}
+for (const providerType of ['jeepay_alipay', 'jeepay_wxpay'] as const) {
+  const fields = cashierProviderConfigFields(providerType)
+  if (jeepayFields.some((field) => field.key === 'payment_mode') || fields.some((field) => field.key === 'payment_mode')) {
+    throw new Error(`JeePay ${providerType} should always use API prepay and must not expose payment_mode`)
+  }
+  const copy = [...jeepayFields, ...fields].map((field) => `${field.label} ${field.hint}`).join(' ')
+  if (/popup|跳转收银台/.test(copy)) {
+    throw new Error(`JeePay ${providerType} should not describe unsupported browser unified-order behavior: ${copy}`)
   }
 }
 if (cashierJeePayConfigFields('mock').length !== 0) {

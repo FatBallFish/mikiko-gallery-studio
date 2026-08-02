@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -25,52 +26,27 @@ func NewJeePayPaymentDisplayBuilder(callbacks CallbackURLConfig) PaymentDisplayB
 }
 
 func BuildJeePayPaymentDisplay(ctx context.Context, callbacks CallbackURLConfig, req PaymentDisplayRequest, display map[string]any) (PaymentDisplayResult, error) {
-	prepayMode := strings.ToLower(strings.TrimSpace(configString(req.Instance.Config, "payment_mode", "prepay_mode", "trade_type")))
-	if prepayMode == "api" || prepayMode == "qrcode" || prepayMode == "qr_code" {
-		paymentURL, qrCode, sign, wayCode, channelTradeNo, err := BuildJeePayAPIPayment(ctx, callbacks, req)
-		if err != nil {
-			return PaymentDisplayResult{}, err
-		}
-		result := PaymentDisplayResult{Display: display, PaymentURL: paymentURL, QRCode: qrCode}
-		display["type"] = "redirect"
-		if qrCode != "" {
-			display["type"] = "qr_code"
-			display["qr_code"] = qrCode
-		}
-		if paymentURL != "" {
-			display["payment_url"] = paymentURL
-		}
-		display["prepay_mode"] = "api"
-		display["sign"] = sign
-		display["sign_type"] = "MD5"
-		display["way_code"] = wayCode
-		if channelTradeNo != "" {
-			display["channel_trade_no"] = channelTradeNo
-		}
-		return result, nil
-	}
-	paymentURL, sign, wayCode, err := BuildJeePayPaymentURL(callbacks, req)
+	paymentURL, qrCode, sign, wayCode, channelTradeNo, err := BuildJeePayAPIPayment(ctx, callbacks, req)
 	if err != nil {
 		return PaymentDisplayResult{}, err
 	}
+	result := PaymentDisplayResult{Display: display, PaymentURL: paymentURL, QRCode: qrCode}
 	display["type"] = "redirect"
-	display["payment_url"] = paymentURL
+	if qrCode != "" {
+		display["type"] = "qr_code"
+		display["qr_code"] = qrCode
+	}
+	if paymentURL != "" {
+		display["payment_url"] = paymentURL
+	}
+	display["prepay_mode"] = "api"
 	display["sign"] = sign
 	display["sign_type"] = "MD5"
 	display["way_code"] = wayCode
-	return PaymentDisplayResult{Display: display, PaymentURL: paymentURL}, nil
-}
-
-func BuildJeePayPaymentURL(callbacks CallbackURLConfig, req PaymentDisplayRequest) (string, string, string, error) {
-	baseURL, params, sign, wayCode, err := BuildJeePayPaymentParams(callbacks, req)
-	if err != nil {
-		return "", "", "", err
+	if channelTradeNo != "" {
+		display["channel_trade_no"] = channelTradeNo
 	}
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
-	}
-	return strings.TrimRight(baseURL, "/") + "/api/pay/unifiedOrder?" + values.Encode(), sign, wayCode, nil
+	return result, nil
 }
 
 func BuildJeePayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, req PaymentDisplayRequest) (string, string, string, string, string, error) {
@@ -78,16 +54,16 @@ func BuildJeePayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, req
 	if err != nil {
 		return "", "", "", "", "", err
 	}
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
+	body, marshalErr := json.Marshal(params)
+	if marshalErr != nil {
+		return "", "", "", "", "", errs.Internal("encode jeepay unified order request")
 	}
 	endpoint := strings.TrimRight(baseURL, "/") + "/api/pay/unifiedOrder"
-	httpReq, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()))
+	httpReq, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
 	if reqErr != nil {
 		return "", "", "", "", "", errs.BadRequest("invalid jeepay gateway_url")
 	}
-	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
 	resp, doErr := http.DefaultClient.Do(httpReq)
 	if doErr != nil {
@@ -114,7 +90,17 @@ func BuildJeePayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, req
 		data = nested
 	}
 	paymentURL := strings.TrimSpace(firstRawString(data, "payUrl", "pay_url", "payurl", "payURL", "cashierUrl", "cashier_url"))
-	qrCode := strings.TrimSpace(firstRawString(data, "codeUrl", "code_url", "qrCode", "qr_code", "qrcode", "payData", "pay_data"))
+	qrCode := strings.TrimSpace(firstRawString(data, "codeUrl", "code_url", "qrCode", "qr_code", "qrcode"))
+	if payData := strings.TrimSpace(firstRawString(data, "payData", "pay_data")); paymentURL == "" && qrCode == "" && payData != "" {
+		payDataType := strings.ToLower(strings.TrimSpace(firstRawString(data, "payDataType", "pay_data_type")))
+		if payDataType == "codeurl" || payDataType == "code_img_url" || payDataType == "codeimgurl" {
+			qrCode = payData
+		} else if parsed, parseErr := url.Parse(payData); parseErr == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+			paymentURL = payData
+		} else {
+			qrCode = payData
+		}
+	}
 	channelTradeNo := strings.TrimSpace(firstRawString(data, "payOrderId", "pay_order_id", "trade_no", "tradeNo", "channelOrderNo"))
 	if paymentURL == "" && qrCode == "" {
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
@@ -156,7 +142,9 @@ func BuildJeePayPaymentParams(callbacks CallbackURLConfig, req PaymentDisplayReq
 		"notifyUrl":  notifyURL,
 		"returnUrl":  returnURL,
 		"clientIp":   defaultString(strings.TrimSpace(configString(req.Instance.Config, "client_ip", "clientIp", "payer_client_ip", "payerClientIP")), "127.0.0.1"),
+		"reqTime":    strconv.FormatInt(time.Now().UnixMilli(), 10),
 		"signType":   "MD5",
+		"version":    "1.0",
 	}
 	channelExtra, channelExtraErr := jsonOrStringConfig(req.Instance.Config, "channel_extra", "channelExtra", "channel_extra_json", "channelExtraJSON")
 	if channelExtraErr != nil {
