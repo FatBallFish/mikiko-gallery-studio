@@ -7,6 +7,7 @@ import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
+import { landingAssetUrl } from './landingContent'
 import { loginCopy, loginLocale } from './loginCopy'
 import {
   loginPresentation,
@@ -114,6 +115,10 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
   const presentation = loginPresentation({ mode, intent, busy, sending, cooldown: effectiveCooldown, passwordSetupRequired: Boolean(passwordSetupToken) })
   const isDark = app.themePreference.mode === 'dark'
   const activeTabId = `${formId}-${mode}-tab`
+  const studioShowcase1280Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.webp')
+  const studioShowcase1920Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.webp')
+  const studioShowcase1280Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.avif')
+  const studioShowcase1920Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.avif')
 
   useEffect(() => {
     if (cooldown <= 0) return undefined
@@ -274,7 +279,11 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
   return (
     <main className={loginClasses.page}>
       <section className={loginClasses.scene} aria-hidden="true">
-        <img className={loginClasses.sceneImage} src="/landing/hero-gallery.webp" alt="" width={1280} height={720} decoding="async" fetchPriority="high" />
+        <picture className="block size-full">
+          <source type="image/avif" srcSet={`${studioShowcase1280Avif} 1280w, ${studioShowcase1920Avif} 1920w`} sizes="(min-width: 768px) 54vw, 100vw" />
+          <source type="image/webp" srcSet={`${studioShowcase1280Webp} 1280w, ${studioShowcase1920Webp} 1920w`} sizes="(min-width: 768px) 54vw, 100vw" />
+          <img className={loginClasses.sceneImage} src={studioShowcase1280Webp} alt="" width={1280} height={720} decoding="async" fetchPriority="high" />
+        </picture>
         <div className={loginClasses.sceneShade} />
         <div className={loginClasses.sceneCopy}>
           <h1 className={loginClasses.sceneTitle}>让每一次生成，都回到同一座创作暗房。</h1>
@@ -283,7 +292,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
       </section>
 
       <button type="button" className={loginClasses.brand} onClick={() => app.navigate('landing')} aria-label={`${siteBrand.name} 首页`}>
-        <BrandMark withText />
+        <BrandMark withText inverse />
       </button>
 
       <section className={loginClasses.panel} aria-labelledby={`${formId}-title`}>

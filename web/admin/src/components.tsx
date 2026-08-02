@@ -343,7 +343,7 @@ export function AdminLayout({
         </>
       ) : null}
 
-      <aside className={adminShell.sidebar} aria-label="Pic Gallery Admin Navigation">
+      <aside className={adminShell.sidebar} aria-label="Mikiko Gallery Studio Admin Navigation">
         <a className={adminShell.brand} href={routeHref('dashboard')} onClick={() => onNavigate('dashboard')}>
           <span className={adminShell.brandOrb}>M</span>
           <strong className={adminShell.brandText}>Mikiko Admin</strong>

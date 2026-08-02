@@ -7,7 +7,7 @@ const landingAssetUrl = 'landingAssetUrl' in landingContent
 
 if (!landingAssetUrl) throw new Error('landing content must expose a base-path-aware asset URL helper')
 
-if (landingAssetUrl('/studio/', '/landing/hero-gallery.webp') !== '/studio/landing/hero-gallery.webp') {
+if (landingAssetUrl('/studio/', '/landing/studio-showcase-1280.webp') !== '/studio/landing/studio-showcase-1280.webp') {
   throw new Error('landing assets must respect a non-root Vite base path')
 }
 

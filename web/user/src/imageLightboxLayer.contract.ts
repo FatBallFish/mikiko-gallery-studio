@@ -11,7 +11,7 @@ if (overlayLayers.modal !== 'z-[110]' || overlayLayers.lightbox !== 'z-[120]' ||
 
 const ssr = renderToString(createElement(ImageDetailModal, {
   title: 'SSR detail contract',
-  image: { id: 'ssr', url: '/landing/hero-gallery.webp', width: 1024, height: 768, publish_status: 'private' },
+  image: { id: 'ssr', url: '/landing/studio-showcase-1280.webp', width: 1280, height: 720, publish_status: 'private' },
   onCopyPrompt: () => undefined,
   onClose: () => undefined,
 }))

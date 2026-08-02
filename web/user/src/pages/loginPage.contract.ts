@@ -19,8 +19,21 @@ for (const required of [
   'setPasswordSetupToken(result.password_setup_token)',
   'await userApi.completePasswordSetup(passwordSetupToken, newPassword)',
   'data-auth-field="confirmPassword"',
+  '<picture',
+  '/landing/studio-showcase-1280.webp',
+  '/landing/studio-showcase-1920.webp',
+  '/landing/studio-showcase-1280.avif',
+  '/landing/studio-showcase-1920.avif',
+  'type="image/avif"',
+  'type="image/webp"',
+  'srcSet=',
+  '<BrandMark withText inverse />',
 ]) {
   if (!source.includes(required)) throw new Error(`authentication page source contract missing: ${required}`)
+}
+
+if (source.includes('/landing/hero-gallery.webp')) {
+  throw new Error('login must not serve the legacy test-user hero screenshot')
 }
 
 if (/localStorage\.(?:setItem|getItem)\([^\n]*passwordSetupToken/.test(source)) {

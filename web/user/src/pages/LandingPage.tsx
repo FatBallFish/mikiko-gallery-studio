@@ -29,7 +29,10 @@ export function LandingPage() {
   const app = useApp()
   const pageRef = useRef<HTMLElement>(null)
   useLandingMotion(pageRef)
-  const heroGalleryAsset = landingAssetUrl(import.meta.env.BASE_URL, '/landing/hero-gallery.webp')
+  const studioShowcase1280Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.webp')
+  const studioShowcase1920Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.webp')
+  const studioShowcase1280Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.avif')
+  const studioShowcase1920Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.avif')
   const workspaceAsset = landingAssetUrl(import.meta.env.BASE_URL, '/landing/workspace.webp')
 
   const goCreate = () => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })
@@ -110,17 +113,21 @@ export function LandingPage() {
             onClick={goCreate}
             aria-label="打开图片生成页面"
           >
-            <img
-              data-landing-image
-              className="size-full object-cover object-left transition-transform duration-700 ease-out group-hover:scale-105 group-focus-visible:scale-105"
-              src={heroGalleryAsset}
-              alt="Mikiko 图片详情中的真实生成结果"
-              width={1280}
-              height={720}
-              loading="eager"
-              decoding="async"
-              fetchPriority="high"
-            />
+            <picture className="block size-full">
+              <source type="image/avif" srcSet={`${studioShowcase1280Avif} 1280w, ${studioShowcase1920Avif} 1920w`} sizes="(min-width: 768px) 64vw, 112vw" />
+              <source type="image/webp" srcSet={`${studioShowcase1280Webp} 1280w, ${studioShowcase1920Webp} 1920w`} sizes="(min-width: 768px) 64vw, 112vw" />
+              <img
+                data-landing-image
+                className="size-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105 group-focus-visible:scale-105"
+                src={studioShowcase1280Webp}
+                alt="Mikiko Studio 原创视觉资产工作台"
+                width={1280}
+                height={720}
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+              />
+            </picture>
             <span data-landing-image-overlay className="pointer-events-none absolute inset-0 bg-black opacity-0" />
             <span className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-lg border border-white/15 bg-black/70 px-3 py-2 text-xs font-semibold text-white backdrop-blur-md md:bottom-6 md:left-6 md:text-sm">
               从灵感发现进入生成与资产管理
@@ -164,8 +171,8 @@ export function LandingPage() {
                       data-landing-image
                       src={landingAssetUrl(import.meta.env.BASE_URL, capability.image)}
                       alt=""
-                      width={capability.image === '/landing/workspace.webp' ? 1291 : 1280}
-                      height={capability.image === '/landing/workspace.webp' ? 808 : 720}
+                      width={capability.image === '/landing/workspace.webp' ? 1440 : 1280}
+                      height={capability.image === '/landing/workspace.webp' ? 900 : 720}
                       loading="lazy"
                       decoding="async"
                       className="absolute inset-0 size-full object-cover opacity-30 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-45 group-focus-visible:scale-105 group-focus-visible:opacity-45"
@@ -199,8 +206,8 @@ export function LandingPage() {
               <img
                 src={workspaceAsset}
                 alt=""
-                width={1291}
-                height={808}
+                width={1440}
+                height={900}
                 loading="lazy"
                 decoding="async"
                 className="size-full object-cover"
@@ -247,8 +254,8 @@ export function LandingPage() {
                   data-landing-image
                   src={landingAssetUrl(import.meta.env.BASE_URL, mode.image)}
                   alt=""
-                  width={mode.image === '/landing/workspace.webp' ? 1291 : 1280}
-                  height={mode.image === '/landing/workspace.webp' ? 808 : 720}
+                  width={mode.image === '/landing/workspace.webp' ? 1440 : 1280}
+                  height={mode.image === '/landing/workspace.webp' ? 900 : 720}
                   loading="lazy"
                   decoding="async"
                   className="absolute inset-0 size-full object-cover opacity-45 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-65 group-focus-visible:scale-105 group-focus-visible:opacity-65"
