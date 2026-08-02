@@ -12,8 +12,8 @@ if (calculateImageSizeForBaseResolution('4K', '1:1') !== '2880x2880') {
   throw new Error('4K 1:1 should map to 2880x2880')
 }
 
-if (calculateImageSizeForBaseResolution('auto', '16:9') !== '1280x720') {
-  throw new Error('auto 16:9 should preview the default 1K route bucket')
+if (calculateImageSizeForBaseResolution('auto', '16:9') !== 'auto') {
+  throw new Error('unresolved auto must remain auto instead of guessing a route bucket')
 }
 
 const customCases = [

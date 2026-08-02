@@ -586,7 +586,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
     ? customSizeNormalization.valid ? customSizeNormalization.size : ''
     : pixelSize
-  const ratioPixelEstimate = useMemo(() => workspaceRatioPixelEstimate(baseResolution, ratio), [baseResolution, ratio])
+  const ratioPixelEstimate = useMemo(
+    () => workspaceRatioPixelEstimate(baseResolution, ratio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
+    [baseResolution, ratio, selectedModel, taskType],
+  )
 
   useEffect(() => {
     if (!capability || !selectedModel) return

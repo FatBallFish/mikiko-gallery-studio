@@ -15,6 +15,14 @@ if (workspaceRatioPixelEstimate('', '16:9') !== '' || workspaceRatioPixelEstimat
   throw new Error('ratio pixel preview must remain empty until both parameters are selected')
 }
 
+if (workspaceRatioPixelEstimate('auto', '16:9', '2k') !== '2560x1440') {
+  throw new Error('auto ratio preview must use the backend-resolved task bucket')
+}
+
+if (workspaceRatioPixelEstimate('auto', '16:9') !== '') {
+  throw new Error('auto ratio preview must remain hidden without an authoritative task bucket')
+}
+
 const ratioPayload: EstimateRequest = {
   task_type: 'image_edit',
   route_model_code: 'plus',

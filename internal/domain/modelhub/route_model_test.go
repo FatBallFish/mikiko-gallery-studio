@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -70,6 +71,32 @@ func TestListVisibleRouteModelsMergesGroupsAndUsesLowestMultiplier(t *testing.T)
 	}
 	if !containsString(items[1].TaskTypes, "image_edit") || items[1].MaxReferenceImageCount != 3 || items[1].MaxOutputImageCount != 4 {
 		t.Fatalf("expected visible reference capabilities, got %#v", items[1])
+	}
+}
+
+func TestListVisibleRouteModelsExposesAutoBaseResolutionByTaskType(t *testing.T) {
+	resolver := NewResolver(config.Config{Billing: config.BillingConfig{
+		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "2k"},
+	}})
+	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{
+		RouteModels: []RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices: []RoutePriceConfig{
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "2k", BasePoints: "2.00000", Enabled: true},
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "4k", BasePoints: "4.00000", Enabled: true},
+			{RouteModelID: 1, TaskType: "image_edit", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true},
+		},
+	}})
+
+	items, err := resolver.ListVisibleRouteModels(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("ListVisibleRouteModels: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("visible route model count = %d, want 1", len(items))
+	}
+	want := map[string]string{"text_to_image": "2k", "image_edit": "1k"}
+	if !reflect.DeepEqual(items[0].AutoBaseResolutionByTaskType, want) {
+		t.Fatalf("auto base resolution map = %#v, want %#v", items[0].AutoBaseResolutionByTaskType, want)
 	}
 }
 

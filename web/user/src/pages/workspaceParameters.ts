@@ -15,9 +15,11 @@ export function normalizeWorkspaceCustomSize(width: string, height: string): Cus
   return normalizeCustomImageSize(Number(width), Number(height))
 }
 
-export function workspaceRatioPixelEstimate(baseResolution: string, ratio: string) {
+export function workspaceRatioPixelEstimate(baseResolution: string, ratio: string, autoBaseResolution = '') {
   if (!baseResolution.trim() || !ratio.trim()) return ''
-  return calculateImageSizeForBaseResolution(baseResolution, ratio)
+  const effectiveBaseResolution = baseResolution.trim().toLowerCase() === 'auto' ? autoBaseResolution : baseResolution
+  if (!effectiveBaseResolution.trim()) return ''
+  return calculateImageSizeForBaseResolution(effectiveBaseResolution, ratio)
 }
 
 export function workspaceOutputOptions(model?: CapabilityModelGroup) {

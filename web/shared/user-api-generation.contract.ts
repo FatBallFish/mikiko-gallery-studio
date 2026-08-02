@@ -53,6 +53,7 @@ const capability = normalizeCapabilities({
     Description: 'Current Go capability shape',
     TaskTypes: ['text_to_image', 'image_edit'],
     Qualities: ['auto', '1k', '2k'],
+    AutoBaseResolutionByTaskType: { text_to_image: '2k', image_edit: '1k' },
     AspectRatios: ['1:1', '16:9'],
     SupportsCustomSize: true,
     MaxOutputImageCount: 4,
@@ -72,6 +73,7 @@ const capability = normalizeCapabilities({
 const model = capability.model_groups[0]
 if (!model) throw new Error('Go-style capability should expose its model group')
 assertDeepEqual(model.base_resolution, ['auto', '1k', '2k'], 'quality buckets should become base-resolution options')
+assertDeepEqual(model.auto_base_resolution_by_task_type, { text_to_image: '2k', image_edit: '1k' }, 'resolved auto buckets should survive capability normalization')
 assertDeepEqual(model.qualities, ['auto', '1k', '2k'], 'legacy quality aliases should remain available')
 assertDeepEqual(model.aspect_ratios, ['1:1', '16:9'], 'Go aspect ratios should survive normalization')
 assertDeepEqual(model.size_modes, ['ratio'], 'the current Go API should expose ratio mode only')

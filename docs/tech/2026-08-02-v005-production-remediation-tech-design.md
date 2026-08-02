@@ -84,7 +84,7 @@ The TypeScript helper mirrors the algorithm for immediate feedback. Backend norm
 
 When pixel mode is enabled, the admin shows preset tags and a custom-size toggle. New model drafts receive the default preset list. Workspace shows either preset selection or a “自定义尺寸” option. Custom width/height fields update a visible final normalized size and include the exact owner-provided model-limit description.
 
-Ratio mode calls the existing `calculateImageSizeForBaseResolution` helper and displays the estimated dimensions beside the controls. This is advisory UI; the request continues sending ratio/base resolution and the backend remains authoritative.
+Ratio mode calls the existing `calculateImageSizeForBaseResolution` helper and displays the estimated dimensions beside the controls. For `auto`, each visible route model exposes `auto_base_resolution_by_task_type`, derived with the same route-default and configured-price fallback rules used by request resolution. The workspace uses the selected task type's value and hides the estimate when that authoritative value is absent; it never assumes 1K. This is advisory UI; the request continues sending ratio/base resolution and the backend remains authoritative.
 
 ## 4. Password Setup and Session Invalidation
 
@@ -100,6 +100,8 @@ Email-code login verifies and consumes the code as today, creates the user/trial
 This token is only parsed by the password-setup endpoint. Normal access-token parsing rejects it because normal claims do not carry the expected access purpose. The setup endpoint reloads the user and checks ID, email, token version, status, expiry, issuer, and purpose before setting the password.
 
 Setting the password increments `token_version` and revokes all refresh sessions in one database transaction, then returns a newly issued normal session. Refresh-session records persist the token version present at issuance; refresh rejects passwordless users and stale token versions before rotation. This makes the setup grant one-time, prevents pre-upgrade passwordless cookies from bypassing setup, and keeps invalidation correct across clustered nodes without cluster-local memory.
+
+Adding `refresh_sessions.token_version` advances the explicit database schema version from 1 to 2. PostgreSQL migration adds the non-null column with default 0 so existing sessions remain readable; passwordless or stale legacy sessions are then rejected by the authentication service rather than failing at the storage boundary.
 
 ### 4.2 Profile password change
 

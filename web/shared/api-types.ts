@@ -493,6 +493,7 @@ export type CapabilityItem = {
   task_types: ImageTaskType[]
   qualities?: string[]
   base_resolution?: string[]
+  auto_base_resolution_by_task_type?: Partial<Record<ImageTaskType, string>>
   size_modes?: Array<'ratio' | 'pixel' | string>
   aspect_ratios: string[]
   pixel_sizes?: string[]
@@ -521,6 +522,7 @@ export type CapabilityModelGroup = {
   task_types: ImageTaskType[]
   qualities?: string[]
   base_resolution?: string[]
+  auto_base_resolution_by_task_type?: Partial<Record<ImageTaskType, string>>
   size_modes?: Array<'ratio' | 'pixel' | string>
   aspect_ratios?: string[]
   pixel_sizes?: string[]

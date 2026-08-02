@@ -63,7 +63,6 @@ function gcd(a: number, b: number): number {
 
 function normalizeQualityBucket(value: string): SizeTier | null {
   switch (value.trim().toLowerCase()) {
-    case 'auto':
     case '1k':
     case 'low':
       return '1k'
@@ -103,6 +102,7 @@ export function isExplicitImageSize(value: string) {
 }
 
 export function calculateImageSizeForQuality(quality: string, ratio: string) {
+  if (quality.trim().toLowerCase() === 'auto') return 'auto'
   const tier = normalizeQualityBucket(quality)
   if (!tier) return legacySizeMap[ratio] ?? ratio
 
