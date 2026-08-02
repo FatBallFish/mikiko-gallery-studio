@@ -23,12 +23,13 @@ import { useCompactWorkspaceViewport, workspaceParametersHidden } from './worksp
 import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGesture'
 import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
-import { normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions } from './workspaceParameters'
+import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 
 type OutputTab = 'current' | 'history'
 type WorkspaceSizeMode = 'ratio' | 'pixel'
+type WorkspacePixelSelection = 'preset' | 'custom'
 type RestoreParameters = {
   routeModelCode?: string
   sizeMode?: WorkspaceSizeMode
@@ -263,6 +264,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [baseResolution, setBaseResolution] = useState('')
   const [ratio, setRatio] = useState('')
   const [pixelSize, setPixelSize] = useState('')
+  const [pixelSelection, setPixelSelection] = useState<WorkspacePixelSelection>('preset')
+  const [customWidth, setCustomWidth] = useState('')
+  const [customHeight, setCustomHeight] = useState('')
   const [count, setCount] = useState(1)
   const [quality, setQuality] = useState('auto')
   const [outputFormat, setOutputFormat] = useState('png')
@@ -577,6 +581,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
   const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
+  const customSizeSupported = Boolean(selectedModel && selectedModel.supports_custom_size && sizeModes.includes('pixel'))
+  const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight), [customWidth, customHeight])
+  const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
+    ? customSizeNormalization.valid ? customSizeNormalization.size : ''
+    : pixelSize
+  const ratioPixelEstimate = useMemo(() => workspaceRatioPixelEstimate(baseResolution, ratio), [baseResolution, ratio])
 
   useEffect(() => {
     if (!capability || !selectedModel) return
@@ -588,17 +598,30 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     )
     if (waitingForPreferredModel) return
 
-	setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
+    setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
     setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
-    setPixelSize(restoreParameters?.pixelSize && pixelSizes.includes(restoreParameters.pixelSize) ? restoreParameters.pixelSize : pixelSizes[0] ?? '')
+    const restoredPixelSize = restoreParameters?.pixelSize
+    const restoredCustomDimensions = customSizeSupported && restoredPixelSize && !pixelSizes.includes(restoredPixelSize)
+      ? parsePixelDimensions(restoredPixelSize)
+      : null
+    if (restoredCustomDimensions) {
+      setPixelSelection('custom')
+      setCustomWidth(String(restoredCustomDimensions.width))
+      setCustomHeight(String(restoredCustomDimensions.height))
+    } else {
+      setPixelSelection('preset')
+      setCustomWidth('')
+      setCustomHeight('')
+    }
+    setPixelSize(restoredPixelSize && pixelSizes.includes(restoredPixelSize) ? restoredPixelSize : pixelSizes[0] ?? '')
     setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0])
     setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0])
     setOutputCompression(restoreParameters?.outputCompression ?? 100)
     setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0])
     setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))
     restoreParametersRef.current = null
-  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions])
+  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -610,7 +633,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }, [selectedModel, quality, outputFormat, outputCompression, moderation])
 
   const sizeParametersReady = sizeMode === 'pixel'
-    ? Boolean(pixelSize && pixelSizes.includes(pixelSize))
+    ? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
     : Boolean(baseResolution && ratio && baseResolutionOptionsForModel.includes(baseResolution) && ratios.includes(ratio))
 
   const parametersReady = Boolean(
@@ -636,10 +659,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	output_compression: compressionVisible ? outputCompression : 100,
 	moderation,
 	aspect_ratio: sizeMode === 'ratio' ? ratio : '',
-	pixel_size: sizeMode === 'pixel' ? pixelSize : undefined,
+	pixel_size: sizeMode === 'pixel' ? effectivePixelSize : undefined,
     image_count: count,
     reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : [],
-  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, pixelSize, count, editRefs])
+  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, effectivePixelSize, count, editRefs])
   const estimateKey = useMemo(() => workspaceEstimateKey(estimatePayload), [estimatePayload])
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
@@ -1189,7 +1212,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 </div>
               ) : null}
 
-              {sizeMode === 'pixel' && pixelSizes.length ? (
+              {sizeMode === 'ratio' && ratioPixelEstimate ? (
+                <p className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 px-3 py-2 text-xs leading-5 text-[var(--muted)]" role="status">
+                  预计输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{ratioPixelEstimate}</strong>
+                </p>
+              ) : null}
+
+              {sizeMode === 'pixel' && (pixelSizes.length || customSizeSupported) ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>像素尺寸</label>
                   <div className={workspaceClasses.selectGridThree}>
@@ -1197,13 +1226,40 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                       <button
                         key={value}
                         type="button"
-                        className={cn(workspaceClasses.selectItem, pixelSize === value && workspaceClasses.selectItemActive)}
-                        onClick={() => setPixelSize(value)}
+                        className={cn(workspaceClasses.selectItem, pixelSelection === 'preset' && pixelSize === value && workspaceClasses.selectItemActive)}
+                        onClick={() => { setPixelSelection('preset'); setPixelSize(value) }}
                       >
                         <span className={rdWorkspace.itemLabel}>{value}</span>
                       </button>
                     ))}
+                    {customSizeSupported ? (
+                      <button
+                        type="button"
+                        className={cn(workspaceClasses.selectItem, pixelSelection === 'custom' && workspaceClasses.selectItemActive)}
+                        onClick={() => setPixelSelection('custom')}
+                      >
+                        <span className={rdWorkspace.itemLabel}>自定义尺寸</span>
+                      </button>
+                    ) : null}
                   </div>
+                  {customSizeSupported && pixelSelection === 'custom' ? (
+                    <div className="mt-3 grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 p-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-width">
+                          Width
+                          <input id="workspace-custom-width" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-height">
+                          Height
+                          <input id="workspace-custom-height" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
+                        </label>
+                      </div>
+                      <p className="text-xs leading-5 text-[var(--muted)]" role="status">
+                        {customSizeNormalization.valid ? <>最终输出：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '请输入有效的 Width 和 Height。'}
+                      </p>
+                      <p className="text-xs leading-5 text-[var(--muted)]">由于模型限制，最终输出会自动规整到合法尺寸：宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。</p>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -2101,6 +2157,12 @@ function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetr
       </div>
     </div>
   )
+}
+
+function parsePixelDimensions(input: string) {
+  const match = input.match(/^(\d+)x(\d+)$/i)
+  if (!match) return null
+  return { width: Number(match[1]), height: Number(match[2]) }
 }
 
 function normalizeAspectRatio(input?: string) {

@@ -1,4 +1,5 @@
 import type { Capability, CapabilityModelGroup, ImageTaskType } from '../../../shared/api-types'
+import { normalizeCustomImageSize } from '../../../shared/image-size'
 
 export const workspaceCreationDraftStorageKey = 'pic-gallery-workspace-creation-draft-v1'
 const workspaceCreationDraftHistoryKey = '__picGalleryWorkspaceCreationDraft'
@@ -121,7 +122,7 @@ export function normalizeWorkspaceCreationDraft(
   const aspectRatios = model.aspect_ratios?.length ? model.aspect_ratios : capability.aspect_ratios
   const pixelSizes = model.pixel_sizes?.length ? model.pixel_sizes : capability.pixel_sizes ?? []
   const aspectRatio = sizeMode === 'ratio' ? chooseOption(aspectRatios, draft.aspect_ratio, '画面比例', notices) : ''
-  const pixelSize = sizeMode === 'pixel' ? chooseOption(pixelSizes, draft.pixel_size, '像素尺寸', notices) : ''
+  const pixelSize = sizeMode === 'pixel' ? normalizeDraftPixelSize(model, pixelSizes, draft.pixel_size, notices) : ''
   const quality = chooseOption(model.quality ?? model.qualities ?? capability.quality ?? capability.qualities ?? ['auto'], draft.quality, '质量', notices)
   const outputFormat = chooseOption(model.output_format ?? capability.output_format ?? ['png'], draft.output_format, '输出格式', notices)
   const moderation = chooseOption(model.moderation ?? capability.moderation ?? ['auto'], draft.moderation, '内容审核', notices)
@@ -213,6 +214,25 @@ function chooseOption(options: string[], requested: string | undefined, label: s
   const selected = candidates.find((item) => item.toLowerCase() === clean(requested)?.toLowerCase()) ?? candidates[0] ?? ''
   if (selected !== clean(requested)) notices.push(`${label} ${clean(requested) || '未指定'} 当前不可用，已调整为 ${selected || '未设置'}。`)
   return selected
+}
+
+function normalizeDraftPixelSize(model: CapabilityModelGroup, presets: string[], requested: string | undefined, notices: string[]) {
+  const requestedSize = clean(requested)
+  const preset = presets.find((item) => item.toLowerCase() === requestedSize?.toLowerCase())
+  if (preset) return preset
+
+  if (model.supports_custom_size && requestedSize) {
+    const match = requestedSize.match(/^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/)
+    if (match) {
+      const normalized = normalizeCustomImageSize(Number(match[1]), Number(match[2]))
+      if (normalized.valid) {
+        if (normalized.size !== requestedSize) notices.push(`像素尺寸 ${requestedSize} 已规整为 ${normalized.size}。`)
+        return normalized.size
+      }
+    }
+  }
+
+  return chooseOption(presets, requested, '像素尺寸', notices)
 }
 
 function unique<T>(values: T[]) {

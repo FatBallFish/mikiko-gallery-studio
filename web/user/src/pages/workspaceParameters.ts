@@ -1,10 +1,23 @@
 import type { CapabilityModelGroup } from '../../../shared/api-types'
+import { calculateImageSizeForBaseResolution, normalizeCustomImageSize, type CustomImageSizeNormalization } from '../../../shared/image-size'
 
 export type WorkspaceOutputParameters = {
   quality: string
   outputFormat: string
   outputCompression: number
   moderation: string
+}
+
+export function normalizeWorkspaceCustomSize(width: string, height: string): CustomImageSizeNormalization {
+  if (!/^\d+$/.test(width.trim()) || !/^\d+$/.test(height.trim())) {
+    return normalizeCustomImageSize(Number.NaN, Number.NaN)
+  }
+  return normalizeCustomImageSize(Number(width), Number(height))
+}
+
+export function workspaceRatioPixelEstimate(baseResolution: string, ratio: string) {
+  if (!baseResolution.trim() || !ratio.trim()) return ''
+  return calculateImageSizeForBaseResolution(baseResolution, ratio)
 }
 
 export function workspaceOutputOptions(model?: CapabilityModelGroup) {

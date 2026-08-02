@@ -4,6 +4,12 @@ import { readFileSync } from 'node:fs'
 const source = readFileSync(new URL('./ProviderModelsPage.tsx', import.meta.url), 'utf8')
 
 for (const expected of [
+  "const defaultPixelSizes = ['1024x1024', '1536x1024', '1024x1536', '1280x720', '720x1280', '1024x768', '768x1024']",
+  'supportsCustomSize: boolean',
+  'supports_custom_size: modelDialog.supportsCustomSize',
+  '允许用户自定义尺寸',
+  'checked={modelDialog.supportsCustomSize}',
+  'row.supports_custom_size',
   'supportsOutputCompression: boolean',
   'supports_output_compression: modelDialog.supportsOutputCompression',
   '是否支持压缩质量',
@@ -13,6 +19,14 @@ for (const expected of [
   if (!source.includes(expected)) {
     throw new Error(`real-model editor must include ${expected}`)
   }
+}
+
+if (!source.includes("mode === 'pixel' && checked") || !source.includes('supportedPixelSizes: defaultPixelSizes')) {
+  throw new Error('enabling pixel mode must seed all default pixel presets')
+}
+
+if (!source.includes("mode === 'pixel' && !checked") || !source.includes('supportsCustomSize: false')) {
+  throw new Error('disabling pixel mode must also disable custom pixel sizes')
 }
 
 const editorStart = source.indexOf("{modelDialog ? (")

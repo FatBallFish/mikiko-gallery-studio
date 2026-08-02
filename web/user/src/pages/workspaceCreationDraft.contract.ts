@@ -24,6 +24,24 @@ const normalized = normalizeWorkspaceCreationDraft(consumed, capability)
 if (normalized.values.route_model_code !== 'plus' || normalized.values.base_resolution !== '1K' || normalized.values.aspect_ratio !== '1:1' || normalized.values.quality !== 'auto' || normalized.values.output_format !== 'png' || normalized.values.image_count !== 2) throw new Error(`creation draft fallbacks drifted: ${JSON.stringify(normalized)}`)
 if (normalized.notices.length < 4) throw new Error('every unsupported restored field should produce a fallback notice')
 
+const customSizeCapability: Capability = {
+  task_types: ['text_to_image'], aspect_ratios: ['1:1'], pixel_sizes: ['1024x1024'], max_image_count: 1,
+  model_groups: [{ id: 'custom', code: 'custom', name: 'Custom', task_types: ['text_to_image'], base_resolution: ['1K'], size_modes: ['pixel'], pixel_sizes: ['1024x1024'], supports_custom_size: true, quality: ['auto'], output_format: ['png'], moderation: ['auto'], supports_output_compression: false, max_output_image_count: 1, max_reference_image_count: 0, prices: [], supports_reference: false }],
+}
+const restoredCustomSize = normalizeWorkspaceCreationDraft({
+  version: 1, prompt: 'custom dimensions', task_type: 'text_to_image', route_model_code: 'custom', size_mode: 'pixel', pixel_size: '1001x777',
+}, customSizeCapability)
+if (restoredCustomSize.values.pixel_size !== '1008x784') {
+  throw new Error(`custom-enabled drafts must preserve their normalized size, got ${JSON.stringify(restoredCustomSize)}`)
+}
+
+const presetOnlySize = normalizeWorkspaceCreationDraft({
+  version: 1, prompt: 'preset only', task_type: 'text_to_image', route_model_code: 'custom', size_mode: 'pixel', pixel_size: '1001x777',
+}, { ...customSizeCapability, model_groups: [{ ...customSizeCapability.model_groups[0], supports_custom_size: false }] })
+if (presetOnlySize.values.pixel_size !== '1024x1024') {
+  throw new Error(`preset-only drafts must fall back to a configured preset, got ${JSON.stringify(presetOnlySize)}`)
+}
+
 const publicEditWithoutAccessibleSources = normalizeWorkspaceCreationDraft({
   version: 1, prompt: 'public edit prompt', task_type: 'image_edit', route_model_code: 'plus', reference_asset_ids: [],
 }, capability)

@@ -18,7 +18,7 @@ import {
 } from './providerModelRows'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
-type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportedPixelSizes: string[]; pixelInput: string; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
+type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
 type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
 
 const baseResolutionOptions = ['auto', '1K', '2K', '4K']
@@ -26,7 +26,7 @@ const qualityOptions = ['auto', 'low', 'medium', 'high']
 const outputFormatOptions = ['png', 'jpeg', 'webp']
 const moderationOptions = ['auto', 'low']
 const defaultRatios = ['1:1', '16:9', '9:16', '4:3', '3:4']
-const defaultPixelSizes = ['1024x1024']
+const defaultPixelSizes = ['1024x1024', '1536x1024', '1024x1536', '1280x720', '720x1280', '1024x768', '768x1024']
 const blankAccount: AccountDraft = { name: '', adapterType: 'openai_compatible', authType: 'api_key', baseUrl: '', apiKey: '', priority: '1', weight: '100', concurrencyLimit: '5', timeoutMS: '120000', status: 'enabled', sourceMode: 'images' }
 const defaultTestPrompt = 'A small product photo of a ceramic coffee cup on a clean desk'
 const accountPrimaryActionLabel = '查看模型'
@@ -157,6 +157,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         size_modes: modelDialog.sizeModes,
         supported_ratios: modelDialog.supportedRatios,
         supported_pixel_sizes: modelDialog.supportedPixelSizes,
+        supports_custom_size: modelDialog.supportsCustomSize,
         output_format: modelDialog.outputFormat,
         supports_output_compression: modelDialog.supportsOutputCompression,
         moderation: modelDialog.moderation,
@@ -330,6 +331,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             </Field>
             {modelDialog.sizeModes.includes('ratio') ? <Field label="支持比例"><TagInput values={modelDialog.supportedRatios} input={modelDialog.ratioInput} placeholder="例如 3:2，回车添加" options={defaultRatios} normalize={normalizeRatio} onInput={(ratioInput) => setModelDialog({ ...modelDialog, ratioInput })} onChange={(supportedRatios, ratioInput = '') => setModelDialog({ ...modelDialog, supportedRatios, ratioInput })} /></Field> : null}
             {modelDialog.sizeModes.includes('pixel') ? <Field label="支持像素"><TagInput values={modelDialog.supportedPixelSizes} input={modelDialog.pixelInput} placeholder="例如 2048x2048，回车添加" options={defaultPixelSizes} normalize={normalizePixelSize} onInput={(pixelInput) => setModelDialog({ ...modelDialog, pixelInput })} onChange={(supportedPixelSizes, pixelInput = '') => setModelDialog({ ...modelDialog, supportedPixelSizes, pixelInput })} /></Field> : null}
+            {modelDialog.sizeModes.includes('pixel') ? <Field label="允许用户自定义尺寸" hint="启用后，用户可以输入 Width 和 Height，最终尺寸由后端自动规整为模型支持的合法尺寸。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsCustomSize} onChange={(event) => setModelDialog({ ...modelDialog, supportsCustomSize: event.target.checked })} /><span>{modelDialog.supportsCustomSize ? '允许' : '不允许'}</span></label></Field> : null}
             <Field label="输出格式"><TagInput values={modelDialog.outputFormat} input={modelDialog.outputFormatInput} placeholder="png / jpeg / webp" options={outputFormatOptions} normalize={normalizeLowerEnum} onInput={(outputFormatInput) => setModelDialog({ ...modelDialog, outputFormatInput })} onChange={(outputFormat, outputFormatInput = '') => setModelDialog({ ...modelDialog, outputFormat, outputFormatInput })} /></Field>
             <Field label="是否支持压缩质量" hint="启用后，用户可在 JPEG/WebP 输出格式下配置 1-100 的压缩质量。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsOutputCompression} onChange={(event) => setModelDialog({ ...modelDialog, supportsOutputCompression: event.target.checked })} /><span>{modelDialog.supportsOutputCompression ? '支持' : '不支持'}</span></label></Field>
             <Field label="审核等级"><TagInput values={modelDialog.moderation} input={modelDialog.moderationInput} placeholder="auto / low" options={moderationOptions} normalize={normalizeLowerEnum} onInput={(moderationInput) => setModelDialog({ ...modelDialog, moderationInput })} onChange={(moderation, moderationInput = '') => setModelDialog({ ...modelDialog, moderation, moderationInput })} /></Field>
@@ -498,11 +500,11 @@ function editAccountDraft(row: ModelAccount): AccountDraft {
 }
 
 function newModelDraft(account: ModelAccount): ModelDraft {
-  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['auto', '1K', '2K'], baseResolutionInput: '', quality: ['auto'], qualityInput: '', maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, ratioInput: '', supportedPixelSizes: defaultPixelSizes, pixelInput: '', outputFormat: ['png'], outputFormatInput: '', supportsOutputCompression: false, moderation: ['auto'], moderationInput: '', costPerImage: '0.00000', currency: 'USD', enabled: true }
+  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['auto', '1K', '2K'], baseResolutionInput: '', quality: ['auto'], qualityInput: '', maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, ratioInput: '', supportedPixelSizes: defaultPixelSizes, pixelInput: '', supportsCustomSize: false, outputFormat: ['png'], outputFormatInput: '', supportsOutputCompression: false, moderation: ['auto'], moderationInput: '', costPerImage: '0.00000', currency: 'USD', enabled: true }
 }
 
 function editModelDraft(account: ModelAccount, row: ModelAccountModel): ModelDraft {
-  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), baseResolutionInput: '', quality: normalizeLowerEnums(row.quality ?? ['auto']), qualityInput: '', maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, ratioInput: '', supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, pixelInput: '', outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), outputFormatInput: '', supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), moderationInput: '', costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
+  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), baseResolutionInput: '', quality: normalizeLowerEnums(row.quality ?? ['auto']), qualityInput: '', maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, ratioInput: '', supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, pixelInput: '', supportsCustomSize: Boolean(row.supports_custom_size), outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), outputFormatInput: '', supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), moderationInput: '', costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
 }
 
 function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]): TestImageDialog {
@@ -514,6 +516,12 @@ function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]):
 
 function toggleSizeMode(draft: ModelDraft, mode: 'ratio' | 'pixel', checked: boolean): ModelDraft {
   const next = checked ? Array.from(new Set([...draft.sizeModes, mode])) : draft.sizeModes.filter((item) => item !== mode)
+  if (mode === 'pixel' && checked) {
+    return { ...draft, sizeModes: next, supportedPixelSizes: draft.supportedPixelSizes.length ? draft.supportedPixelSizes : defaultPixelSizes }
+  }
+  if (mode === 'pixel' && !checked) {
+    return { ...draft, sizeModes: next.length ? next : ['ratio'], supportsCustomSize: false }
+  }
   return { ...draft, sizeModes: next.length ? next : ['ratio'] }
 }
 

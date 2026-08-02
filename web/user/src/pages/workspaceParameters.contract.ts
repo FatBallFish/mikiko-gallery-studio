@@ -1,10 +1,26 @@
 import type { CapabilityModelGroup } from '../../../shared/api-types'
+import { readFileSync } from 'node:fs'
 import { normalizeCapabilities, toTask } from '../../../shared/user-api'
 import {
   normalizeWorkspaceOutputParameters,
+  normalizeWorkspaceCustomSize,
   workspaceCompressionVisible,
   workspaceOutputOptions,
 } from './workspaceParameters'
+
+const workspaceSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
+
+for (const expected of [
+  'selectedModel.supports_custom_size',
+  '自定义尺寸',
+  'Width',
+  'Height',
+  'effectivePixelSize',
+  "pixel_size: sizeMode === 'pixel' ? effectivePixelSize : undefined",
+  '由于模型限制，最终输出会自动规整到合法尺寸：宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。',
+]) {
+  if (!workspaceSource.includes(expected)) throw new Error(`workspace custom size UI must include ${expected}`)
+}
 
 const capability = normalizeCapabilities({
   model_groups: [{
@@ -83,4 +99,13 @@ const clamped = normalizeWorkspaceOutputParameters(model, {
 })
 if (clamped.outputCompression !== 100) {
   throw new Error(`compression should clamp to 100, got ${clamped.outputCompression}`)
+}
+
+const customSize = normalizeWorkspaceCustomSize('1001', '777')
+if (!customSize.valid || customSize.size !== '1008x784') {
+  throw new Error(`custom workspace size should use shared normalization, got ${JSON.stringify(customSize)}`)
+}
+
+if (normalizeWorkspaceCustomSize('1001.5', '777').valid || normalizeWorkspaceCustomSize('', '777').valid) {
+  throw new Error('custom workspace size should reject partial and non-integer input')
 }
