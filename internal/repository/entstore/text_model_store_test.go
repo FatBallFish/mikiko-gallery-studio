@@ -2,11 +2,15 @@ package entstore_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	domaintextmodel "github.com/fatballfish/pic-gallery/internal/domain/textmodel"
@@ -229,4 +233,98 @@ func TestTextModelStoreConcurrentDefaultSelectionKeepsOneDefault(t *testing.T) {
 	if defaults != 1 {
 		t.Fatalf("expected exactly one default after concurrent selection, got %d", defaults)
 	}
+}
+
+func TestTextModelStoreModelWritesSharePostgresDefaultLock(t *testing.T) {
+	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
+	if adminURL == "" {
+		t.Skip("set PIC_GALLERY_TEST_POSTGRES_URL to run PostgreSQL text-model lock integration")
+	}
+	database, err := sql.Open("postgres", adminURL)
+	if err != nil {
+		t.Fatalf("open integration database: %v", err)
+	}
+	defer database.Close()
+	schemaName := fmt.Sprintf("text_model_lock_%d", time.Now().UnixNano())
+	if _, err := database.ExecContext(t.Context(), `CREATE SCHEMA `+schemaName); err != nil {
+		t.Fatalf("create integration schema: %v", err)
+	}
+	t.Cleanup(func() { _, _ = database.Exec(`DROP SCHEMA IF EXISTS ` + schemaName + ` CASCADE`) })
+	databaseURL := postgresURLWithSearchPath(t, adminURL, schemaName)
+	clientA, err := repoent.Open(dialect.Postgres, databaseURL)
+	if err != nil {
+		t.Fatalf("open first ent integration client: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := repoent.Open(dialect.Postgres, databaseURL)
+	if err != nil {
+		t.Fatalf("open second ent integration client: %v", err)
+	}
+	defer clientB.Close()
+	if err := clientA.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create integration schema tables: %v", err)
+	}
+	storeA := entstore.NewTextModelStore(clientA)
+	storeB := entstore.NewTextModelStore(clientB)
+	account, err := storeA.CreateAccount(t.Context(), domaintextmodel.AccountRecord{Name: "Concurrent", PlatformType: "openai_compatible", APIStyle: "responses", BaseURL: "https://text.example.com", Enabled: true, Version: 1})
+	if err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+	model, err := storeA.CreateModel(t.Context(), domaintextmodel.Model{AccountID: account.ID, ModelCode: "model-a", DisplayName: "Model A", InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1})
+	if err != nil {
+		t.Fatalf("CreateModel seed: %v", err)
+	}
+
+	assertBlockedByDefaultLock := func(name string, operation func() error) {
+		t.Helper()
+		lockTx, err := database.BeginTx(t.Context(), nil)
+		if err != nil {
+			t.Fatalf("%s begin lock transaction: %v", name, err)
+		}
+		if _, err := lockTx.ExecContext(t.Context(), `SET LOCAL search_path TO `+schemaName); err != nil {
+			_ = lockTx.Rollback()
+			t.Fatalf("%s set search path: %v", name, err)
+		}
+		if _, err := lockTx.ExecContext(t.Context(), `SELECT id FROM text_model_accounts WHERE deleted_at IS NULL ORDER BY id FOR UPDATE`); err != nil {
+			_ = lockTx.Rollback()
+			t.Fatalf("%s lock accounts: %v", name, err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- operation() }()
+		select {
+		case operationErr := <-done:
+			_ = lockTx.Rollback()
+			t.Fatalf("%s bypassed default-model database lock: %v", name, operationErr)
+		case <-time.After(150 * time.Millisecond):
+		}
+		if err := lockTx.Commit(); err != nil {
+			t.Fatalf("%s release account lock: %v", name, err)
+		}
+		select {
+		case operationErr := <-done:
+			if operationErr != nil {
+				t.Fatalf("%s after account lock release: %v", name, operationErr)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s did not finish after account lock release", name)
+		}
+	}
+
+	assertBlockedByDefaultLock("create model", func() error {
+		_, err := storeB.CreateModel(context.Background(), domaintextmodel.Model{AccountID: account.ID, ModelCode: "model-b", DisplayName: "Model B", InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1})
+		return err
+	})
+	model.Enabled = false
+	model.Version++
+	assertBlockedByDefaultLock("update model", func() error {
+		_, err := storeB.UpdateModel(context.Background(), model)
+		return err
+	})
+	created, err := storeB.CreateModel(t.Context(), domaintextmodel.Model{AccountID: account.ID, ModelCode: "model-c", DisplayName: "Model C", InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1})
+	if err != nil {
+		t.Fatalf("CreateModel delete target: %v", err)
+	}
+	assertBlockedByDefaultLock("delete model", func() error {
+		return storeB.DeleteModel(context.Background(), created.ID)
+	})
 }

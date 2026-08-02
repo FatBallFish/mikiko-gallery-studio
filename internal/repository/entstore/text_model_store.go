@@ -136,17 +136,19 @@ func (s *TextModelStore) GetModel(ctx context.Context, modelID int64) (domaintex
 }
 
 func (s *TextModelStore) CreateModel(ctx context.Context, model domaintextmodel.Model) (domaintextmodel.Model, error) {
-	row, err := s.client.TextModel.Create().
-		SetAccountID(model.AccountID).
-		SetModelCode(model.ModelCode).
-		SetDisplayName(model.DisplayName).
-		SetInputPricePerMillionTokens(model.InputPricePerMTok).
-		SetOutputPricePerMillionTokens(model.OutputPricePerMTok).
-		SetCurrency(model.Currency).
-		SetEnabled(model.Enabled).
-		SetIsDefault(model.IsDefault).
-		SetVersion(defaultInt64(model.Version, 1)).
-		Save(ctx)
+	row, err := withTextModelDefaultWrite(ctx, s, func(tx *repoent.Tx) (*repoent.TextModel, error) {
+		return tx.TextModel.Create().
+			SetAccountID(model.AccountID).
+			SetModelCode(model.ModelCode).
+			SetDisplayName(model.DisplayName).
+			SetInputPricePerMillionTokens(model.InputPricePerMTok).
+			SetOutputPricePerMillionTokens(model.OutputPricePerMTok).
+			SetCurrency(model.Currency).
+			SetEnabled(model.Enabled).
+			SetIsDefault(model.IsDefault).
+			SetVersion(defaultInt64(model.Version, 1)).
+			Save(ctx)
+	})
 	if err != nil {
 		if repoent.IsConstraintError(err) {
 			return domaintextmodel.Model{}, repoerr.ErrConflict
@@ -157,17 +159,19 @@ func (s *TextModelStore) CreateModel(ctx context.Context, model domaintextmodel.
 }
 
 func (s *TextModelStore) UpdateModel(ctx context.Context, model domaintextmodel.Model) (domaintextmodel.Model, error) {
-	row, err := s.client.TextModel.UpdateOneID(int(model.ID)).
-		SetAccountID(model.AccountID).
-		SetModelCode(model.ModelCode).
-		SetDisplayName(model.DisplayName).
-		SetInputPricePerMillionTokens(model.InputPricePerMTok).
-		SetOutputPricePerMillionTokens(model.OutputPricePerMTok).
-		SetCurrency(model.Currency).
-		SetEnabled(model.Enabled).
-		SetIsDefault(model.IsDefault && model.Enabled).
-		SetVersion(model.Version).
-		Save(ctx)
+	row, err := withTextModelDefaultWrite(ctx, s, func(tx *repoent.Tx) (*repoent.TextModel, error) {
+		return tx.TextModel.UpdateOneID(int(model.ID)).
+			SetAccountID(model.AccountID).
+			SetModelCode(model.ModelCode).
+			SetDisplayName(model.DisplayName).
+			SetInputPricePerMillionTokens(model.InputPricePerMTok).
+			SetOutputPricePerMillionTokens(model.OutputPricePerMTok).
+			SetCurrency(model.Currency).
+			SetEnabled(model.Enabled).
+			SetIsDefault(model.IsDefault && model.Enabled).
+			SetVersion(model.Version).
+			Save(ctx)
+	})
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domaintextmodel.Model{}, repoerr.ErrNotFound
@@ -181,7 +185,9 @@ func (s *TextModelStore) UpdateModel(ctx context.Context, model domaintextmodel.
 }
 
 func (s *TextModelStore) DeleteModel(ctx context.Context, modelID int64) error {
-	affected, err := s.client.TextModel.Update().Where(textmodel.IDEQ(int(modelID)), textmodel.DeletedAtIsNil()).SetDeletedAt(time.Now().UTC()).SetIsDefault(false).Save(ctx)
+	affected, err := withTextModelDefaultWrite(ctx, s, func(tx *repoent.Tx) (int, error) {
+		return tx.TextModel.Update().Where(textmodel.IDEQ(int(modelID)), textmodel.DeletedAtIsNil()).SetDeletedAt(time.Now().UTC()).SetIsDefault(false).Save(ctx)
+	})
 	if err != nil {
 		return err
 	}
@@ -335,6 +341,33 @@ func lockTextModelAccounts(ctx context.Context, tx *repoent.Tx) ([]*repoent.Text
 		}
 	})
 	return tx.TextModelAccount.Query().Where(textmodelaccount.DeletedAtIsNil(), lockRows).Order(repoent.Asc(textmodelaccount.FieldID)).All(ctx)
+}
+
+func withTextModelDefaultWrite[T any](ctx context.Context, store *TextModelStore, write func(*repoent.Tx) (T, error)) (T, error) {
+	var zero T
+	store.defaultMu.Lock()
+	defer store.defaultMu.Unlock()
+	tx, err := store.client.Tx(ctx)
+	if err != nil {
+		return zero, err
+	}
+	rollback := func(cause error) (T, error) {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return zero, fmt.Errorf("%w (rollback: %v)", cause, rollbackErr)
+		}
+		return zero, cause
+	}
+	if _, err := lockTextModelAccounts(ctx, tx); err != nil {
+		return rollback(err)
+	}
+	result, err := write(tx)
+	if err != nil {
+		return rollback(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return zero, err
+	}
+	return result, nil
 }
 
 func (s *TextModelStore) GetDefaultModel(ctx context.Context) (domaintextmodel.AccountRecord, domaintextmodel.Model, error) {
