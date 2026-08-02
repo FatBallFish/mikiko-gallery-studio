@@ -4,7 +4,7 @@ import { renderToString } from 'react-dom/server'
 
 const modelURL = new URL('./ui/imageMediaModel.ts', import.meta.url)
 if (!existsSync(modelURL)) {
-  throw new Error('ImageLightbox needs an executable per-image loading and retry model')
+  throw new Error('image zoom needs an executable per-image loading and retry model')
 }
 
 const { imageMediaTransition, initialImageMediaState } = await import('./ui/imageMediaModel')
@@ -28,12 +28,12 @@ if (!fallbackSSR.includes('role="alert"') || !fallbackSSR.includes('重试加载
 }
 
 const source = readFileSync(new URL('./components.tsx', import.meta.url), 'utf8')
-const lightboxStart = source.indexOf('const lightboxClasses')
-const lightboxEnd = source.indexOf('\nfunction LightboxInfo', lightboxStart)
-const lightboxSource = source.slice(lightboxStart, lightboxEnd)
+const zoomStart = source.indexOf('function ImageZoomViewer')
+const zoomEnd = source.indexOf('\nexport function PublicDetailIcon', zoomStart)
+const zoomSource = source.slice(zoomStart, zoomEnd)
 
-if ((lightboxSource.match(/motion-reduce:animate-none/g) ?? []).length < 2) {
-  throw new Error('lightbox and zoom entrance animations must both stop under reduced motion')
+if (!source.includes('zoomBackdrop:') || !source.includes('motion-reduce:animate-none')) {
+  throw new Error('zoom entrance animation must stop under reduced motion')
 }
 for (const contract of [
   'useImageMediaState(',
@@ -42,10 +42,7 @@ for (const contract of [
   '<ImageMediaFallback onRetry={media.retry}',
   'key={media.imageKey}',
 ]) {
-  if (!lightboxSource.includes(contract)) {
-    throw new Error(`full-image and zoom media must expose ${contract}`)
+  if (!zoomSource.includes(contract)) {
+    throw new Error(`zoom media must expose ${contract}`)
   }
-}
-if ((lightboxSource.match(/useImageMediaState\(/g) ?? []).length < 2) {
-  throw new Error('full-image and zoom viewers need independent per-image load state')
 }

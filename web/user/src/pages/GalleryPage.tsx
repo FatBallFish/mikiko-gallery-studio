@@ -3,7 +3,7 @@ import type { MouseEvent, ReactNode } from 'react'
 import type { GalleryImage, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { cn } from '../../../shared/classnames'
-import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, ImageLightbox, Modal, PublicDetailIcon, StatusPill, copyText, useApp, type ImageLightboxPayload } from '../components'
+import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, Modal, PublicDetailIcon, StatusPill, copyText, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
@@ -183,7 +183,6 @@ export function GalleryPage() {
   const [publishStatus, setPublishStatus] = useState<(typeof publishFilters)[number]['value']>('all')
   const [imageGroup, setImageGroup] = useState('all')
   const [selected, setSelected] = useState<GalleryImage | null>(null)
-  const [imagePreview, setImagePreview] = useState<ImageLightboxPayload | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [groupDialog, setGroupDialog] = useState<{ ids: string[] } | null>(null)
@@ -519,10 +518,9 @@ export function GalleryPage() {
         imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
         referenceImages={(selected?.reference_assets ?? []).filter((asset) => asset.preview_url).map((asset) => {
           const url = assetUrl(asset.preview_url || '')
-          return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图', onPreview: () => setImagePreview({ url, downloadUrl: url, alt: asset.name || '原图', source: '原图引用' }) }
+          return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图' }
         })}
         showPublicStats={false}
-        onPreviewImage={setImagePreview}
         onCopyPrompt={async (prompt) => {
           await copyText(prompt)
           app.notify('success', 'Prompt 已复制')
@@ -576,11 +574,6 @@ export function GalleryPage() {
           </div>
         </Modal>
       ) : null}
-      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} onReuseConfiguration={(draft) => {
-        stageWorkspaceCreationDraft(draft, window.sessionStorage, window.history)
-        setImagePreview(null)
-        app.navigate('genpic')
-      }} />
     </div>
   )
 }

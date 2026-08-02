@@ -3,7 +3,7 @@ import type { ImageResult } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, ImageLightbox, PublicDetailIcon, copyText, publicDetailButton, type ImageLightboxPayload, useApp } from '../components'
+import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, PublicDetailIcon, copyText, publicDetailButton, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 import { ArrowRight, Image as ImageIcon, RefreshCw } from '../ui/icons'
 import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
@@ -56,7 +56,6 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'liked' | 'favorited'>('all')
   const [selected, setSelected] = useState<ImageResult | null>(null)
-  const [imagePreview, setImagePreview] = useState<ImageLightboxPayload | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<{ imageId: string; message: string } | null>(null)
   const [detailRetryVersion, setDetailRetryVersion] = useState(0)
@@ -314,7 +313,6 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         title="公开图片详情"
         image={selected}
         imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
-        onPreviewImage={setImagePreview}
         onLike={(image) => void toggleReaction(image as ImageResult, 'like')}
         onFavorite={(image) => void toggleReaction(image as ImageResult, 'favorite')}
         onDownload={(image) => downloadImage(image as ImageResult)}
@@ -323,11 +321,6 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         previewSourceLabel="公开广场"
         onClose={() => setSelected(null)}
       />
-      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} onReuseConfiguration={(draft) => {
-        stageWorkspaceCreationDraft(draft, window.sessionStorage, window.history)
-        setImagePreview(null)
-        app.navigate('genpic')
-      }} />
     </main>
   )
 }

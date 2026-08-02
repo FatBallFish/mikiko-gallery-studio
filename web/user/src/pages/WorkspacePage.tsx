@@ -5,7 +5,7 @@ import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, I
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, ImageDetailModal, ImageLightbox, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImageLightboxPayload } from '../components'
+import { Button, EmptyState, ErrorState, ImageDetailModal, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
 import { userButton, userForm, userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
@@ -278,7 +278,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [editSourceOpen, setEditSourceOpen] = useState(false)
-  const [previewImage, setPreviewImage] = useState<ImageLightboxPayload | null>(null)
+  const [previewImage, setPreviewImage] = useState<ImagePreviewPayload | null>(null)
+  const previewDetailImage: ImageResult | null = previewImage ? {
+    id: previewImage.alt || 'preview',
+    url: previewImage.url,
+    download_url: previewImage.downloadUrl,
+    width: previewImage.width ?? 0,
+    height: previewImage.height ?? 0,
+    publish_status: 'private',
+    prompt: previewImage.prompt,
+    aspect_ratio: previewImage.ratio,
+    route_model_code: previewImage.model,
+  } : null
   const [outputTab, setOutputTab] = useState<OutputTab>('current')
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
   const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
@@ -1455,17 +1466,34 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           </div>
         )}
 
-        <ImageLightbox image={previewImage} onClose={() => setPreviewImage(null)} onReuseConfiguration={(draft) => {
-          stageWorkspaceCreationDraft(draft, window.sessionStorage, window.history)
-          setPreviewImage(null)
-          app.navigate('genpic')
-        }} />
+        <ImageDetailModal
+          title="图片详情"
+          image={previewDetailImage}
+          imageUrl={previewImage?.url}
+          showPublicStats={false}
+          onDownload={() => window.open(previewImage?.downloadUrl || previewImage?.url, '_blank', 'noopener,noreferrer')}
+          onCopyPrompt={async (prompt) => {
+            await copyText(prompt)
+            app.notify('success', 'Prompt 已复制')
+          }}
+          actions={previewImage?.creationDraft ? [{
+            key: 'reuse',
+            label: '复用配置',
+            icon: <PublicDetailIcon name="edit" />,
+            onClick: () => {
+              stageWorkspaceCreationDraft(previewImage.creationDraft!, window.sessionStorage, window.history)
+              setPreviewImage(null)
+              app.navigate('genpic')
+            },
+          }] : []}
+          previewSourceLabel={previewImage?.source || '创作输出'}
+          onClose={() => setPreviewImage(null)}
+        />
         {historyTaskDialog ? (
           <HistoryTaskDialog
             task={historyTaskDialog}
             accessToken={app.session?.token}
             onClose={() => setHistoryTaskDialog(null)}
-            onPreviewImage={setPreviewImage}
           />
         ) : null}
         {galleryImportTarget ? (
@@ -1755,7 +1783,7 @@ function formatCompactDuration(ms: number) {
 function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDialog }: {
   tasks: ImageTask[]
   accessToken?: string | null
-  onPreviewImage: (image: ImageLightboxPayload) => void
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
 }) {
   if (!tasks.length) {
@@ -1779,7 +1807,7 @@ function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDia
 function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTaskDialog }: {
   task: ImageTask
   accessToken?: string | null
-  onPreviewImage: (image: ImageLightboxPayload) => void
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
 }) {
   const slots = generationSlots(task)
@@ -1843,11 +1871,10 @@ function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTaskDial
   )
 }
 
-function HistoryTaskDialog({ task, accessToken, onClose, onPreviewImage }: {
+function HistoryTaskDialog({ task, accessToken, onClose }: {
   task: ImageTask
   accessToken?: string | null
   onClose: () => void
-  onPreviewImage: (image: ImageLightboxPayload) => void
 }) {
   const app = useApp()
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -1888,11 +1915,9 @@ function HistoryTaskDialog({ task, accessToken, onClose, onPreviewImage }: {
           id: asset.id,
           url,
           alt: asset.name || '原图引用',
-          onPreview: url ? () => onPreviewImage({ url, downloadUrl: url, alt: asset.name || '原图引用', source: '原图引用' }) : undefined,
         }
       }).filter((item) => item.url)}
       showPublicStats={false}
-      onPreviewImage={onPreviewImage}
       onDownload={() => window.open(userApi.imageAssetUrl(image.download_url ?? image.url, accessToken), '_blank', 'noopener,noreferrer')}
       onCopyPrompt={async (value) => {
         await copyText(value)
@@ -1913,7 +1938,7 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
   task: ImageTask
   onCopyPrompt: () => Promise<void>
   onUseReference: (url: string) => Promise<void>
-  onPreviewImage: (image: ImageLightboxPayload) => void
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onRetryTask: (task: ImageTask) => Promise<void>
   onDeleteTask: (task: ImageTask) => Promise<void>
   accessToken?: string
@@ -2093,7 +2118,7 @@ function GeneratedImage({ image, alt, fallbackRatio, accessToken, onUseReference
   fallbackRatio?: string
   accessToken?: string
   onUseReference: (url: string) => Promise<void>
-  onPreview: (image: ImageLightboxPayload) => void
+  onPreview: (image: ImagePreviewPayload) => void
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
   const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)
