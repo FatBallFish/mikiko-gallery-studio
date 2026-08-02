@@ -4139,9 +4139,11 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 		}
 		channelRefund, channelErr := a.refundCashierOrderWithProvider(r.Context(), order, refundTradeNo, providerRefundAmountCNY, strings.TrimSpace(req.Reason))
 		if channelErr != nil {
-			if _, releaseErr := a.billing.ReleaseRefundPaymentOrder(r.Context(), refundReq); releaseErr != nil {
-				httpx.WriteError(w, r, normalizeAppError(releaseErr))
-				return
+			if !stripeRefundOutcomeIsUncertain(order, channelErr) {
+				if _, releaseErr := a.billing.ReleaseRefundPaymentOrder(r.Context(), refundReq); releaseErr != nil {
+					httpx.WriteError(w, r, normalizeAppError(releaseErr))
+					return
+				}
 			}
 			httpx.WriteError(w, r, channelErr)
 			return
@@ -4370,6 +4372,13 @@ func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbi
 		return nil, nil
 	}
 	return &result, nil
+}
+
+func stripeRefundOutcomeIsUncertain(order domainbilling.PaymentOrder, channelErr *errs.Error) bool {
+	if channelErr == nil || cashierOrderProviderType(order, cashierProviderInstance{}) != "stripe" {
+		return false
+	}
+	return channelErr.Code == errs.CodePaymentProviderUnavailable || channelErr.Code == errs.CodePaymentAmountMismatch
 }
 
 func (a *API) cashierProviderInstanceForOrder(ctx context.Context, order domainbilling.PaymentOrder) (cashierProviderInstance, bool) {

@@ -1321,6 +1321,26 @@ func TestBillingStoreRefundPaymentOrderCanCompleteFromFrozenRefundGrant(t *testi
 	if _, err := store.CheckRefundPaymentOrder(ctx, freezeReq); err != nil {
 		t.Fatalf("CheckRefundPaymentOrder should allow existing refund freeze: %v", err)
 	}
+	changedFreezeReq := freezeReq
+	changedFreezeReq.RefundAmountCNY = "10.00000"
+	for name, check := range map[string]func() error{
+		"check": func() error {
+			_, err := store.CheckRefundPaymentOrder(ctx, changedFreezeReq)
+			return err
+		},
+		"freeze": func() error {
+			_, err := store.FreezeRefundPaymentOrder(ctx, changedFreezeReq)
+			return err
+		},
+	} {
+		t.Run("changed refund amount is rejected by "+name, func(t *testing.T) {
+			err := check()
+			var appErr *errs.Error
+			if !errors.As(err, &appErr) || appErr.Code != errs.CodePaymentAmountMismatch {
+				t.Fatalf("expected PAYMENT_AMOUNT_MISMATCH, got %T %v", err, err)
+			}
+		})
+	}
 	grant, err := client.WalletGrant.Query().
 		Where(walletgrant.UserIDEQ(92), walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDEQ(order.ID), walletgrant.StatusEQ("active")).
 		Only(ctx)
