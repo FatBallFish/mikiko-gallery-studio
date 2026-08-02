@@ -42,6 +42,25 @@ if (presetOnlySize.values.pixel_size !== '1024x1024') {
   throw new Error(`preset-only drafts must fall back to a configured preset, got ${JSON.stringify(presetOnlySize)}`)
 }
 
+const taskScopedDraft = normalizeWorkspaceCreationDraft({
+  version: 1, prompt: 'edit-only options', task_type: 'image_edit', route_model_code: 'plus', size_mode: 'pixel',
+  pixel_size: '1536x1024', quality: 'low', output_format: 'webp', moderation: 'low', image_count: 3,
+  reference_asset_ids: ['ref-1'],
+}, {
+  ...capability,
+  model_groups: [{
+    ...capability.model_groups[0],
+    size_modes: ['ratio', 'pixel'], quality: ['auto', 'low'], output_format: ['png', 'webp'], moderation: ['auto', 'low'],
+    capabilities_by_task_type: {
+      text_to_image: { base_resolution: ['auto', '2K'], auto_base_resolution: '2k', size_modes: ['ratio'], aspect_ratios: ['1:1'], pixel_sizes: [], quality: ['auto'], output_format: ['png'], supports_output_compression: false, supports_custom_size: false, moderation: ['auto'], max_output_image_count: 2, max_reference_image_count: 0 },
+      image_edit: { base_resolution: ['auto', '1K'], auto_base_resolution: '1k', size_modes: ['pixel'], aspect_ratios: [], pixel_sizes: ['1536x1024'], quality: ['low'], output_format: ['webp'], supports_output_compression: true, supports_custom_size: true, moderation: ['low'], max_output_image_count: 1, max_reference_image_count: 2 },
+    },
+  }],
+})
+if (taskScopedDraft.values.size_mode !== 'pixel' || taskScopedDraft.values.pixel_size !== '1536x1024' || taskScopedDraft.values.quality !== 'low' || taskScopedDraft.values.output_format !== 'webp' || taskScopedDraft.values.image_count !== 1) {
+  throw new Error(`creation draft must normalize against the selected task capability: ${JSON.stringify(taskScopedDraft)}`)
+}
+
 const publicEditWithoutAccessibleSources = normalizeWorkspaceCreationDraft({
   version: 1, prompt: 'public edit prompt', task_type: 'image_edit', route_model_code: 'plus', reference_asset_ids: [],
 }, capability)

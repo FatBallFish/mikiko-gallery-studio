@@ -56,6 +56,18 @@ const capability = normalizeCapabilities({
     AutoBaseResolutionByTaskType: { text_to_image: '2k', image_edit: '1k' },
     AspectRatios: ['1:1', '16:9'],
     SupportsCustomSize: true,
+    CapabilitiesByTaskType: {
+      text_to_image: {
+        BaseResolution: ['auto', '2k'], AutoBaseResolution: '2k', SizeModes: ['ratio'], AspectRatios: ['1:1'],
+        Quality: ['high'], OutputFormat: ['jpeg'], SupportsOutputCompression: true, SupportsCustomSize: false,
+        Moderation: ['auto'], MaxOutputImageCount: 2, MaxReferenceImageCount: 0,
+      },
+      image_edit: {
+        BaseResolution: ['auto', '1k'], AutoBaseResolution: '1k', SizeModes: ['pixel'], PixelSizes: ['1024x1024'],
+        Quality: ['low'], OutputFormat: ['webp'], SupportsOutputCompression: false, SupportsCustomSize: true,
+        Moderation: ['low'], MaxOutputImageCount: 1, MaxReferenceImageCount: 3,
+      },
+    },
     MaxOutputImageCount: 4,
     MaxReferenceImageCount: 2,
     Prices: [{
@@ -82,6 +94,18 @@ assertDeepEqual(model.prices[0]?.base_resolution, '2k', 'price quality should be
 assertDeepEqual(model.prices[0]?.quality, '2k', 'legacy price quality should remain available')
 assertDeepEqual(model.supports_output_compression, false, 'missing compression support should default to false')
 assertDeepEqual(model.supports_custom_size, true, 'Go custom-size support should survive normalization')
+assertDeepEqual(model.capabilities_by_task_type, {
+  text_to_image: {
+    base_resolution: ['auto', '2k'], auto_base_resolution: '2k', size_modes: ['ratio'], aspect_ratios: ['1:1'], pixel_sizes: [],
+    quality: ['high'], output_format: ['jpeg'], supports_output_compression: true, supports_custom_size: false,
+    moderation: ['auto'], max_output_image_count: 2, max_reference_image_count: 0,
+  },
+  image_edit: {
+    base_resolution: ['auto', '1k'], auto_base_resolution: '1k', size_modes: ['pixel'], aspect_ratios: [], pixel_sizes: ['1024x1024'],
+    quality: ['low'], output_format: ['webp'], supports_output_compression: false, supports_custom_size: true,
+    moderation: ['low'], max_output_image_count: 1, max_reference_image_count: 3,
+  },
+}, 'complete task-scoped capabilities should survive normalization')
 assertAbsent(model, ['quality', 'output_format', 'moderation'], 'normalization must not advertise unsupported option sets')
 
 const legacyCapability = normalizeCapabilities({ ModelGroups: [{ Code: 'legacy', TaskTypes: ['text_to_image'] }] })

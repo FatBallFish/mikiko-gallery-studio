@@ -1,4 +1,4 @@
-import type { CapabilityModelGroup } from '../../../shared/api-types'
+import type { CapabilityModelGroup, ImageTaskType } from '../../../shared/api-types'
 import { calculateImageSizeForBaseResolution, normalizeCustomImageSize, type CustomImageSizeNormalization } from '../../../shared/image-size'
 
 export type WorkspaceOutputParameters = {
@@ -13,6 +13,34 @@ export function normalizeWorkspaceCustomSize(width: string, height: string): Cus
     return normalizeCustomImageSize(Number.NaN, Number.NaN)
   }
   return normalizeCustomImageSize(Number(width), Number(height))
+}
+
+export function workspaceModelForTask(model: CapabilityModelGroup | undefined, taskType: ImageTaskType) {
+  if (!model) return undefined
+  const scoped = model.capabilities_by_task_type?.[taskType]
+  if (!scoped) return model
+  const autoBaseResolutionByTaskType = { ...model.auto_base_resolution_by_task_type }
+  if (scoped.auto_base_resolution) autoBaseResolutionByTaskType[taskType] = scoped.auto_base_resolution
+  return {
+    ...model,
+    base_resolution: scoped.base_resolution ?? model.base_resolution,
+    auto_base_resolution_by_task_type: autoBaseResolutionByTaskType,
+    size_modes: scoped.size_modes ?? model.size_modes,
+    aspect_ratios: scoped.aspect_ratios ?? model.aspect_ratios,
+    pixel_sizes: scoped.pixel_sizes ?? model.pixel_sizes,
+    quality: scoped.quality ?? model.quality,
+    output_format: scoped.output_format ?? model.output_format,
+    supports_output_compression: scoped.supports_output_compression ?? model.supports_output_compression,
+    supports_custom_size: scoped.supports_custom_size ?? model.supports_custom_size,
+    moderation: scoped.moderation ?? model.moderation,
+    max_output_image_count: scoped.max_output_image_count ?? model.max_output_image_count,
+    max_reference_image_count: scoped.max_reference_image_count ?? model.max_reference_image_count,
+  } satisfies CapabilityModelGroup
+}
+
+export function workspaceCustomSizeSupported(model: CapabilityModelGroup | undefined) {
+  if (!model) return false
+  return Boolean(model.supports_custom_size)
 }
 
 export function workspaceRatioPixelEstimate(baseResolution: string, ratio: string, autoBaseResolution = '') {

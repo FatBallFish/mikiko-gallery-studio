@@ -1,5 +1,6 @@
 import type { Capability, CapabilityModelGroup, ImageTaskType } from '../../../shared/api-types'
 import { normalizeCustomImageSize } from '../../../shared/image-size'
+import { workspaceCustomSizeSupported, workspaceModelForTask } from './workspaceParameters'
 
 export const workspaceCreationDraftStorageKey = 'pic-gallery-workspace-creation-draft-v1'
 const workspaceCreationDraftHistoryKey = '__picGalleryWorkspaceCreationDraft'
@@ -112,7 +113,8 @@ export function normalizeWorkspaceCreationDraft(
   if (taskType !== draft.task_type) notices.push(`任务类型 ${draft.task_type} 当前不可用，已切换为 ${taskType}。`)
 
   const models = capability.model_groups.filter((item) => item.task_types.includes(taskType))
-  const model = models.find((item) => item.code === clean(draft.route_model_code)) ?? models[0]
+  const rawModel = models.find((item) => item.code === clean(draft.route_model_code)) ?? models[0]
+  const model = workspaceModelForTask(rawModel, taskType)
   if (!model) throw new Error('当前没有可用于该任务类型的模型。')
   if (model.code !== clean(draft.route_model_code)) notices.push(`模型 ${clean(draft.route_model_code) || '未指定'} 当前不可用，已切换为 ${model.name || model.code}。`)
 
@@ -221,7 +223,7 @@ function normalizeDraftPixelSize(model: CapabilityModelGroup, presets: string[],
   const preset = presets.find((item) => item.toLowerCase() === requestedSize?.toLowerCase())
   if (preset) return preset
 
-  if (model.supports_custom_size && requestedSize) {
+  if (workspaceCustomSizeSupported(model) && requestedSize) {
     const match = requestedSize.match(/^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/)
     if (match) {
       const normalized = normalizeCustomImageSize(Number(match[1]), Number(match[2]))

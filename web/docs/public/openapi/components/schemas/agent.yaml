@@ -640,6 +640,40 @@ components:
                 $ref: '#/components/schemas/PaymentOrder'
             pagination:
               $ref: ./common.yaml#/components/schemas/Pagination
+    CapabilityTaskOptions:
+      type: object
+      properties:
+        base_resolution:
+          type: array
+          items: { type: string }
+        auto_base_resolution:
+          type: string
+        quality:
+          type: array
+          items: { type: string }
+        size_modes:
+          type: array
+          items: { type: string }
+        aspect_ratios:
+          type: array
+          items: { type: string }
+        pixel_sizes:
+          type: array
+          items: { type: string }
+        output_format:
+          type: array
+          items: { type: string }
+        supports_output_compression:
+          type: boolean
+        supports_custom_size:
+          type: boolean
+        moderation:
+          type: array
+          items: { type: string }
+        max_output_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
     CapabilityItem:
       type: object
       properties:
@@ -652,6 +686,10 @@ components:
         base_resolution:
           type: array
           items:
+            type: string
+        auto_base_resolution_by_task_type:
+          type: object
+          additionalProperties:
             type: string
         quality:
           type: array
@@ -670,6 +708,14 @@ components:
         supports_output_compression:
           type: boolean
           description: Whether this model supports user-selected JPEG/WebP compression quality.
+        supports_custom_size:
+          type: boolean
+          description: Whether at least one task type for this route model supports custom pixel sizes.
+        capabilities_by_task_type:
+          type: object
+          description: Complete generation capabilities keyed by image task type.
+          additionalProperties:
+            $ref: '#/components/schemas/CapabilityTaskOptions'
         size_modes:
           type: array
           items:
@@ -726,6 +772,9 @@ components:
         base_resolution:
           type: array
           items: { type: string }
+        auto_base_resolution_by_task_type:
+          type: object
+          additionalProperties: { type: string }
         quality:
           type: array
           items: { type: string }
@@ -743,6 +792,12 @@ components:
           items: { type: string }
         supports_output_compression:
           type: boolean
+        supports_custom_size:
+          type: boolean
+        capabilities_by_task_type:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CapabilityTaskOptions'
         moderation:
           type: array
           items: { type: string }

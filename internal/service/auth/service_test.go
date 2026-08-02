@@ -360,8 +360,9 @@ func TestRegisterDerivesNicknameFromEmailInMemoryAndStoreModes(t *testing.T) {
 
 type recordingAuthStore struct {
 	Store
-	nextID int64
-	users  map[string]domainauth.User
+	nextID         int64
+	users          map[string]domainauth.User
+	saveRefreshErr error
 }
 
 func newRecordingAuthStore() *recordingAuthStore {
@@ -384,7 +385,22 @@ func (s *recordingAuthStore) CreateUser(_ context.Context, user domainauth.User)
 }
 
 func (s *recordingAuthStore) SaveRefreshSession(context.Context, entstore.RefreshSessionRecord) error {
-	return nil
+	return s.saveRefreshErr
+}
+
+func TestIssueSessionFailsWhenRefreshSessionCannotBePersisted(t *testing.T) {
+	store := newRecordingAuthStore()
+	store.saveRefreshErr = fmt.Errorf("database unavailable")
+	svc := NewServiceWithStore(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret"}, map[string]string{"basic": "1.00000"}, store)
+	user := domainauth.User{ID: 42, Email: "session@example.com", GroupCode: "basic", TokenVersion: 3}
+
+	session, err := svc.issueSessionLocked(&user)
+	if err == nil || session.AccessToken != "" || session.RefreshToken != "" {
+		t.Fatalf("session issuance must fail closed when persistence fails, session=%#v err=%v", session, err)
+	}
+	if len(svc.sessionsByHash) != 0 || len(svc.familySessions) != 0 {
+		t.Fatalf("failed session must not remain in memory, sessions=%d families=%d", len(svc.sessionsByHash), len(svc.familySessions))
+	}
 }
 
 func TestSendEmailCodeFailsClosedWithoutDeliveryOrExplicitFixedCode(t *testing.T) {

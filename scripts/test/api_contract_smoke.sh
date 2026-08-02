@@ -1635,6 +1635,8 @@ go build -o "$WORKER_BINARY" ./cmd/worker
 start_smoke_middleware
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestTextModelStore.*Postgres' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/db -run '^TestSchemaV2MigratesLegacyRefreshSessions$' -count=1
 start_fake_provider
 write_smoke_config true
 assert_api_port_free

@@ -503,7 +503,22 @@ export type CapabilityItem = {
   output_format?: string[]
   supports_output_compression?: boolean
   supports_custom_size?: boolean
+  capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
   moderation?: string[]
+}
+export type CapabilityTaskOptions = {
+  base_resolution?: string[]
+  auto_base_resolution?: string
+  size_modes?: Array<'ratio' | 'pixel' | string>
+  aspect_ratios?: string[]
+  pixel_sizes?: string[]
+  quality?: string[]
+  output_format?: string[]
+  supports_output_compression?: boolean
+  supports_custom_size?: boolean
+  moderation?: string[]
+  max_output_image_count?: number
+  max_reference_image_count?: number
 }
 export type RouteModelPriceQuote = {
   task_type: ImageTaskType
@@ -532,6 +547,7 @@ export type CapabilityModelGroup = {
   output_format?: string[]
   supports_output_compression?: boolean
   supports_custom_size?: boolean
+  capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
   moderation?: string[]
   effective_multiplier?: string
   prices: RouteModelPriceQuote[]

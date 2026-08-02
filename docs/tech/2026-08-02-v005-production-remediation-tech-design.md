@@ -86,6 +86,8 @@ When pixel mode is enabled, the admin shows preset tags and a custom-size toggle
 
 Ratio mode calls the existing `calculateImageSizeForBaseResolution` helper and displays the estimated dimensions beside the controls. For `auto`, each visible route model exposes `auto_base_resolution_by_task_type`, derived with the same route-default and configured-price fallback rules used by request resolution. The workspace uses the selected task type's value and hides the estimate when that authoritative value is absent; it never assumes 1K. This is advisory UI; the request continues sending ratio/base resolution and the backend remains authoritative.
 
+Visible route models also expose `capabilities_by_task_type`. Each entry is computed only from enabled provider candidates that support that task and contains its base resolutions, automatic resolution, size modes, ratios, pixel presets, quality, output formats, compression/custom-size flags, moderation options, and output/reference limits. Existing top-level aggregate fields remain for compatibility, while the workspace projects the selected model through the task entry before rendering or restoring any parameter. This prevents one task type from advertising options that only another task type can route.
+
 ## 4. Password Setup and Session Invalidation
 
 ### 4.1 Limited setup grant
@@ -120,7 +122,7 @@ Refresh cookies are never set for the intermediate result. Reloading the page in
 
 ## 5. Visual Asset System
 
-The owner-requested custom API path is used through the image-generation CLI workflow. Its key lives in a locally ignored, permission-restricted file and is read into a single generation process; it is never passed to git, build arguments, screenshots, or test fixtures.
+The owner-requested custom API path is used through the image-generation CLI workflow. Its key lives in a locally ignored, permission-restricted file and is read into a single generation process; it is never passed to git, Docker build contexts, build arguments, screenshots, or test fixtures. Both `.gitignore` and `.dockerignore` exclude `.secrets/`, and the Docker contract verifies that boundary.
 
 Generate one 3840x2160 high-quality master visual with no text, watermark, UI chrome, or third-party marks. The art direction is a sophisticated AI image studio contact sheet: distinct original scenes, restrained dark-neutral surround, amber/coral/cyan accents, and clear regions that survive responsive cropping. Inspect the master, then create desktop/mobile WebP and AVIF derivatives with a size budget verified by `file`, image dimensions, and byte counts.
 
@@ -147,3 +149,5 @@ Each vertical slice follows red-green-refactor. Final evidence includes:
 ```
 
 Browser verification covers checkout popup behavior, unified image details and zoom, custom/ratio sizes, mandatory password setup, profile password change/logout, and responsive landing/login visuals. The release is complete only after the PR is merged, a new tag is pushed, GitHub Actions succeeds, and the GitHub Release contains the expected artifacts and templated Chinese notes.
+
+The isolated API smoke also executes the real PostgreSQL v1-to-v2 refresh-session migration test so a release cannot pass while the explicit database migration is skipped.

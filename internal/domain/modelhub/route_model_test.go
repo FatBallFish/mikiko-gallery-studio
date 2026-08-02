@@ -486,6 +486,63 @@ func TestVisibleRouteModelAggregatesCustomSizeCapability(t *testing.T) {
 	}
 }
 
+func TestVisibleRouteModelScopesCapabilitiesByTaskType(t *testing.T) {
+	resolver := NewResolver(config.Config{Billing: config.BillingConfig{
+		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "2k"},
+	}})
+	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{
+		RouteModels: []RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices: []RoutePriceConfig{
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true},
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "2k", BasePoints: "2.00000", Enabled: true},
+			{RouteModelID: 1, TaskType: "image_edit", BaseResolution: "4k", BasePoints: "4.00000", Enabled: true},
+		},
+		ProviderModels: []ProviderCandidate{
+			{
+				AccountModelID: 11, ModelCode: "text-model", SupportedTaskTypes: []string{"text_to_image"},
+				SizeModes: []string{SizeModeRatio}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"high"},
+				OutputFormat: []string{"jpeg"}, SupportsOutputCompression: true, Moderation: []string{"auto"},
+				MaxImageCount: 2,
+			},
+			{
+				AccountModelID: 12, ModelCode: "edit-model", SupportedTaskTypes: []string{"image_edit"},
+				SizeModes: []string{SizeModePixel}, SupportedPixelSizes: []string{"1536x1024"}, SupportsCustomSize: true,
+				Quality: []string{"low"}, OutputFormat: []string{"webp"}, Moderation: []string{"low"},
+				MaxImageCount: 1, MaxReferenceImageCount: 3,
+			},
+		},
+		Candidates: []RouteCandidateConfig{
+			{RouteModelID: 1, AccountModelID: 11, Enabled: true},
+			{RouteModelID: 1, AccountModelID: 12, Enabled: true},
+		},
+	}})
+
+	items, err := resolver.ListVisibleRouteModels(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("ListVisibleRouteModels: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("visible route model count = %d, want 1", len(items))
+	}
+	want := map[string]VisibleRouteModelTaskCapability{
+		"text_to_image": {
+			BaseResolution: []string{"auto", "1k", "2k"}, AutoBaseResolution: "2k",
+			Quality: []string{"high"}, SizeModes: []string{"ratio"}, AspectRatios: []string{"1:1"}, PixelSizes: []string{},
+			OutputFormat: []string{"jpeg"}, SupportsOutputCompression: true, Moderation: []string{"auto"},
+			MaxOutputImageCount: 2,
+		},
+		"image_edit": {
+			BaseResolution: []string{"auto", "4k"}, AutoBaseResolution: "4k",
+			Quality: []string{"low"}, SizeModes: []string{"pixel"}, AspectRatios: []string{}, PixelSizes: []string{"1536x1024"},
+			OutputFormat: []string{"webp"}, SupportsCustomSize: true, Moderation: []string{"low"},
+			MaxOutputImageCount: 1, MaxReferenceImageCount: 3,
+		},
+	}
+	if !reflect.DeepEqual(items[0].CapabilitiesByTaskType, want) {
+		t.Fatalf("task capabilities = %#v, want %#v", items[0].CapabilitiesByTaskType, want)
+	}
+}
+
 func TestResolveRouteModelRejectsUnsupportedExplicitBaseResolution(t *testing.T) {
 	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 4, ReferenceImageMaxCount: 2}})
 	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{

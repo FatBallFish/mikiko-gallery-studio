@@ -7,6 +7,7 @@ import type {
   CashierOptions,
   CashierOrder,
   Capability,
+  CapabilityTaskOptions,
   CreateApiKeyRequest,
   CreateCashierOrderRequest,
   CreateTaskRequest,
@@ -15,6 +16,7 @@ import type {
   GalleryImage,
   ImageResult,
   ImageTask,
+  ImageTaskType,
   LedgerEntry,
   LoginResult,
   NormalLoginResponse,
@@ -269,19 +271,43 @@ function optionalOutputCapabilities(source: any) {
     output_format?: string[]
     supports_output_compression: boolean
     supports_custom_size: boolean
+    capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
     moderation?: string[]
   } = { supports_output_compression: false, supports_custom_size: false }
   const quality = pick<string[]>(source, 'quality', 'Quality')
   const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
   const supportsCompression = pick<boolean>(source, 'supports_output_compression', 'SupportsOutputCompression')
   const supportsCustomSize = pick<boolean>(source, 'supports_custom_size', 'SupportsCustomSize')
+  const capabilitiesByTaskType = pick<Record<string, unknown>>(source, 'capabilities_by_task_type', 'CapabilitiesByTaskType')
   const moderation = pick<string[]>(source, 'moderation', 'Moderation')
   if (quality !== undefined) result.quality = quality
   if (outputFormat !== undefined) result.output_format = outputFormat
   if (supportsCompression !== undefined) result.supports_output_compression = supportsCompression
   if (supportsCustomSize !== undefined) result.supports_custom_size = supportsCustomSize
+  if (capabilitiesByTaskType !== undefined) {
+    result.capabilities_by_task_type = Object.fromEntries(
+      Object.entries(capabilitiesByTaskType).map(([taskType, capability]) => [normalizeTaskType(taskType), normalizeTaskCapability(capability)]),
+    )
+  }
   if (moderation !== undefined) result.moderation = moderation
   return result
+}
+
+function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
+  return {
+    base_resolution: pick<string[]>(source, 'base_resolution', 'BaseResolution') ?? [],
+    auto_base_resolution: String(pick(source, 'auto_base_resolution', 'AutoBaseResolution') ?? '').trim().toLowerCase() || undefined,
+    size_modes: pick<Array<'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes') ?? [],
+    aspect_ratios: pick<string[]>(source, 'aspect_ratios', 'AspectRatios') ?? [],
+    pixel_sizes: pick<string[]>(source, 'pixel_sizes', 'PixelSizes') ?? [],
+    quality: pick<string[]>(source, 'quality', 'Quality') ?? [],
+    output_format: pick<string[]>(source, 'output_format', 'OutputFormat') ?? [],
+    supports_output_compression: Boolean(pick(source, 'supports_output_compression', 'SupportsOutputCompression')),
+    supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
+    moderation: pick<string[]>(source, 'moderation', 'Moderation') ?? [],
+    max_output_image_count: Number(pick(source, 'max_output_image_count', 'MaxOutputImageCount') ?? 0),
+    max_reference_image_count: Number(pick(source, 'max_reference_image_count', 'MaxReferenceImageCount') ?? 0),
+  }
 }
 
 export function normalizeCapabilities(raw: any): Capability {

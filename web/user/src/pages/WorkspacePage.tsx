@@ -23,7 +23,7 @@ import { useCompactWorkspaceViewport, workspaceParametersHidden } from './worksp
 import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGesture'
 import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
-import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
+import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 
@@ -574,14 +574,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }, [taskType, capability, model])
 
   const availableModels = useMemo(() => capability ? selectableModels(capability, taskType) : [], [capability, taskType])
-  const selectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
+  const rawSelectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
+  const selectedModel = useMemo(() => workspaceModelForTask(rawSelectedModel, taskType), [rawSelectedModel, taskType])
   const sizeModes = useMemo(() => sizeModeOptions(selectedModel), [selectedModel])
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
   const ratios = useMemo(() => ratioOptions(selectedModel, capability), [selectedModel, capability])
   const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
   const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
-  const customSizeSupported = Boolean(selectedModel && selectedModel.supports_custom_size && sizeModes.includes('pixel'))
+  const customSizeSupported = workspaceCustomSizeSupported(selectedModel) && sizeModes.includes('pixel')
   const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight), [customWidth, customHeight])
   const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
     ? customSizeNormalization.valid ? customSizeNormalization.size : ''

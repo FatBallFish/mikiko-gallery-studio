@@ -326,7 +326,11 @@ func (s *Service) LoginWithEmailCodeResult(email, code string) (LoginResult, err
 			PasswordSetupExpiresAt: setupExpiresAt,
 		}, nil
 	}
-	return LoginResult{User: *user, Session: s.issueSessionLocked(user), Created: createdUser}, nil
+	session, err := s.issueSessionLocked(user)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	return LoginResult{User: *user, Session: session, Created: createdUser}, nil
 }
 
 func (s *Service) LoginWithPassword(email, password string) (domainauth.User, domainauth.Session, error) {
@@ -353,7 +357,11 @@ func (s *Service) LoginWithPassword(email, password string) (domainauth.User, do
 	if user.PasswordHash == "" || !verifyPassword(user.PasswordHash, password) {
 		return domainauth.User{}, domainauth.Session{}, errs.Unauthorized("invalid email or password")
 	}
-	return *user, s.issueSessionLocked(user), nil
+	session, err := s.issueSessionLocked(user)
+	if err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
+	return *user, session, nil
 }
 
 func (s *Service) ChangePassword(userID int64, code, newPassword string) (domainauth.User, error) {
@@ -461,7 +469,10 @@ func (s *Service) CompletePasswordSetup(setupToken, newPassword string) (domaina
 	if err != nil {
 		return domainauth.User{}, domainauth.Session{}, err
 	}
-	session := s.issueSessionLocked(&updated)
+	session, err := s.issueSessionLocked(&updated)
+	if err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
 	return updated, session, nil
 }
 
@@ -589,7 +600,10 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 		return domainauth.User{}, domainauth.Session{}, errs.New(401, errs.CodeAuthRefreshExpired, "refresh token expired")
 	}
 	current.Status = "rotated"
-	newSession := s.issueSessionWithFamilyLocked(&user, current.FamilyID)
+	newSession, err := s.issueSessionWithFamilyLocked(&user, current.FamilyID)
+	if err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
 	current.ReplacedBySessionID = newSession.SessionID
 	s.persistRefreshTokenStateLocked(*current)
 	if s.store != nil {
@@ -677,11 +691,11 @@ func (s *Service) userMultiplierFor(groupCode string) string {
 	return "1.00000"
 }
 
-func (s *Service) issueSessionLocked(user *domainauth.User) domainauth.Session {
+func (s *Service) issueSessionLocked(user *domainauth.User) (domainauth.Session, error) {
 	return s.issueSessionWithFamilyLocked(user, uuid.NewString())
 }
 
-func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID string) domainauth.Session {
+func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID string) (domainauth.Session, error) {
 	sessionID := uuid.NewString()
 	refreshToken := randomToken()
 	refreshHash := hashToken(refreshToken)
@@ -699,13 +713,13 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode, Purpose: accessTokenPurpose,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", user.ID), ExpiresAt: jwt.NewNumericDate(accessExp), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: s.cfg.Issuer},
 	}
-	accessToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.AccessTokenSecret))
+	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.AccessTokenSecret))
+	if err != nil {
+		return domainauth.Session{}, fmt.Errorf("sign access token: %w", err)
+	}
 	session := &refreshSession{ID: sessionID, FamilyID: familyID, UserID: user.ID, TokenVersion: user.TokenVersion, RefreshTokenHash: refreshHash, Status: "active", ExpiresAt: refreshExp}
-	s.sessionsByHash[refreshHash] = session
-	s.familySessions[familyID] = append(s.familySessions[familyID], session)
-	s.persistRefreshTokenStateLocked(*session)
 	if s.store != nil {
-		_ = s.store.SaveRefreshSession(context.Background(), entstore.RefreshSessionRecord{
+		if err := s.store.SaveRefreshSession(context.Background(), entstore.RefreshSessionRecord{
 			ID:               session.ID,
 			FamilyID:         session.FamilyID,
 			UserID:           session.UserID,
@@ -713,9 +727,14 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 			RefreshTokenHash: session.RefreshTokenHash,
 			Status:           session.Status,
 			ExpiresAt:        session.ExpiresAt.Unix(),
-		})
+		}); err != nil {
+			return domainauth.Session{}, fmt.Errorf("save refresh session: %w", err)
+		}
 	}
-	return domainauth.Session{AccessToken: accessToken, AccessTokenExpiresAt: accessExp, RefreshToken: refreshToken, RefreshTokenExpiresAt: refreshExp, RefreshCookieName: s.cfg.RefreshCookieName, SessionID: sessionID, SessionFamilyID: familyID}
+	s.sessionsByHash[refreshHash] = session
+	s.familySessions[familyID] = append(s.familySessions[familyID], session)
+	s.persistRefreshTokenStateLocked(*session)
+	return domainauth.Session{AccessToken: accessToken, AccessTokenExpiresAt: accessExp, RefreshToken: refreshToken, RefreshTokenExpiresAt: refreshExp, RefreshCookieName: s.cfg.RefreshCookieName, SessionID: sessionID, SessionFamilyID: familyID}, nil
 }
 
 func (s *Service) issuePasswordSetupTokenLocked(user *domainauth.User) (string, time.Time, error) {
