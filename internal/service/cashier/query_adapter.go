@@ -11,11 +11,13 @@ import (
 )
 
 type OrderSnapshot struct {
-	OrderNo     string
-	AmountCNY   string
-	TradeNo     string
-	ClientToken string
-	Status      string
+	OrderNo         string
+	AmountCNY       string
+	TradeNo         string
+	RefundTradeNo   string
+	ChannelRefundNo string
+	ClientToken     string
+	Status          string
 }
 
 type QueryStatus struct {

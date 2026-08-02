@@ -4145,6 +4145,34 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, channelErr)
 			return
 		}
+		if channelRefund != nil && strings.EqualFold(strings.TrimSpace(channelRefund.ProviderType), "stripe") {
+			if _, recordErr := a.billing.RecordProviderRefundStatus(r.Context(), billingservice.ProviderRefundStatusRequest{
+				UserID:              order.UserID,
+				OrderID:             order.ID,
+				RefundTradeNo:       refundTradeNo,
+				RefundAmountCNY:     refundAmountCNY,
+				ChannelRefundNo:     channelRefund.ChannelRefundNo,
+				ChannelRefundStatus: channelRefund.RefundStatus,
+				Reason:              strings.TrimSpace(req.Reason),
+				OperatorAdminID:     admin.AdminID,
+			}); recordErr != nil {
+				httpx.WriteError(w, r, normalizeAppError(recordErr))
+				return
+			}
+			switch strings.ToLower(strings.TrimSpace(channelRefund.RefundStatus)) {
+			case "succeeded":
+			case "pending":
+				httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodePaymentRefundPending, "payment refund is pending provider confirmation"))
+				return
+			default:
+				if _, releaseErr := a.billing.ReleaseRefundPaymentOrder(r.Context(), refundReq); releaseErr != nil {
+					httpx.WriteError(w, r, normalizeAppError(releaseErr))
+					return
+				}
+				httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodePaymentRefundFailed, "payment refund failed at provider"))
+				return
+			}
+		}
 		result, err := a.billing.RefundPaymentOrder(r.Context(), refundReq)
 		if err != nil {
 			if channelRefund != nil {
@@ -4379,11 +4407,13 @@ func cashierOrderProviderType(order domainbilling.PaymentOrder, instance cashier
 
 func cashierOrderSnapshot(order domainbilling.PaymentOrder) cashierservice.OrderSnapshot {
 	return cashierservice.OrderSnapshot{
-		OrderNo:     order.OrderNo,
-		AmountCNY:   order.AmountCNY,
-		TradeNo:     order.TradeNo,
-		ClientToken: order.ClientToken,
-		Status:      order.Status,
+		OrderNo:         order.OrderNo,
+		AmountCNY:       order.AmountCNY,
+		TradeNo:         order.TradeNo,
+		RefundTradeNo:   order.RefundTradeNo,
+		ChannelRefundNo: order.ChannelRefundNo,
+		ClientToken:     order.ClientToken,
+		Status:          order.Status,
 	}
 }
 

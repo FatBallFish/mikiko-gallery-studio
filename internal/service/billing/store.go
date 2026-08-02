@@ -76,6 +76,17 @@ type RefundFinalizeFailureRequest struct {
 	FailureReason string
 }
 
+type ProviderRefundStatusRequest struct {
+	UserID              int64
+	OrderID             int64
+	RefundTradeNo       string
+	RefundAmountCNY     string
+	ChannelRefundNo     string
+	ChannelRefundStatus string
+	Reason              string
+	OperatorAdminID     int64
+}
+
 type ChargebackSummaryStoreRequest struct {
 	OrderID        int64
 	ChargePoints   string
@@ -107,6 +118,7 @@ type Store interface {
 	CheckRefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	FreezeRefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	ReleaseRefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
+	RecordProviderRefundStatus(ctx context.Context, req ProviderRefundStatusRequest) (domainbilling.PaymentOrder, error)
 	RefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	RecordRefundFinalizeFailure(ctx context.Context, req RefundFinalizeFailureRequest) (domainbilling.PaymentWebhookEvent, error)
 	ReserveTask(ctx context.Context, req ReserveStoreRequest) (BalanceState, error)
@@ -848,7 +860,7 @@ func (s *MemoryStore) refundPaymentOrderLocked(req domainbilling.RefundPaymentOr
 	if refundTradeNo == "" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("refund_trade_no is required")
 	}
-	if s.memoryRefundRecordExists(order.ID, refundTradeNo) || order.RefundTradeNo == refundTradeNo {
+	if s.memoryRefundRecordExists(order.ID, refundTradeNo) {
 		return order, nil
 	}
 	if order.Status == "refunded" {
@@ -961,6 +973,21 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 	s.balances[order.UserID] = current
 	s.breakdown[order.UserID] = breakdown
 	delete(s.refundFreezes, order.ID)
+	return order, nil
+}
+
+func (s *MemoryStore) RecordProviderRefundStatus(_ context.Context, req ProviderRefundStatusRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[req.OrderID]
+	if !ok || order.UserID != req.UserID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	order.RefundTradeNo = strings.TrimSpace(req.RefundTradeNo)
+	order.ChannelRefundNo = strings.TrimSpace(req.ChannelRefundNo)
+	order.ChannelRefundStatus = strings.ToLower(strings.TrimSpace(req.ChannelRefundStatus))
+	order.UpdatedAt = time.Now().UTC()
+	s.orders[order.ID] = order
 	return order, nil
 }
 

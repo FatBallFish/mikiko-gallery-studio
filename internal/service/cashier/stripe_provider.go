@@ -228,20 +228,28 @@ func newStripeRefundPaymentBuilder(clientFactory stripeRefundsFactory) RefundPay
 		if err != nil {
 			return RefundPaymentResult{}, err
 		}
-		params := &stripe.RefundParams{
-			Amount:        stripe.Int64(amountFen),
-			PaymentIntent: stripe.String(intentID),
-			Metadata: map[string]string{
-				"order_no":        strings.TrimSpace(req.Order.OrderNo),
-				"refund_trade_no": refundTradeNo,
-			},
+		client := clientFactory(secretKey)
+		var refundResult *stripe.Refund
+		if channelRefundNo := strings.TrimSpace(req.Order.ChannelRefundNo); channelRefundNo != "" && strings.TrimSpace(req.Order.RefundTradeNo) == refundTradeNo {
+			params := &stripe.RefundParams{}
+			params.Context = ctx
+			refundResult, err = client.Get(channelRefundNo, params)
+		} else {
+			params := &stripe.RefundParams{
+				Amount:        stripe.Int64(amountFen),
+				PaymentIntent: stripe.String(intentID),
+				Metadata: map[string]string{
+					"order_no":        strings.TrimSpace(req.Order.OrderNo),
+					"refund_trade_no": refundTradeNo,
+				},
+			}
+			params.Context = ctx
+			params.SetIdempotencyKey(refundTradeNo)
+			if strings.TrimSpace(req.Reason) != "" {
+				params.Reason = stripe.String(string(stripe.RefundReasonRequestedByCustomer))
+			}
+			refundResult, err = client.New(params)
 		}
-		params.Context = ctx
-		params.SetIdempotencyKey(refundTradeNo)
-		if strings.TrimSpace(req.Reason) != "" {
-			params.Reason = stripe.String(string(stripe.RefundReasonRequestedByCustomer))
-		}
-		refundResult, err := clientFactory(secretKey).New(params)
 		if err != nil || refundResult == nil || strings.TrimSpace(refundResult.ID) == "" {
 			return RefundPaymentResult{}, paymentRefundProviderUnavailable()
 		}

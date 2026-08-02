@@ -621,6 +621,14 @@ func (s *Service) ReleaseRefundPaymentOrder(ctx context.Context, req domainbilli
 	return item, nil
 }
 
+func (s *Service) RecordProviderRefundStatus(ctx context.Context, req ProviderRefundStatusRequest) (domainbilling.PaymentOrder, error) {
+	item, err := s.store.RecordProviderRefundStatus(ctx, req)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return item, nil
+}
+
 func (s *Service) ReserveTask(ctx context.Context, req domainbilling.ReserveRequest) (domainbilling.BalanceSummary, error) {
 	state, err := s.store.ReserveTask(ctx, ReserveStoreRequest(req))
 	if err != nil {

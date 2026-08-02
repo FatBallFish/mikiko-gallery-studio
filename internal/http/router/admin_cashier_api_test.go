@@ -1311,6 +1311,110 @@ func TestAdminCashierStripeQueryAndPartialRefund(t *testing.T) {
 	}
 }
 
+func TestAdminCashierStripeRefundWaitsForProviderSuccess(t *testing.T) {
+	tests := []struct {
+		name              string
+		initialStatus     string
+		queryStatus       string
+		wantFirstHTTPCode int
+		wantFirstCode     string
+		wantRetrySuccess  bool
+	}{
+		{name: "pending refund is queried before local settlement", initialStatus: "pending", queryStatus: "succeeded", wantFirstHTTPCode: http.StatusConflict, wantFirstCode: "PAYMENT_REFUND_PENDING", wantRetrySuccess: true},
+		{name: "failed refund does not settle locally", initialStatus: "failed", wantFirstHTTPCode: http.StatusConflict, wantFirstCode: "PAYMENT_REFUND_FAILED"},
+		{name: "canceled refund does not settle locally", initialStatus: "canceled", wantFirstHTTPCode: http.StatusConflict, wantFirstCode: "PAYMENT_REFUND_FAILED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var refundCreates int
+			var refundQueries int
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
+					_, _ = w.Write([]byte(`{"id":"pi_refund_state","object":"payment_intent","amount":1000,"currency":"cny","client_secret":"pi_refund_state_secret_client","status":"requires_payment_method"}`))
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_refund_state":
+					_, _ = w.Write([]byte(`{"id":"pi_refund_state","object":"payment_intent","amount":1000,"currency":"cny","status":"succeeded"}`))
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/refunds":
+					refundCreates++
+					_, _ = fmt.Fprintf(w, `{"id":"re_refund_state","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_state","status":%q}`, tt.initialStatus)
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/refunds/re_refund_state":
+					refundQueries++
+					_, _ = fmt.Fprintf(w, `{"id":"re_refund_state","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_state","status":%q}`, tt.queryStatus)
+				default:
+					t.Fatalf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer upstream.Close()
+			originalBackend := stripe.GetBackend(stripe.APIBackend)
+			stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+			t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+			handler, adminToken, user, userSession, billingSvc := newAdminCashierRefundProviderTest(t, "cashier-stripe-refund-state-"+tt.initialStatus+"@example.com")
+			putVisibleMethodsForCashierTest(t, handler, adminToken, `[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]`)
+			createProviderInstanceForCashierTest(t, handler, adminToken, `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"config":{"publishable_key":"pk_test_admin"},"secrets":{"secret_key":"sk_test_admin","webhook_secret":"whsec_admin"}}`)
+			orderID, _ := createCustomCashierOrderForTest(t, handler, userSession.AccessToken, "stripe", "10.00")
+			syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+			syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+			syncRec := httptest.NewRecorder()
+			handler.ServeHTTP(syncRec, syncReq)
+			if syncRec.Code != http.StatusOK {
+				t.Fatalf("complete Stripe order: status=%d body=%s", syncRec.Code, syncRec.Body.String())
+			}
+
+			refundBody := `{"refund_trade_no":"REFUND-STRIPE-STATE-001","refund_amount_cny":"5.00","reason":"state check"}`
+			refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(refundBody))
+			refundReq.Header.Set("Authorization", "Bearer "+adminToken)
+			refundReq.Header.Set("Content-Type", "application/json")
+			refundRec := httptest.NewRecorder()
+			handler.ServeHTTP(refundRec, refundReq)
+			if refundRec.Code != tt.wantFirstHTTPCode || !bytes.Contains(refundRec.Body.Bytes(), []byte(`"code":"`+tt.wantFirstCode+`"`)) {
+				t.Fatalf("unexpected first refund response status=%d body=%s", refundRec.Code, refundRec.Body.String())
+			}
+			pending := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
+			if pending.Status != "completed" || pending.RefundedAmountCNY != "" || pending.RefundedPoints != "" {
+				t.Fatalf("provider %s must not settle local refund, got %#v", tt.initialStatus, pending)
+			}
+
+			if tt.wantRetrySuccess {
+				retryReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(refundBody))
+				retryReq.Header.Set("Authorization", "Bearer "+adminToken)
+				retryReq.Header.Set("Content-Type", "application/json")
+				retryRec := httptest.NewRecorder()
+				handler.ServeHTTP(retryRec, retryReq)
+				if retryRec.Code != http.StatusOK {
+					t.Fatalf("expected queried Stripe refund to settle, status=%d body=%s", retryRec.Code, retryRec.Body.String())
+				}
+				settled := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
+				if settled.Status != "partially_refunded" || settled.RefundedAmountCNY != "5.00000" {
+					t.Fatalf("unexpected queried Stripe refund state %#v", settled)
+				}
+			}
+			if refundCreates != 1 || refundQueries != boolInt(tt.wantRetrySuccess) {
+				t.Fatalf("unexpected Stripe refund calls creates=%d queries=%d", refundCreates, refundQueries)
+			}
+			balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+			if err != nil {
+				t.Fatalf("GetBalance after Stripe refund state check: %v", err)
+			}
+			if tt.wantRetrySuccess {
+				if balance.AvailablePoints != "16.00000" {
+					t.Fatalf("expected settled partial refund balance, got %#v", balance)
+				}
+			} else if balance.AvailablePoints != "32.00000" {
+				t.Fatalf("expected failed provider refund to release local balance, got %#v", balance)
+			}
+		})
+	}
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
 func TestAdminCashierOrderRefundCallsWxPayDirectProvider(t *testing.T) {
 	privateKey, _ := testRSAKeyPairPEM(t)
 	var upstreamPath string

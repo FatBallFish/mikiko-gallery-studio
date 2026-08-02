@@ -46,6 +46,8 @@ const (
 	CodePaymentProviderUnavailable     = "PAYMENT_PROVIDER_UNAVAILABLE"
 	CodePaymentProviderNotImplemented  = "PAYMENT_PROVIDER_NOT_IMPLEMENTED"
 	CodePaymentProviderConfigInvalid   = "PAYMENT_PROVIDER_CONFIG_INVALID"
+	CodePaymentRefundPending           = "PAYMENT_REFUND_PENDING"
+	CodePaymentRefundFailed            = "PAYMENT_REFUND_FAILED"
 	CodePaymentAmountOutOfRange        = "PAYMENT_AMOUNT_OUT_OF_RANGE"
 	CodePaymentTooManyPending          = "PAYMENT_TOO_MANY_PENDING_ORDERS"
 	CodePaymentSignatureInvalid        = "PAYMENT_SIGNATURE_INVALID"

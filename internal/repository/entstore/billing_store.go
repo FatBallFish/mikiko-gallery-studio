@@ -832,6 +832,45 @@ func (s *BillingStore) ReleaseRefundPaymentOrder(ctx context.Context, req domain
 	})
 }
 
+func (s *BillingStore) RecordProviderRefundStatus(ctx context.Context, req billingservice.ProviderRefundStatusRequest) (domainbilling.PaymentOrder, error) {
+	refundTradeNo := strings.TrimSpace(req.RefundTradeNo)
+	channelRefundNo := strings.TrimSpace(req.ChannelRefundNo)
+	channelRefundStatus := strings.ToLower(strings.TrimSpace(req.ChannelRefundStatus))
+	if refundTradeNo == "" || channelRefundNo == "" || channelRefundStatus == "" {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("provider refund status is incomplete")
+	}
+	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (domainbilling.PaymentOrder, error) {
+		order, err := tx.PaymentOrder.Query().
+			Where(paymentorder.IDEQ(int(req.OrderID)), paymentorder.UserIDEQ(req.UserID)).
+			Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+			}
+			return domainbilling.PaymentOrder{}, err
+		}
+		payload := cloneMap(order.ProviderPayload)
+		if payload == nil {
+			payload = map[string]any{}
+		}
+		payload["refund_trade_no"] = refundTradeNo
+		payload["provider_refund"] = map[string]any{
+			"refund_trade_no":       refundTradeNo,
+			"refund_amount_cny":     strings.TrimSpace(req.RefundAmountCNY),
+			"channel_refund_no":     channelRefundNo,
+			"channel_refund_status": channelRefundStatus,
+			"reason":                strings.TrimSpace(req.Reason),
+			"operator_admin_id":     req.OperatorAdminID,
+			"updated_at":            time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		updated, err := tx.PaymentOrder.UpdateOneID(order.ID).SetProviderPayload(payload).Save(ctx)
+		if err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
+		return s.mapPaymentOrder(ctx, updated), nil
+	})
+}
+
 func (s *BillingStore) CheckRefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error) {
 	order, err := s.client.PaymentOrder.Query().
 		Where(paymentorder.IDEQ(int(req.OrderID)), paymentorder.UserIDEQ(req.UserID)).
@@ -2626,6 +2665,14 @@ func applyPaymentOrderProviderPayload(order *domainbilling.PaymentOrder, payload
 	}
 	if refundTradeNo := strings.TrimSpace(fmt.Sprint(payload["refund_trade_no"])); refundTradeNo != "" && refundTradeNo != "<nil>" {
 		order.RefundTradeNo = refundTradeNo
+	}
+	if providerRefund, ok := payload["provider_refund"].(map[string]any); ok {
+		if channelRefundNo := strings.TrimSpace(fmt.Sprint(providerRefund["channel_refund_no"])); channelRefundNo != "" && channelRefundNo != "<nil>" {
+			order.ChannelRefundNo = channelRefundNo
+		}
+		if channelRefundStatus := strings.TrimSpace(fmt.Sprint(providerRefund["channel_refund_status"])); channelRefundStatus != "" && channelRefundStatus != "<nil>" {
+			order.ChannelRefundStatus = strings.ToLower(channelRefundStatus)
+		}
 	}
 	if refundedAmountCNY := strings.TrimSpace(fmt.Sprint(payload["refunded_amount_cny"])); refundedAmountCNY != "" && refundedAmountCNY != "<nil>" {
 		order.RefundedAmountCNY = refundedAmountCNY
