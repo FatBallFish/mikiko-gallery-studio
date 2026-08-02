@@ -288,7 +288,7 @@ func (s *Service) GetBalance(ctx context.Context, userID int64, userGroupMultipl
 	if err != nil {
 		return domainbilling.BalanceSummary{}, errs.Internal("failed to load points balance")
 	}
-	return s.balanceSummaryFromState(state, userGroupMultiplier)
+	return s.balanceSummaryFromState(ctx, state, userGroupMultiplier)
 }
 
 func (s *Service) ListLedger(ctx context.Context, userID int64, page, pageSize int) (domainbilling.LedgerPage, error) {
@@ -634,7 +634,7 @@ func (s *Service) ReserveTask(ctx context.Context, req domainbilling.ReserveRequ
 	if err != nil {
 		return domainbilling.BalanceSummary{}, err
 	}
-	return s.balanceSummaryFromState(state, "")
+	return s.balanceSummaryFromState(ctx, state, "")
 }
 
 func (s *Service) FinalizeTask(ctx context.Context, req domainbilling.FinalizeRequest) (domainbilling.BalanceSummary, error) {
@@ -642,7 +642,7 @@ func (s *Service) FinalizeTask(ctx context.Context, req domainbilling.FinalizeRe
 	if err != nil {
 		return domainbilling.BalanceSummary{}, err
 	}
-	return s.balanceSummaryFromState(state, "")
+	return s.balanceSummaryFromState(ctx, state, "")
 }
 
 func (s *Service) AdminAdjust(ctx context.Context, req domainbilling.AdjustRequest) (domainbilling.BalanceSummary, error) {
@@ -650,7 +650,7 @@ func (s *Service) AdminAdjust(ctx context.Context, req domainbilling.AdjustReque
 	if err != nil {
 		return domainbilling.BalanceSummary{}, err
 	}
-	return s.balanceSummaryFromState(state, "")
+	return s.balanceSummaryFromState(ctx, state, "")
 }
 
 func (s *Service) EnsureSignupTrialGrant(ctx context.Context, req SignupTrialGrantRequest) (SignupTrialGrantResult, error) {
@@ -693,7 +693,7 @@ func (s *Service) EnsureSignupTrialGrant(ctx context.Context, req SignupTrialGra
 	if err != nil {
 		return SignupTrialGrantResult{}, err
 	}
-	balance, err := s.balanceSummaryFromState(result.Balance, "")
+	balance, err := s.balanceSummaryFromState(ctx, result.Balance, "")
 	if err != nil {
 		return SignupTrialGrantResult{}, err
 	}
@@ -721,19 +721,20 @@ func (s *Service) RedeemCode(ctx context.Context, req RedeemCodeRequest) (domain
 	if err != nil {
 		return domainbilling.BalanceSummary{}, err
 	}
-	return s.balanceSummaryFromState(state, "")
+	return s.balanceSummaryFromState(ctx, state, "")
 }
 
 func (s *Service) APIKeyUsage(ctx context.Context, apiKeyID int64, since *time.Time) (string, error) {
 	return s.store.APIKeyUsage(ctx, apiKeyID, since)
 }
 
-func (s *Service) balanceSummaryFromState(state BalanceState, userGroupMultiplier string) (domainbilling.BalanceSummary, error) {
-	groupMultiplier, err := scaledDecimalString(userGroupMultiplier, "1", s.cfg.PointsScale)
+func (s *Service) balanceSummaryFromState(ctx context.Context, state BalanceState, userGroupMultiplier string) (domainbilling.BalanceSummary, error) {
+	cfg := s.currentBillingConfig(ctx)
+	groupMultiplier, err := scaledDecimalString(userGroupMultiplier, "1", cfg.PointsScale)
 	if err != nil {
 		return domainbilling.BalanceSummary{}, errs.Internal("invalid user group multiplier")
 	}
-	cnyPerPoint, err := scaledDecimalString(s.cfg.CNYPerPoint, "0", s.cfg.PointsScale)
+	cnyPerPoint, err := scaledDecimalString(cfg.CNYPerPoint, "0", cfg.PointsScale)
 	if err != nil {
 		return domainbilling.BalanceSummary{}, errs.Internal("invalid cny per point config")
 	}

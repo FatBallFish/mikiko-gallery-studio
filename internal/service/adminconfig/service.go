@@ -249,7 +249,6 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 				valueItem("payments", "custom_amount_enabled", true),
 				valueItem("payments", "custom_amount_min_cny", "1.00000"),
 				valueItem("payments", "custom_amount_max_cny", "999.00000"),
-				valueItem("payments", "custom_amount_cny_per_point", cfg.Billing.CNYPerPoint),
 				valueItem("payments", "visible_methods", []map[string]any{
 					{
 						"method":               "mock",

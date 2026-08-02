@@ -213,6 +213,7 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 	if adminSvc == nil {
 		adminSvc = adminconfigservice.NewService(cfg)
 	}
+	billingSvc.SetAdminConfigResolver(adminSvc)
 	if adminAuthSvc == nil {
 		adminAuthSvc = adminauthservice.NewService(cfg.Auth, nil)
 	}

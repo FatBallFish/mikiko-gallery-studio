@@ -19,11 +19,14 @@ import (
 )
 
 const paymentsTabKey = "payments"
+const billingPricingTabKey = "billing_pricing"
 const defaultCustomAmountCNYPerPoint = "0.31250"
 
 type ConfigStore interface {
 	PaymentConfigValue(ctx context.Context, key string) (any, error)
 	SavePaymentConfigValue(ctx context.Context, key string, value any, adminID int64) error
+	BillingPricingConfigValue(ctx context.Context, key string) (any, error)
+	SaveBillingPricingConfigValue(ctx context.Context, key string, value any, adminID int64) error
 	ProductionMode() bool
 }
 
@@ -57,10 +60,18 @@ func NewAdminConfigStoreWithDefaultCNYPerPoint(admin *adminconfigservice.Service
 }
 
 func (s *AdminConfigStore) PaymentConfigValue(ctx context.Context, key string) (any, error) {
+	return s.configValue(ctx, s.paymentsTab, key)
+}
+
+func (s *AdminConfigStore) BillingPricingConfigValue(ctx context.Context, key string) (any, error) {
+	return s.configValue(ctx, billingPricingTabKey, key)
+}
+
+func (s *AdminConfigStore) configValue(ctx context.Context, tabKey, key string) (any, error) {
 	if s == nil || s.admin == nil {
 		return nil, errs.Internal("cashier config store is not available")
 	}
-	tab, err := s.admin.GetTab(ctx, s.paymentsTab)
+	tab, err := s.admin.GetTab(ctx, tabKey)
 	if err != nil {
 		return nil, err
 	}
@@ -73,18 +84,26 @@ func (s *AdminConfigStore) PaymentConfigValue(ctx context.Context, key string) (
 }
 
 func (s *AdminConfigStore) SavePaymentConfigValue(ctx context.Context, key string, value any, adminID int64) error {
+	return s.saveConfigValue(ctx, s.paymentsTab, key, value, adminID)
+}
+
+func (s *AdminConfigStore) SaveBillingPricingConfigValue(ctx context.Context, key string, value any, adminID int64) error {
+	return s.saveConfigValue(ctx, billingPricingTabKey, key, value, adminID)
+}
+
+func (s *AdminConfigStore) saveConfigValue(ctx context.Context, tabKey, key string, value any, adminID int64) error {
 	if s == nil || s.admin == nil {
 		return errs.Internal("cashier config store is not available")
 	}
-	tab, err := s.admin.GetTab(ctx, s.paymentsTab)
+	tab, err := s.admin.GetTab(ctx, tabKey)
 	if err != nil {
 		return err
 	}
 	_, err = s.admin.UpdateTab(ctx, domainadminconfig.UpdateTabRequest{
-		TabKey:  s.paymentsTab,
+		TabKey:  tabKey,
 		Version: tab.Version,
 		Items: []domainadminconfig.Item{{
-			ConfigCategory: s.paymentsTab,
+			ConfigCategory: tabKey,
 			ConfigKey:      key,
 			ConfigValue:    map[string]any{"value": value},
 			Scope:          s.paymentsScope,
@@ -149,9 +168,11 @@ func (f *ConfigFacade) CustomAmountConfig(ctx context.Context) (domaincashier.Cu
 	} else if ok {
 		cfg.MaxAmountCNY = value
 	}
-	if value, ok, err := f.stringValue(ctx, "custom_amount_cny_per_point"); err != nil {
+	raw, err := f.store.BillingPricingConfigValue(ctx, "cny_per_point")
+	if err != nil {
 		return domaincashier.CustomAmountConfig{}, err
-	} else if ok {
+	}
+	if value, ok := stringValue(raw); ok {
 		cfg.CNYPerPoint = value
 	}
 	return NormalizeCustomAmountConfig(cfg)
@@ -163,14 +184,16 @@ func (f *ConfigFacade) UpdateCustomAmountConfig(ctx context.Context, cfg domainc
 		return domaincashier.CustomAmountConfig{}, err
 	}
 	for key, value := range map[string]any{
-		"custom_amount_enabled":       normalized.Enabled,
-		"custom_amount_min_cny":       normalized.MinAmountCNY,
-		"custom_amount_max_cny":       normalized.MaxAmountCNY,
-		"custom_amount_cny_per_point": normalized.CNYPerPoint,
+		"custom_amount_enabled": normalized.Enabled,
+		"custom_amount_min_cny": normalized.MinAmountCNY,
+		"custom_amount_max_cny": normalized.MaxAmountCNY,
 	} {
 		if err := f.store.SavePaymentConfigValue(ctx, key, value, adminID); err != nil {
 			return domaincashier.CustomAmountConfig{}, err
 		}
+	}
+	if err := f.store.SaveBillingPricingConfigValue(ctx, "cny_per_point", normalized.CNYPerPoint, adminID); err != nil {
+		return domaincashier.CustomAmountConfig{}, err
 	}
 	return f.CustomAmountConfig(ctx)
 }
@@ -373,17 +396,22 @@ func (f *ConfigFacade) stringValue(ctx context.Context, key string) (string, boo
 	if err != nil {
 		return "", false, err
 	}
+	value, ok := stringValue(raw)
+	return value, ok, nil
+}
+
+func stringValue(raw any) (string, bool) {
 	switch value := raw.(type) {
 	case string:
 		trimmed := strings.TrimSpace(value)
-		return trimmed, trimmed != "", nil
+		return trimmed, trimmed != ""
 	case fmt.Stringer:
 		trimmed := strings.TrimSpace(value.String())
-		return trimmed, trimmed != "", nil
+		return trimmed, trimmed != ""
 	case nil:
-		return "", false, nil
+		return "", false
 	default:
-		return strings.TrimSpace(fmt.Sprint(value)), true, nil
+		return strings.TrimSpace(fmt.Sprint(value)), true
 	}
 }
 

@@ -1932,6 +1932,69 @@ func TestCashierMockPaymentIsHiddenAndBlockedInProduction(t *testing.T) {
 	}
 }
 
+func TestBillingPricingCNYPerPointControlsBalanceAndCustomOrders(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	session := loginExistingAuthUser(t, authSvc, "cashier-global-rate@example.com")
+	adminCfgSvc := adminconfigservice.NewService(cfg)
+	if _, err := adminCfgSvc.UpdateTab(t.Context(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "billing_pricing",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "billing_pricing",
+			ConfigKey:      "cny_per_point",
+			ConfigValue:    map[string]any{"value": "0.50000"},
+			Scope:          "global",
+		}},
+		UpdatedBy: 1,
+	}); err != nil {
+		t.Fatalf("UpdateTab billing_pricing: %v", err)
+	}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, adminCfgSvc, billingSvc))
+
+	balanceReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/balance", nil)
+	balanceReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	balanceRec := httptest.NewRecorder()
+	handler.ServeHTTP(balanceRec, balanceReq)
+	if balanceRec.Code != http.StatusOK {
+		t.Fatalf("balance expected 200, got %d body=%s", balanceRec.Code, balanceRec.Body.String())
+	}
+	var balanceResp struct {
+		Data domainbilling.BalanceSummary `json:"data"`
+	}
+	if err := json.NewDecoder(balanceRec.Body).Decode(&balanceResp); err != nil {
+		t.Fatalf("decode balance: %v", err)
+	}
+	if balanceResp.Data.CNYPerPoint != "0.50000" {
+		t.Fatalf("expected runtime billing rate in balance, got %#v", balanceResp.Data)
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"mock"}`))
+	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create custom amount order expected 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createResp struct {
+		Data domainbilling.PaymentOrder `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
+		t.Fatalf("decode custom order: %v", err)
+	}
+	if createResp.Data.AmountCNY != "10.00000" || createResp.Data.Points != "20.00000" {
+		t.Fatalf("expected runtime billing rate in custom order, got %#v", createResp.Data)
+	}
+}
+
 func TestCashierCustomAmountUsesAdminConfig(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{

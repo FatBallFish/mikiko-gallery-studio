@@ -41,7 +41,6 @@ const itemMeta: Record<string, ConfigFieldMeta> = {
   custom_amount_enabled: { label: '允许自定义金额充值', hint: '开启后用户可在收银台输入自定义金额创建充值订单。', type: 'boolean' },
   custom_amount_min_cny: { label: '自定义金额最低值', hint: '用户自定义金额充值时允许提交的最低人民币金额。', type: 'text' },
   custom_amount_max_cny: { label: '自定义金额最高值', hint: '用户自定义金额充值时允许提交的最高人民币金额。', type: 'text' },
-  custom_amount_cny_per_point: { label: '自定义充值汇率', hint: '自定义金额充值换算积分时使用的人民币积分汇率。', type: 'text' },
   visible_methods: { label: '可见支付方式', hint: '用户收银台展示的支付入口列表，包含入口名称、渠道类型、调度策略和排序。', type: 'list' },
   provider_instances: { label: '支付渠道实例', hint: '收银台底层渠道账号配置，包含商户配置、状态、限额和调度参数；密钥不会明文回显。', type: 'list' },
   scheduler_state: { label: '支付调度状态', hint: '多渠道账号轮询调度的运行状态，通常由系统维护。', type: 'map' },

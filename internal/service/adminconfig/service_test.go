@@ -58,7 +58,6 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 	})
 	assertTabKeys(t, tabs, "openai_compat", []string{"openai_compat_model_map"})
 	assertTabKeys(t, tabs, "payments", []string{
-		"custom_amount_cny_per_point",
 		"custom_amount_enabled",
 		"custom_amount_max_cny",
 		"custom_amount_min_cny",
