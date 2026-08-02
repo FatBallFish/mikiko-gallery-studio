@@ -118,4 +118,3 @@ Fix the payment, image-detail, generation-size, password, and visual-asset defec
 - Backfilling passwords for existing passwordless users without email verification.
 - Redesigning the full landing-page layout.
 - Publishing generated 4K intermediate source files when optimized derivatives are the actual product assets.
-
