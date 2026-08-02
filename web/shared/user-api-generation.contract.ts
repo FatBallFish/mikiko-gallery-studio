@@ -54,6 +54,7 @@ const capability = normalizeCapabilities({
     TaskTypes: ['text_to_image', 'image_edit'],
     Qualities: ['auto', '1k', '2k'],
     AspectRatios: ['1:1', '16:9'],
+    SupportsCustomSize: true,
     MaxOutputImageCount: 4,
     MaxReferenceImageCount: 2,
     Prices: [{
@@ -78,7 +79,11 @@ assertDeepEqual(model.pixel_sizes, [], 'the current Go API should not invent pix
 assertDeepEqual(model.prices[0]?.base_resolution, '2k', 'price quality should become a base-resolution alias')
 assertDeepEqual(model.prices[0]?.quality, '2k', 'legacy price quality should remain available')
 assertDeepEqual(model.supports_output_compression, false, 'missing compression support should default to false')
+assertDeepEqual(model.supports_custom_size, true, 'Go custom-size support should survive normalization')
 assertAbsent(model, ['quality', 'output_format', 'moderation'], 'normalization must not advertise unsupported option sets')
+
+const legacyCapability = normalizeCapabilities({ ModelGroups: [{ Code: 'legacy', TaskTypes: ['text_to_image'] }] })
+assertDeepEqual(legacyCapability.model_groups[0]?.supports_custom_size, false, 'missing custom-size support should default to false')
 
 const ratioRequest = {
   task_type: 'image_edit',

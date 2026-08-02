@@ -88,6 +88,7 @@ type ModelAccountModel struct {
 	OutputFormat              []string       `json:"output_format"`
 	OutputCompression         int            `json:"output_compression"`
 	SupportsOutputCompression bool           `json:"supports_output_compression"`
+	SupportsCustomSize        bool           `json:"supports_custom_size"`
 	Moderation                []string       `json:"moderation"`
 	CostPerImage              string         `json:"cost_per_image"`
 	Currency                  string         `json:"currency"`
@@ -112,6 +113,7 @@ type ModelAccountModelWriteRequest struct {
 	OutputFormat              []string
 	OutputCompression         int
 	SupportsOutputCompression bool
+	SupportsCustomSize        bool
 	Moderation                []string
 	CostPerImage              string
 	Currency                  string

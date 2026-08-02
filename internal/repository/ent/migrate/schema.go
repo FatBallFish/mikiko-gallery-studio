@@ -650,6 +650,7 @@ var (
 		{Name: "output_format", Type: field.TypeJSON, Nullable: true},
 		{Name: "output_compression", Type: field.TypeInt, Default: 100},
 		{Name: "supports_output_compression", Type: field.TypeBool, Default: false},
+		{Name: "supports_custom_size", Type: field.TypeBool, Default: false},
 		{Name: "moderation", Type: field.TypeJSON, Nullable: true},
 		{Name: "cost_per_image", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "USD"},
@@ -675,7 +676,7 @@ var (
 			{
 				Name:    "modelaccountmodel_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{ModelAccountModelsColumns[21]},
+				Columns: []*schema.Column{ModelAccountModelsColumns[22]},
 			},
 		},
 	}

@@ -6023,6 +6023,7 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		OutputFormat:              append([]string(nil), model.OutputFormat...),
 		OutputCompression:         model.OutputCompression,
 		SupportsOutputCompression: model.SupportsOutputCompression,
+		SupportsCustomSize:        model.SupportsCustomSize,
 		Moderation:                append([]string(nil), model.Moderation...),
 		HealthStatus:              account.Status,
 		TimeoutMS:                 account.TimeoutMS,
@@ -8260,6 +8261,7 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 		OutputFormat              []string       `json:"output_format"`
 		OutputCompression         *int           `json:"output_compression"`
 		SupportsOutputCompression bool           `json:"supports_output_compression"`
+		SupportsCustomSize        bool           `json:"supports_custom_size"`
 		Moderation                []string       `json:"moderation"`
 		CostPerImage              string         `json:"cost_per_image"`
 		Currency                  string         `json:"currency"`
@@ -8282,7 +8284,7 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 	if req.OutputCompression != nil {
 		outputCompression = *req.OutputCompression
 	}
-	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
+	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
 }
 
 func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) (domainimagetask.TestModelAccountRequest, bool) {

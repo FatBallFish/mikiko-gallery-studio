@@ -77,7 +77,7 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("decode model account response: %v", err)
 	}
 
-	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","image_edit"],"qualities":["1k","2k"],"supported_ratios":["1:1","16:9"],"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
+	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","image_edit"],"qualities":["1k","2k"],"size_modes":["ratio","pixel"],"supported_ratios":["1:1","16:9"],"supported_pixel_sizes":["1024x1024"],"supports_custom_size":true,"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
 	createAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	createAccountModelReq.Header.Set("Content-Type", "application/json")
 	createAccountModelRec := httptest.NewRecorder()
@@ -91,12 +91,13 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 			SupportedRatios        []string `json:"supported_ratios"`
 			MaxImageCount          int      `json:"max_image_count"`
 			MaxReferenceImageCount int      `json:"max_reference_image_count"`
+			SupportsCustomSize     bool     `json:"supports_custom_size"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(createAccountModelRec.Body).Decode(&accountModelResp); err != nil {
 		t.Fatalf("decode account model response: %v", err)
 	}
-	if len(accountModelResp.Data.SupportedRatios) != 2 || accountModelResp.Data.SupportedRatios[1] != "16:9" || accountModelResp.Data.MaxImageCount != 2 || accountModelResp.Data.MaxReferenceImageCount != 3 {
+	if len(accountModelResp.Data.SupportedRatios) != 2 || accountModelResp.Data.SupportedRatios[1] != "16:9" || accountModelResp.Data.MaxImageCount != 2 || accountModelResp.Data.MaxReferenceImageCount != 3 || !accountModelResp.Data.SupportsCustomSize {
 		t.Fatalf("account model capabilities were not preserved: %#v", accountModelResp.Data)
 	}
 
@@ -114,13 +115,14 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 				SupportedRatios        []string `json:"supported_ratios"`
 				MaxImageCount          int      `json:"max_image_count"`
 				MaxReferenceImageCount int      `json:"max_reference_image_count"`
+				SupportsCustomSize     bool     `json:"supports_custom_size"`
 			} `json:"items"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(listAccountModelsRec.Body).Decode(&accountModelListResp); err != nil {
 		t.Fatalf("decode account model list response: %v", err)
 	}
-	if len(accountModelListResp.Data.Items) != 1 || accountModelListResp.Data.Items[0].ID != accountModelResp.Data.ID || len(accountModelListResp.Data.Items[0].SupportedRatios) != 2 || accountModelListResp.Data.Items[0].MaxImageCount != 2 || accountModelListResp.Data.Items[0].MaxReferenceImageCount != 3 {
+	if len(accountModelListResp.Data.Items) != 1 || accountModelListResp.Data.Items[0].ID != accountModelResp.Data.ID || len(accountModelListResp.Data.Items[0].SupportedRatios) != 2 || accountModelListResp.Data.Items[0].MaxImageCount != 2 || accountModelListResp.Data.Items[0].MaxReferenceImageCount != 3 || !accountModelListResp.Data.Items[0].SupportsCustomSize {
 		t.Fatalf("account model list lost capabilities: %#v", accountModelListResp.Data.Items)
 	}
 
@@ -137,12 +139,13 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 			SupportedRatios        []string `json:"supported_ratios"`
 			MaxImageCount          int      `json:"max_image_count"`
 			MaxReferenceImageCount int      `json:"max_reference_image_count"`
+			SupportsCustomSize     bool     `json:"supports_custom_size"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(updateAccountModelRec.Body).Decode(&updatedAccountModelResp); err != nil {
 		t.Fatalf("decode updated account model response: %v", err)
 	}
-	if len(updatedAccountModelResp.Data.SupportedRatios) != 1 || updatedAccountModelResp.Data.SupportedRatios[0] != "9:16" || updatedAccountModelResp.Data.MaxImageCount != 1 || updatedAccountModelResp.Data.MaxReferenceImageCount != 0 {
+	if len(updatedAccountModelResp.Data.SupportedRatios) != 1 || updatedAccountModelResp.Data.SupportedRatios[0] != "9:16" || updatedAccountModelResp.Data.MaxImageCount != 1 || updatedAccountModelResp.Data.MaxReferenceImageCount != 0 || updatedAccountModelResp.Data.SupportsCustomSize {
 		t.Fatalf("account model update lost capabilities: %#v", updatedAccountModelResp.Data)
 	}
 

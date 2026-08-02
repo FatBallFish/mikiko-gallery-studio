@@ -1493,18 +1493,22 @@ func init() {
 	modelaccountmodelDescSupportsOutputCompression := modelaccountmodelFields[13].Descriptor()
 	// modelaccountmodel.DefaultSupportsOutputCompression holds the default value on creation for the supports_output_compression field.
 	modelaccountmodel.DefaultSupportsOutputCompression = modelaccountmodelDescSupportsOutputCompression.Default.(bool)
+	// modelaccountmodelDescSupportsCustomSize is the schema descriptor for supports_custom_size field.
+	modelaccountmodelDescSupportsCustomSize := modelaccountmodelFields[14].Descriptor()
+	// modelaccountmodel.DefaultSupportsCustomSize holds the default value on creation for the supports_custom_size field.
+	modelaccountmodel.DefaultSupportsCustomSize = modelaccountmodelDescSupportsCustomSize.Default.(bool)
 	// modelaccountmodelDescCostPerImage is the schema descriptor for cost_per_image field.
-	modelaccountmodelDescCostPerImage := modelaccountmodelFields[15].Descriptor()
+	modelaccountmodelDescCostPerImage := modelaccountmodelFields[16].Descriptor()
 	// modelaccountmodel.DefaultCostPerImage holds the default value on creation for the cost_per_image field.
 	modelaccountmodel.DefaultCostPerImage = modelaccountmodelDescCostPerImage.Default.(string)
 	// modelaccountmodelDescCurrency is the schema descriptor for currency field.
-	modelaccountmodelDescCurrency := modelaccountmodelFields[16].Descriptor()
+	modelaccountmodelDescCurrency := modelaccountmodelFields[17].Descriptor()
 	// modelaccountmodel.DefaultCurrency holds the default value on creation for the currency field.
 	modelaccountmodel.DefaultCurrency = modelaccountmodelDescCurrency.Default.(string)
 	// modelaccountmodel.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	modelaccountmodel.CurrencyValidator = modelaccountmodelDescCurrency.Validators[0].(func(string) error)
 	// modelaccountmodelDescEnabled is the schema descriptor for enabled field.
-	modelaccountmodelDescEnabled := modelaccountmodelFields[17].Descriptor()
+	modelaccountmodelDescEnabled := modelaccountmodelFields[18].Descriptor()
 	// modelaccountmodel.DefaultEnabled holds the default value on creation for the enabled field.
 	modelaccountmodel.DefaultEnabled = modelaccountmodelDescEnabled.Default.(bool)
 	modelproviderMixin := schema.ModelProvider{}.Mixin()

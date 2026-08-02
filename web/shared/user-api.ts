@@ -266,15 +266,18 @@ function optionalOutputCapabilities(source: any) {
     quality?: string[]
     output_format?: string[]
     supports_output_compression: boolean
+    supports_custom_size: boolean
     moderation?: string[]
-  } = { supports_output_compression: false }
+  } = { supports_output_compression: false, supports_custom_size: false }
   const quality = pick<string[]>(source, 'quality', 'Quality')
   const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
   const supportsCompression = pick<boolean>(source, 'supports_output_compression', 'SupportsOutputCompression')
+  const supportsCustomSize = pick<boolean>(source, 'supports_custom_size', 'SupportsCustomSize')
   const moderation = pick<string[]>(source, 'moderation', 'Moderation')
   if (quality !== undefined) result.quality = quality
   if (outputFormat !== undefined) result.output_format = outputFormat
   if (supportsCompression !== undefined) result.supports_output_compression = supportsCompression
+  if (supportsCustomSize !== undefined) result.supports_custom_size = supportsCustomSize
   if (moderation !== undefined) result.moderation = moderation
   return result
 }

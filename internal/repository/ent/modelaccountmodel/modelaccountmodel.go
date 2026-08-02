@@ -47,6 +47,8 @@ const (
 	FieldOutputCompression = "output_compression"
 	// FieldSupportsOutputCompression holds the string denoting the supports_output_compression field in the database.
 	FieldSupportsOutputCompression = "supports_output_compression"
+	// FieldSupportsCustomSize holds the string denoting the supports_custom_size field in the database.
+	FieldSupportsCustomSize = "supports_custom_size"
 	// FieldModeration holds the string denoting the moderation field in the database.
 	FieldModeration = "moderation"
 	// FieldCostPerImage holds the string denoting the cost_per_image field in the database.
@@ -81,6 +83,7 @@ var Columns = []string{
 	FieldOutputFormat,
 	FieldOutputCompression,
 	FieldSupportsOutputCompression,
+	FieldSupportsCustomSize,
 	FieldModeration,
 	FieldCostPerImage,
 	FieldCurrency,
@@ -119,6 +122,8 @@ var (
 	DefaultOutputCompression int
 	// DefaultSupportsOutputCompression holds the default value on creation for the "supports_output_compression" field.
 	DefaultSupportsOutputCompression bool
+	// DefaultSupportsCustomSize holds the default value on creation for the "supports_custom_size" field.
+	DefaultSupportsCustomSize bool
 	// DefaultCostPerImage holds the default value on creation for the "cost_per_image" field.
 	DefaultCostPerImage string
 	// DefaultCurrency holds the default value on creation for the "currency" field.
@@ -185,6 +190,11 @@ func ByOutputCompression(opts ...sql.OrderTermOption) OrderOption {
 // BySupportsOutputCompression orders the results by the supports_output_compression field.
 func BySupportsOutputCompression(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSupportsOutputCompression, opts...).ToFunc()
+}
+
+// BySupportsCustomSize orders the results by the supports_custom_size field.
+func BySupportsCustomSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSupportsCustomSize, opts...).ToFunc()
 }
 
 // ByCostPerImage orders the results by the cost_per_image field.

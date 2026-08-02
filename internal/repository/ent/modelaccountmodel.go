@@ -52,6 +52,8 @@ type ModelAccountModel struct {
 	OutputCompression int `json:"output_compression,omitempty"`
 	// SupportsOutputCompression holds the value of the "supports_output_compression" field.
 	SupportsOutputCompression bool `json:"supports_output_compression,omitempty"`
+	// SupportsCustomSize holds the value of the "supports_custom_size" field.
+	SupportsCustomSize bool `json:"supports_custom_size,omitempty"`
 	// Moderation holds the value of the "moderation" field.
 	Moderation []string `json:"moderation,omitempty"`
 	// CostPerImage holds the value of the "cost_per_image" field.
@@ -72,7 +74,7 @@ func (*ModelAccountModel) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case modelaccountmodel.FieldTaskTypes, modelaccountmodel.FieldBaseResolution, modelaccountmodel.FieldQuality, modelaccountmodel.FieldSizeModes, modelaccountmodel.FieldSupportedRatios, modelaccountmodel.FieldSupportedPixelSizes, modelaccountmodel.FieldOutputFormat, modelaccountmodel.FieldModeration, modelaccountmodel.FieldExtra:
 			values[i] = new([]byte)
-		case modelaccountmodel.FieldSupportsOutputCompression, modelaccountmodel.FieldEnabled:
+		case modelaccountmodel.FieldSupportsOutputCompression, modelaccountmodel.FieldSupportsCustomSize, modelaccountmodel.FieldEnabled:
 			values[i] = new(sql.NullBool)
 		case modelaccountmodel.FieldID, modelaccountmodel.FieldAccountID, modelaccountmodel.FieldMaxReferenceImageCount, modelaccountmodel.FieldMaxImageCount, modelaccountmodel.FieldOutputCompression:
 			values[i] = new(sql.NullInt64)
@@ -218,6 +220,12 @@ func (_m *ModelAccountModel) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				_m.SupportsOutputCompression = value.Bool
 			}
+		case modelaccountmodel.FieldSupportsCustomSize:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field supports_custom_size", values[i])
+			} else if value.Valid {
+				_m.SupportsCustomSize = value.Bool
+			}
 		case modelaccountmodel.FieldModeration:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field moderation", values[i])
@@ -340,6 +348,9 @@ func (_m *ModelAccountModel) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("supports_output_compression=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SupportsOutputCompression))
+	builder.WriteString(", ")
+	builder.WriteString("supports_custom_size=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportsCustomSize))
 	builder.WriteString(", ")
 	builder.WriteString("moderation=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Moderation))

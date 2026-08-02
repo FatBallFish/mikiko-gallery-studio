@@ -104,6 +104,11 @@ func SupportsOutputCompression(v bool) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsOutputCompression, v))
 }
 
+// SupportsCustomSize applies equality check predicate on the "supports_custom_size" field. It's identical to SupportsCustomSizeEQ.
+func SupportsCustomSize(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsCustomSize, v))
+}
+
 // CostPerImage applies equality check predicate on the "cost_per_image" field. It's identical to CostPerImageEQ.
 func CostPerImage(v string) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldEQ(FieldCostPerImage, v))
@@ -617,6 +622,16 @@ func SupportsOutputCompressionEQ(v bool) predicate.ModelAccountModel {
 // SupportsOutputCompressionNEQ applies the NEQ predicate on the "supports_output_compression" field.
 func SupportsOutputCompressionNEQ(v bool) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldNEQ(FieldSupportsOutputCompression, v))
+}
+
+// SupportsCustomSizeEQ applies the EQ predicate on the "supports_custom_size" field.
+func SupportsCustomSizeEQ(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsCustomSize, v))
+}
+
+// SupportsCustomSizeNEQ applies the NEQ predicate on the "supports_custom_size" field.
+func SupportsCustomSizeNEQ(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldSupportsCustomSize, v))
 }
 
 // ModerationIsNil applies the IsNil predicate on the "moderation" field.

@@ -441,6 +441,7 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 		OutputFormat:              req.OutputFormat,
 		OutputCompression:         req.OutputCompression,
 		SupportsOutputCompression: req.SupportsOutputCompression,
+		SupportsCustomSize:        req.SupportsCustomSize,
 		Moderation:                req.Moderation,
 	})
 	if err != nil {
@@ -456,6 +457,7 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 	req.OutputFormat = capability.OutputFormat
 	req.OutputCompression = capability.OutputCompression
 	req.SupportsOutputCompression = capability.SupportsOutputCompression
+	req.SupportsCustomSize = capability.SupportsCustomSize
 	req.Moderation = capability.Moderation
 	if req.Extra == nil {
 		req.Extra = map[string]any{}

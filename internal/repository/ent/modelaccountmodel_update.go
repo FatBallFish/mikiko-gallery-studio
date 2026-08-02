@@ -307,6 +307,20 @@ func (_u *ModelAccountModelUpdate) SetNillableSupportsOutputCompression(v *bool)
 	return _u
 }
 
+// SetSupportsCustomSize sets the "supports_custom_size" field.
+func (_u *ModelAccountModelUpdate) SetSupportsCustomSize(v bool) *ModelAccountModelUpdate {
+	_u.mutation.SetSupportsCustomSize(v)
+	return _u
+}
+
+// SetNillableSupportsCustomSize sets the "supports_custom_size" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableSupportsCustomSize(v *bool) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetSupportsCustomSize(*v)
+	}
+	return _u
+}
+
 // SetModeration sets the "moderation" field.
 func (_u *ModelAccountModelUpdate) SetModeration(v []string) *ModelAccountModelUpdate {
 	_u.mutation.SetModeration(v)
@@ -570,6 +584,9 @@ func (_u *ModelAccountModelUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if value, ok := _u.mutation.SupportsOutputCompression(); ok {
 		_spec.SetField(modelaccountmodel.FieldSupportsOutputCompression, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SupportsCustomSize(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsCustomSize, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Moderation(); ok {
 		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)
@@ -895,6 +912,20 @@ func (_u *ModelAccountModelUpdateOne) SetNillableSupportsOutputCompression(v *bo
 	return _u
 }
 
+// SetSupportsCustomSize sets the "supports_custom_size" field.
+func (_u *ModelAccountModelUpdateOne) SetSupportsCustomSize(v bool) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSupportsCustomSize(v)
+	return _u
+}
+
+// SetNillableSupportsCustomSize sets the "supports_custom_size" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableSupportsCustomSize(v *bool) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetSupportsCustomSize(*v)
+	}
+	return _u
+}
+
 // SetModeration sets the "moderation" field.
 func (_u *ModelAccountModelUpdateOne) SetModeration(v []string) *ModelAccountModelUpdateOne {
 	_u.mutation.SetModeration(v)
@@ -1188,6 +1219,9 @@ func (_u *ModelAccountModelUpdateOne) sqlSave(ctx context.Context) (_node *Model
 	}
 	if value, ok := _u.mutation.SupportsOutputCompression(); ok {
 		_spec.SetField(modelaccountmodel.FieldSupportsOutputCompression, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SupportsCustomSize(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsCustomSize, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Moderation(); ok {
 		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)

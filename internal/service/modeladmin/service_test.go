@@ -103,20 +103,21 @@ func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 	model, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
 		TaskTypes: []string{"image_edit"}, Quality: []string{"high"},
+		SizeModes: []string{"ratio", "pixel"}, SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true,
 		SupportedRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
 		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateModelAccountModel: %v", err)
 	}
-	if len(model.SupportedRatios) != 1 || model.SupportedRatios[0] != "16:9" || model.MaxImageCount != 2 || model.MaxReferenceImageCount != 3 {
+	if len(model.SupportedRatios) != 1 || model.SupportedRatios[0] != "16:9" || model.MaxImageCount != 2 || model.MaxReferenceImageCount != 3 || !model.SupportsCustomSize {
 		t.Fatalf("memory create lost generation capabilities: %#v", model)
 	}
 	snapshot, err := svc.ModelRoutingConfig(ctx)
 	if err != nil {
 		t.Fatalf("ModelRoutingConfig after create: %v", err)
 	}
-	if len(snapshot.ProviderModels) != 1 || len(snapshot.ProviderModels[0].SupportedAspectRatios) != 1 || snapshot.ProviderModels[0].SupportedAspectRatios[0] != "16:9" || snapshot.ProviderModels[0].MaxImageCount != 2 || snapshot.ProviderModels[0].MaxReferenceImageCount != 3 || !snapshot.ProviderModels[0].SupportsImageInput {
+	if len(snapshot.ProviderModels) != 1 || len(snapshot.ProviderModels[0].SupportedAspectRatios) != 1 || snapshot.ProviderModels[0].SupportedAspectRatios[0] != "16:9" || snapshot.ProviderModels[0].MaxImageCount != 2 || snapshot.ProviderModels[0].MaxReferenceImageCount != 3 || !snapshot.ProviderModels[0].SupportsImageInput || !snapshot.ProviderModels[0].SupportsCustomSize {
 		t.Fatalf("memory snapshot lost generation capabilities: %#v", snapshot.ProviderModels)
 	}
 
@@ -129,14 +130,14 @@ func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateModelAccountModel: %v", err)
 	}
-	if len(updated.SupportedRatios) != 1 || updated.SupportedRatios[0] != "1:1" || updated.MaxImageCount != 1 || updated.MaxReferenceImageCount != 0 {
+	if len(updated.SupportedRatios) != 1 || updated.SupportedRatios[0] != "1:1" || updated.MaxImageCount != 1 || updated.MaxReferenceImageCount != 0 || updated.SupportsCustomSize {
 		t.Fatalf("memory update lost generation capabilities: %#v", updated)
 	}
 	snapshot, err = svc.ModelRoutingConfig(ctx)
 	if err != nil {
 		t.Fatalf("ModelRoutingConfig after update: %v", err)
 	}
-	if len(snapshot.ProviderModels) != 1 || snapshot.ProviderModels[0].MaxReferenceImageCount != 0 || snapshot.ProviderModels[0].SupportsImageInput {
+	if len(snapshot.ProviderModels) != 1 || snapshot.ProviderModels[0].MaxReferenceImageCount != 0 || snapshot.ProviderModels[0].SupportsImageInput || snapshot.ProviderModels[0].SupportsCustomSize {
 		t.Fatalf("memory snapshot must preserve explicit no-reference support: %#v", snapshot.ProviderModels)
 	}
 }

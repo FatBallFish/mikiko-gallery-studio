@@ -497,6 +497,7 @@ export type CapabilityItem = {
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
+  supports_custom_size?: boolean
   moderation?: string[]
 }
 export type RouteModelPriceQuote = {
@@ -524,6 +525,7 @@ export type CapabilityModelGroup = {
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
+  supports_custom_size?: boolean
   moderation?: string[]
   effective_multiplier?: string
   prices: RouteModelPriceQuote[]
@@ -543,6 +545,7 @@ export type Capability = {
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
+  supports_custom_size?: boolean
   moderation?: string[]
   max_image_count: number
   reference_image_max_mb?: number
@@ -947,6 +950,7 @@ export type ModelAccountModel = {
   output_format: string[]
   output_compression?: number
   supports_output_compression: boolean
+  supports_custom_size: boolean
   moderation: string[]
   cost_per_image: string
   currency: string
@@ -955,7 +959,7 @@ export type ModelAccountModel = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; output_format: string[]; supports_output_compression: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; output_format: string[]; supports_output_compression: boolean; supports_custom_size?: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
 export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio?: string }
 export type ModelAccountTestImageResult = {
   status: string

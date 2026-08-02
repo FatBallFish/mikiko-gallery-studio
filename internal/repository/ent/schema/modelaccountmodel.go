@@ -29,6 +29,7 @@ func (ModelAccountModel) Fields() []ent.Field {
 		field.JSON("output_format", []string{"png"}).Optional(),
 		field.Int("output_compression").Default(100),
 		field.Bool("supports_output_compression").Default(false),
+		field.Bool("supports_custom_size").Default(false),
 		field.JSON("moderation", []string{"auto"}).Optional(),
 		field.String("cost_per_image").SchemaType(map[string]string{dialect.Postgres: "numeric(18,5)"}).Default("0.00000"),
 		field.String("currency").MaxLen(16).Default("USD"),

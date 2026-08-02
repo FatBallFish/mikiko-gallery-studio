@@ -16745,6 +16745,7 @@ type ModelAccountModelMutation struct {
 	output_compression           *int
 	addoutput_compression        *int
 	supports_output_compression  *bool
+	supports_custom_size         *bool
 	moderation                   *[]string
 	appendmoderation             []string
 	cost_per_image               *string
@@ -17763,6 +17764,42 @@ func (m *ModelAccountModelMutation) ResetSupportsOutputCompression() {
 	m.supports_output_compression = nil
 }
 
+// SetSupportsCustomSize sets the "supports_custom_size" field.
+func (m *ModelAccountModelMutation) SetSupportsCustomSize(b bool) {
+	m.supports_custom_size = &b
+}
+
+// SupportsCustomSize returns the value of the "supports_custom_size" field in the mutation.
+func (m *ModelAccountModelMutation) SupportsCustomSize() (r bool, exists bool) {
+	v := m.supports_custom_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportsCustomSize returns the old "supports_custom_size" field's value of the ModelAccountModel entity.
+// If the ModelAccountModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountModelMutation) OldSupportsCustomSize(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportsCustomSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportsCustomSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportsCustomSize: %w", err)
+	}
+	return oldValue.SupportsCustomSize, nil
+}
+
+// ResetSupportsCustomSize resets all changes to the "supports_custom_size" field.
+func (m *ModelAccountModelMutation) ResetSupportsCustomSize() {
+	m.supports_custom_size = nil
+}
+
 // SetModeration sets the "moderation" field.
 func (m *ModelAccountModelMutation) SetModeration(s []string) {
 	m.moderation = &s
@@ -18019,7 +18056,7 @@ func (m *ModelAccountModelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ModelAccountModelMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.created_at != nil {
 		fields = append(fields, modelaccountmodel.FieldCreatedAt)
 	}
@@ -18070,6 +18107,9 @@ func (m *ModelAccountModelMutation) Fields() []string {
 	}
 	if m.supports_output_compression != nil {
 		fields = append(fields, modelaccountmodel.FieldSupportsOutputCompression)
+	}
+	if m.supports_custom_size != nil {
+		fields = append(fields, modelaccountmodel.FieldSupportsCustomSize)
 	}
 	if m.moderation != nil {
 		fields = append(fields, modelaccountmodel.FieldModeration)
@@ -18128,6 +18168,8 @@ func (m *ModelAccountModelMutation) Field(name string) (ent.Value, bool) {
 		return m.OutputCompression()
 	case modelaccountmodel.FieldSupportsOutputCompression:
 		return m.SupportsOutputCompression()
+	case modelaccountmodel.FieldSupportsCustomSize:
+		return m.SupportsCustomSize()
 	case modelaccountmodel.FieldModeration:
 		return m.Moderation()
 	case modelaccountmodel.FieldCostPerImage:
@@ -18181,6 +18223,8 @@ func (m *ModelAccountModelMutation) OldField(ctx context.Context, name string) (
 		return m.OldOutputCompression(ctx)
 	case modelaccountmodel.FieldSupportsOutputCompression:
 		return m.OldSupportsOutputCompression(ctx)
+	case modelaccountmodel.FieldSupportsCustomSize:
+		return m.OldSupportsCustomSize(ctx)
 	case modelaccountmodel.FieldModeration:
 		return m.OldModeration(ctx)
 	case modelaccountmodel.FieldCostPerImage:
@@ -18318,6 +18362,13 @@ func (m *ModelAccountModelMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSupportsOutputCompression(v)
+		return nil
+	case modelaccountmodel.FieldSupportsCustomSize:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportsCustomSize(v)
 		return nil
 	case modelaccountmodel.FieldModeration:
 		v, ok := value.([]string)
@@ -18567,6 +18618,9 @@ func (m *ModelAccountModelMutation) ResetField(name string) error {
 		return nil
 	case modelaccountmodel.FieldSupportsOutputCompression:
 		m.ResetSupportsOutputCompression()
+		return nil
+	case modelaccountmodel.FieldSupportsCustomSize:
+		m.ResetSupportsCustomSize()
 		return nil
 	case modelaccountmodel.FieldModeration:
 		m.ResetModeration()
