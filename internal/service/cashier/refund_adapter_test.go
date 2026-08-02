@@ -58,9 +58,12 @@ func TestRefundAdapterRegistryWithBuildersRegistersStandardProviders(t *testing.
 		WxPayDirect: func(_ context.Context, req RefundPaymentRequest) (RefundPaymentResult, error) {
 			return refundResultForTest(req, "WX-REFUND"), nil
 		},
+		Stripe: func(_ context.Context, req RefundPaymentRequest) (RefundPaymentResult, error) {
+			return refundResultForTest(req, "STRIPE-REFUND"), nil
+		},
 	})
 
-	for _, providerType := range []string{"alipay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "wxpay_direct"} {
+	for _, providerType := range []string{"alipay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "wxpay_direct", "stripe"} {
 		result, shouldCall, err := registry.RefundPayment(context.Background(), RefundPaymentRequest{
 			Order:           OrderSnapshot{OrderNo: "PGO-REFUND", Status: "completed"},
 			Instance:        domaincashier.ProviderInstance{ID: 9, ProviderType: providerType},

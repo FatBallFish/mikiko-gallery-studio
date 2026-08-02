@@ -21,6 +21,7 @@ func StandardRefundProviderBuilders() RefundProviderBuilders {
 		WxPayDirect:  WxPayRefundPaymentBuilder,
 		EasyPay:      EasyPayRefundPaymentBuilder,
 		JeePay:       JeePayRefundPaymentBuilder,
+		Stripe:       NewStripeRefundPaymentBuilder(),
 	}
 }
 

@@ -1,11 +1,14 @@
 import type { CashierOrder, PaymentDisplay } from '../../../shared/api-types'
+import { checkoutStripePaymentConfig } from './checkoutStripePayment'
 
 export type CheckoutPaymentDisplayModel = {
-  kind: 'qr_code' | 'redirect' | 'form' | 'mock' | 'unsupported' | 'none'
+  kind: 'qr_code' | 'redirect' | 'form' | 'mock' | 'stripe' | 'unsupported' | 'none'
   label: string
   detail: string
   href?: string
   formHtml?: string
+  publishableKey?: string
+  clientSecret?: string
 }
 
 export function checkoutPaymentDisplayModel(order: CashierOrder): CheckoutPaymentDisplayModel {
@@ -22,6 +25,23 @@ export function checkoutPaymentDisplayModel(order: CashierOrder): CheckoutPaymen
       kind: 'unsupported',
       label: '微信内支付需在微信环境打开',
       detail: '当前浏览器无法调起微信 JSAPI，请返回支付方式，改选 H5 或扫码支付后重新创建订单。',
+    }
+  }
+  if (display.type === 'stripe_payment_element') {
+    const stripe = checkoutStripePaymentConfig(display)
+    if (!stripe.supported) {
+      return {
+        kind: 'unsupported',
+        label: 'Stripe 支付不可用',
+        detail: stripe.error,
+      }
+    }
+    return {
+      kind: 'stripe',
+      label: 'Stripe 安全支付',
+      detail: '请填写支付信息并确认付款，支付结果会在当前订单中自动更新。',
+      publishableKey: stripe.publishableKey,
+      clientSecret: stripe.clientSecret,
     }
   }
   if (display.type === 'mock') {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
@@ -23,6 +24,34 @@ func writePrivateFileAtomicNoReplace(path string, content []byte) (returnErr err
 
 func writeDeploymentFileAtomicNoReplace(path string, content []byte) error {
 	return writeFileAtomicNoReplace(path, content, 0o644)
+}
+
+func writePrivateFileAtomicReplace(path string, content []byte) error {
+	if err := inspectInstallPath(path); err != nil {
+		return err
+	}
+	return config.WriteRuntimeEnvAtomic(path, content)
+}
+
+func writeDeploymentFileAtomicReplace(path string, content []byte) error {
+	if err := writePrivateFileAtomicReplace(path, content); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o644)
+}
+
+func inspectInstallPath(path string) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("install target %s is not a regular file", path)
+	}
+	return nil
 }
 
 func writeFileAtomicNoReplace(path string, content []byte, mode os.FileMode) (returnErr error) {

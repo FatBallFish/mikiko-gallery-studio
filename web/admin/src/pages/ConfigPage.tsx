@@ -10,6 +10,7 @@ import {
   configFieldMeta,
   configLockedDetail,
   configPermission,
+  configRowAllowed,
   configTabMeta,
   configValidateValue,
   extractConfigValue,
@@ -55,6 +56,8 @@ export function ConfigPage({
   onFeedback,
   compact = false,
   summaryMode = false,
+  categories = generalConfigCategories,
+  keys,
   onDirtyChange,
   onBusyChange,
 }: {
@@ -62,6 +65,8 @@ export function ConfigPage({
   onFeedback: (title: string, detail?: string) => void
   compact?: boolean
   summaryMode?: boolean
+  categories?: readonly string[]
+  keys?: readonly string[]
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
 }) {
@@ -80,7 +85,7 @@ export function ConfigPage({
     setError(null)
     try {
       const nextRows = await adminApi.listConfig()
-      const generalRows = nextRows.filter(isGeneralConfigRow)
+      const generalRows = nextRows.filter((row) => configRowAllowed(row, categories, keys))
       setRows(generalRows)
       setDrafts(Object.fromEntries(generalRows.map((row) => [draftId(row), extractConfigValue(row)])))
       setActiveTab((current) => {
@@ -160,7 +165,7 @@ export function ConfigPage({
         })),
       })
       const nextRows = await adminApi.listConfig()
-      const generalRows = nextRows.filter(isGeneralConfigRow)
+      const generalRows = nextRows.filter((row) => configRowAllowed(row, categories, keys))
       setRows(generalRows)
       setDrafts(Object.fromEntries(generalRows.map((row) => [draftId(row), extractConfigValue(row)])))
       setNotice(`${activeMeta.label}已保存，API 节点将在 1 分钟内读取新配置。`)
@@ -290,11 +295,6 @@ export function ConfigPage({
       )}
     </section>
   )
-}
-
-function isGeneralConfigRow(row: ConfigItem) {
-  const category = row.config_category || row.tab
-  return generalConfigCategories.includes(category as (typeof generalConfigCategories)[number])
 }
 
 function ConfigEditor({

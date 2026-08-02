@@ -172,6 +172,69 @@ install_candidate() {
   printf '%s\n' "$install_dir/mgsctl"
 }
 
+path_marker_start='# >>> mikiko-gallery-studio mgsctl >>>'
+path_marker_end='# <<< mikiko-gallery-studio mgsctl <<<'
+
+validate_shell_profile() {
+  profile_path=$1
+  if [ -L "$profile_path" ]; then
+    echo "refusing to update symlinked shell profile: $profile_path" >&2
+    return 1
+  fi
+  if [ -e "$profile_path" ] && [ ! -f "$profile_path" ]; then
+    echo "refusing to update non-regular shell profile: $profile_path" >&2
+    return 1
+  fi
+}
+
+update_shell_profile_path() {
+  profile_path=$1
+  escaped_install_dir="$(printf '%s' "$install_dir" | sed 's/[\\`"$]/\\&/g')"
+  profile_stage="$(mktemp "${profile_path}.mgsctl.XXXXXX")" || return 1
+  if [ -f "$profile_path" ]; then
+    awk -v start="$path_marker_start" -v finish="$path_marker_end" '
+      $0 == start { managed = 1; next }
+      managed && $0 == finish { managed = 0; next }
+      !managed { print }
+    ' "$profile_path" > "$profile_stage"
+  fi
+  {
+    printf '\n%s\n' "$path_marker_start"
+    printf 'export PATH="%s:$PATH"\n' "$escaped_install_dir"
+    printf '%s\n' "$path_marker_end"
+  } >> "$profile_stage"
+  if ! mv -f "$profile_stage" "$profile_path"; then
+    rm -f "$profile_stage"
+    return 1
+  fi
+}
+
+ensure_install_dir_on_path() {
+  case ":${PATH:-}:" in
+    *":$install_dir:"*) return 0 ;;
+  esac
+
+  if ! mkdir -p "${HOME:?HOME is required}"; then
+    echo "cannot create HOME directory for shell profile updates: $HOME" >&2
+    return 1
+  fi
+  primary_profile="${HOME:?HOME is required}/.profile"
+  shell_profile=""
+  case "${SHELL:-}" in
+    */bash) shell_profile="$HOME/.bashrc" ;;
+    */zsh) shell_profile="$HOME/.zshrc" ;;
+  esac
+
+  validate_shell_profile "$primary_profile" || return 1
+  if [ -n "$shell_profile" ] && [ "$shell_profile" != "$primary_profile" ]; then
+    validate_shell_profile "$shell_profile" || return 1
+  fi
+  update_shell_profile_path "$primary_profile" || return 1
+  if [ -n "$shell_profile" ] && [ "$shell_profile" != "$primary_profile" ]; then
+    update_shell_profile_path "$shell_profile" || return 1
+  fi
+}
+
 force_local_build=false
 if path_binary="$(command -v mgsctl 2>/dev/null)"; then
   source_commit=""
@@ -236,7 +299,10 @@ installed_binary="$(install_candidate "$candidate")" || exit 1
 echo "Installed mgsctl: $installed_binary"
 case ":${PATH:-}:" in
   *":$install_dir:"*) ;;
-  *) echo "Add $install_dir to PATH to run mgsctl directly in future shells." ;;
+  *)
+    ensure_install_dir_on_path || exit 1
+    echo "Added $install_dir to PATH for future shells."
+    ;;
 esac
 
 exec "$installed_binary" "$@"

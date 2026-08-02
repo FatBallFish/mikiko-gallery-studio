@@ -124,6 +124,7 @@ type CashierConfig struct {
 	OrderTimeoutSeconds         int    `yaml:"order_timeout_seconds"`
 	MaxPendingOrdersPerUser     int    `yaml:"max_pending_orders_per_user"`
 	SiteBaseURL                 string `yaml:"site_base_url"`
+	StripeAPIBaseURL            string `yaml:"stripe_api_base_url"`
 	ProviderConfigEncryptionKey string `yaml:"provider_config_encryption_key"`
 }
 

@@ -691,7 +691,7 @@ func (s *Service) createUserLocked(email string) (domainauth.User, error) {
 	user := domainauth.User{
 		ID:              s.nextUserID,
 		Email:           email,
-		Nickname:        fmt.Sprintf("user-%d", s.nextUserID),
+		Nickname:        defaultNicknameFromEmail(email),
 		Status:          "active",
 		GroupCode:       "basic",
 		GroupCodes:      []string{"basic"},
@@ -708,6 +708,23 @@ func (s *Service) createUserLocked(email string) (domainauth.User, error) {
 	s.usersByEmail[email] = &user
 	s.usersByID[user.ID] = &user
 	return user, nil
+}
+
+func defaultNicknameFromEmail(email string) string {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	at := strings.IndexByte(normalized, '@')
+	if at <= 0 {
+		return "user"
+	}
+	localPart := strings.TrimSpace(normalized[:at])
+	if localPart == "" {
+		return "user"
+	}
+	runes := []rune(localPart)
+	if len(runes) > 64 {
+		runes = runes[:64]
+	}
+	return string(runes)
 }
 
 func (s *Service) getUserByIDLocked(id int64) (domainauth.User, bool) {

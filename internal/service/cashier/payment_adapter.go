@@ -35,6 +35,7 @@ type PaymentProviderBuilders struct {
 	WxPayDirect  PaymentDisplayBuilder
 	EasyPay      PaymentDisplayBuilder
 	JeePay       PaymentDisplayBuilder
+	Stripe       PaymentDisplayBuilder
 }
 
 type PaymentAdapterRegistry struct {
@@ -56,6 +57,7 @@ func NewPaymentAdapterRegistryWithBuilders(builders PaymentProviderBuilders) *Pa
 	registry.Register("easypay_wxpay", builders.EasyPay)
 	registry.Register("jeepay_alipay", builders.JeePay)
 	registry.Register("jeepay_wxpay", builders.JeePay)
+	registry.Register("stripe", builders.Stripe)
 	return registry
 }
 

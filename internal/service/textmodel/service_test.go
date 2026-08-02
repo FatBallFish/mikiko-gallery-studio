@@ -9,6 +9,7 @@ import (
 	domaintextmodel "github.com/fatballfish/pic-gallery/internal/domain/textmodel"
 	textprovider "github.com/fatballfish/pic-gallery/internal/provider/text"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type connectionOptimizer struct {
@@ -61,6 +62,149 @@ func TestServiceEncryptsSecretsAndResolvesEnabledDefault(t *testing.T) {
 	if resolvedAccount.ID != account.ID || resolvedModel.ID != model.ID || apiKey != "plain-secret" {
 		t.Fatalf("unexpected resolved default: %#v %#v key=%q", resolvedAccount, resolvedModel, apiKey)
 	}
+}
+
+func TestServiceMaintainsDefaultModelReadiness(t *testing.T) {
+	ctx := context.Background()
+	store := textmodelservice.NewMemoryStore()
+	svc := textmodelservice.NewService(store, "text-model-encryption-key")
+	account := createEnabledTextModelAccount(t, ctx, svc, "Primary")
+
+	first := createTextModel(t, ctx, svc, account.ID, "model-a", true)
+	if !first.IsDefault {
+		t.Fatalf("first eligible model should become default: %#v", first)
+	}
+	second := createTextModel(t, ctx, svc, account.ID, "model-b", true)
+	if second.IsDefault {
+		t.Fatalf("new model must not steal an existing default: %#v", second)
+	}
+	resolvedAccount, resolvedModel, _, err := svc.ResolveDefaultModel(ctx)
+	if err != nil {
+		t.Fatalf("ResolveDefaultModel: %v", err)
+	}
+	if resolvedAccount.ID != account.ID || resolvedModel.ID != first.ID {
+		t.Fatalf("expected first model to remain default, got account=%#v model=%#v", resolvedAccount, resolvedModel)
+	}
+
+	updatedFirst, err := svc.UpdateModel(ctx, first.ID, domaintextmodel.ModelWriteRequest{
+		Version: first.Version, AccountID: first.AccountID, ModelCode: first.ModelCode,
+		DisplayName: first.DisplayName, InputPricePerMTok: first.InputPricePerMTok,
+		OutputPricePerMTok: first.OutputPricePerMTok, Currency: first.Currency, Enabled: false,
+	})
+	if err != nil {
+		t.Fatalf("disable default model: %v", err)
+	}
+	if updatedFirst.IsDefault {
+		t.Fatalf("disabled model must not remain default: %#v", updatedFirst)
+	}
+	_, replacement, _, err := svc.ResolveDefaultModel(ctx)
+	if err != nil {
+		t.Fatalf("resolve replacement default: %v", err)
+	}
+	if replacement.ID != second.ID || !replacement.IsDefault {
+		t.Fatalf("unique eligible replacement should become default: %#v", replacement)
+	}
+
+	third := createTextModel(t, ctx, svc, account.ID, "model-c", true)
+	if third.IsDefault {
+		t.Fatalf("third model must not steal the replacement default: %#v", third)
+	}
+	if err := svc.DeleteModel(ctx, second.ID); err != nil {
+		t.Fatalf("delete current default: %v", err)
+	}
+	_, replacement, _, err = svc.ResolveDefaultModel(ctx)
+	if err != nil || replacement.ID != third.ID || !replacement.IsDefault {
+		t.Fatalf("unique candidate should replace deleted default: model=%#v err=%v", replacement, err)
+	}
+
+	disabledAccount, err := svc.UpdateAccount(ctx, account.ID, domaintextmodel.AccountWriteRequest{
+		Version: account.Version, Name: account.Name, PlatformType: account.PlatformType,
+		APIStyle: account.APIStyle, BaseURL: account.BaseURL, Enabled: false,
+	})
+	if err != nil {
+		t.Fatalf("disable account: %v", err)
+	}
+	if _, _, _, err := svc.ResolveDefaultModel(ctx); err == nil {
+		t.Fatal("disabled account must not provide a default model")
+	}
+	if _, err := svc.UpdateAccount(ctx, account.ID, domaintextmodel.AccountWriteRequest{
+		Version: disabledAccount.Version, Name: disabledAccount.Name, PlatformType: disabledAccount.PlatformType,
+		APIStyle: disabledAccount.APIStyle, BaseURL: disabledAccount.BaseURL, Enabled: true,
+	}); err != nil {
+		t.Fatalf("re-enable account: %v", err)
+	}
+	_, replacement, _, err = svc.ResolveDefaultModel(ctx)
+	if err != nil || replacement.ID != third.ID || !replacement.IsDefault {
+		t.Fatalf("re-enabled unique candidate should become default: model=%#v err=%v", replacement, err)
+	}
+}
+
+func TestResolveDefaultModelRepairsUniqueLegacyCandidate(t *testing.T) {
+	ctx := context.Background()
+	store := textmodelservice.NewMemoryStore()
+	svc := textmodelservice.NewService(store, "text-model-encryption-key")
+	account := createEnabledTextModelAccount(t, ctx, svc, "Legacy")
+	legacy, err := store.CreateModel(ctx, domaintextmodel.Model{
+		AccountID: account.ID, ModelCode: "legacy-model", DisplayName: "Legacy Model",
+		InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1,
+	})
+	if err != nil {
+		t.Fatalf("seed legacy model: %v", err)
+	}
+
+	_, resolved, _, err := svc.ResolveDefaultModel(ctx)
+	if err != nil {
+		t.Fatalf("ResolveDefaultModel should self-heal unique candidate: %v", err)
+	}
+	if resolved.ID != legacy.ID || !resolved.IsDefault {
+		t.Fatalf("legacy candidate was not promoted: %#v", resolved)
+	}
+}
+
+func TestResolveDefaultModelReportsAmbiguousCandidates(t *testing.T) {
+	ctx := context.Background()
+	store := textmodelservice.NewMemoryStore()
+	svc := textmodelservice.NewService(store, "text-model-encryption-key")
+	account := createEnabledTextModelAccount(t, ctx, svc, "Ambiguous")
+	for _, code := range []string{"model-a", "model-b"} {
+		if _, err := store.CreateModel(ctx, domaintextmodel.Model{
+			AccountID: account.ID, ModelCode: code, DisplayName: code,
+			InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1,
+		}); err != nil {
+			t.Fatalf("seed %s: %v", code, err)
+		}
+	}
+
+	_, _, _, err := svc.ResolveDefaultModel(ctx)
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 409 || appErr.Code != errs.CodeTextModelDefaultRequired {
+		t.Fatalf("expected actionable default-required error, got %#v", err)
+	}
+}
+
+func createEnabledTextModelAccount(t *testing.T, ctx context.Context, svc *textmodelservice.Service, name string) domaintextmodel.Account {
+	t.Helper()
+	account, err := svc.CreateAccount(ctx, domaintextmodel.AccountWriteRequest{
+		Name: name, PlatformType: domaintextmodel.PlatformOpenAICompatible,
+		APIStyle: domaintextmodel.APIStyleResponses, BaseURL: "https://text.example.com",
+		Enabled: true, Secrets: map[string]string{"api_key": "test-api-key"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+	return account
+}
+
+func createTextModel(t *testing.T, ctx context.Context, svc *textmodelservice.Service, accountID int64, code string, enabled bool) domaintextmodel.Model {
+	t.Helper()
+	model, err := svc.CreateModel(ctx, domaintextmodel.ModelWriteRequest{
+		AccountID: accountID, ModelCode: code, DisplayName: code,
+		InputPricePerMTok: "0", OutputPricePerMTok: "0", Currency: "USD", Enabled: enabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateModel(%s): %v", code, err)
+	}
+	return model
 }
 
 func TestServiceRejectsVersionConflictsAndInvalidPrices(t *testing.T) {

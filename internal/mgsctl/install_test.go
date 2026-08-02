@@ -336,7 +336,7 @@ func TestExecuteInstallRecoversAValidatedCrashBeforeRuntimeCommit(t *testing.T) 
 	}
 }
 
-func TestExistingInstallCleansDeferredStageFilesBeforeReturningCollision(t *testing.T) {
+func TestExistingPendingInstallCleansDeferredStageFilesAndResumesIdempotently(t *testing.T) {
 	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
 	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
 	if err != nil {
@@ -349,11 +349,52 @@ func TestExistingInstallCleansDeferredStageFilesBeforeReturningCollision(t *test
 	if err := os.WriteFile(stagePath, []byte("deferred secret stage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ExecuteInstall(context.Background(), plan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x52}, 32))}); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := ExecuteInstall(context.Background(), plan, InstallDependencies{Entropy: errorReader("resume must not consume entropy")}); err != nil {
 		t.Fatalf("second install error = %v", err)
 	}
 	if _, err := os.Stat(stagePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("deferred stage was not cleaned: %v", err)
+	}
+}
+
+func TestExecuteInstallRestoresPendingArtifactsWhenOverwritePublicationFails(t *testing.T) {
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	oldPlan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExecuteInstall(context.Background(), oldPlan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x58}, 64))}); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		filepath.Join(runtimeDirectory, "config", "runtime.env"),
+		filepath.Join(runtimeDirectory, "config", "install-state.json"),
+		filepath.Join(runtimeDirectory, "deployment.json"),
+		filepath.Join(runtimeDirectory, "compose.yml"),
+	}
+	before := make(map[string][]byte, len(paths))
+	for _, path := range paths {
+		before[path] = mustReadFile(t, path)
+	}
+	newPlan := oldPlan
+	newPlan.ApplicationVersion = "v2"
+	newPlan.ImageTag = "v2"
+	newPlan.APIPort = "19090"
+	failure := errors.New("injected deployment publication failure")
+	_, err = ExecuteInstall(context.Background(), newPlan, InstallDependencies{
+		Entropy:           errorReader("stable pending overwrite must not consume entropy"),
+		OverwriteExisting: true,
+		ReplaceDeploymentFile: func(string, []byte) error {
+			return failure
+		},
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("overwrite error = %v, want injected failure", err)
+	}
+	for _, path := range paths {
+		if current := mustReadFile(t, path); !bytes.Equal(current, before[path]) {
+			t.Errorf("artifact %s was not restored", path)
+		}
 	}
 }
 
@@ -389,6 +430,79 @@ func TestExecuteInstallResumesTheSamePendingDockerPlanAfterApplyFailure(t *testi
 	}
 }
 
+func TestExecuteInstallResumesPendingPlanWhenGeneratedAssetIsMissing(t *testing.T) {
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ExecuteInstall(context.Background(), plan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x69}, 64))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(runtimeDirectory, "compose.yml")); err != nil {
+		t.Fatal(err)
+	}
+
+	applyCalls := 0
+	resumed, err := ExecuteInstall(context.Background(), plan, InstallDependencies{
+		Entropy: errorReader("resume must not regenerate entropy"),
+		ApplyDeployment: func(context.Context, InstallPlan) error {
+			applyCalls++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("resume with missing generated asset: %v", err)
+	}
+	if applyCalls != 1 || resumed.SetupToken != result.SetupToken {
+		t.Fatalf("resume result = %#v, apply calls = %d", resumed, applyCalls)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDirectory, "compose.yml")); err != nil {
+		t.Fatalf("missing generated asset was not rebuilt: %v", err)
+	}
+}
+
+func TestExecuteInstallRejectsSymlinkedPendingDeploymentAsset(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reparse-point behavior is covered by platform-specific filesystem tests")
+	}
+	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
+	plan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExecuteInstall(context.Background(), plan, InstallDependencies{Entropy: bytes.NewReader(bytes.Repeat([]byte{0x6a}, 64))}); err != nil {
+		t.Fatal(err)
+	}
+	outsidePath := filepath.Join(t.TempDir(), "outside-compose.yml")
+	outsideContent := []byte("outside deployment content\n")
+	if err := os.WriteFile(outsidePath, outsideContent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	composePath := filepath.Join(runtimeDirectory, "compose.yml")
+	if err := os.Remove(composePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsidePath, composePath); err != nil {
+		t.Fatal(err)
+	}
+
+	newPlan := plan
+	newPlan.APIPort = "19090"
+	_, err = ExecuteInstall(context.Background(), newPlan, InstallDependencies{
+		Entropy:           errorReader("symlinked installation must not consume entropy"),
+		OverwriteExisting: true,
+	})
+	var collision *InstallTargetExistsError
+	if !errors.As(err, &collision) || collision.State != "unrecognized" || collision.Overwritable {
+		t.Fatalf("symlinked pending install error = %v", err)
+	}
+	if content := mustReadFile(t, outsidePath); !bytes.Equal(content, outsideContent) {
+		t.Fatalf("symlink target changed: %q", content)
+	}
+}
+
 func TestExecuteInstallOverwritesOnlyARecognizedPendingInstallAndPreservesData(t *testing.T) {
 	runtimeDirectory := filepath.Join(t.TempDir(), "runtime")
 	oldPlan, err := BuildInstallPlan(InstallInput{Mode: "docker", Profile: "core", Topology: "single", Role: "single", RuntimeDir: runtimeDirectory, StorageDriver: "local", ApplicationVersion: "v1"})
@@ -400,6 +514,10 @@ func TestExecuteInstallOverwritesOnlyARecognizedPendingInstallAndPreservesData(t
 		t.Fatal(err)
 	}
 	oldRuntime := mustReadFile(t, oldResult.RuntimeEnvPath)
+	oldDocument, err := config.ParseRuntimeEnv(oldRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
 	dataMarker := filepath.Join(runtimeDirectory, "data", "keep-me")
 	if err := os.WriteFile(dataMarker, []byte("persistent"), 0o600); err != nil {
 		t.Fatal(err)
@@ -408,35 +526,39 @@ func TestExecuteInstallOverwritesOnlyARecognizedPendingInstallAndPreservesData(t
 	newPlan := oldPlan
 	newPlan.ApplicationVersion = "v2"
 	newPlan.ImageTag = "v2"
+	newPlan.APIPort = "19090"
+	newPlan.GatewayPort = "19080"
 	_, err = ExecuteInstall(context.Background(), newPlan, InstallDependencies{Entropy: errorReader("collision must not consume entropy")})
 	var collision *InstallTargetExistsError
 	if !errors.As(err, &collision) || !collision.Overwritable {
 		t.Fatalf("pending collision = %v, want overwritable typed error", err)
 	}
-	_, err = ExecuteInstall(context.Background(), newPlan, InstallDependencies{
-		Entropy:           errorReader("cannot generate replacement"),
-		OverwriteExisting: true,
-	})
-	if err == nil || !bytes.Equal(mustReadFile(t, oldResult.RuntimeEnvPath), oldRuntime) {
-		t.Fatalf("failed replacement did not preserve pending runtime: %v", err)
-	}
-
 	newResult, err := ExecuteInstall(context.Background(), newPlan, InstallDependencies{
-		Entropy:           bytes.NewReader(bytes.Repeat([]byte{0x72}, 64)),
+		Entropy:           errorReader("existing identity and credentials must not consume entropy"),
 		OverwriteExisting: true,
 	})
 	if err != nil {
 		t.Fatalf("overwrite pending install: %v", err)
 	}
-	if newResult.SetupToken == oldResult.SetupToken {
-		t.Fatal("overwrite reused the previous setup token")
+	if newResult.SetupToken != oldResult.SetupToken {
+		t.Fatal("overwrite changed the previous setup token")
 	}
 	if content, err := os.ReadFile(dataMarker); err != nil || string(content) != "persistent" {
 		t.Fatalf("persistent data changed: %q, %v", content, err)
 	}
 	document, err := config.ParseRuntimeEnv(mustReadFile(t, newResult.RuntimeEnvPath))
-	if err != nil || document.Values["APPLICATION_VERSION"] != "v2" || document.Values["IMAGE_TAG"] != "v2" {
+	if err != nil || document.Values["APPLICATION_VERSION"] != "v2" || document.Values["IMAGE_TAG"] != "v2" || document.Values["API_PORT"] != "19090" || document.Values["GATEWAY_PORT"] != "19080" {
 		t.Fatalf("overwritten runtime = %#v, %v", document.Values, err)
+	}
+	for _, key := range []string{
+		"INSTALLATION_ID", "SETUP_TOKEN", "AUTH_ACCESS_TOKEN_SECRET",
+		"API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY",
+		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY", "PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY",
+		"CLUSTER_ENROLLMENT_SEAL_KEY",
+	} {
+		if document.Values[key] != oldDocument.Values[key] {
+			t.Errorf("overwrite changed stable runtime value %s", key)
+		}
 	}
 }
 

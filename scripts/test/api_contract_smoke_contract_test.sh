@@ -60,6 +60,16 @@ if grep -Eq 'PostgreSQL final server.*(PASSWORD|password|postgres://|psql:)' "$S
 fi
 
 for marker in \
+  'POSTGRES_TEST_URL=' \
+  'PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL"' \
+  "-run '^TestTextModelStore.*Postgres'"; do
+  if ! grep -Fq -- "$marker" "$SMOKE"; then
+    echo "API smoke does not execute PostgreSQL text-model concurrency coverage: $marker" >&2
+    exit 1
+  fi
+done
+
+for marker in \
   'CONFIG_REVISION=1' \
   'CLUSTER_ENROLLMENT_SEAL_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
   'SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"' \

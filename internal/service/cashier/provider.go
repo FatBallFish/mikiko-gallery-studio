@@ -3,6 +3,7 @@ package cashier
 import (
 	"crypto/sha256"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 func NormalizeProviderInstance(req domaincashier.ProviderInstance, instanceID int64, now time.Time) (domaincashier.ProviderInstance, error) {
@@ -58,7 +60,7 @@ func NormalizeProviderInstance(req domaincashier.ProviderInstance, instanceID in
 
 func ProviderTypeAllowed(providerType string) bool {
 	switch providerType {
-	case "mock", "alipay_direct", "wxpay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay":
+	case "mock", "alipay_direct", "wxpay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "stripe":
 		return true
 	default:
 		return false
@@ -74,6 +76,8 @@ func ProviderSupportsMethod(providerType, method string) bool {
 		return method == "alipay"
 	case "wxpay_direct", "easypay_wxpay", "jeepay_wxpay":
 		return method == "wxpay"
+	case "stripe":
+		return method == "stripe"
 	default:
 		return false
 	}
@@ -85,6 +89,8 @@ func DefaultMethodsForProviderType(providerType string) []string {
 		return []string{"wxpay"}
 	case "mock":
 		return []string{"mock"}
+	case "stripe":
+		return []string{"stripe"}
 	default:
 		return []string{"alipay"}
 	}
@@ -152,7 +158,29 @@ func ProviderInstanceForWrite(req domaincashier.ProviderInstanceWriteRequest, ex
 	if err := RejectMaskedSecrets(req.Secrets); err != nil {
 		return domaincashier.ProviderInstance{}, err
 	}
+	if err := ValidateProviderConfiguration(next.ProviderType, next.Config); err != nil {
+		return domaincashier.ProviderInstance{}, err
+	}
 	return next, nil
+}
+
+func ValidateProviderConfiguration(providerType string, config map[string]any) error {
+	requirements := map[string][]string{
+		"jeepay_alipay": {"gateway_url", "mch_no", "app_id", "key", "way_code"},
+		"jeepay_wxpay":  {"gateway_url", "mch_no", "app_id", "key", "way_code"},
+		"stripe":        {"publishable_key", "secret_key", "webhook_secret"},
+	}
+	required := requirements[strings.ToLower(strings.TrimSpace(providerType))]
+	missing := make([]string, 0)
+	for _, field := range required {
+		if strings.TrimSpace(fmt.Sprint(config[field])) == "" || config[field] == nil {
+			missing = append(missing, field)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return errs.New(http.StatusBadRequest, errs.CodePaymentProviderConfigInvalid, "payment provider configuration is missing required fields: "+strings.Join(missing, ", "))
 }
 
 func MergeProviderConfigForWrite(config, secrets map[string]any, clearSecrets []string, existingConfig map[string]any) map[string]any {

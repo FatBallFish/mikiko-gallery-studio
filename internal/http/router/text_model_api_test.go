@@ -100,12 +100,8 @@ func TestTextModelAdminAndPromptOptimizationAPIs(t *testing.T) {
 	if testRec.Code != http.StatusOK || !bytes.Contains(testRec.Body.Bytes(), []byte(`"status":"success"`)) || bytes.Contains(testRec.Body.Bytes(), []byte("admin-secret-value")) {
 		t.Fatalf("unexpected connection test response %d body=%s", testRec.Code, testRec.Body.String())
 	}
-	defaultReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/text-models/"+jsonNumber(modelResp.Data.ID)+":default", nil)
-	defaultReq.Header.Set("Authorization", "Bearer "+adminToken)
-	defaultRec := httptest.NewRecorder()
-	handler.ServeHTTP(defaultRec, defaultReq)
-	if defaultRec.Code != http.StatusOK {
-		t.Fatalf("expected default selection 200, got %d body=%s", defaultRec.Code, defaultRec.Body.String())
+	if !modelResp.Data.IsDefault {
+		t.Fatalf("first enabled model should be returned as default: %#v", modelResp.Data)
 	}
 
 	estimateReq := httptest.NewRequest(http.MethodPost, "/api/agent/text/v1/prompt-optimizations/estimate", bytes.NewBufferString(`{"prompt":"a portrait in summer rain"}`))
@@ -134,5 +130,31 @@ func TestTextModelAdminAndPromptOptimizationAPIs(t *testing.T) {
 	handler.ServeHTTP(optimizeRec, optimizeReq)
 	if optimizeRec.Code != http.StatusOK || !bytes.Contains(optimizeRec.Body.Bytes(), []byte("A polished cinematic image prompt")) {
 		t.Fatalf("unexpected optimize response %d body=%s", optimizeRec.Code, optimizeRec.Body.String())
+	}
+
+	legacyDefault, err := textStore.GetModel(t.Context(), modelResp.Data.ID)
+	if err != nil {
+		t.Fatalf("GetModel default: %v", err)
+	}
+	legacyDefault.IsDefault = false
+	legacyDefault.Version++
+	if _, err := textStore.UpdateModel(t.Context(), legacyDefault); err != nil {
+		t.Fatalf("clear legacy default: %v", err)
+	}
+	if _, err := textStore.CreateModel(t.Context(), domaintextmodel.Model{
+		AccountID: accountResp.Data.ID, ModelCode: "gpt-second", DisplayName: "GPT Second",
+		InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1,
+	}); err != nil {
+		t.Fatalf("seed second legacy candidate: %v", err)
+	}
+	ambiguousReq := httptest.NewRequest(http.MethodPost, "/api/agent/text/v1/prompt-optimizations/estimate", bytes.NewBufferString(`{"prompt":"ambiguous configuration"}`))
+	ambiguousReq.Header.Set("Authorization", "Bearer "+userSession.AccessToken)
+	ambiguousReq.Header.Set("Content-Type", "application/json")
+	ambiguousRec := httptest.NewRecorder()
+	handler.ServeHTTP(ambiguousRec, ambiguousReq)
+	if ambiguousRec.Code != http.StatusConflict ||
+		!bytes.Contains(ambiguousRec.Body.Bytes(), []byte(`"code":"TEXT_MODEL_DEFAULT_REQUIRED"`)) ||
+		!bytes.Contains(ambiguousRec.Body.Bytes(), []byte(`"next_suggestion":"select a default text model and retry"`)) {
+		t.Fatalf("expected actionable default-required response, got %d body=%s", ambiguousRec.Code, ambiguousRec.Body.String())
 	}
 }

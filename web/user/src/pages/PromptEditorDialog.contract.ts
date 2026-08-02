@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { overlayLayers } from '../ui/redesign-classes'
 
 const dialog = readFileSync(new URL('./PromptEditorDialog.tsx', import.meta.url), 'utf8')
 const workspace = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
@@ -16,6 +17,10 @@ if ((workspace.match(/<PromptEditorActions/g) ?? []).length !== 1 || !dialog.inc
 if (!dialog.includes('max-[600px]:h-[calc(100dvh-3rem)]') || !dialog.includes('max-[600px]:max-h-[calc(100dvh-3rem)]')) {
   throw new Error('mobile prompt editor must fit inside the modal backdrop padding without leaving the viewport')
 }
-if (!redesignClasses.includes("modalBackdrop: 'fixed inset-0 z-[110]")) {
+if (
+  overlayLayers.modal !== 'z-[110]'
+  || !redesignClasses.includes("toastStack: 'fixed right-5 top-5 z-[100]")
+  || !redesignClasses.includes('modalBackdrop: `fixed inset-0 ${overlayLayers.modal}')
+) {
   throw new Error('modal backdrop must render above the toast stack so notifications cannot cover dialog titles')
 }

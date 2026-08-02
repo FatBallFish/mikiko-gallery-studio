@@ -8,6 +8,7 @@ import (
 
 var ErrNotFound = errors.New("repository: not found")
 var ErrConflict = errors.New("repository: conflict")
+var ErrDefaultModelRequired = errors.New("repository: text model default required")
 var ErrTransientContention = errors.New("repository: transient contention")
 
 func TransientContention(err error) error {

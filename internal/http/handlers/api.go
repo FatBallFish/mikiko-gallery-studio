@@ -213,6 +213,7 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 	if adminSvc == nil {
 		adminSvc = adminconfigservice.NewService(cfg)
 	}
+	billingSvc.SetAdminConfigResolver(adminSvc)
 	if adminAuthSvc == nil {
 		adminAuthSvc = adminauthservice.NewService(cfg.Auth, nil)
 	}
@@ -1672,6 +1673,15 @@ func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		writePaymentWebhookSuccess(w, providerCode)
 		return
 	}
+	if strings.EqualFold(providerCode, "stripe") {
+		_, appErr := a.handleStripeWebhook(r)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		writePaymentWebhookSuccess(w, providerCode)
+		return
+	}
 	var req struct {
 		OrderNo string `json:"order_no"`
 		TradeNo string `json:"trade_no"`
@@ -1792,6 +1802,66 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
 	}
 	return result, nil
+}
+
+const maxStripeWebhookBodyBytes = 1 << 20
+
+func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
+	body, readErr := io.ReadAll(io.LimitReader(r.Body, maxStripeWebhookBodyBytes+1))
+	if readErr != nil || len(body) > maxStripeWebhookBodyBytes {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid payment webhook body")
+	}
+	signature := strings.TrimSpace(r.Header.Get("Stripe-Signature"))
+	if signature == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
+	}
+
+	configured := false
+	var event cashierservice.StripeWebhookEvent
+	verified := false
+	for _, instance := range a.cashierProviderInstances(r.Context()) {
+		if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "stripe") || !instance.Enabled || instance.ConfigStatus != "configured" {
+			continue
+		}
+		webhookSecret := strings.TrimSpace(mapStringValue(instance.Config, "webhook_secret"))
+		if webhookSecret == "" {
+			continue
+		}
+		configured = true
+		parsed, err := cashierservice.ParseStripeWebhookEvent(body, signature, webhookSecret)
+		if err == nil {
+			event = parsed
+			verified = true
+			break
+		}
+	}
+	if !configured {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+	}
+	if !verified {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
+	}
+
+	switch event.Type {
+	case "payment_intent.payment_failed":
+		return domainbilling.PaymentOrder{}, nil
+	case "payment_intent.succeeded":
+		if event.Currency != "cny" || event.OrderNo == "" || event.PaymentIntentID == "" {
+			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
+		}
+		result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
+			Provider:  "stripe",
+			OrderNo:   event.OrderNo,
+			TradeNo:   event.PaymentIntentID,
+			AmountCNY: event.AmountCNY,
+		})
+		if err != nil {
+			return domainbilling.PaymentOrder{}, normalizeAppError(err)
+		}
+		return result, nil
+	default:
+		return domainbilling.PaymentOrder{}, nil
+	}
 }
 
 func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
@@ -4067,14 +4137,44 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, amountErr)
 			return
 		}
-		channelRefund, channelErr := a.refundCashierOrderWithProvider(r.Context(), order, refundTradeNo, providerRefundAmountCNY, strings.TrimSpace(req.Reason))
+		channelRefund, outcomeUncertain, channelErr := a.refundCashierOrderWithProvider(r.Context(), order, refundTradeNo, providerRefundAmountCNY, strings.TrimSpace(req.Reason))
 		if channelErr != nil {
-			if _, releaseErr := a.billing.ReleaseRefundPaymentOrder(r.Context(), refundReq); releaseErr != nil {
-				httpx.WriteError(w, r, normalizeAppError(releaseErr))
-				return
+			if !outcomeUncertain {
+				if _, releaseErr := a.billing.ReleaseRefundPaymentOrder(r.Context(), refundReq); releaseErr != nil {
+					httpx.WriteError(w, r, normalizeAppError(releaseErr))
+					return
+				}
 			}
 			httpx.WriteError(w, r, channelErr)
 			return
+		}
+		if channelRefund != nil && strings.EqualFold(strings.TrimSpace(channelRefund.ProviderType), "stripe") {
+			if _, recordErr := a.billing.RecordProviderRefundStatus(r.Context(), billingservice.ProviderRefundStatusRequest{
+				UserID:              order.UserID,
+				OrderID:             order.ID,
+				RefundTradeNo:       refundTradeNo,
+				RefundAmountCNY:     refundAmountCNY,
+				ChannelRefundNo:     channelRefund.ChannelRefundNo,
+				ChannelRefundStatus: channelRefund.RefundStatus,
+				Reason:              strings.TrimSpace(req.Reason),
+				OperatorAdminID:     admin.AdminID,
+			}); recordErr != nil {
+				httpx.WriteError(w, r, normalizeAppError(recordErr))
+				return
+			}
+			switch strings.ToLower(strings.TrimSpace(channelRefund.RefundStatus)) {
+			case "succeeded":
+			case "pending":
+				httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodePaymentRefundPending, "payment refund is pending provider confirmation"))
+				return
+			default:
+				if _, releaseErr := a.billing.ReleaseRefundPaymentOrder(r.Context(), refundReq); releaseErr != nil {
+					httpx.WriteError(w, r, normalizeAppError(releaseErr))
+					return
+				}
+				httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodePaymentRefundFailed, "payment refund failed at provider"))
+				return
+			}
 		}
 		result, err := a.billing.RefundPaymentOrder(r.Context(), refundReq)
 		if err != nil {
@@ -4249,13 +4349,13 @@ func (a *API) syncAdminCashierOrder(ctx context.Context, orderID int64) (adminCa
 	return adminCashierOrderSyncResponse{Order: order, Sync: syncResult}, nil
 }
 
-func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbilling.PaymentOrder, refundTradeNo string, refundAmountCNY string, reason string) (*cashierProviderRefundResult, *errs.Error) {
+func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbilling.PaymentOrder, refundTradeNo string, refundAmountCNY string, reason string) (*cashierProviderRefundResult, bool, *errs.Error) {
 	if !cashierservice.RefundRequiresProvider(cashierOrderSnapshot(order), cashierProviderInstance{ProviderType: cashierOrderProviderType(order, cashierProviderInstance{})}) {
-		return nil, nil
+		return nil, false, nil
 	}
 	instance, ok := a.cashierProviderInstanceForOrder(ctx, order)
 	if !ok {
-		return nil, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return nil, false, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	registry := cashierservice.NewRefundAdapterRegistryWithBuilders(cashierservice.StandardRefundProviderBuilders())
 	result, shouldCall, err := registry.RefundPayment(ctx, cashierservice.RefundPaymentRequest{
@@ -4266,12 +4366,12 @@ func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbi
 		Reason:          reason,
 	})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return nil, result.OutcomeUncertain, normalizeAppError(err)
 	}
 	if !shouldCall {
-		return nil, nil
+		return nil, false, nil
 	}
-	return &result, nil
+	return &result, false, nil
 }
 
 func (a *API) cashierProviderInstanceForOrder(ctx context.Context, order domainbilling.PaymentOrder) (cashierProviderInstance, bool) {
@@ -4310,10 +4410,13 @@ func cashierOrderProviderType(order domainbilling.PaymentOrder, instance cashier
 
 func cashierOrderSnapshot(order domainbilling.PaymentOrder) cashierservice.OrderSnapshot {
 	return cashierservice.OrderSnapshot{
-		OrderNo:   order.OrderNo,
-		AmountCNY: order.AmountCNY,
-		TradeNo:   order.TradeNo,
-		Status:    order.Status,
+		OrderNo:         order.OrderNo,
+		AmountCNY:       order.AmountCNY,
+		TradeNo:         order.TradeNo,
+		RefundTradeNo:   order.RefundTradeNo,
+		ChannelRefundNo: order.ChannelRefundNo,
+		ClientToken:     order.ClientToken,
+		Status:          order.Status,
 	}
 }
 
@@ -8789,6 +8892,7 @@ func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMe
 		WxPayDirect:  cashierservice.NewWxPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
 		EasyPay:      cashierservice.NewEasyPayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
 		JeePay:       cashierservice.NewJeePayPaymentDisplayBuilder(cashierservice.CallbackURLConfig{SiteBaseURL: siteBaseURL}),
+		Stripe:       cashierservice.NewStripePaymentDisplayBuilder(),
 	})
 
 	result, err := registry.BuildPaymentDisplay(ctx, req)

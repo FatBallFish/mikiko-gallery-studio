@@ -61,9 +61,12 @@ func TestQueryAdapterRegistryWithBuildersRegistersStandardProviders(t *testing.T
 		WxPayDirect: func(_ context.Context, req QueryOrderStatusRequest) (QueryOrderStatusResult, error) {
 			return BuildQueryOrderStatusResult(req.Instance, NormalizeQueryStatus("paid"), "WX-TRADE", req.Order.AmountCNY, map[string]any{"source": "wxpay"}), nil
 		},
+		Stripe: func(_ context.Context, req QueryOrderStatusRequest) (QueryOrderStatusResult, error) {
+			return BuildQueryOrderStatusResult(req.Instance, NormalizeQueryStatus("paid"), "STRIPE-TRADE", req.Order.AmountCNY, map[string]any{"source": "stripe"}), nil
+		},
 	})
 
-	for _, providerType := range []string{"alipay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "wxpay_direct"} {
+	for _, providerType := range []string{"alipay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "wxpay_direct", "stripe"} {
 		result, err := registry.QueryOrderStatus(context.Background(), QueryOrderStatusRequest{
 			Order:    OrderSnapshot{OrderNo: "PGO-QUERY", AmountCNY: "12.50000"},
 			Instance: domaincashier.ProviderInstance{ID: 9, ProviderType: providerType},

@@ -155,6 +155,94 @@ func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (R
 	return RuntimeArtifacts{RuntimeEnv: runtimeEnv, InstallState: state, Manifest: manifest, SetupToken: setupToken, DeploymentFiles: deploymentFiles}, nil
 }
 
+func BuildPendingRuntimeArtifacts(plan InstallPlan, snapshot pendingInstallSnapshot, random io.Reader, now time.Time) (RuntimeArtifacts, error) {
+	if err := ValidateInstallPlan(plan); err != nil {
+		return RuntimeArtifacts{}, fmt.Errorf("validate install plan: %w", err)
+	}
+	values := make(map[string]string, len(snapshot.Runtime.Values))
+	for key, value := range snapshot.Runtime.Values {
+		values[key] = value
+	}
+	postgresManaged := slices.Contains(plan.Components, ComponentPostgres)
+	redisManaged := slices.Contains(plan.Components, ComponentRedis)
+	storageManaged := slices.Contains(plan.Components, ComponentMinIO)
+	values["DEPLOYMENT_MODE"] = string(plan.Mode)
+	values["DEPLOYMENT_PROFILE"] = string(plan.Profile)
+	values["DEPLOYMENT_TOPOLOGY"] = string(plan.Topology)
+	values["DEPLOYMENT_ROLE"] = string(plan.Role)
+	values["DEPLOYMENT_MODULES"] = componentsCSV(plan.Components)
+	values["POSTGRES_MANAGED"] = strconv.FormatBool(postgresManaged)
+	values["REDIS_MANAGED"] = strconv.FormatBool(redisManaged)
+	values["OBJECT_STORAGE_MANAGED"] = strconv.FormatBool(storageManaged)
+	values["SETUP_COMPLETED"] = "false"
+	values["STORAGE_DRIVER"] = plan.StorageDriver
+	values["APPLICATION_VERSION"] = plan.ApplicationVersion
+	values["API_PORT"] = plan.APIPort
+	values["GATEWAY_PORT"] = plan.GatewayPort
+	values["USER_WEB_PORT"] = plan.UserWebPort
+	values["ADMIN_WEB_PORT"] = plan.AdminWebPort
+	values["DOCS_WEB_PORT"] = plan.DocsWebPort
+	values["MONITORING_PORT"] = plan.MonitoringPort
+	values["PUBLIC_API_URL"] = plan.PublicAPIURL
+	if plan.Mode == config.DeploymentModeDocker {
+		values["IMAGE_REGISTRY"] = plan.ImageRegistry
+		values["IMAGE_TAG"] = plan.ImageTag
+		values["RELEASE_VERSION"] = ""
+	} else {
+		values["IMAGE_REGISTRY"] = ""
+		values["IMAGE_TAG"] = ""
+		values["RELEASE_VERSION"] = plan.ReleaseVersion
+	}
+	if plan.StorageDriver == "local" {
+		values["STORAGE_LOCAL_ROOT"] = defaultString(values["STORAGE_LOCAL_ROOT"], "./data/storage")
+		values["STORAGE_SHARED_VOLUME"] = "true"
+	}
+	needPostgres := postgresManaged && (values["POSTGRES_PASSWORD"] == "" || values["DATABASE_URL"] == "")
+	needRedis := redisManaged && (values["REDIS_PASSWORD"] == "" || values["REDIS_URL"] == "")
+	needStorage := storageManaged && (values["MINIO_ROOT_PASSWORD"] == "" || values["STORAGE_S3_ACCESS_KEY_ID"] == "" || values["STORAGE_S3_SECRET_ACCESS_KEY"] == "")
+	if needPostgres || needRedis || needStorage {
+		if random == nil {
+			random = cryptorand.Reader
+		}
+		root := make([]byte, 32)
+		if _, err := io.ReadFull(random, root); err != nil {
+			return RuntimeArtifacts{}, fmt.Errorf("generate missing managed resource entropy: %w", err)
+		}
+		populateManagedResources(values, root, needPostgres, needRedis, needStorage)
+		clear(root)
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	state := snapshot.State
+	state.DeploymentRole = plan.Role
+	state.UpdatedAt = now
+	return renderRuntimeArtifacts(plan, values, snapshot.Runtime.Extensions, state, snapshot.Manifest.CreatedAt, snapshot.Result.SetupToken)
+}
+
+func renderRuntimeArtifacts(plan InstallPlan, values map[string]string, extensions []config.EnvEntry, state setup.InstallState, createdAt time.Time, setupToken string) (RuntimeArtifacts, error) {
+	runtimeEnv, err := config.RenderRuntimeEnv(config.DefaultRuntimeSchema(), values, extensions)
+	if err != nil {
+		return RuntimeArtifacts{}, fmt.Errorf("render runtime env: %w", err)
+	}
+	deploymentFiles, err := buildDeploymentFiles(plan)
+	if err != nil {
+		return RuntimeArtifacts{}, err
+	}
+	fileHashes := make(map[string]string, len(deploymentFiles))
+	for _, file := range deploymentFiles {
+		digest := sha256.Sum256(file.Content)
+		fileHashes[filepath.ToSlash(file.RelativePath)] = fmt.Sprintf("%x", digest)
+	}
+	manifest, err := json.MarshalIndent(deploymentManifest{SchemaVersion: 1, InstallationID: state.InstallationID, CreatedAt: createdAt, Plan: plan, Files: fileHashes}, "", "  ")
+	if err != nil {
+		return RuntimeArtifacts{}, fmt.Errorf("render deployment manifest: %w", err)
+	}
+	return RuntimeArtifacts{RuntimeEnv: runtimeEnv, InstallState: state, Manifest: append(manifest, '\n'), SetupToken: setupToken, DeploymentFiles: deploymentFiles}, nil
+}
+
 func buildDeploymentFiles(plan InstallPlan) ([]DeploymentFile, error) {
 	if plan.Mode != config.DeploymentModeDocker {
 		return nil, nil

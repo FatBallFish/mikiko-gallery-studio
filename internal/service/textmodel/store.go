@@ -1,7 +1,9 @@
 package textmodel
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,8 +24,11 @@ type Store interface {
 	DeleteModel(ctx context.Context, modelID int64) error
 	SetDefaultModel(ctx context.Context, modelID int64) (domaintextmodel.Model, error)
 	GetDefaultModel(ctx context.Context) (domaintextmodel.AccountRecord, domaintextmodel.Model, error)
+	ReconcileDefaultModel(ctx context.Context, preferredModelID *int64) (DefaultSelection, error)
 	SaveOptimizationRun(ctx context.Context, run domaintextmodel.OptimizationRun) (domaintextmodel.OptimizationRun, error)
 }
+
+type DefaultSelection = domaintextmodel.DefaultSelection
 
 type MemoryStore struct {
 	mu       sync.Mutex
@@ -192,6 +197,61 @@ func (s *MemoryStore) GetDefaultModel(_ context.Context) (domaintextmodel.Accoun
 		}
 	}
 	return domaintextmodel.AccountRecord{}, domaintextmodel.Model{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) ReconcileDefaultModel(_ context.Context, preferredModelID *int64) (DefaultSelection, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	candidates := make([]domaintextmodel.Model, 0, len(s.models))
+	for _, model := range s.models {
+		account, ok := s.accounts[model.AccountID]
+		if model.DeletedAt == nil && model.Enabled && ok && account.DeletedAt == nil && account.Enabled {
+			candidates = append(candidates, model)
+		}
+	}
+	slices.SortFunc(candidates, func(left, right domaintextmodel.Model) int {
+		return cmp.Compare(left.ID, right.ID)
+	})
+
+	var selected *domaintextmodel.Model
+	for i := range candidates {
+		if candidates[i].IsDefault {
+			selected = &candidates[i]
+			break
+		}
+	}
+	if selected == nil && preferredModelID != nil {
+		for i := range candidates {
+			if candidates[i].ID == *preferredModelID {
+				selected = &candidates[i]
+				break
+			}
+		}
+	}
+	if selected == nil && len(candidates) == 1 {
+		selected = &candidates[0]
+	}
+
+	now := time.Now().UTC()
+	for id, model := range s.models {
+		shouldBeDefault := selected != nil && id == selected.ID
+		if model.IsDefault != shouldBeDefault {
+			model.IsDefault = shouldBeDefault
+			model.Version++
+			model.UpdatedAt = now
+			s.models[id] = model
+		}
+	}
+	if selected == nil {
+		if len(candidates) == 0 {
+			return DefaultSelection{}, repoerr.ErrNotFound
+		}
+		return DefaultSelection{}, repoerr.ErrDefaultModelRequired
+	}
+	model := s.models[selected.ID]
+	account := s.accounts[model.AccountID]
+	return DefaultSelection{Account: cloneAccountRecord(account), Model: model}, nil
 }
 
 func (s *MemoryStore) SaveOptimizationRun(_ context.Context, run domaintextmodel.OptimizationRun) (domaintextmodel.OptimizationRun, error) {

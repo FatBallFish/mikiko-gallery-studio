@@ -51,6 +51,33 @@ func TestEmailCodeLoginGrantsSignupTrialOnlyForNewUser(t *testing.T) {
 	}
 }
 
+func TestEmailCodeRegisterExposesEmailDerivedNickname(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	cfg.Auth.FixedEmailCode = "123456"
+	authSvc := authservice.NewService(cfg.Auth, map[string]string{"basic": "1.00000"})
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil))
+
+	login := emailCodeLogin(t, handler, "alice.name+tag@example.com")
+	profileReq := httptest.NewRequest(http.MethodGet, "/api/agent/user/v1/profile", nil)
+	profileReq.Header.Set("Authorization", "Bearer "+login.AccessToken)
+	profileRec := httptest.NewRecorder()
+	handler.ServeHTTP(profileRec, profileReq)
+	if profileRec.Code != http.StatusOK {
+		t.Fatalf("profile expected 200, got %d body=%s", profileRec.Code, profileRec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Nickname string `json:"nickname"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(profileRec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode profile response: %v", err)
+	}
+	if response.Data.Nickname != "alice.name+tag" {
+		t.Fatalf("expected email-derived nickname, got %q", response.Data.Nickname)
+	}
+}
+
 func TestEmailCodeLoginUsesAdminSignupTrialConfig(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	cfg.Billing.SignupTrial = config.SignupTrialConfig{

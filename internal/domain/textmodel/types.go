@@ -80,6 +80,11 @@ type ModelWriteRequest struct {
 	Enabled            bool   `json:"enabled"`
 }
 
+type DefaultSelection struct {
+	Account AccountRecord
+	Model   Model
+}
+
 type OptimizationRun struct {
 	ID                string         `json:"id"`
 	UserID            int64          `json:"user_id"`

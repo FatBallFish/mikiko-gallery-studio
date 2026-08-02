@@ -30,6 +30,7 @@ import (
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
@@ -248,6 +249,9 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	}
 	if err := validatePromptOptimizationQuoteSigningKey(cfg); err != nil {
 		return err
+	}
+	if err := cashierservice.ConfigureStripeAPIBackend(cfg.Cashier.StripeAPIBaseURL); err != nil {
+		return fmt.Errorf("configure Stripe API backend: %w", err)
 	}
 	dependencyTimeout := options.dependencyTimeout
 	if dependencyTimeout <= 0 {

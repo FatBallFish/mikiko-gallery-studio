@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { AdminMetric, AdminSession, ProviderHealth, UserGroup } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
@@ -770,6 +770,87 @@ export function IconButton({
     <button className={cn(adminShell.iconButton, className)} type="button" aria-label={label} title={title ?? label} {...props}>
       {children ?? '·'}
     </button>
+  )
+}
+
+export function TooltipIconButton({
+  label,
+  disabledReason,
+  disabled,
+  children,
+  className,
+  ...props
+}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'title'> & {
+  label: string
+  disabledReason?: string
+}) {
+  const anchorRef = useRef<HTMLSpanElement | null>(null)
+  const tooltipID = useId()
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number; placement: 'top' | 'bottom' }>({ left: 0, top: 0, placement: 'top' })
+  const tooltipText = disabled && disabledReason ? disabledReason : label
+
+  useEffect(() => {
+    if (!open) return undefined
+    const updatePosition = () => {
+      const rect = anchorRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const placement = rect.top < 72 ? 'bottom' : 'top'
+      const halfWidth = 130
+      setPosition({
+        left: Math.min(window.innerWidth - halfWidth - 12, Math.max(halfWidth + 12, rect.left + rect.width / 2)),
+        top: placement === 'bottom' ? rect.bottom + 8 : rect.top - 8,
+        placement,
+      })
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
+
+  return (
+    <span
+      ref={anchorRef}
+      className="inline-flex"
+      tabIndex={disabled ? 0 : -1}
+      aria-label={disabled ? tooltipText : undefined}
+      aria-describedby={open ? tooltipID : undefined}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
+      }}
+    >
+      <button
+        className={cn(adminShell.iconButton, 'size-10 [&_svg]:size-5', 'disabled:cursor-not-allowed disabled:opacity-45', className)}
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? tooltipID : undefined}
+        disabled={disabled}
+        {...props}
+      >
+        {children}
+      </button>
+      {open ? createPortal(
+        <span
+          id={tooltipID}
+          className={cn(
+            'pointer-events-none fixed z-[200] max-w-[260px] -translate-x-1/2 rounded-md border border-[var(--border)] bg-[var(--fg)] px-2.5 py-1.5 text-center text-xs font-medium text-[var(--surface-solid)] shadow-[var(--pg-shadow-sm)]',
+            position.placement === 'top' && '-translate-y-full',
+          )}
+          role="tooltip"
+          style={{ left: position.left, top: position.top }}
+        >
+          {tooltipText}
+        </span>,
+        document.body,
+      ) : null}
+    </span>
   )
 }
 

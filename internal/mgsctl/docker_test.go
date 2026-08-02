@@ -200,7 +200,7 @@ func TestBuildDockerProcessSpecsPreparesManagedServicesBeforeApplications(t *tes
 				"pull",
 				"up --detach --wait postgres redis minio",
 				"run --rm --no-deps minio-init",
-				"up --detach --wait --remove-orphans api worker user-web admin-web docs-web gateway",
+				"up --detach --wait --force-recreate --remove-orphans api worker user-web admin-web docs-web gateway",
 			},
 		},
 		{
@@ -212,7 +212,7 @@ func TestBuildDockerProcessSpecsPreparesManagedServicesBeforeApplications(t *tes
 			wantCommands: []string{
 				"pull",
 				"up --detach --wait postgres redis",
-				"up --detach --wait --remove-orphans api",
+				"up --detach --wait --force-recreate --remove-orphans api",
 			},
 		},
 	}

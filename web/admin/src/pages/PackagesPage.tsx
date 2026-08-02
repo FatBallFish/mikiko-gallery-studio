@@ -5,6 +5,8 @@ import { cn } from '../../../shared/classnames'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { DataTable, FilterToolbar, ListPage, type ColumnDef } from '../ui/dataTable'
+import { CashierPlanEditorDialog } from './CashierPlanEditorDialog'
+import { cashierPlanDraftFromRow, cashierPlanEmptyDraft, cashierPlanPayloadFromDraft, type CashierPlanDraft } from './cashierPlanDraft'
 import { cashierPlanEmptyState, cashierPlanPurchaseBadge } from './cashierPlanPurchase'
 import { cashierPlanStatusBadge, cashierPlanTypeLabel } from './cashierStatusRows'
 
@@ -12,6 +14,9 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
   const [rows, setRows] = useState<CashierPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [dialog, setDialog] = useState<CashierPlanDraft | null>(null)
+  const [dialogError, setDialogError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -30,6 +35,30 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
     void load()
   }, [])
 
+  const openEditor = (draft: CashierPlanDraft) => {
+    setDialogError(null)
+    setDialog(draft)
+  }
+
+  const save = async () => {
+    if (!dialog || saving) return
+    setSaving(true)
+    setDialogError(null)
+    try {
+      const payload = cashierPlanPayloadFromDraft(dialog)
+      if (dialog.row) await adminApi.updateCashierPlan(dialog.row.id, payload)
+      else await adminApi.createCashierPlan(payload)
+      const savedName = dialog.plan_name
+      setDialog(null)
+      await load()
+      onFeedback('充值套餐已保存', savedName)
+    } catch (caught) {
+      setDialogError(caught instanceof Error ? caught.message : '充值套餐保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) return <LoadingBlock label="载入套餐列表" />
   if (error) return <ErrorBlock message={error} onRetry={() => void load()} />
 
@@ -38,24 +67,25 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
       <PageHeader
         title="套餐管理"
         description="维护价格、积分、上下架和展示顺序；支付通道配置已移至支付配置。"
-        primaryAction={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => onFeedback('套餐编辑入口', '新增/编辑表单将在侧栏中完成。')}>新增套餐</button>}
+        primaryAction={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => openEditor(cashierPlanEmptyDraft())}>新增套餐</button>}
         secondaryActions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => void load()}>刷新</button>}
       />
       <ListPage
         filters={<FilterToolbar fields={[]} resultSummary={`共 ${rows.length} 个套餐`} />}
       >
         <DataTable
-          columns={packageColumns(onFeedback)}
+          columns={packageColumns((plan) => openEditor(cashierPlanDraftFromRow(plan)))}
           rows={rows}
           rowKey={(plan) => plan.id}
           empty={<EmptyBlock title={cashierPlanEmptyState.title} detail={cashierPlanEmptyState.detail} />}
         />
       </ListPage>
+      {dialog ? <CashierPlanEditorDialog draft={dialog} saving={saving} error={dialogError} onChange={setDialog} onClose={() => setDialog(null)} onSave={() => void save()} /> : null}
     </section>
   )
 }
 
-function packageColumns(onFeedback: (title: string, detail?: string) => void): ColumnDef<CashierPlan>[] {
+function packageColumns(onEdit: (plan: CashierPlan) => void): ColumnDef<CashierPlan>[] {
   return [
     {
       key: 'plan',
@@ -108,7 +138,7 @@ function packageColumns(onFeedback: (title: string, detail?: string) => void): C
       title: '操作',
       width: 'minmax(90px,.7fr)',
       align: 'right',
-      render: (plan) => <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} onClick={() => onFeedback('套餐编辑入口', plan.plan_name)}>编辑</button>,
+      render: (plan) => <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} onClick={() => onEdit(plan)}>编辑</button>,
     },
   ]
 }

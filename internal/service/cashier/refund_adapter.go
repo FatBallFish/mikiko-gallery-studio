@@ -20,6 +20,7 @@ type RefundPaymentRequest struct {
 type RefundPaymentResult struct {
 	ProviderType       string         `json:"provider_type"`
 	ProviderInstanceID int64          `json:"provider_instance_id,omitempty"`
+	OutcomeUncertain   bool           `json:"-"`
 	RefundStatus       string         `json:"refund_status"`
 	RefundTradeNo      string         `json:"refund_trade_no"`
 	ChannelRefundNo    string         `json:"channel_refund_no,omitempty"`
@@ -35,6 +36,7 @@ type RefundProviderBuilders struct {
 	WxPayDirect  RefundPaymentBuilder
 	EasyPay      RefundPaymentBuilder
 	JeePay       RefundPaymentBuilder
+	Stripe       RefundPaymentBuilder
 }
 
 type RefundAdapterRegistry struct {
@@ -54,6 +56,7 @@ func NewRefundAdapterRegistryWithBuilders(builders RefundProviderBuilders) *Refu
 	registry.Register("easypay_wxpay", builders.EasyPay)
 	registry.Register("jeepay_alipay", builders.JeePay)
 	registry.Register("jeepay_wxpay", builders.JeePay)
+	registry.Register("stripe", builders.Stripe)
 	return registry
 }
 

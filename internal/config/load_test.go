@@ -475,6 +475,32 @@ func TestLocalRuntimeExampleLoadsAsCompletedSharedDevelopmentRuntime(t *testing.
 	}
 }
 
+func TestLoadRuntimeReadsStripeLoopbackAPIBaseURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	values["CASHIER_STRIPE_API_BASE_URL"] = "http://127.0.0.1:19090"
+	writeRuntimeValuesForTest(t, path, values)
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime: %v", err)
+	}
+	if cfg.Cashier.StripeAPIBaseURL != "http://127.0.0.1:19090" {
+		t.Fatalf("StripeAPIBaseURL = %q", cfg.Cashier.StripeAPIBaseURL)
+	}
+}
+
+func TestLoadRuntimeAppliesDefaultCNYPerPoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	writeRuntimeValuesForTest(t, path, completeRuntimeValuesForTest())
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime: %v", err)
+	}
+	if cfg.Billing.CNYPerPoint != "0.3125" {
+		t.Fatalf("CNYPerPoint = %q, want default 0.3125", cfg.Billing.CNYPerPoint)
+	}
+}
+
 func completeRuntimeValuesForTest() map[string]string {
 	return map[string]string{
 		"RUNTIME_SCHEMA_VERSION":                   "1",

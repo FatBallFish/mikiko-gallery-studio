@@ -72,9 +72,13 @@ func TestPaymentAdapterRegistryWithBuildersRegistersStandardProviders(t *testing
 			display["qr_code"] = "weixin://pay"
 			return PaymentDisplayResult{Display: display, QRCode: "weixin://pay"}, nil
 		},
+		Stripe: func(_ context.Context, _ PaymentDisplayRequest, display map[string]any) (PaymentDisplayResult, error) {
+			display["type"] = "stripe_payment_element"
+			return PaymentDisplayResult{Display: display, ClientToken: "pi_secret"}, nil
+		},
 	})
 
-	cases := []string{"alipay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "wxpay_direct"}
+	cases := []string{"alipay_direct", "easypay_alipay", "easypay_wxpay", "jeepay_alipay", "jeepay_wxpay", "wxpay_direct", "stripe"}
 	for _, providerType := range cases {
 		result, err := registry.BuildPaymentDisplay(context.Background(), PaymentDisplayRequest{
 			Method:    domaincashier.VisibleMethod{Method: "alipay"},
@@ -85,7 +89,7 @@ func TestPaymentAdapterRegistryWithBuildersRegistersStandardProviders(t *testing
 		if err != nil {
 			t.Fatalf("BuildPaymentDisplay(%s) returned error: %v", providerType, err)
 		}
-		if result.PaymentURL == "" && result.QRCode == "" {
+		if result.PaymentURL == "" && result.QRCode == "" && result.ClientToken == "" {
 			t.Fatalf("expected standard provider %s to be registered, got %#v", providerType, result)
 		}
 	}

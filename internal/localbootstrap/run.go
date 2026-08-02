@@ -2,6 +2,7 @@ package localbootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -12,13 +13,16 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	"github.com/fatballfish/pic-gallery/internal/setup"
+	"github.com/lib/pq"
 )
 
 const (
-	InstallationID = "pic-gallery-local"
-	OperationID    = "local-bootstrap"
-	AdminEmail     = "admin@example.com"
-	AdminPassword  = "admin123456"
+	InstallationID            = "pic-gallery-local"
+	OperationID               = "local-bootstrap"
+	AdminEmail                = "admin@example.com"
+	AdminPassword             = "admin123456"
+	localMigrationMaxAttempts = 12
+	localMigrationRetryDelay  = 500 * time.Millisecond
 )
 
 var requiredModules = []string{"admin-web", "api", "docs-web", "mailpit", "minio", "nginx", "postgres", "redis", "user-web", "worker"}
@@ -32,6 +36,7 @@ type Result struct {
 type dependencies struct {
 	load      func(string) (config.BootstrapConfig, config.Config, setup.InstallState, error)
 	migrate   func(context.Context, config.Config) (db.MigrationResult, error)
+	wait      func(context.Context, time.Duration) error
 	bind      func(context.Context, string, entstore.LocalBindingRequest) (setup.SetupBinding, error)
 	hash      func(string) (string, error)
 	reconcile func(string, setup.CommitProof, time.Time) error
@@ -41,6 +46,7 @@ type dependencies struct {
 func Run(ctx context.Context, runtimeEnvPath string) (Result, error) {
 	return run(ctx, runtimeEnvPath, dependencies{
 		load: loadInputs, migrate: app.RunDatabaseMigrationSnapshot,
+		wait: waitForContext,
 		bind: entstore.OpenAndBindLocalInstallation, hash: adminauthservice.HashPasswordChecked,
 		reconcile: reconcileState, now: func() time.Time { return time.Now().UTC() },
 	})
@@ -57,7 +63,7 @@ func run(ctx context.Context, runtimeEnvPath string, deps dependencies) (Result,
 	if err := validateLocalConfiguration(bootstrap, cfg, state); err != nil {
 		return Result{}, err
 	}
-	migration, err := deps.migrate(ctx, cfg)
+	migration, err := runLocalMigration(ctx, cfg, deps.migrate, deps.wait)
 	if err != nil {
 		return Result{}, fmt.Errorf("run local bootstrap migration: %w", err)
 	}
@@ -85,6 +91,46 @@ func run(ctx context.Context, runtimeEnvPath string, deps dependencies) (Result,
 		return Result{}, fmt.Errorf("reconcile local bootstrap install state: %w", err)
 	}
 	return Result{RuntimePath: bootstrap.Path, Migration: migration, Binding: binding}, nil
+}
+
+func runLocalMigration(
+	ctx context.Context,
+	cfg config.Config,
+	migrate func(context.Context, config.Config) (db.MigrationResult, error),
+	wait func(context.Context, time.Duration) error,
+) (db.MigrationResult, error) {
+	for attempt := 1; attempt <= localMigrationMaxAttempts; attempt++ {
+		result, err := migrate(ctx, cfg)
+		if err == nil {
+			return result, nil
+		}
+		if !isPostgresStarting(err) || attempt == localMigrationMaxAttempts {
+			return db.MigrationResult{}, err
+		}
+		if wait == nil {
+			return db.MigrationResult{}, fmt.Errorf("local bootstrap migration retry dependency is incomplete")
+		}
+		if err := wait(ctx, localMigrationRetryDelay); err != nil {
+			return db.MigrationResult{}, fmt.Errorf("wait for PostgreSQL startup before migration retry: %w", err)
+		}
+	}
+	return db.MigrationResult{}, fmt.Errorf("local bootstrap migration retry exhausted")
+}
+
+func isPostgresStarting(err error) bool {
+	var postgresErr *pq.Error
+	return errors.As(err, &postgresErr) && postgresErr.Code == "57P03"
+}
+
+func waitForContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func loadInputs(runtimeEnvPath string) (config.BootstrapConfig, config.Config, setup.InstallState, error) {

@@ -76,6 +76,17 @@ type RefundFinalizeFailureRequest struct {
 	FailureReason string
 }
 
+type ProviderRefundStatusRequest struct {
+	UserID              int64
+	OrderID             int64
+	RefundTradeNo       string
+	RefundAmountCNY     string
+	ChannelRefundNo     string
+	ChannelRefundStatus string
+	Reason              string
+	OperatorAdminID     int64
+}
+
 type ChargebackSummaryStoreRequest struct {
 	OrderID        int64
 	ChargePoints   string
@@ -107,6 +118,7 @@ type Store interface {
 	CheckRefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	FreezeRefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	ReleaseRefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
+	RecordProviderRefundStatus(ctx context.Context, req ProviderRefundStatusRequest) (domainbilling.PaymentOrder, error)
 	RefundPaymentOrder(ctx context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	RecordRefundFinalizeFailure(ctx context.Context, req RefundFinalizeFailureRequest) (domainbilling.PaymentWebhookEvent, error)
 	ReserveTask(ctx context.Context, req ReserveStoreRequest) (BalanceState, error)
@@ -144,7 +156,7 @@ type MemoryStore struct {
 	breakdown     map[int64]memoryBreakdown
 	subs          map[int64]*domainbilling.UserSubscriptionSummary
 	trialGrants   map[string]SignupTrialGrantStoreRequest
-	refundFreezes map[int64]decimal.Decimal
+	refundFreezes map[int64]memoryRefundFreeze
 	refundTrades  map[int64]map[string]struct{}
 	refundRetries map[int64]domainbilling.RefundPaymentOrderRequest
 }
@@ -156,6 +168,12 @@ type memoryBreakdown struct {
 	Recharge          decimal.Decimal
 	TrialExpires      *time.Time
 	TrialReminderDays int
+}
+
+type memoryRefundFreeze struct {
+	RefundTradeNo   string
+	RefundAmountCNY decimal.Decimal
+	RefundPoints    decimal.Decimal
 }
 
 type balanceState struct {
@@ -182,7 +200,7 @@ func NewMemoryStore(scale int) *MemoryStore {
 		breakdown:     map[int64]memoryBreakdown{},
 		subs:          map[int64]*domainbilling.UserSubscriptionSummary{},
 		trialGrants:   map[string]SignupTrialGrantStoreRequest{},
-		refundFreezes: map[int64]decimal.Decimal{},
+		refundFreezes: map[int64]memoryRefundFreeze{},
 		refundTrades:  map[int64]map[string]struct{}{},
 		refundRetries: map[int64]domainbilling.RefundPaymentOrderRequest{},
 	}
@@ -848,7 +866,7 @@ func (s *MemoryStore) refundPaymentOrderLocked(req domainbilling.RefundPaymentOr
 	if refundTradeNo == "" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("refund_trade_no is required")
 	}
-	if s.memoryRefundRecordExists(order.ID, refundTradeNo) || order.RefundTradeNo == refundTradeNo {
+	if s.memoryRefundRecordExists(order.ID, refundTradeNo) {
 		return order, nil
 	}
 	if order.Status == "refunded" {
@@ -864,7 +882,10 @@ func (s *MemoryStore) refundPaymentOrderLocked(req domainbilling.RefundPaymentOr
 	current := s.balances[order.UserID]
 	breakdown := s.breakdown[order.UserID]
 	frozenRefund := s.refundFreezes[order.ID]
-	if frozenRefund.GreaterThanOrEqual(plan.RefundPoints) {
+	if frozenRefund.RefundPoints.IsPositive() {
+		if err := ensureMemoryRefundFreezeMatches(frozenRefund, refundTradeNo, plan); err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
 		if current.Frozen.LessThan(plan.RefundPoints) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
@@ -915,14 +936,17 @@ func (s *MemoryStore) FreezeRefundPaymentOrder(_ context.Context, req domainbill
 	if refundTradeNo == "" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("refund_trade_no is required")
 	}
-	if s.memoryRefundRecordExists(order.ID, refundTradeNo) || order.RefundTradeNo == refundTradeNo {
+	if s.memoryRefundRecordExists(order.ID, refundTradeNo) {
 		return order, nil
 	}
 	plan, err := s.memoryPaymentOrderRefundPlan(order, req)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
-	if frozen := s.refundFreezes[order.ID]; frozen.GreaterThanOrEqual(plan.RefundPoints) {
+	if frozen := s.refundFreezes[order.ID]; frozen.RefundPoints.IsPositive() {
+		if err := ensureMemoryRefundFreezeMatches(frozen, refundTradeNo, plan); err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
 		return order, nil
 	}
 	current := s.balances[order.UserID]
@@ -935,7 +959,11 @@ func (s *MemoryStore) FreezeRefundPaymentOrder(_ context.Context, req domainbill
 	breakdown.Recharge = breakdown.Recharge.Sub(plan.RefundPoints)
 	s.balances[order.UserID] = current
 	s.breakdown[order.UserID] = breakdown
-	s.refundFreezes[order.ID] = plan.RefundPoints
+	s.refundFreezes[order.ID] = memoryRefundFreeze{
+		RefundTradeNo:   refundTradeNo,
+		RefundAmountCNY: plan.RefundAmountCNY,
+		RefundPoints:    plan.RefundPoints,
+	}
 	return order, nil
 }
 
@@ -946,10 +974,11 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 	if !ok || order.UserID != req.UserID {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
 	}
-	frozen := s.refundFreezes[order.ID]
-	if !frozen.IsPositive() {
+	freeze := s.refundFreezes[order.ID]
+	if !freeze.RefundPoints.IsPositive() || freeze.RefundTradeNo != strings.TrimSpace(req.RefundTradeNo) {
 		return order, nil
 	}
+	frozen := freeze.RefundPoints
 	current := s.balances[order.UserID]
 	breakdown := s.breakdown[order.UserID]
 	if current.Frozen.LessThan(frozen) {
@@ -961,6 +990,21 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 	s.balances[order.UserID] = current
 	s.breakdown[order.UserID] = breakdown
 	delete(s.refundFreezes, order.ID)
+	return order, nil
+}
+
+func (s *MemoryStore) RecordProviderRefundStatus(_ context.Context, req ProviderRefundStatusRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[req.OrderID]
+	if !ok || order.UserID != req.UserID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	order.RefundTradeNo = strings.TrimSpace(req.RefundTradeNo)
+	order.ChannelRefundNo = strings.TrimSpace(req.ChannelRefundNo)
+	order.ChannelRefundStatus = strings.ToLower(strings.TrimSpace(req.ChannelRefundStatus))
+	order.UpdatedAt = time.Now().UTC()
+	s.orders[order.ID] = order
 	return order, nil
 }
 
@@ -978,7 +1022,7 @@ func (s *MemoryStore) CheckRefundPaymentOrder(_ context.Context, req domainbilli
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot transition to refunded")
 	}
 	refundTradeNo := strings.TrimSpace(req.RefundTradeNo)
-	if s.memoryRefundRecordExists(order.ID, refundTradeNo) || order.RefundTradeNo == refundTradeNo {
+	if s.memoryRefundRecordExists(order.ID, refundTradeNo) {
 		return order, nil
 	}
 	plan, err := s.memoryPaymentOrderRefundPlan(order, req)
@@ -988,16 +1032,29 @@ func (s *MemoryStore) CheckRefundPaymentOrder(_ context.Context, req domainbilli
 	current := s.balances[order.UserID]
 	breakdown := s.breakdown[order.UserID]
 	frozenRefund := s.refundFreezes[order.ID]
-	if frozenRefund.IsZero() {
+	if !frozenRefund.RefundPoints.IsPositive() {
 		if current.Available.LessThan(plan.RefundPoints) || breakdown.Recharge.LessThan(plan.RefundPoints) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
 		return order, nil
 	}
-	if frozenRefund.LessThan(plan.RefundPoints) || current.Frozen.LessThan(plan.RefundPoints) {
+	if err := ensureMemoryRefundFreezeMatches(frozenRefund, refundTradeNo, plan); err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	if current.Frozen.LessThan(plan.RefundPoints) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
 	return order, nil
+}
+
+func ensureMemoryRefundFreezeMatches(freeze memoryRefundFreeze, refundTradeNo string, plan memoryPaymentOrderRefundPlan) error {
+	if freeze.RefundTradeNo != strings.TrimSpace(refundTradeNo) {
+		return errs.New(http.StatusConflict, errs.CodeConflict, "another payment refund is pending")
+	}
+	if !freeze.RefundAmountCNY.Equal(plan.RefundAmountCNY) || !freeze.RefundPoints.Equal(plan.RefundPoints) {
+		return errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment refund amount does not match the pending refund")
+	}
+	return nil
 }
 
 func (s *MemoryStore) completeRechargeOrderLocked(order domainbilling.PaymentOrder, req domainbilling.CompleteRechargeOrderRequest) (domainbilling.PaymentOrder, error) {

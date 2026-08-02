@@ -58,7 +58,6 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 	})
 	assertTabKeys(t, tabs, "openai_compat", []string{"openai_compat_model_map"})
 	assertTabKeys(t, tabs, "payments", []string{
-		"custom_amount_cny_per_point",
 		"custom_amount_enabled",
 		"custom_amount_max_cny",
 		"custom_amount_min_cny",
@@ -231,6 +230,71 @@ func TestAdminConfigIgnoresStaleOverridesAndRejectsUnknownItems(t *testing.T) {
 	if tab.Version != 1 {
 		t.Fatalf("expected stale overrides to be ignored for version, got %d", tab.Version)
 	}
+}
+
+func TestBillingPricingUsesLegacyPaymentRateUntilNewRateIsSaved(t *testing.T) {
+	ctx := context.Background()
+	store := adminconfig.NewMemoryStore()
+	if err := store.SaveByCategory(ctx, "payments", 7, 0, []domainadminconfig.Item{{
+		ConfigCategory: "payments",
+		ConfigKey:      "custom_amount_cny_per_point",
+		ConfigValue:    map[string]any{"value": "0.62500"},
+		Scope:          "global",
+	}}); err != nil {
+		t.Fatalf("SaveByCategory legacy payment rate: %v", err)
+	}
+	svc := adminconfig.NewServiceWithStore(testConfig(), store)
+
+	tab, err := svc.GetTab(ctx, "billing_pricing")
+	if err != nil {
+		t.Fatalf("GetTab billing_pricing with legacy rate: %v", err)
+	}
+	assertConfigItemValue(t, tab, "cny_per_point", "0.62500")
+	if tab.Version != 7 {
+		t.Fatalf("expected legacy version to participate in migration, got %d", tab.Version)
+	}
+
+	updated, err := svc.UpdateTab(ctx, domainadminconfig.UpdateTabRequest{
+		TabKey:  "billing_pricing",
+		Version: tab.Version,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "billing_pricing",
+			ConfigKey:      "cny_per_point",
+			ConfigValue:    map[string]any{"value": "0.50000"},
+			Scope:          "global",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("UpdateTab new billing rate: %v", err)
+	}
+	assertConfigItemValue(t, updated, "cny_per_point", "0.50000")
+
+	if err := store.SaveByCategory(ctx, "payments", 9, 0, []domainadminconfig.Item{{
+		ConfigCategory: "payments",
+		ConfigKey:      "custom_amount_cny_per_point",
+		ConfigValue:    map[string]any{"value": "0.75000"},
+		Scope:          "global",
+	}}); err != nil {
+		t.Fatalf("update legacy payment rate: %v", err)
+	}
+	loaded, err := svc.GetTab(ctx, "billing_pricing")
+	if err != nil {
+		t.Fatalf("GetTab billing_pricing after new save: %v", err)
+	}
+	assertConfigItemValue(t, loaded, "cny_per_point", "0.50000")
+}
+
+func assertConfigItemValue(t *testing.T, tab domainadminconfig.Tab, key string, want any) {
+	t.Helper()
+	for _, item := range tab.Items {
+		if item.ConfigKey == key {
+			if got := item.ConfigValue["value"]; got != want {
+				t.Fatalf("unexpected %s value: got %#v want %#v", key, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected config item %q in tab %#v", key, tab)
 }
 
 func assertTabMissing(t *testing.T, tabs []domainadminconfig.Tab, tabKey string) {

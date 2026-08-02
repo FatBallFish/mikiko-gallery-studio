@@ -231,6 +231,7 @@ func configFromRuntimeValues(fileEnv map[string]string) Config {
 	cfg.Cashier.OrderTimeoutSeconds = envInt(fileEnv, "CASHIER_ORDER_TIMEOUT_SECONDS", 0)
 	cfg.Cashier.MaxPendingOrdersPerUser = envInt(fileEnv, "CASHIER_MAX_PENDING_ORDERS_PER_USER", 0)
 	cfg.Cashier.SiteBaseURL = envString(fileEnv, "CASHIER_SITE_BASE_URL", "")
+	cfg.Cashier.StripeAPIBaseURL = envString(fileEnv, "CASHIER_STRIPE_API_BASE_URL", "")
 
 	cfg.Worker.MaxConcurrentTasks = envInt(fileEnv, "WORKER_MAX_CONCURRENT_TASKS", 0)
 	cfg.HTTP.CORSAllowedOrigins = envCSV(fileEnv, "CORS_ALLOWED_ORIGINS")
@@ -337,6 +338,9 @@ func applyDefaults(cfg *Config) {
 		cfg.APIKey.SigningSecretEncryptionKey = "local-dev-api-key-signing-secret-encryption-key"
 	}
 	cfg.Billing.PointsScale = 5
+	if strings.TrimSpace(cfg.Billing.CNYPerPoint) == "" {
+		cfg.Billing.CNYPerPoint = "0.3125"
+	}
 	if strings.TrimSpace(cfg.Billing.SignupTrial.Points) == "" {
 		cfg.Billing.SignupTrial.Points = "20.00000"
 	}

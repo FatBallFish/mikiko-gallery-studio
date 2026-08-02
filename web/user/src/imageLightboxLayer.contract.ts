@@ -3,6 +3,11 @@ import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { ImageLightbox } from './components'
 import { focusTrapTargetIndex } from './ui/focusTrap'
+import { overlayLayers } from './ui/redesign-classes'
+
+if (overlayLayers.modal !== 'z-[110]' || overlayLayers.lightbox !== 'z-[120]' || overlayLayers.zoom !== 'z-[130]') {
+  throw new Error(`Overlay layers must remain ordered modal < lightbox < zoom: ${JSON.stringify(overlayLayers)}`)
+}
 
 const ssr = renderToString(createElement(ImageLightbox, {
   image: { url: '/landing/hero-gallery.webp', alt: 'SSR lightbox contract' },
@@ -41,4 +46,9 @@ if (lightboxSource.includes("window.addEventListener('keydown', close)")) {
 const focusLayerCount = (lightboxSource.match(/data-focus-layer/g) ?? []).length
 if (focusLayerCount < 2) {
   throw new Error(`ImageLightbox and zoom viewer must be separate nested focus layers, got ${focusLayerCount}`)
+}
+
+const overlayPortalCount = (lightboxSource.match(/<OverlayPortal>/g) ?? []).length
+if (overlayPortalCount < 2) {
+  throw new Error(`ImageLightbox and zoom viewer must each render through OverlayPortal, got ${overlayPortalCount}`)
 }

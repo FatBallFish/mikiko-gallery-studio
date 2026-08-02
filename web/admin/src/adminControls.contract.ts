@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 // @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
 import { readFileSync } from 'node:fs'
-import { ActionMenu, Button, IconButton, SegmentedControl, StatusBadge } from './components'
+import { ActionMenu, Button, IconButton, SegmentedControl, StatusBadge, TooltipIconButton } from './components'
 
 const componentsSource = readFileSync(new URL('./components.tsx', import.meta.url), 'utf8')
 const dataTableSource = readFileSync(new URL('./ui/dataTable.tsx', import.meta.url), 'utf8')
@@ -9,6 +9,7 @@ const dataTableSource = readFileSync(new URL('./ui/dataTable.tsx', import.meta.u
 createElement(Button, { variant: 'primary', size: 'md' }, '保存')
 createElement(Button, { variant: 'danger', size: 'sm' }, '删除')
 createElement(IconButton, { label: '刷新', title: '刷新列表', onClick: () => undefined })
+createElement(TooltipIconButton, { label: '测试连接', disabled: true, disabledReason: '请先启用账号', onClick: () => undefined })
 
 createElement(SegmentedControl, {
   value: 'all',
@@ -38,8 +39,20 @@ for (const primitive of [
   'export function EmptyBlock',
   'export function LoadingBlock',
   "variant?: 'framed' | 'inline'",
+  'export function TooltipIconButton',
 ]) {
   if (!componentsSource.includes(primitive)) throw new Error(`admin controls must expose ${primitive}`)
+}
+
+for (const tooltipContract of [
+  "'size-10 [&_svg]:size-5'",
+  'disabledReason',
+  'onMouseEnter={() => setOpen(true)}',
+  'onFocus={() => setOpen(true)}',
+  'role="tooltip"',
+  'createPortal(',
+]) {
+  if (!componentsSource.includes(tooltipContract)) throw new Error(`tooltip icon buttons must support ${tooltipContract}`)
 }
 
 for (const interaction of [

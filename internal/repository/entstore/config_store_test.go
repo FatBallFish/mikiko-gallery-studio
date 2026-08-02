@@ -64,6 +64,79 @@ func TestAdminConfigStorePersistsTabOverrides(t *testing.T) {
 	}
 }
 
+func TestAdminConfigStoreMigratesLegacyPaymentRateToBillingPricing(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:configstore-legacy-rate?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewAdminConfigStore(client)
+	if err := store.SaveByCategory(ctx, "payments", 7, 0, []domainadminconfig.Item{{
+		ConfigCategory: "payments",
+		ConfigKey:      "custom_amount_cny_per_point",
+		ConfigValue:    map[string]any{"value": "0.62500"},
+		Scope:          "global",
+	}}); err != nil {
+		t.Fatalf("save legacy payment rate: %v", err)
+	}
+	svc := adminconfig.NewServiceWithStore(testAdminConfig(), store)
+	legacyTab, err := svc.GetTab(ctx, "billing_pricing")
+	if err != nil {
+		t.Fatalf("get billing pricing from legacy rate: %v", err)
+	}
+	assertEntConfigValue(t, legacyTab, "cny_per_point", "0.62500")
+
+	updated, err := svc.UpdateTab(ctx, domainadminconfig.UpdateTabRequest{
+		TabKey:  "billing_pricing",
+		Version: legacyTab.Version,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "billing_pricing",
+			ConfigKey:      "cny_per_point",
+			ConfigValue:    map[string]any{"value": "0.50000"},
+			Scope:          "global",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("save new billing pricing rate: %v", err)
+	}
+	assertEntConfigValue(t, updated, "cny_per_point", "0.50000")
+
+	if err := store.SaveByCategory(ctx, "payments", 9, 0, []domainadminconfig.Item{{
+		ConfigCategory: "payments",
+		ConfigKey:      "custom_amount_cny_per_point",
+		ConfigValue:    map[string]any{"value": "0.75000"},
+		Scope:          "global",
+	}}); err != nil {
+		t.Fatalf("update legacy payment rate: %v", err)
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		reloaded := adminconfig.NewServiceWithStore(testAdminConfig(), store)
+		tab, err := reloaded.GetTab(ctx, "billing_pricing")
+		if err != nil {
+			t.Fatalf("reload billing pricing attempt %d: %v", attempt, err)
+		}
+		assertEntConfigValue(t, tab, "cny_per_point", "0.50000")
+	}
+}
+
+func assertEntConfigValue(t *testing.T, tab domainadminconfig.Tab, key string, want any) {
+	t.Helper()
+	for _, item := range tab.Items {
+		if item.ConfigKey == key {
+			if got := item.ConfigValue["value"]; got != want {
+				t.Fatalf("unexpected %s value: got %#v want %#v", key, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected config item %q in tab %#v", key, tab)
+}
+
 func testAdminConfig() config.Config {
 	return config.Config{
 		Auth: config.AuthConfig{

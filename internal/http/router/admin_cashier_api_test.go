@@ -20,6 +20,7 @@ import (
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	stripe "github.com/stripe/stripe-go/v85"
 )
 
 func TestAdminCashierReadEndpoints(t *testing.T) {
@@ -1238,6 +1239,385 @@ func TestAdminCashierOrderRefundCallsAlipayDirectProvider(t *testing.T) {
 	}
 }
 
+func TestAdminCashierStripeQueryAndPartialRefund(t *testing.T) {
+	var queryPath string
+	var refundValues url.Values
+	var refundIdempotencyKey string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
+			_, _ = w.Write([]byte(`{"id":"pi_admin_stripe","object":"payment_intent","amount":1025,"currency":"cny","client_secret":"pi_admin_stripe_secret_client","status":"requires_payment_method"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_admin_stripe":
+			queryPath = r.URL.Path
+			_, _ = w.Write([]byte(`{"id":"pi_admin_stripe","object":"payment_intent","amount":1025,"currency":"cny","status":"succeeded"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/refunds":
+			refundIdempotencyKey = r.Header.Get("Idempotency-Key")
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse Stripe refund form: %v", err)
+			}
+			refundValues = r.PostForm
+			_, _ = w.Write([]byte(`{"id":"re_admin_stripe","object":"refund","amount":525,"currency":"cny","payment_intent":"pi_admin_stripe","status":"succeeded"}`))
+		default:
+			t.Fatalf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	handler, adminToken, user, userSession, billingSvc := newAdminCashierRefundProviderTest(t, "cashier-stripe-admin-user@example.com")
+	putVisibleMethodsForCashierTest(t, handler, adminToken, `[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]`)
+	createProviderInstanceForCashierTest(t, handler, adminToken, `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"config":{"publishable_key":"pk_test_admin"},"secrets":{"secret_key":"sk_test_admin","webhook_secret":"whsec_admin"}}`)
+	orderID, _ := createCustomCashierOrderForTest(t, handler, userSession.AccessToken, "stripe", "10.25")
+
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+	syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+	syncRec := httptest.NewRecorder()
+	handler.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("expected Stripe admin sync 200, got %d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+	if queryPath != "/v1/payment_intents/pi_admin_stripe" {
+		t.Fatalf("expected pending order sync to use client token, got query path %q", queryPath)
+	}
+	completed := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
+	if completed.Status != "completed" || completed.TradeNo != "pi_admin_stripe" {
+		t.Fatalf("expected Stripe sync to complete order, got %#v", completed)
+	}
+
+	refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(`{"refund_trade_no":"REFUND-STRIPE-001","refund_amount_cny":"5.25","reason":"partial refund"}`))
+	refundReq.Header.Set("Authorization", "Bearer "+adminToken)
+	refundReq.Header.Set("Content-Type", "application/json")
+	refundRec := httptest.NewRecorder()
+	handler.ServeHTTP(refundRec, refundReq)
+	if refundRec.Code != http.StatusOK {
+		t.Fatalf("expected Stripe partial refund 200, got %d body=%s", refundRec.Code, refundRec.Body.String())
+	}
+	if refundIdempotencyKey != "REFUND-STRIPE-001" || refundValues.Get("amount") != "525" || refundValues.Get("payment_intent") != "pi_admin_stripe" || refundValues.Get("metadata[refund_trade_no]") != "REFUND-STRIPE-001" {
+		t.Fatalf("unexpected Stripe refund request idempotency=%q values=%#v", refundIdempotencyKey, refundValues)
+	}
+	refunded := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
+	if refunded.Status != "partially_refunded" || refunded.RefundTradeNo != "REFUND-STRIPE-001" || refunded.RefundedAmountCNY != "5.25000" {
+		t.Fatalf("unexpected local Stripe refund state %#v", refunded)
+	}
+	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+	if err != nil {
+		t.Fatalf("load balance after Stripe refund: %v", err)
+	}
+	if balance.RechargePoints != "16.00000" || balance.AvailablePoints != "16.00000" {
+		t.Fatalf("expected partial Stripe refund to retain exact remaining balance, got %#v", balance)
+	}
+}
+
+func TestAdminCashierStripeRefundWaitsForProviderSuccess(t *testing.T) {
+	tests := []struct {
+		name              string
+		initialStatus     string
+		queryStatus       string
+		wantFirstHTTPCode int
+		wantFirstCode     string
+		wantRetrySuccess  bool
+	}{
+		{name: "pending refund is queried before local settlement", initialStatus: "pending", queryStatus: "succeeded", wantFirstHTTPCode: http.StatusConflict, wantFirstCode: "PAYMENT_REFUND_PENDING", wantRetrySuccess: true},
+		{name: "failed refund does not settle locally", initialStatus: "failed", wantFirstHTTPCode: http.StatusConflict, wantFirstCode: "PAYMENT_REFUND_FAILED"},
+		{name: "canceled refund does not settle locally", initialStatus: "canceled", wantFirstHTTPCode: http.StatusConflict, wantFirstCode: "PAYMENT_REFUND_FAILED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var refundCreates int
+			var refundQueries int
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
+					_, _ = w.Write([]byte(`{"id":"pi_refund_state","object":"payment_intent","amount":1000,"currency":"cny","client_secret":"pi_refund_state_secret_client","status":"requires_payment_method"}`))
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_refund_state":
+					_, _ = w.Write([]byte(`{"id":"pi_refund_state","object":"payment_intent","amount":1000,"currency":"cny","status":"succeeded"}`))
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/refunds":
+					refundCreates++
+					_, _ = fmt.Fprintf(w, `{"id":"re_refund_state","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_state","status":%q}`, tt.initialStatus)
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/refunds/re_refund_state":
+					refundQueries++
+					_, _ = fmt.Fprintf(w, `{"id":"re_refund_state","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_state","status":%q}`, tt.queryStatus)
+				default:
+					t.Fatalf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer upstream.Close()
+			originalBackend := stripe.GetBackend(stripe.APIBackend)
+			stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+			t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+			handler, adminToken, user, userSession, billingSvc := newAdminCashierRefundProviderTest(t, "cashier-stripe-refund-state-"+tt.initialStatus+"@example.com")
+			putVisibleMethodsForCashierTest(t, handler, adminToken, `[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]`)
+			createProviderInstanceForCashierTest(t, handler, adminToken, `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"config":{"publishable_key":"pk_test_admin"},"secrets":{"secret_key":"sk_test_admin","webhook_secret":"whsec_admin"}}`)
+			orderID, _ := createCustomCashierOrderForTest(t, handler, userSession.AccessToken, "stripe", "10.00")
+			syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+			syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+			syncRec := httptest.NewRecorder()
+			handler.ServeHTTP(syncRec, syncReq)
+			if syncRec.Code != http.StatusOK {
+				t.Fatalf("complete Stripe order: status=%d body=%s", syncRec.Code, syncRec.Body.String())
+			}
+
+			refundBody := `{"refund_trade_no":"REFUND-STRIPE-STATE-001","refund_amount_cny":"5.00","reason":"state check"}`
+			refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(refundBody))
+			refundReq.Header.Set("Authorization", "Bearer "+adminToken)
+			refundReq.Header.Set("Content-Type", "application/json")
+			refundRec := httptest.NewRecorder()
+			handler.ServeHTTP(refundRec, refundReq)
+			if refundRec.Code != tt.wantFirstHTTPCode || !bytes.Contains(refundRec.Body.Bytes(), []byte(`"code":"`+tt.wantFirstCode+`"`)) {
+				t.Fatalf("unexpected first refund response status=%d body=%s", refundRec.Code, refundRec.Body.String())
+			}
+			pending := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
+			if pending.Status != "completed" || pending.RefundedAmountCNY != "" || pending.RefundedPoints != "" {
+				t.Fatalf("provider %s must not settle local refund, got %#v", tt.initialStatus, pending)
+			}
+
+			if tt.wantRetrySuccess {
+				retryReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(refundBody))
+				retryReq.Header.Set("Authorization", "Bearer "+adminToken)
+				retryReq.Header.Set("Content-Type", "application/json")
+				retryRec := httptest.NewRecorder()
+				handler.ServeHTTP(retryRec, retryReq)
+				if retryRec.Code != http.StatusOK {
+					t.Fatalf("expected queried Stripe refund to settle, status=%d body=%s", retryRec.Code, retryRec.Body.String())
+				}
+				settled := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
+				if settled.Status != "partially_refunded" || settled.RefundedAmountCNY != "5.00000" {
+					t.Fatalf("unexpected queried Stripe refund state %#v", settled)
+				}
+			}
+			if refundCreates != 1 || refundQueries != boolInt(tt.wantRetrySuccess) {
+				t.Fatalf("unexpected Stripe refund calls creates=%d queries=%d", refundCreates, refundQueries)
+			}
+			balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+			if err != nil {
+				t.Fatalf("GetBalance after Stripe refund state check: %v", err)
+			}
+			if tt.wantRetrySuccess {
+				if balance.AvailablePoints != "16.00000" {
+					t.Fatalf("expected settled partial refund balance, got %#v", balance)
+				}
+			} else if balance.AvailablePoints != "32.00000" {
+				t.Fatalf("expected failed provider refund to release local balance, got %#v", balance)
+			}
+		})
+	}
+}
+
+func TestAdminCashierStripeRefundKeepsFreezeWhenProviderOutcomeIsUncertain(t *testing.T) {
+	var refundCreates int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_uncertain","object":"payment_intent","amount":1000,"currency":"cny","client_secret":"pi_refund_uncertain_secret_client","status":"requires_payment_method"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_refund_uncertain":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_uncertain","object":"payment_intent","amount":1000,"currency":"cny","status":"succeeded"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/refunds":
+			refundCreates++
+			if refundCreates == 1 {
+				_, _ = w.Write([]byte(`{"id":"re_refund_uncertain","object":"refund","amount":500`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"re_refund_uncertain","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_uncertain","status":"succeeded"}`))
+		default:
+			t.Errorf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	handler, adminToken, user, userSession, billingSvc := newAdminCashierRefundProviderTest(t, "cashier-stripe-refund-uncertain@example.com")
+	putVisibleMethodsForCashierTest(t, handler, adminToken, `[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]`)
+	createProviderInstanceForCashierTest(t, handler, adminToken, `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"config":{"publishable_key":"pk_test_admin"},"secrets":{"secret_key":"sk_test_admin","webhook_secret":"whsec_admin"}}`)
+	orderID, _ := createCustomCashierOrderForTest(t, handler, userSession.AccessToken, "stripe", "10.00")
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+	syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+	syncRec := httptest.NewRecorder()
+	handler.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("complete Stripe order: status=%d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+
+	refundBody := `{"refund_trade_no":"REFUND-STRIPE-UNCERTAIN-001","refund_amount_cny":"5.00","reason":"uncertain result"}`
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(refundBody))
+	firstReq.Header.Set("Authorization", "Bearer "+adminToken)
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstRec := httptest.NewRecorder()
+	handler.ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusBadGateway || !bytes.Contains(firstRec.Body.Bytes(), []byte(`"code":"PAYMENT_PROVIDER_UNAVAILABLE"`)) {
+		t.Fatalf("unexpected uncertain refund response status=%d body=%s", firstRec.Code, firstRec.Body.String())
+	}
+	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance after uncertain Stripe refund: %v", err)
+	}
+	if balance.AvailablePoints != "16.00000" || balance.FrozenPoints != "16.00000" {
+		t.Fatalf("uncertain Stripe outcome must keep refund points frozen, got %#v", balance)
+	}
+
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(refundBody))
+	retryReq.Header.Set("Authorization", "Bearer "+adminToken)
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryRec := httptest.NewRecorder()
+	handler.ServeHTTP(retryRec, retryReq)
+	if retryRec.Code != http.StatusOK {
+		t.Fatalf("retry uncertain Stripe refund: status=%d body=%s", retryRec.Code, retryRec.Body.String())
+	}
+	if refundCreates != 2 {
+		t.Fatalf("expected one idempotent retry after uncertain response, got %d Stripe creates", refundCreates)
+	}
+	settled := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
+	if settled.Status != "partially_refunded" || settled.RefundedAmountCNY != "5.00000" {
+		t.Fatalf("unexpected settled Stripe refund %#v", settled)
+	}
+}
+
+func TestAdminCashierStripePendingRefundRejectsChangedAmountBeforeProviderQuery(t *testing.T) {
+	var refundCreates int
+	var refundQueries int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_bound","object":"payment_intent","amount":1000,"currency":"cny","client_secret":"pi_refund_bound_secret_client","status":"requires_payment_method"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_refund_bound":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_bound","object":"payment_intent","amount":1000,"currency":"cny","status":"succeeded"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/refunds":
+			refundCreates++
+			_, _ = w.Write([]byte(`{"id":"re_refund_bound","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_bound","status":"pending"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/refunds/re_refund_bound":
+			refundQueries++
+			_, _ = w.Write([]byte(`{"id":"re_refund_bound","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_bound","status":"pending"}`))
+		default:
+			t.Errorf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	handler, adminToken, user, userSession, billingSvc := newAdminCashierRefundProviderTest(t, "cashier-stripe-refund-bound@example.com")
+	putVisibleMethodsForCashierTest(t, handler, adminToken, `[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]`)
+	createProviderInstanceForCashierTest(t, handler, adminToken, `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"config":{"publishable_key":"pk_test_admin"},"secrets":{"secret_key":"sk_test_admin","webhook_secret":"whsec_admin"}}`)
+	orderID, _ := createCustomCashierOrderForTest(t, handler, userSession.AccessToken, "stripe", "10.00")
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+	syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+	syncRec := httptest.NewRecorder()
+	handler.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("complete Stripe order: status=%d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+
+	firstBody := `{"refund_trade_no":"REFUND-STRIPE-BOUND-001","refund_amount_cny":"5.00","reason":"pending amount"}`
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(firstBody))
+	firstReq.Header.Set("Authorization", "Bearer "+adminToken)
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstRec := httptest.NewRecorder()
+	handler.ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusConflict || !bytes.Contains(firstRec.Body.Bytes(), []byte(`"code":"PAYMENT_REFUND_PENDING"`)) {
+		t.Fatalf("unexpected pending refund response status=%d body=%s", firstRec.Code, firstRec.Body.String())
+	}
+
+	changedBody := `{"refund_trade_no":"REFUND-STRIPE-BOUND-001","refund_amount_cny":"4.00","reason":"changed amount"}`
+	changedReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(changedBody))
+	changedReq.Header.Set("Authorization", "Bearer "+adminToken)
+	changedReq.Header.Set("Content-Type", "application/json")
+	changedRec := httptest.NewRecorder()
+	handler.ServeHTTP(changedRec, changedReq)
+	if changedRec.Code != http.StatusConflict || !bytes.Contains(changedRec.Body.Bytes(), []byte(`"code":"PAYMENT_AMOUNT_MISMATCH"`)) {
+		t.Fatalf("changed pending refund amount should be rejected, status=%d body=%s", changedRec.Code, changedRec.Body.String())
+	}
+	if refundCreates != 1 || refundQueries != 0 {
+		t.Fatalf("changed amount must fail before another Stripe call, creates=%d queries=%d", refundCreates, refundQueries)
+	}
+	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance after changed refund amount: %v", err)
+	}
+	if balance.AvailablePoints != "16.00000" || balance.FrozenPoints != "16.00000" {
+		t.Fatalf("changed amount must not release the original freeze, got %#v", balance)
+	}
+}
+
+func TestAdminCashierStripeRefundReleasesFreezeWhenProviderInstanceIsMissing(t *testing.T) {
+	var refundCreates int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_missing_instance","object":"payment_intent","amount":1000,"currency":"cny","client_secret":"pi_refund_missing_instance_secret_client","status":"requires_payment_method"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_refund_missing_instance":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_missing_instance","object":"payment_intent","amount":1000,"currency":"cny","status":"succeeded"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/refunds":
+			refundCreates++
+			_, _ = w.Write([]byte(`{"id":"re_unexpected","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_missing_instance","status":"succeeded"}`))
+		default:
+			t.Errorf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	handler, adminToken, user, userSession, billingSvc := newAdminCashierRefundProviderTest(t, "cashier-stripe-refund-missing-instance@example.com")
+	putVisibleMethodsForCashierTest(t, handler, adminToken, `[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]`)
+	providerID := createProviderInstanceForCashierTest(t, handler, adminToken, `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"config":{"publishable_key":"pk_test_admin"},"secrets":{"secret_key":"sk_test_admin","webhook_secret":"whsec_admin"}}`)
+	orderID, _ := createCustomCashierOrderForTest(t, handler, userSession.AccessToken, "stripe", "10.00")
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+	syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+	syncRec := httptest.NewRecorder()
+	handler.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("complete Stripe order: status=%d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/cashier/provider-instances/"+jsonInt64(providerID), nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete Stripe provider instance: status=%d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(`{"refund_trade_no":"REFUND-STRIPE-MISSING-INSTANCE-001","refund_amount_cny":"5.00"}`))
+	refundReq.Header.Set("Authorization", "Bearer "+adminToken)
+	refundReq.Header.Set("Content-Type", "application/json")
+	refundRec := httptest.NewRecorder()
+	handler.ServeHTTP(refundRec, refundReq)
+	if refundRec.Code != http.StatusConflict || !bytes.Contains(refundRec.Body.Bytes(), []byte(`"code":"PAYMENT_PROVIDER_UNAVAILABLE"`)) {
+		t.Fatalf("unexpected missing provider refund response status=%d body=%s", refundRec.Code, refundRec.Body.String())
+	}
+	if refundCreates != 0 {
+		t.Fatalf("missing provider instance must fail before Stripe refund call, got %d calls", refundCreates)
+	}
+	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance after missing provider refund: %v", err)
+	}
+	if balance.AvailablePoints != "32.00000" || balance.FrozenPoints != "0.00000" {
+		t.Fatalf("certain pre-call failure must release refund freeze, got %#v", balance)
+	}
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
 func TestAdminCashierOrderRefundCallsWxPayDirectProvider(t *testing.T) {
 	privateKey, _ := testRSAKeyPairPEM(t)
 	var upstreamPath string
@@ -2395,6 +2775,19 @@ func TestAdminCashierProviderInstanceCreateAndUpdate(t *testing.T) {
 	handler := NewWithAPI(api)
 	adminToken := loginAdminForCashierProviderTest(t, handler)
 
+	invalidJeePayBody := `{"provider_type":"jeepay_alipay","name":"invalid JeePay","enabled":true,"supported_methods":["alipay"],"config":{"gateway_url":"https://pay.example.com","mch_no":"submitted-merchant","way_code":"ALI_PC"},"secrets":{"key":"submitted-secret"}}`
+	invalidJeePayReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/provider-instances", bytes.NewBufferString(invalidJeePayBody))
+	invalidJeePayReq.Header.Set("Authorization", "Bearer "+adminToken)
+	invalidJeePayReq.Header.Set("Content-Type", "application/json")
+	invalidJeePayRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidJeePayRec, invalidJeePayReq)
+	if invalidJeePayRec.Code != http.StatusBadRequest || !bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte(`"code":"PAYMENT_PROVIDER_CONFIG_INVALID"`)) || !bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte("app_id")) {
+		t.Fatalf("expected typed JeePay provider validation error, got %d body=%s", invalidJeePayRec.Code, invalidJeePayRec.Body.String())
+	}
+	if bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte("submitted-merchant")) || bytes.Contains(invalidJeePayRec.Body.Bytes(), []byte("submitted-secret")) {
+		t.Fatalf("provider validation error leaked submitted values: %s", invalidJeePayRec.Body.String())
+	}
+
 	createBody := `{"provider_type":"alipay_direct","name":"支付宝沙箱主账号","enabled":true,"supported_methods":["alipay"],"sort_order":20,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000","daily_amount_limit_cny":"5000.00000"},"config":{"app_id":"app-123","app_private_key":"super-secret-private-key","alipay_public_key":"public-key","gateway_url":"https://openapi-sandbox.dl.alipaydev.com/gateway.do"}}`
 	createReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/provider-instances", bytes.NewBufferString(createBody))
 	createReq.Header.Set("Authorization", "Bearer "+adminToken)
@@ -2597,7 +2990,7 @@ func putVisibleMethodsForCashierTest(t *testing.T, handler http.Handler, adminTo
 	}
 }
 
-func createProviderInstanceForCashierTest(t *testing.T, handler http.Handler, adminToken string, body string) {
+func createProviderInstanceForCashierTest(t *testing.T, handler http.Handler, adminToken string, body string) int64 {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/provider-instances", bytes.NewBufferString(body))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -2607,6 +3000,15 @@ func createProviderInstanceForCashierTest(t *testing.T, handler http.Handler, ad
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected provider instance create 201, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	var resp struct {
+		Data struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil || resp.Data.ID <= 0 {
+		t.Fatalf("decode provider instance create response: err=%v body=%s", err, rec.Body.String())
+	}
+	return resp.Data.ID
 }
 
 func createCustomCashierOrderForTest(t *testing.T, handler http.Handler, userToken string, visibleMethod string, amountCNY string) (int64, string) {

@@ -21,10 +21,14 @@ for (const apiContract of ['adminApi.listPaymentOrders', 'page_size: nextPageize
   }
 }
 
-for (const packageContract of ['adminApi.listCashierPlans', "onFeedback('套餐编辑入口'", 'cashierPlanStatusBadge', 'cashierPlanPurchaseBadge']) {
+for (const packageContract of ['adminApi.listCashierPlans', 'adminApi.createCashierPlan', 'adminApi.updateCashierPlan', '<CashierPlanEditorDialog', 'cashierPlanStatusBadge', 'cashierPlanPurchaseBadge']) {
   if (!packagesSource.includes(packageContract)) {
     throw new Error(`packages redesign must preserve ${packageContract}`)
   }
+}
+
+if (packagesSource.includes("onFeedback('套餐编辑入口'")) {
+  throw new Error('PackagesPage must open the real editor instead of showing placeholder feedback')
 }
 
 for (const drift of ['adminSurface.card', 'rounded-2xl', 'rounded-3xl', 'uppercase', 'tracking-[', 'text-emerald-', 'text-green-']) {

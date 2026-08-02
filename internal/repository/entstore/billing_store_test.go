@@ -1321,6 +1321,26 @@ func TestBillingStoreRefundPaymentOrderCanCompleteFromFrozenRefundGrant(t *testi
 	if _, err := store.CheckRefundPaymentOrder(ctx, freezeReq); err != nil {
 		t.Fatalf("CheckRefundPaymentOrder should allow existing refund freeze: %v", err)
 	}
+	changedFreezeReq := freezeReq
+	changedFreezeReq.RefundAmountCNY = "10.00000"
+	for name, check := range map[string]func() error{
+		"check": func() error {
+			_, err := store.CheckRefundPaymentOrder(ctx, changedFreezeReq)
+			return err
+		},
+		"freeze": func() error {
+			_, err := store.FreezeRefundPaymentOrder(ctx, changedFreezeReq)
+			return err
+		},
+	} {
+		t.Run("changed refund amount is rejected by "+name, func(t *testing.T) {
+			err := check()
+			var appErr *errs.Error
+			if !errors.As(err, &appErr) || appErr.Code != errs.CodePaymentAmountMismatch {
+				t.Fatalf("expected PAYMENT_AMOUNT_MISMATCH, got %T %v", err, err)
+			}
+		})
+	}
 	grant, err := client.WalletGrant.Query().
 		Where(walletgrant.UserIDEQ(92), walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDEQ(order.ID), walletgrant.StatusEQ("active")).
 		Only(ctx)
@@ -1329,6 +1349,22 @@ func TestBillingStoreRefundPaymentOrderCanCompleteFromFrozenRefundGrant(t *testi
 	}
 	if grant.Metadata["refund_freeze_trade_no"] != "refund-trade-freeze-1" || grant.Metadata["refund_freeze_points"] != "12.50000" {
 		t.Fatalf("expected refund freeze metadata, got %#v", grant.Metadata)
+	}
+	providerPending, err := store.RecordProviderRefundStatus(ctx, billingservice.ProviderRefundStatusRequest{
+		UserID:              92,
+		OrderID:             order.ID,
+		RefundTradeNo:       "refund-trade-freeze-1",
+		RefundAmountCNY:     "12.50000",
+		ChannelRefundNo:     "re_pending_1",
+		ChannelRefundStatus: "pending",
+		Reason:              "customer requested refund",
+		OperatorAdminID:     7002,
+	})
+	if err != nil {
+		t.Fatalf("RecordProviderRefundStatus: %v", err)
+	}
+	if providerPending.Status != "completed" || providerPending.RefundTradeNo != "refund-trade-freeze-1" || providerPending.ChannelRefundNo != "re_pending_1" || providerPending.ChannelRefundStatus != "pending" {
+		t.Fatalf("expected provider refund identity without local settlement, got %#v", providerPending)
 	}
 
 	if _, err := store.ReleaseRefundPaymentOrder(ctx, freezeReq); err != nil {
