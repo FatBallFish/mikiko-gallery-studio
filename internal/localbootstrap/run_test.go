@@ -3,6 +3,7 @@ package localbootstrap
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	"github.com/fatballfish/pic-gallery/internal/setup"
+	"github.com/lib/pq"
 )
 
 func TestRunCompletesGuardedStagesInOrder(t *testing.T) {
@@ -101,6 +103,110 @@ func TestRunStopsAtFailingStage(t *testing.T) {
 				t.Fatalf("run error = %v, want wrapped stage error", err)
 			}
 		})
+	}
+}
+
+func TestRunRetriesPostgresStartupMigrationErrors(t *testing.T) {
+	bootstrap, cfg, state := validLocalInputs()
+	attempts := 0
+	waits := 0
+	result, err := run(context.Background(), "runtime.env", successfulDependencies(bootstrap, cfg, state, func(context.Context, config.Config) (db.MigrationResult, error) {
+		attempts++
+		if attempts < 3 {
+			return db.MigrationResult{}, fmt.Errorf("reserve migration connection: %w", &pq.Error{Code: "57P03", Message: "the database system is starting up"})
+		}
+		return db.MigrationResult{Changed: true}, nil
+	}, func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}))
+	if err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+	if attempts != 3 || waits != 2 || !result.Migration.Changed {
+		t.Fatalf("migration retry result = attempts:%d waits:%d result:%+v", attempts, waits, result.Migration)
+	}
+}
+
+func TestRunDoesNotRetryNonStartupMigrationErrors(t *testing.T) {
+	bootstrap, cfg, state := validLocalInputs()
+	wantErr := errors.New("migration statement failed")
+	attempts := 0
+	waits := 0
+	_, err := run(context.Background(), "runtime.env", successfulDependencies(bootstrap, cfg, state, func(context.Context, config.Config) (db.MigrationResult, error) {
+		attempts++
+		return db.MigrationResult{}, wantErr
+	}, func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("run error = %v, want wrapped migration error", err)
+	}
+	if attempts != 1 || waits != 0 {
+		t.Fatalf("non-startup migration retried: attempts=%d waits=%d", attempts, waits)
+	}
+}
+
+func TestRunStopsMigrationRetryWhenContextIsCanceled(t *testing.T) {
+	bootstrap, cfg, state := validLocalInputs()
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	waits := 0
+	_, err := run(ctx, "runtime.env", successfulDependencies(bootstrap, cfg, state, func(context.Context, config.Config) (db.MigrationResult, error) {
+		attempts++
+		return db.MigrationResult{}, &pq.Error{Code: "57P03", Message: "the database system is starting up"}
+	}, func(context.Context, time.Duration) error {
+		waits++
+		cancel()
+		return ctx.Err()
+	}))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("run error = %v, want context cancellation", err)
+	}
+	if attempts != 1 || waits != 1 {
+		t.Fatalf("canceled migration retry continued: attempts=%d waits=%d", attempts, waits)
+	}
+}
+
+func TestRunBoundsPostgresStartupMigrationRetries(t *testing.T) {
+	bootstrap, cfg, state := validLocalInputs()
+	attempts := 0
+	waits := 0
+	_, err := run(context.Background(), "runtime.env", successfulDependencies(bootstrap, cfg, state, func(context.Context, config.Config) (db.MigrationResult, error) {
+		attempts++
+		return db.MigrationResult{}, &pq.Error{Code: "57P03", Message: "the database system is starting up"}
+	}, func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}))
+	if err == nil || !strings.Contains(err.Error(), "database system is starting up") {
+		t.Fatalf("run error = %v, want final PostgreSQL startup error", err)
+	}
+	if attempts != localMigrationMaxAttempts || waits != localMigrationMaxAttempts-1 {
+		t.Fatalf("migration retry bounds = attempts:%d waits:%d", attempts, waits)
+	}
+}
+
+func successfulDependencies(
+	bootstrap config.BootstrapConfig,
+	cfg config.Config,
+	state setup.InstallState,
+	migrate func(context.Context, config.Config) (db.MigrationResult, error),
+	wait func(context.Context, time.Duration) error,
+) dependencies {
+	return dependencies{
+		load: func(string) (config.BootstrapConfig, config.Config, setup.InstallState, error) {
+			return bootstrap, cfg, state, nil
+		},
+		migrate: migrate,
+		wait:    wait,
+		hash:    func(string) (string, error) { return "bcrypt$test", nil },
+		bind: func(context.Context, string, entstore.LocalBindingRequest) (setup.SetupBinding, error) {
+			return setup.SetupBinding{OperationID: OperationID, InstallationID: InstallationID, ConfigRevision: 1, RequestDigest: strings.Repeat("b", 64)}, nil
+		},
+		reconcile: func(string, setup.CommitProof, time.Time) error { return nil },
+		now:       func() time.Time { return time.Now().UTC() },
 	}
 }
 
