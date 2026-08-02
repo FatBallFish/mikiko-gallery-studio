@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -43,6 +45,27 @@ type StripeRefunds interface {
 }
 
 type stripeRefundsFactory func(secretKey string) StripeRefunds
+
+func ConfigureStripeAPIBackend(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return fmt.Errorf("Stripe API base URL must be a loopback HTTP origin")
+	}
+	hostname := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	ip := net.ParseIP(hostname)
+	if hostname != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return fmt.Errorf("Stripe API base URL must be a loopback HTTP origin")
+	}
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
+		URL:               stripe.String(strings.TrimRight(rawURL, "/")),
+		MaxNetworkRetries: stripe.Int64(0),
+	}))
+	return nil
+}
 
 func NewStripePaymentDisplayBuilder() PaymentDisplayBuilder {
 	return newStripePaymentDisplayBuilder(func(secretKey string) StripePaymentIntents {

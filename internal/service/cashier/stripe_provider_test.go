@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -109,6 +111,40 @@ func TestStripePaymentIntentBuilderCreatesExactIdempotentIntent(t *testing.T) {
 		if strings.Contains(string(encoded), secret) {
 			t.Fatalf("payment response leaked provider secret %q", secret)
 		}
+	}
+}
+
+func TestConfigureStripeAPIBackendUsesOnlyLoopbackServer(t *testing.T) {
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/payment_intents" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"pi_loopback","object":"payment_intent","amount":1025,"currency":"cny","client_secret":"pi_loopback_secret_client","status":"requires_payment_method"}`))
+	}))
+	defer server.Close()
+
+	if err := ConfigureStripeAPIBackend(server.URL); err != nil {
+		t.Fatalf("ConfigureStripeAPIBackend loopback: %v", err)
+	}
+	result, err := NewStripePaymentDisplayBuilder()(context.Background(), PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "stripe", Config: map[string]any{
+			"publishable_key": "pk_test_loopback",
+			"secret_key":      "sk_test_loopback",
+		}},
+		OrderNo: "PGO-LOOPBACK", AmountCNY: "10.25", Subject: "Loopback",
+	}, nil)
+	if err != nil {
+		t.Fatalf("build payment display through loopback: %v", err)
+	}
+	if result.ClientToken != "pi_loopback" {
+		t.Fatalf("unexpected loopback PaymentIntent: %#v", result)
+	}
+	if err := ConfigureStripeAPIBackend("https://api.stripe.com"); err == nil {
+		t.Fatal("expected non-loopback Stripe API base URL to be rejected")
 	}
 }
 

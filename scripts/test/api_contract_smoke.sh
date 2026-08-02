@@ -1151,6 +1151,9 @@ signed_request() {
 }
 
 start_fake_provider() {
+  if [[ -n "$FAKE_PROVIDER_PID" ]] && kill -0 "$FAKE_PROVIDER_PID" >/dev/null 2>&1; then
+    return
+  fi
   local port
   port="$(python3 - <<'PY'
 import socket
@@ -1166,34 +1169,125 @@ import base64
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNkaGAAAAHAAZcAzSrgAAAAAElFTkSuQmCC"
 )
 PORT = int(os.environ["FAKE_PROVIDER_PORT"])
+PAYMENT_INTENTS = {}
+REFUNDS = {}
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
 
+    def send_json(self, body, status=200):
+        payload = json.dumps(body, separators=(",", ":")).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("x-request-id", "fake-provider-smoke")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def read_body(self):
+        length = int(self.headers.get("Content-Length") or "0")
+        if length:
+            return self.rfile.read(length)
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            chunks = []
+            while True:
+                size_line = self.rfile.readline().strip().split(b";", 1)[0]
+                size = int(size_line, 16)
+                if size == 0:
+                    self.rfile.readline()
+                    break
+                chunks.append(self.rfile.read(size))
+                self.rfile.read(2)
+            return b"".join(chunks)
+        return b""
+
     def do_GET(self):
-        if self.path == "/images/smoke.png":
+        parsed = urlparse(self.path)
+        if parsed.path == "/images/smoke.png":
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(PNG)))
             self.end_headers()
             self.wfile.write(PNG)
             return
+        if parsed.path.startswith("/v1/payment_intents/"):
+            intent_id = parsed.path.rsplit("/", 1)[-1]
+            intent = PAYMENT_INTENTS.get(intent_id)
+            if intent is None:
+                self.send_json({"error": {"type": "invalid_request_error", "code": "resource_missing"}}, 404)
+                return
+            self.send_json({**intent, "status": "succeeded"})
+            return
+        if parsed.path.startswith("/v1/refunds/"):
+            refund_id = parsed.path.rsplit("/", 1)[-1]
+            refund = REFUNDS.get(refund_id)
+            if refund is None:
+                self.send_json({"error": {"type": "invalid_request_error", "code": "resource_missing"}}, 404)
+                return
+            self.send_json(refund)
+            return
         self.send_error(404)
 
     def do_POST(self):
-        if self.path != "/chat/completions":
+        parsed = urlparse(self.path)
+        raw_body = self.read_body()
+        if parsed.path in ("/v1/responses", "/responses"):
+            print("text-provider-call", flush=True)
+            self.send_json({
+                "id": "resp_smoke",
+                "object": "response",
+                "output": [{"content": [{"type": "output_text", "text": "Detailed optimized smoke prompt"}]}],
+                "usage": {"input_tokens": 9, "output_tokens": 5},
+            })
+            return
+        if parsed.path == "/v1/payment_intents":
+            form = parse_qs(raw_body.decode())
+            order_no = form.get("metadata[order_no]", [""])[0]
+            amount = int(form.get("amount", ["0"])[0])
+            intent_id = f"pi_smoke_{len(PAYMENT_INTENTS) + 1}"
+            intent = {
+                "id": intent_id,
+                "object": "payment_intent",
+                "amount": amount,
+                "currency": form.get("currency", ["cny"])[0],
+                "client_secret": f"{intent_id}_secret_client",
+                "status": "requires_payment_method",
+                "metadata": {"order_no": order_no},
+            }
+            PAYMENT_INTENTS[intent_id] = intent
+            print("stripe-payment-intent-create", flush=True)
+            self.send_json(intent)
+            return
+        if parsed.path == "/v1/refunds":
+            form = parse_qs(raw_body.decode())
+            refund_id = f"re_smoke_{len(REFUNDS) + 1}"
+            refund = {
+                "id": refund_id,
+                "object": "refund",
+                "amount": int(form.get("amount", ["0"])[0]),
+                "currency": "cny",
+                "payment_intent": form.get("payment_intent", [""])[0],
+                "status": "succeeded",
+                "metadata": {
+                    "order_no": form.get("metadata[order_no]", [""])[0],
+                    "refund_trade_no": form.get("metadata[refund_trade_no]", [""])[0],
+                },
+            }
+            REFUNDS[refund_id] = refund
+            print("stripe-refund-create", flush=True)
+            self.send_json(refund)
+            return
+        if parsed.path not in ("/chat/completions", "/v1/chat/completions"):
             self.send_error(404)
             return
-        length = int(self.headers.get("Content-Length") or "0")
-        if length:
-            self.rfile.read(length)
         print("provider-call", flush=True)
         body = {
             "choices": [
@@ -1206,13 +1300,7 @@ class Handler(BaseHTTPRequestHandler):
                 }
             ]
         }
-        payload = json.dumps(body).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("x-request-id", "fake-provider-smoke")
-        self.end_headers()
-        self.wfile.write(payload)
+        self.send_json(body)
 
 
 ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
@@ -1284,6 +1372,7 @@ CASHIER_MOCK_ENABLED=true
 CASHIER_ORDER_TIMEOUT_SECONDS=1800
 CASHIER_MAX_PENDING_ORDERS_PER_USER=3
 CASHIER_SITE_BASE_URL=$BASE_URL
+CASHIER_STRIPE_API_BASE_URL=${FAKE_PROVIDER_URL:-}
 WORKER_MAX_CONCURRENT_TASKS=4
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 PUBLIC_API_URL=$BASE_URL
@@ -1523,6 +1612,7 @@ cd "$ROOT_DIR"
 go build -o "$API_BINARY" ./cmd/api
 go build -o "$WORKER_BINARY" ./cmd/worker
 start_smoke_middleware
+start_fake_provider
 write_smoke_config true
 assert_api_port_free
 assert_ordinary_startup_does_not_migrate api "$API_BINARY"
@@ -2465,12 +2555,14 @@ pending_limit_second_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/ord
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}')"
+PENDING_LIMIT_SECOND_ID="$(assert_json_field "$pending_limit_second_body" "data.id")"
 assert_cashier_order_state "$pending_limit_second_body" "pending" "" "" "no" >/dev/null
 
 pending_limit_third_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}')"
+PENDING_LIMIT_THIRD_ID="$(assert_json_field "$pending_limit_third_body" "data.id")"
 assert_cashier_order_state "$pending_limit_third_body" "pending" "" "" "no" >/dev/null
 
 pending_limit_status="$(curl --silent --output "$TMP_DIR/pending-limit.json" --write-out "%{http_code}" \
@@ -2761,5 +2853,351 @@ assert_json_field "$dashboard_body" "data.operations.platform_loss_provider_cost
 cashier_overview_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/overview" -H "Authorization: Bearer $ADMIN_TOKEN")"
 [[ "$(assert_json_field "$cashier_overview_body" "data.mock_enabled")" == "True" || "$(assert_json_field "$cashier_overview_body" "data.mock_enabled")" == "true" ]]
 [[ "$(assert_json_field "$cashier_overview_body" "data.today_completed_count")" == "1" ]]
+
+fresh_tabs_body="$(request "$BASE_URL/api/ops/admin/v1/config-tabs" -H "Authorization: Bearer $SUPER_ADMIN_TOKEN")"
+billing_pricing_version="$(config_tab_version "$fresh_tabs_body" "billing_pricing")"
+billing_pricing_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/config-tabs/billing_pricing" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "{\"version\":${billing_pricing_version},\"items\":[{\"config_category\":\"billing_pricing\",\"config_key\":\"cny_per_point\",\"config_value\":{\"value\":\"0.40000\"},\"scope\":\"global\"}]}")"
+JSON="$billing_pricing_body" python3 - <<'PY'
+import json
+import os
+
+payload = json.loads(os.environ["JSON"]).get("data", {})
+items = payload.get("items") or []
+if payload.get("tab_key") != "billing_pricing" or not items:
+    raise SystemExit(f"unexpected billing pricing tab update: {payload!r}")
+if any(item.get("config_category") != "billing_pricing" for item in items):
+    raise SystemExit(f"billing pricing tab mixed unrelated categories: {payload!r}")
+conversion = [item for item in items if item.get("config_key") == "cny_per_point"]
+if len(conversion) != 1 or conversion[0].get("config_value", {}).get("value") != "0.40000":
+    raise SystemExit(f"billing pricing should expose the point conversion value: {payload!r}")
+PY
+
+text_account_secret="smoke-text-secret-${SMOKE_ID}"
+text_account_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/text-model-accounts" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(FAKE_PROVIDER_URL="$FAKE_PROVIDER_URL" TEXT_ACCOUNT_SECRET="$text_account_secret" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "name": "Smoke Responses Account",
+    "platform_type": "openai_compatible",
+    "api_style": "responses",
+    "base_url": os.environ["FAKE_PROVIDER_URL"],
+    "enabled": True,
+    "secrets": {"api_key": os.environ["TEXT_ACCOUNT_SECRET"]},
+}))
+PY
+)")"
+TEXT_ACCOUNT_ID="$(assert_json_field "$text_account_body" "data.id")"
+if [[ "$text_account_body" == *"$text_account_secret"* ]]; then
+  echo "Text model account response exposed its API key" >&2
+  exit 1
+fi
+
+text_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/text-model-accounts/${TEXT_ACCOUNT_ID}/models" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "model_code":"gpt-smoke-responses",
+    "display_name":"Smoke Responses Model",
+    "input_price_per_million_tokens":"0.000000",
+    "output_price_per_million_tokens":"0.000000",
+    "currency":"USD",
+    "enabled":true
+  }')"
+TEXT_MODEL_ID="$(assert_json_field "$text_model_body" "data.id")"
+[[ "$(assert_json_field "$text_model_body" "data.is_default")" == "True" || "$(assert_json_field "$text_model_body" "data.is_default")" == "true" ]]
+text_model_test_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/text-models/${TEXT_MODEL_ID}:test" \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN")"
+[[ "$(assert_json_field "$text_model_test_body" "data.status")" == "success" ]]
+
+prompt_estimate_body="$(request -X POST "$BASE_URL/api/agent/text/v1/prompt-optimizations/estimate" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"prompt":"smoke prompt optimization without manual default selection"}')"
+PROMPT_QUOTE="$(assert_json_field "$prompt_estimate_body" "data.quote")"
+prompt_optimized_body="$(request -X POST "$BASE_URL/api/agent/text/v1/prompt-optimizations" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(PROMPT_QUOTE="$PROMPT_QUOTE" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "prompt": "smoke prompt optimization without manual default selection",
+    "quote": os.environ["PROMPT_QUOTE"],
+}))
+PY
+)")"
+[[ "$(assert_json_field "$prompt_optimized_body" "data.optimized_prompt")" == "Detailed optimized smoke prompt" ]]
+
+jeepay_secret="smoke-jeepay-key-${SMOKE_ID}"
+jeepay_provider_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/provider-instances" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(JEEPAY_SECRET="$jeepay_secret" BASE_URL="$BASE_URL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "provider_type": "jeepay_alipay",
+    "name": "Smoke JeePay Persistence",
+    "enabled": True,
+    "supported_methods": ["alipay"],
+    "sort_order": 90,
+    "scheduler_weight": 100,
+    "config": {
+        "gateway_url": "https://pay.example.test",
+        "mch_no": "smoke-merchant-original",
+        "app_id": "smoke-app-original",
+        "way_code": "ALI_PC",
+        "notify_url": os.environ["BASE_URL"] + "/api/open/image/v1/payments/webhooks/jeepay_alipay",
+        "return_url": os.environ["BASE_URL"] + "/#/checkout",
+    },
+    "secrets": {"key": os.environ["JEEPAY_SECRET"]},
+}))
+PY
+)")"
+JEEPAY_PROVIDER_ID="$(assert_json_field "$jeepay_provider_body" "data.id")"
+[[ "$(assert_json_field "$jeepay_provider_body" "data.config.mch_no")" == "smoke-merchant-original" ]]
+[[ "$(assert_json_field "$jeepay_provider_body" "data.config.app_id")" == "smoke-app-original" ]]
+if [[ "$jeepay_provider_body" == *"$jeepay_secret"* ]]; then
+  echo "JeePay create response exposed its key" >&2
+  exit 1
+fi
+
+jeepay_update_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/provider-instances/${JEEPAY_PROVIDER_ID}" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(BASE_URL="$BASE_URL" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "provider_type": "jeepay_alipay",
+    "name": "Smoke JeePay Persistence Updated",
+    "enabled": False,
+    "supported_methods": ["alipay"],
+    "sort_order": 90,
+    "scheduler_weight": 100,
+    "config": {
+        "gateway_url": "https://pay.example.test",
+        "mch_no": "smoke-merchant-updated",
+        "app_id": "smoke-app-updated",
+        "way_code": "ALI_PC",
+        "notify_url": os.environ["BASE_URL"] + "/api/open/image/v1/payments/webhooks/jeepay_alipay",
+        "return_url": os.environ["BASE_URL"] + "/#/checkout",
+    },
+    "secrets": {"key": ""},
+}))
+PY
+)")"
+[[ "$(assert_json_field "$jeepay_update_body" "data.config.mch_no")" == "smoke-merchant-updated" ]]
+[[ "$(assert_json_field "$jeepay_update_body" "data.config.app_id")" == "smoke-app-updated" ]]
+[[ "$(assert_json_field "$jeepay_update_body" "data.config_status")" == "configured" ]]
+jeepay_detail_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/provider-instances/${JEEPAY_PROVIDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$jeepay_detail_body" "data.config.mch_no")" == "smoke-merchant-updated" ]]
+[[ "$(assert_json_field "$jeepay_detail_body" "data.config.app_id")" == "smoke-app-updated" ]]
+if [[ "$jeepay_update_body$jeepay_detail_body" == *"$jeepay_secret"* ]]; then
+  echo "JeePay update or detail response exposed its key" >&2
+  exit 1
+fi
+
+for pending_order_id in "$PENDING_LIMIT_FIRST_ID" "$PENDING_LIMIT_SECOND_ID" "$PENDING_LIMIT_THIRD_ID"; do
+  pending_cleanup_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${pending_order_id}/cancel" \
+    -H "Authorization: Bearer $ACCESS_TOKEN")"
+  [[ "$(assert_json_field "$pending_cleanup_body" "data.status")" == "canceled" ]]
+done
+
+stripe_secret_key="sk_test_smoke_${SMOKE_ID}"
+stripe_webhook_secret="whsec_smoke_${SMOKE_ID}"
+stripe_visible_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/visible-methods" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"items":[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]}')"
+[[ "$(assert_json_field "$stripe_visible_body" "data.items.0.method")" == "stripe" ]]
+
+stripe_provider_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/provider-instances" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(STRIPE_SECRET_KEY="$stripe_secret_key" STRIPE_WEBHOOK_SECRET="$stripe_webhook_secret" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "provider_type": "stripe",
+    "name": "Smoke Stripe",
+    "enabled": True,
+    "supported_methods": ["stripe"],
+    "sort_order": 0,
+    "scheduler_weight": 100,
+    "limits": {"min_amount_cny": "1.00000", "max_amount_cny": "500.00000"},
+    "config": {"publishable_key": "pk_test_smoke"},
+    "secrets": {
+        "secret_key": os.environ["STRIPE_SECRET_KEY"],
+        "webhook_secret": os.environ["STRIPE_WEBHOOK_SECRET"],
+    },
+}))
+PY
+)")"
+STRIPE_PROVIDER_ID="$(assert_json_field "$stripe_provider_body" "data.id")"
+[[ "$(assert_json_field "$stripe_provider_body" "data.config.publishable_key")" == "pk_test_smoke" ]]
+if [[ "$stripe_provider_body" == *"$stripe_secret_key"* || "$stripe_provider_body" == *"$stripe_webhook_secret"* ]]; then
+  echo "Stripe provider response exposed credentials" >&2
+  exit 1
+fi
+
+stripe_options_body="$(request "$BASE_URL/api/agent/cashier/v1/options" -H "Authorization: Bearer $ACCESS_TOKEN")"
+[[ "$(assert_json_field "$stripe_options_body" "data.visible_methods.0.method")" == "stripe" ]]
+stripe_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"purchase_type":"custom_amount","amount_cny":"10.25","visible_method":"stripe"}')"
+STRIPE_ORDER_ID="$(assert_json_field "$stripe_order_body" "data.id")"
+STRIPE_ORDER_NO="$(assert_json_field "$stripe_order_body" "data.order_no")"
+STRIPE_INTENT_ID="$(assert_json_field "$stripe_order_body" "data.client_token")"
+[[ "$(assert_json_field "$stripe_order_body" "data.provider_instance_id")" == "$STRIPE_PROVIDER_ID" ]]
+[[ "$(assert_json_field "$stripe_order_body" "data.payment_display.type")" == "stripe_payment_element" ]]
+[[ "$(assert_json_field "$stripe_order_body" "data.payment_display.publishable_key")" == "pk_test_smoke" ]]
+[[ "$(assert_json_field "$stripe_order_body" "data.payment_display.client_secret")" == "${STRIPE_INTENT_ID}_secret_client" ]]
+if [[ "$stripe_order_body" == *"$stripe_secret_key"* || "$stripe_order_body" == *"$stripe_webhook_secret"* ]]; then
+  echo "Stripe order response exposed provider credentials" >&2
+  exit 1
+fi
+
+stripe_balance_before_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
+stripe_event_body="$(STRIPE_ORDER_NO="$STRIPE_ORDER_NO" STRIPE_INTENT_ID="$STRIPE_INTENT_ID" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "id": "evt_smoke_stripe_success",
+    "object": "event",
+    "api_version": "2026-05-27.dahlia",
+    "type": "payment_intent.succeeded",
+    "data": {"object": {
+        "id": os.environ["STRIPE_INTENT_ID"],
+        "object": "payment_intent",
+        "amount": 1025,
+        "currency": "cny",
+        "metadata": {"order_no": os.environ["STRIPE_ORDER_NO"]},
+        "status": "succeeded",
+    }},
+}, separators=(",", ":")))
+PY
+)"
+stripe_event_timestamp="$(date +%s)"
+stripe_signature="$(STRIPE_WEBHOOK_SECRET="$stripe_webhook_secret" STRIPE_EVENT_TIMESTAMP="$stripe_event_timestamp" STRIPE_EVENT_BODY="$stripe_event_body" python3 - <<'PY'
+import hashlib
+import hmac
+import os
+
+signed = f"{os.environ['STRIPE_EVENT_TIMESTAMP']}.{os.environ['STRIPE_EVENT_BODY']}".encode()
+print(hmac.new(os.environ["STRIPE_WEBHOOK_SECRET"].encode(), signed, hashlib.sha256).hexdigest())
+PY
+)"
+for _ in 1 2; do
+  stripe_webhook_body="$(request -X POST "$BASE_URL/api/open/image/v1/payments/webhooks/stripe" \
+    -H "Content-Type: application/json" \
+    -H "Stripe-Signature: t=${stripe_event_timestamp},v1=${stripe_signature}" \
+    --data-binary "$stripe_event_body")"
+  [[ "$stripe_webhook_body" == "success" ]]
+done
+stripe_order_after_webhook_body="$(request "$BASE_URL/api/agent/cashier/v1/orders/${STRIPE_ORDER_ID}" -H "Authorization: Bearer $ACCESS_TOKEN")"
+[[ "$(assert_json_field "$stripe_order_after_webhook_body" "data.status")" == "completed" ]]
+[[ "$(assert_json_field "$stripe_order_after_webhook_body" "data.trade_no")" == "$STRIPE_INTENT_ID" ]]
+stripe_balance_after_webhook_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
+stripe_balance_after_duplicate_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
+[[ "$(assert_json_field "$stripe_balance_after_webhook_body" "data.recharge_points")" == "$(assert_json_field "$stripe_balance_after_duplicate_body" "data.recharge_points")" ]]
+STRIPE_BALANCE_BEFORE="$(assert_json_field "$stripe_balance_before_body" "data.recharge_points")" \
+STRIPE_BALANCE_AFTER="$(assert_json_field "$stripe_balance_after_webhook_body" "data.recharge_points")" python3 - <<'PY'
+import os
+from decimal import Decimal
+
+before = Decimal(os.environ["STRIPE_BALANCE_BEFORE"])
+after = Decimal(os.environ["STRIPE_BALANCE_AFTER"])
+if after - before != Decimal("20.50000"):
+    raise SystemExit(f"Stripe webhook should credit exactly 20.50000 points, got before={before} after={after}")
+PY
+
+stripe_sync_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${STRIPE_ORDER_ID}/sync" \
+  -H "Authorization: Bearer $ADMIN_TOKEN")"
+assert_cashier_sync_state "$stripe_sync_body" "$STRIPE_ORDER_ID" "$STRIPE_INTENT_ID" "10.25" "false" >/dev/null
+stripe_refund_trade_no="REFUND-STRIPE-SMOKE-${SMOKE_ID}"
+stripe_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${STRIPE_ORDER_ID}/refund" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "{\"refund_trade_no\":\"${stripe_refund_trade_no}\",\"refund_amount_cny\":\"5.25\",\"reason\":\"api smoke Stripe partial refund\"}")"
+assert_cashier_refund_state "$stripe_refund_body" "partially_refunded" "$stripe_refund_trade_no" "5.25000" "10.50000" >/dev/null
+[[ "$STRIPE_ORDER_ID" =~ ^[0-9]+$ ]]
+stripe_refund_audit_body="$(psql_query -c \
+  "SELECT json_build_object('action', action, 'target_type', target_type, 'target_id', target_id, 'metadata', metadata)::text FROM audit_logs WHERE action = 'cashier.order.refund' AND target_type = 'payment_order' AND target_id = '$STRIPE_ORDER_ID' ORDER BY id DESC LIMIT 1")"
+if [[ -z "$stripe_refund_audit_body" ]]; then
+  echo "Stripe refund audit entry was not persisted; recent audit targets follow:" >&2
+  psql_query -c "SELECT action || ' ' || target_type || ' ' || target_id FROM audit_logs ORDER BY id DESC LIMIT 10" >&2
+  exit 1
+fi
+JSON="$stripe_refund_audit_body" python3 - <<'PY'
+import json
+import os
+
+item = json.loads(os.environ["JSON"])
+metadata = item.get("metadata") or {}
+if item.get("action") != "cashier.order.refund" or item.get("target_type") != "payment_order":
+    raise SystemExit(f"unexpected Stripe refund audit entry: {item!r}")
+if metadata.get("provider_type") != "stripe" or metadata.get("channel_refund_status") != "succeeded" or not str(metadata.get("channel_refund_no", "")).startswith("re_smoke_"):
+    raise SystemExit(f"Stripe refund audit is missing channel result: {metadata!r}")
+PY
+
+redeem_balance_before_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
+redeem_valid_until="$(python3 - <<'PY'
+from datetime import datetime, timedelta, timezone
+
+print((datetime.now(timezone.utc) + timedelta(days=1)).isoformat().replace("+00:00", "Z"))
+PY
+)"
+redeem_code="SMOKE-REDEEM-${SMOKE_ID}"
+redeem_create_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/redeem-codes" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "{\"code\":\"${redeem_code}\",\"status\":\"available\",\"reward_type\":\"points\",\"reward_value\":\"6.00000\",\"valid_until\":\"${redeem_valid_until}\",\"max_redemptions\":1}")"
+REDEEM_CODE_ID="$(assert_json_field "$redeem_create_body" "data.id")"
+redeem_body="$(request -X POST "$BASE_URL/api/agent/billing/v1/redeem-codes/redeem" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: redeem-smoke-${SMOKE_ID}" \
+  --data "{\"code\":\"${redeem_code}\"}")"
+assert_json_field "$redeem_body" "data.available_points" >/dev/null
+redeem_balance_after_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
+REDEEM_BALANCE_BEFORE="$(assert_json_field "$redeem_balance_before_body" "data.available_points")" \
+REDEEM_BALANCE_AFTER="$(assert_json_field "$redeem_balance_after_body" "data.available_points")" python3 - <<'PY'
+import os
+from decimal import Decimal
+
+before = Decimal(os.environ["REDEEM_BALANCE_BEFORE"])
+after = Decimal(os.environ["REDEEM_BALANCE_AFTER"])
+if after - before != Decimal("6.00000"):
+    raise SystemExit(f"redeem code should credit exactly 6.00000 points, got before={before} after={after}")
+PY
+redeem_duplicate_status="$(curl --silent --output "$TMP_DIR/redeem-duplicate.json" --write-out "%{http_code}" \
+  -X POST "$BASE_URL/api/agent/billing/v1/redeem-codes/redeem" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: redeem-smoke-duplicate-${SMOKE_ID}" \
+  --data "{\"code\":\"${redeem_code}\"}")"
+if [[ "$redeem_duplicate_status" != "404" ]] || [[ "$(assert_json_field "$(cat "$TMP_DIR/redeem-duplicate.json")" "error.code")" != "NOT_FOUND" ]]; then
+  echo "Repeated redeem should return the non-enumerating NOT_FOUND response" >&2
+  exit 1
+fi
+redeem_redemptions_body="$(request "$BASE_URL/api/ops/admin/v1/redeem-codes/${REDEEM_CODE_ID}/redemptions" -H "Authorization: Bearer $ADMIN_TOKEN")"
+if [[ "$(assert_json_field "$redeem_redemptions_body" "data.pagination.total")" != "1" ]]; then
+  echo "Redeem code should have exactly one redemption record" >&2
+  exit 1
+fi
 
 echo "API contract smoke passed: $BASE_URL"

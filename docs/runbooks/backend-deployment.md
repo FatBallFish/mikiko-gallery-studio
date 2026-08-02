@@ -65,7 +65,9 @@ Installation generates secrets, deployment assets, `deployment.json`, `config/in
 
 If `docker compose pull` fails, mgsctl validates the source checkout, locally builds the selected Pic Gallery images with the requested registry/tag, and continues startup. Without a complete checkout it returns the pull error together with actionable fallback guidance.
 
-The same Setup-pending plan resumes automatically after a failed startup. A different interactive plan prompts before replacing generated configuration. For automation, pass `--overwrite` explicitly. Overwrite preserves `data/`, `logs/`, and Docker volumes and is rejected for completed or unrecognized installations.
+The same Setup-pending plan resumes automatically after a failed startup. A different interactive plan prompts before replacing generated configuration. For automation, pass `--overwrite` explicitly. Pending resume and overwrite preserve the installation ID, Setup token and version, application secrets, managed middleware credentials, `data/`, `logs/`, and Docker volumes. Overwrite rerenders runtime and Compose files from the newly entered values, then force-recreates affected services so changed API, Gateway, and Web ports take effect. It is rejected for completed or unrecognized installations.
+
+On Linux, `scripts/install.sh` installs `mgsctl` under the user-local binary directory and adds that directory to `.profile` plus the active shell startup file when needed. Start a new shell after installation, or source the updated startup file before invoking `mgsctl` directly.
 
 ## TUI, Help, and Endpoint Handoff
 
@@ -97,7 +99,7 @@ mgsctl setup token reset
 
 Reset increments `SETUP_TOKEN_VERSION`, invalidates the old token and sessions, writes the file atomically, and restarts only API and Gateway. Worker, Web services, and managed middleware remain running. Show and reset are permanently refused after setup completes.
 
-After restart, configure provider accounts, text and image models, routes, prices, plans, registration policy, recharge/payment providers, SMTP, and other business settings in the admin console.
+After restart, configure provider accounts, text and image models, routes, prices, plans, registration policy, recharge/payment providers, SMTP, and other business settings in the admin console. Payment provider field and callback guidance is documented in [Cashier Provider Configuration](./cashier-provider-configuration.md).
 
 ## Cluster Nodes
 
@@ -173,6 +175,8 @@ mgsctl upgrade --image-tag v1.2.3 --migrate=false
 
 Database migrations are forward-compatible and are not automatically reversed. If service rollout fails after a successful migration, the target runtime and manifest remain published; rerun the same `mgsctl upgrade` command to resume the idempotent rollout. If rollout fails without a migration, `mgsctl` restores the previous runtime and manifest and actively reapplies the previous deployment plan.
 
+After an upgrade, run `mgsctl doctor`, verify `/readyz`, and open the admin text-model configuration. Exactly one enabled model on an enabled account should be the default optimization model. A single eligible legacy model is repaired automatically; if several eligible models exist without a default, select one before accepting user prompt-optimization traffic.
+
 Back up external databases and object storage with provider-native tooling before upgrades. For Docker full, back up the named PostgreSQL and MinIO volumes before destructive maintenance.
 
 ## Uninstall Safety
@@ -200,7 +204,7 @@ For Docker, this additionally removes Compose named volumes. Before stopping ser
 
 ## Failure Recovery
 
-- If an initial image pull failed, rerun the exact install command to resume. From a complete source checkout, missing Pic Gallery application images are built locally. Use `--overwrite` only when intentionally replacing a different Setup-pending plan.
+- If an initial image pull failed, rerun the exact install command to resume. From a complete source checkout, missing Mikiko Gallery Studio application images are built locally. Use `--overwrite` only when intentionally replacing a different Setup-pending plan; it rerenders configuration and force-recreates affected services while preserving identity, secrets, middleware credentials, and persistent data.
 - A pending setup can reuse its current token or rotate it with `setup token reset`.
 - If a browser closes or the API restarts after setup has crossed a durable boundary, open `/setup` again and authenticate with the current Token. The authenticated session returns the persisted operation ID; re-enter the same editable configuration and secrets, rerun the probes, and apply to resume that operation.
 - A failed probe writes no final setup configuration.

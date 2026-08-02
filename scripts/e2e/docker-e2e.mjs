@@ -896,6 +896,12 @@ async function happyPathPromptOptimization() {
   }))
   const chatModel = await createModel(chatAccount, 'chat')
   const responsesModel = await createModel(responsesAccount, 'responses')
+  if (!chatModel.is_default || responsesModel.is_default) {
+    fail('The first eligible text model was not retained as the automatic default', {
+      chatModel,
+      responsesModel,
+    })
+  }
   state.ids.textModelAccountId = String(chatAccount.id)
   state.ids.textModelId = String(chatModel.id)
 
@@ -906,7 +912,6 @@ async function happyPathPromptOptimization() {
   }
 
   const optimizeWithModel = async (model, expectedPrompt) => {
-    await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/text-models/${model.id}:default`, 200, { headers: bearer(state.admin.token) })
     const prompt = `Turn this into a precise image prompt for ${model.model_code}`
     const estimate = await expectStatus('POST', `${BASE_URL}/api/agent/text/v1/prompt-optimizations/estimate`, 200, {
       headers: bearer(state.user.token),
@@ -926,8 +931,9 @@ async function happyPathPromptOptimization() {
     }
     return optimizedData
   }
-  await optimizeWithModel(responsesModel, 'Optimized responses prompt for Docker E2E')
   await optimizeWithModel(chatModel, 'Optimized chat prompt for Docker E2E')
+  await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/text-models/${responsesModel.id}:default`, 200, { headers: bearer(state.admin.token) })
+  await optimizeWithModel(responsesModel, 'Optimized responses prompt for Docker E2E')
   await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/text-models/${chatModel.id}:default`, 200, { headers: bearer(state.admin.token) })
 
   const chatRequest = state.fakeTextRequests.find(item => item.path === '/v1/chat/completions' && item.model === chatModel.model_code && item.max_completion_tokens)
