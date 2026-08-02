@@ -58,6 +58,21 @@ func (s *Service) GetTab(ctx context.Context, tabKey string) (domainadminconfig.
 	if err != nil {
 		return domainadminconfig.Tab{}, err
 	}
+	if tabKey == "billing_pricing" && !hasConfigOverride(overrides, "cny_per_point", "global") {
+		legacyOverrides, legacyErr := s.store.GetByCategory(ctx, "payments")
+		if legacyErr != nil {
+			return domainadminconfig.Tab{}, legacyErr
+		}
+		for _, legacy := range legacyOverrides {
+			if legacy.ConfigKey != "custom_amount_cny_per_point" || defaultString(legacy.Scope, "global") != "global" {
+				continue
+			}
+			legacy.ConfigCategory = "billing_pricing"
+			legacy.ConfigKey = "cny_per_point"
+			overrides = append(overrides, legacy)
+			break
+		}
+	}
 	tab := domainadminconfig.Tab{
 		TabKey:  definition.Key,
 		TabName: definition.Name,
@@ -95,6 +110,15 @@ func (s *Service) GetTab(ctx context.Context, tabKey string) (domainadminconfig.
 		return tab.Items[i].Scope < tab.Items[j].Scope
 	})
 	return tab, nil
+}
+
+func hasConfigOverride(items []domainadminconfig.Item, configKey, scope string) bool {
+	for _, item := range items {
+		if item.ConfigKey == configKey && defaultString(item.Scope, "global") == scope {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) UpdateTab(ctx context.Context, req domainadminconfig.UpdateTabRequest) (domainadminconfig.Tab, error) {
