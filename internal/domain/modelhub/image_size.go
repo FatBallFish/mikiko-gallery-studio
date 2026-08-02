@@ -112,6 +112,74 @@ func CalculateImageSize(baseResolution, aspectRatio string) (string, error) {
 	return fmt.Sprintf("%dx%d", bestWidth, bestHeight), nil
 }
 
+func NormalizeCustomImageSize(width, height int) (string, error) {
+	if width <= 0 || height <= 0 {
+		return "", fmt.Errorf("image width and height must be positive")
+	}
+	if IsLegalCustomImageSize(width, height) {
+		return fmt.Sprintf("%dx%d", width, height), nil
+	}
+
+	targetRatio := float64(width) / float64(height)
+	if targetRatio > imageMaxAspectRatio {
+		targetRatio = imageMaxAspectRatio
+	} else if targetRatio < 1/imageMaxAspectRatio {
+		targetRatio = 1 / imageMaxAspectRatio
+	}
+	targetPixels := math.Min(imageMaxPixels, math.Max(imageMinPixels, float64(width)*float64(height)))
+	targetWidth := math.Sqrt(targetPixels * targetRatio)
+	targetHeight := math.Sqrt(targetPixels / targetRatio)
+	if longest := math.Max(targetWidth, targetHeight); longest > imageMaxEdge {
+		scale := imageMaxEdge / longest
+		targetWidth *= scale
+		targetHeight *= scale
+		targetPixels = targetWidth * targetHeight
+	}
+
+	bestWidth, bestHeight := 0, 0
+	bestScore, bestDistance := math.Inf(1), math.Inf(1)
+	for candidateWidth := imageSizeMultiple; candidateWidth <= imageMaxEdge; candidateWidth += imageSizeMultiple {
+		idealHeight := float64(candidateWidth) / targetRatio
+		candidateHeights := []int{
+			int(math.Floor(idealHeight/float64(imageSizeMultiple))) * imageSizeMultiple,
+			int(math.Ceil(idealHeight/float64(imageSizeMultiple))) * imageSizeMultiple,
+		}
+		for _, candidateHeight := range candidateHeights {
+			if !IsLegalCustomImageSize(candidateWidth, candidateHeight) {
+				continue
+			}
+			actualRatio := float64(candidateWidth) / float64(candidateHeight)
+			pixels := float64(candidateWidth * candidateHeight)
+			ratioError := math.Abs(math.Log(actualRatio / targetRatio))
+			pixelError := math.Abs(math.Log(pixels / targetPixels))
+			score := ratioError*4 + pixelError
+			distance := math.Abs(float64(candidateWidth)-targetWidth)/targetWidth + math.Abs(float64(candidateHeight)-targetHeight)/targetHeight
+			if score < bestScore-1e-12 || (math.Abs(score-bestScore) <= 1e-12 && (distance < bestDistance-1e-12 || (math.Abs(distance-bestDistance) <= 1e-12 && candidateWidth*candidateHeight > bestWidth*bestHeight))) {
+				bestWidth, bestHeight = candidateWidth, candidateHeight
+				bestScore, bestDistance = score, distance
+			}
+		}
+	}
+	if bestWidth == 0 || bestHeight == 0 {
+		return "", fmt.Errorf("no legal custom image size")
+	}
+	return fmt.Sprintf("%dx%d", bestWidth, bestHeight), nil
+}
+
+func IsLegalCustomImageSize(width, height int) bool {
+	if width <= 0 || height <= 0 || width%imageSizeMultiple != 0 || height%imageSizeMultiple != 0 {
+		return false
+	}
+	if width > imageMaxEdge || height > imageMaxEdge {
+		return false
+	}
+	pixels := width * height
+	if pixels < imageMinPixels || pixels > imageMaxPixels {
+		return false
+	}
+	return maxFloat(float64(width)/float64(height), float64(height)/float64(width)) <= imageMaxAspectRatio
+}
+
 func ParseImageSize(size string) (int, int, bool) {
 	parts := strings.FieldsFunc(strings.TrimSpace(size), func(r rune) bool {
 		return r == 'x' || r == 'X' || r == '×'

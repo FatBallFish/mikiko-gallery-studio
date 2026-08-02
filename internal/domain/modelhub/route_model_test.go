@@ -405,6 +405,60 @@ func TestResolveRouteModelPixelModeUsesPixelCapabilityWithoutQualityFilter(t *te
 	}
 }
 
+func TestResolveRouteModelCustomPixelSizeRequiresDeclaredCapability(t *testing.T) {
+	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 4, ReferenceImageMaxCount: 2}})
+	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{
+		RouteModels: []RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
+		ProviderModels: []ProviderCandidate{
+			{AccountModelID: 11, ModelAccountID: 101, ModelCode: "preset-only", SupportedTaskTypes: []string{"text_to_image"}, SizeModes: []string{SizeModePixel}, SupportedPixelSizes: []string{"1024x1024"}},
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "custom-size", SupportedTaskTypes: []string{"text_to_image"}, SizeModes: []string{SizeModePixel}, SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true},
+		},
+		Candidates: []RouteCandidateConfig{
+			{RouteModelID: 1, AccountModelID: 11, Priority: 1, Enabled: true},
+			{RouteModelID: 1, AccountModelID: 12, Priority: 2, Enabled: true},
+		},
+	}})
+
+	request, err := NormalizeResolveRequest(ResolveRequest{
+		RouteModelCode: "plus", TaskType: "text_to_image", SizeMode: SizeModePixel,
+		RequestedSize: "1001x1001", RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("NormalizeResolveRequest() custom pixel mode: %v", err)
+	}
+	if request.RequestedSize != "1008x1008" {
+		t.Fatalf("expected authoritative normalization to 1008x1008, got %q", request.RequestedSize)
+	}
+	resolved, err := resolver.ResolveContext(context.Background(), request)
+	if err != nil {
+		t.Fatalf("ResolveContext() custom pixel mode: %v", err)
+	}
+	if len(resolved.Providers) != 1 || resolved.Providers[0].ModelCode != "custom-size" {
+		t.Fatalf("expected only custom-size candidate, got %#v", resolved.Providers)
+	}
+}
+
+func TestVisibleRouteModelAggregatesCustomSizeCapability(t *testing.T) {
+	resolver := NewResolver(config.Config{})
+	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{
+		RouteModels: []RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
+		ProviderModels: []ProviderCandidate{{
+			AccountModelID: 12, ModelCode: "custom-size", SizeModes: []string{SizeModePixel},
+			SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true,
+		}},
+		Candidates: []RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}})
+	items, err := resolver.ListVisibleRouteModels(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("ListVisibleRouteModels: %v", err)
+	}
+	if len(items) != 1 || !items[0].SupportsCustomSize {
+		t.Fatalf("expected visible custom-size capability, got %#v", items)
+	}
+}
+
 func TestResolveRouteModelRejectsUnsupportedExplicitBaseResolution(t *testing.T) {
 	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 4, ReferenceImageMaxCount: 2}})
 	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{

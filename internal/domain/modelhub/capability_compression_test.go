@@ -50,3 +50,30 @@ func TestNormalizeCapabilityPreservesCompressionSupport(t *testing.T) {
 		t.Fatal("normalization must preserve compression support")
 	}
 }
+
+func TestCandidateSupportsCustomPixelSizeOnlyWhenDeclared(t *testing.T) {
+	request := ResolveRequest{
+		TaskType: "text_to_image", SizeMode: SizeModePixel, RequestedSize: "1008x1008",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	}
+	candidate := ProviderCandidate{
+		HealthStatus: "enabled", SupportedTaskTypes: []string{"text_to_image"},
+		SizeModes: []string{SizeModePixel}, SupportedPixelSizes: []string{"1024x1024"},
+		Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+	}
+	if CandidateSupportsRequest(candidate, request, "1k") {
+		t.Fatal("preset-only candidate must reject an arbitrary pixel size")
+	}
+	candidate.SupportsCustomSize = true
+	if !CandidateSupportsRequest(candidate, request, "1k") {
+		t.Fatal("custom-size candidate should accept a legal normalized pixel size")
+	}
+
+	capability, err := NormalizeCapability(ImageModelCapability{SizeModes: []string{SizeModePixel}, SupportsCustomSize: true})
+	if err != nil {
+		t.Fatalf("NormalizeCapability custom size: %v", err)
+	}
+	if !capability.SupportsCustomSize {
+		t.Fatal("normalization must preserve custom-size support")
+	}
+}

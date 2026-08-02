@@ -35,6 +35,7 @@ type ImageModelCapability struct {
 	OutputFormat              []string
 	OutputCompression         int
 	SupportsOutputCompression bool
+	SupportsCustomSize        bool
 	Moderation                []string
 }
 
@@ -163,8 +164,12 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 		}
 		return req, nil
 	case SizeModePixel:
-		size := NormalizePixelSize(req.RequestedSize)
-		if size == "" {
+		width, height, ok := ParseImageSize(req.RequestedSize)
+		if !ok {
+			return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
+		}
+		size, err := NormalizeCustomImageSize(width, height)
+		if err != nil {
 			return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
 		}
 		req.SizeMode = SizeModePixel

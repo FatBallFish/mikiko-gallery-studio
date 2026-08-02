@@ -117,7 +117,7 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			taskTypes[price.TaskType] = struct{}{}
 			baseResolution[price.BaseResolution] = struct{}{}
 		}
-		sizeModes, aspectRatios, pixelSizes, quality, outputFormat, supportsOutputCompression, moderation, maxOutputCount, maxReferenceCount := r.visibleRouteModelLimits(routeModel, routing)
+		sizeModes, aspectRatios, pixelSizes, quality, outputFormat, supportsOutputCompression, supportsCustomSize, moderation, maxOutputCount, maxReferenceCount := r.visibleRouteModelLimits(routeModel, routing)
 		visible = append(visible, VisibleRouteModel{
 			ID:                        routeModel.ID,
 			Code:                      routeModel.Code,
@@ -131,6 +131,7 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			PixelSizes:                pixelSizes,
 			OutputFormat:              outputFormat,
 			SupportsOutputCompression: supportsOutputCompression,
+			SupportsCustomSize:        supportsCustomSize,
 			Moderation:                moderation,
 			MaxOutputImageCount:       maxOutputCount,
 			MaxReferenceImageCount:    maxReferenceCount,
@@ -141,7 +142,7 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 	return visible, nil
 }
 
-func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing ModelRoutingSnapshot) ([]string, []string, []string, []string, []string, bool, []string, int, int) {
+func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing ModelRoutingSnapshot) ([]string, []string, []string, []string, []string, bool, bool, []string, int, int) {
 	candidateByID := map[int64]ProviderCandidate{}
 	for _, candidate := range routing.ProviderModels {
 		candidateByID[candidate.AccountModelID] = candidate
@@ -155,6 +156,7 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	maxOutputCount := 0
 	maxReferenceCount := 0
 	supportsOutputCompression := false
+	supportsCustomSize := false
 	hasCandidate := false
 	for _, route := range routing.Candidates {
 		if !route.Enabled || route.RouteModelID != routeModel.ID {
@@ -199,6 +201,9 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 		if candidate.SupportsOutputCompression {
 			supportsOutputCompression = true
 		}
+		if candidate.SupportsCustomSize && containsString(candidate.SizeModes, SizeModePixel) {
+			supportsCustomSize = true
+		}
 		if candidate.MaxImageCount > maxOutputCount {
 			maxOutputCount = candidate.MaxImageCount
 		}
@@ -224,7 +229,7 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	if len(moderation) == 0 {
 		moderation["auto"] = struct{}{}
 	}
-	return sortedSet(sizeModes), sortedSet(ratios), sortedSet(pixelSizes), sortedSet(quality), sortedSet(outputFormat), supportsOutputCompression, sortedSet(moderation), maxOutputCount, maxReferenceCount
+	return sortedSet(sizeModes), sortedSet(ratios), sortedSet(pixelSizes), sortedSet(quality), sortedSet(outputFormat), supportsOutputCompression, supportsCustomSize, sortedSet(moderation), maxOutputCount, maxReferenceCount
 }
 
 func effectiveMultiplier(routeModel RouteModelConfig, groups []UserGroupConfig) (decimal.Decimal, bool) {
@@ -317,6 +322,7 @@ type ProviderCandidate struct {
 	OutputFormat              []string
 	OutputCompression         int
 	SupportsOutputCompression bool
+	SupportsCustomSize        bool
 	Moderation                []string
 	MaxImageCount             int
 	ConcurrencyLimit          int
@@ -435,6 +441,7 @@ type CapabilityItem struct {
 	PixelSizes                []string
 	OutputFormat              []string
 	SupportsOutputCompression bool
+	SupportsCustomSize        bool
 	Moderation                []string
 	MaxOutputImageCount       int
 	MaxReferenceImageCount    int
@@ -453,6 +460,7 @@ type VisibleRouteModel struct {
 	PixelSizes                []string                 `json:"pixel_sizes"`
 	OutputFormat              []string                 `json:"output_format"`
 	SupportsOutputCompression bool                     `json:"supports_output_compression"`
+	SupportsCustomSize        bool                     `json:"supports_custom_size"`
 	Moderation                []string                 `json:"moderation"`
 	MaxOutputImageCount       int                      `json:"max_output_image_count"`
 	MaxReferenceImageCount    int                      `json:"max_reference_image_count"`
@@ -744,7 +752,11 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 		if size == "" {
 			return false
 		}
-		if len(candidate.SupportedPixelSizes) > 0 && !containsString(candidate.SupportedPixelSizes, size) {
+		width, height, ok := ParseImageSize(size)
+		if !ok || !IsLegalCustomImageSize(width, height) {
+			return false
+		}
+		if !candidate.SupportsCustomSize && !containsString(candidate.SupportedPixelSizes, size) {
 			return false
 		}
 		return true
@@ -775,6 +787,7 @@ func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
 		OutputFormat:              candidate.OutputFormat,
 		OutputCompression:         candidate.OutputCompression,
 		SupportsOutputCompression: candidate.SupportsOutputCompression,
+		SupportsCustomSize:        candidate.SupportsCustomSize,
 		Moderation:                candidate.Moderation,
 	})
 	if err != nil {
@@ -790,6 +803,7 @@ func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
 	candidate.OutputFormat = capability.OutputFormat
 	candidate.OutputCompression = capability.OutputCompression
 	candidate.SupportsOutputCompression = capability.SupportsOutputCompression
+	candidate.SupportsCustomSize = capability.SupportsCustomSize
 	candidate.Moderation = capability.Moderation
 	if candidate.MaxReferenceImageCount > 0 {
 		candidate.SupportsImageInput = true

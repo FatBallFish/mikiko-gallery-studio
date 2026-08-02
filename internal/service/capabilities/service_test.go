@@ -14,13 +14,14 @@ func TestVisibleRouteModelJSONUsesSnakeCaseCapabilityFields(t *testing.T) {
 		Code:                      "plus",
 		OutputFormat:              []string{"webp"},
 		SupportsOutputCompression: true,
+		SupportsCustomSize:        true,
 		Prices:                    []modelhub.VisibleRouteModelPrice{{TaskType: "text_to_image", BaseResolution: "1k"}},
 	})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 	encoded := string(payload)
-	for _, expected := range []string{`"output_format"`, `"supports_output_compression"`, `"task_type"`, `"base_resolution"`} {
+	for _, expected := range []string{`"output_format"`, `"supports_output_compression"`, `"supports_custom_size"`, `"task_type"`, `"base_resolution"`} {
 		if !strings.Contains(encoded, expected) {
 			t.Fatalf("expected snake-case field %s in %s", expected, encoded)
 		}
