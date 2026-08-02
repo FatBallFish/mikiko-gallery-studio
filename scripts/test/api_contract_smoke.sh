@@ -85,6 +85,7 @@ print(secrets.token_hex(16))
 PY
 )"
 DATABASE_URL=""
+POSTGRES_TEST_URL=""
 REDIS_URL=""
 ADMIN_PASSWORD="$(python3 - <<'PY'
 import secrets
@@ -211,6 +212,7 @@ SQL
   postgres_port="$(docker port "$POSTGRES_CONTAINER" 5432/tcp | awk -F: 'NR == 1 { print $NF }')"
   redis_port="$(docker port "$REDIS_CONTAINER" 6379/tcp | awk -F: 'NR == 1 { print $NF }')"
   DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${postgres_port}/${POSTGRES_DB}?sslmode=disable"
+  POSTGRES_TEST_URL="postgres://${POSTGRES_SUPERUSER}:${POSTGRES_SUPERUSER_PASSWORD}@127.0.0.1:${postgres_port}/postgres?sslmode=disable"
   REDIS_URL="redis://127.0.0.1:${redis_port}/0"
 }
 
@@ -1612,6 +1614,8 @@ cd "$ROOT_DIR"
 go build -o "$API_BINARY" ./cmd/api
 go build -o "$WORKER_BINARY" ./cmd/worker
 start_smoke_middleware
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestTextModelStore.*Postgres' -count=1
 start_fake_provider
 write_smoke_config true
 assert_api_port_free

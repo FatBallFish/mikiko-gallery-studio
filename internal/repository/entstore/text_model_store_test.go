@@ -235,6 +235,44 @@ func TestTextModelStoreConcurrentDefaultSelectionKeepsOneDefault(t *testing.T) {
 	}
 }
 
+func TestTextModelStoreRejectsModelsForSoftDeletedAccount(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:text-model-deleted-account?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewTextModelStore(client)
+	source, err := store.CreateAccount(ctx, domaintextmodel.AccountRecord{Name: "Source", PlatformType: "openai_compatible", APIStyle: "responses", BaseURL: "https://text.example.com", Enabled: true, Version: 1})
+	if err != nil {
+		t.Fatalf("CreateAccount source: %v", err)
+	}
+	target, err := store.CreateAccount(ctx, domaintextmodel.AccountRecord{Name: "Deleted target", PlatformType: "openai_compatible", APIStyle: "responses", BaseURL: "https://text.example.com", Enabled: true, Version: 1})
+	if err != nil {
+		t.Fatalf("CreateAccount target: %v", err)
+	}
+	model, err := store.CreateModel(ctx, domaintextmodel.Model{AccountID: source.ID, ModelCode: "model-a", DisplayName: "Model A", InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1})
+	if err != nil {
+		t.Fatalf("CreateModel source: %v", err)
+	}
+	if err := store.DeleteAccount(ctx, target.ID); err != nil {
+		t.Fatalf("DeleteAccount target: %v", err)
+	}
+
+	if _, err := store.CreateModel(ctx, domaintextmodel.Model{AccountID: target.ID, ModelCode: "model-b", DisplayName: "Model B", InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1}); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("create for soft-deleted account: want conflict, got %v", err)
+	}
+	model.AccountID = target.ID
+	model.Version++
+	if _, err := store.UpdateModel(ctx, model); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("move to soft-deleted account: want conflict, got %v", err)
+	}
+}
+
 func TestTextModelStoreModelWritesSharePostgresDefaultLock(t *testing.T) {
 	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
 	if adminURL == "" {
@@ -327,4 +365,144 @@ func TestTextModelStoreModelWritesSharePostgresDefaultLock(t *testing.T) {
 	assertBlockedByDefaultLock("delete model", func() error {
 		return storeB.DeleteModel(context.Background(), created.ID)
 	})
+}
+
+func TestTextModelStoreSerializesAccountDeleteWithPostgresModelWrites(t *testing.T) {
+	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
+	if adminURL == "" {
+		t.Skip("set PIC_GALLERY_TEST_POSTGRES_URL to run PostgreSQL text-model delete integration")
+	}
+	database, err := sql.Open("postgres", adminURL)
+	if err != nil {
+		t.Fatalf("open integration database: %v", err)
+	}
+	defer database.Close()
+	schemaName := fmt.Sprintf("text_model_delete_%d", time.Now().UnixNano())
+	if _, err := database.ExecContext(t.Context(), `CREATE SCHEMA `+schemaName); err != nil {
+		t.Fatalf("create integration schema: %v", err)
+	}
+	t.Cleanup(func() { _, _ = database.Exec(`DROP SCHEMA IF EXISTS ` + schemaName + ` CASCADE`) })
+	databaseURL := postgresURLWithSearchPath(t, adminURL, schemaName)
+	clientA, err := repoent.Open(dialect.Postgres, databaseURL)
+	if err != nil {
+		t.Fatalf("open first ent integration client: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := repoent.Open(dialect.Postgres, databaseURL)
+	if err != nil {
+		t.Fatalf("open second ent integration client: %v", err)
+	}
+	defer clientB.Close()
+	if err := clientA.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create integration schema tables: %v", err)
+	}
+	storeA := entstore.NewTextModelStore(clientA)
+	storeB := entstore.NewTextModelStore(clientB)
+
+	newAccount := func(name string) domaintextmodel.AccountRecord {
+		t.Helper()
+		account, err := storeA.CreateAccount(t.Context(), domaintextmodel.AccountRecord{Name: name, PlatformType: "openai_compatible", APIStyle: "responses", BaseURL: "https://text.example.com", Enabled: true, Version: 1})
+		if err != nil {
+			t.Fatalf("CreateAccount %s: %v", name, err)
+		}
+		return account
+	}
+	beginAccountLock := func(accountID int64) *sql.Tx {
+		t.Helper()
+		tx, err := database.BeginTx(t.Context(), nil)
+		if err != nil {
+			t.Fatalf("begin account lock: %v", err)
+		}
+		if _, err := tx.ExecContext(t.Context(), `SET LOCAL search_path TO `+schemaName); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("set search path: %v", err)
+		}
+		if _, err := tx.ExecContext(t.Context(), `SELECT id FROM text_model_accounts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, accountID); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("lock account %d: %v", accountID, err)
+		}
+		return tx
+	}
+	assertBlocked := func(name string, done <-chan error) {
+		t.Helper()
+		select {
+		case operationErr := <-done:
+			t.Fatalf("%s bypassed account lock: %v", name, operationErr)
+		case <-time.After(150 * time.Millisecond):
+		}
+	}
+	await := func(name string, done <-chan error) error {
+		t.Helper()
+		select {
+		case operationErr := <-done:
+			return operationErr
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s did not finish after account lock release", name)
+			return nil
+		}
+	}
+
+	createTarget := newAccount("Create target")
+	createLock := beginAccountLock(createTarget.ID)
+	createDone := make(chan error, 1)
+	go func() {
+		_, createErr := storeB.CreateModel(context.Background(), domaintextmodel.Model{AccountID: createTarget.ID, ModelCode: "model-create", DisplayName: "Model Create", InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1})
+		createDone <- createErr
+	}()
+	assertBlocked("create model", createDone)
+	if _, err := createLock.ExecContext(t.Context(), `UPDATE text_model_accounts SET deleted_at = NOW() WHERE id = $1`, createTarget.ID); err != nil {
+		_ = createLock.Rollback()
+		t.Fatalf("soft-delete create target: %v", err)
+	}
+	if err := createLock.Commit(); err != nil {
+		t.Fatalf("commit create target delete: %v", err)
+	}
+	if err := await("create model", createDone); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("create after concurrent account delete: want conflict, got %v", err)
+	}
+
+	source := newAccount("Move source")
+	moveTarget := newAccount("Move target")
+	model, err := storeA.CreateModel(t.Context(), domaintextmodel.Model{AccountID: source.ID, ModelCode: "model-move", DisplayName: "Model Move", InputPricePerMTok: "0.000000", OutputPricePerMTok: "0.000000", Currency: "USD", Enabled: true, Version: 1})
+	if err != nil {
+		t.Fatalf("CreateModel move source: %v", err)
+	}
+	moveLock := beginAccountLock(moveTarget.ID)
+	moveDone := make(chan error, 1)
+	go func() {
+		model.AccountID = moveTarget.ID
+		model.Version++
+		_, updateErr := storeB.UpdateModel(context.Background(), model)
+		moveDone <- updateErr
+	}()
+	assertBlocked("move model", moveDone)
+	if _, err := moveLock.ExecContext(t.Context(), `UPDATE text_model_accounts SET deleted_at = NOW() WHERE id = $1`, moveTarget.ID); err != nil {
+		_ = moveLock.Rollback()
+		t.Fatalf("soft-delete move target: %v", err)
+	}
+	if err := moveLock.Commit(); err != nil {
+		t.Fatalf("commit move target delete: %v", err)
+	}
+	if err := await("move model", moveDone); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("move after concurrent account delete: want conflict, got %v", err)
+	}
+
+	deleteTarget := newAccount("Delete target")
+	deleteLock := beginAccountLock(deleteTarget.ID)
+	deleteDone := make(chan error, 1)
+	go func() { deleteDone <- storeB.DeleteAccount(context.Background(), deleteTarget.ID) }()
+	assertBlocked("delete account", deleteDone)
+	if _, err := deleteLock.ExecContext(t.Context(), `INSERT INTO text_models (account_id, model_code, display_name, input_price_per_million_tokens, output_price_per_million_tokens, currency, enabled, is_default, version, created_at, updated_at) VALUES ($1, 'model-delete-race', 'Model Delete Race', 0, 0, 'USD', TRUE, FALSE, 1, NOW(), NOW())`, deleteTarget.ID); err != nil {
+		_ = deleteLock.Rollback()
+		t.Fatalf("insert concurrent model: %v", err)
+	}
+	if err := deleteLock.Commit(); err != nil {
+		t.Fatalf("commit concurrent model: %v", err)
+	}
+	if err := await("delete account", deleteDone); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("delete after concurrent model create: want conflict, got %v", err)
+	}
+	if _, err := storeA.GetAccount(t.Context(), deleteTarget.ID); err != nil {
+		t.Fatalf("account with concurrent model must remain active: %v", err)
+	}
 }

@@ -91,14 +91,16 @@ func (s *TextModelStore) UpdateAccount(ctx context.Context, record domaintextmod
 }
 
 func (s *TextModelStore) DeleteAccount(ctx context.Context, accountID int64) error {
-	models, err := s.client.TextModel.Query().Where(textmodel.AccountIDEQ(accountID), textmodel.DeletedAtIsNil()).Count(ctx)
-	if err != nil {
-		return err
-	}
-	if models > 0 {
-		return repoerr.ErrConflict
-	}
-	affected, err := s.client.TextModelAccount.Update().Where(textmodelaccount.IDEQ(int(accountID)), textmodelaccount.DeletedAtIsNil()).SetDeletedAt(time.Now().UTC()).Save(ctx)
+	affected, err := withTextModelDefaultWrite(ctx, s, func(tx *repoent.Tx) (int, error) {
+		models, err := tx.TextModel.Query().Where(textmodel.AccountIDEQ(accountID), textmodel.DeletedAtIsNil()).Count(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if models > 0 {
+			return 0, repoerr.ErrConflict
+		}
+		return tx.TextModelAccount.Update().Where(textmodelaccount.IDEQ(int(accountID)), textmodelaccount.DeletedAtIsNil()).SetDeletedAt(time.Now().UTC()).Save(ctx)
+	})
 	if err != nil {
 		return err
 	}
@@ -137,6 +139,9 @@ func (s *TextModelStore) GetModel(ctx context.Context, modelID int64) (domaintex
 
 func (s *TextModelStore) CreateModel(ctx context.Context, model domaintextmodel.Model) (domaintextmodel.Model, error) {
 	row, err := withTextModelDefaultWrite(ctx, s, func(tx *repoent.Tx) (*repoent.TextModel, error) {
+		if err := requireActiveTextModelAccount(ctx, tx, model.AccountID); err != nil {
+			return nil, err
+		}
 		return tx.TextModel.Create().
 			SetAccountID(model.AccountID).
 			SetModelCode(model.ModelCode).
@@ -160,6 +165,9 @@ func (s *TextModelStore) CreateModel(ctx context.Context, model domaintextmodel.
 
 func (s *TextModelStore) UpdateModel(ctx context.Context, model domaintextmodel.Model) (domaintextmodel.Model, error) {
 	row, err := withTextModelDefaultWrite(ctx, s, func(tx *repoent.Tx) (*repoent.TextModel, error) {
+		if err := requireActiveTextModelAccount(ctx, tx, model.AccountID); err != nil {
+			return nil, err
+		}
 		return tx.TextModel.UpdateOneID(int(model.ID)).
 			SetAccountID(model.AccountID).
 			SetModelCode(model.ModelCode).
@@ -341,6 +349,20 @@ func lockTextModelAccounts(ctx context.Context, tx *repoent.Tx) ([]*repoent.Text
 		}
 	})
 	return tx.TextModelAccount.Query().Where(textmodelaccount.DeletedAtIsNil(), lockRows).Order(repoent.Asc(textmodelaccount.FieldID)).All(ctx)
+}
+
+func requireActiveTextModelAccount(ctx context.Context, tx *repoent.Tx, accountID int64) error {
+	exists, err := tx.TextModelAccount.Query().Where(
+		textmodelaccount.IDEQ(int(accountID)),
+		textmodelaccount.DeletedAtIsNil(),
+	).Exist(ctx)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return repoerr.ErrConflict
+	}
+	return nil
 }
 
 func withTextModelDefaultWrite[T any](ctx context.Context, store *TextModelStore, write func(*repoent.Tx) (T, error)) (T, error) {
