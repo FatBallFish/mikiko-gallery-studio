@@ -355,8 +355,11 @@ func (s *Service) LoginWithPassword(email, password string) (domainauth.User, do
 	return *user, s.issueSessionLocked(user), nil
 }
 
-func (s *Service) ChangePassword(userID int64, oldPassword, newPassword string) (domainauth.User, error) {
-	oldPassword = strings.TrimSpace(oldPassword)
+func (s *Service) ChangePassword(userID int64, code, newPassword string) (domainauth.User, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return domainauth.User{}, errs.BadRequest("verification code is required")
+	}
 	if err := validateNewPassword(newPassword); err != nil {
 		return domainauth.User{}, err
 	}
@@ -366,8 +369,14 @@ func (s *Service) ChangePassword(userID int64, oldPassword, newPassword string) 
 	if !ok {
 		return domainauth.User{}, errs.New(404, errs.CodeNotFound, "user not found")
 	}
-	if user.PasswordHash == "" || !verifyPassword(user.PasswordHash, oldPassword) {
-		return domainauth.User{}, errs.Unauthorized("old password is incorrect")
+	if user.Status == "disabled" {
+		return domainauth.User{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
+	}
+	if user.Status == "closed" {
+		return domainauth.User{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
+	}
+	if err := s.consumeEmailCodeLocked(user.Email, code, "password_change"); err != nil {
+		return domainauth.User{}, err
 	}
 	return s.updatePasswordLocked(&user, newPassword)
 }

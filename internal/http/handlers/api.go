@@ -653,14 +653,14 @@ func (a *API) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		OldPassword string `json:"old_password"`
 		NewPassword string `json:"new_password"`
+		Code        string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return
 	}
-	if _, err := a.auth.ChangePassword(user.ID, req.OldPassword, req.NewPassword); err != nil {
+	if _, err := a.auth.ChangePassword(user.ID, req.Code, req.NewPassword); err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
@@ -7294,6 +7294,7 @@ func profilePayload(user *domainauth.User) map[string]any {
 		"user_group_code":   user.GroupCode,
 		"theme":             defaultString(user.Theme, "system"),
 		"default_locale":    defaultString(user.DefaultLocale, "zh-CN"),
+		"has_password":      user.PasswordHash != "",
 	}
 	if mode, accent, ok := profileThemePreference(user.Theme); ok {
 		payload["preferences"] = map[string]any{

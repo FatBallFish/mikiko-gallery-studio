@@ -9,7 +9,7 @@ components:
           format: email
         scene:
           type: string
-          enum: [login, register, forgot_password]
+          enum: [login, register, password_reset, password_change]
     EmailCodeLoginRequest:
       type: object
       required: [email, code]
@@ -76,9 +76,9 @@ components:
           type: string
     PasswordChangeRequest:
       type: object
-      required: [old_password, new_password]
+      required: [code, new_password]
       properties:
-        old_password:
+        code:
           type: string
         new_password:
           type: string
@@ -113,6 +113,8 @@ components:
           type: integer
         email:
           type: string
+        has_password:
+          type: boolean
         nickname:
           type: string
         bio:

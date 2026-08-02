@@ -17,6 +17,7 @@ import type {
   ImageTask,
   LedgerEntry,
   LoginResult,
+  NormalLoginResponse,
   PageResult,
   PaymentOrder,
   PromptOptimizationEstimate,
@@ -42,6 +43,7 @@ export function toUserProfile(raw: any): UserProfile {
     ...raw,
     id: String(raw.id ?? raw.user_id ?? ''),
     email: raw.email ?? '',
+    has_password: Boolean(raw.has_password),
     display_name: name,
     avatar_initials: initials(name),
     tier: raw.tier ?? 'FREE',
@@ -352,17 +354,19 @@ export function normalizeTaskList(raw: any): ImageTask[] {
 
 export const userApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
-  sendEmailCode: (email: string, scene: 'login' | 'register' | 'password_reset' = 'login') =>
+  sendEmailCode: (email: string, scene: 'login' | 'register' | 'password_reset' | 'password_change' = 'login') =>
     sharedApiClient.request<{ email: string; scene: string; status: string }>(API_PATHS.agent.sendEmailCode, { method: 'POST', body: { email, scene }, auth: false }),
   loginWithEmailCode: (email: string, code: string) =>
     sharedApiClient.request<LoginResult>(API_PATHS.agent.loginEmailCode, { method: 'POST', body: { email, code }, auth: false }),
   loginWithPassword: (email: string, password: string) =>
-    sharedApiClient.request<LoginResult>(API_PATHS.agent.loginPassword, { method: 'POST', body: { email, password }, auth: false }),
+    sharedApiClient.request<NormalLoginResponse>(API_PATHS.agent.loginPassword, { method: 'POST', body: { email, password }, auth: false }),
+  completePasswordSetup: (password_setup_token: string, new_password: string) =>
+    sharedApiClient.request<NormalLoginResponse>(API_PATHS.agent.passwordSetup, { method: 'POST', body: { password_setup_token, new_password }, auth: false }),
   refreshSession: () =>
-    sharedApiClient.request<LoginResult>(API_PATHS.agent.refreshSession, { method: 'POST', auth: false, retryUnauthorized: false }),
+    sharedApiClient.request<NormalLoginResponse>(API_PATHS.agent.refreshSession, { method: 'POST', auth: false, retryUnauthorized: false }),
   logout: () => sharedApiClient.request<void>(API_PATHS.agent.logout, { method: 'POST' }),
-  changePassword: (old_password: string, new_password: string) =>
-    sharedApiClient.request<{ ok: boolean }>(API_PATHS.agent.passwordChange, { method: 'POST', body: { old_password, new_password } }),
+  changePassword: (code: string, new_password: string) =>
+    sharedApiClient.request<{ status: string }>(API_PATHS.agent.passwordChange, { method: 'POST', body: { code, new_password } }),
   requestPasswordReset: (email: string) =>
     sharedApiClient.request<{ status: string }>(API_PATHS.agent.passwordResetRequest, { method: 'POST', body: { email }, auth: false }),
   confirmPasswordReset: (email: string, code: string, new_password: string) =>

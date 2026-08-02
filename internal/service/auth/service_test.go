@@ -113,6 +113,69 @@ func TestPasswordSetupGrantValidatesPurposeExpiryIssuerAndVersion(t *testing.T) 
 	}
 }
 
+func TestPasswordChangeRequiresBoundOneTimeCodeAndRevokesEverySession(t *testing.T) {
+	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"})
+	if err := svc.SendEmailCode("change@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, firstSession := completePasswordlessCodeLogin(t, svc, "change@example.com", "123456")
+	_, secondSession, err := svc.LoginWithPassword(user.Email, "test-password-123")
+	if err != nil {
+		t.Fatalf("LoginWithPassword: %v", err)
+	}
+	originalVersion := user.TokenVersion
+	setEmailCodeForTest(svc, user.Email, "password_change", "246810")
+
+	updated, err := svc.ChangePassword(user.ID, "246810", "changed-password-123")
+	if err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+	if updated.TokenVersion != originalVersion+1 {
+		t.Fatalf("password change must increment token version once, before=%d after=%d", originalVersion, updated.TokenVersion)
+	}
+	for label, refreshToken := range map[string]string{"first": firstSession.RefreshToken, "second": secondSession.RefreshToken} {
+		if _, _, err := svc.Refresh(refreshToken); err == nil {
+			t.Fatalf("%s refresh session must be revoked", label)
+		}
+	}
+	if _, err := svc.ChangePassword(user.ID, "246810", "another-password-123"); err == nil {
+		t.Fatal("password change code must be one-time")
+	}
+	if _, _, err := svc.LoginWithPassword(user.Email, "test-password-123"); err == nil {
+		t.Fatal("old password must stop working after password change")
+	}
+	if _, _, err := svc.LoginWithPassword(user.Email, "changed-password-123"); err != nil {
+		t.Fatalf("new password login: %v", err)
+	}
+}
+
+func TestPasswordChangeRejectsWrongSceneAndAnotherUsersCode(t *testing.T) {
+	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"})
+	if err := svc.SendEmailCode("owner@example.com", "login"); err != nil {
+		t.Fatalf("owner SendEmailCode: %v", err)
+	}
+	owner, _ := completePasswordlessCodeLogin(t, svc, "owner@example.com", "123456")
+	if err := svc.SendEmailCode("other@example.com", "login"); err != nil {
+		t.Fatalf("other SendEmailCode: %v", err)
+	}
+	other, _ := completePasswordlessCodeLogin(t, svc, "other@example.com", "123456")
+
+	setEmailCodeForTest(svc, owner.Email, "login", "111111")
+	if _, err := svc.ChangePassword(owner.ID, "111111", "changed-password-123"); err == nil {
+		t.Fatal("login-scene code must not authorize password change")
+	}
+	setEmailCodeForTest(svc, other.Email, "password_change", "222222")
+	if _, err := svc.ChangePassword(owner.ID, "222222", "changed-password-123"); err == nil {
+		t.Fatal("another user's code must not authorize password change")
+	}
+}
+
+func setEmailCodeForTest(svc *Service, email, scene, code string) {
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	svc.codesByEmail[email] = emailCode{Code: code, Scene: scene, ExpiresAt: time.Now().Add(10 * time.Minute), LastSentAt: time.Now()}
+}
+
 type capturingEmailSender struct {
 	email string
 	scene string

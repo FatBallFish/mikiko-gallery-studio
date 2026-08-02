@@ -22,6 +22,7 @@ export const API_PATHS = {
     sendEmailCode: '/api/agent/auth/v1/email/send-code',
     loginEmailCode: '/api/agent/auth/v1/login/email-code',
     loginPassword: '/api/agent/auth/v1/login/password',
+    passwordSetup: '/api/agent/auth/v1/password/setup',
     refreshSession: '/api/agent/auth/v1/session/refresh',
     logout: '/api/agent/auth/v1/logout',
     passwordChange: '/api/agent/auth/v1/password/change',
@@ -219,6 +220,7 @@ export type GenerationPreferences = GenerationPreferencesBase & (
 export type UserProfile = {
   id: ID
   email: string
+  has_password: boolean
   nickname?: string
   bio?: string
   avatar_object_key?: string
@@ -233,11 +235,11 @@ export type UserProfile = {
   preferences: GenerationPreferences
 }
 
-export type SendEmailCodeRequest = { email: string; scene?: 'login' | 'register' | 'password_reset' | string }
+export type SendEmailCodeRequest = { email: string; scene?: 'login' | 'register' | 'password_reset' | 'password_change' | string }
 export type SendEmailCodeResponse = { email: string; scene: string; status: string; cooldown_seconds?: number }
 export type PasswordLoginRequest = { email: string; password: string }
 export type EmailCodeLoginRequest = { email: string; code: string }
-export type ChangePasswordRequest = { old_password: string; new_password: string }
+export type ChangePasswordRequest = { code: string; new_password: string }
 export type PasswordResetRequest = { email: string }
 export type PasswordResetConfirmRequest = { email: string; code: string; new_password: string }
 export type CloseAccountResponse = { id: ID; status: string; closed_at?: string | null }
@@ -304,7 +306,9 @@ export type SignupGrantResult = {
   expires_at?: string | null
   balance: Balance
 }
-export type LoginResponse = { access_token: string; expires_in_seconds: number; expires_in?: number; user_id: ID; profile?: UserProfile; signup_grant?: SignupGrantResult }
+export type NormalLoginResponse = { password_setup_required?: false; access_token: string; expires_in_seconds: number; expires_in?: number; user_id: ID; profile?: UserProfile; signup_grant?: SignupGrantResult }
+export type PasswordSetupRequiredLoginResponse = { password_setup_required: true; password_setup_token: string; password_setup_expires_in_seconds: number; user_id: ID; signup_grant?: SignupGrantResult; access_token?: never }
+export type LoginResponse = NormalLoginResponse | PasswordSetupRequiredLoginResponse
 export type SubscriptionPlan = {
   id: number
   plan_code: string

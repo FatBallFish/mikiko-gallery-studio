@@ -118,6 +118,59 @@ func TestAuthPasswordSetupRequiredBeforeFirstSession(t *testing.T) {
 	}
 }
 
+func TestAuthPasswordChangeRequiresCodeAndExpiresCurrentSession(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	cfg.Auth.FixedEmailCode = "123456"
+	cfg.Auth.RefreshCookieName = "pg_refresh"
+	authSvc := authservice.NewService(cfg.Auth, map[string]string{"basic": "1.00000"})
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil))
+	email := "profile-password@example.com"
+	login := emailCodeLogin(t, handler, email)
+
+	profileReq := httptest.NewRequest(http.MethodGet, "/api/agent/user/v1/profile", nil)
+	profileReq.Header.Set("Authorization", "Bearer "+login.AccessToken)
+	profileRec := httptest.NewRecorder()
+	handler.ServeHTTP(profileRec, profileReq)
+	if profileRec.Code != http.StatusOK {
+		t.Fatalf("profile expected 200, got %d body=%s", profileRec.Code, profileRec.Body.String())
+	}
+	var profileResponse struct {
+		Data struct {
+			HasPassword bool `json:"has_password"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(profileRec.Body).Decode(&profileResponse); err != nil {
+		t.Fatalf("decode profile: %v", err)
+	}
+	if !profileResponse.Data.HasPassword {
+		t.Fatal("profile must expose has_password after mandatory setup")
+	}
+
+	sendRec := postJSON(t, handler, "/api/agent/auth/v1/email/send-code", `{"email":"`+email+`","scene":"password_change"}`)
+	if sendRec.Code != http.StatusAccepted {
+		t.Fatalf("password change code expected 202, got %d body=%s", sendRec.Code, sendRec.Body.String())
+	}
+	changeReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/password/change", bytes.NewBufferString(`{"code":"123456","new_password":"changed-password-123"}`))
+	changeReq.Header.Set("Authorization", "Bearer "+login.AccessToken)
+	changeReq.Header.Set("Content-Type", "application/json")
+	changeRec := httptest.NewRecorder()
+	handler.ServeHTTP(changeRec, changeReq)
+	if changeRec.Code != http.StatusOK {
+		t.Fatalf("password change expected 200, got %d body=%s", changeRec.Code, changeRec.Body.String())
+	}
+	if cookies := changeRec.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != cfg.Auth.RefreshCookieName || cookies[0].MaxAge >= 0 {
+		t.Fatalf("password change must clear refresh cookie, got %#v", cookies)
+	}
+
+	expiredProfileReq := httptest.NewRequest(http.MethodGet, "/api/agent/user/v1/profile", nil)
+	expiredProfileReq.Header.Set("Authorization", "Bearer "+login.AccessToken)
+	expiredProfileRec := httptest.NewRecorder()
+	handler.ServeHTTP(expiredProfileRec, expiredProfileReq)
+	if expiredProfileRec.Code != http.StatusUnauthorized {
+		t.Fatalf("old access token expected 401 after password change, got %d body=%s", expiredProfileRec.Code, expiredProfileRec.Body.String())
+	}
+}
+
 func TestEmailCodeRegisterExposesEmailDerivedNickname(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	cfg.Auth.FixedEmailCode = "123456"

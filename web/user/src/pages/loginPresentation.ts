@@ -7,6 +7,7 @@ export type LoginPresentationInput = {
   busy: boolean
   sending: boolean
   cooldown: number
+  passwordSetupRequired?: boolean
 }
 
 export type LoginFieldValues = {
@@ -16,9 +17,11 @@ export type LoginFieldValues = {
   password: string
   code: string
   newPassword: string
+  confirmPassword?: string
+  passwordSetupRequired?: boolean
 }
 
-export type LoginFieldErrors = Partial<Record<'email' | 'password' | 'code' | 'newPassword', string>>
+export type LoginFieldErrors = Partial<Record<'email' | 'password' | 'code' | 'newPassword' | 'confirmPassword', string>>
 export type LoginFieldName = keyof LoginFieldErrors
 
 export const loginProviders = [
@@ -54,14 +57,31 @@ export function nextLoginModeForKey(current: LoginMode, key: string): LoginMode 
   return null
 }
 
-export function firstLoginInvalidField(errors: LoginFieldErrors, mode: LoginMode, intent: LoginIntent): LoginFieldName | null {
-  const order: LoginFieldName[] = intent === 'reset'
+export function firstLoginInvalidField(errors: LoginFieldErrors, mode: LoginMode, intent: LoginIntent, passwordSetupRequired = false): LoginFieldName | null {
+  const order: LoginFieldName[] = passwordSetupRequired
+    ? ['newPassword', 'confirmPassword']
+    : intent === 'reset'
     ? ['email', 'code', 'newPassword']
     : mode === 'password' ? ['email', 'password'] : ['email', 'code']
   return order.find((field) => Boolean(errors[field])) ?? null
 }
 
 export function loginPresentation(input: LoginPresentationInput) {
+  if (input.passwordSetupRequired) {
+    return {
+      title: '创建登录密码',
+      summary: '邮箱验证已完成。设置密码后即可进入站点。',
+      submitLabel: input.busy ? '正在设置...' : '设置密码并进入',
+      submitDisabled: input.busy || input.sending,
+      sendCodeLabel: '',
+      sendCodeDisabled: true,
+      codeScene: 'login' as const,
+      showPassword: false,
+      showCode: false,
+      showNewPassword: true,
+      showPasswordConfirmation: true,
+    } as const
+  }
   const isReset = input.intent === 'reset'
   const isRegister = input.intent === 'register'
   const isCode = input.mode === 'code'
@@ -94,11 +114,19 @@ export function loginPresentation(input: LoginPresentationInput) {
     showPassword: input.mode === 'password' && !isReset,
     showCode: input.mode === 'code' || isReset,
     showNewPassword: isReset,
+    showPasswordConfirmation: false,
   } as const
 }
 
 export function validateLoginFields(values: LoginFieldValues): LoginFieldErrors {
   const errors: LoginFieldErrors = {}
+  if (values.passwordSetupRequired) {
+    if (!values.newPassword) errors.newPassword = '请输入新密码'
+    else if (values.newPassword.trim().length < 8) errors.newPassword = '新密码至少需要 8 个字符'
+    if (!values.confirmPassword) errors.confirmPassword = '请再次输入新密码'
+    else if (values.confirmPassword !== values.newPassword) errors.confirmPassword = '两次输入的密码不一致'
+    return errors
+  }
   const email = values.email.trim()
 
   if (!email) errors.email = '请输入邮箱地址'
