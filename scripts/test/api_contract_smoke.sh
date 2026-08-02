@@ -3121,8 +3121,8 @@ from decimal import Decimal
 
 before = Decimal(os.environ["STRIPE_BALANCE_BEFORE"])
 after = Decimal(os.environ["STRIPE_BALANCE_AFTER"])
-if after - before != Decimal("20.50000"):
-    raise SystemExit(f"Stripe webhook should credit exactly 20.50000 points, got before={before} after={after}")
+if after - before != Decimal("25.62500"):
+    raise SystemExit(f"Stripe webhook should credit exactly 25.62500 points, got before={before} after={after}")
 PY
 
 stripe_sync_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${STRIPE_ORDER_ID}/sync" \
@@ -3133,7 +3133,7 @@ stripe_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   --data "{\"refund_trade_no\":\"${stripe_refund_trade_no}\",\"refund_amount_cny\":\"5.25\",\"reason\":\"api smoke Stripe partial refund\"}")"
-assert_cashier_refund_state "$stripe_refund_body" "partially_refunded" "$stripe_refund_trade_no" "5.25000" "10.50000" >/dev/null
+assert_cashier_refund_state "$stripe_refund_body" "partially_refunded" "$stripe_refund_trade_no" "5.25000" "13.12500" >/dev/null
 [[ "$STRIPE_ORDER_ID" =~ ^[0-9]+$ ]]
 stripe_refund_audit_body="$(psql_query -c \
   "SELECT json_build_object('action', action, 'target_type', target_type, 'target_id', target_id, 'metadata', metadata)::text FROM audit_logs WHERE action = 'cashier.order.refund' AND target_type = 'payment_order' AND target_id = '$STRIPE_ORDER_ID' ORDER BY id DESC LIMIT 1")"
