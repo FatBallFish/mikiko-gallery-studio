@@ -382,16 +382,48 @@ func (a *API) HandleEmailCodeLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	a.setRefreshCookie(w, login.Session)
-	payload := map[string]any{
-		"access_token":       login.Session.AccessToken,
-		"expires_in_seconds": int(time.Until(login.Session.AccessTokenExpiresAt).Seconds()),
-		"user_id":            login.User.ID,
-	}
+	payload := map[string]any{"user_id": login.User.ID}
 	if signupGrant != nil {
 		payload["signup_grant"] = signupGrant
 	}
+	if login.PasswordSetupRequired {
+		payload["password_setup_required"] = true
+		payload["password_setup_token"] = login.PasswordSetupToken
+		payload["password_setup_expires_in_seconds"] = int(time.Until(login.PasswordSetupExpiresAt).Seconds())
+		httpx.WriteSuccess(w, r, http.StatusOK, payload)
+		return
+	}
+	a.setRefreshCookie(w, login.Session)
+	payload["access_token"] = login.Session.AccessToken
+	payload["expires_in_seconds"] = int(time.Until(login.Session.AccessTokenExpiresAt).Seconds())
 	httpx.WriteSuccess(w, r, http.StatusOK, payload)
+}
+
+func (a *API) HandlePasswordSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var req struct {
+		PasswordSetupToken string `json:"password_setup_token"`
+		NewPassword        string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	user, session, err := a.auth.CompletePasswordSetup(req.PasswordSetupToken, req.NewPassword)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.setRefreshCookie(w, session)
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "auth.password_setup", "user", fmt.Sprintf("%d", user.ID), nil)
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"access_token":       session.AccessToken,
+		"expires_in_seconds": int(time.Until(session.AccessTokenExpiresAt).Seconds()),
+		"user_id":            user.ID,
+	})
 }
 
 func (a *API) signupTrialGrantResult(ctx context.Context, userID int64, newlyCreated bool) (*billingservice.SignupTrialGrantResult, error) {

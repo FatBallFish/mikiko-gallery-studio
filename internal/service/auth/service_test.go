@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +12,106 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
+	jwt "github.com/golang-jwt/jwt/v5"
 )
+
+func TestEmailCodeLoginRequiresPasswordSetupBeforeSession(t *testing.T) {
+	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"})
+	if err := svc.SendEmailCode("new-user@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+
+	login, err := svc.LoginWithEmailCodeResult("new-user@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCodeResult: %v", err)
+	}
+	if !login.PasswordSetupRequired || login.PasswordSetupToken == "" {
+		t.Fatalf("expected password setup grant, got %#v", login)
+	}
+	if login.Session.AccessToken != "" || login.Session.RefreshToken != "" || login.Session.SessionID != "" {
+		t.Fatalf("passwordless login must not issue a normal session, got %#v", login.Session)
+	}
+	if _, err := svc.ParseAccessToken(login.PasswordSetupToken); err == nil {
+		t.Fatal("password setup grant must not authorize normal user APIs")
+	}
+
+	user, session, err := svc.CompletePasswordSetup(login.PasswordSetupToken, "new-password-123")
+	if err != nil {
+		t.Fatalf("CompletePasswordSetup: %v", err)
+	}
+	if user.PasswordHash == "" || session.AccessToken == "" || session.RefreshToken == "" {
+		t.Fatalf("password setup must issue the first normal session, user=%#v session=%#v", user, session)
+	}
+	claims, err := svc.ParseAccessToken(session.AccessToken)
+	if err != nil || claims.Purpose != accessTokenPurpose {
+		t.Fatalf("normal session must carry access purpose, claims=%#v err=%v", claims, err)
+	}
+	if _, _, err := svc.CompletePasswordSetup(login.PasswordSetupToken, "another-password-123"); err == nil {
+		t.Fatal("password setup grant must be one-time")
+	}
+}
+
+func TestEmailCodeLoginIssuesSessionForExistingPasswordUser(t *testing.T) {
+	svc := NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}, map[string]string{"basic": "1.00000"})
+	if err := svc.SendEmailCode("existing@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	first, err := svc.LoginWithEmailCodeResult("existing@example.com", "123456")
+	if err != nil {
+		t.Fatalf("first LoginWithEmailCodeResult: %v", err)
+	}
+	if _, _, err := svc.CompletePasswordSetup(first.PasswordSetupToken, "existing-password-123"); err != nil {
+		t.Fatalf("CompletePasswordSetup: %v", err)
+	}
+	if err := svc.SendEmailCode("existing@example.com", "login"); err != nil {
+		t.Fatalf("second SendEmailCode: %v", err)
+	}
+	login, err := svc.LoginWithEmailCodeResult("existing@example.com", "123456")
+	if err != nil {
+		t.Fatalf("second LoginWithEmailCodeResult: %v", err)
+	}
+	if login.PasswordSetupRequired || login.PasswordSetupToken != "" || login.Session.AccessToken == "" || login.Session.RefreshToken == "" {
+		t.Fatalf("existing password user must receive a normal session, got %#v", login)
+	}
+}
+
+func TestPasswordSetupGrantValidatesPurposeExpiryIssuerAndVersion(t *testing.T) {
+	cfg := config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh"}
+	svc := NewService(cfg, map[string]string{"basic": "1.00000"})
+	if err := svc.SendEmailCode("grant@example.com", "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	login, err := svc.LoginWithEmailCodeResult("grant@example.com", "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCodeResult: %v", err)
+	}
+
+	sign := func(purpose, issuer string, version int, expiresAt time.Time) string {
+		t.Helper()
+		claims := Claims{
+			UserID: login.User.ID, Email: login.User.Email, TokenVersion: version, Purpose: purpose,
+			RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", login.User.ID), Issuer: issuer, IssuedAt: jwt.NewNumericDate(time.Now().Add(-time.Minute)), ExpiresAt: jwt.NewNumericDate(expiresAt)},
+		}
+		token, signErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.AccessTokenSecret))
+		if signErr != nil {
+			t.Fatalf("sign setup fixture: %v", signErr)
+		}
+		return token
+	}
+
+	for name, token := range map[string]string{
+		"purpose": sign(accessTokenPurpose, cfg.Issuer, login.User.TokenVersion, time.Now().Add(time.Minute)),
+		"expiry":  sign(passwordSetupTokenPurpose, cfg.Issuer, login.User.TokenVersion, time.Now().Add(-time.Minute)),
+		"issuer":  sign(passwordSetupTokenPurpose, "other", login.User.TokenVersion, time.Now().Add(time.Minute)),
+		"version": sign(passwordSetupTokenPurpose, cfg.Issuer, login.User.TokenVersion+1, time.Now().Add(time.Minute)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := svc.CompletePasswordSetup(token, "new-password-123"); err == nil {
+				t.Fatalf("expected %s setup grant to be rejected", name)
+			}
+		})
+	}
+}
 
 type capturingEmailSender struct {
 	email string
@@ -89,10 +189,7 @@ func TestLoginAndRefreshRotation(t *testing.T) {
 	if err := svc.SendEmailCode("user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, session, err := svc.LoginWithEmailCode("user@example.com", "123456")
-	if err != nil {
-		t.Fatalf("LoginWithEmailCode: %v", err)
-	}
+	user, session := completePasswordlessCodeLogin(t, svc, "user@example.com", "123456")
 	if user.ID == 0 || session.AccessToken == "" || session.RefreshToken == "" {
 		t.Fatalf("expected tokens and user to be created")
 	}
@@ -311,10 +408,7 @@ func TestRefreshReplayBlockedByRedisRuntimeState(t *testing.T) {
 	if err := svc.SendEmailCode("user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, session, err := svc.LoginWithEmailCode("user@example.com", "123456")
-	if err != nil {
-		t.Fatalf("LoginWithEmailCode: %v", err)
-	}
+	user, session := completePasswordlessCodeLogin(t, svc, "user@example.com", "123456")
 	_, refreshed, err := svc.Refresh(session.RefreshToken)
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
@@ -337,4 +431,20 @@ func TestRefreshReplayBlockedByRedisRuntimeState(t *testing.T) {
 	if blocked, _ := runtime.IsRefreshFamilyReplayBlocked(context.Background(), cached.FamilyID); !blocked {
 		t.Fatalf("expected replay-blocked family flag to be stored after reuse for user %d", user.ID)
 	}
+}
+
+func completePasswordlessCodeLogin(t *testing.T, svc *Service, email, code string) (domainauth.User, domainauth.Session) {
+	t.Helper()
+	login, err := svc.LoginWithEmailCodeResult(email, code)
+	if err != nil {
+		t.Fatalf("LoginWithEmailCodeResult: %v", err)
+	}
+	if !login.PasswordSetupRequired || login.PasswordSetupToken == "" {
+		t.Fatalf("expected password setup grant, got %#v", login)
+	}
+	user, session, err := svc.CompletePasswordSetup(login.PasswordSetupToken, "test-password-123")
+	if err != nil {
+		t.Fatalf("CompletePasswordSetup: %v", err)
+	}
+	return user, session
 }

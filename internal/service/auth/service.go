@@ -49,14 +49,24 @@ type Claims struct {
 	Email        string `json:"email"`
 	TokenVersion int    `json:"token_version"`
 	GroupCode    string `json:"group_code"`
+	Purpose      string `json:"purpose"`
 	jwt.RegisteredClaims
 }
 
 type LoginResult struct {
-	User    domainauth.User
-	Session domainauth.Session
-	Created bool
+	User                   domainauth.User
+	Session                domainauth.Session
+	Created                bool
+	PasswordSetupRequired  bool
+	PasswordSetupToken     string
+	PasswordSetupExpiresAt time.Time
 }
+
+const (
+	accessTokenPurpose        = "access"
+	passwordSetupTokenPurpose = "password_setup"
+	passwordSetupTokenTTL     = 10 * time.Minute
+)
 
 type EmailSender interface {
 	SendVerificationCode(email, scene, code string) error
@@ -302,6 +312,19 @@ func (s *Service) LoginWithEmailCodeResult(email, code string) (LoginResult, err
 	if user.Status == "closed" {
 		return LoginResult{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
 	}
+	if user.PasswordHash == "" {
+		setupToken, setupExpiresAt, err := s.issuePasswordSetupTokenLocked(user)
+		if err != nil {
+			return LoginResult{}, err
+		}
+		return LoginResult{
+			User:                   *user,
+			Created:                createdUser,
+			PasswordSetupRequired:  true,
+			PasswordSetupToken:     setupToken,
+			PasswordSetupExpiresAt: setupExpiresAt,
+		}, nil
+	}
 	return LoginResult{User: *user, Session: s.issueSessionLocked(user), Created: createdUser}, nil
 }
 
@@ -401,6 +424,35 @@ func (s *Service) SetPassword(userID int64, newPassword string) (domainauth.User
 		return domainauth.User{}, errs.New(404, errs.CodeNotFound, "user not found")
 	}
 	return s.updatePasswordLocked(&user, newPassword)
+}
+
+func (s *Service) CompletePasswordSetup(setupToken, newPassword string) (domainauth.User, domainauth.Session, error) {
+	if err := validateNewPassword(newPassword); err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
+	claims, err := s.parseTokenForPurpose(setupToken, passwordSetupTokenPurpose)
+	if err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.getUserByIDLocked(claims.UserID)
+	if !ok || !strings.EqualFold(user.Email, claims.Email) || user.TokenVersion != claims.TokenVersion || user.PasswordHash != "" {
+		return domainauth.User{}, domainauth.Session{}, errs.Unauthorized("password setup token expired or invalid")
+	}
+	if user.Status == "disabled" {
+		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeUserDisabled, "user has been disabled")
+	}
+	if user.Status == "closed" {
+		return domainauth.User{}, domainauth.Session{}, errs.New(403, errs.CodeForbidden, "user account has been closed")
+	}
+	updated, err := s.updatePasswordLocked(&user, newPassword)
+	if err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
+	session := s.issueSessionLocked(&updated)
+	return updated, session, nil
 }
 
 func (s *Service) CloseAccount(userID int64) (domainauth.User, error) {
@@ -528,14 +580,8 @@ func (s *Service) Refresh(refreshToken string) (domainauth.User, domainauth.Sess
 }
 
 func (s *Service) ParseAccessToken(accessToken string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(accessToken, &Claims{}, func(token *jwt.Token) (any, error) {
-		return []byte(s.cfg.AccessTokenSecret), nil
-	})
+	claims, err := s.parseTokenForPurpose(accessToken, accessTokenPurpose)
 	if err != nil {
-		return nil, errs.New(401, errs.CodeAuthAccessExpired, "access token expired or invalid")
-	}
-	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
 		return nil, errs.New(401, errs.CodeAuthAccessExpired, "access token expired or invalid")
 	}
 	return claims, nil
@@ -629,7 +675,7 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 	accessExp := time.Now().Add(accessTTL)
 	refreshExp := time.Now().Add(refreshTTL)
 	claims := Claims{
-		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode,
+		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, GroupCode: user.GroupCode, Purpose: accessTokenPurpose,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", user.ID), ExpiresAt: jwt.NewNumericDate(accessExp), IssuedAt: jwt.NewNumericDate(time.Now()), Issuer: s.cfg.Issuer},
 	}
 	accessToken, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.AccessTokenSecret))
@@ -648,6 +694,42 @@ func (s *Service) issueSessionWithFamilyLocked(user *domainauth.User, familyID s
 		})
 	}
 	return domainauth.Session{AccessToken: accessToken, AccessTokenExpiresAt: accessExp, RefreshToken: refreshToken, RefreshTokenExpiresAt: refreshExp, RefreshCookieName: s.cfg.RefreshCookieName, SessionID: sessionID, SessionFamilyID: familyID}
+}
+
+func (s *Service) issuePasswordSetupTokenLocked(user *domainauth.User) (string, time.Time, error) {
+	now := time.Now()
+	expiresAt := now.Add(passwordSetupTokenTTL)
+	claims := Claims{
+		UserID: user.ID, Email: user.Email, TokenVersion: user.TokenVersion, Purpose: passwordSetupTokenPurpose,
+		RegisteredClaims: jwt.RegisteredClaims{Subject: fmt.Sprintf("%d", user.ID), ExpiresAt: jwt.NewNumericDate(expiresAt), IssuedAt: jwt.NewNumericDate(now), Issuer: s.cfg.Issuer},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.AccessTokenSecret))
+	if err != nil {
+		return "", time.Time{}, errs.Internal("failed to issue password setup token")
+	}
+	return token, expiresAt, nil
+}
+
+func (s *Service) parseTokenForPurpose(rawToken, purpose string) (*Claims, error) {
+	options := []jwt.ParserOption{jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()})}
+	if issuer := strings.TrimSpace(s.cfg.Issuer); issuer != "" {
+		options = append(options, jwt.WithIssuer(issuer))
+	}
+	token, err := jwt.ParseWithClaims(strings.TrimSpace(rawToken), &Claims{}, func(token *jwt.Token) (any, error) {
+		return []byte(s.cfg.AccessTokenSecret), nil
+	}, options...)
+	if err != nil {
+		return nil, errs.Unauthorized("token expired or invalid")
+	}
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, errs.Unauthorized("token expired or invalid")
+	}
+	validPurpose := claims.Purpose == purpose || (purpose == accessTokenPurpose && claims.Purpose == "")
+	if !validPurpose || claims.UserID <= 0 || strings.TrimSpace(claims.Email) == "" {
+		return nil, errs.Unauthorized("token expired or invalid")
+	}
+	return claims, nil
 }
 
 func (s *Service) revokeFamilyLocked(familyID string) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
+	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
@@ -48,6 +49,72 @@ func TestEmailCodeLoginGrantsSignupTrialOnlyForNewUser(t *testing.T) {
 	second := emailCodeLogin(t, handler, "signup-trial@example.com")
 	if second.SignupGrant.Granted || second.SignupGrant.Balance.TrialPoints != "15.00000" {
 		t.Fatalf("expected second login not to duplicate trial grant, got %#v", second.SignupGrant)
+	}
+}
+
+func TestAuthPasswordSetupRequiredBeforeFirstSession(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	cfg.Auth.FixedEmailCode = "123456"
+	cfg.Auth.RefreshCookieName = "pg_refresh"
+	authSvc := authservice.NewService(cfg.Auth, map[string]string{"basic": "1.00000"})
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil))
+	email := "password-setup@example.com"
+
+	sendEmailLoginCode(t, handler, email)
+	loginRec := postJSON(t, handler, "/api/agent/auth/v1/login/email-code", `{"email":"`+email+`","code":"123456"}`)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("login expected 200, got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+	if cookies := loginRec.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("passwordless login must not set refresh cookie, got %#v", cookies)
+	}
+	var loginResponse struct {
+		Data struct {
+			PasswordSetupRequired bool   `json:"password_setup_required"`
+			PasswordSetupToken    string `json:"password_setup_token"`
+			AccessToken           string `json:"access_token"`
+			UserID                int64  `json:"user_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(loginRec.Body).Decode(&loginResponse); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	login := loginResponse.Data
+	if !login.PasswordSetupRequired || login.PasswordSetupToken == "" || login.UserID == 0 || login.AccessToken != "" {
+		t.Fatalf("expected setup-only login result, got %#v", login)
+	}
+
+	profileReq := httptest.NewRequest(http.MethodGet, "/api/agent/user/v1/profile", nil)
+	profileReq.Header.Set("Authorization", "Bearer "+login.PasswordSetupToken)
+	profileRec := httptest.NewRecorder()
+	handler.ServeHTTP(profileRec, profileReq)
+	if profileRec.Code != http.StatusUnauthorized {
+		t.Fatalf("setup token must not access profile, got %d body=%s", profileRec.Code, profileRec.Body.String())
+	}
+
+	setupRec := postJSON(t, handler, "/api/agent/auth/v1/password/setup", `{"password_setup_token":"`+login.PasswordSetupToken+`","new_password":"new-password-123"}`)
+	if setupRec.Code != http.StatusOK {
+		t.Fatalf("password setup expected 200, got %d body=%s", setupRec.Code, setupRec.Body.String())
+	}
+	var setupResponse struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+			UserID      int64  `json:"user_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(setupRec.Body).Decode(&setupResponse); err != nil {
+		t.Fatalf("decode setup response: %v", err)
+	}
+	if setupResponse.Data.AccessToken == "" || setupResponse.Data.UserID != login.UserID {
+		t.Fatalf("password setup must return first normal session, got %#v", setupResponse.Data)
+	}
+	if cookies := setupRec.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != cfg.Auth.RefreshCookieName || cookies[0].Value == "" {
+		t.Fatalf("password setup must set refresh cookie, got %#v", cookies)
+	}
+
+	replayRec := postJSON(t, handler, "/api/agent/auth/v1/password/setup", `{"password_setup_token":"`+login.PasswordSetupToken+`","new_password":"another-password-123"}`)
+	if replayRec.Code != http.StatusUnauthorized {
+		t.Fatalf("setup token replay expected 401, got %d body=%s", replayRec.Code, replayRec.Body.String())
 	}
 }
 
@@ -173,9 +240,11 @@ func TestEmailCodeLoginUsesAdminSignupTrialExpiryReminderDays(t *testing.T) {
 }
 
 type emailCodeLoginResponse struct {
-	AccessToken string `json:"access_token"`
-	UserID      int64  `json:"user_id"`
-	SignupGrant struct {
+	AccessToken           string `json:"access_token"`
+	UserID                int64  `json:"user_id"`
+	PasswordSetupRequired bool   `json:"password_setup_required"`
+	PasswordSetupToken    string `json:"password_setup_token"`
+	SignupGrant           struct {
 		Granted bool                         `json:"granted"`
 		Balance domainbilling.BalanceSummary `json:"balance"`
 	} `json:"signup_grant"`
@@ -183,13 +252,7 @@ type emailCodeLoginResponse struct {
 
 func emailCodeLogin(t *testing.T, handler http.Handler, email string) emailCodeLoginResponse {
 	t.Helper()
-	sendReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/email/send-code", bytes.NewBufferString(`{"email":"`+email+`","scene":"login"}`))
-	sendReq.Header.Set("Content-Type", "application/json")
-	sendRec := httptest.NewRecorder()
-	handler.ServeHTTP(sendRec, sendReq)
-	if sendRec.Code != http.StatusAccepted {
-		t.Fatalf("send code expected 202, got %d body=%s", sendRec.Code, sendRec.Body.String())
-	}
+	sendEmailLoginCode(t, handler, email)
 
 	loginReq := httptest.NewRequest(http.MethodPost, "/api/agent/auth/v1/login/email-code", bytes.NewBufferString(`{"email":"`+email+`","code":"123456"}`))
 	loginReq.Header.Set("Content-Type", "application/json")
@@ -204,5 +267,49 @@ func emailCodeLogin(t *testing.T, handler http.Handler, email string) emailCodeL
 	if err := json.NewDecoder(loginRec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode login response: %v", err)
 	}
+	if resp.Data.PasswordSetupRequired {
+		setupRec := postJSON(t, handler, "/api/agent/auth/v1/password/setup", `{"password_setup_token":"`+resp.Data.PasswordSetupToken+`","new_password":"test-password-123"}`)
+		if setupRec.Code != http.StatusOK {
+			t.Fatalf("password setup expected 200, got %d body=%s", setupRec.Code, setupRec.Body.String())
+		}
+		var setupResponse struct {
+			Data struct {
+				AccessToken string `json:"access_token"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(setupRec.Body).Decode(&setupResponse); err != nil {
+			t.Fatalf("decode password setup response: %v", err)
+		}
+		resp.Data.AccessToken = setupResponse.Data.AccessToken
+	}
 	return resp.Data
+}
+
+func sendEmailLoginCode(t *testing.T, handler http.Handler, email string) {
+	t.Helper()
+	sendRec := postJSON(t, handler, "/api/agent/auth/v1/email/send-code", `{"email":"`+email+`","scene":"login"}`)
+	if sendRec.Code != http.StatusAccepted {
+		t.Fatalf("send code expected 202, got %d body=%s", sendRec.Code, sendRec.Body.String())
+	}
+}
+
+func postJSON(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func loginAuthUserWithPasswordSetup(t *testing.T, authSvc *authservice.Service, email, code string) (domainauth.User, domainauth.Session, error) {
+	t.Helper()
+	login, err := authSvc.LoginWithEmailCodeResult(email, code)
+	if err != nil {
+		return domainauth.User{}, domainauth.Session{}, err
+	}
+	if !login.PasswordSetupRequired {
+		return login.User, login.Session, nil
+	}
+	return authSvc.CompletePasswordSetup(login.PasswordSetupToken, "test-password-123")
 }

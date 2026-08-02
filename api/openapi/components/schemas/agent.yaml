@@ -21,6 +21,36 @@ components:
           type: string
         redirect_to:
           type: string
+    EmailCodeLoginResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [user_id]
+          properties:
+            access_token:
+              type: string
+            expires_in_seconds:
+              type: integer
+            user_id:
+              type: integer
+            password_setup_required:
+              type: boolean
+            password_setup_token:
+              type: string
+            password_setup_expires_in_seconds:
+              type: integer
+            signup_grant:
+              $ref: '#/components/schemas/SignupGrant'
+    PasswordSetupRequest:
+      type: object
+      required: [password_setup_token, new_password]
+      properties:
+        password_setup_token:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
     SessionResponse:
       type: object
       properties:

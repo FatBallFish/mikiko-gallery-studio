@@ -48,6 +48,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/auth/v1/email/send-code", api.HandleSendEmailCode)
 		mux.HandleFunc("/api/agent/auth/v1/login/email-code", api.HandleEmailCodeLogin)
 		mux.HandleFunc("/api/agent/auth/v1/login/password", api.HandlePasswordLogin)
+		mux.HandleFunc("/api/agent/auth/v1/password/setup", api.HandlePasswordSetup)
 		mux.HandleFunc("/api/agent/auth/v1/session/refresh", api.HandleRefresh)
 		mux.HandleFunc("/api/agent/auth/v1/logout", api.HandleLogout)
 		mux.HandleFunc("/api/agent/auth/v1/password/change", api.HandleChangePassword)
