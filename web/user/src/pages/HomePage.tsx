@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react'
 import type { ImageResult } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageLightbox, LocalFeedback, StatusRail, type ImageLightboxPayload, useApp } from '../components'
+import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageDetailModal, LocalFeedback, StatusRail, copyText, useApp } from '../components'
 import { useApiResource } from '../useApiResource'
 import { ArrowRight, Image as ImageIcon, RefreshCw, Sparkles } from '../ui/icons'
 import { galleryImageAspect } from './galleryExperience'
-import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
+import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homePublicDetailImage, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
 
 const homeClasses = {
   content: 'mx-auto w-full max-w-[1440px] flex-1 px-6 pb-28 pt-8 md:px-10 md:pb-16 md:pt-12',
@@ -42,7 +42,7 @@ export function HomePage() {
   const capabilities = useApiResource(() => userApi.getCapabilities(), [])
   const tasks = useApiResource(() => userApi.listTasks(), [])
   const publicGallery = useApiResource(() => openApi.listPublicGallery(1, 12, { sort: 'hot', accessToken: null }), [])
-  const [imagePreview, setImagePreview] = useState<ImageLightboxPayload | null>(null)
+  const [selectedImage, setSelectedImage] = useState<ImageResult | null>(null)
 
   const latestTask = useMemo(() => newestHomeTask(tasks.data ?? []), [tasks.data])
   const continuation = useMemo(() => homeContinuationView(tasks.data ?? []), [tasks.data])
@@ -54,17 +54,7 @@ export function HomePage() {
   function openImage(image: ImageResult) {
     const source = image.url || image.download_url
     if (!source) return
-    setImagePreview({
-      url: userApi.imageAssetUrl(source, null),
-      downloadUrl: userApi.imageAssetUrl(image.download_url || source, null),
-      alt: image.prompt_excerpt || image.id,
-      prompt: image.prompt_excerpt,
-      width: image.width,
-      height: image.height,
-      ratio: image.aspect_ratio,
-      model: image.route_model_code || image.abstract_model,
-      source: '精选灵感',
-    })
+    setSelectedImage(homePublicDetailImage(image))
   }
 
   return (
@@ -142,7 +132,18 @@ export function HomePage() {
           </div>
         ) : null}
       </section>
-      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} />
+      <ImageDetailModal
+        title="精选作品详情"
+        image={selectedImage}
+        imageUrl={selectedImage?.url || selectedImage?.download_url ? userApi.imageAssetUrl(selectedImage.url || selectedImage.download_url || '', null) : undefined}
+        onDownload={(image) => window.open(userApi.imageAssetUrl(image.download_url || image.url || '', null), '_blank', 'noopener,noreferrer')}
+        onCopyPrompt={async (prompt) => {
+          await copyText(prompt)
+          app.notify('success', 'Prompt 已复制')
+        }}
+        previewSourceLabel="精选灵感"
+        onClose={() => setSelectedImage(null)}
+      />
     </main>
   )
 }

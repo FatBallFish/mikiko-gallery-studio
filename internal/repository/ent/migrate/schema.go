@@ -650,6 +650,7 @@ var (
 		{Name: "output_format", Type: field.TypeJSON, Nullable: true},
 		{Name: "output_compression", Type: field.TypeInt, Default: 100},
 		{Name: "supports_output_compression", Type: field.TypeBool, Default: false},
+		{Name: "supports_custom_size", Type: field.TypeBool, Default: false},
 		{Name: "moderation", Type: field.TypeJSON, Nullable: true},
 		{Name: "cost_per_image", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "USD"},
@@ -675,7 +676,7 @@ var (
 			{
 				Name:    "modelaccountmodel_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{ModelAccountModelsColumns[21]},
+				Columns: []*schema.Column{ModelAccountModelsColumns[22]},
 			},
 		},
 	}
@@ -1364,6 +1365,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "token_version", Type: field.TypeInt, Default: 0},
 		{Name: "session_family_id", Type: field.TypeUUID},
 		{Name: "refresh_token_hash", Type: field.TypeString, Size: 128},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
@@ -1382,7 +1384,7 @@ var (
 			{
 				Name:    "refreshsession_refresh_token_hash",
 				Unique:  true,
-				Columns: []*schema.Column{RefreshSessionsColumns[5]},
+				Columns: []*schema.Column{RefreshSessionsColumns[6]},
 			},
 			{
 				Name:    "refreshsession_user_id",
@@ -1392,17 +1394,17 @@ var (
 			{
 				Name:    "refreshsession_session_family_id",
 				Unique:  false,
-				Columns: []*schema.Column{RefreshSessionsColumns[4]},
+				Columns: []*schema.Column{RefreshSessionsColumns[5]},
 			},
 			{
 				Name:    "refreshsession_status",
 				Unique:  false,
-				Columns: []*schema.Column{RefreshSessionsColumns[6]},
+				Columns: []*schema.Column{RefreshSessionsColumns[7]},
 			},
 			{
 				Name:    "refreshsession_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{RefreshSessionsColumns[9]},
+				Columns: []*schema.Column{RefreshSessionsColumns[10]},
 			},
 		},
 	}

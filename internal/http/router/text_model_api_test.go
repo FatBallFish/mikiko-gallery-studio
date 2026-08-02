@@ -35,7 +35,7 @@ func TestTextModelAdminAndPromptOptimizationAPIs(t *testing.T) {
 	if err := authSvc.SendEmailCode("prompt-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, userSession, err := authSvc.LoginWithEmailCode("prompt-user@example.com", "123456")
+	_, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "prompt-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

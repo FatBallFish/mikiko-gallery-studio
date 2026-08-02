@@ -9,7 +9,7 @@ components:
           format: email
         scene:
           type: string
-          enum: [login, register, forgot_password]
+          enum: [login, register, password_reset, password_change]
     EmailCodeLoginRequest:
       type: object
       required: [email, code]
@@ -21,6 +21,36 @@ components:
           type: string
         redirect_to:
           type: string
+    EmailCodeLoginResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [user_id]
+          properties:
+            access_token:
+              type: string
+            expires_in_seconds:
+              type: integer
+            user_id:
+              type: integer
+            password_setup_required:
+              type: boolean
+            password_setup_token:
+              type: string
+            password_setup_expires_in_seconds:
+              type: integer
+            signup_grant:
+              $ref: '#/components/schemas/SignupGrant'
+    PasswordSetupRequest:
+      type: object
+      required: [password_setup_token, new_password]
+      properties:
+        password_setup_token:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
     SessionResponse:
       type: object
       properties:
@@ -46,9 +76,9 @@ components:
           type: string
     PasswordChangeRequest:
       type: object
-      required: [old_password, new_password]
+      required: [code, new_password]
       properties:
-        old_password:
+        code:
           type: string
         new_password:
           type: string
@@ -83,6 +113,8 @@ components:
           type: integer
         email:
           type: string
+        has_password:
+          type: boolean
         nickname:
           type: string
         bio:
@@ -608,6 +640,40 @@ components:
                 $ref: '#/components/schemas/PaymentOrder'
             pagination:
               $ref: ./common.yaml#/components/schemas/Pagination
+    CapabilityTaskOptions:
+      type: object
+      properties:
+        base_resolution:
+          type: array
+          items: { type: string }
+        auto_base_resolution:
+          type: string
+        quality:
+          type: array
+          items: { type: string }
+        size_modes:
+          type: array
+          items: { type: string }
+        aspect_ratios:
+          type: array
+          items: { type: string }
+        pixel_sizes:
+          type: array
+          items: { type: string }
+        output_format:
+          type: array
+          items: { type: string }
+        supports_output_compression:
+          type: boolean
+        supports_custom_size:
+          type: boolean
+        moderation:
+          type: array
+          items: { type: string }
+        max_output_image_count:
+          type: integer
+        max_reference_image_count:
+          type: integer
     CapabilityItem:
       type: object
       properties:
@@ -620,6 +686,10 @@ components:
         base_resolution:
           type: array
           items:
+            type: string
+        auto_base_resolution_by_task_type:
+          type: object
+          additionalProperties:
             type: string
         quality:
           type: array
@@ -638,6 +708,14 @@ components:
         supports_output_compression:
           type: boolean
           description: Whether this model supports user-selected JPEG/WebP compression quality.
+        supports_custom_size:
+          type: boolean
+          description: Whether at least one task type for this route model supports custom pixel sizes.
+        capabilities_by_task_type:
+          type: object
+          description: Complete generation capabilities keyed by image task type.
+          additionalProperties:
+            $ref: '#/components/schemas/CapabilityTaskOptions'
         size_modes:
           type: array
           items:
@@ -694,6 +772,9 @@ components:
         base_resolution:
           type: array
           items: { type: string }
+        auto_base_resolution_by_task_type:
+          type: object
+          additionalProperties: { type: string }
         quality:
           type: array
           items: { type: string }
@@ -711,6 +792,12 @@ components:
           items: { type: string }
         supports_output_compression:
           type: boolean
+        supports_custom_size:
+          type: boolean
+        capabilities_by_task_type:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CapabilityTaskOptions'
         moderation:
           type: array
           items: { type: string }

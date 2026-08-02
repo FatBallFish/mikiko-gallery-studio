@@ -175,7 +175,7 @@ func newDeveloperAPIKeyHandler(t *testing.T) (http.Handler, *apikeyservice.Servi
 	if err := authSvc.SendEmailCode("apikey-reset@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, session, err := authSvc.LoginWithEmailCode("apikey-reset@example.com", "123456")
+	user, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "apikey-reset@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

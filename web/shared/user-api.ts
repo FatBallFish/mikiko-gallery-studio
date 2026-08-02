@@ -7,6 +7,7 @@ import type {
   CashierOptions,
   CashierOrder,
   Capability,
+  CapabilityTaskOptions,
   CreateApiKeyRequest,
   CreateCashierOrderRequest,
   CreateTaskRequest,
@@ -15,8 +16,10 @@ import type {
   GalleryImage,
   ImageResult,
   ImageTask,
+  ImageTaskType,
   LedgerEntry,
   LoginResult,
+  NormalLoginResponse,
   PageResult,
   PaymentOrder,
   PromptOptimizationEstimate,
@@ -42,6 +45,7 @@ export function toUserProfile(raw: any): UserProfile {
     ...raw,
     id: String(raw.id ?? raw.user_id ?? ''),
     email: raw.email ?? '',
+    has_password: Boolean(raw.has_password),
     display_name: name,
     avatar_initials: initials(name),
     tier: raw.tier ?? 'FREE',
@@ -266,17 +270,44 @@ function optionalOutputCapabilities(source: any) {
     quality?: string[]
     output_format?: string[]
     supports_output_compression: boolean
+    supports_custom_size: boolean
+    capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
     moderation?: string[]
-  } = { supports_output_compression: false }
+  } = { supports_output_compression: false, supports_custom_size: false }
   const quality = pick<string[]>(source, 'quality', 'Quality')
   const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
   const supportsCompression = pick<boolean>(source, 'supports_output_compression', 'SupportsOutputCompression')
+  const supportsCustomSize = pick<boolean>(source, 'supports_custom_size', 'SupportsCustomSize')
+  const capabilitiesByTaskType = pick<Record<string, unknown>>(source, 'capabilities_by_task_type', 'CapabilitiesByTaskType')
   const moderation = pick<string[]>(source, 'moderation', 'Moderation')
   if (quality !== undefined) result.quality = quality
   if (outputFormat !== undefined) result.output_format = outputFormat
   if (supportsCompression !== undefined) result.supports_output_compression = supportsCompression
+  if (supportsCustomSize !== undefined) result.supports_custom_size = supportsCustomSize
+  if (capabilitiesByTaskType !== undefined) {
+    result.capabilities_by_task_type = Object.fromEntries(
+      Object.entries(capabilitiesByTaskType).map(([taskType, capability]) => [normalizeTaskType(taskType), normalizeTaskCapability(capability)]),
+    )
+  }
   if (moderation !== undefined) result.moderation = moderation
   return result
+}
+
+function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
+  return {
+    base_resolution: pick<string[]>(source, 'base_resolution', 'BaseResolution') ?? [],
+    auto_base_resolution: String(pick(source, 'auto_base_resolution', 'AutoBaseResolution') ?? '').trim().toLowerCase() || undefined,
+    size_modes: pick<Array<'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes') ?? [],
+    aspect_ratios: pick<string[]>(source, 'aspect_ratios', 'AspectRatios') ?? [],
+    pixel_sizes: pick<string[]>(source, 'pixel_sizes', 'PixelSizes') ?? [],
+    quality: pick<string[]>(source, 'quality', 'Quality') ?? [],
+    output_format: pick<string[]>(source, 'output_format', 'OutputFormat') ?? [],
+    supports_output_compression: Boolean(pick(source, 'supports_output_compression', 'SupportsOutputCompression')),
+    supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
+    moderation: pick<string[]>(source, 'moderation', 'Moderation') ?? [],
+    max_output_image_count: Number(pick(source, 'max_output_image_count', 'MaxOutputImageCount') ?? 0),
+    max_reference_image_count: Number(pick(source, 'max_reference_image_count', 'MaxReferenceImageCount') ?? 0),
+  }
 }
 
 export function normalizeCapabilities(raw: any): Capability {
@@ -288,6 +319,7 @@ export function normalizeCapabilities(raw: any): Capability {
       ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
       ?? ['auto']
     const baseResolution = pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? qualities
+    const autoBaseResolutionByTaskType = pick<Record<string, string>>(item, 'auto_base_resolution_by_task_type', 'AutoBaseResolutionByTaskType')
     const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => {
       const quality = String(pick(price, 'quality', 'Quality', 'base_resolution', 'BaseResolution') ?? 'auto')
       return {
@@ -312,6 +344,9 @@ export function normalizeCapabilities(raw: any): Capability {
       task_types: normalizedTaskTypes,
       qualities,
       base_resolution: baseResolution,
+      auto_base_resolution_by_task_type: autoBaseResolutionByTaskType
+        ? Object.fromEntries(Object.entries(autoBaseResolutionByTaskType).map(([taskType, resolution]) => [normalizeTaskType(taskType), String(resolution).trim().toLowerCase()]))
+        : undefined,
       size_modes: pick<Array<'ratio' | 'pixel' | string>>(item, 'size_modes', 'SizeModes') ?? ['ratio'],
       aspect_ratios: pick<string[]>(item, 'aspect_ratios', 'AspectRatios') ?? pick<string[]>(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? [],
       pixel_sizes: pick<string[]>(item, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? [],
@@ -349,17 +384,19 @@ export function normalizeTaskList(raw: any): ImageTask[] {
 
 export const userApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
-  sendEmailCode: (email: string, scene: 'login' | 'register' | 'password_reset' = 'login') =>
+  sendEmailCode: (email: string, scene: 'login' | 'register' | 'password_reset' | 'password_change' = 'login') =>
     sharedApiClient.request<{ email: string; scene: string; status: string }>(API_PATHS.agent.sendEmailCode, { method: 'POST', body: { email, scene }, auth: false }),
   loginWithEmailCode: (email: string, code: string) =>
     sharedApiClient.request<LoginResult>(API_PATHS.agent.loginEmailCode, { method: 'POST', body: { email, code }, auth: false }),
   loginWithPassword: (email: string, password: string) =>
-    sharedApiClient.request<LoginResult>(API_PATHS.agent.loginPassword, { method: 'POST', body: { email, password }, auth: false }),
+    sharedApiClient.request<NormalLoginResponse>(API_PATHS.agent.loginPassword, { method: 'POST', body: { email, password }, auth: false }),
+  completePasswordSetup: (password_setup_token: string, new_password: string) =>
+    sharedApiClient.request<NormalLoginResponse>(API_PATHS.agent.passwordSetup, { method: 'POST', body: { password_setup_token, new_password }, auth: false }),
   refreshSession: () =>
-    sharedApiClient.request<LoginResult>(API_PATHS.agent.refreshSession, { method: 'POST', auth: false, retryUnauthorized: false }),
+    sharedApiClient.request<NormalLoginResponse>(API_PATHS.agent.refreshSession, { method: 'POST', auth: false, retryUnauthorized: false }),
   logout: () => sharedApiClient.request<void>(API_PATHS.agent.logout, { method: 'POST' }),
-  changePassword: (old_password: string, new_password: string) =>
-    sharedApiClient.request<{ ok: boolean }>(API_PATHS.agent.passwordChange, { method: 'POST', body: { old_password, new_password } }),
+  changePassword: (code: string, new_password: string) =>
+    sharedApiClient.request<{ status: string }>(API_PATHS.agent.passwordChange, { method: 'POST', body: { code, new_password } }),
   requestPasswordReset: (email: string) =>
     sharedApiClient.request<{ status: string }>(API_PATHS.agent.passwordResetRequest, { method: 'POST', body: { email }, auth: false }),
   confirmPasswordReset: (email: string, code: string, new_password: string) =>

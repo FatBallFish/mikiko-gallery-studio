@@ -5,7 +5,7 @@ import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, I
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, ImageDetailModal, ImageLightbox, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImageLightboxPayload } from '../components'
+import { Button, EmptyState, ErrorState, ImageDetailModal, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
 import { userButton, userForm, userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
@@ -23,12 +23,13 @@ import { useCompactWorkspaceViewport, workspaceParametersHidden } from './worksp
 import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGesture'
 import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
-import { normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceOutputOptions } from './workspaceParameters'
+import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 
 type OutputTab = 'current' | 'history'
 type WorkspaceSizeMode = 'ratio' | 'pixel'
+type WorkspacePixelSelection = 'preset' | 'custom'
 type RestoreParameters = {
   routeModelCode?: string
   sizeMode?: WorkspaceSizeMode
@@ -263,6 +264,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [baseResolution, setBaseResolution] = useState('')
   const [ratio, setRatio] = useState('')
   const [pixelSize, setPixelSize] = useState('')
+  const [pixelSelection, setPixelSelection] = useState<WorkspacePixelSelection>('preset')
+  const [customWidth, setCustomWidth] = useState('')
+  const [customHeight, setCustomHeight] = useState('')
   const [count, setCount] = useState(1)
   const [quality, setQuality] = useState('auto')
   const [outputFormat, setOutputFormat] = useState('png')
@@ -278,7 +282,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [editSourceOpen, setEditSourceOpen] = useState(false)
-  const [previewImage, setPreviewImage] = useState<ImageLightboxPayload | null>(null)
+  const [previewImage, setPreviewImage] = useState<ImagePreviewPayload | null>(null)
+  const previewDetailImage: ImageResult | null = previewImage ? {
+    id: previewImage.alt || 'preview',
+    url: previewImage.url,
+    download_url: previewImage.downloadUrl,
+    width: previewImage.width ?? 0,
+    height: previewImage.height ?? 0,
+    publish_status: 'private',
+    prompt: previewImage.prompt,
+    aspect_ratio: previewImage.ratio,
+    route_model_code: previewImage.model,
+  } : null
   const [outputTab, setOutputTab] = useState<OutputTab>('current')
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
   const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
@@ -559,13 +574,23 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }, [taskType, capability, model])
 
   const availableModels = useMemo(() => capability ? selectableModels(capability, taskType) : [], [capability, taskType])
-  const selectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
+  const rawSelectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
+  const selectedModel = useMemo(() => workspaceModelForTask(rawSelectedModel, taskType), [rawSelectedModel, taskType])
   const sizeModes = useMemo(() => sizeModeOptions(selectedModel), [selectedModel])
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
   const ratios = useMemo(() => ratioOptions(selectedModel, capability), [selectedModel, capability])
   const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
   const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
+  const customSizeSupported = workspaceCustomSizeSupported(selectedModel) && sizeModes.includes('pixel')
+  const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight), [customWidth, customHeight])
+  const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
+    ? customSizeNormalization.valid ? customSizeNormalization.size : ''
+    : pixelSize
+  const ratioPixelEstimate = useMemo(
+    () => workspaceRatioPixelEstimate(baseResolution, ratio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
+    [baseResolution, ratio, selectedModel, taskType],
+  )
 
   useEffect(() => {
     if (!capability || !selectedModel) return
@@ -577,17 +602,30 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     )
     if (waitingForPreferredModel) return
 
-	setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
+    setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
     setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
-    setPixelSize(restoreParameters?.pixelSize && pixelSizes.includes(restoreParameters.pixelSize) ? restoreParameters.pixelSize : pixelSizes[0] ?? '')
+    const restoredPixelSize = restoreParameters?.pixelSize
+    const restoredCustomDimensions = customSizeSupported && restoredPixelSize && !pixelSizes.includes(restoredPixelSize)
+      ? parsePixelDimensions(restoredPixelSize)
+      : null
+    if (restoredCustomDimensions) {
+      setPixelSelection('custom')
+      setCustomWidth(String(restoredCustomDimensions.width))
+      setCustomHeight(String(restoredCustomDimensions.height))
+    } else {
+      setPixelSelection('preset')
+      setCustomWidth('')
+      setCustomHeight('')
+    }
+    setPixelSize(restoredPixelSize && pixelSizes.includes(restoredPixelSize) ? restoredPixelSize : pixelSizes[0] ?? '')
     setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0])
     setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0])
     setOutputCompression(restoreParameters?.outputCompression ?? 100)
     setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0])
     setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))
     restoreParametersRef.current = null
-  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions])
+  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -599,7 +637,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }, [selectedModel, quality, outputFormat, outputCompression, moderation])
 
   const sizeParametersReady = sizeMode === 'pixel'
-    ? Boolean(pixelSize && pixelSizes.includes(pixelSize))
+    ? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
     : Boolean(baseResolution && ratio && baseResolutionOptionsForModel.includes(baseResolution) && ratios.includes(ratio))
 
   const parametersReady = Boolean(
@@ -625,10 +663,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	output_compression: compressionVisible ? outputCompression : 100,
 	moderation,
 	aspect_ratio: sizeMode === 'ratio' ? ratio : '',
-	pixel_size: sizeMode === 'pixel' ? pixelSize : undefined,
+	pixel_size: sizeMode === 'pixel' ? effectivePixelSize : undefined,
     image_count: count,
     reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : [],
-  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, pixelSize, count, editRefs])
+  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, effectivePixelSize, count, editRefs])
   const estimateKey = useMemo(() => workspaceEstimateKey(estimatePayload), [estimatePayload])
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
@@ -1178,7 +1216,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 </div>
               ) : null}
 
-              {sizeMode === 'pixel' && pixelSizes.length ? (
+              {sizeMode === 'ratio' && ratioPixelEstimate ? (
+                <p className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 px-3 py-2 text-xs leading-5 text-[var(--muted)]" role="status">
+                  预计输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{ratioPixelEstimate}</strong>
+                </p>
+              ) : null}
+
+              {sizeMode === 'pixel' && (pixelSizes.length || customSizeSupported) ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>像素尺寸</label>
                   <div className={workspaceClasses.selectGridThree}>
@@ -1186,13 +1230,40 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                       <button
                         key={value}
                         type="button"
-                        className={cn(workspaceClasses.selectItem, pixelSize === value && workspaceClasses.selectItemActive)}
-                        onClick={() => setPixelSize(value)}
+                        className={cn(workspaceClasses.selectItem, pixelSelection === 'preset' && pixelSize === value && workspaceClasses.selectItemActive)}
+                        onClick={() => { setPixelSelection('preset'); setPixelSize(value) }}
                       >
                         <span className={rdWorkspace.itemLabel}>{value}</span>
                       </button>
                     ))}
+                    {customSizeSupported ? (
+                      <button
+                        type="button"
+                        className={cn(workspaceClasses.selectItem, pixelSelection === 'custom' && workspaceClasses.selectItemActive)}
+                        onClick={() => setPixelSelection('custom')}
+                      >
+                        <span className={rdWorkspace.itemLabel}>自定义尺寸</span>
+                      </button>
+                    ) : null}
                   </div>
+                  {customSizeSupported && pixelSelection === 'custom' ? (
+                    <div className="mt-3 grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 p-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-width">
+                          Width
+                          <input id="workspace-custom-width" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-height">
+                          Height
+                          <input id="workspace-custom-height" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
+                        </label>
+                      </div>
+                      <p className="text-xs leading-5 text-[var(--muted)]" role="status">
+                        {customSizeNormalization.valid ? <>最终输出：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '请输入有效的 Width 和 Height。'}
+                      </p>
+                      <p className="text-xs leading-5 text-[var(--muted)]">由于模型限制，最终输出会自动规整到合法尺寸：宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。</p>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -1455,17 +1526,34 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           </div>
         )}
 
-        <ImageLightbox image={previewImage} onClose={() => setPreviewImage(null)} onReuseConfiguration={(draft) => {
-          stageWorkspaceCreationDraft(draft, window.sessionStorage, window.history)
-          setPreviewImage(null)
-          app.navigate('genpic')
-        }} />
+        <ImageDetailModal
+          title="图片详情"
+          image={previewDetailImage}
+          imageUrl={previewImage?.url}
+          showPublicStats={false}
+          onDownload={() => window.open(previewImage?.downloadUrl || previewImage?.url, '_blank', 'noopener,noreferrer')}
+          onCopyPrompt={async (prompt) => {
+            await copyText(prompt)
+            app.notify('success', 'Prompt 已复制')
+          }}
+          actions={previewImage?.creationDraft ? [{
+            key: 'reuse',
+            label: '复用配置',
+            icon: <PublicDetailIcon name="edit" />,
+            onClick: () => {
+              stageWorkspaceCreationDraft(previewImage.creationDraft!, window.sessionStorage, window.history)
+              setPreviewImage(null)
+              app.navigate('genpic')
+            },
+          }] : []}
+          previewSourceLabel={previewImage?.source || '创作输出'}
+          onClose={() => setPreviewImage(null)}
+        />
         {historyTaskDialog ? (
           <HistoryTaskDialog
             task={historyTaskDialog}
             accessToken={app.session?.token}
             onClose={() => setHistoryTaskDialog(null)}
-            onPreviewImage={setPreviewImage}
           />
         ) : null}
         {galleryImportTarget ? (
@@ -1755,7 +1843,7 @@ function formatCompactDuration(ms: number) {
 function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDialog }: {
   tasks: ImageTask[]
   accessToken?: string | null
-  onPreviewImage: (image: ImageLightboxPayload) => void
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
 }) {
   if (!tasks.length) {
@@ -1779,7 +1867,7 @@ function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDia
 function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTaskDialog }: {
   task: ImageTask
   accessToken?: string | null
-  onPreviewImage: (image: ImageLightboxPayload) => void
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
 }) {
   const slots = generationSlots(task)
@@ -1843,11 +1931,10 @@ function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTaskDial
   )
 }
 
-function HistoryTaskDialog({ task, accessToken, onClose, onPreviewImage }: {
+function HistoryTaskDialog({ task, accessToken, onClose }: {
   task: ImageTask
   accessToken?: string | null
   onClose: () => void
-  onPreviewImage: (image: ImageLightboxPayload) => void
 }) {
   const app = useApp()
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -1888,11 +1975,9 @@ function HistoryTaskDialog({ task, accessToken, onClose, onPreviewImage }: {
           id: asset.id,
           url,
           alt: asset.name || '原图引用',
-          onPreview: url ? () => onPreviewImage({ url, downloadUrl: url, alt: asset.name || '原图引用', source: '原图引用' }) : undefined,
         }
       }).filter((item) => item.url)}
       showPublicStats={false}
-      onPreviewImage={onPreviewImage}
       onDownload={() => window.open(userApi.imageAssetUrl(image.download_url ?? image.url, accessToken), '_blank', 'noopener,noreferrer')}
       onCopyPrompt={async (value) => {
         await copyText(value)
@@ -1913,7 +1998,7 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
   task: ImageTask
   onCopyPrompt: () => Promise<void>
   onUseReference: (url: string) => Promise<void>
-  onPreviewImage: (image: ImageLightboxPayload) => void
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onRetryTask: (task: ImageTask) => Promise<void>
   onDeleteTask: (task: ImageTask) => Promise<void>
   accessToken?: string
@@ -2078,6 +2163,12 @@ function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetr
   )
 }
 
+function parsePixelDimensions(input: string) {
+  const match = input.match(/^(\d+)x(\d+)$/i)
+  if (!match) return null
+  return { width: Number(match[1]), height: Number(match[2]) }
+}
+
 function normalizeAspectRatio(input?: string) {
   if (!input) return undefined
   const colon = input.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/)
@@ -2093,7 +2184,7 @@ function GeneratedImage({ image, alt, fallbackRatio, accessToken, onUseReference
   fallbackRatio?: string
   accessToken?: string
   onUseReference: (url: string) => Promise<void>
-  onPreview: (image: ImageLightboxPayload) => void
+  onPreview: (image: ImagePreviewPayload) => void
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
   const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useId, useState } from 'react'
 import type { Balance, LedgerEntry, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, Field, useApp } from '../components'
+import { Button, EmptyState, Field, Modal, useApp } from '../components'
 import { button as btn, card, form } from '../ui/redesign-classes'
 import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage } from '../useApiResource'
@@ -51,6 +51,12 @@ const profileClasses = {
   avatar: 'grid size-20 place-items-center rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] text-[32px] font-extrabold text-white shadow-[0_0_30px_rgba(var(--accent-rgb),0.3)]',
   profileName: 'text-xl font-bold',
   profileEmail: 'text-sm text-[var(--muted)]',
+  passwordAction: 'mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-5',
+  passwordHint: 'max-w-sm text-sm leading-6 text-[var(--muted)]',
+  modalForm: 'mt-5 grid gap-4',
+  required: 'ml-1 text-[var(--accent-coral)]',
+  modalActions: 'mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+  codeRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
 }
 
 export function ProfilePage() {
@@ -59,6 +65,7 @@ export function ProfilePage() {
   const [balance, setBalance] = useState<Balance | null>(null)
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
   const [showRedeemInput, setShowRedeemInput] = useState(false)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
@@ -124,7 +131,7 @@ export function ProfilePage() {
         </div>
 
         <div className={profileClasses.stack}>
-          {profile ? <ProfileEditor profile={profile} busy={busy} onSave={saveProfile} /> : null}
+          {profile ? <ProfileEditor profile={profile} busy={busy} onSave={saveProfile} onChangePassword={() => setShowPasswordDialog(true)} /> : null}
 
           <div className={cn(profileClasses.card, 'pg-enter')}>
             <div className={profileClasses.ledgerHeader}>
@@ -155,6 +162,9 @@ export function ProfilePage() {
           </div>
         </div>
       </div>
+      {profile && showPasswordDialog ? (
+        <PasswordChangeModal profile={profile} onClose={() => setShowPasswordDialog(false)} />
+      ) : null}
     </SettingsWorkspace>
   )
 }
@@ -217,7 +227,7 @@ function BalanceBuckets({ balance }: { balance: Balance | null }) {
   )
 }
 
-function ProfileEditor({ profile, busy, onSave }: { profile: UserProfile; busy: boolean; onSave: (patch: Partial<UserProfile>) => Promise<void> }) {
+function ProfileEditor({ profile, busy, onSave, onChangePassword }: { profile: UserProfile; busy: boolean; onSave: (patch: Partial<UserProfile>) => Promise<void>; onChangePassword: () => void }) {
   const [name, setName] = useState(profile.display_name)
   const [signature, setSignature] = useState(profile.signature)
 
@@ -234,6 +244,105 @@ function ProfileEditor({ profile, busy, onSave }: { profile: UserProfile; busy: 
       <Field label="显示昵称"><input className={form.input} value={name} onChange={(event) => setName(event.target.value)} /></Field>
       <Field label="签名"><textarea className={form.textarea} value={signature} onChange={(event) => setSignature(event.target.value)} rows={3} /></Field>
       <button className={cn(btn.base, btn.primary)} type="button" disabled={busy} onClick={() => void onSave({ display_name: name, signature })}>{busy ? '保存中...' : '保存修改'}</button>
+      <div className={profileClasses.passwordAction}>
+        <p className={profileClasses.passwordHint}>修改密码前需要验证当前账户邮箱，成功后所有设备均需重新登录。</p>
+        <button className={btn.base} type="button" onClick={onChangePassword}>{profile.has_password ? '修改密码' : '设置密码'}</button>
+      </div>
     </div>
+  )
+}
+
+function PasswordChangeModal({ profile, onClose }: { profile: UserProfile; onClose: () => void }) {
+  const app = useApp()
+  const formId = useId()
+  const [code, setCode] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [cooldown, setCooldown] = useState(0)
+  const [sending, setSending] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  useEffect(() => {
+    if (cooldown <= 0) return undefined
+    const timer = window.setInterval(() => setCooldown((value) => Math.max(0, value - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldown])
+
+  async function sendPasswordChangeCode() {
+    setSending(true)
+    setFormError('')
+    try {
+      await userApi.sendEmailCode(profile.email, 'password_change')
+      setCooldown(60)
+      app.notify('success', '验证码已发送，请查看邮箱')
+    } catch (err) {
+      const message = errorMessage(err)
+      setFormError(message)
+      app.notify('error', message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function submitPasswordChange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFormError('')
+    if (!/^\d{6}$/.test(code.trim())) {
+      setFormError('请输入 6 位邮箱验证码')
+      return
+    }
+    if (newPassword.length < 8) {
+      setFormError('新密码至少需要 8 个字符')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setFormError('两次输入的新密码不一致')
+      return
+    }
+
+    setBusy(true)
+    try {
+      await userApi.changePassword(code, newPassword)
+      app.notify('success', '密码修改成功，请重新登录')
+      onClose()
+      await app.logout()
+    } catch (err) {
+      const message = errorMessage(err)
+      setFormError(message)
+      app.notify('error', message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="修改密码" onClose={onClose} className="w-[min(520px,calc(100vw-2rem))]">
+      <form className={profileClasses.modalForm} onSubmit={(event) => void submitPasswordChange(event)} noValidate>
+        <p className="m-0 text-sm leading-6 text-[var(--muted)]">验证码将发送至 <strong className="text-[var(--fg)]">{profile.email}</strong></p>
+        <div>
+          <label className="mb-2 block text-sm font-bold" htmlFor={`${formId}-code`}>验证码<span className={profileClasses.required} aria-hidden="true">*</span></label>
+          <div className={profileClasses.codeRow}>
+            <input id={`${formId}-code`} className={form.input} value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={6} required onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+            <button className={btn.base} type="button" disabled={sending || cooldown > 0 || busy} onClick={() => void sendPasswordChangeCode()}>
+              {sending ? '发送中...' : cooldown > 0 ? `${cooldown}s 后重发` : '发送验证码'}
+            </button>
+          </div>
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-bold" htmlFor={`${formId}-new-password`}>新密码<span className={profileClasses.required} aria-hidden="true">*</span></label>
+          <input id={`${formId}-new-password`} className={form.input} type="password" value={newPassword} autoComplete="new-password" minLength={8} required onChange={(event) => setNewPassword(event.target.value)} />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-bold" htmlFor={`${formId}-confirm-password`}>确认新密码<span className={profileClasses.required} aria-hidden="true">*</span></label>
+          <input id={`${formId}-confirm-password`} className={form.input} type="password" value={confirmPassword} autoComplete="new-password" minLength={8} required onChange={(event) => setConfirmPassword(event.target.value)} />
+        </div>
+        {formError ? <p className="m-0 text-sm text-[var(--accent-coral)]" role="alert">{formError}</p> : null}
+        <div className={profileClasses.modalActions}>
+          <button className={btn.base} type="button" disabled={busy} onClick={onClose}>取消</button>
+          <button className={cn(btn.base, btn.primary)} type="submit" disabled={busy || sending}>{busy ? '修改中...' : '确认修改'}</button>
+        </div>
+      </form>
+    </Modal>
   )
 }

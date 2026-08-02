@@ -326,6 +326,25 @@ print(expr)
 PY
 }
 
+assert_password_setup_login() {
+  local json="$1"
+  JSON="$json" python3 - <<'PY'
+import json
+import os
+
+data = json.loads(os.environ["JSON"])
+payload = data.get("data", {})
+if payload.get("password_setup_required") is not True:
+    raise SystemExit(f"passwordless email-code login must require password setup: {payload!r}")
+if payload.get("access_token"):
+    raise SystemExit("passwordless email-code login must not issue an access token")
+token = payload.get("password_setup_token")
+if not token:
+    raise SystemExit("passwordless email-code login did not issue a setup token")
+print(token)
+PY
+}
+
 config_tab_version() {
   local json="$1"
   local tab_key="$2"
@@ -1616,6 +1635,8 @@ go build -o "$WORKER_BINARY" ./cmd/worker
 start_smoke_middleware
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestTextModelStore.*Postgres' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/db -run '^TestSchemaV2MigratesLegacyRefreshSessions$' -count=1
 start_fake_provider
 write_smoke_config true
 assert_api_port_free
@@ -1685,6 +1706,7 @@ ready_body="$(request "$BASE_URL/readyz")"
 docs_body="$(request "$BASE_URL/docs/openapi.json")"
 assert_json_field "$docs_body" "openapi" >/dev/null
 assert_json_path_exists "$docs_body" "paths./api/agent/auth/v1/login/email-code.post" >/dev/null
+assert_json_path_exists "$docs_body" "paths./api/agent/auth/v1/password/setup.post" >/dev/null
 assert_json_path_exists "$docs_body" "paths./api/agent/cashier/v1/orders.post" >/dev/null
 assert_json_path_exists "$docs_body" "paths./api/open/image/v1/gallery/images.get" >/dev/null
 assert_json_path_exists "$docs_body" "paths./api/ops/admin/v1/readiness.get" >/dev/null
@@ -1735,13 +1757,29 @@ print(json.dumps({
 }))
 PY
 )")"
-ACCESS_TOKEN="$(assert_json_field "$login_body" "data.access_token")"
+PASSWORD_SETUP_TOKEN="$(assert_password_setup_login "$login_body")"
 [[ "$(assert_json_field "$login_body" "data.signup_grant.granted")" == "True" || "$(assert_json_field "$login_body" "data.signup_grant.granted")" == "true" ]]
 [[ "$(assert_json_field "$login_body" "data.signup_grant.balance.trial_points")" == "20.00000" ]]
 [[ "$(assert_json_field "$login_body" "data.signup_grant.balance.buckets.0.bucket")" == "trial" ]]
 
+password_setup_body="$(request -X POST "$BASE_URL/api/agent/auth/v1/password/setup" \
+  -H "Content-Type: application/json" \
+  -c "$COOKIE_JAR" \
+  --data "$(PASSWORD_SETUP_TOKEN="$PASSWORD_SETUP_TOKEN" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "password_setup_token": os.environ["PASSWORD_SETUP_TOKEN"],
+    "new_password": "SmokePassword-123!",
+}))
+PY
+)")"
+ACCESS_TOKEN="$(assert_json_field "$password_setup_body" "data.access_token")"
+
 profile_body="$(request "$BASE_URL/api/agent/user/v1/profile" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$profile_body" "data.email")" == "$SMOKE_USER_EMAIL" ]]
+[[ "$(assert_json_field "$profile_body" "data.has_password")" == "True" || "$(assert_json_field "$profile_body" "data.has_password")" == "true" ]]
 USER_ID="$(assert_json_field "$profile_body" "data.id")"
 
 balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"

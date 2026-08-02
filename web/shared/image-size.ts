@@ -102,6 +102,7 @@ export function isExplicitImageSize(value: string) {
 }
 
 export function calculateImageSizeForQuality(quality: string, ratio: string) {
+  if (quality.trim().toLowerCase() === 'auto') return 'auto'
   const tier = normalizeQualityBucket(quality)
   if (!tier) return legacySizeMap[ratio] ?? ratio
 
@@ -152,3 +153,95 @@ export function calculateImageSizeForQuality(quality: string, ratio: string) {
 }
 
 export const calculateImageSizeForBaseResolution = calculateImageSizeForQuality
+
+export type CustomImageSizeNormalization = {
+  valid: boolean
+  requestedWidth: number
+  requestedHeight: number
+  width: number
+  height: number
+  size: string
+  wasNormalized: boolean
+  error?: string
+}
+
+export function normalizeCustomImageSize(width: number, height: number): CustomImageSizeNormalization {
+  const invalid = (error: string): CustomImageSizeNormalization => ({
+    valid: false,
+    requestedWidth: width,
+    requestedHeight: height,
+    width: 0,
+    height: 0,
+    size: '',
+    wasNormalized: false,
+    error,
+  })
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+    return invalid('width and height must be positive integers')
+  }
+  if (isLegalCustomImageSize(width, height)) {
+    return customImageSizeResult(width, height, width, height)
+  }
+
+  const requestedRatio = width / height
+  const targetRatio = Math.min(MAX_ASPECT_RATIO, Math.max(1 / MAX_ASPECT_RATIO, requestedRatio))
+  let targetPixels = Math.min(MAX_PIXELS, Math.max(MIN_PIXELS, width * height))
+  let targetWidth = Math.sqrt(targetPixels * targetRatio)
+  let targetHeight = Math.sqrt(targetPixels / targetRatio)
+  const longest = Math.max(targetWidth, targetHeight)
+  if (longest > MAX_EDGE) {
+    const scale = MAX_EDGE / longest
+    targetWidth *= scale
+    targetHeight *= scale
+    targetPixels = targetWidth * targetHeight
+  }
+
+  let bestWidth = 0
+  let bestHeight = 0
+  let bestScore = Number.POSITIVE_INFINITY
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (let candidateWidth = SIZE_MULTIPLE; candidateWidth <= MAX_EDGE; candidateWidth += SIZE_MULTIPLE) {
+    const idealHeight = candidateWidth / targetRatio
+    const candidateHeights = [
+      Math.floor(idealHeight / SIZE_MULTIPLE) * SIZE_MULTIPLE,
+      Math.ceil(idealHeight / SIZE_MULTIPLE) * SIZE_MULTIPLE,
+    ]
+    for (const candidateHeight of candidateHeights) {
+      if (!isLegalCustomImageSize(candidateWidth, candidateHeight)) continue
+      const actualRatio = candidateWidth / candidateHeight
+      const pixels = candidateWidth * candidateHeight
+      const ratioError = Math.abs(Math.log(actualRatio / targetRatio))
+      const pixelError = Math.abs(Math.log(pixels / targetPixels))
+      const score = ratioError * 4 + pixelError
+      const distance = Math.abs(candidateWidth - targetWidth) / targetWidth + Math.abs(candidateHeight - targetHeight) / targetHeight
+      if (score < bestScore - 1e-12 || (Math.abs(score - bestScore) <= 1e-12 && (distance < bestDistance - 1e-12 || (Math.abs(distance - bestDistance) <= 1e-12 && candidateWidth * candidateHeight > bestWidth * bestHeight)))) {
+        bestWidth = candidateWidth
+        bestHeight = candidateHeight
+        bestScore = score
+        bestDistance = distance
+      }
+    }
+  }
+  if (!bestWidth || !bestHeight) return invalid('no legal custom image size')
+  return customImageSizeResult(width, height, bestWidth, bestHeight)
+}
+
+function isLegalCustomImageSize(width: number, height: number) {
+  if (width <= 0 || height <= 0 || width % SIZE_MULTIPLE || height % SIZE_MULTIPLE) return false
+  if (width > MAX_EDGE || height > MAX_EDGE) return false
+  const pixels = width * height
+  if (pixels < MIN_PIXELS || pixels > MAX_PIXELS) return false
+  return Math.max(width / height, height / width) <= MAX_ASPECT_RATIO
+}
+
+function customImageSizeResult(requestedWidth: number, requestedHeight: number, width: number, height: number): CustomImageSizeNormalization {
+  return {
+    valid: true,
+    requestedWidth,
+    requestedHeight,
+    width,
+    height,
+    size: `${width}x${height}`,
+    wasNormalized: requestedWidth !== width || requestedHeight !== height,
+  }
+}

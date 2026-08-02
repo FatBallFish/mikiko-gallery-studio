@@ -9,6 +9,7 @@ import { Wallet, CreditCard, QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
+import { closePaymentWindow, dispatchPaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutDateTime, checkoutMoney, checkoutOrderActionState, checkoutOrderRuntimeState, checkoutPaymentMethodLabel, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
@@ -239,6 +240,7 @@ export function CheckoutPage() {
       app.notify('error', normalizedCustomAmount.error ?? '请输入有效金额')
       return
     }
+    const paymentWindow = reservePaymentWindow()
     setBusy(true)
     try {
       const nextOrder = await userApi.createCashierOrder({
@@ -248,6 +250,7 @@ export function CheckoutPage() {
         visible_method: selectedMethod,
         client_return_url: `${window.location.origin}${window.location.pathname}#/checkout`,
       }, orderIdempotencyKey)
+      dispatchPaymentWindow(paymentWindow, checkoutPaymentDisplayModel(nextOrder))
       setOrder(nextOrder)
       setPaymentModalOpen(true)
       setNowMs(Date.now())
@@ -256,6 +259,7 @@ export function CheckoutPage() {
       setOrderIdempotencyKey(newCheckoutOrderIdempotencyKey())
       app.notify('success', '订单已创建，请继续完成支付')
     } catch (caught) {
+      closePaymentWindow(paymentWindow)
       app.notify('error', errorMessage(caught))
     } finally {
       setBusy(false)
@@ -571,11 +575,7 @@ function PaymentDisplayPanel({
   const paymentHref = display.href ?? ''
   const openForm = () => {
     if (!display.formHtml) return
-    const popup = window.open('', '_blank')
-    if (!popup) return
-    popup.opener = null
-    popup.document.write(display.formHtml)
-    popup.document.close()
+    dispatchPaymentWindow(reservePaymentWindow(), display)
   }
   return (
     <section className={cn(checkoutClasses.payment, display.kind === 'unsupported' && checkoutClasses.paymentUnsupported)}>

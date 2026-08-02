@@ -1,5 +1,5 @@
 import type { ImageResult } from '../../../shared/api-types'
-import { homeGalleryCardView } from './homeGalleryModel'
+import { homeGalleryCardView, homePublicDetailImage } from './homeGalleryModel'
 
 const guestImage: ImageResult = {
   id: 'img_anon',
@@ -16,6 +16,7 @@ const guestImage: ImageResult = {
 }
 
 const card = homeGalleryCardView(guestImage)
+const detail = homePublicDetailImage(guestImage)
 
 if (card.title !== 'A soft neon city…') {
   throw new Error(`home gallery card should prefer prompt excerpt for anonymous featured gallery, got ${card.title}`)
@@ -23,6 +24,14 @@ if (card.title !== 'A soft neon city…') {
 
 if (card.title.includes('Full prompt')) {
   throw new Error('home featured gallery card must not expose full prompt in list context')
+}
+
+if (detail.prompt !== guestImage.prompt_excerpt) {
+  throw new Error(`home public detail must expose only prompt_excerpt, got ${detail.prompt}`)
+}
+
+if (detail.prompt?.includes('Full prompt')) {
+  throw new Error('home public detail must not expose the full prompt from a public list response')
 }
 
 if (!card.meta.includes('plus') || !card.meta.includes('2K')) {

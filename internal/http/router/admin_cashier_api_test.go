@@ -289,14 +289,14 @@ func TestAdminCashierOrdersSupportsOperationalFilters(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-filter-a@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode userA: %v", err)
 	}
-	userA, userASession, err := authSvc.LoginWithEmailCode("cashier-filter-a@example.com", "123456")
+	userA, userASession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-filter-a@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode userA: %v", err)
 	}
 	if err := authSvc.SendEmailCode("cashier-filter-b@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode userB: %v", err)
 	}
-	_, userBSession, err := authSvc.LoginWithEmailCode("cashier-filter-b@example.com", "123456")
+	_, userBSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-filter-b@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode userB: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-manual-complete-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-manual-complete-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-manual-complete-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestAdminCashierOrderCloseCancelsPendingOrderAndBlocksCompletion(t *testing
 	if err := authSvc.SendEmailCode("cashier-close-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, session, err := authSvc.LoginWithEmailCode("cashier-close-user@example.com", "123456")
+	user, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-close-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -544,7 +544,7 @@ func TestAdminCashierOrderRefundDeductsUnusedRechargeBalance(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-refund-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-refund-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-refund-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -655,7 +655,7 @@ func TestAdminCashierOrderChargebackDeductsBalanceAndIsIdempotent(t *testing.T) 
 	if err := authSvc.SendEmailCode("cashier-chargeback-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, session, err := authSvc.LoginWithEmailCode("cashier-chargeback-user@example.com", "123456")
+	user, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-chargeback-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1681,7 +1681,22 @@ func TestAdminCashierOrderRefundCallsJeePayProvider(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamPath = r.URL.Path
 		if r.Method != http.MethodPost {
-			t.Fatalf("expected jeepay refund POST, got %s", r.Method)
+			t.Fatalf("expected jeepay POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/pay/unifiedOrder" {
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode jeepay unified order JSON: %v", err)
+			}
+			if body["mchOrderNo"] == "" || body["sign"] == "" {
+				t.Fatalf("unexpected jeepay unified order body: %#v", body)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+			return
+		}
+		if r.URL.Path != "/api/refund/refundOrder" {
+			t.Fatalf("unexpected jeepay refund path %s", r.URL.Path)
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -1692,7 +1707,6 @@ func TestAdminCashierOrderRefundCallsJeePayProvider(t *testing.T) {
 			t.Fatalf("parse jeepay refund form: %v body=%s", err, string(body))
 		}
 		upstreamValues = values
-		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"refundOrderId":"JEEPAY-REFUND-001","mchRefundNo":"REFUND-JEEPAY-001","refundAmount":1250,"state":2,"channelOrderNo":"CHANNEL-REFUND-001"}}`))
 	}))
 	defer upstream.Close()
@@ -1736,7 +1750,7 @@ func TestAdminCashierOrderSyncCompletesPaidProviderOrder(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-sync-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-sync-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-sync-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1840,7 +1854,7 @@ func TestAdminCashierOrderSyncRejectsPaidAmountMismatch(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-sync-mismatch-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-sync-mismatch-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-sync-mismatch-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1917,7 +1931,7 @@ func TestAdminCashierOrderSyncClassifiesRiskControlStatus(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-sync-risk-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("cashier-sync-risk-user@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-sync-risk-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1997,7 +2011,7 @@ func TestAdminCashierOrderSyncQueriesAlipayDirectProvider(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-sync-alipay-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-sync-alipay-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-sync-alipay-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -2124,7 +2138,7 @@ func TestAdminCashierOrderSyncQueriesWxPayDirectProvider(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-sync-wxpay-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-sync-wxpay-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-sync-wxpay-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -2255,7 +2269,7 @@ func TestAdminCashierOrderSyncQueriesEasyPayProvider(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-sync-easypay-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-sync-easypay-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-sync-easypay-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -2360,10 +2374,22 @@ func TestAdminCashierOrderSyncQueriesJeePayProvider(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamPath = r.URL.Path
 		if r.Method != http.MethodPost {
-			t.Fatalf("expected jeepay query POST, got %s", r.Method)
+			t.Fatalf("expected jeepay POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/pay/unifiedOrder" {
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode jeepay unified order JSON: %v", err)
+			}
+			if body["mchOrderNo"] == "" || body["sign"] == "" {
+				t.Fatalf("unexpected jeepay unified order body: %#v", body)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
+			return
 		}
 		if r.URL.Path != "/api/pay/query" {
-			t.Fatalf("expected jeepay query path /api/pay/query, got %s", r.URL.Path)
+			t.Fatalf("unexpected jeepay query path %s", r.URL.Path)
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -2374,7 +2400,6 @@ func TestAdminCashierOrderSyncQueriesJeePayProvider(t *testing.T) {
 			t.Fatalf("parse jeepay query form: %v", err)
 		}
 		upstreamValues = values
-		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{"state":2,"amount":1250,"payOrderId":"JEEPAY-QUERY-001"}}`))
 	}))
 	defer upstream.Close()
@@ -2390,7 +2415,7 @@ func TestAdminCashierOrderSyncQueriesJeePayProvider(t *testing.T) {
 	if err := authSvc.SendEmailCode("cashier-sync-jeepay-user@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("cashier-sync-jeepay-user@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "cashier-sync-jeepay-user@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -2958,7 +2983,7 @@ func newAdminCashierRefundProviderTest(t *testing.T, email string) (http.Handler
 	if err := authSvc.SendEmailCode(email, "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode(email, "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, email, "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

@@ -20,7 +20,7 @@ func TestAgentAPIKeyLifecycleEndpoints(t *testing.T) {
 	if err := authSvc.SendEmailCode("keys@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("keys@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "keys@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

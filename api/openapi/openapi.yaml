@@ -420,7 +420,25 @@ paths:
               $ref: ./components/schemas/agent.yaml#/components/schemas/EmailCodeLoginRequest
       responses:
         '200':
-          description: Login succeeded
+          description: Login succeeded or password setup is required before a session can be issued
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/EmailCodeLoginResponse
+  /api/agent/auth/v1/password/setup:
+    post:
+      tags: [Agent Auth]
+      summary: Complete mandatory first-login password setup
+      operationId: postAgentAuthPasswordSetup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/PasswordSetupRequest
+      responses:
+        '200':
+          description: Password configured and first normal session issued
           content:
             application/json:
               schema:

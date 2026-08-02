@@ -1,12 +1,14 @@
 .git
 .gitignore
 .worktrees/
+.secrets/
 .DS_Store
 .env
 .env.*
 !.env.example
 .tmp
 tmp/
+tmp/imagegen/
 target/
 coverage/
 *.out

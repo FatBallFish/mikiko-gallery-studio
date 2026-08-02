@@ -382,16 +382,48 @@ func (a *API) HandleEmailCodeLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	a.setRefreshCookie(w, login.Session)
-	payload := map[string]any{
-		"access_token":       login.Session.AccessToken,
-		"expires_in_seconds": int(time.Until(login.Session.AccessTokenExpiresAt).Seconds()),
-		"user_id":            login.User.ID,
-	}
+	payload := map[string]any{"user_id": login.User.ID}
 	if signupGrant != nil {
 		payload["signup_grant"] = signupGrant
 	}
+	if login.PasswordSetupRequired {
+		payload["password_setup_required"] = true
+		payload["password_setup_token"] = login.PasswordSetupToken
+		payload["password_setup_expires_in_seconds"] = int(time.Until(login.PasswordSetupExpiresAt).Seconds())
+		httpx.WriteSuccess(w, r, http.StatusOK, payload)
+		return
+	}
+	a.setRefreshCookie(w, login.Session)
+	payload["access_token"] = login.Session.AccessToken
+	payload["expires_in_seconds"] = int(time.Until(login.Session.AccessTokenExpiresAt).Seconds())
 	httpx.WriteSuccess(w, r, http.StatusOK, payload)
+}
+
+func (a *API) HandlePasswordSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var req struct {
+		PasswordSetupToken string `json:"password_setup_token"`
+		NewPassword        string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	user, session, err := a.auth.CompletePasswordSetup(req.PasswordSetupToken, req.NewPassword)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.setRefreshCookie(w, session)
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "auth.password_setup", "user", fmt.Sprintf("%d", user.ID), nil)
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"access_token":       session.AccessToken,
+		"expires_in_seconds": int(time.Until(session.AccessTokenExpiresAt).Seconds()),
+		"user_id":            user.ID,
+	})
 }
 
 func (a *API) signupTrialGrantResult(ctx context.Context, userID int64, newlyCreated bool) (*billingservice.SignupTrialGrantResult, error) {
@@ -621,14 +653,14 @@ func (a *API) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		OldPassword string `json:"old_password"`
 		NewPassword string `json:"new_password"`
+		Code        string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return
 	}
-	if _, err := a.auth.ChangePassword(user.ID, req.OldPassword, req.NewPassword); err != nil {
+	if _, err := a.auth.ChangePassword(user.ID, req.Code, req.NewPassword); err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
@@ -6023,6 +6055,7 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		OutputFormat:              append([]string(nil), model.OutputFormat...),
 		OutputCompression:         model.OutputCompression,
 		SupportsOutputCompression: model.SupportsOutputCompression,
+		SupportsCustomSize:        model.SupportsCustomSize,
 		Moderation:                append([]string(nil), model.Moderation...),
 		HealthStatus:              account.Status,
 		TimeoutMS:                 account.TimeoutMS,
@@ -7261,6 +7294,7 @@ func profilePayload(user *domainauth.User) map[string]any {
 		"user_group_code":   user.GroupCode,
 		"theme":             defaultString(user.Theme, "system"),
 		"default_locale":    defaultString(user.DefaultLocale, "zh-CN"),
+		"has_password":      user.PasswordHash != "",
 	}
 	if mode, accent, ok := profileThemePreference(user.Theme); ok {
 		payload["preferences"] = map[string]any{
@@ -8260,6 +8294,7 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 		OutputFormat              []string       `json:"output_format"`
 		OutputCompression         *int           `json:"output_compression"`
 		SupportsOutputCompression bool           `json:"supports_output_compression"`
+		SupportsCustomSize        bool           `json:"supports_custom_size"`
 		Moderation                []string       `json:"moderation"`
 		CostPerImage              string         `json:"cost_per_image"`
 		Currency                  string         `json:"currency"`
@@ -8282,7 +8317,7 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 	if req.OutputCompression != nil {
 		outputCompression = *req.OutputCompression
 	}
-	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
+	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
 }
 
 func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) (domainimagetask.TestModelAccountRequest, bool) {

@@ -25,7 +25,7 @@ export function useApp() {
   return value
 }
 
-export type ImageLightboxPayload = {
+export type ImagePreviewPayload = {
   url: string
   downloadUrl?: string
   alt: string
@@ -54,23 +54,6 @@ function gcd(a: number, b: number): number {
 }
 
 const lightboxClasses = {
-  backdrop: `fixed inset-0 ${overlayLayers.lightbox} flex cursor-zoom-out items-start justify-center bg-[var(--lightbox-backdrop)] p-4 pt-10 backdrop-blur-xl animate-in fade-in duration-300 motion-reduce:animate-none sm:p-10`,
-  close: 'absolute right-4 top-4 z-10 grid size-8 cursor-pointer place-items-center rounded-full border border-[var(--lightbox-close-border)] bg-[var(--lightbox-close-bg)] text-sm leading-none text-[var(--lightbox-close-text)] shadow-lg transition hover:scale-105',
-  stage: 'relative flex max-h-[92vh] w-full max-w-6xl cursor-default flex-col overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--bg)] shadow-2xl md:flex-row',
-  imageWrap: 'flex flex-1 items-start justify-center overflow-auto bg-[var(--lightbox-stage-bg)] p-6 pt-8',
-  imageFrame: 'relative grid min-h-80 w-full place-items-center',
-  imageButton: 'max-h-[80vh] w-auto max-w-full cursor-zoom-in border-0 bg-transparent p-0',
-  image: 'max-h-[80vh] w-auto max-w-full rounded-xl object-contain shadow-xl',
-  panel: 'flex max-h-[92vh] w-full flex-col justify-between gap-6 overflow-y-auto border-t border-[var(--border)] bg-[var(--surface)] p-8 md:w-96 md:border-l md:border-t-0',
-  title: 'text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]',
-  meta: 'grid grid-cols-2 gap-2.5',
-  metaItem: 'rounded-2xl border border-[var(--border)] bg-[var(--bg)]/70 p-3',
-  metaLabel: 'mb-1 block text-[10px] font-vault-mono uppercase tracking-widest text-[var(--muted)]',
-  metaValue: 'text-sm font-black text-[var(--fg)]',
-  prompt: 'max-h-44 overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-4 text-sm leading-relaxed text-[var(--fg)] [overflow-wrap:anywhere]',
-  actions: 'flex flex-col gap-3',
-  primaryAction: 'w-full rounded-xl bg-[var(--accent)] py-3 text-sm font-bold text-white transition-transform hover:scale-[1.02]',
-  secondaryAction: 'w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] py-3 text-sm font-bold text-[var(--fg)] transition-colors hover:border-[var(--accent)]',
   zoomBackdrop: `fixed inset-0 ${overlayLayers.zoom} bg-[var(--lightbox-backdrop)]/95 backdrop-blur-xl animate-in fade-in duration-200 motion-reduce:animate-none`,
   zoomClose: `absolute right-4 top-4 ${overlayLayers.zoomControls} grid size-10 place-items-center rounded-full border border-[var(--lightbox-close-border)] bg-[var(--lightbox-close-bg)] text-base text-[var(--lightbox-close-text)] shadow-lg transition hover:scale-105`,
   zoomViewport: 'absolute inset-0 overflow-hidden cursor-grab active:cursor-grabbing',
@@ -108,79 +91,7 @@ export function ImageMediaFallback({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-export function ImageLightbox({ image, onClose, onReuseConfiguration }: {
-  image: ImageLightboxPayload | null
-  onClose: () => void
-  onReuseConfiguration?: (draft: WorkspaceCreationDraft) => void
-}) {
-  const [zoomOpen, setZoomOpen] = useState(false)
-  const media = useImageMediaState(image?.url ?? '')
-  const dialogRef = useRef<HTMLElement | null>(null)
-  useDismissableLayer(Boolean(image), onClose, dialogRef)
-
-  useEffect(() => {
-    if (!image) setZoomOpen(false)
-  }, [image])
-
-  if (!image) return null
-  const pixels = imagePixelsLabel(image.width, image.height)
-  const ratio = imageRatioLabel(image.width, image.height, image.ratio)
-  const reuseConfiguration = () => {
-    if (image.creationDraft) onReuseConfiguration?.(image.creationDraft)
-  }
-  const downloadImage = () => {
-    const link = document.createElement('a')
-    link.href = image.downloadUrl || image.url
-    link.download = `${image.alt || 'mikiko-image'}.png`
-    link.rel = 'noopener noreferrer'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-  }
-  return (
-    <OverlayPortal>
-      <div className={lightboxClasses.backdrop} data-focus-layer role="presentation" onMouseDown={onClose}>
-        <section ref={dialogRef} tabIndex={-1} className={lightboxClasses.stage} role="dialog" aria-modal="true" aria-label="图片预览" onMouseDown={(event) => event.stopPropagation()}>
-          <button type="button" className={lightboxClasses.close} aria-label="关闭预览" onClick={onClose}><X size={16} strokeWidth={1.7} aria-hidden="true" /></button>
-          <div className={lightboxClasses.imageWrap}>
-            <div className={lightboxClasses.imageFrame}>
-              {media.status === 'loading' ? <span className={lightboxClasses.mediaLoading} role="status">正在加载图片</span> : null}
-              {media.status === 'error' ? <ImageMediaFallback onRetry={media.retry} /> : (
-                <button type="button" className={lightboxClasses.imageButton} disabled={media.status !== 'loaded'} onClick={() => setZoomOpen(true)} aria-label="放大查看图片">
-                  <img key={media.imageKey} className={cn(lightboxClasses.image, media.status !== 'loaded' && 'opacity-0')} src={image.url} alt={image.alt} onLoad={media.markLoaded} onError={media.markError} />
-                </button>
-              )}
-            </div>
-          </div>
-          <aside className={lightboxClasses.panel}>
-            <div>
-              <div className="flex flex-col gap-5">
-                <span className={lightboxClasses.title}>画卷配置详情</span>
-                <div className={lightboxClasses.meta}>
-                  <LightboxInfo label="像素" value={pixels} />
-                  <LightboxInfo label="比例" value={ratio} />
-                  <LightboxInfo label="模型" value={image.model || '未知'} />
-                  <LightboxInfo label="来源" value={image.source || 'Mikiko Studio'} />
-                </div>
-                <div>
-                  <span className="mb-2 block text-xs text-[var(--muted)]">提示词</span>
-                  <p className={lightboxClasses.prompt}>"{image.prompt || image.alt || '暂无提示词'}"</p>
-                </div>
-              </div>
-            </div>
-            <div className={lightboxClasses.actions}>
-              {image.creationDraft && onReuseConfiguration ? <button type="button" className={lightboxClasses.primaryAction} onClick={reuseConfiguration}>复用配置</button> : null}
-              <button type="button" className={lightboxClasses.secondaryAction} onClick={downloadImage}>下载图片</button>
-            </div>
-          </aside>
-        </section>
-        {zoomOpen ? <ImageZoomViewer image={image} onClose={() => setZoomOpen(false)} /> : null}
-      </div>
-    </OverlayPortal>
-  )
-}
-
-function ImageZoomViewer({ image, onClose }: { image: ImageLightboxPayload; onClose: () => void }) {
+function ImageZoomViewer({ image, onClose }: { image: ImagePreviewPayload; onClose: () => void }) {
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number; active: boolean }>({ x: 0, y: 0, active: false })
@@ -266,15 +177,6 @@ function ImageZoomViewer({ image, onClose }: { image: ImageLightboxPayload; onCl
   )
 }
 
-function LightboxInfo({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={lightboxClasses.metaItem}>
-      <span className={lightboxClasses.metaLabel}>{label}</span>
-      <span className={lightboxClasses.metaValue}>{value}</span>
-    </div>
-  )
-}
-
 export function PublicDetailIcon({ name, active }: { name: 'eye' | 'heart' | 'star' | 'download' | 'copy' | 'edit' | 'public' | 'group' | 'delete'; active?: boolean }) {
   const props = { size: 18, strokeWidth: 1.5, fill: active && (name === 'heart' || name === 'star') ? 'currentColor' : 'none' }
   if (name === 'eye') return <Eye {...props} />
@@ -302,7 +204,7 @@ const publicDetailClasses = {
   side: 'grid min-w-0 gap-[18px]',
   prompt: 'grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-[var(--border)] pb-[18px]',
   promptLabel: 'text-[11px] uppercase tracking-[.08em] text-[var(--muted)]',
-  promptText: 'm-0 mt-2 leading-[1.7] text-[var(--muted)] [overflow-wrap:anywhere]',
+  promptText: 'm-0 mt-2 max-h-48 overflow-y-auto rounded-lg pr-2 leading-[1.7] text-[var(--muted)] [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]',
   meta: 'grid grid-cols-2 gap-2.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5 max-[760px]:grid-cols-1',
   stats: 'grid grid-cols-3 gap-2.5 max-[760px]:grid-cols-1',
   metaItem: 'grid min-w-0 gap-1 text-xs text-[var(--muted)]',
@@ -340,13 +242,12 @@ export type ImageDetailAction = {
   disabled?: boolean
 }
 
-export function ImageDetailModal({ title, image, imageUrl, referenceImages = [], showPublicStats = true, onPreviewImage, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onClose }: {
+export function ImageDetailModal({ title, image, imageUrl, referenceImages = [], showPublicStats = true, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onClose }: {
   title: string
   image: ImageResult | GalleryImage | null
   imageUrl?: string
-  referenceImages?: Array<{ id: string; url: string; alt: string; onPreview?: () => void }>
+  referenceImages?: Array<{ id: string; url: string; alt: string }>
   showPublicStats?: boolean
-  onPreviewImage?: (payload: ImageLightboxPayload) => void
   onLike?: (image: ImageResult | GalleryImage) => void
   onFavorite?: (image: ImageResult | GalleryImage) => void
   onDownload?: (image: ImageResult | GalleryImage) => void
@@ -355,23 +256,32 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
   previewSourceLabel?: string
   onClose: () => void
 }) {
+  const [zoomImage, setZoomImage] = useState<ImagePreviewPayload | null>(null)
+  useEffect(() => setZoomImage(null), [image?.id, imageUrl])
   if (!image) return null
+  const zoomableReferences = referenceImages.map((item) => ({
+    ...item,
+    onPreview: () => setZoomImage({ url: item.url, downloadUrl: item.url, alt: item.alt, source: '原图引用' }),
+  }))
   return (
-    <Modal title={title} onClose={onClose}>
-      <PublicImageDetail
-        image={image}
-        imageUrl={imageUrl}
-        referenceImages={referenceImages}
-        showPublicStats={showPublicStats}
-        onPreviewImage={onPreviewImage}
-        onLike={onLike}
-        onFavorite={onFavorite}
-        onDownload={onDownload}
-        onCopyPrompt={onCopyPrompt}
-        actions={actions}
-        previewSourceLabel={previewSourceLabel}
-      />
-    </Modal>
+    <>
+      <Modal title={title} onClose={onClose}>
+        <PublicImageDetail
+          image={image}
+          imageUrl={imageUrl}
+          referenceImages={zoomableReferences}
+          showPublicStats={showPublicStats}
+          onPreviewImage={setZoomImage}
+          onLike={onLike}
+          onFavorite={onFavorite}
+          onDownload={onDownload}
+          onCopyPrompt={onCopyPrompt}
+          actions={actions}
+          previewSourceLabel={previewSourceLabel}
+        />
+      </Modal>
+      {zoomImage ? <ImageZoomViewer image={zoomImage} onClose={() => setZoomImage(null)} /> : null}
+    </>
   )
 }
 
@@ -380,7 +290,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   imageUrl?: string
   referenceImages?: Array<{ id: string; url: string; alt: string; onPreview?: () => void }>
   showPublicStats?: boolean
-  onPreviewImage?: (payload: ImageLightboxPayload) => void
+  onPreviewImage?: (payload: ImagePreviewPayload) => void
   onLike?: (image: ImageResult | GalleryImage) => void
   onFavorite?: (image: ImageResult | GalleryImage) => void
   onDownload?: (image: ImageResult | GalleryImage) => void
@@ -428,7 +338,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
         <div className={publicDetailClasses.prompt}>
           <div>
             <small className={publicDetailClasses.promptLabel}>Prompt</small>
-            <p className={publicDetailClasses.promptText}>{prompt}</p>
+            <p className={publicDetailClasses.promptText} tabIndex={0}>{prompt}</p>
           </div>
           {publicDetailButton('复制 Prompt', <PublicDetailIcon name="copy" />, () => onCopyPrompt(prompt), '', !image.prompt)}
         </div>

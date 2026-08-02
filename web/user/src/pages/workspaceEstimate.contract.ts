@@ -1,5 +1,27 @@
 import type { EstimateRequest, EstimateResult } from '../../../shared/api-types'
 import { currentWorkspaceEstimate, workspaceEstimateKey } from './workspaceEstimate'
+import { workspaceRatioPixelEstimate } from './workspaceParameters'
+
+for (const [baseResolution, ratio, expected] of [
+  ['1K', '16:9', '1280x720'],
+  ['2K', '16:9', '2560x1440'],
+  ['4K', '1:1', '2880x2880'],
+] as const) {
+  const actual = workspaceRatioPixelEstimate(baseResolution, ratio)
+  if (actual !== expected) throw new Error(`${baseResolution} ${ratio} should preview ${expected}, got ${actual}`)
+}
+
+if (workspaceRatioPixelEstimate('', '16:9') !== '' || workspaceRatioPixelEstimate('1K', '') !== '') {
+  throw new Error('ratio pixel preview must remain empty until both parameters are selected')
+}
+
+if (workspaceRatioPixelEstimate('auto', '16:9', '2k') !== '2560x1440') {
+  throw new Error('auto ratio preview must use the backend-resolved task bucket')
+}
+
+if (workspaceRatioPixelEstimate('auto', '16:9') !== '') {
+  throw new Error('auto ratio preview must remain hidden without an authoritative task bucket')
+}
 
 const ratioPayload: EstimateRequest = {
   task_type: 'image_edit',

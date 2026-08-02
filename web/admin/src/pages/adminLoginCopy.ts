@@ -1,7 +1,7 @@
 export type AdminLoginEnv = Record<string, string | undefined>
 
 export const adminLoginCopy = {
-  brand: 'Pic Gallery 运营后台',
+  brand: 'Mikiko Gallery Studio 运营后台',
   heroTitle: '登录运营后台',
   heroDetail: '进入低噪声运营控制台，处理配置、审核、交易与审计任务。',
   formEyebrow: '管理员登录',

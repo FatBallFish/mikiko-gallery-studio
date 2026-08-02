@@ -186,6 +186,7 @@ func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domai
 		SetOutputFormat(req.OutputFormat).
 		SetOutputCompression(req.OutputCompression).
 		SetSupportsOutputCompression(req.SupportsOutputCompression).
+		SetSupportsCustomSize(req.SupportsCustomSize).
 		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
@@ -217,6 +218,7 @@ func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountMo
 		SetOutputFormat(req.OutputFormat).
 		SetOutputCompression(req.OutputCompression).
 		SetSupportsOutputCompression(req.SupportsOutputCompression).
+		SetSupportsCustomSize(req.SupportsCustomSize).
 		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
@@ -1048,6 +1050,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			OutputFormat:              append([]string(nil), model.OutputFormat...),
 			OutputCompression:         model.OutputCompression,
 			SupportsOutputCompression: model.SupportsOutputCompression,
+			SupportsCustomSize:        model.SupportsCustomSize,
 			Moderation:                append([]string(nil), model.Moderation...),
 			HealthStatus:              account.Status,
 			TimeoutMS:                 account.TimeoutMs,
@@ -1254,6 +1257,7 @@ func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repo
 		OutputFormat:              append([]string(nil), entity.OutputFormat...),
 		OutputCompression:         entity.OutputCompression,
 		SupportsOutputCompression: entity.SupportsOutputCompression,
+		SupportsCustomSize:        entity.SupportsCustomSize,
 		Moderation:                append([]string(nil), entity.Moderation...),
 		CostPerImage:              entity.CostPerImage,
 		Currency:                  entity.Currency,

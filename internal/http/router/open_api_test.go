@@ -264,7 +264,7 @@ func newOpenAPIHandlerWithAuth(t *testing.T, createReq apikeyservice.CreateReque
 	if err := authSvc.SendEmailCode("openapi@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, _, err := authSvc.LoginWithEmailCode("openapi@example.com", "123456")
+	user, _, err := loginAuthUserWithPasswordSetup(t, authSvc, "openapi@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

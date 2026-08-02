@@ -47,7 +47,7 @@ func TestAdminRedeemCodeManagementEndpoints(t *testing.T) {
 	if err := authSvc.SendEmailCode("redeemer@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, userSession, err := authSvc.LoginWithEmailCode("redeemer@example.com", "123456")
+	user, userSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "redeemer@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

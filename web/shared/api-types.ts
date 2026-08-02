@@ -22,6 +22,7 @@ export const API_PATHS = {
     sendEmailCode: '/api/agent/auth/v1/email/send-code',
     loginEmailCode: '/api/agent/auth/v1/login/email-code',
     loginPassword: '/api/agent/auth/v1/login/password',
+    passwordSetup: '/api/agent/auth/v1/password/setup',
     refreshSession: '/api/agent/auth/v1/session/refresh',
     logout: '/api/agent/auth/v1/logout',
     passwordChange: '/api/agent/auth/v1/password/change',
@@ -219,6 +220,7 @@ export type GenerationPreferences = GenerationPreferencesBase & (
 export type UserProfile = {
   id: ID
   email: string
+  has_password: boolean
   nickname?: string
   bio?: string
   avatar_object_key?: string
@@ -233,11 +235,11 @@ export type UserProfile = {
   preferences: GenerationPreferences
 }
 
-export type SendEmailCodeRequest = { email: string; scene?: 'login' | 'register' | 'password_reset' | string }
+export type SendEmailCodeRequest = { email: string; scene?: 'login' | 'register' | 'password_reset' | 'password_change' | string }
 export type SendEmailCodeResponse = { email: string; scene: string; status: string; cooldown_seconds?: number }
 export type PasswordLoginRequest = { email: string; password: string }
 export type EmailCodeLoginRequest = { email: string; code: string }
-export type ChangePasswordRequest = { old_password: string; new_password: string }
+export type ChangePasswordRequest = { code: string; new_password: string }
 export type PasswordResetRequest = { email: string }
 export type PasswordResetConfirmRequest = { email: string; code: string; new_password: string }
 export type CloseAccountResponse = { id: ID; status: string; closed_at?: string | null }
@@ -304,7 +306,9 @@ export type SignupGrantResult = {
   expires_at?: string | null
   balance: Balance
 }
-export type LoginResponse = { access_token: string; expires_in_seconds: number; expires_in?: number; user_id: ID; profile?: UserProfile; signup_grant?: SignupGrantResult }
+export type NormalLoginResponse = { password_setup_required?: false; access_token: string; expires_in_seconds: number; expires_in?: number; user_id: ID; profile?: UserProfile; signup_grant?: SignupGrantResult }
+export type PasswordSetupRequiredLoginResponse = { password_setup_required: true; password_setup_token: string; password_setup_expires_in_seconds: number; user_id: ID; signup_grant?: SignupGrantResult; access_token?: never }
+export type LoginResponse = NormalLoginResponse | PasswordSetupRequiredLoginResponse
 export type SubscriptionPlan = {
   id: number
   plan_code: string
@@ -489,6 +493,7 @@ export type CapabilityItem = {
   task_types: ImageTaskType[]
   qualities?: string[]
   base_resolution?: string[]
+  auto_base_resolution_by_task_type?: Partial<Record<ImageTaskType, string>>
   size_modes?: Array<'ratio' | 'pixel' | string>
   aspect_ratios: string[]
   pixel_sizes?: string[]
@@ -497,7 +502,23 @@ export type CapabilityItem = {
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
+  supports_custom_size?: boolean
+  capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
   moderation?: string[]
+}
+export type CapabilityTaskOptions = {
+  base_resolution?: string[]
+  auto_base_resolution?: string
+  size_modes?: Array<'ratio' | 'pixel' | string>
+  aspect_ratios?: string[]
+  pixel_sizes?: string[]
+  quality?: string[]
+  output_format?: string[]
+  supports_output_compression?: boolean
+  supports_custom_size?: boolean
+  moderation?: string[]
+  max_output_image_count?: number
+  max_reference_image_count?: number
 }
 export type RouteModelPriceQuote = {
   task_type: ImageTaskType
@@ -516,6 +537,7 @@ export type CapabilityModelGroup = {
   task_types: ImageTaskType[]
   qualities?: string[]
   base_resolution?: string[]
+  auto_base_resolution_by_task_type?: Partial<Record<ImageTaskType, string>>
   size_modes?: Array<'ratio' | 'pixel' | string>
   aspect_ratios?: string[]
   pixel_sizes?: string[]
@@ -524,6 +546,8 @@ export type CapabilityModelGroup = {
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
+  supports_custom_size?: boolean
+  capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
   moderation?: string[]
   effective_multiplier?: string
   prices: RouteModelPriceQuote[]
@@ -543,6 +567,7 @@ export type Capability = {
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
+  supports_custom_size?: boolean
   moderation?: string[]
   max_image_count: number
   reference_image_max_mb?: number
@@ -947,6 +972,7 @@ export type ModelAccountModel = {
   output_format: string[]
   output_compression?: number
   supports_output_compression: boolean
+  supports_custom_size: boolean
   moderation: string[]
   cost_per_image: string
   currency: string
@@ -955,7 +981,7 @@ export type ModelAccountModel = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; output_format: string[]; supports_output_compression: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; output_format: string[]; supports_output_compression: boolean; supports_custom_size?: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
 export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio?: string }
 export type ModelAccountTestImageResult = {
   status: string

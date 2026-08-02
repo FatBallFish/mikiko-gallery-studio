@@ -48,7 +48,7 @@ func TestAdminUserManagementEndpoints(t *testing.T) {
 	if err := authSvc.SendEmailCode("managed@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	managedUser, managedSession, err := authSvc.LoginWithEmailCode("managed@example.com", "123456")
+	managedUser, managedSession, err := loginAuthUserWithPasswordSetup(t, authSvc, "managed@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

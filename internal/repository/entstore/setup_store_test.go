@@ -389,7 +389,7 @@ func seedSetupInstallation(t *testing.T, client *repoent.Client, installationID 
 		SetSingletonKey("installation").
 		SetInstallationID(installationID).
 		SetConfigSchemaVersion(1).
-		SetDatabaseSchemaVersion(1).
+		SetDatabaseSchemaVersion(db.CurrentDatabaseSchemaVersion).
 		SetAppVersion("setup-store-test").
 		SetInitializedAt(time.Now().UTC()).
 		SetMigratedAt(time.Now().UTC()).

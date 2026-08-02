@@ -14,18 +14,22 @@ func TestVisibleRouteModelJSONUsesSnakeCaseCapabilityFields(t *testing.T) {
 		Code:                      "plus",
 		OutputFormat:              []string{"webp"},
 		SupportsOutputCompression: true,
-		Prices:                    []modelhub.VisibleRouteModelPrice{{TaskType: "text_to_image", BaseResolution: "1k"}},
+		SupportsCustomSize:        true,
+		CapabilitiesByTaskType: map[string]modelhub.VisibleRouteModelTaskCapability{
+			"text_to_image": {AutoBaseResolution: "2k", Quality: []string{"high"}},
+		},
+		Prices: []modelhub.VisibleRouteModelPrice{{TaskType: "text_to_image", BaseResolution: "1k"}},
 	})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 	encoded := string(payload)
-	for _, expected := range []string{`"output_format"`, `"supports_output_compression"`, `"task_type"`, `"base_resolution"`} {
+	for _, expected := range []string{`"output_format"`, `"supports_output_compression"`, `"supports_custom_size"`, `"capabilities_by_task_type"`, `"auto_base_resolution"`, `"task_type"`, `"base_resolution"`} {
 		if !strings.Contains(encoded, expected) {
 			t.Fatalf("expected snake-case field %s in %s", expected, encoded)
 		}
 	}
-	if strings.Contains(encoded, `"SupportsOutputCompression"`) || strings.Contains(encoded, `"OutputFormat"`) {
+	if strings.Contains(encoded, `"SupportsOutputCompression"`) || strings.Contains(encoded, `"CapabilitiesByTaskType"`) || strings.Contains(encoded, `"OutputFormat"`) {
 		t.Fatalf("capability response must not expose Go field names: %s", encoded)
 	}
 }

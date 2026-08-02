@@ -186,6 +186,20 @@ func (_c *ModelAccountModelCreate) SetNillableSupportsOutputCompression(v *bool)
 	return _c
 }
 
+// SetSupportsCustomSize sets the "supports_custom_size" field.
+func (_c *ModelAccountModelCreate) SetSupportsCustomSize(v bool) *ModelAccountModelCreate {
+	_c.mutation.SetSupportsCustomSize(v)
+	return _c
+}
+
+// SetNillableSupportsCustomSize sets the "supports_custom_size" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableSupportsCustomSize(v *bool) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetSupportsCustomSize(*v)
+	}
+	return _c
+}
+
 // SetModeration sets the "moderation" field.
 func (_c *ModelAccountModelCreate) SetModeration(v []string) *ModelAccountModelCreate {
 	_c.mutation.SetModeration(v)
@@ -303,6 +317,10 @@ func (_c *ModelAccountModelCreate) defaults() {
 		v := modelaccountmodel.DefaultSupportsOutputCompression
 		_c.mutation.SetSupportsOutputCompression(v)
 	}
+	if _, ok := _c.mutation.SupportsCustomSize(); !ok {
+		v := modelaccountmodel.DefaultSupportsCustomSize
+		_c.mutation.SetSupportsCustomSize(v)
+	}
 	if _, ok := _c.mutation.CostPerImage(); !ok {
 		v := modelaccountmodel.DefaultCostPerImage
 		_c.mutation.SetCostPerImage(v)
@@ -355,6 +373,9 @@ func (_c *ModelAccountModelCreate) check() error {
 	}
 	if _, ok := _c.mutation.SupportsOutputCompression(); !ok {
 		return &ValidationError{Name: "supports_output_compression", err: errors.New(`ent: missing required field "ModelAccountModel.supports_output_compression"`)}
+	}
+	if _, ok := _c.mutation.SupportsCustomSize(); !ok {
+		return &ValidationError{Name: "supports_custom_size", err: errors.New(`ent: missing required field "ModelAccountModel.supports_custom_size"`)}
 	}
 	if _, ok := _c.mutation.CostPerImage(); !ok {
 		return &ValidationError{Name: "cost_per_image", err: errors.New(`ent: missing required field "ModelAccountModel.cost_per_image"`)}
@@ -463,6 +484,10 @@ func (_c *ModelAccountModelCreate) createSpec() (*ModelAccountModel, *sqlgraph.C
 	if value, ok := _c.mutation.SupportsOutputCompression(); ok {
 		_spec.SetField(modelaccountmodel.FieldSupportsOutputCompression, field.TypeBool, value)
 		_node.SupportsOutputCompression = value
+	}
+	if value, ok := _c.mutation.SupportsCustomSize(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsCustomSize, field.TypeBool, value)
+		_node.SupportsCustomSize = value
 	}
 	if value, ok := _c.mutation.Moderation(); ok {
 		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)

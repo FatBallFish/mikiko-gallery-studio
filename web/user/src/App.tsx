@@ -130,6 +130,7 @@ function UserApplication() {
           const currentProfile = sessionRef.current?.profile ?? profile ?? refreshed.profile ?? {
             id: String(refreshed.user_id ?? ''),
             email: '',
+            has_password: false,
             display_name: 'Mikiko User',
             avatar_initials: 'PG',
             tier: 'FREE' as const,
@@ -214,6 +215,7 @@ function UserApplication() {
         sessionRef.current = { token: refreshed.access_token, profile: profile ?? {
           id: String(refreshed.user_id ?? ''),
           email: '',
+          has_password: false,
           display_name: 'Mikiko User',
           avatar_initials: 'PG',
           tier: 'FREE',

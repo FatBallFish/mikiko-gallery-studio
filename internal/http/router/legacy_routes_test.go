@@ -30,7 +30,7 @@ func TestRestoredLegacyAgentRoutes(t *testing.T) {
 	if err := authSvc.SendEmailCode("legacy-agent@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("legacy-agent@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "legacy-agent@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

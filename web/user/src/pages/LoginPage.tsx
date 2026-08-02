@@ -1,11 +1,13 @@
 import { FormEvent, KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
 import { ArrowLeft, Check, Eye, EyeOff, LoaderCircle, Moon, Sun } from 'lucide-react'
 import { cn } from '../../../shared/classnames'
+import type { SignupGrantResult } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
+import { landingAssetUrl } from './landingContent'
 import { loginCopy, loginLocale } from './loginCopy'
 import {
   loginPresentation,
@@ -96,6 +98,9 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordSetupToken, setPasswordSetupToken] = useState('')
+  const [pendingSignupGrant, setPendingSignupGrant] = useState<SignupGrantResult | undefined>(undefined)
   const [showPassword, setShowPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [cooldown, setCooldown] = useState(0)
@@ -107,9 +112,13 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
   const [codeSent, setCodeSent] = useState(false)
 
   const effectiveCooldown = loginCooldownForEmail(cooldown, cooldownEmail, email)
-  const presentation = loginPresentation({ mode, intent, busy, sending, cooldown: effectiveCooldown })
+  const presentation = loginPresentation({ mode, intent, busy, sending, cooldown: effectiveCooldown, passwordSetupRequired: Boolean(passwordSetupToken) })
   const isDark = app.themePreference.mode === 'dark'
   const activeTabId = `${formId}-${mode}-tab`
+  const studioShowcase1280Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.webp')
+  const studioShowcase1920Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.webp')
+  const studioShowcase1280Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.avif')
+  const studioShowcase1920Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.avif')
 
   useEffect(() => {
     if (cooldown <= 0) return undefined
@@ -128,7 +137,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
   }
 
   function focusFirstInvalidField(validation: LoginFieldErrors) {
-    const field = firstLoginInvalidField(validation, mode, intent)
+    const field = firstLoginInvalidField(validation, mode, intent, Boolean(passwordSetupToken))
     if (!field) return
     window.requestAnimationFrame(() => {
       formRef.current?.querySelector<HTMLInputElement>(`[data-auth-field="${field}"]`)?.focus()
@@ -141,6 +150,10 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
     setIntent(next.intent)
     setCooldown(next.cooldown)
     setCode(next.code)
+    setPasswordSetupToken('')
+    setPendingSignupGrant(undefined)
+    setNewPassword('')
+    setConfirmPassword('')
     setErrors({})
     setFormError('')
     setCodeSent(next.codeSent)
@@ -152,6 +165,10 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
     setMode(next.mode)
     setCooldown(next.cooldown)
     setCode(next.code)
+    setPasswordSetupToken('')
+    setPendingSignupGrant(undefined)
+    setNewPassword('')
+    setConfirmPassword('')
     setErrors({})
     setFormError('')
     setCodeSent(next.codeSent)
@@ -167,7 +184,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
   }
 
   async function sendCode() {
-    const validation = validateLoginFields({ mode: 'code', intent, email, password, code: '123456', newPassword: intent === 'reset' ? '123456' : '' })
+    const validation = validateLoginFields({ mode: 'code', intent, email, password, code: '123456', newPassword: intent === 'reset' ? '123456' : '', confirmPassword: '', passwordSetupRequired: false })
     if (validation.email) {
       setErrors((current) => ({ ...current, email: validation.email }))
       focusFirstInvalidField({ email: validation.email })
@@ -195,7 +212,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const validation = validateLoginFields({ mode, intent, email, password, code, newPassword })
+    const validation = validateLoginFields({ mode, intent, email, password, code, newPassword, confirmPassword, passwordSetupRequired: Boolean(passwordSetupToken) })
     setErrors(validation)
     setFormError('')
     if (Object.keys(validation).length > 0) {
@@ -205,6 +222,21 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
 
     setBusy(true)
     try {
+      if (passwordSetupToken) {
+        const result = await userApi.completePasswordSetup(passwordSetupToken, newPassword)
+        const profile = await userApi.getProfileWithToken(result.access_token)
+        rememberLoginEmail(email.trim())
+        setPasswordSetupToken('')
+        setNewPassword('')
+        setConfirmPassword('')
+        await app.login({ token: result.access_token, profile }, returnTo, { imageId, taskId })
+        if (pendingSignupGrant?.granted) {
+          app.notify('success', `已领取 ${pendingSignupGrant.balance.trial_points ?? pendingSignupGrant.balance.available_points} 体验积分`)
+          await app.refreshAccount()
+        }
+        return
+      }
+
       if (intent === 'reset') {
         await userApi.confirmPasswordReset(email.trim(), code.trim(), newPassword)
         app.notify('success', '密码已重置，请使用新密码登录')
@@ -218,6 +250,15 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
       const result = mode === 'password'
         ? await userApi.loginWithPassword(email.trim(), password)
         : await userApi.loginWithEmailCode(email.trim(), code.trim())
+      if (result.password_setup_required) {
+        setPasswordSetupToken(result.password_setup_token)
+        setPendingSignupGrant(result.signup_grant)
+        setPassword('')
+        setCode('')
+        setNewPassword('')
+        setConfirmPassword('')
+        return
+      }
       const profile = await userApi.getProfileWithToken(result.access_token)
       rememberLoginEmail(email.trim())
       await app.login({ token: result.access_token, profile }, returnTo, { imageId, taskId })
@@ -238,7 +279,11 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
   return (
     <main className={loginClasses.page}>
       <section className={loginClasses.scene} aria-hidden="true">
-        <img className={loginClasses.sceneImage} src="/landing/hero-gallery.webp" alt="" width={1280} height={720} decoding="async" fetchPriority="high" />
+        <picture className="block size-full">
+          <source type="image/avif" srcSet={`${studioShowcase1280Avif} 1280w, ${studioShowcase1920Avif} 1920w`} sizes="(min-width: 768px) 54vw, 100vw" />
+          <source type="image/webp" srcSet={`${studioShowcase1280Webp} 1280w, ${studioShowcase1920Webp} 1920w`} sizes="(min-width: 768px) 54vw, 100vw" />
+          <img className={loginClasses.sceneImage} src={studioShowcase1280Webp} alt="" width={1280} height={720} decoding="async" fetchPriority="high" />
+        </picture>
         <div className={loginClasses.sceneShade} />
         <div className={loginClasses.sceneCopy}>
           <h1 className={loginClasses.sceneTitle}>让每一次生成，都回到同一座创作暗房。</h1>
@@ -247,7 +292,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
       </section>
 
       <button type="button" className={loginClasses.brand} onClick={() => app.navigate('landing')} aria-label={`${siteBrand.name} 首页`}>
-        <BrandMark withText />
+        <BrandMark withText inverse />
       </button>
 
       <section className={loginClasses.panel} aria-labelledby={`${formId}-title`}>
@@ -273,7 +318,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
           <h2 id={`${formId}-title`} className={loginClasses.title}>{presentation.title}</h2>
           <p className={loginClasses.summary}>{presentation.summary}</p>
 
-          {intent === 'login' ? (
+          {intent === 'login' && !passwordSetupToken ? (
           <div className={loginClasses.tabs} role="tablist" aria-label="登录方式">
             <button
               id={`${formId}-password-tab`}
@@ -312,12 +357,12 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
             ref={formRef}
             id={`${formId}-form`}
             className={loginClasses.form}
-            role={intent === 'login' ? 'tabpanel' : undefined}
-            aria-labelledby={intent === 'login' ? activeTabId : undefined}
+            role={intent === 'login' && !passwordSetupToken ? 'tabpanel' : undefined}
+            aria-labelledby={intent === 'login' && !passwordSetupToken ? activeTabId : undefined}
             onSubmit={submit}
             noValidate
           >
-            <div className={loginClasses.field}>
+            {!passwordSetupToken ? <div className={loginClasses.field}>
               <label className={loginClasses.label} htmlFor={`${formId}-email`}>邮箱地址</label>
               <input
                 id={`${formId}-email`}
@@ -342,7 +387,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
                 }}
               />
               {errors.email ? <p id={`${formId}-email-error`} className={loginClasses.error} role="alert">{errors.email}</p> : null}
-            </div>
+            </div> : null}
 
             {presentation.showPassword ? (
               <div className={loginClasses.field}>
@@ -426,6 +471,28 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
               </div>
             ) : null}
 
+            {presentation.showPasswordConfirmation ? (
+              <div className={loginClasses.field}>
+                <label className={loginClasses.label} htmlFor={`${formId}-confirm-password`}>确认新密码</label>
+                <div className={loginClasses.passwordWrap}>
+                  <input
+                    id={`${formId}-confirm-password`}
+                    data-auth-field="confirmPassword"
+                    className={cn(loginClasses.input, loginClasses.passwordInput, errors.confirmPassword && loginClasses.inputError)}
+                    type={showNewPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    placeholder="再次输入新密码"
+                    disabled={busy}
+                    aria-invalid={Boolean(errors.confirmPassword)}
+                    aria-describedby={errors.confirmPassword ? `${formId}-confirm-password-error` : undefined}
+                    onChange={(event) => { setConfirmPassword(event.target.value); clearFieldError('confirmPassword') }}
+                  />
+                </div>
+                {errors.confirmPassword ? <p id={`${formId}-confirm-password-error`} className={loginClasses.error} role="alert">{errors.confirmPassword}</p> : null}
+              </div>
+            ) : null}
+
             {formError ? <p className={loginClasses.formError} role="alert">{formError}</p> : null}
 
             <button type="submit" className={loginClasses.submit} style={{ color: '#111218' }} disabled={presentation.submitDisabled}>
@@ -434,7 +501,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
             </button>
           </form>
 
-          <div className={loginClasses.providers} aria-label="第三方登录状态">
+          {!passwordSetupToken ? <div className={loginClasses.providers} aria-label="第三方登录状态">
             <p className={loginClasses.providerLabel}>第三方登录正在接入，当前请使用邮箱。</p>
             <div className={loginClasses.providerGrid}>
               {loginProviders.map((provider) => (
@@ -443,14 +510,14 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
                 </button>
               ))}
             </div>
-          </div>
+          </div> : null}
 
-          <p className={loginClasses.footer}>
+          {!passwordSetupToken ? <p className={loginClasses.footer}>
             {intent === 'register' ? '已经有账户？' : '还没有账户？'}{' '}
             <button type="button" className={loginClasses.footerAction} disabled={busy || sending} onClick={() => changeIntent(intent === 'register' ? 'login' : 'register')}>
               {intent === 'register' ? '返回登录' : '通过邮箱注册'}
             </button>
-          </p>
+          </p> : null}
         </div>
       </section>
     </main>

@@ -56,6 +56,27 @@ func (_u *RefreshSessionUpdate) AddUserID(v int64) *RefreshSessionUpdate {
 	return _u
 }
 
+// SetTokenVersion sets the "token_version" field.
+func (_u *RefreshSessionUpdate) SetTokenVersion(v int) *RefreshSessionUpdate {
+	_u.mutation.ResetTokenVersion()
+	_u.mutation.SetTokenVersion(v)
+	return _u
+}
+
+// SetNillableTokenVersion sets the "token_version" field if the given value is not nil.
+func (_u *RefreshSessionUpdate) SetNillableTokenVersion(v *int) *RefreshSessionUpdate {
+	if v != nil {
+		_u.SetTokenVersion(*v)
+	}
+	return _u
+}
+
+// AddTokenVersion adds value to the "token_version" field.
+func (_u *RefreshSessionUpdate) AddTokenVersion(v int) *RefreshSessionUpdate {
+	_u.mutation.AddTokenVersion(v)
+	return _u
+}
+
 // SetSessionFamilyID sets the "session_family_id" field.
 func (_u *RefreshSessionUpdate) SetSessionFamilyID(v uuid.UUID) *RefreshSessionUpdate {
 	_u.mutation.SetSessionFamilyID(v)
@@ -267,6 +288,12 @@ func (_u *RefreshSessionUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(refreshsession.FieldUserID, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.TokenVersion(); ok {
+		_spec.SetField(refreshsession.FieldTokenVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedTokenVersion(); ok {
+		_spec.AddField(refreshsession.FieldTokenVersion, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.SessionFamilyID(); ok {
 		_spec.SetField(refreshsession.FieldSessionFamilyID, field.TypeUUID, value)
 	}
@@ -341,6 +368,27 @@ func (_u *RefreshSessionUpdateOne) SetNillableUserID(v *int64) *RefreshSessionUp
 // AddUserID adds value to the "user_id" field.
 func (_u *RefreshSessionUpdateOne) AddUserID(v int64) *RefreshSessionUpdateOne {
 	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// SetTokenVersion sets the "token_version" field.
+func (_u *RefreshSessionUpdateOne) SetTokenVersion(v int) *RefreshSessionUpdateOne {
+	_u.mutation.ResetTokenVersion()
+	_u.mutation.SetTokenVersion(v)
+	return _u
+}
+
+// SetNillableTokenVersion sets the "token_version" field if the given value is not nil.
+func (_u *RefreshSessionUpdateOne) SetNillableTokenVersion(v *int) *RefreshSessionUpdateOne {
+	if v != nil {
+		_u.SetTokenVersion(*v)
+	}
+	return _u
+}
+
+// AddTokenVersion adds value to the "token_version" field.
+func (_u *RefreshSessionUpdateOne) AddTokenVersion(v int) *RefreshSessionUpdateOne {
+	_u.mutation.AddTokenVersion(v)
 	return _u
 }
 
@@ -584,6 +632,12 @@ func (_u *RefreshSessionUpdateOne) sqlSave(ctx context.Context) (_node *RefreshS
 	}
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(refreshsession.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.TokenVersion(); ok {
+		_spec.SetField(refreshsession.FieldTokenVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedTokenVersion(); ok {
+		_spec.AddField(refreshsession.FieldTokenVersion, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.SessionFamilyID(); ok {
 		_spec.SetField(refreshsession.FieldSessionFamilyID, field.TypeUUID, value)

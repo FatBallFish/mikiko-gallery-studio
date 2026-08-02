@@ -3,6 +3,7 @@ import { API_PATHS, type AdminMetric, type AdminUser, type ApiKey, type AuditLog
 export const demoProfile: UserProfile = {
   id: 'usr_01JYV4D8FISH',
   email: 'fatballfish@example.com',
+  has_password: true,
   display_name: 'Fatball Fish',
   avatar_initials: 'FF',
   tier: 'PLUS',

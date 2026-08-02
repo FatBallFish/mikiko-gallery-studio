@@ -132,7 +132,7 @@ func TestAgentTaskCreateAndQueryEndpoints(t *testing.T) {
 	if err := authSvc.SendEmailCode("task@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("task@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "task@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestAgentTaskCreateRejectsSyncResponseMode(t *testing.T) {
 	if err := authSvc.SendEmailCode("sync-mode@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("sync-mode@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "sync-mode@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -810,7 +810,7 @@ func loginExistingAuthUser(t *testing.T, authSvc *authservice.Service, email str
 	if err := authSvc.SendEmailCode(email, "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode(email, "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, email, "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -879,7 +879,7 @@ func TestRedeemCodeRejectsUnknownCodeWithoutCreditingBalance(t *testing.T) {
 	if err := authSvc.SendEmailCode("redeem@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	user, session, err := authSvc.LoginWithEmailCode("redeem@example.com", "123456")
+	user, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "redeem@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -920,7 +920,7 @@ func TestAgentTaskCreateQueuesTaskForWorker(t *testing.T) {
 	if err := authSvc.SendEmailCode("queue@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("queue@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "queue@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -969,7 +969,7 @@ func TestAgentBillingBalanceAndLedgerEndpoints(t *testing.T) {
 	if err := authSvc.SendEmailCode("billing@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("billing@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "billing@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1124,7 +1124,7 @@ func TestAgentLedgerEndpointReturnsEmptyArrayForUsersWithoutHistory(t *testing.T
 	if err := authSvc.SendEmailCode("empty-ledger@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("empty-ledger@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "empty-ledger@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1169,7 +1169,7 @@ func TestAgentBillingEndpointsReuseTaskServiceBillingBackend(t *testing.T) {
 	if err := authSvc.SendEmailCode("shared-billing@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("shared-billing@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "shared-billing@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1246,7 +1246,7 @@ func TestAgentEstimateEndpointUsesSnakeCaseAndRejectsInvalidCounts(t *testing.T)
 	if err := authSvc.SendEmailCode("estimate@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("estimate@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "estimate@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}
@@ -1366,7 +1366,7 @@ func TestAgentTaskCreateIsIdempotentWithIdempotencyKey(t *testing.T) {
 	if err := authSvc.SendEmailCode("idem@example.com", "login"); err != nil {
 		t.Fatalf("SendEmailCode: %v", err)
 	}
-	_, session, err := authSvc.LoginWithEmailCode("idem@example.com", "123456")
+	_, session, err := loginAuthUserWithPasswordSetup(t, authSvc, "idem@example.com", "123456")
 	if err != nil {
 		t.Fatalf("LoginWithEmailCode: %v", err)
 	}

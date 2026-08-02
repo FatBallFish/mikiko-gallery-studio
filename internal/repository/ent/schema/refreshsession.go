@@ -16,6 +16,7 @@ func (RefreshSession) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).Default(uuid.New).Immutable(),
 		field.Int64("user_id"),
+		field.Int("token_version").Default(0),
 		field.UUID("session_family_id", uuid.UUID{}).Default(uuid.New),
 		field.String("refresh_token_hash").MaxLen(128).NotEmpty(),
 		field.String("status").MaxLen(32).Default("active"),

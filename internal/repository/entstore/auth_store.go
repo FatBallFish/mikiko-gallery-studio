@@ -2,6 +2,7 @@ package entstore
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ type RefreshSessionRecord struct {
 	ID                  string
 	FamilyID            string
 	UserID              int64
+	TokenVersion        int
 	RefreshTokenHash    string
 	Status              string
 	ExpiresAt           int64
@@ -142,20 +144,41 @@ func (s *AuthStore) IncrementTokenVersion(ctx context.Context, userID int64) err
 	return nil
 }
 
-func (s *AuthStore) UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string, passwordUpdatedAt time.Time) (domainauth.User, error) {
-	affected, err := s.client.User.Update().
+func (s *AuthStore) UpdatePasswordAndRevokeSessions(ctx context.Context, userID int64, passwordHash string, passwordUpdatedAt time.Time) (domainauth.User, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainauth.User{}, err
+	}
+	rollback := func(cause error) (domainauth.User, error) {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return domainauth.User{}, fmt.Errorf("%w (rollback failed: %v)", cause, rollbackErr)
+		}
+		return domainauth.User{}, cause
+	}
+
+	affected, err := tx.User.Update().
 		Where(user.IDEQ(int(userID)), user.DeletedAtIsNil()).
 		SetPasswordHash(passwordHash).
 		SetPasswordUpdatedAt(passwordUpdatedAt.UTC()).
 		AddTokenVersion(1).
 		Save(ctx)
 	if err != nil {
-		return domainauth.User{}, err
+		return rollback(err)
 	}
 	if affected == 0 {
-		return domainauth.User{}, repoerr.ErrNotFound
+		return rollback(repoerr.ErrNotFound)
 	}
-	return s.GetUserByID(ctx, userID)
+	if _, err := tx.RefreshSession.Update().Where(refreshsession.UserIDEQ(userID)).SetStatus("revoked").Save(ctx); err != nil {
+		return rollback(err)
+	}
+	updated, err := (&AuthStore{client: tx.Client()}).GetUserByID(ctx, userID)
+	if err != nil {
+		return rollback(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domainauth.User{}, err
+	}
+	return updated, nil
 }
 
 func (s *AuthStore) MarkUserClosed(ctx context.Context, userID int64, closedAt time.Time) (domainauth.User, error) {
@@ -195,6 +218,7 @@ func (s *AuthStore) SaveRefreshSession(ctx context.Context, session RefreshSessi
 		SetID(sessionID).
 		SetSessionFamilyID(familyID).
 		SetUserID(session.UserID).
+		SetTokenVersion(session.TokenVersion).
 		SetRefreshTokenHash(session.RefreshTokenHash).
 		SetStatus(session.Status).
 		SetExpiresAt(unixToTime(session.ExpiresAt))
@@ -388,6 +412,7 @@ func mapRefreshSessionEntity(entity *repoent.RefreshSession) RefreshSessionRecor
 		ID:               entity.ID.String(),
 		FamilyID:         entity.SessionFamilyID.String(),
 		UserID:           entity.UserID,
+		TokenVersion:     entity.TokenVersion,
 		RefreshTokenHash: entity.RefreshTokenHash,
 		Status:           entity.Status,
 		ExpiresAt:        entity.ExpiresAt.Unix(),

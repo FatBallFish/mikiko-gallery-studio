@@ -117,31 +117,53 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			taskTypes[price.TaskType] = struct{}{}
 			baseResolution[price.BaseResolution] = struct{}{}
 		}
-		sizeModes, aspectRatios, pixelSizes, quality, outputFormat, supportsOutputCompression, moderation, maxOutputCount, maxReferenceCount := r.visibleRouteModelLimits(routeModel, routing)
+		taskTypeList := sortedSet(taskTypes)
+		autoBaseResolutionByTaskType := make(map[string]string, len(taskTypeList))
+		capabilitiesByTaskType := make(map[string]VisibleRouteModelTaskCapability, len(taskTypeList))
+		for _, taskType := range taskTypeList {
+			autoBaseResolution, _ := resolveAutoRouteBaseResolution(routeModel, taskType, r.cfg.Billing.AutoBaseResolutionDefaultByGroup, routing.Prices)
+			if autoBaseResolution != "" {
+				autoBaseResolutionByTaskType[taskType] = autoBaseResolution
+			}
+			taskBaseResolution := map[string]struct{}{}
+			for _, price := range pricesByRoute[routeModel.ID] {
+				if price.TaskType == taskType {
+					taskBaseResolution[price.BaseResolution] = struct{}{}
+				}
+			}
+			taskCapability := r.visibleRouteModelLimits(routeModel, routing, taskType)
+			taskCapability.BaseResolution = append([]string{"auto"}, sortedSet(taskBaseResolution)...)
+			taskCapability.AutoBaseResolution = autoBaseResolution
+			capabilitiesByTaskType[taskType] = taskCapability
+		}
+		aggregateCapability := r.visibleRouteModelLimits(routeModel, routing, "")
 		visible = append(visible, VisibleRouteModel{
-			ID:                        routeModel.ID,
-			Code:                      routeModel.Code,
-			Name:                      routeModel.Name,
-			Description:               routeModel.Description,
-			TaskTypes:                 sortedSet(taskTypes),
-			BaseResolution:            append([]string{"auto"}, sortedSet(baseResolution)...),
-			Quality:                   quality,
-			SizeModes:                 sizeModes,
-			AspectRatios:              aspectRatios,
-			PixelSizes:                pixelSizes,
-			OutputFormat:              outputFormat,
-			SupportsOutputCompression: supportsOutputCompression,
-			Moderation:                moderation,
-			MaxOutputImageCount:       maxOutputCount,
-			MaxReferenceImageCount:    maxReferenceCount,
-			EffectiveMultiplier:       multiplier.StringFixed(5),
-			Prices:                    prices,
+			ID:                           routeModel.ID,
+			Code:                         routeModel.Code,
+			Name:                         routeModel.Name,
+			Description:                  routeModel.Description,
+			TaskTypes:                    taskTypeList,
+			BaseResolution:               append([]string{"auto"}, sortedSet(baseResolution)...),
+			AutoBaseResolutionByTaskType: autoBaseResolutionByTaskType,
+			Quality:                      aggregateCapability.Quality,
+			SizeModes:                    aggregateCapability.SizeModes,
+			AspectRatios:                 aggregateCapability.AspectRatios,
+			PixelSizes:                   aggregateCapability.PixelSizes,
+			OutputFormat:                 aggregateCapability.OutputFormat,
+			SupportsOutputCompression:    aggregateCapability.SupportsOutputCompression,
+			SupportsCustomSize:           aggregateCapability.SupportsCustomSize,
+			Moderation:                   aggregateCapability.Moderation,
+			MaxOutputImageCount:          aggregateCapability.MaxOutputImageCount,
+			MaxReferenceImageCount:       aggregateCapability.MaxReferenceImageCount,
+			CapabilitiesByTaskType:       capabilitiesByTaskType,
+			EffectiveMultiplier:          multiplier.StringFixed(5),
+			Prices:                       prices,
 		})
 	}
 	return visible, nil
 }
 
-func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing ModelRoutingSnapshot) ([]string, []string, []string, []string, []string, bool, []string, int, int) {
+func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing ModelRoutingSnapshot, taskType string) VisibleRouteModelTaskCapability {
 	candidateByID := map[int64]ProviderCandidate{}
 	for _, candidate := range routing.ProviderModels {
 		candidateByID[candidate.AccountModelID] = candidate
@@ -155,6 +177,7 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	maxOutputCount := 0
 	maxReferenceCount := 0
 	supportsOutputCompression := false
+	supportsCustomSize := false
 	hasCandidate := false
 	for _, route := range routing.Candidates {
 		if !route.Enabled || route.RouteModelID != routeModel.ID {
@@ -164,8 +187,11 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 		if !ok {
 			continue
 		}
-		hasCandidate = true
 		candidate = normalizeProviderCandidate(candidate)
+		if taskType != "" && len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, taskType) {
+			continue
+		}
+		hasCandidate = true
 		for _, mode := range candidate.SizeModes {
 			if trimmed := strings.TrimSpace(mode); trimmed != "" {
 				sizeModes[trimmed] = struct{}{}
@@ -199,6 +225,9 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 		if candidate.SupportsOutputCompression {
 			supportsOutputCompression = true
 		}
+		if candidate.SupportsCustomSize && containsString(candidate.SizeModes, SizeModePixel) {
+			supportsCustomSize = true
+		}
 		if candidate.MaxImageCount > maxOutputCount {
 			maxOutputCount = candidate.MaxImageCount
 		}
@@ -224,7 +253,11 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	if len(moderation) == 0 {
 		moderation["auto"] = struct{}{}
 	}
-	return sortedSet(sizeModes), sortedSet(ratios), sortedSet(pixelSizes), sortedSet(quality), sortedSet(outputFormat), supportsOutputCompression, sortedSet(moderation), maxOutputCount, maxReferenceCount
+	return VisibleRouteModelTaskCapability{
+		Quality: sortedSet(quality), SizeModes: sortedSet(sizeModes), AspectRatios: sortedSet(ratios), PixelSizes: sortedSet(pixelSizes),
+		OutputFormat: sortedSet(outputFormat), SupportsOutputCompression: supportsOutputCompression, SupportsCustomSize: supportsCustomSize,
+		Moderation: sortedSet(moderation), MaxOutputImageCount: maxOutputCount, MaxReferenceImageCount: maxReferenceCount,
+	}
 }
 
 func effectiveMultiplier(routeModel RouteModelConfig, groups []UserGroupConfig) (decimal.Decimal, bool) {
@@ -317,6 +350,7 @@ type ProviderCandidate struct {
 	OutputFormat              []string
 	OutputCompression         int
 	SupportsOutputCompression bool
+	SupportsCustomSize        bool
 	Moderation                []string
 	MaxImageCount             int
 	ConcurrencyLimit          int
@@ -435,29 +469,48 @@ type CapabilityItem struct {
 	PixelSizes                []string
 	OutputFormat              []string
 	SupportsOutputCompression bool
+	SupportsCustomSize        bool
 	Moderation                []string
 	MaxOutputImageCount       int
 	MaxReferenceImageCount    int
 }
 
 type VisibleRouteModel struct {
-	ID                        int64                    `json:"id"`
-	Code                      string                   `json:"code"`
-	Name                      string                   `json:"name"`
-	Description               string                   `json:"description,omitempty"`
-	TaskTypes                 []string                 `json:"task_types"`
-	BaseResolution            []string                 `json:"base_resolution"`
-	Quality                   []string                 `json:"quality"`
-	SizeModes                 []string                 `json:"size_modes"`
-	AspectRatios              []string                 `json:"aspect_ratios"`
-	PixelSizes                []string                 `json:"pixel_sizes"`
-	OutputFormat              []string                 `json:"output_format"`
-	SupportsOutputCompression bool                     `json:"supports_output_compression"`
-	Moderation                []string                 `json:"moderation"`
-	MaxOutputImageCount       int                      `json:"max_output_image_count"`
-	MaxReferenceImageCount    int                      `json:"max_reference_image_count"`
-	EffectiveMultiplier       string                   `json:"effective_multiplier"`
-	Prices                    []VisibleRouteModelPrice `json:"prices"`
+	ID                           int64                                      `json:"id"`
+	Code                         string                                     `json:"code"`
+	Name                         string                                     `json:"name"`
+	Description                  string                                     `json:"description,omitempty"`
+	TaskTypes                    []string                                   `json:"task_types"`
+	BaseResolution               []string                                   `json:"base_resolution"`
+	AutoBaseResolutionByTaskType map[string]string                          `json:"auto_base_resolution_by_task_type"`
+	Quality                      []string                                   `json:"quality"`
+	SizeModes                    []string                                   `json:"size_modes"`
+	AspectRatios                 []string                                   `json:"aspect_ratios"`
+	PixelSizes                   []string                                   `json:"pixel_sizes"`
+	OutputFormat                 []string                                   `json:"output_format"`
+	SupportsOutputCompression    bool                                       `json:"supports_output_compression"`
+	SupportsCustomSize           bool                                       `json:"supports_custom_size"`
+	Moderation                   []string                                   `json:"moderation"`
+	MaxOutputImageCount          int                                        `json:"max_output_image_count"`
+	MaxReferenceImageCount       int                                        `json:"max_reference_image_count"`
+	CapabilitiesByTaskType       map[string]VisibleRouteModelTaskCapability `json:"capabilities_by_task_type"`
+	EffectiveMultiplier          string                                     `json:"effective_multiplier"`
+	Prices                       []VisibleRouteModelPrice                   `json:"prices"`
+}
+
+type VisibleRouteModelTaskCapability struct {
+	BaseResolution            []string `json:"base_resolution"`
+	AutoBaseResolution        string   `json:"auto_base_resolution,omitempty"`
+	Quality                   []string `json:"quality"`
+	SizeModes                 []string `json:"size_modes"`
+	AspectRatios              []string `json:"aspect_ratios"`
+	PixelSizes                []string `json:"pixel_sizes"`
+	OutputFormat              []string `json:"output_format"`
+	SupportsOutputCompression bool     `json:"supports_output_compression"`
+	SupportsCustomSize        bool     `json:"supports_custom_size"`
+	Moderation                []string `json:"moderation"`
+	MaxOutputImageCount       int      `json:"max_output_image_count"`
+	MaxReferenceImageCount    int      `json:"max_reference_image_count"`
 }
 
 type VisibleRouteModelPrice struct {
@@ -503,12 +556,7 @@ func ResolveRouteBaseResolution(routeModel RouteModelConfig, taskType, requested
 		return baseResolution, nil
 	}
 
-	baseResolution := strings.ToLower(strings.TrimSpace(autoDefaults[strings.ToLower(routeModel.Code)]))
-	source := "route_model_default"
-	if baseResolution == "" || !hasRoutePrice(routeModel.ID, taskType, baseResolution, prices) {
-		baseResolution = firstRouteBaseResolution(routeModel.ID, taskType, prices)
-		source = "first_configured_price"
-	}
+	baseResolution, source := resolveAutoRouteBaseResolution(routeModel, taskType, autoDefaults, prices)
 	if baseResolution == "" {
 		return "", errs.New(409, errs.CodeRouteModelPriceMissing, "model pricing not found")
 	}
@@ -522,6 +570,14 @@ func ResolveRouteBaseResolution(routeModel RouteModelConfig, taskType, requested
 		"fallback_source", source,
 	)
 	return baseResolution, nil
+}
+
+func resolveAutoRouteBaseResolution(routeModel RouteModelConfig, taskType string, autoDefaults map[string]string, prices []RoutePriceConfig) (string, string) {
+	baseResolution := strings.ToLower(strings.TrimSpace(autoDefaults[strings.ToLower(routeModel.Code)]))
+	if baseResolution != "" && hasRoutePrice(routeModel.ID, taskType, baseResolution, prices) {
+		return baseResolution, "route_model_default"
+	}
+	return firstRouteBaseResolution(routeModel.ID, taskType, prices), "first_configured_price"
 }
 
 func ResolveRouteBaseResolutionBySizeMode(routeModel RouteModelConfig, req ResolveRequest, autoDefaults map[string]string, prices []RoutePriceConfig) (string, error) {
@@ -744,7 +800,11 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 		if size == "" {
 			return false
 		}
-		if len(candidate.SupportedPixelSizes) > 0 && !containsString(candidate.SupportedPixelSizes, size) {
+		width, height, ok := ParseImageSize(size)
+		if !ok || !IsLegalCustomImageSize(width, height) {
+			return false
+		}
+		if !candidate.SupportsCustomSize && !containsString(candidate.SupportedPixelSizes, size) {
 			return false
 		}
 		return true
@@ -775,6 +835,7 @@ func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
 		OutputFormat:              candidate.OutputFormat,
 		OutputCompression:         candidate.OutputCompression,
 		SupportsOutputCompression: candidate.SupportsOutputCompression,
+		SupportsCustomSize:        candidate.SupportsCustomSize,
 		Moderation:                candidate.Moderation,
 	})
 	if err != nil {
@@ -790,6 +851,7 @@ func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
 	candidate.OutputFormat = capability.OutputFormat
 	candidate.OutputCompression = capability.OutputCompression
 	candidate.SupportsOutputCompression = capability.SupportsOutputCompression
+	candidate.SupportsCustomSize = capability.SupportsCustomSize
 	candidate.Moderation = capability.Moderation
 	if candidate.MaxReferenceImageCount > 0 {
 		candidate.SupportsImageInput = true

@@ -17,17 +17,21 @@ const oldComposePaths = [
 ]
 const localCompose = requireSource(localComposePath)
 const dockerignore = requireSource('.dockerignore')
+const gitignore = requireSource('.gitignore')
 const localRuntime = requireSource('config/runtime.local.env.example')
 const localInstallState = JSON.parse(requireSource('config/install-state.local.json.example'))
 
 if (!localCompose.includes('name: pic-gallery-local')) {
   throw new Error('the only local Compose project must be named pic-gallery-local')
 }
+if (!gitignore.split(/\r?\n/).includes('.secrets/')) throw new Error('Git must ignore the local image-generation credential directory')
 for (const path of oldComposePaths) {
   if (existsSync(resolve(path))) throw new Error(`obsolete local Compose file must be removed: ${path}`)
 }
 for (const secretPath of [
   '.worktrees/',
+  '.secrets/',
+  'tmp/imagegen/',
   'config/runtime.env',
   'config/.runtime.env.tmp-*',
   'config/install-state.json',

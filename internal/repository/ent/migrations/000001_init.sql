@@ -124,6 +124,7 @@ create table if not exists admin_users (
 create table if not exists refresh_sessions (
   id uuid primary key,
   user_id bigint not null,
+  token_version int not null default 0,
   session_family_id uuid not null,
   refresh_token_hash varchar(128) not null unique,
   status varchar(32) not null default 'active',

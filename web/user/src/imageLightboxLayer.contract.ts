@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
-import { ImageLightbox } from './components'
+import { ImageDetailModal } from './components'
 import { focusTrapTargetIndex } from './ui/focusTrap'
 import { overlayLayers } from './ui/redesign-classes'
 
@@ -9,46 +9,35 @@ if (overlayLayers.modal !== 'z-[110]' || overlayLayers.lightbox !== 'z-[120]' ||
   throw new Error(`Overlay layers must remain ordered modal < lightbox < zoom: ${JSON.stringify(overlayLayers)}`)
 }
 
-const ssr = renderToString(createElement(ImageLightbox, {
-  image: { url: '/landing/hero-gallery.webp', alt: 'SSR lightbox contract' },
+const ssr = renderToString(createElement(ImageDetailModal, {
+  title: 'SSR detail contract',
+  image: { id: 'ssr', url: '/landing/studio-showcase-1280.webp', width: 1280, height: 720, publish_status: 'private' },
+  onCopyPrompt: () => undefined,
   onClose: () => undefined,
 }))
 if (ssr !== '') {
-  throw new Error(`ImageLightbox must be SSR-safe through OverlayPortal, got ${ssr.slice(0, 120)}`)
+  throw new Error(`ImageDetailModal must be SSR-safe through OverlayPortal, got ${ssr.slice(0, 120)}`)
 }
 
 if (focusTrapTargetIndex(2, 3, false) !== 0 || focusTrapTargetIndex(0, 3, true) !== 2) {
-  throw new Error('ImageLightbox shared focus lifecycle must wrap Tab in both directions')
+  throw new Error('image detail shared focus lifecycle must wrap Tab in both directions')
 }
 
 const source = readFileSync(new URL('./components.tsx', import.meta.url), 'utf8')
-const lightboxStart = source.indexOf('export function ImageLightbox')
-const lightboxEnd = source.indexOf('\nfunction LightboxInfo', lightboxStart)
-const lightboxSource = source.slice(lightboxStart, lightboxEnd)
+const modalStart = source.indexOf('export function ImageDetailModal')
+const modalEnd = source.indexOf('\nexport function PublicImageDetail', modalStart)
+const modalSource = source.slice(modalStart, modalEnd)
+const zoomStart = source.indexOf('function ImageZoomViewer')
+const zoomEnd = source.indexOf('\nexport function PublicDetailIcon', zoomStart)
+const zoomSource = source.slice(zoomStart, zoomEnd)
 
-for (const required of [
-  'useDismissableLayer(Boolean(image), onClose, dialogRef)',
-  '<OverlayPortal>',
-  'data-focus-layer',
-  'ref={dialogRef}',
-  'tabIndex={-1}',
-  'useDismissableLayer(true, onClose, dialogRef)',
-]) {
-  if (!lightboxSource.includes(required)) {
-    throw new Error(`ImageLightbox and nested zoom must reuse the shared focus lifecycle: ${required}`)
+for (const required of ['<Modal', '<ImageZoomViewer', 'onPreviewImage={setZoomImage}']) {
+  if (!modalSource.includes(required)) {
+    throw new Error(`ImageDetailModal should own the direct zoom lifecycle: ${required}`)
   }
 }
-
-if (lightboxSource.includes("window.addEventListener('keydown', close)")) {
-  throw new Error('ImageLightbox must not duplicate the shared Escape/focus-trap listener')
-}
-
-const focusLayerCount = (lightboxSource.match(/data-focus-layer/g) ?? []).length
-if (focusLayerCount < 2) {
-  throw new Error(`ImageLightbox and zoom viewer must be separate nested focus layers, got ${focusLayerCount}`)
-}
-
-const overlayPortalCount = (lightboxSource.match(/<OverlayPortal>/g) ?? []).length
-if (overlayPortalCount < 2) {
-  throw new Error(`ImageLightbox and zoom viewer must each render through OverlayPortal, got ${overlayPortalCount}`)
+for (const required of ['useDismissableLayer(true, onClose, dialogRef)', '<OverlayPortal>', 'data-focus-layer', 'ref={dialogRef}', 'tabIndex={-1}']) {
+  if (!zoomSource.includes(required)) {
+    throw new Error(`zoom viewer must reuse the shared focus lifecycle: ${required}`)
+  }
 }

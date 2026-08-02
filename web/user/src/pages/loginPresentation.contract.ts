@@ -44,6 +44,11 @@ if (reset.title !== '重置密码' || reset.codeScene !== 'password_reset' || !r
   throw new Error(`password reset presentation drifted: ${JSON.stringify(reset)}`)
 }
 
+const passwordSetup = loginPresentation(state({ mode: 'code', passwordSetupRequired: true }))
+if (passwordSetup.title !== '创建登录密码' || !passwordSetup.showNewPassword || !passwordSetup.showPasswordConfirmation || passwordSetup.showCode || passwordSetup.submitLabel !== '设置密码并进入') {
+  throw new Error(`mandatory password setup presentation drifted: ${JSON.stringify(passwordSetup)}`)
+}
+
 const sending = loginPresentation(state({ mode: 'code', sending: true }))
 if (sending.sendCodeLabel !== '发送中...' || !sending.sendCodeDisabled) {
   throw new Error(`sending state is not explicit: ${JSON.stringify(sending)}`)
@@ -82,6 +87,13 @@ if (Object.keys(valid).length !== 0) throw new Error(`valid registration fields 
 if (!loginProviders.length || loginProviders.some((provider) => !provider.disabled || !provider.label.includes('暂未开放'))) {
   throw new Error(`unsupported third-party providers must be disabled and clearly unavailable: ${JSON.stringify(loginProviders)}`)
 }
+
+const setupMismatch = validateLoginFields({ mode: 'code', intent: 'login', passwordSetupRequired: true, email: '', password: '', code: '', newPassword: 'password-123', confirmPassword: 'password-456' })
+if (!setupMismatch.confirmPassword || setupMismatch.email || setupMismatch.code) {
+  throw new Error(`password setup must only validate password fields, got ${JSON.stringify(setupMismatch)}`)
+}
+const validSetup = validateLoginFields({ mode: 'code', intent: 'login', passwordSetupRequired: true, email: '', password: '', code: '', newPassword: 'password-123', confirmPassword: 'password-123' })
+if (Object.keys(validSetup).length !== 0) throw new Error(`valid password setup was rejected: ${JSON.stringify(validSetup)}`)
 
 const resetTransition = nextLoginFlow('reset', 37)
 if (resetTransition.mode !== 'code' || resetTransition.intent !== 'reset' || resetTransition.cooldown !== 37 || resetTransition.codeSent) {

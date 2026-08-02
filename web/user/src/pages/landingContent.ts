@@ -18,7 +18,7 @@ export type LandingCapability = {
   detail: string
   columns: 2 | 3 | 5 | 7
   rows: 1 | 2
-  image?: '/landing/hero-gallery.webp' | '/landing/workspace.webp'
+  image?: '/landing/studio-showcase-1280.webp' | '/landing/workspace.webp'
   action: LandingAction['kind']
 }
 
@@ -44,7 +44,7 @@ export const landingChapters = {
       detail: '选择抽象模型、质量、比例与数量，不必先理解每个上游的参数差异。',
       columns: 7,
       rows: 2,
-      image: '/landing/hero-gallery.webp',
+      image: '/landing/studio-showcase-1280.webp',
       action: 'create',
     },
     {
@@ -82,7 +82,7 @@ export const landingChapters = {
       id: 'words',
       title: '从文字构建画面',
       detail: '中文与英文提示词均可用于文生图，尺寸、质量与数量按当前模型能力开放。',
-      image: '/landing/hero-gallery.webp',
+      image: '/landing/studio-showcase-1280.webp',
     },
     {
       id: 'edit',
@@ -94,7 +94,7 @@ export const landingChapters = {
       id: 'reference',
       title: '让参考图参与表达',
       detail: '参考图数量、格式和大小先校验，输入数量与最终输出数量分别计算。',
-      image: '/landing/hero-gallery.webp',
+      image: '/landing/studio-showcase-1280.webp',
     },
   ],
   developer: {

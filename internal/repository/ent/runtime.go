@@ -1493,18 +1493,22 @@ func init() {
 	modelaccountmodelDescSupportsOutputCompression := modelaccountmodelFields[13].Descriptor()
 	// modelaccountmodel.DefaultSupportsOutputCompression holds the default value on creation for the supports_output_compression field.
 	modelaccountmodel.DefaultSupportsOutputCompression = modelaccountmodelDescSupportsOutputCompression.Default.(bool)
+	// modelaccountmodelDescSupportsCustomSize is the schema descriptor for supports_custom_size field.
+	modelaccountmodelDescSupportsCustomSize := modelaccountmodelFields[14].Descriptor()
+	// modelaccountmodel.DefaultSupportsCustomSize holds the default value on creation for the supports_custom_size field.
+	modelaccountmodel.DefaultSupportsCustomSize = modelaccountmodelDescSupportsCustomSize.Default.(bool)
 	// modelaccountmodelDescCostPerImage is the schema descriptor for cost_per_image field.
-	modelaccountmodelDescCostPerImage := modelaccountmodelFields[15].Descriptor()
+	modelaccountmodelDescCostPerImage := modelaccountmodelFields[16].Descriptor()
 	// modelaccountmodel.DefaultCostPerImage holds the default value on creation for the cost_per_image field.
 	modelaccountmodel.DefaultCostPerImage = modelaccountmodelDescCostPerImage.Default.(string)
 	// modelaccountmodelDescCurrency is the schema descriptor for currency field.
-	modelaccountmodelDescCurrency := modelaccountmodelFields[16].Descriptor()
+	modelaccountmodelDescCurrency := modelaccountmodelFields[17].Descriptor()
 	// modelaccountmodel.DefaultCurrency holds the default value on creation for the currency field.
 	modelaccountmodel.DefaultCurrency = modelaccountmodelDescCurrency.Default.(string)
 	// modelaccountmodel.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	modelaccountmodel.CurrencyValidator = modelaccountmodelDescCurrency.Validators[0].(func(string) error)
 	// modelaccountmodelDescEnabled is the schema descriptor for enabled field.
-	modelaccountmodelDescEnabled := modelaccountmodelFields[17].Descriptor()
+	modelaccountmodelDescEnabled := modelaccountmodelFields[18].Descriptor()
 	// modelaccountmodel.DefaultEnabled holds the default value on creation for the enabled field.
 	modelaccountmodel.DefaultEnabled = modelaccountmodelDescEnabled.Default.(bool)
 	modelproviderMixin := schema.ModelProvider{}.Mixin()
@@ -2634,12 +2638,16 @@ func init() {
 	refreshsession.DefaultUpdatedAt = refreshsessionDescUpdatedAt.Default.(func() time.Time)
 	// refreshsession.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	refreshsession.UpdateDefaultUpdatedAt = refreshsessionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// refreshsessionDescTokenVersion is the schema descriptor for token_version field.
+	refreshsessionDescTokenVersion := refreshsessionFields[2].Descriptor()
+	// refreshsession.DefaultTokenVersion holds the default value on creation for the token_version field.
+	refreshsession.DefaultTokenVersion = refreshsessionDescTokenVersion.Default.(int)
 	// refreshsessionDescSessionFamilyID is the schema descriptor for session_family_id field.
-	refreshsessionDescSessionFamilyID := refreshsessionFields[2].Descriptor()
+	refreshsessionDescSessionFamilyID := refreshsessionFields[3].Descriptor()
 	// refreshsession.DefaultSessionFamilyID holds the default value on creation for the session_family_id field.
 	refreshsession.DefaultSessionFamilyID = refreshsessionDescSessionFamilyID.Default.(func() uuid.UUID)
 	// refreshsessionDescRefreshTokenHash is the schema descriptor for refresh_token_hash field.
-	refreshsessionDescRefreshTokenHash := refreshsessionFields[3].Descriptor()
+	refreshsessionDescRefreshTokenHash := refreshsessionFields[4].Descriptor()
 	// refreshsession.RefreshTokenHashValidator is a validator for the "refresh_token_hash" field. It is called by the builders before save.
 	refreshsession.RefreshTokenHashValidator = func() func(string) error {
 		validators := refreshsessionDescRefreshTokenHash.Validators
@@ -2657,25 +2665,25 @@ func init() {
 		}
 	}()
 	// refreshsessionDescStatus is the schema descriptor for status field.
-	refreshsessionDescStatus := refreshsessionFields[4].Descriptor()
+	refreshsessionDescStatus := refreshsessionFields[5].Descriptor()
 	// refreshsession.DefaultStatus holds the default value on creation for the status field.
 	refreshsession.DefaultStatus = refreshsessionDescStatus.Default.(string)
 	// refreshsession.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	refreshsession.StatusValidator = refreshsessionDescStatus.Validators[0].(func(string) error)
 	// refreshsessionDescUserAgent is the schema descriptor for user_agent field.
-	refreshsessionDescUserAgent := refreshsessionFields[5].Descriptor()
+	refreshsessionDescUserAgent := refreshsessionFields[6].Descriptor()
 	// refreshsession.DefaultUserAgent holds the default value on creation for the user_agent field.
 	refreshsession.DefaultUserAgent = refreshsessionDescUserAgent.Default.(string)
 	// refreshsession.UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
 	refreshsession.UserAgentValidator = refreshsessionDescUserAgent.Validators[0].(func(string) error)
 	// refreshsessionDescIPAddr is the schema descriptor for ip_addr field.
-	refreshsessionDescIPAddr := refreshsessionFields[6].Descriptor()
+	refreshsessionDescIPAddr := refreshsessionFields[7].Descriptor()
 	// refreshsession.DefaultIPAddr holds the default value on creation for the ip_addr field.
 	refreshsession.DefaultIPAddr = refreshsessionDescIPAddr.Default.(string)
 	// refreshsession.IPAddrValidator is a validator for the "ip_addr" field. It is called by the builders before save.
 	refreshsession.IPAddrValidator = refreshsessionDescIPAddr.Validators[0].(func(string) error)
 	// refreshsessionDescExpiresAt is the schema descriptor for expires_at field.
-	refreshsessionDescExpiresAt := refreshsessionFields[7].Descriptor()
+	refreshsessionDescExpiresAt := refreshsessionFields[8].Descriptor()
 	// refreshsession.DefaultExpiresAt holds the default value on creation for the expires_at field.
 	refreshsession.DefaultExpiresAt = refreshsessionDescExpiresAt.Default.(func() time.Time)
 	// refreshsessionDescID is the schema descriptor for id field.
