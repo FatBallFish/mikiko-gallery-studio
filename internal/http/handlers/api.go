@@ -4137,9 +4137,9 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, amountErr)
 			return
 		}
-		channelRefund, channelErr := a.refundCashierOrderWithProvider(r.Context(), order, refundTradeNo, providerRefundAmountCNY, strings.TrimSpace(req.Reason))
+		channelRefund, outcomeUncertain, channelErr := a.refundCashierOrderWithProvider(r.Context(), order, refundTradeNo, providerRefundAmountCNY, strings.TrimSpace(req.Reason))
 		if channelErr != nil {
-			if !stripeRefundOutcomeIsUncertain(order, channelErr) {
+			if !outcomeUncertain {
 				if _, releaseErr := a.billing.ReleaseRefundPaymentOrder(r.Context(), refundReq); releaseErr != nil {
 					httpx.WriteError(w, r, normalizeAppError(releaseErr))
 					return
@@ -4349,13 +4349,13 @@ func (a *API) syncAdminCashierOrder(ctx context.Context, orderID int64) (adminCa
 	return adminCashierOrderSyncResponse{Order: order, Sync: syncResult}, nil
 }
 
-func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbilling.PaymentOrder, refundTradeNo string, refundAmountCNY string, reason string) (*cashierProviderRefundResult, *errs.Error) {
+func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbilling.PaymentOrder, refundTradeNo string, refundAmountCNY string, reason string) (*cashierProviderRefundResult, bool, *errs.Error) {
 	if !cashierservice.RefundRequiresProvider(cashierOrderSnapshot(order), cashierProviderInstance{ProviderType: cashierOrderProviderType(order, cashierProviderInstance{})}) {
-		return nil, nil
+		return nil, false, nil
 	}
 	instance, ok := a.cashierProviderInstanceForOrder(ctx, order)
 	if !ok {
-		return nil, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return nil, false, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	registry := cashierservice.NewRefundAdapterRegistryWithBuilders(cashierservice.StandardRefundProviderBuilders())
 	result, shouldCall, err := registry.RefundPayment(ctx, cashierservice.RefundPaymentRequest{
@@ -4366,19 +4366,12 @@ func (a *API) refundCashierOrderWithProvider(ctx context.Context, order domainbi
 		Reason:          reason,
 	})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return nil, result.OutcomeUncertain, normalizeAppError(err)
 	}
 	if !shouldCall {
-		return nil, nil
+		return nil, false, nil
 	}
-	return &result, nil
-}
-
-func stripeRefundOutcomeIsUncertain(order domainbilling.PaymentOrder, channelErr *errs.Error) bool {
-	if channelErr == nil || cashierOrderProviderType(order, cashierProviderInstance{}) != "stripe" {
-		return false
-	}
-	return channelErr.Code == errs.CodePaymentProviderUnavailable || channelErr.Code == errs.CodePaymentAmountMismatch
+	return &result, false, nil
 }
 
 func (a *API) cashierProviderInstanceForOrder(ctx context.Context, order domainbilling.PaymentOrder) (cashierProviderInstance, bool) {

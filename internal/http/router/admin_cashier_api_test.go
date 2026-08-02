@@ -1549,6 +1549,68 @@ func TestAdminCashierStripePendingRefundRejectsChangedAmountBeforeProviderQuery(
 	}
 }
 
+func TestAdminCashierStripeRefundReleasesFreezeWhenProviderInstanceIsMissing(t *testing.T) {
+	var refundCreates int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/payment_intents":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_missing_instance","object":"payment_intent","amount":1000,"currency":"cny","client_secret":"pi_refund_missing_instance_secret_client","status":"requires_payment_method"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/payment_intents/pi_refund_missing_instance":
+			_, _ = w.Write([]byte(`{"id":"pi_refund_missing_instance","object":"payment_intent","amount":1000,"currency":"cny","status":"succeeded"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/refunds":
+			refundCreates++
+			_, _ = w.Write([]byte(`{"id":"re_unexpected","object":"refund","amount":500,"currency":"cny","payment_intent":"pi_refund_missing_instance","status":"succeeded"}`))
+		default:
+			t.Errorf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	handler, adminToken, user, userSession, billingSvc := newAdminCashierRefundProviderTest(t, "cashier-stripe-refund-missing-instance@example.com")
+	putVisibleMethodsForCashierTest(t, handler, adminToken, `[{"method":"stripe","label":"Stripe","enabled":true,"source_provider_type":"stripe","scheduler_strategy":"round_robin","display_order":10}]`)
+	providerID := createProviderInstanceForCashierTest(t, handler, adminToken, `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"config":{"publishable_key":"pk_test_admin"},"secrets":{"secret_key":"sk_test_admin","webhook_secret":"whsec_admin"}}`)
+	orderID, _ := createCustomCashierOrderForTest(t, handler, userSession.AccessToken, "stripe", "10.00")
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/sync", nil)
+	syncReq.Header.Set("Authorization", "Bearer "+adminToken)
+	syncRec := httptest.NewRecorder()
+	handler.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("complete Stripe order: status=%d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/cashier/provider-instances/"+jsonInt64(providerID), nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete Stripe provider instance: status=%d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(`{"refund_trade_no":"REFUND-STRIPE-MISSING-INSTANCE-001","refund_amount_cny":"5.00"}`))
+	refundReq.Header.Set("Authorization", "Bearer "+adminToken)
+	refundReq.Header.Set("Content-Type", "application/json")
+	refundRec := httptest.NewRecorder()
+	handler.ServeHTTP(refundRec, refundReq)
+	if refundRec.Code != http.StatusConflict || !bytes.Contains(refundRec.Body.Bytes(), []byte(`"code":"PAYMENT_PROVIDER_UNAVAILABLE"`)) {
+		t.Fatalf("unexpected missing provider refund response status=%d body=%s", refundRec.Code, refundRec.Body.String())
+	}
+	if refundCreates != 0 {
+		t.Fatalf("missing provider instance must fail before Stripe refund call, got %d calls", refundCreates)
+	}
+	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance after missing provider refund: %v", err)
+	}
+	if balance.AvailablePoints != "32.00000" || balance.FrozenPoints != "0.00000" {
+		t.Fatalf("certain pre-call failure must release refund freeze, got %#v", balance)
+	}
+}
+
 func boolInt(value bool) int {
 	if value {
 		return 1
@@ -2928,7 +2990,7 @@ func putVisibleMethodsForCashierTest(t *testing.T, handler http.Handler, adminTo
 	}
 }
 
-func createProviderInstanceForCashierTest(t *testing.T, handler http.Handler, adminToken string, body string) {
+func createProviderInstanceForCashierTest(t *testing.T, handler http.Handler, adminToken string, body string) int64 {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/provider-instances", bytes.NewBufferString(body))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -2938,6 +3000,15 @@ func createProviderInstanceForCashierTest(t *testing.T, handler http.Handler, ad
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected provider instance create 201, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	var resp struct {
+		Data struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil || resp.Data.ID <= 0 {
+		t.Fatalf("decode provider instance create response: err=%v body=%s", err, rec.Body.String())
+	}
+	return resp.Data.ID
 }
 
 func createCustomCashierOrderForTest(t *testing.T, handler http.Handler, userToken string, visibleMethod string, amountCNY string) (int64, string) {

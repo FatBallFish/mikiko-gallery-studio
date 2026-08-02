@@ -36,15 +36,17 @@ func (c *recordingStripePaymentIntents) Get(id string, _ *stripe.PaymentIntentPa
 type recordingStripeRefunds struct {
 	newParams *stripe.RefundParams
 	refund    *stripe.Refund
+	newErr    error
+	getErr    error
 }
 
 func (c *recordingStripeRefunds) New(params *stripe.RefundParams) (*stripe.Refund, error) {
 	c.newParams = params
-	return c.refund, nil
+	return c.refund, c.newErr
 }
 
 func (c *recordingStripeRefunds) Get(string, *stripe.RefundParams) (*stripe.Refund, error) {
-	return c.refund, nil
+	return c.refund, c.getErr
 }
 
 func TestStripePaymentIntentBuilderCreatesExactIdempotentIntent(t *testing.T) {
@@ -241,6 +243,30 @@ func TestStripeRefundUsesExactAmountAndLocalIdempotencyKey(t *testing.T) {
 				t.Fatalf("unexpected Stripe refund result %#v", result)
 			}
 		})
+	}
+}
+
+func TestStripeRefundMarksOnlyPostCallFailuresAsOutcomeUncertain(t *testing.T) {
+	request := RefundPaymentRequest{
+		Order:           OrderSnapshot{OrderNo: "PGO-STRIPE-OUTCOME", AmountCNY: "10.00", TradeNo: "pi_outcome", Status: "completed"},
+		Instance:        domaincashier.ProviderInstance{ID: 9, ProviderType: "stripe", Config: map[string]any{}},
+		RefundTradeNo:   "REFUND-OUTCOME-001",
+		RefundAmountCNY: "5.00",
+	}
+	missingSecretResult, missingSecretErr := newStripeRefundPaymentBuilder(func(string) StripeRefunds {
+		t.Fatal("missing secret must fail before creating a Stripe client")
+		return nil
+	})(context.Background(), request)
+	if missingSecretErr == nil || missingSecretResult.OutcomeUncertain {
+		t.Fatalf("missing secret is a certain pre-call failure, result=%#v err=%v", missingSecretResult, missingSecretErr)
+	}
+
+	request.Instance.Config["secret_key"] = "sk_test_outcome"
+	transportResult, transportErr := newStripeRefundPaymentBuilder(func(string) StripeRefunds {
+		return &recordingStripeRefunds{newErr: errors.New("connection reset after request write")}
+	})(context.Background(), request)
+	if transportErr == nil || !transportResult.OutcomeUncertain {
+		t.Fatalf("post-call transport failure must be uncertain, result=%#v err=%v", transportResult, transportErr)
 	}
 }
 

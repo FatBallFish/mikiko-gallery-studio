@@ -20,6 +20,7 @@ type RefundPaymentRequest struct {
 type RefundPaymentResult struct {
 	ProviderType       string         `json:"provider_type"`
 	ProviderInstanceID int64          `json:"provider_instance_id,omitempty"`
+	OutcomeUncertain   bool           `json:"-"`
 	RefundStatus       string         `json:"refund_status"`
 	RefundTradeNo      string         `json:"refund_trade_no"`
 	ChannelRefundNo    string         `json:"channel_refund_no,omitempty"`

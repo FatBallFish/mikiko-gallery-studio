@@ -251,10 +251,10 @@ func newStripeRefundPaymentBuilder(clientFactory stripeRefundsFactory) RefundPay
 			refundResult, err = client.New(params)
 		}
 		if err != nil || refundResult == nil || strings.TrimSpace(refundResult.ID) == "" {
-			return RefundPaymentResult{}, paymentRefundProviderUnavailable()
+			return RefundPaymentResult{OutcomeUncertain: true}, paymentRefundProviderUnavailable()
 		}
 		if refundResult.Amount != amountFen || refundResult.Currency != stripe.CurrencyCNY {
-			return RefundPaymentResult{}, stripePaymentAmountMismatch()
+			return RefundPaymentResult{OutcomeUncertain: true}, stripePaymentAmountMismatch()
 		}
 		status := strings.ToLower(strings.TrimSpace(string(refundResult.Status)))
 		if status == "" {
