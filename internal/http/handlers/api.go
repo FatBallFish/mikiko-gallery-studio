@@ -2233,11 +2233,18 @@ func (a *API) HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	imageID := strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/images/")
-	result, content, err := a.tasks.DownloadImageResult(r.Context(), user.ID, imageID)
+	delivery, err := a.tasks.DeliverImageResult(r.Context(), user.ID, imageID)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
+	if strings.TrimSpace(delivery.TemporaryURL) != "" {
+		w.Header().Set("Location", delivery.TemporaryURL)
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+		return
+	}
+	result, content := delivery.Result, delivery.Content
 	w.Header().Set("Content-Type", defaultString(result.MimeType, "application/octet-stream"))
 	w.Header().Set("Content-Disposition", `attachment; filename="`+imageDownloadFilename(result)+`"`)
 	w.WriteHeader(http.StatusOK)

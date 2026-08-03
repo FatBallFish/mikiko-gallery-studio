@@ -1262,6 +1262,69 @@ func (s *Service) GetByID(ctx context.Context, userID int64, taskID string) (dom
 	return cloneTask(task), nil
 }
 
+type ImageResultDelivery struct {
+	Result       provider.ImageResult
+	Content      []byte
+	TemporaryURL string
+}
+
+func (s *Service) DeliverImageResult(ctx context.Context, userID int64, imageID string) (ImageResultDelivery, error) {
+	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return ImageResultDelivery{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return ImageResultDelivery{}, errs.Internal("failed to load image result")
+	}
+	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
+		return ImageResultDelivery{}, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	backend, routeErr := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if routeErr != nil {
+		return ImageResultDelivery{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	if signer, ok := backend.Backend.(storage.TemporaryURLSigner); ok {
+		temporaryURL, signErr := signer.TemporaryGetURL(ctx, result.ObjectKey, storage.TemporaryGetURLOptions{
+			Expiry:           5 * time.Minute,
+			ResponseFilename: imageResultDeliveryFilename(result),
+			ContentType:      strings.TrimSpace(result.MimeType),
+		})
+		if signErr != nil || strings.TrimSpace(temporaryURL) == "" {
+			return ImageResultDelivery{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+		}
+		return ImageResultDelivery{Result: result, TemporaryURL: temporaryURL}, nil
+	}
+	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
+	if readErr != nil {
+		return ImageResultDelivery{}, errs.New(404, errs.CodeNotFound, "image not found")
+	}
+	return ImageResultDelivery{Result: result, Content: content}, nil
+}
+
+func imageResultDeliveryFilename(result provider.ImageResult) string {
+	name := strings.TrimSpace(result.ID)
+	if name == "" {
+		name = "image"
+	}
+	if filepath.Ext(name) != "" {
+		return name
+	}
+	extension := filepath.Ext(strings.TrimSpace(result.ObjectKey))
+	if extension == "" {
+		switch strings.ToLower(strings.TrimSpace(result.MimeType)) {
+		case "image/jpeg", "image/jpg":
+			extension = ".jpg"
+		case "image/webp":
+			extension = ".webp"
+		case "image/gif":
+			extension = ".gif"
+		default:
+			extension = ".png"
+		}
+	}
+	return name + extension
+}
+
 func (s *Service) DownloadImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, []byte, error) {
 	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
 	if err != nil {

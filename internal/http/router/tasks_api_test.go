@@ -20,9 +20,11 @@ import (
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	"github.com/fatballfish/pic-gallery/internal/provider"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/internal/worker"
 )
 
@@ -533,6 +535,62 @@ func TestAgentTaskB64ResultPersistsAndDownloadsLocalImage(t *testing.T) {
 	if deletedDownloadRec.Code != http.StatusNotFound {
 		t.Fatalf("expected deleted task image download 404, got %d body=%s", deletedDownloadRec.Code, deletedDownloadRec.Body.String())
 	}
+}
+
+func TestAgentImageDownloadRedirectsToOwnedTemporaryStorageURL(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	authSvc, session := loginTestUser(t, "signed-download-owner@example.com")
+	store := imagetaskservice.NewMemoryStore()
+	result := provider.ImageResult{
+		ID: "signed-image", StorageDriver: "s3", StorageConfigID: "bfss-primary",
+		ObjectKey: "generated/signed-image.png", MimeType: "image/png", VisibilityStatus: "private",
+	}
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: 1, ID: "signed-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	backend := &temporaryRedirectBackend{location: "https://bfss.example.com/bucket/generated/signed-image.png?X-Amz-Signature=signed"}
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, nil, store, nil, nil, backend)
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, nil))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/images/"+result.ID, nil)
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected temporary redirect 307, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if location := rec.Header().Get("Location"); location != backend.location {
+		t.Fatalf("Location = %q, want %q", location, backend.location)
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "private, no-store" {
+		t.Fatalf("Cache-Control = %q, want private, no-store", cacheControl)
+	}
+	if rec.Body.Len() != 0 || backend.getCalls != 0 || backend.signCalls != 1 {
+		t.Fatalf("redirect response body=%q getCalls=%d signCalls=%d", rec.Body.String(), backend.getCalls, backend.signCalls)
+	}
+}
+
+type temporaryRedirectBackend struct {
+	location  string
+	getCalls  int
+	signCalls int
+}
+
+func (backend *temporaryRedirectBackend) Driver() string { return "s3" }
+func (backend *temporaryRedirectBackend) Put(context.Context, string, string, []byte) error {
+	return nil
+}
+func (backend *temporaryRedirectBackend) Get(context.Context, string) ([]byte, error) {
+	backend.getCalls++
+	return []byte("must not proxy signed storage bytes"), nil
+}
+func (backend *temporaryRedirectBackend) Delete(context.Context, string) error { return nil }
+func (backend *temporaryRedirectBackend) TemporaryGetURL(context.Context, string, storage.TemporaryGetURLOptions) (string, error) {
+	backend.signCalls++
+	return backend.location, nil
 }
 
 func TestReferenceAssetsImportFromGalleryCreatesDownloadableReference(t *testing.T) {
