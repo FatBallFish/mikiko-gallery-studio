@@ -123,6 +123,10 @@ const errorMessages: Record<string, Record<ErrorLocale, string>> = {
     zh: '上游模型服务暂不可用，请稍后重试。',
     en: 'The upstream model service is temporarily unavailable. Please try again later.',
   },
+  PAYMENT_PROVIDER_UNAVAILABLE: {
+    zh: '支付渠道暂时不可用，请稍后重试。',
+    en: 'The payment channel is temporarily unavailable. Please try again later.',
+  },
   UPSTREAM_BAD_REQUEST: {
     zh: '上游模型拒绝了本次请求，请调整参数或提示词后重试。',
     en: 'The upstream model rejected this request. Please adjust the settings or prompt and try again.',

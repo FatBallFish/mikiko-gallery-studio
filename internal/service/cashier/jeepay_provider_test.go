@@ -1,10 +1,13 @@
 package cashier
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,6 +172,137 @@ func TestJeePayPaymentDisplayBuilderAPIModePostsChannelExtra(t *testing.T) {
 	}
 	if result.Display["type"] != "qr_code" || result.Display["payment_url"] != result.PaymentURL || result.Display["qr_code"] != result.QRCode || result.Display["prepay_mode"] != "api" || result.Display["way_code"] != "WX_JSAPI" || result.Display["channel_trade_no"] != "JEEPAY-API-PAY-001" {
 		t.Fatalf("unexpected api display %#v", result.Display)
+	}
+}
+
+func TestJeePayALI_PCDefaultChannelExtraRequestsPayURL(t *testing.T) {
+	request := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": "https://jeepay.example.com", "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret", "way_code": "ALI_PC",
+		}},
+		OrderNo: "PGO-JEEPAY-ALI-PC", AmountCNY: "9.90000", Subject: "Basic Monthly",
+	}
+
+	_, params, sign, _, err := BuildJeePayPaymentParams(CallbackURLConfig{}, request)
+	if err != nil {
+		t.Fatalf("BuildJeePayPaymentParams returned error: %v", err)
+	}
+	if got := params["channelExtra"]; got != `{"payDataType":"payUrl"}` {
+		t.Fatalf("channelExtra = %q, want payUrl default", got)
+	}
+	if sign == "" || sign != jeepaySign(params, "merchant-secret") {
+		t.Fatalf("default channelExtra must be covered by the request signature: sign=%q params=%#v", sign, params)
+	}
+}
+
+func TestJeePayWX_NATIVEDefaultChannelExtraRequestsCodeURL(t *testing.T) {
+	request := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_wxpay", Config: map[string]any{
+			"gateway_url": "https://jeepay.example.com", "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret", "way_code": "WX_NATIVE",
+		}},
+		OrderNo: "PGO-JEEPAY-WX-NATIVE", AmountCNY: "9.90000", Subject: "Basic Monthly",
+	}
+
+	_, params, _, _, err := BuildJeePayPaymentParams(CallbackURLConfig{}, request)
+	if err != nil {
+		t.Fatalf("BuildJeePayPaymentParams returned error: %v", err)
+	}
+	if got := params["channelExtra"]; got != `{"payDataType":"codeUrl"}` {
+		t.Fatalf("channelExtra = %q, want codeUrl default", got)
+	}
+}
+
+func TestJeePayExplicitChannelExtraOverridesDefaultChannelExtra(t *testing.T) {
+	const configured = `{"payDataType":"form","scene":"admin-configured"}`
+	request := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": "https://jeepay.example.com", "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret", "way_code": "ALI_PC", "channel_extra": configured,
+		}},
+		OrderNo: "PGO-JEEPAY-EXPLICIT", AmountCNY: "9.90000", Subject: "Basic Monthly",
+	}
+
+	_, params, _, _, err := BuildJeePayPaymentParams(CallbackURLConfig{}, request)
+	if err != nil {
+		t.Fatalf("BuildJeePayPaymentParams returned error: %v", err)
+	}
+	if got := params["channelExtra"]; got != configured {
+		t.Fatalf("channelExtra = %q, want explicit configuration %q", got, configured)
+	}
+}
+
+func TestJeePayHTTPFailureLogsSanitizedDiagnostic(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var requestBody map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 50301,
+			"msg":  "merchant rejected request https://cashier.example.com/pay?token=redirect-secret sign=" + requestBody["sign"] + " key=merchant-secret",
+		})
+	}))
+	defer upstream.Close()
+
+	request := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret", "way_code": "ALI_PC",
+		}},
+		OrderNo: "PGO-JEEPAY-HTTP-FAIL", AmountCNY: "9.90000", Subject: "Basic Monthly",
+	}
+	if _, _, _, _, _, err := BuildJeePayAPIPayment(context.Background(), CallbackURLConfig{}, request); err == nil {
+		t.Fatal("expected JeePay HTTP failure")
+	}
+
+	output := logs.String()
+	for _, required := range []string{"stage=http_response", "http_status=503", "message=\"merchant rejected request"} {
+		if !strings.Contains(output, required) {
+			t.Fatalf("sanitized JeePay diagnostic missing %q: %s", required, output)
+		}
+	}
+	for _, secret := range []string{"merchant-secret", "redirect-secret", "token=", "sign="} {
+		if strings.Contains(output, secret) {
+			t.Fatalf("sanitized JeePay diagnostic leaked %q: %s", secret, output)
+		}
+	}
+}
+
+func TestJeePayProviderFailureLogsCodeAndBoundedMessage(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 1008, "msg": "merchant configuration rejected"})
+	}))
+	defer upstream.Close()
+
+	request := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret", "way_code": "ALI_PC",
+		}},
+		OrderNo: "PGO-JEEPAY-CODE-FAIL", AmountCNY: "9.90000", Subject: "Basic Monthly",
+	}
+	if _, _, _, _, _, err := BuildJeePayAPIPayment(context.Background(), CallbackURLConfig{}, request); err == nil {
+		t.Fatal("expected JeePay provider failure")
+	}
+
+	output := logs.String()
+	for _, required := range []string{"stage=provider_response", "provider_code=1008", "message=\"merchant configuration rejected\""} {
+		if !strings.Contains(output, required) {
+			t.Fatalf("JeePay provider diagnostic missing %q: %s", required, output)
+		}
+	}
+	if strings.Contains(output, "merchant-secret") {
+		t.Fatalf("JeePay provider diagnostic leaked merchant key: %s", output)
 	}
 }
 
