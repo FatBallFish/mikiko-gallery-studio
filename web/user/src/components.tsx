@@ -36,6 +36,7 @@ export type ImagePreviewPayload = {
   model?: string
   source?: string
   creationDraft?: WorkspaceCreationDraft
+  detailImage?: ImageResult
 }
 
 export function imagePixelsLabel(width?: number, height?: number) {
@@ -300,6 +301,11 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
 }) {
   const authorName = image.author_name || '匿名用户'
   const prompt = image.prompt || '-'
+  const actualResolution = image.width > 0 && image.height > 0 ? imagePixelsLabel(image.width, image.height) : '-'
+  const taskType = image.task_type === 'image_edit' ? '图片编辑' : image.task_type === 'text_to_image' ? '文生图' : image.task_type || '-'
+  const sizeMode = image.size_mode === 'pixel' ? '像素尺寸' : image.size_mode === 'ratio' ? '按比例' : image.size_mode || '-'
+  const outputCompression = image.output_compression == null ? '-' : `${image.output_compression}%`
+  const outputCount = image.requested_output_image_count ?? image.image_count ?? '-'
   return (
     <div className={publicDetailClasses.root}>
       <div className={publicDetailClasses.media}>
@@ -345,8 +351,17 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
         <div className={publicDetailClasses.meta}>
           <span className={publicDetailClasses.metaItem}>作者 <b className={publicDetailClasses.metaValue}>{authorName}</b></span>
           <span className={publicDetailClasses.metaItem}>模型 <b className={publicDetailClasses.metaValue}>{image.route_model_code || image.abstract_model || '-'}</b></span>
+          <span className={publicDetailClasses.metaItem}>实际分辨率 <b className={publicDetailClasses.metaValue}>{actualResolution}</b></span>
           <span className={publicDetailClasses.metaItem}>基础分辨率 <b className={publicDetailClasses.metaValue}>{image.base_resolution || '-'}</b></span>
           <span className={publicDetailClasses.metaItem}>比例 <b className={publicDetailClasses.metaValue}>{image.aspect_ratio || '-'}</b></span>
+          <span className={publicDetailClasses.metaItem}>尺寸模式 <b className={publicDetailClasses.metaValue}>{sizeMode}</b></span>
+          <span className={publicDetailClasses.metaItem}>请求尺寸 <b className={publicDetailClasses.metaValue}>{image.requested_size || '-'}</b></span>
+          <span className={publicDetailClasses.metaItem}>任务类型 <b className={publicDetailClasses.metaValue}>{taskType}</b></span>
+          <span className={publicDetailClasses.metaItem}>质量 <b className={publicDetailClasses.metaValue}>{image.quality || '-'}</b></span>
+          <span className={publicDetailClasses.metaItem}>输出格式 <b className={publicDetailClasses.metaValue}>{image.output_format?.toUpperCase() || '-'}</b></span>
+          <span className={publicDetailClasses.metaItem}>压缩质量 <b className={publicDetailClasses.metaValue}>{outputCompression}</b></span>
+          <span className={publicDetailClasses.metaItem}>审核等级 <b className={publicDetailClasses.metaValue}>{image.moderation || '-'}</b></span>
+          <span className={publicDetailClasses.metaItem}>输出数量 <b className={publicDetailClasses.metaValue}>{outputCount}</b></span>
         </div>
         {showPublicStats ? (
           <div className={publicDetailClasses.stats}>
