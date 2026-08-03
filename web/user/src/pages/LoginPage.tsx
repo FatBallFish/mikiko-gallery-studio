@@ -26,17 +26,17 @@ import {
 const lastLoginEmailKey = 'pic-gallery-last-login-email'
 
 const loginClasses = {
-  page: 'relative grid min-h-svh w-full max-w-full overflow-x-hidden bg-[var(--bg)] font-vault-body text-[var(--fg)] md:grid-cols-[minmax(320px,1.08fr)_minmax(460px,0.92fr)]',
-  scene: 'pointer-events-none absolute inset-0 overflow-hidden md:relative md:min-h-svh',
+  page: 'relative grid min-h-svh w-full max-w-full overflow-x-hidden bg-[var(--bg)] font-vault-body text-[var(--fg)] md:h-dvh md:min-h-0 md:grid-cols-[minmax(320px,1.08fr)_minmax(460px,0.92fr)] md:overflow-hidden',
+  scene: 'pointer-events-none absolute inset-0 overflow-hidden md:relative md:h-full md:min-h-0',
   sceneImage: 'size-full object-cover object-[44%_center] opacity-55 transition-[filter,opacity,transform] duration-700 md:opacity-100 md:hover:scale-[1.015] motion-reduce:transition-none motion-reduce:hover:scale-100',
   sceneShade: 'absolute inset-0 bg-[linear-gradient(180deg,rgba(5,6,10,0.34)_0%,rgba(5,6,10,0.74)_58%,rgba(5,6,10,0.94)_100%)] md:bg-[linear-gradient(90deg,rgba(5,6,10,0.16)_0%,rgba(5,6,10,0.28)_58%,rgba(5,6,10,0.76)_100%)]',
   sceneCopy: 'absolute bottom-10 left-10 hidden max-w-[560px] text-[#f8f4ed] lg:block xl:bottom-14 xl:left-14',
   sceneTitle: 'm-0 max-w-[560px] font-vault-display text-[clamp(2.5rem,4.2vw,4.8rem)] font-bold leading-[1.02] tracking-[0]',
   sceneSummary: 'mt-6 max-w-[420px] text-base leading-7 text-white/68',
   brand: 'pointer-events-auto absolute left-4 top-4 z-30 rounded-xl border-0 bg-black/30 p-2 text-white backdrop-blur-md transition-transform duration-200 hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7a566] active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100 sm:left-6 sm:top-6 md:left-8 md:top-8',
-  panel: 'relative z-10 flex min-h-svh items-center justify-center bg-[color-mix(in_oklch,var(--bg)_88%,transparent)] px-3 py-20 backdrop-blur-xl min-[360px]:px-5 sm:px-8 md:bg-[var(--bg)] md:px-10 md:py-24 md:backdrop-blur-none',
+  panel: 'relative z-10 flex min-h-svh items-center justify-center bg-[color-mix(in_oklch,var(--bg)_88%,transparent)] px-3 py-20 backdrop-blur-xl min-[360px]:px-5 sm:px-8 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain md:bg-[var(--bg)] md:px-10 md:py-10 md:backdrop-blur-none md:[@media(max-height:860px)]:py-4',
   themeButton: 'absolute right-4 top-4 grid size-11 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] shadow-[var(--shadow-sm)] transition-all duration-200 hover:-translate-y-px hover:border-[var(--border-strong)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.96] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 sm:right-6 sm:top-6 md:right-8 md:top-8',
-  formSurface: 'w-full max-w-[448px] rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface-solid)_92%,transparent)] p-5 shadow-[0_30px_90px_-48px_rgba(0,0,0,0.72)] backdrop-blur-xl min-[360px]:p-6 sm:p-8 md:bg-[var(--surface)] md:p-9',
+  formSurface: 'w-full max-w-[448px] rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface-solid)_92%,transparent)] p-5 shadow-[0_30px_90px_-48px_rgba(0,0,0,0.72)] backdrop-blur-xl min-[360px]:p-6 sm:p-8 md:bg-[var(--surface)] md:p-9 md:[@media(max-height:860px)]:p-6',
   back: 'mb-5 inline-flex min-h-10 items-center gap-2 rounded-lg border-0 bg-transparent px-1 text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
   eyebrow: 'm-0 font-vault-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]',
   title: 'mb-0 mt-3 font-vault-display text-[clamp(1.8rem,8vw,2.6rem)] font-bold leading-[1.08] tracking-[0] text-[var(--fg)]',

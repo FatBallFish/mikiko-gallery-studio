@@ -28,6 +28,15 @@ for (const required of [
   'type="image/webp"',
   'srcSet=',
   '<BrandMark withText inverse />',
+  'md:h-dvh',
+  'md:min-h-0',
+  'md:overflow-hidden',
+  'md:h-full',
+  'md:overflow-y-auto',
+  'md:overscroll-contain',
+  'md:py-10',
+  'md:[@media(max-height:860px)]:py-4',
+  'md:[@media(max-height:860px)]:p-6',
 ]) {
   if (!source.includes(required)) throw new Error(`authentication page source contract missing: ${required}`)
 }
