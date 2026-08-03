@@ -11,6 +11,7 @@ for (const banned of [
   'ViduClaw',
   'PIC GALLERY Atelier',
   '/landing/hero-gallery.webp',
+  '/landing/workspace.webp',
   'role="listitem"',
 ]) {
   if (landingSource.includes(banned)) throw new Error(`landing source contains banned asset, copy, or role: ${banned}`)
@@ -25,9 +26,11 @@ for (const required of [
   '/landing/studio-showcase-1920.webp',
   '/landing/studio-showcase-1280.avif',
   '/landing/studio-showcase-1920.avif',
-  '/landing/workspace.webp',
   "landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.webp')",
-  "landingAssetUrl(import.meta.env.BASE_URL, '/landing/workspace.webp')",
+  'function LandingAssetPicture',
+  'width={asset.width}',
+  'height={asset.height}',
+  'asset={landingChapters.workflow.image}',
   'type="image/avif"',
   'type="image/webp"',
   'srcSet=',

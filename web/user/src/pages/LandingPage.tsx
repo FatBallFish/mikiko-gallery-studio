@@ -13,7 +13,7 @@ import {
   Wallet,
 } from '../ui/icons'
 import { useLandingMotion } from '../ui/useLandingMotion'
-import { landingActionInk, landingAssetUrl, landingChapters } from './landingContent'
+import { landingActionInk, landingAssetUrl, landingChapters, type LandingAsset } from './landingContent'
 
 const container = 'mx-auto w-full max-w-[1440px] px-6 sm:px-8 lg:px-12 xl:px-16'
 const sectionSpace = 'py-32 md:py-48'
@@ -25,6 +25,27 @@ const capabilityIcons = {
   estimate: Wallet,
 } as const
 
+function LandingAssetPicture({ asset, pictureClassName, imageClassName }: { asset: LandingAsset; pictureClassName?: string; imageClassName: string }) {
+  const avif = landingAssetUrl(import.meta.env.BASE_URL, asset.avif)
+  const webp = landingAssetUrl(import.meta.env.BASE_URL, asset.webp)
+  return (
+    <picture className={pictureClassName}>
+      <source type="image/avif" srcSet={avif} />
+      <source type="image/webp" srcSet={webp} />
+      <img
+        data-landing-image
+        src={webp}
+        alt=""
+        width={asset.width}
+        height={asset.height}
+        loading="lazy"
+        decoding="async"
+        className={imageClassName}
+      />
+    </picture>
+  )
+}
+
 export function LandingPage() {
   const app = useApp()
   const pageRef = useRef<HTMLElement>(null)
@@ -33,7 +54,6 @@ export function LandingPage() {
   const studioShowcase1920Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.webp')
   const studioShowcase1280Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.avif')
   const studioShowcase1920Avif = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1920.avif')
-  const workspaceAsset = landingAssetUrl(import.meta.env.BASE_URL, '/landing/workspace.webp')
 
   const goCreate = () => app.navigate(app.isAuthenticated ? 'genpic' : 'login', { returnTo: 'genpic' })
 
@@ -167,15 +187,10 @@ export function LandingPage() {
                   onClick={goCreate}
                 >
                   {capability.image ? (
-                    <img
-                      data-landing-image
-                      src={landingAssetUrl(import.meta.env.BASE_URL, capability.image)}
-                      alt=""
-                      width={capability.image === '/landing/workspace.webp' ? 1440 : 1280}
-                      height={capability.image === '/landing/workspace.webp' ? 900 : 720}
-                      loading="lazy"
-                      decoding="async"
-                      className="absolute inset-0 size-full object-cover opacity-30 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-45 group-focus-visible:scale-105 group-focus-visible:opacity-45"
+                    <LandingAssetPicture
+                      asset={capability.image}
+                      pictureClassName="absolute inset-0 size-full"
+                      imageClassName="size-full object-cover opacity-30 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-45 group-focus-visible:scale-105 group-focus-visible:opacity-45"
                     />
                   ) : null}
                   {capability.image ? <span data-landing-image-overlay className="pointer-events-none absolute inset-0 bg-black opacity-0" /> : null}
@@ -203,14 +218,10 @@ export function LandingPage() {
           <h2 className="m-0 max-w-[1100px] font-vault-display text-4xl font-bold leading-[1.08] tracking-[0] md:text-6xl">
             构想
             <span className="mx-3 inline-block h-[0.72em] w-20 overflow-hidden rounded-full border border-[var(--border-strong)] align-middle transition-transform duration-700 hover:scale-105 md:w-32" aria-hidden="true">
-              <img
-                src={workspaceAsset}
-                alt=""
-                width={1440}
-                height={900}
-                loading="lazy"
-                decoding="async"
-                className="size-full object-cover"
+              <LandingAssetPicture
+                asset={landingChapters.workflow.image}
+                pictureClassName="block size-full"
+                imageClassName="size-full object-cover"
               />
             </span>
             经过一条可见链路，成为资产
@@ -250,15 +261,10 @@ export function LandingPage() {
                 className="group relative min-h-[190px] flex-1 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-left transition-[flex,transform,border-color] duration-700 ease-out hover:flex-[1.75] hover:-translate-y-1 hover:border-[color-mix(in_oklch,var(--accent)_48%,var(--border))] focus-visible:flex-[1.75] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] lg:min-h-0"
                 onClick={goCreate}
               >
-                <img
-                  data-landing-image
-                  src={landingAssetUrl(import.meta.env.BASE_URL, mode.image)}
-                  alt=""
-                  width={mode.image === '/landing/workspace.webp' ? 1440 : 1280}
-                  height={mode.image === '/landing/workspace.webp' ? 900 : 720}
-                  loading="lazy"
-                  decoding="async"
-                  className="absolute inset-0 size-full object-cover opacity-45 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-65 group-focus-visible:scale-105 group-focus-visible:opacity-65"
+                <LandingAssetPicture
+                  asset={mode.image}
+                  pictureClassName="absolute inset-0 size-full"
+                  imageClassName="size-full object-cover opacity-45 transition-all duration-700 ease-out group-hover:scale-105 group-hover:opacity-65 group-focus-visible:scale-105 group-focus-visible:opacity-65"
                 />
                 <span data-landing-image-overlay className="pointer-events-none absolute inset-0 bg-black opacity-0" />
                 <span className="absolute inset-0 bg-[linear-gradient(to_top,rgba(5,6,10,0.96),rgba(5,6,10,0.12))]" />

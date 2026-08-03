@@ -12,13 +12,29 @@ export type LandingAction = {
   kind: 'create' | 'docs'
 }
 
+export type LandingAsset = {
+  webp: string
+  avif: string
+  width: number
+  height: number
+}
+
+function landingAsset(name: string, width: number, height: number): LandingAsset {
+  return {
+    webp: `/landing/${name}.webp`,
+    avif: `/landing/${name}.avif`,
+    width,
+    height,
+  }
+}
+
 export type LandingCapability = {
   id: 'generate' | 'edit' | 'reference' | 'estimate'
   title: string
   detail: string
   columns: 2 | 3 | 5 | 7
   rows: 1 | 2
-  image?: '/landing/studio-showcase-1280.webp' | '/landing/workspace.webp'
+  image?: LandingAsset
   action: LandingAction['kind']
 }
 
@@ -44,7 +60,7 @@ export const landingChapters = {
       detail: '选择抽象模型、质量、比例与数量，不必先理解每个上游的参数差异。',
       columns: 7,
       rows: 2,
-      image: '/landing/studio-showcase-1280.webp',
+      image: landingAsset('studio-showcase-1280', 1280, 720),
       action: 'create',
     },
     {
@@ -53,7 +69,7 @@ export const landingChapters = {
       detail: '上传图片并描述修改目标，模型能力不支持时会在提交前明确阻止。',
       columns: 5,
       rows: 1,
-      image: '/landing/workspace.webp',
+      image: landingAsset('capability-edit', 2048, 1152),
       action: 'create',
     },
     {
@@ -62,6 +78,7 @@ export const landingChapters = {
       detail: '用一张或多张参考图约束主体与方向。',
       columns: 3,
       rows: 1,
+      image: landingAsset('capability-reference', 1536, 1024),
       action: 'create',
     },
     {
@@ -70,10 +87,12 @@ export const landingChapters = {
       detail: '生成前看见本次消耗。',
       columns: 2,
       rows: 1,
+      image: landingAsset('capability-estimate', 1536, 1024),
       action: 'create',
     },
   ] satisfies LandingCapability[],
   workflow: {
+    image: landingAsset('workflow-strip', 2048, 768),
     statement: '选择任务类型与抽象模型，配置质量、比例和数量；平台先完成能力校验与积分预估，再进入排队、生成、保存，结果最终回到你的历史资产。',
     steps: ['配置意图', '确认预估', '跟随任务状态', '保存生成结果'],
   },
@@ -82,19 +101,19 @@ export const landingChapters = {
       id: 'words',
       title: '从文字构建画面',
       detail: '中文与英文提示词均可用于文生图，尺寸、质量与数量按当前模型能力开放。',
-      image: '/landing/studio-showcase-1280.webp',
+      image: landingAsset('mode-text', 1024, 1536),
     },
     {
       id: 'edit',
       title: '在原图上继续',
       detail: '图片编辑需要图片输入；不兼容的模型不会进入扣费与生成流程。',
-      image: '/landing/workspace.webp',
+      image: landingAsset('mode-edit', 1024, 1536),
     },
     {
       id: 'reference',
       title: '让参考图参与表达',
       detail: '参考图数量、格式和大小先校验，输入数量与最终输出数量分别计算。',
-      image: '/landing/studio-showcase-1280.webp',
+      image: landingAsset('mode-reference', 1024, 1536),
     },
   ],
   developer: {
