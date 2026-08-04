@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1252,6 +1253,18 @@ func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, rout
 }
 
 func (s *Service) GetByID(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
+	task, err := s.loadOwnedTask(ctx, userID, taskID)
+	if err != nil {
+		return domainimagetask.Task{}, err
+	}
+	projected, projectErr := s.projectTaskMedia(ctx, cloneTask(task), "/api/agent/image/v1/images/")
+	if projectErr != nil {
+		return domainimagetask.Task{}, projectErr
+	}
+	return projected, nil
+}
+
+func (s *Service) loadOwnedTask(ctx context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
 	task, err := s.store.GetByID(ctx, userID, taskID)
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
@@ -1259,7 +1272,7 @@ func (s *Service) GetByID(ctx context.Context, userID int64, taskID string) (dom
 		}
 		return domainimagetask.Task{}, errs.Internal("failed to load image task")
 	}
-	return cloneTask(task), nil
+	return task, nil
 }
 
 type ImageResultDelivery struct {
@@ -1283,16 +1296,11 @@ func (s *Service) DeliverImageResult(ctx context.Context, userID int64, imageID 
 	if routeErr != nil {
 		return ImageResultDelivery{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
 	}
-	if signer, ok := backend.Backend.(storage.TemporaryURLSigner); ok {
-		temporaryURL, signErr := signer.TemporaryGetURL(ctx, result.ObjectKey, storage.TemporaryGetURLOptions{
-			Expiry:           5 * time.Minute,
-			ResponseFilename: imageResultDeliveryFilename(result),
-			ContentType:      strings.TrimSpace(result.MimeType),
-		})
-		if signErr != nil || strings.TrimSpace(temporaryURL) == "" {
+	if urls, supported, signErr := storage.ProjectTemporaryMediaURLs(ctx, backend.Backend, result.ObjectKey, result.MimeType, imageResultDeliveryFilename(result)); supported {
+		if signErr != nil {
 			return ImageResultDelivery{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
 		}
-		return ImageResultDelivery{Result: result, TemporaryURL: temporaryURL}, nil
+		return ImageResultDelivery{Result: result, TemporaryURL: urls.DownloadURL}, nil
 	}
 	content, readErr := backend.Backend.Get(ctx, result.ObjectKey)
 	if readErr != nil {
@@ -1422,7 +1430,60 @@ func (s *Service) ListByUser(ctx context.Context, userID int64) ([]domainimageta
 		}
 		return nil, errs.Internal("failed to list image tasks")
 	}
-	return list, nil
+	projected := make([]domainimagetask.Task, 0, len(list))
+	for _, task := range list {
+		item, projectErr := s.projectTaskMedia(ctx, cloneTask(task), "/api/agent/image/v1/images/")
+		if projectErr != nil {
+			return nil, projectErr
+		}
+		projected = append(projected, item)
+	}
+	return projected, nil
+}
+
+func (s *Service) projectTaskMedia(ctx context.Context, task domainimagetask.Task, fallbackPrefix string) (domainimagetask.Task, error) {
+	for index, result := range task.Results {
+		projected, err := s.projectImageResultMedia(ctx, result, fallbackPrefix)
+		if err != nil {
+			return domainimagetask.Task{}, err
+		}
+		task.Results[index] = projected
+	}
+	return task, nil
+}
+
+func (s *Service) projectImageResultMedia(ctx context.Context, result provider.ImageResult, fallbackPrefix string) (provider.ImageResult, error) {
+	fallbackURL := strings.TrimRight(fallbackPrefix, "/") + "/" + url.PathEscape(strings.TrimSpace(result.ID))
+	if strings.EqualFold(strings.TrimSpace(result.StorageDriver), "remote") || strings.TrimSpace(result.ObjectKey) == "" {
+		if remoteURL := absoluteHTTPMediaURL(defaultString(result.URL, result.ObjectKey)); remoteURL != "" {
+			result.URL, result.DownloadURL = remoteURL, remoteURL
+			return result, nil
+		}
+		result.URL, result.DownloadURL = fallbackURL, fallbackURL
+		return result, nil
+	}
+	backend, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	urls, supported, err := storage.ProjectTemporaryMediaURLs(ctx, backend.Backend, result.ObjectKey, result.MimeType, imageResultDeliveryFilename(result))
+	if err != nil {
+		return provider.ImageResult{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	if supported {
+		result.URL, result.DownloadURL = urls.PreviewURL, urls.DownloadURL
+		return result, nil
+	}
+	result.URL, result.DownloadURL = fallbackURL, fallbackURL
+	return result, nil
+}
+
+func absoluteHTTPMediaURL(value string) string {
+	target, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil {
+		return ""
+	}
+	return target.String()
 }
 
 func (s *Service) DeleteByID(ctx context.Context, userID int64, taskID string) error {
@@ -1436,7 +1497,7 @@ func (s *Service) DeleteByID(ctx context.Context, userID int64, taskID string) e
 }
 
 func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, req domainimagetask.RetryRequest) (domainimagetask.Task, error) {
-	original, err := s.GetByID(ctx, userID, taskID)
+	original, err := s.loadOwnedTask(ctx, userID, taskID)
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}

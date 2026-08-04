@@ -950,7 +950,7 @@ func TestDeliverImageResultUsesTemporaryURLAfterOwnershipCheck(t *testing.T) {
 	if delivery.Result.ID != result.ID || delivery.TemporaryURL != backend.signedURL || len(delivery.Content) != 0 {
 		t.Fatalf("unexpected temporary delivery %#v", delivery)
 	}
-	if backend.getCalls != 0 || backend.signCalls != 1 || backend.objectKey != result.ObjectKey {
+	if backend.getCalls != 0 || backend.signCalls != 2 || backend.objectKey != result.ObjectKey {
 		t.Fatalf("temporary delivery calls: get=%d sign=%d key=%q", backend.getCalls, backend.signCalls, backend.objectKey)
 	}
 	if backend.options.Expiry != 5*time.Minute || backend.options.ContentType != "image/png" || backend.options.ResponseFilename != "signed-image.png" {
@@ -960,8 +960,72 @@ func TestDeliverImageResultUsesTemporaryURLAfterOwnershipCheck(t *testing.T) {
 	if _, err := svc.DeliverImageResult(t.Context(), 23, result.ID); err == nil {
 		t.Fatal("expected non-owner delivery to be rejected")
 	}
-	if backend.signCalls != 1 {
+	if backend.signCalls != 2 {
 		t.Fatalf("non-owner request reached signer; sign calls=%d", backend.signCalls)
+	}
+}
+
+func TestTemporaryMediaURLProjectionForTaskResults(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	result := provider.ImageResult{
+		ID: "projected-image", StorageDriver: "s3", StorageConfigID: "bfss-primary",
+		ObjectKey: "generated/projected-image.png", MimeType: "image/png", VisibilityStatus: "private",
+	}
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: 22, ID: "projected-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	backend := &temporaryURLBackend{
+		previewURL:  "https://bfss.example.com/generated/projected-image.png?mode=preview&X-Amz-Signature=preview",
+		downloadURL: "https://bfss.example.com/generated/projected-image.png?mode=download&X-Amz-Signature=download",
+	}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, store, nil, nil, backend)
+
+	task, err := svc.GetByID(t.Context(), 22, "projected-task")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(task.Results) != 1 || task.Results[0].URL != backend.previewURL || task.Results[0].DownloadURL != backend.downloadURL {
+		t.Fatalf("task result must expose separate temporary URLs, got %#v", task.Results)
+	}
+	if backend.signCalls != 2 || backend.options.Expiry != 5*time.Minute || backend.options.ResponseFilename != "projected-image.png" {
+		t.Fatalf("unexpected signer calls=%d options=%#v", backend.signCalls, backend.options)
+	}
+	if _, err := svc.GetByID(t.Context(), 23, "projected-task"); err == nil {
+		t.Fatal("non-owner must be rejected before media signing")
+	}
+	if backend.signCalls != 2 {
+		t.Fatalf("non-owner request reached signer; sign calls=%d", backend.signCalls)
+	}
+}
+
+func TestMediaProjectionUsesLocalFallbackAndSurfacesSigningFailure(t *testing.T) {
+	localStore := imagetask.NewMemoryStore()
+	localResult := provider.ImageResult{ID: "local-projection", StorageDriver: "local", ObjectKey: "generated/local.png", MimeType: "image/png"}
+	if err := localStore.Save(t.Context(), domainimagetask.Task{UserID: 22, ID: "local-projection-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{localResult}}); err != nil {
+		t.Fatalf("Save local: %v", err)
+	}
+	localService := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, localStore, nil, nil, storage.NewLocalBackend(t.TempDir()))
+	localTask, err := localService.GetByID(t.Context(), 22, "local-projection-task")
+	if err != nil {
+		t.Fatalf("GetByID local: %v", err)
+	}
+	wantFallback := "/api/agent/image/v1/images/local-projection"
+	if localTask.Results[0].URL != wantFallback || localTask.Results[0].DownloadURL != wantFallback {
+		t.Fatalf("local media must use authenticated fallback route, got %#v", localTask.Results[0])
+	}
+
+	signingStore := imagetask.NewMemoryStore()
+	signedResult := provider.ImageResult{ID: "broken-signing", StorageDriver: "s3", ObjectKey: "generated/broken.png", MimeType: "image/png"}
+	if err := signingStore.Save(t.Context(), domainimagetask.Task{UserID: 22, ID: "broken-signing-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{signedResult}}); err != nil {
+		t.Fatalf("Save signing: %v", err)
+	}
+	signingService := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, signingStore, nil, nil, &temporaryURLBackend{signErr: errors.New("signing unavailable")})
+	_, err = signingService.GetByID(t.Context(), 22, "broken-signing-task")
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.Code != "STORAGE_CONFIG_UNAVAILABLE" {
+		t.Fatalf("signing failure must surface stable storage error, got %T %v", err, err)
 	}
 }
 
@@ -1064,11 +1128,14 @@ func TestDeliverImageResultFallsBackToBackendBytes(t *testing.T) {
 }
 
 type temporaryURLBackend struct {
-	signedURL string
-	objectKey string
-	options   storage.TemporaryGetURLOptions
-	getCalls  int
-	signCalls int
+	signedURL   string
+	previewURL  string
+	downloadURL string
+	objectKey   string
+	options     storage.TemporaryGetURLOptions
+	getCalls    int
+	signCalls   int
+	signErr     error
 }
 
 func (backend *temporaryURLBackend) Driver() string { return "s3" }
@@ -1084,6 +1151,15 @@ func (backend *temporaryURLBackend) TemporaryGetURL(_ context.Context, objectKey
 	backend.signCalls++
 	backend.objectKey = objectKey
 	backend.options = options
+	if backend.signErr != nil {
+		return "", backend.signErr
+	}
+	if options.ResponseFilename != "" && backend.downloadURL != "" {
+		return backend.downloadURL, nil
+	}
+	if options.ResponseFilename == "" && backend.previewURL != "" {
+		return backend.previewURL, nil
+	}
 	return backend.signedURL, nil
 }
 
