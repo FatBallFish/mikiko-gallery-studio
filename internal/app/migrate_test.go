@@ -8,6 +8,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
+	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
 func TestRunDatabaseMigrationLoadsOneRuntimeSnapshot(t *testing.T) {
@@ -59,6 +60,51 @@ func TestRunDatabaseMigrationLoadsOneRuntimeSnapshot(t *testing.T) {
 	}
 	if result.Current.InstallationID != wantConfig.Runtime.InstallationID {
 		t.Fatalf("migration result = %#v", result)
+	}
+}
+
+func TestRunUpgradeDatabaseMigrationReconcilesBindingAfterSchemaMigration(t *testing.T) {
+	bootstrap := config.BootstrapConfig{
+		Path: "runtime.env", SchemaVersion: 1, SetupCompleted: true,
+		Deployment:     config.DeploymentContext{Role: config.DeploymentRoleSingle},
+		InstallationID: "installation-snapshot", ApplicationVersion: "v2.0.0",
+		Values: map[string]string{
+			"SETUP_COMPLETED": "true", "DEPLOYMENT_ROLE": "single", "INSTALLATION_ID": "installation-snapshot",
+			"APPLICATION_VERSION": "v2.0.0", "RUNTIME_SCHEMA_VERSION": "1", "DATABASE_URL": "postgres://app:secret@db/app",
+		},
+	}
+	events := make([]string, 0, 2)
+	legacyIdentity := setup.LegacySetupReleaseIdentity{ApplicationVersion: "v1.0.0", ImageTag: "v1.0.0"}
+	result, err := runUpgradeDatabaseMigration(t.Context(), "runtime.env", legacyIdentity,
+		func(path string) (config.BootstrapConfig, config.Config, error) {
+			if path != "runtime.env" {
+				t.Fatalf("runtime path = %q", path)
+			}
+			return bootstrap, config.Config{
+				Runtime: config.RuntimeConfig{
+					DeploymentRole: config.DeploymentRoleSingle, InstallationID: bootstrap.InstallationID,
+					ApplicationVersion: bootstrap.ApplicationVersion, ConfigSchemaVersion: bootstrap.SchemaVersion,
+				},
+				Database: config.DatabaseConfig{URL: bootstrap.Values["DATABASE_URL"]},
+			}, nil
+		},
+		func(context.Context, string, db.MigrationRequest) (db.MigrationResult, error) {
+			events = append(events, "schema")
+			return db.MigrationResult{Changed: true}, nil
+		},
+		func(_ context.Context, got config.BootstrapConfig, identity setup.LegacySetupReleaseIdentity) (bool, error) {
+			events = append(events, "binding")
+			if got.Path != bootstrap.Path || got.Values["APPLICATION_VERSION"] != "v2.0.0" {
+				t.Fatalf("reconciler bootstrap = %#v", got)
+			}
+			if identity != legacyIdentity {
+				t.Fatalf("legacy identity = %#v", identity)
+			}
+			return true, nil
+		},
+	)
+	if err != nil || !result.Changed || strings.Join(events, ",") != "schema,binding" {
+		t.Fatalf("upgrade migration = (%+v, %v), events=%v", result, err, events)
 	}
 }
 

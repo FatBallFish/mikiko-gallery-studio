@@ -81,6 +81,42 @@ func TestSetupStoreBindsFirstAdminAndRetriesWithoutPassword(t *testing.T) {
 	}
 }
 
+func TestSetupStoreReconcileRequestDigestUsesIdentityBoundCompareAndSwap(t *testing.T) {
+	client := newSetupStoreSQLiteClient(t)
+	installationID := uuid.NewString()
+	seedSetupInstallation(t, client, installationID)
+	store := entstore.NewSetupStore(client)
+	passwordHash, err := adminauthservice.HashPasswordChecked("setup-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := setup.SetupInitializationRequest{
+		OperationID: uuid.NewString(), InstallationID: installationID, ConfigRevision: 3,
+		RequestDigest: strings.Repeat("a", 64), AdminEmail: "root@example.com", AdminPasswordHash: passwordHash,
+	}
+	if _, err := store.Initialize(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	update := setup.SetupBindingDigestUpdate{
+		OperationID: request.OperationID, InstallationID: request.InstallationID, ConfigRevision: request.ConfigRevision,
+		ExpectedRequestDigest: request.RequestDigest, RequestDigest: strings.Repeat("b", 64),
+	}
+	updated, err := store.ReconcileRequestDigest(t.Context(), update)
+	if err != nil || updated.RequestDigest != update.RequestDigest {
+		t.Fatalf("ReconcileRequestDigest = (%+v, %v)", updated, err)
+	}
+	if _, err := store.ReconcileRequestDigest(t.Context(), update); !errors.Is(err, setup.ErrSetupBindingMismatch) {
+		t.Fatalf("stale compare-and-swap error = %v", err)
+	}
+	wrongIdentity := update
+	wrongIdentity.ExpectedRequestDigest = update.RequestDigest
+	wrongIdentity.RequestDigest = strings.Repeat("c", 64)
+	wrongIdentity.OperationID = uuid.NewString()
+	if _, err := store.ReconcileRequestDigest(t.Context(), wrongIdentity); !errors.Is(err, setup.ErrSetupBindingMismatch) {
+		t.Fatalf("wrong identity compare-and-swap error = %v", err)
+	}
+}
+
 func TestSetupStoreRollsBackWhenFirstAdminAlreadyExists(t *testing.T) {
 	client := newSetupStoreSQLiteClient(t)
 	installationID := uuid.NewString()

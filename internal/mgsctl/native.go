@@ -89,7 +89,13 @@ func (executor NativeExecutor) MigrateUpgrade(ctx context.Context, target Upgrad
 		return fmt.Errorf("prepared native migration executable is required")
 	}
 	spec := ProcessSpec{
-		Executable: executable, Arguments: []string{"--env-file", runtimeEnvPath}, Directory: target.Plan.RuntimeDir,
+		Executable: executable, Arguments: []string{
+			"--env-file", runtimeEnvPath, "--reconcile-legacy-setup-binding",
+			"--legacy-application-version", target.PreviousReleaseIdentity.ApplicationVersion,
+			"--legacy-image-registry", target.PreviousReleaseIdentity.ImageRegistry,
+			"--legacy-image-tag", target.PreviousReleaseIdentity.ImageTag,
+			"--legacy-release-version", target.PreviousReleaseIdentity.ReleaseVersion,
+		}, Directory: target.Plan.RuntimeDir,
 	}
 	if err := executor.Runner.Run(ctx, spec); err != nil {
 		return fmt.Errorf("run target native database migration: %w", err)

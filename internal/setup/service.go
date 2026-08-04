@@ -1050,9 +1050,17 @@ func validateDeploymentManagement(bootstrap config.BootstrapConfig, deployment c
 }
 
 func setupRequestDigest(values map[string]string, adminEmail string) (string, error) {
+	return setupRequestDigestWithReleaseFields(values, adminEmail, false)
+}
+
+func legacySetupRequestDigest(values map[string]string, adminEmail string) (string, error) {
+	return setupRequestDigestWithReleaseFields(values, adminEmail, true)
+}
+
+func setupRequestDigestWithReleaseFields(values map[string]string, adminEmail string, includeReleaseFields bool) (string, error) {
 	entries := make([]config.EnvEntry, 0, len(values))
 	for name, value := range values {
-		if setupReleaseField(name) {
+		if !includeReleaseFields && setupReleaseField(name) {
 			continue
 		}
 		entries = append(entries, config.EnvEntry{Key: name, Value: value})
