@@ -9,6 +9,7 @@ import { Button, EmptyState, ErrorState, ImageDetailModal, LoadingState, Modal, 
 import { userButton, userForm, userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
+import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import { errorMessage } from '../useApiResource'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
@@ -727,6 +728,28 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const historyTasks = useMemo(() => (
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
+
+  async function refreshWorkspaceMedia() {
+    const tasks = await userApi.listTasks()
+    setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
+      limit: 20,
+      preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
+    }))
+    setHistoryTaskDialog((current) => current ? tasks.find((task) => task.id === current.id) ?? current : null)
+    setPreviewImage((current) => {
+      const imageID = current?.detailImage?.id
+      if (!current || !imageID) return current
+      const task = tasks.find((item) => item.results.some((image) => image.id === imageID))
+      const image = task?.results.find((item) => item.id === imageID)
+      if (!task || !image) return current
+      return {
+        ...current,
+        url: userApi.imageAssetUrl(image.url, app.session?.token),
+        downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, app.session?.token),
+        detailImage: projectWorkspaceImageDetail(image, task, app.profile),
+      }
+    })
+  }
 
   async function openGalleryImport(target: 'edit') {
     const remaining = editRemainingLimit
@@ -1462,6 +1485,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             activeTaskId={latestTask?.id}
             accessToken={app.session?.token}
             onSelectTask={selectRecentTask}
+            onMediaRefresh={() => void refreshWorkspaceMedia()}
           />
         ) : null}
         {latestTask ? (
@@ -1513,9 +1537,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                   }
                 }}
                 accessToken={app.session?.token}
+                onMediaRefresh={() => void refreshWorkspaceMedia()}
               />
             ) : (
-              <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} />
+              <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} onMediaRefresh={() => void refreshWorkspaceMedia()} />
             )}
             <div ref={feedEndRef} />
           </div>
@@ -1550,12 +1575,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             },
           }] : []}
           previewSourceLabel={previewImage?.source || '创作输出'}
+          onMediaRefresh={() => void refreshWorkspaceMedia()}
           onClose={() => setPreviewImage(null)}
         />
         {historyTaskDialog ? (
           <HistoryTaskDialog
             task={historyTaskDialog}
             accessToken={app.session?.token}
+            onMediaRefresh={() => void refreshWorkspaceMedia()}
             onClose={() => setHistoryTaskDialog(null)}
           />
         ) : null}
@@ -1578,7 +1605,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   )
 }
 
-function ReferenceAssetPreview({ asset, accessToken, onClick }: { asset: ReferenceAsset; accessToken?: string | null; onClick?: (url: string) => void }) {
+function ReferenceAssetPreview({ asset, accessToken, onClick, onMediaRefresh }: { asset: ReferenceAsset; accessToken?: string | null; onClick?: (url: string) => void; onMediaRefresh?: () => void | Promise<void> }) {
   const previewURL = referenceAssetPreviewURL(asset, accessToken)
   if (!previewURL) {
     return <div className={workspaceClasses.refPlaceholder}>无法预览</div>
@@ -1586,11 +1613,11 @@ function ReferenceAssetPreview({ asset, accessToken, onClick }: { asset: Referen
   if (onClick) {
     return (
       <button className={workspaceClasses.sourceImageButton} type="button" onClick={() => onClick(previewURL)}>
-        <img className={workspaceClasses.refImage} src={previewURL} alt={asset.name || '参考图'} />
+        <RefreshableMediaImage className={workspaceClasses.refImage} src={previewURL} alt={asset.name || '参考图'} onMediaRefresh={onMediaRefresh} />
       </button>
     )
   }
-  return <img src={previewURL} alt={asset.name || '参考图'} className={workspaceClasses.refImage} />
+  return <RefreshableMediaImage src={previewURL} alt={asset.name || '参考图'} className={workspaceClasses.refImage} onMediaRefresh={onMediaRefresh} />
 }
 
 function SparkleGlyph() {
@@ -1788,11 +1815,12 @@ function formatHistoryTime(value?: string) {
   }).format(date)
 }
 
-function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask }: {
+function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask, onMediaRefresh }: {
   tasks: ImageTask[]
   activeTaskId?: string
   accessToken?: string
   onSelectTask: (task: ImageTask) => void
+  onMediaRefresh: () => void | Promise<void>
 }) {
   return (
     <section className="border-b border-[var(--border)] px-3 py-2.5 sm:px-5" aria-label="最近创作">
@@ -1812,7 +1840,7 @@ function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask }: 
               onClick={() => onSelectTask(task)}
             >
               <span className="grid size-[42px] place-items-center overflow-hidden rounded-lg bg-[var(--bg)] text-[10px] text-[var(--muted)]">
-                {image ? <img className="size-full object-cover" src={userApi.imageAssetUrl(image.url, accessToken)} alt="" /> : <span className="px-1 text-center leading-tight">{card.statusLabel}</span>}
+                {image ? <RefreshableMediaImage className="size-full object-cover" src={userApi.imageAssetUrl(image.url, accessToken)} alt="" onMediaRefresh={onMediaRefresh} /> : <span className="px-1 text-center leading-tight">{card.statusLabel}</span>}
               </span>
               <span className="min-w-0">
                 <strong className="block truncate text-xs text-[var(--fg)]">{card.taskTypeLabel}</strong>
@@ -1843,12 +1871,13 @@ function formatCompactDuration(ms: number) {
   return `${seconds}s`
 }
 
-function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOpenTaskDialog }: {
+function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOpenTaskDialog, onMediaRefresh }: {
   tasks: ImageTask[]
   profile?: Pick<UserProfile, 'display_name'> | null
   accessToken?: string | null
   onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
+  onMediaRefresh: () => void | Promise<void>
 }) {
   if (!tasks.length) {
     return <EmptyState title="暂无历史创作" detail="完成一次创作后，任务记录会展示在这里。" />
@@ -1863,18 +1892,20 @@ function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOp
           accessToken={accessToken}
           onPreviewImage={onPreviewImage}
           onOpenTaskDialog={onOpenTaskDialog}
+          onMediaRefresh={onMediaRefresh}
         />
       ))}
     </div>
   )
 }
 
-function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpenTaskDialog }: {
+function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpenTaskDialog, onMediaRefresh }: {
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   accessToken?: string | null
   onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
+  onMediaRefresh: () => void | Promise<void>
 }) {
   const slots = generationSlots(task)
   const imageSlot = slots.find((slot): slot is Extract<typeof slot, { kind: 'image' }> => slot.kind === 'image')
@@ -1914,7 +1945,7 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
         {multi ? <span className={cn(workspaceClasses.historyLayer, workspaceClasses.historyLayerBack1)} aria-hidden="true" /> : null}
         <span className={cn(workspaceClasses.historyLayer, allFailed && workspaceClasses.historyFailed)}>
           {imageSlot && imageUrl ? (
-            <img className={workspaceClasses.historyImage} src={imageUrl} alt={task.title} />
+            <RefreshableMediaImage className={workspaceClasses.historyImage} src={imageUrl} alt={task.title} onMediaRefresh={onMediaRefresh} />
           ) : running ? (
             <span className={workspaceClasses.historyState}>
               <span className={userState.spinner} />
@@ -1939,9 +1970,10 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   )
 }
 
-function HistoryTaskDialog({ task, accessToken, onClose }: {
+function HistoryTaskDialog({ task, accessToken, onMediaRefresh, onClose }: {
   task: ImageTask
   accessToken?: string | null
+  onMediaRefresh: () => void | Promise<void>
   onClose: () => void
 }) {
   const app = useApp()
@@ -1981,12 +2013,13 @@ function HistoryTaskDialog({ task, accessToken, onClose }: {
         { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: reuseConfiguration },
       ]}
       previewSourceLabel="历史创作"
+      onMediaRefresh={onMediaRefresh}
       onClose={onClose}
     />
   )
 }
 
-function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken }: {
+function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onMediaRefresh }: {
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   onCopyPrompt: () => Promise<void>
@@ -1995,6 +2028,7 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
   onRetryTask: (task: ImageTask) => Promise<void>
   onDeleteTask: (task: ImageTask) => Promise<void>
   accessToken?: string
+  onMediaRefresh: () => void | Promise<void>
 }) {
   const slots = generationSlots(task)
   const activeStage = task.progress_message || task.progress_stage || '等待后端返回任务进度'
@@ -2044,6 +2078,7 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
                   key={asset.id || asset.preview_url || asset.download_url}
                   asset={asset}
                   accessToken={accessToken}
+                  onMediaRefresh={onMediaRefresh}
                   onClick={(url) => onPreviewImage({ url, alt: asset.name || '原图引用', source: '原图引用' })}
                 />
               ))}
@@ -2063,6 +2098,7 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
                     accessToken={accessToken}
                     onUseReference={onUseReference}
                     onPreview={onPreviewImage}
+                    onMediaRefresh={onMediaRefresh}
                   />
                 )
               }
@@ -2173,7 +2209,7 @@ function normalizeAspectRatio(input?: string) {
   return undefined
 }
 
-function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview }: {
+function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onMediaRefresh }: {
   image: ImageResult
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
@@ -2182,6 +2218,7 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
   accessToken?: string
   onUseReference: (url: string) => Promise<void>
   onPreview: (image: ImagePreviewPayload) => void
+  onMediaRefresh: () => void | Promise<void>
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
   const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)
@@ -2210,7 +2247,7 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
         })}
         aria-label="预览生成图片"
       >
-        <img className={cn(workspaceClasses.generatedImage, sizeClass)} src={imageUrl} alt={alt} />
+        <RefreshableMediaImage className={cn(workspaceClasses.generatedImage, sizeClass)} src={imageUrl} alt={alt} onMediaRefresh={onMediaRefresh} />
       </button>
       <figcaption className={workspaceClasses.generatedCaption}>
         <button className={workspaceClasses.generatedIconAction} type="button" title="编辑" aria-label="编辑图片" onClick={() => void onUseReference(imageUrl)}><EditGlyph /></button>

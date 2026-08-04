@@ -60,6 +60,7 @@ export type ReviewActionModel = {
 export type ReviewRowView = {
   raw: ReviewItem
   imageID: string
+  imageURL: string
   title: string
   owner: string
   context: string
@@ -116,6 +117,7 @@ export function reviewRowView(item: ReviewItem): ReviewRowView {
   return {
     raw: item,
     imageID: item.image_id ?? item.id,
+    imageURL: item.image_url ?? '',
     title: item.title || item.id,
     owner: item.owner || '-',
     context: item.reason || item.review_reason || '-',

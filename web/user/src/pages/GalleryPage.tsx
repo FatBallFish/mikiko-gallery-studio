@@ -534,6 +534,7 @@ export function GalleryPage() {
 			onPublish={handlePublishAction}
         onDelete={(image) => requestDeleteImages([image])}
         onGroup={(image) => openGroupDialog([image])}
+        onMediaRefresh={() => void reloadLoadedPages()}
       />
 
       <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-4 text-sm text-[var(--muted)]" aria-live="polite">
@@ -565,6 +566,7 @@ export function GalleryPage() {
           { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
         ] : []}
         previewSourceLabel="历史资产"
+        onMediaRefresh={() => void reloadLoadedPages()}
 		onClose={() => setSelected(null)}
 	/>
 	{publishDialog ? (
@@ -624,7 +626,7 @@ export function GalleryPage() {
   )
 }
 
-function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onOpen, onCopyPrompt, onReuse, onDownload, onPublish, onDelete, onGroup }: {
+function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onOpen, onCopyPrompt, onReuse, onDownload, onPublish, onDelete, onGroup, onMediaRefresh }: {
   rows: GalleryImage[]
   accessToken?: string
   busyId: string | null
@@ -637,6 +639,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
   onPublish: (image: GalleryImage) => void
   onDelete: (image: GalleryImage) => void
   onGroup: (image: GalleryImage) => void
+  onMediaRefresh: () => void | Promise<void>
 }) {
   return (
     <div className={galleryClasses.grid}>
@@ -652,6 +655,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
               aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
               selected={selectedIds.has(image.id)}
               onOpen={() => onOpen(image)}
+              onMediaRefresh={onMediaRefresh}
               imageClassName={galleryClasses.thumbImage}
               topAction={(
                 <button

@@ -7,6 +7,7 @@ import { adminButton, adminPage } from '../ui/classes'
 import { useAdminPreviewMotion } from '../ui/adminMotion'
 import { FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import { FilterIcon, XIcon } from '../ui/listIcons'
+import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import { adminTaskTypeOptions } from './adminTaskTypes'
 import { reviewDefaultReason, reviewListQuery, reviewRowView, reviewStatusLabel } from './reviewRows'
 import type { ReviewDecision, ReviewListFilters } from './reviewRows'
@@ -193,6 +194,7 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
               busy={busy}
               mutationError={mutationError}
               interactionLocked={refreshing}
+              onMediaRefresh={() => void load()}
               onSelect={selectItem}
               onDecision={openDrawer}
               onReasonChange={setReason}
@@ -215,6 +217,7 @@ function ReviewWorkbench({
   busy,
   mutationError,
   interactionLocked,
+  onMediaRefresh,
   onSelect,
   onDecision,
   onReasonChange,
@@ -229,6 +232,7 @@ function ReviewWorkbench({
   busy: boolean
   mutationError: string
   interactionLocked: boolean
+  onMediaRefresh: () => void | Promise<void>
   onSelect: (item: ReviewItem) => void
   onDecision: (item: ReviewItem, decision: ReviewDecision, explanation?: string) => void
   onReasonChange: (value: string) => void
@@ -296,7 +300,7 @@ function ReviewWorkbench({
         {selectedRow ? (
           <>
             <div className={reviewClasses.previewImageWrap}>
-              <img className={reviewClasses.previewImage} src={adminApi.imageReviewUrl(selectedRow.imageID, accessToken)} alt={selectedRow.title} />
+              <RefreshableMediaImage className={reviewClasses.previewImage} src={adminApi.imageReviewUrl(selectedRow.imageID, accessToken, selectedRow.imageURL)} alt={selectedRow.title} onMediaRefresh={onMediaRefresh} />
             </div>
             <div className={reviewClasses.previewMeta}>
               <div className="flex flex-wrap items-center gap-2">
