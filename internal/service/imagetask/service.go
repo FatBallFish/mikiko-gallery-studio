@@ -1665,6 +1665,10 @@ func (s *Service) ReviewImage(ctx context.Context, imageID, nextStatus, reviewRe
 	return image, nil
 }
 
+func (s *Service) ProjectGalleryImageForAdmin(ctx context.Context, image domainimagetask.GalleryImage) (domainimagetask.GalleryImage, error) {
+	return s.projectGalleryImageMedia(ctx, image, "/api/ops/admin/v1/image-reviews/"+url.PathEscape(image.ID)+"/image")
+}
+
 func (s *Service) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	req.Page, req.PageSize = normalizeListPage(req.Page, req.PageSize)
 	req.Status = strings.TrimSpace(req.Status)

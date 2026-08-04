@@ -41,4 +41,7 @@ for (const [file, contract] of [
 const reviewSource = readFileSync(new URL('../admin/src/pages/ReviewPage.tsx', import.meta.url), 'utf8')
 assert.ok(reviewSource.includes('selectedRow.imageURL'), 'admin review must consume the projected image URL from its list response')
 
+const openAPISource = readFileSync(new URL('./open-api.ts', import.meta.url), 'utf8')
+assert.ok(!openAPISource.includes('API_PATHS.open.galleryImageDownload'), 'public gallery adapters must preserve projected media URLs instead of rebuilding application download routes')
+
 console.log('OK: direct media URL and bounded refresh contract passed')

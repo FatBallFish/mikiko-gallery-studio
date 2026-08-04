@@ -3482,6 +3482,11 @@ func (a *API) HandleAdminImageReviewDetail(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
+	image, err = a.tasks.ProjectGalleryImageForAdmin(r.Context(), image)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
 	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), auditOp, "image_result", imageID, map[string]any{"previous_status": previousStatus, "next_status": image.VisibilityStatus, "reason": image.ReviewReason})
 	httpx.WriteSuccess(w, r, http.StatusOK, image)
 }

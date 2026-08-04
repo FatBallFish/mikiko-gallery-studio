@@ -1,7 +1,7 @@
 import type { Balance, Capability, CreateTaskRequest, EstimateRequest, EstimateResult, ImageResult, ImageTask, OpenAIImageEditRequest, OpenAIImageGenerationRequest, OpenAIImageResponse, OpenAIModelList, OpenReferenceAssetUploadSessionRequest, OpenReferenceAssetUploadSessionResponse, PageResult, ReferenceAsset } from './api-types'
 import { API_PATHS } from './api-types'
 import { resolveGenerationResolution } from './generation-resolution'
-import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
+import { normalizePage, sharedApiClient, withQuery } from './http-client'
 import { docsFromOpenApi, normalizeErrors, normalizeExamples } from './open-api-docs'
 import { toImageResult, toReferenceAsset, toTask } from './user-api'
 
@@ -42,9 +42,7 @@ export const openApi = {
 }
 
 function toPublicGalleryImage(raw: any) {
-  const image = toImageResult(raw)
-  const publicURL = fillPath(API_PATHS.open.galleryImageDownload, { image_id: image.id })
-  return { ...image, url: publicURL, download_url: publicURL }
+  return toImageResult(raw)
 }
 
 export type OpenApiHeaders = {

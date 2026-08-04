@@ -574,6 +574,18 @@ func TestDirectMediaURLProjectionAcrossImageAPIs(t *testing.T) {
 		})
 	}
 
+	unpublishReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/image-reviews/"+imageID+":unpublish", bytes.NewBufferString(`{"reason":"direct media audit"}`))
+	unpublishReq.Header.Set("Authorization", "Bearer "+adminToken)
+	unpublishReq.Header.Set("Content-Type", "application/json")
+	unpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(unpublishRec, unpublishReq)
+	if unpublishRec.Code != http.StatusOK || !bytes.Contains(unpublishRec.Body.Bytes(), []byte("https://objects.example.test/")) {
+		t.Fatalf("admin review mutation must return direct signed media URL: status=%d body=%s", unpublishRec.Code, unpublishRec.Body.String())
+	}
+	if bytes.Contains(unpublishRec.Body.Bytes(), []byte("/api/agent/image/v1/images/")) {
+		t.Fatalf("admin review mutation must not return a user fallback route body=%s", unpublishRec.Body.String())
+	}
+
 	var uploadBody bytes.Buffer
 	uploadWriter := multipart.NewWriter(&uploadBody)
 	uploadPart, err := uploadWriter.CreateFormFile("file", "direct-reference.png")
