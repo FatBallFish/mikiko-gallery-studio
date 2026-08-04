@@ -1,4 +1,4 @@
-import type { CashierPlan } from '../../../shared/api-types'
+import type { CashierPlan, CashierPlanStatus, CashierPlanTransitionAction } from '../../../shared/api-types'
 
 export type CashierPlanDraftInput = {
   plan_code: string
@@ -30,6 +30,29 @@ export const cashierPlanSectionCopy = {
   dialogDetail: '积分包可直接开放购买；订阅套餐仅在后台保留定义，不在用户端开放购买。',
   subscriptionOptionLabel: '订阅套餐',
 } as const
+
+export const cashierPlanFilterOptions: ReadonlyArray<{ value: CashierPlanStatus; label: string }> = [
+  { value: 'active', label: '启用' },
+  { value: 'disabled', label: '停用' },
+  { value: 'archived', label: '已删除' },
+]
+
+export type CashierPlanAction = {
+  action: CashierPlanTransitionAction
+  label: string
+  detail: string
+  tone: 'neutral' | 'warning' | 'danger'
+}
+
+export function cashierPlanActions(plan: CashierPlan): CashierPlanAction[] {
+  if (plan.status === 'archived') {
+    return [{ action: 'restore', label: '恢复套餐', detail: `恢复「${plan.plan_name}」后将处于停用状态，需要再次启用才会开放购买。`, tone: 'neutral' }]
+  }
+  const availability: CashierPlanAction = plan.status === 'active'
+    ? { action: 'disable', label: '停用套餐', detail: `停用「${plan.plan_name}」后，用户将无法创建新订单。`, tone: 'warning' }
+    : { action: 'enable', label: '启用套餐', detail: `启用「${plan.plan_name}」后，积分包会重新开放购买。`, tone: 'neutral' }
+  return [availability, { action: 'archive', label: '删除套餐', detail: `删除「${plan.plan_name}」后将默认隐藏，历史订单和积分发放不受影响。`, tone: 'danger' }]
+}
 
 export function cashierPlanPurchaseEnabled(planType: string | undefined, purchaseEnabled: boolean): boolean {
   return (planType ?? 'points_package') === 'points_package' && purchaseEnabled

@@ -295,8 +295,9 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 		}
 		item.PlanName = strings.TrimSpace(req.PlanName)
 		item.PlanType = normalizePlanType(req.PlanType)
-		item.PurchaseEnabled = req.PurchaseEnabled
-		item.Status = normalizePlanStatus(req.Status)
+		if item.PlanType != "points_package" {
+			item.PurchaseEnabled = false
+		}
 		item.PriceCNY = strings.TrimSpace(req.PriceCNY)
 		item.Points = strings.TrimSpace(req.Points)
 		item.BonusPoints = strings.TrimSpace(req.BonusPoints)

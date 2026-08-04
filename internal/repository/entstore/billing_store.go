@@ -115,12 +115,19 @@ func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateS
 }
 
 func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
-	metadata := subscriptionPlanMetadata(req.PlanType, req.PurchaseEnabled)
+	current, err := s.client.SubscriptionPlan.Get(ctx, int(req.PlanID))
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+		}
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	purchaseEnabled := current.PurchaseEnabled && strings.TrimSpace(req.PlanType) == "points_package"
+	metadata := subscriptionPlanMetadata(req.PlanType, purchaseEnabled)
 	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
 		SetPlanName(strings.TrimSpace(req.PlanName)).
 		SetPlanType(strings.TrimSpace(req.PlanType)).
-		SetPurchaseEnabled(req.PurchaseEnabled).
-		SetStatus(strings.TrimSpace(req.Status)).
+		SetPurchaseEnabled(purchaseEnabled).
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).

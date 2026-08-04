@@ -231,6 +231,7 @@ export const adminApi = {
   createCashierPlan: (input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlans, { method: 'POST', body: input }),
   updateCashierPlan: (plan_id: string | number, input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'PUT', pathParams: { plan_id }, body: input }),
   deleteCashierPlan: (plan_id: string | number) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'DELETE', pathParams: { plan_id } }),
+  transitionCashierPlan: (plan_id: string | number, action: 'enable' | 'disable' | 'archive' | 'restore') => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanTransition, { method: 'POST', pathParams: { plan_id, action } }),
   getCashierCustomAmountConfig: () => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig),
   updateCashierCustomAmountConfig: (input: CashierCustomAmountConfig) => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig, { method: 'PUT', body: input }),
   listPaymentVisibleMethods: async () => (await sharedApiClient.request<{ items: PaymentVisibleMethod[] }>(API_PATHS.ops.paymentVisibleMethods)).items ?? [],

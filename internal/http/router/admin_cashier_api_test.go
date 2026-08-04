@@ -14,14 +14,134 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
+	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	stripe "github.com/stripe/stripe-go/v85"
 )
+
+func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
+		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email: "cashier-plan-admin@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role: domainadminauth.RoleAdmin, Status: "active",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	auditSvc := auditservice.NewService(nil)
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingservice.NewService(cfg.Billing), nil, adminAuth, auditSvc)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForCashierPlanTest(t, handler)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/plans", bytes.NewBufferString(
+		`{"plan_code":"lifecycle-plan","plan_name":"生命周期套餐","plan_type":"points_package","purchase_enabled":false,"status":"disabled","price_cny":"20.00000","points":"50.00000","bonus_points":"0.00000","duration_days":30,"currency":"CNY"}`,
+	))
+	createReq.Header.Set("Authorization", "Bearer "+adminToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create lifecycle plan: status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		Data domainbilling.SubscriptionPlan `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created plan: %v", err)
+	}
+
+	transition := func(action string, wantStatus string, wantPurchase bool) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d/%s", created.Data.ID, action), nil)
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s plan: status=%d body=%s", action, rec.Code, rec.Body.String())
+		}
+		var response struct {
+			Data domainbilling.SubscriptionPlan `json:"data"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+			t.Fatalf("decode %s response: %v", action, err)
+		}
+		if response.Data.Status != wantStatus || response.Data.PurchaseEnabled != wantPurchase {
+			t.Fatalf("%s result = %#v", action, response.Data)
+		}
+	}
+
+	transition("enable", "active", true)
+	transition("disable", "disabled", false)
+	updateReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d", created.Data.ID), bytes.NewBufferString(
+		`{"plan_name":"生命周期套餐已编辑","plan_type":"points_package","purchase_enabled":true,"status":"active","price_cny":"21.00000","points":"51.00000","bonus_points":"0.00000","duration_days":30,"currency":"CNY"}`,
+	))
+	updateReq.Header.Set("Authorization", "Bearer "+adminToken)
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRec := httptest.NewRecorder()
+	handler.ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("edit disabled plan: status=%d body=%s", updateRec.Code, updateRec.Body.String())
+	}
+	var updated struct {
+		Data domainbilling.SubscriptionPlan `json:"data"`
+	}
+	if err := json.NewDecoder(updateRec.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated plan: %v", err)
+	}
+	if updated.Data.Status != "disabled" || updated.Data.PurchaseEnabled {
+		t.Fatalf("plan edit must not bypass lifecycle transition: %#v", updated.Data)
+	}
+	transition("archive", "archived", false)
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/plans?page=1&page_size=20", nil)
+	defaultReq.Header.Set("Authorization", "Bearer "+adminToken)
+	defaultRec := httptest.NewRecorder()
+	handler.ServeHTTP(defaultRec, defaultReq)
+	if defaultRec.Code != http.StatusOK || bytes.Contains(defaultRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) {
+		t.Fatalf("default list must hide archived plan: status=%d body=%s", defaultRec.Code, defaultRec.Body.String())
+	}
+	archivedReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/plans?status=archived&page=1&page_size=20", nil)
+	archivedReq.Header.Set("Authorization", "Bearer "+adminToken)
+	archivedRec := httptest.NewRecorder()
+	handler.ServeHTTP(archivedRec, archivedReq)
+	if archivedRec.Code != http.StatusOK || !bytes.Contains(archivedRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) {
+		t.Fatalf("archived filter must return archived plan: status=%d body=%s", archivedRec.Code, archivedRec.Body.String())
+	}
+
+	transition("restore", "disabled", false)
+	disabledReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/plans?status=disabled&page=1&page_size=20", nil)
+	disabledReq.Header.Set("Authorization", "Bearer "+adminToken)
+	disabledRec := httptest.NewRecorder()
+	handler.ServeHTTP(disabledRec, disabledReq)
+	if disabledRec.Code != http.StatusOK || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) {
+		t.Fatalf("disabled filter must return restored plan: status=%d body=%s", disabledRec.Code, disabledRec.Body.String())
+	}
+
+	logs, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, TargetType: "cashier_plan", TargetID: fmt.Sprintf("%d", created.Data.ID)})
+	if err != nil {
+		t.Fatalf("list audit logs: %v", err)
+	}
+	actions := map[string]bool{}
+	for _, log := range logs.Items {
+		actions[log.Action] = true
+	}
+	for _, action := range []string{"cashier.plan.enable", "cashier.plan.disable", "cashier.plan.archive", "cashier.plan.restore"} {
+		if !actions[action] {
+			t.Fatalf("missing audit action %q in %#v", action, actions)
+		}
+	}
+}
 
 func TestAdminCashierReadEndpoints(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")

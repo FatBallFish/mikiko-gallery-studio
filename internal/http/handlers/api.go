@@ -3829,7 +3829,7 @@ func (a *API) HandleAdminCashierPlans(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{})
+	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: r.URL.Query().Get("status")})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -3847,25 +3847,38 @@ func (a *API) HandleAdminCashierPlanDetail(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	planID, parseErr := parseAdminCashierPlanID(r.URL.Path)
+	planID, action, parseErr := parseAdminCashierPlanPath(r.URL.Path)
 	if parseErr != nil {
 		httpx.WriteError(w, r, parseErr)
 		return
 	}
-	if r.Method == http.MethodDelete {
-		plan, err := a.billing.DeletePlan(r.Context(), planID)
+	if r.Method == http.MethodPost && action != "" {
+		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: action})
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan.delete", "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan."+action, "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
 		return
 	}
-	if r.Method != http.MethodPut {
+	if r.Method == http.MethodDelete && action == "" {
+		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: domainbilling.SubscriptionPlanActionArchive})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan.archive", "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
+		return
+	}
+	if r.Method != http.MethodPut || action != "" {
 		writeMethodNotAllowed(w, r)
 		return
 	}
@@ -7669,18 +7682,31 @@ func parseCashierOrderPath(path string) (int64, string, *errs.Error) {
 	return orderID, action, nil
 }
 
-func parseAdminCashierPlanID(path string) (int64, *errs.Error) {
+func parseAdminCashierPlanPath(path string) (int64, string, *errs.Error) {
 	const prefix = "/api/ops/admin/v1/cashier/plans/"
 	raw := strings.TrimPrefix(path, prefix)
 	raw = strings.Trim(raw, "/")
-	if raw == "" || strings.Contains(raw, "/") {
-		return 0, errs.BadRequest("invalid plan_id")
+	parts := strings.Split(raw, "/")
+	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" {
+		return 0, "", errs.BadRequest("invalid plan_id")
 	}
-	planID, err := strconv.ParseInt(raw, 10, 64)
+	planID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || planID <= 0 {
-		return 0, errs.BadRequest("invalid plan_id")
+		return 0, "", errs.BadRequest("invalid plan_id")
 	}
-	return planID, nil
+	action := ""
+	if len(parts) == 2 {
+		action = strings.ToLower(strings.TrimSpace(parts[1]))
+		switch action {
+		case domainbilling.SubscriptionPlanActionEnable,
+			domainbilling.SubscriptionPlanActionDisable,
+			domainbilling.SubscriptionPlanActionArchive,
+			domainbilling.SubscriptionPlanActionRestore:
+		default:
+			return 0, "", errs.BadRequest("invalid subscription plan action")
+		}
+	}
+	return planID, action, nil
 }
 
 func parseAdminCashierProviderInstanceID(path string) (int64, *errs.Error) {
